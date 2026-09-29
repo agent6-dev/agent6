@@ -79,10 +79,11 @@ def test_install_writes_profile_and_reloads(
 
 
 def test_bundled_profile_parses_as_apparmor() -> None:
-    """apparmor_parser must ACCEPT what we install. Asserting the text instead
-    let a rename of AppArmor's own `profile` keyword ship: the string check
-    passed while `system apparmor install` could no longer grant userns, so
-    strict silently stayed unavailable on the hosts that need this most."""
+    """apparmor_parser accepts the bundled profile.
+
+    A text assertion would let a rename of AppArmor's own keyword ship, leaving strict silently
+    unavailable on the hosts that need it most.
+    """
     parser = shutil.which("apparmor_parser")
     if parser is None:
         pytest.skip("apparmor_parser not installed")
@@ -129,8 +130,7 @@ def test_remove_unloads_then_deletes(
     profile.write_text("x", encoding="utf-8")
     monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(profile))
 
-    # The recorded mock leaves the file; have `rm` actually delete it so the
-    # post-removal file check (success = file gone) sees success.
+    # The mock `rm` deletes the file, so the post-removal check sees success.
     def _run_priv_rm(argv: list[str], *, what: str, required: bool = True) -> bool:
         priv_calls.append(argv)
         if argv and argv[0] == "rm":
@@ -147,8 +147,7 @@ def test_remove_unloads_then_deletes(
 def test_remove_reports_failure_if_file_remains(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, priv_calls: list[list[str]]
 ) -> None:
-    # If the privileged rm couldn't delete the file, removal failed (exit 1) --
-    # but a failed -R (profile present-but-not-loaded) alone must NOT fail it.
+    # A failed privileged rm is exit 1; a failed -R alone (present but not loaded) is not.
     monkeypatch.setattr(sc, "_apparmor_present", lambda: True)
     profile = tmp_path / "agent6-jail"
     profile.write_text("x", encoding="utf-8")
@@ -182,9 +181,12 @@ def test_remove_does_not_report_an_unloaded_profile_as_an_error(
 def test_a_profile_the_parser_refuses_never_reaches_the_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The kernel loads the profile from the temp file before it is copied into
-    place: a refused profile leaves no file for `status` to report as
-    installed, and a reinstall that fails keeps the working profile."""
+    """A profile the parser refuses never reaches the path.
+
+    A failed reinstall keeps the working one.
+
+    The kernel loads the profile from the temp file before it is copied into place.
+    """
     monkeypatch.setattr(sc, "_apparmor_present", lambda: True)
     dest = tmp_path / "agent6-jail"
     monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(dest))
@@ -211,9 +213,7 @@ def test_a_profile_the_parser_refuses_never_reaches_the_path(
 def test_a_failed_first_copy_removes_its_partial_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The profile loaded but the copy into place failed and left a partial
-    file where none was before: it is removed again, so nothing reads as
-    installed."""
+    """A failed first copy removes its partial file, so nothing reads as installed."""
     monkeypatch.setattr(sc, "_apparmor_present", lambda: True)
     dest = tmp_path / "agent6-jail"
     monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(dest))

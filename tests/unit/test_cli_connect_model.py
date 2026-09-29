@@ -21,12 +21,9 @@ from agent6.ui.cli import model as modelmod
 def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)
-    # Default to an interactive terminal: the getpass-path tests below assert
-    # the masked-input behaviour, which `connect` only takes when stdin is a
-    # TTY. Under pytest stdin reports non-TTY; the non-TTY path has its own test.
+    # An interactive terminal by default: the masked-input path runs only when stdin is a TTY.
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    # Keep connect hermetic by default: stub the post-save key probe so no test
-    # makes a real network call. Tests of the probe behaviour re-patch it.
+    # The post-save key probe is stubbed so no test makes a network call; probe tests re-patch it.
     monkeypatch.setattr(
         "agent6.ui.cli.connect.probe_provider_key",
         lambda *a, **k: KeyProbeResult(  # type: ignore[misc]
@@ -64,9 +61,7 @@ def test_connect_stores_key_and_provider_and_never_execs(
 def test_connect_preserves_hand_edited_provider_keys(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """connect is the documented add/UPDATE path; re-running it for a key
-    rotation must not erase the operator's hand-added sibling keys (it replaced
-    the whole [providers.<name>] block)."""
+    """Re-running connect for a key rotation keeps the operator's hand-added sibling keys."""
     gc = tmp_path / "g" / "agent6" / "config.toml"
     gc.parent.mkdir(parents=True, exist_ok=True)
     gc.write_text(
@@ -135,9 +130,7 @@ def test_connect_no_verify_skips_the_probe(
 def test_connect_non_tty_reads_plain_input_without_getpass(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Scripted/piped connect (no controlling terminal): getpass would print a
-    # GetPassWarning + "input may be echoed" line. The non-TTY path reads a
-    # plain line via input() instead, never touching getpass.
+    # With no controlling terminal the key is read with input(), never getpass.
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
 
     def _boom(*_a: object, **_k: object) -> str:
@@ -154,8 +147,7 @@ def test_connect_non_tty_reads_plain_input_without_getpass(
 def test_connect_rejects_non_bare_key_provider_name(
     iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A name with a space would corrupt `[providers.<name>]` in the TOML; reject
-    # it before writing anything (connect doesn't re-validate the file).
+    # A name with a space would corrupt `[providers.<name>]`; rejected before any write.
     rc = main(["connect", "my provider"])
     assert rc == 2
     err = capsys.readouterr().err
@@ -168,8 +160,7 @@ def test_connect_rejects_non_bare_key_provider_name(
 def test_connect_prints_post_entry_key_summary(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Simulate Python < 3.14 getpass (no echo_char): the helper must print a
-    # length + last-four summary so the operator can tell the paste landed.
+    # Python < 3.14 getpass has no echo_char: the helper prints a length and last-four summary.
     def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
         if "echo_char" in kwargs:
             raise TypeError("echo_char unsupported")
@@ -204,8 +195,7 @@ def test_connect_short_key_summary_omits_tail(
 def test_connect_masked_echo_skips_summary(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Simulate Python 3.14+ getpass that accepts echo_char: no post-entry
-    # summary is printed because the keystrokes were already masked live.
+    # Python 3.14+ getpass masks live, so no post-entry summary.
     def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
         return "sk-ant-0123456789wxyz"
 
@@ -265,11 +255,7 @@ def test_model_invalid_provider_refuses_and_rolls_back(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # Regression: setting a role to an unconfigured provider makes the merged
-    # config invalid. The set must REFUSE (rc 2) and leave config.toml byte-for-
-    # byte as it was, not write the broken value -- which previously bricked every
-    # later command. (The provider cross-check is active only once a provider is
-    # configured, so connect one first.)
+    # A role on an unconfigured provider refuses at rc 2 and leaves config.toml byte for byte.
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
     assert main(["connect", "anthropic"]) == 0
     assert main(["model", "worker", "anthropic/good-x"]) == 0
@@ -308,9 +294,7 @@ def test_connect_config_rollback_uses_the_shared_refusal_without_saving_the_key(
 def test_connect_config_rollback_precedes_the_chatgpt_sign_in(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The pasted-key branch stored nothing on a refused edit, but the ChatGPT
-    sign-in still ran (and stored its tokens) before the provider block was
-    validated: the block is written first, on every branch."""
+    """The provider block is validated and written before the ChatGPT sign-in stores any token."""
     signed_in: list[str] = []
 
     def bad_combination(*_args: object, **_kwargs: object) -> str:
@@ -356,9 +340,7 @@ def _key_stub(key: str | None) -> Callable[..., str | None]:
 def test_model_piped_without_model_lists_the_catalog(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # No tty and no model named: the invocation is a listing (one id per line,
-    # exit 0), not a 344-line prompt dump that ends in an EOF error. The set
-    # hint goes to stderr so stdout stays pipe-clean.
+    # No tty and no model named: a listing, one id per line at exit 0, with the hint on stderr.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
@@ -379,9 +361,7 @@ def test_model_piped_without_model_lists_the_catalog(
 def test_model_set_warns_when_the_provider_has_no_key(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Setting a role to a configured-but-keyless provider succeeds (config is
-    # just config) but the first run would refuse; the warning closes that loop at
-    # set time. README's own quickstart line hits this on a keyless machine.
+    # A configured but keyless provider is valid config; the warning names the first run's refusal.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
@@ -438,10 +418,7 @@ def test_model_piped_unknown_provider_errors(
 def test_model_stdout_piped_lists_even_with_a_tty_stdin(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `agent6 model worker anthropic | grep x` keeps stdin a tty; the listing
-    # must trigger on the piped stdout, not park the pipe on an invisible
-    # numbered prompt. (iso leaves stdin.isatty True; captured stdout is not
-    # a tty, exactly the pipe shape.)
+    # Stdin stays a tty while stdout is piped: the listing triggers on the piped stdout.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
@@ -455,8 +432,7 @@ def test_model_stdout_piped_lists_even_with_a_tty_stdin(
 def test_model_piped_without_provider_errors_without_prompt_dump(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The provider prompt is interactive-only; piped it dumped "Connected
-    # providers: ..." plus a prompt, then died on EOF.
+    # The provider prompt is interactive-only; piped, it is a listing.
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     rc = main(["model", "worker"])
     assert rc == 2
@@ -487,8 +463,7 @@ def test_model_piped_listing_notes_an_ignored_thinking_flag(
 
 
 def test_model_aborts_without_provider(iso: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # Role given but provider omitted and none connected: the prompt gets an
-    # empty answer and the command refuses rather than writing a bad config.
+    # Role given, provider omitted, none connected: refuse instead of writing bad config.
     monkeypatch.setattr("builtins.input", lambda prompt="": "")
     assert main(["model", "worker"]) == 2
 
@@ -496,8 +471,7 @@ def test_model_aborts_without_provider(iso: Path, monkeypatch: pytest.MonkeyPatc
 def test_model_interactive_prefill(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A provider is connected; the model list is served live (mocked). The
-    # operator picks the provider by default and the model by number.
+    # The operator picks the provider by default and the model by number from a mocked live list.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
@@ -532,7 +506,7 @@ def test_model_all_interactive_prompts_once(
     monkeypatch.setattr("agent6.models.choices.list_models", _models)
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)  # interactive = both ttys
     calls = {"n": 0}
-    answers = iter(["", "2"])  # provider default, model #2 — once, not 3x
+    answers = iter(["", "2"])  # provider default, model #2: once, not 3x
 
     def _input(prompt: str = "") -> str:
         calls["n"] += 1
@@ -608,9 +582,11 @@ class _TokenResp:
 def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Headless connect: paste the callback URL, exchange the code, store
-    tokens 0600, write the provider block, print the training-data notice.
-    Never executes a subprocess and never opens a browser."""
+    """The headless ChatGPT paste flow signs in and writes the config.
+
+    Paste the callback URL, exchange the code, store tokens 0600, write the provider block, print
+    the training-data notice; no subprocess, no browser.
+    """
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("agent6.ui.cli.connect.pysecrets.token_urlsafe", lambda n=24: "STATE1")
     exchanges: list[dict[str, str]] = []
@@ -654,9 +630,11 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
 def test_connect_claude_writes_the_format_only_and_stores_no_secret(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`connect claude` checks the binary's sign-in, writes `api_format` and no
-    secret; a signed-out binary warns with the remedy; `--logout` refuses since
-    agent6 holds no Claude Code credential."""
+    """`connect claude` writes `api_format` and no secret.
+
+    A signed-out binary warns with the remedy; `--logout` refuses, since agent6 holds no Claude Code
+    credential.
+    """
 
     def signed_in(binary: str) -> str | None:
         return None
@@ -693,8 +671,10 @@ def test_connect_chatgpt_state_mismatch_refuses(iso: Path, monkeypatch: pytest.M
 
 
 def test_oauth_callback_server_round_trip() -> None:
-    """The localhost receiver answers the redirect, hands over the code, and
-    404s every other path; a state-mismatch hit is a 400, not a capture."""
+    """The localhost receiver answers the redirect, hands over the code and 404s every other path.
+
+    A state-mismatch hit is a 400, not a capture.
+    """
     import urllib.error
     import urllib.request
 
@@ -720,8 +700,7 @@ def test_oauth_callback_server_round_trip() -> None:
 def test_connect_logout_revokes_and_removes_tokens(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """--logout revokes a ChatGPT grant at the issuer (best effort) and
-    removes the provider's secrets entry; a repeat run reports nothing left."""
+    """--logout revokes a ChatGPT grant at the issuer and removes the secrets entry."""
     import time as _time
 
     secrets.save_oauth_tokens(
@@ -753,8 +732,10 @@ def test_connect_logout_revokes_and_removes_tokens(
 def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A tty without a display signs in by code entry: no browser, no
-    localhost server, no paste prompt; the polled grant is saved."""
+    """A tty without a display signs in by device code: no browser, no localhost server.
+
+    No paste.
+    """
     monkeypatch.delenv("DISPLAY", raising=False)
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr("sys.platform", "linux")
@@ -789,9 +770,7 @@ def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
 def test_connect_chatgpt_format_under_another_name_signs_in_as_itself(
     iso: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A chatgpt-format provider under another name is told to the device
-    poll by that name, so every remedy the credential later prints points
-    back at the provider that broke, and its tokens are stored under it."""
+    """A chatgpt-format provider under another name signs in and stores tokens as itself."""
     monkeypatch.delenv("DISPLAY", raising=False)
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr("sys.platform", "linux")
@@ -854,9 +833,7 @@ def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(
 def test_connect_eof_at_the_api_format_prompt_says_why(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """EOF at the api_format prompt names the abort: a custom provider name
-    has no preset format, so a piped connect that ran dry there exited 2
-    having printed only the bare prompt."""
+    """EOF at the api_format prompt names the abort: a custom provider name has no preset format."""
 
     def _eof(prompt: str = "") -> str:
         raise EOFError
@@ -880,8 +857,7 @@ model = "claude-sonnet-4-5"
 def test_a_role_that_falls_back_to_the_worker_says_so(
     iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An unset planner or reviewer shows the worker's model; its origin
-    names the fallback, where it read `[default]` beside a configured model."""
+    """An unset planner or reviewer shows the worker's model with an origin naming the fallback."""
     gpath = tmp_path / "g" / "agent6" / "config.toml"
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text(_WORKER_ONLY, encoding="utf-8")
@@ -897,8 +873,7 @@ def test_a_role_that_falls_back_to_the_worker_says_so(
 def test_a_number_outside_the_model_list_is_refused(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    """The picker offers numbered models; a number past the list was taken as
-    a model id and written to the config."""
+    """A number past the picker's list is refused, not written as a model id."""
     typed = ["7", "2"]
 
     def models(config_path: Path | None, provider: str) -> list[str]:

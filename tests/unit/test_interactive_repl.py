@@ -1,20 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for interactive REPL plumbing.
+"""The interactive REPL's hook and the harness's answers to it.
 
-Covers:
-* ``cli._build_repl_hook`` slash-command dispatch:
-  - empty input / ``/continue`` -> ``"continue"``
-  - ``/quit`` -> ``"stop"``
-  - EOF -> ``"stop"``
-  - ``/cost`` invokes ``budget.format_summary`` then re-prompts
-  - ``/undo`` -> ``"undo"`` (the loop's fork-back undo; the chain never
-    moves HEAD, so a `git revert HEAD` would have reverted the checkout's
-    own commit)
-  - unknown command re-prompts
-* ``Harness`` exits cleanly with ``reason="interactive_stop"`` when
-  the hook returns ``"stop"`` after an auto-commit, and takes the undo
-  fork on ``"undo"``.
+Empty input and `/continue` continue, `/quit` and EOF stop, `/cost` prints the budget summary,
+`/undo` takes the fork-back undo, an unknown command re-prompts; the harness exits
+`interactive_stop` when the hook stops after an auto-commit.
 """
 
 from __future__ import annotations
@@ -67,10 +57,7 @@ def _budget() -> BudgetTracker:
 def test_hook_pauses_the_console_heartbeat_while_prompting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The REPL prompt must sit inside the console view's pause(): the run is
-    waiting on the OPERATOR, and without the pause the heartbeat's per-tick
-    line-erase wiped the "agent6> " prompt and the typed characters, replacing
-    them with a lying "working…" spinner (keystrokes were submitted blind)."""
+    """The REPL prompt sits inside the console view's pause(), or the heartbeat erases it."""
     states: list[str] = []
 
     class _FakePause:
@@ -116,9 +103,10 @@ def _steer(*, armed: bool) -> SteerState:
 def test_the_banner_names_a_ctrl_c_pause_armed_during_the_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A Ctrl-C during the committing step arms a pause whose menu opens only
-    after this prompt: the banner says so, and says nothing when no pause is
-    armed."""
+    """A Ctrl-C during the committing step arms a pause whose menu opens after this prompt.
+
+    The banner says so, and says nothing when no pause is armed.
+    """
     monkeypatch.setattr("builtins.input", lambda _p="": "/continue")
     assert (
         build_repl_hook(tmp_path, _budget(), steer_cell=[_steer(armed=True)])(2, "abc")
@@ -147,8 +135,7 @@ def test_hook_quit_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 def test_hook_exit_is_the_loops_exit_directive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`/exit` stops AND leaves: the loop ends the run `steer_exit`, which the
-    follow-up prompt skips, unlike `/quit`'s stop that re-opens "next:"."""
+    """`/exit` stops and leaves: the run ends `steer_exit`, which the follow-up prompt skips."""
     monkeypatch.setattr("builtins.input", lambda _p="": "/exit")
     hook = build_repl_hook(tmp_path, _budget())
     assert hook(3, "abc") == "exit"
@@ -197,9 +184,10 @@ def test_hook_unknown_reprompts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 def test_hook_undo_is_the_loops_undo_directive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`/undo` hands the loop its own undo (fork back before the last message)
-    and touches no git: the chain never moves HEAD, so reverting HEAD would
-    revert the checkout's own commit, never the auto-commit."""
+    """`/undo` hands the loop its own undo (fork back before the last message), touching no git.
+
+    The chain never moves HEAD, so reverting HEAD would revert the checkout's own commit.
+    """
     _init_repo(tmp_path)
     head = _commit(tmp_path, "b.txt", "theirs\n", "the operator's commit")
     answers = iter(["/undo"])
@@ -291,9 +279,7 @@ def _answer_text(_session_dir: Path) -> str | None:
 def test_steer_prompt_clears_request_marker_on_no_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A TUI-initiated steer whose modal is dismissed (read_steer_answer -> None
-    on timeout) must clear the `steer.request` marker so the run does NOT
-    re-enter the 600s blocking prompt at every later boundary."""
+    """A dismissed steer modal clears the `steer.request` marker; no later boundary re-blocks."""
     from agent6.sessions.ipc import request_steer, steer_request_pending
     from agent6.ui.cli import _steer
 
@@ -319,8 +305,7 @@ def test_steer_prompt_clears_request_marker_on_no_answer(
 def test_steer_prompt_keeps_marker_on_real_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A genuinely-answered steer still works: prompt() returns the answer and
-    leaves clearing to the caller's clear() (which consumes request+answer)."""
+    """An answered steer returns the answer and leaves clearing to the caller's clear()."""
     from agent6.sessions.ipc import request_steer, steer_request_pending
     from agent6.ui.cli import _steer
 
@@ -355,8 +340,7 @@ def test_mcp_lists_a_running_server_that_exposes_no_tools(
 
 
 def test_mcp_lists_a_server_that_failed_to_start(capsys: pytest.CaptureFixture[str]) -> None:
-    """The listing read the started servers alone, so a configured server
-    that failed to start was absent from a list titled with every server."""
+    """The MCP listing names every configured server, a failed start included."""
     from agent6.tools.mcp_client import MCPManager, MCPStartFailure
     from agent6.ui.cli._repl import repl_list_mcp
 
@@ -368,9 +352,7 @@ def test_mcp_lists_a_server_that_failed_to_start(capsys: pytest.CaptureFixture[s
 def test_watch_shows_audit_events_not_streaming_fragments(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`/watch` printed the last N raw log lines, mostly one-word
-    role.thinking_delta fragments of a single turn; it shows the audit lines
-    every other log view shows (deltas and the loop's mirrors skipped)."""
+    """`/watch` shows the audit lines every other log view shows, not raw delta fragments."""
     import json
 
     from agent6.sessions.layout import SessionLayout
@@ -402,10 +384,7 @@ def test_watch_shows_audit_events_not_streaming_fragments(
 def test_i_on_a_pipe_refuses_up_front(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """-i promises a stdin REPL ("Requires a TTY"); on a pipe the REPL's first
-    prompt read EOF and stopped the run mid-task after its first commit. The
-    explicit-but-unhonourable flag refuses before anything runs, for run,
-    resume, and ask sessions alike."""
+    """-i on a pipe refuses before anything runs, for run, resume and ask alike: it needs a TTY."""
     from agent6.ui import cli
 
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
@@ -440,8 +419,7 @@ def test_i_from_a_background_process_group_refuses_before_start(
     capsys: pytest.CaptureFixture[str],
     argv: list[str],
 ) -> None:
-    """A background job can keep a TTY on stdin but cannot read it; starting
-    an interactive execution there suspends it with SIGTTIN at the first prompt."""
+    """A background job with a TTY on stdin cannot read it, so no interactive execution starts."""
     from agent6.ui import cli
     from agent6.ui.cli import _session_prompt as prompt_mod
 
@@ -462,8 +440,7 @@ def test_i_from_a_background_process_group_refuses_before_start(
 def test_bare_ask_from_a_background_process_group_refuses(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Bare ask defaults to its REPL only when the TTY belongs to this job;
-    a background job must not suspend while trying to read from it."""
+    """Bare ask defaults to its REPL only when the TTY belongs to this job."""
     from agent6.ui import cli
     from agent6.ui.cli import _session_prompt as prompt_mod
 
@@ -483,11 +460,10 @@ def test_bare_ask_from_a_background_process_group_refuses(
 def test_init_wizard_ctrl_c_aborts_init_not_the_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Ctrl-C at an /init wizard question aborts /init and returns to the
-    REPL. The prompt session is idle, so the execution's escalating steer handler
-    must not own SIGINT inside the wizard's nested input(): it printed
-    "pausing after this step" for a step that does not exist, and its third
-    press escaped the hook and ended the whole run as interrupted."""
+    """Ctrl-C at an /init wizard question aborts /init and returns to the REPL.
+
+    The steer handler must not own SIGINT inside the wizard's nested input().
+    """
     import os
     import signal
 
@@ -519,9 +495,7 @@ def test_init_wizard_ctrl_c_aborts_init_not_the_run(
 def test_diff_ctrl_c_aborts_diff_not_the_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Ctrl-C while /diff prints aborts /diff and returns to the REPL: a
-    KeyboardInterrupt walked past the /diff failure handler, out of the hook,
-    and the execution journaled the run as interrupted."""
+    """Ctrl-C while /diff prints aborts /diff and returns to the REPL, never past the hook."""
     import signal
 
     def _diff(**_kw: Any) -> int:

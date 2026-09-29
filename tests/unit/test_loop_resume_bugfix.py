@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Regression tests for three loop/resume bugs:
+"""Resume pins: the end-of-iteration snapshot, the completion scalars, the final checkpoint.
 
-#3  end-of-iteration resume snapshot (don't replay already-executed tools)
-#12 completion-relevant scalars survive a resume (metric / verify-settled)
-#10 final checkpoint commits a dirty worktree on a gated-run success exit
+The snapshot never replays executed tools, the completion scalars survive a resume, and the final
+checkpoint commits a dirty worktree on a gated run's success exit.
 """
 
 from __future__ import annotations
@@ -37,8 +36,7 @@ from agent6.harness.loop import (
 )
 from agent6.tools.results import ExecResult, RawResult
 
-# The `[git]` surface the loop reads: the checkpoint message and the commit
-# identity (`commit_identity`), empty as a real Config carries it unset.
+# The `[git]` surface the loop reads, empty as a real Config carries it unset.
 _GIT_STUB = SimpleNamespace(
     control="agent6",
     commit_per_step=True,
@@ -59,8 +57,7 @@ def _wf(
     fallback_parent: str | None = None,
     **kw: Any,
 ) -> Harness:
-    """A loop over *root* with a chain mirroring run.py's wiring (the chain's
-    first parent is HEAD at start); no root, no chain."""
+    """Return a loop over the root with a chain wired as run.py wires it; no root, no chain."""
     if root is not None and fallback_parent is None:
         fallback_parent = (
             sp.run(
@@ -113,8 +110,7 @@ def _git_repo(path: Path) -> None:
 
 
 def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
-    """verify_ever_passed / gateless_ever_edited / metric summary are written
-    and load back, instead of resetting to their fresh-run defaults."""
+    """verify_ever_passed, gateless_ever_edited and the metric summary survive the snapshot."""
     snap = tmp_path / "loop_state.json"
     config = SimpleNamespace(
         git=_GIT_STUB,
@@ -149,8 +145,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
 
 
 def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: Path) -> None:
-    """A resume must not forget a prior red or re-arm memory notices and the
-    once-only finish deferral that already fired earlier in the same run."""
+    """A resume keeps a prior red, the memory notices and the once-only finish deferral."""
     from agent6.harness.loop import restore_completion_state
 
     snap = tmp_path / "loop_state.json"
@@ -190,11 +185,7 @@ def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: Path) -> 
 
 
 def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path) -> None:
-    """A prose turn plus its nudge is a completed iteration; an operator stop
-    at its boundary must resume from AFTER it. The post-turn snapshot only ran
-    on tool turns, so a stop after a prose answer left loop_state.json at the
-    PRE-call snapshot: resume re-paid the provider call and the nudge never
-    existed in the resumed history."""
+    """A prose turn plus its nudge is a completed iteration, so a stop there resumes after it."""
     from agent6.harness._snapshot import SessionResult
     from agent6.providers import ProviderResponse
 
@@ -237,12 +228,10 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path)
 
 
 def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -> None:
-    """The /parallel group counter is run-lifetime state: lane ids embed it
-    (`<run>-p<N>-l<i>`) and so do the imported branches. In-memory only, every
-    resume restarted at p1, so the first post-resume dispatch rebuilt the exact
-    ids of a prior group -- clone dirs collided or, cache clean, the lanes ran
-    to completion and then failed import on the already-existing branch,
-    stranding paid work. Persist it like the sibling completion scalars."""
+    """The /parallel group counter is run-lifetime state, persisted like the completion scalars.
+
+    Lane ids and the imported branches embed it; a reset rebuilds a prior group's ids.
+    """
     from agent6.harness.loop import (
         restore_completion_state,
     )
@@ -278,10 +267,7 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
 
 
 def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
-    """Operator /pin instructions are run-lifetime state: every tier-2 restart
-    re-injects them verbatim, so a resume must carry them like the sibling
-    completion scalars. A version-2 snapshot written BEFORE pins existed loads
-    with none (additive defaulted field, same as the /parallel counter)."""
+    """Operator /pin instructions are run-lifetime state; an older snapshot loads with none."""
     from agent6.harness.loop import (
         restore_completion_state,
     )
@@ -323,9 +309,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
 
 
 def test_pre_version_bump_snapshot_refused_loudly(tmp_path: Path) -> None:
-    """An in-flight run written before a state-format change (an older
-    SNAPSHOT_VERSION) must refuse to resume/fork with a clear reason -- never a
-    garbage parse or a silent default. Deliberately fabricates the OLD shape."""
+    """A snapshot from an older SNAPSHOT_VERSION refuses to resume or fork with a clear reason."""
     import pytest
 
     snap = tmp_path / "loop_state.json"
@@ -347,9 +331,7 @@ def test_pre_version_bump_snapshot_refused_loudly(tmp_path: Path) -> None:
 
 
 def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
-    """A valid-JSON but wrong-shape snapshot (null / list / scalar / missing key
-    / non-list messages) raises a clean ValueError, not an AttributeError or a
-    deferred mid-loop crash the resume callers don't catch."""
+    """A wrong-shape snapshot (null, list, scalar, missing key) raises a clean ValueError."""
     import pytest
 
     snap = tmp_path / "loop_state.json"
@@ -378,11 +360,10 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
 
 
 def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatch) -> None:
-    """_drive_loop restores verify_ever_passed and a synthetic at-ceiling metric
-    sample so the metric/verify-settled stop logic doesn't regress on resume.
+    """`_drive_loop` restores verify_ever_passed and an at-ceiling metric sample on resume.
 
-    Drives a single iteration that immediately finishes; the assertion is that
-    the loop saw the restored at-ceiling history (no early-finish rejection).
+    One iteration that finishes at once; the loop saw the restored history, so no early-finish
+    rejection.
     """
     config = SimpleNamespace(
         git=_GIT_STUB,
@@ -468,9 +449,10 @@ class _EventCapture:
 
 
 def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
-    """A resumed execution emits loop.pin.restored with the snapshot's pins: a fork's
-    fresh logs.jsonl has no pin.added events, so without this the surfaces show
-    zero pins while the engine still re-injects them at every restart."""
+    """A resumed execution emits loop.pin.restored with the snapshot's pins.
+
+    A fork's fresh log has no pin.added events, so the surfaces would show zero pins.
+    """
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
@@ -536,10 +518,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
 
 
 def test_resume_start_carries_the_execution_identity(tmp_path: Path) -> None:
-    """loop.resume.start opens a resumed/forked execution's log; it stamps session_id and
-    mode like session.start so the execution's log identifies itself (the manifest owns
-    the task). An identity-less execution log left every fold empty and each consumer
-    patching its own copy."""
+    """loop.resume.start opens a resumed or forked execution's log with session_id and mode."""
     from agent6.harness._snapshot import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
@@ -610,12 +589,11 @@ def test_resume_start_carries_the_execution_identity(tmp_path: Path) -> None:
 
 
 def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
-    """A pin added and then lost to a crash (loop.pin.added reached logs.jsonl,
-    the snapshot that would carry it never did) leaves the fold holding a pin the
-    engine does not have: the resumed execution appends to the SAME log, so /status and
-    /pin keep listing it while no restart will ever re-inject it. The corrective
-    event (which the fold REPLACES on) must fire even when the snapshot is
-    empty -- guarding it on a non-empty list is what let the stale one stand."""
+    """A pin lost to a crash is re-added from the fold on resume, even with an empty snapshot.
+
+    The fold replaces on the corrective event; guarding it on a non-empty list let the stale pin
+    stand.
+    """
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
@@ -685,9 +663,7 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
 
 
 def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path) -> None:
-    """After a full iteration (assistant turn + tool dispatch + tool_results),
-    the snapshot must advance to next_iteration and include the executed turn,
-    so a crash before the next pre-call snapshot resumes AFTER the tools."""
+    """After a full iteration the snapshot advances to the next iteration with the executed turn."""
     repo = tmp_path / "repo"
     _git_repo(repo)
     snap = repo / "loop_state.json"
@@ -708,8 +684,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         ),
     )
     provider = MagicMock()
-    # Iter 1: a run_command tool_use (non-idempotent side effect).
-    # Iter 2: finish_session.
+    # Iter 1: a run_command tool_use (a side effect). Iter 2: finish_session.
     provider.call.side_effect = [
         SimpleNamespace(
             text="",
@@ -801,12 +776,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
     )
     compact_spy.stop()
 
-    # The KEY guarantee: a snapshot advancing to next_iteration=2 (with the
-    # executed iter-1 turn) must be written at the END of iter 1 -- i.e. AFTER
-    # the first provider call but BEFORE iter 2's compaction/pre-call snapshot.
-    # That closes the crash window between tool dispatch and iter-2's pre-call
-    # save. On the old code the FIRST save after provider-call-1 was iter-2's
-    # OWN pre-call save, which happens AFTER iter-2's compaction.
+    # The snapshot advancing to next_iteration=2 is written at the end of iter 1: no crash window.
     kinds = [ev["kind"] for ev in events]
     first_call = kinds.index("provider_call")
     second_compact = next(i for i, k in enumerate(kinds) if k == "compact" and i > first_call)
@@ -836,8 +806,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
 
 
 def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) -> None:
-    """A run_command-authored edit left uncommitted on a gated run is captured
-    by the final checkpoint so it isn't lost from git history at exit."""
+    """An uncommitted run_command edit on a gated run is captured by the final checkpoint."""
     repo = tmp_path / "repo"
     _git_repo(repo)
     config = SimpleNamespace(
@@ -899,8 +868,7 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
         check=True,
     ).stdout.strip()
     assert "checkpoint" in subject
-    # The commit must be COUNTABLE by the folds: a diff.updated is emitted, not
-    # only loop.auto_commit, so web/TUI/CLI don't read the final work as 0 commits.
+    # A diff.updated is emitted too, so the folds count the final commit.
     kinds = [k for k, _ in emitted]
     assert "loop.auto_commit" in kinds and "diff.updated" in kinds
 
@@ -951,10 +919,7 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
 
 
 def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
-    """A fork copies the checkpoint but NOT logs.jsonl, so the child's log has no
-    compact.dropped events to fold: /status reported "0 elided" over a restored
-    context full of elision markers, contradicting the field's own "markers in
-    the CURRENT context" contract. Same shape as the pin re-announce."""
+    """A fork re-announces its elision markers: it copies the checkpoint but not logs.jsonl."""
     from agent6.harness._compaction import ELISION_GIST_PREFIX, ELISION_PREFIX
 
     config = SimpleNamespace(
@@ -1051,12 +1016,10 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
 
 
 def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
-    """A /parallel lane inherits the coordinator's pins via --pin, NOT a task
-    prefix (the prefix became the lane's manifest user_task, so listings and
-    the judge's brief led with the pin header). Seeding emits the same
-    replace-fold event a restore does, renders the same PINNED block into the
-    conversation, and keeps the pins in state so a later compaction restart
-    re-shows them."""
+    """A `/parallel` lane inherits the coordinator's pins through `--pin`, not a task prefix.
+
+    Seeding emits the same replace-fold event a restore does and keeps the pins in state.
+    """
     from agent6.providers import ProviderResponse
 
     provider = MagicMock()
@@ -1124,10 +1087,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
 
 
 def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
-    """--pin seeded state.pins DIRECTLY, bypassing the PINS_MAX_CHARS cap (a
-    huge --pin then rode every restart and permanently wedged /pin) and the
-    non-empty check (--pin '' seeded a blank pin). Seeding now goes through the
-    same try_pin owner /pin uses."""
+    """`--pin` seeds pins through the same cap and non-empty check as `/pin`."""
     from agent6.harness._operator import PINS_MAX_CHARS
     from agent6.providers import ProviderResponse
 
@@ -1193,10 +1153,11 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
 
 
 def test_a_gate_swapped_between_executions_is_announced_to_the_worker(tmp_path: Path) -> None:
-    """The system prompt is the RUN's, frozen at its start. Config that gains a
-    verify command between executions swaps what judges the work while the
-    instructions still name the old gate, so the worker runs one command and is
-    graded on another. Silence there is the worst case: it looks like it worked."""
+    """The system prompt is the run's, frozen at its start.
+
+    Config that gains a verify command between executions swaps what judges the work; the notice
+    says so.
+    """
     from agent6.harness._snapshot import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
@@ -1270,9 +1231,7 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(tmp_path: 
 
 
 def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: Path) -> None:
-    """A gateless run adopts a verify command at its first commit; a resumed
-    execution started with nothing adopted, so the swap notice named the gate as
-    lost and the run re-adopted it one commit later."""
+    """A resumed execution starts with the gate the run adopted, so no swap notice fires."""
     from agent6.harness._snapshot import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
@@ -1349,11 +1308,7 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: Path) -> None
 
 
 def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Path) -> None:
-    """The snapshot's `head_sha` is the run's CHAIN TIP, and a chain commit
-    moves neither HEAD nor the checkout, so a carry gated on `git status`
-    (HEAD equal, tree clean) failed from the run's first commit on: the very
-    case the field exists for. The carry asks what the run asks: the chain
-    tip, and dirt relative to it."""
+    """The snapshot's `head_sha` is the run's chain tip; the carry asks for dirt relative to it."""
     import subprocess
 
     from agent6.git_ops import chain_commit, chain_tip
@@ -1408,10 +1363,10 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Pat
 
 
 def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(tmp_path: Path) -> None:
-    """An execution that cannot run commands drops its gate before the loop sees the
-    config, and the resume told the worker the gate "changed between executions ...
-    now `none`" over a gate the execution withheld, not swapped. No notice and no
-    swap event: no command can run, that one included."""
+    """An execution that cannot run commands drops its gate before the loop sees the config.
+
+    No notice and no swap event: no command can run, that one included.
+    """
     from agent6.harness._snapshot import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"

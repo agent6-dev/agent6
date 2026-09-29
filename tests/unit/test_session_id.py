@@ -29,11 +29,11 @@ def test_validate_explicit_run_id_rejects_traversal() -> None:
 
 
 def test_validate_explicit_run_id_rejects_git_forbidden_names() -> None:
-    """The id becomes a branch (`agent6/<id>`) and a chain ref
-    (`refs/agent6/<id>/head`); a value git's ref grammar rejects must be refused
-    up front, not accepted into a run whose every commit's `update-ref` then
-    fails while it reports success. The traversal check alone misses all of
-    these (no separator, no dot name)."""
+    """An id git's ref grammar rejects is refused up front.
+
+    The id becomes a branch and a chain ref; accepted, every `update-ref` of the run would fail
+    while it reported success. The traversal check alone misses all of these.
+    """
     for bad in (
         "has space",
         "ti~lde",
@@ -54,8 +54,7 @@ def test_validate_explicit_run_id_rejects_git_forbidden_names() -> None:
 
 
 def test_validate_explicit_run_id_accepts_only_ids_git_can_ref(tmp_path: Path) -> None:
-    """Whatever the validator accepts must actually work as BOTH refs the run
-    builds -- the guarantee the traversal-only check could not make."""
+    """Whatever the validator accepts works as both refs the run builds."""
     import subprocess
 
     def git_accepts(ref: str) -> bool:
@@ -79,11 +78,12 @@ def test_friendly_token_shape() -> None:
 
 
 def test_friendly_token_varies() -> None:
-    """Catches a constant or an unseeded generator. NOT a uniqueness guarantee:
-    within one millisecond the space is ~30M, so 500 draws collide about once
-    in 200 -- which is what made the old 500-draw assertion flaky. What must
-    never collide is the DIRECTORY, and `_unused_session_id` owns that
-    (tests/unit/test_generated_id_collision.py)."""
+    """Catches a constant or an unseeded generator.
+
+    NOT a uniqueness guarantee: within one millisecond the space is ~30M, so 500 draws collide about
+    once in 200, which makes a 500-draw assertion flaky. What must never collide is the DIRECTORY,
+    and `_unused_session_id` owns that (tests/unit/test_generated_id_collision.py).
+    """
     seen = {friendly_token() for _ in range(20)}
     assert len(seen) == 20
 
@@ -131,9 +131,11 @@ def test_resolve_no_match(tmp_path: Path) -> None:
 
 
 def test_a_bucket_scoped_query_ignores_the_other_buckets(tmp_path: Path) -> None:
-    """`plan show`'s resolver walked only plans/ through a twin of the shared
-    resolver whose wording had drifted; the shared one takes the buckets, so a
-    plans-only prefix is not ambiguous against a run of the same prefix."""
+    """`plan show` resolves through the shared resolver with the buckets it takes.
+
+    A plans-only twin had drifted in wording; a plans-only prefix is not ambiguous against a
+    run of the same prefix.
+    """
     _bucket(tmp_path, "sunny-otter-K4Q7B2")
     (tmp_path / "sessions" / "runs" / "sunny-otter-AAAA11").mkdir(parents=True)
     assert resolve_session(tmp_path, "sunny", buckets=("plans",)).session_id == "sunny-otter-K4Q7B2"

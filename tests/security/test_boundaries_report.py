@@ -56,13 +56,14 @@ def _force(monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None =
 
 
 def test_both_levels_build_their_landlock_rules_from_the_one_set_owner() -> None:
-    """A right the ruleset does not pass to `handle_access` is left
-    unrestricted, so a handled set narrower than the full ABI turns a lock
-    off without any rule changing; and `AccessFs::from_read` carries Execute,
-    so a read grant on /proc let a jailed command execve files there. Both
-    levels take `landlock_sets`, whose /proc set strips it. The behaviour pins
-    cannot see either: seccomp refuses mknod first, and nothing under /proc
-    is executable on a stock kernel."""
+    """Both levels take `landlock_sets`, whose /proc set strips Execute.
+
+    A right the ruleset does not pass to `handle_access` is left unrestricted, so a handled
+    set narrower than the full ABI turns a lock off without any rule changing; and
+    `AccessFs::from_read` carries Execute, so a read grant on /proc would let a jailed
+    command execve files there. The behaviour pins cannot see either: seccomp refuses mknod
+    first, and nothing under /proc is executable on a stock kernel.
+    """
     src = _MAIN_RS.read_text(encoding="utf-8")
     assert src.count("let handled = AccessFs::from_all(ABI::V3);") == 1
     assert src.count("all: handled & !AccessFs::MakeChar & !AccessFs::MakeBlock,") == 1
@@ -100,8 +101,10 @@ def test_boundaries_report_covers_every_actor(
 def test_boundaries_report_is_level_aware(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """hardened has no mounts and no private anything; the words must not
-    borrow strict's. A degraded auto also names its cause here."""
+    """Hardened's words never borrow strict's: no mounts, no private anything.
+
+    A degraded auto also names its cause here.
+    """
     _force(monkeypatch, "hardened", reason="userns blocked (test)")
     checks = check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
@@ -118,8 +121,10 @@ def test_boundaries_report_is_level_aware(
 def test_boundaries_report_names_the_opted_in_persistent_home(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The jail's HOME is a write grant, so the report lists it: under
-    `home = "cache"` strict's is the persistent cache dir, named as such."""
+    """The jail's HOME is a write grant, so the report lists it.
+
+    Under `home = "cache"` strict's is the persistent cache dir, named as such.
+    """
     _force(monkeypatch, "strict")
     check_cmds._check_boundaries_section(  # pyright: ignore[reportPrivateUsage]
         Config(sandbox=SandboxConfig(home="cache"))
@@ -132,8 +137,10 @@ def test_boundaries_report_names_the_opted_in_persistent_home(
 def test_boundaries_report_names_the_home_under_none(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`none` has no jail and still a HOME of agent6's own; the report says so
-    after the UNCONFINED line, so the HOME grant is listed at every level."""
+    """`none` has no jail and still a HOME of agent6's own, listed after the UNCONFINED line.
+
+    The HOME grant is listed at every level.
+    """
     _force(monkeypatch, "none")
     check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
@@ -144,12 +151,13 @@ def test_boundaries_report_names_the_home_under_none(
 def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Run inside a fork's worktree, the report lists the repository git dir a
-    jailed command reaches there: the fork manifest's recorded
-    `worktree_git_dir` (found under the repository's state dir), granted
-    through the execution's own policy builder. The report read no manifest, so a
-    fork worktree's grants omitted the one path beyond the workspace. In the
-    repository itself no such line appears."""
+    """Inside a fork's worktree, the report lists the repository git dir a jailed command reaches.
+
+    That is the fork manifest's recorded `worktree_git_dir` (under the repository's state
+    dir), granted through the execution's own policy builder; a report that read no manifest
+    would omit the one path beyond the workspace. In the repository itself no such line
+    appears.
+    """
     import json
     import subprocess
 
@@ -197,9 +205,11 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
 def test_boundaries_report_says_withheld_rather_than_unapproved(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`run_commands = "no"` withholds the command tools from the model. The
-    header read "approval: sandbox.run_commands = no", which describes a
-    prompting policy for tools the model never sees."""
+    """`run_commands = "no"` withholds the command tools, and the header says so.
+
+    "approval: sandbox.run_commands = no" would describe a prompting policy for tools the
+    model never sees.
+    """
     _force(monkeypatch, "strict")
     check_cmds._check_boundaries_section(  # pyright: ignore[reportPrivateUsage]
         Config(sandbox=SandboxConfig(run_commands="no"))
@@ -242,9 +252,11 @@ def test_boundaries_report_names_each_mcp_server(
 def test_boundaries_report_prints_the_refusal_for_a_network_the_level_cannot_give(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Hardened clamps `none` and `session` to the host's network, and a run
-    refuses such a server before it starts: the report says that, never a
-    network the server never gets."""
+    """Hardened clamps `none` and `session` to the host's network, and the report says so.
+
+    A run refuses such a server before it starts; the report never names a network the server
+    never gets.
+    """
     from agent6.config._sandbox import MCPConfig, MCPSandbox, MCPServerEntry
 
     _force(monkeypatch, "hardened", "no user namespaces")
@@ -263,8 +275,10 @@ def test_boundaries_report_prints_the_refusal_for_a_network_the_level_cannot_giv
 def test_boundaries_report_gives_an_mcp_server_the_network_the_level_can(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """On a level with no namespaces, `auto` resolves to the host's network,
-    and the report says so rather than printing the knob."""
+    """On a level with no namespaces, `auto` resolves to the host's network and the report says so.
+
+    Never the knob's own word.
+    """
     from agent6.config._sandbox import MCPConfig, MCPServerEntry
 
     _force(monkeypatch, "hardened", "no user namespaces")

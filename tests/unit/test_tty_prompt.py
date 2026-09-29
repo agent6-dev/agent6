@@ -32,8 +32,7 @@ pytestmark = pytest.mark.filterwarnings(
 
 
 def _drive_pty(child: Any, expect: bytes, reply: bytes) -> int:
-    """Fork *child* under a fresh pty, wait for *expect* on the terminal, type
-    *reply*, and return the child's exit code."""
+    """Fork the child under a fresh pty, wait for the text, type the reply, return its exit code."""
     pid, master = pty.fork()
     if pid == 0:  # pragma: no cover - child process
         os._exit(child())
@@ -136,8 +135,7 @@ def test_stdin_questioner_returns_none_without_a_terminal() -> None:
 def test_questioner_marks_headless_defaults(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With no front-end and no terminal, ask_user answers empty but says so:
-    the question.answer event carries source=headless-default."""
+    """With no front-end and no terminal, ask_user answers empty with source=headless-default."""
     from agent6.ui.cli import _interact as interact_mod
 
     def _no_tty(_q: tuple[UserQuestion, ...], **_kw: object) -> tuple[str, ...] | None:
@@ -164,9 +162,10 @@ def test_questioner_marks_headless_defaults(
 def test_a_wait_park_narrates_the_attach_remedy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A detached-wait session blocking on ask_user printed NOTHING: a piped
-    `resume` looked hung for 300s (a live find). The park now says where to
-    answer, on both the question and the approval paths."""
+    """A detached-wait session parked on ask_user says where to answer.
+
+    It printed nothing, so a piped `resume` looked hung for 300s.
+    """
     from agent6.ui.cli import _interact as interact_mod
 
     lines: list[str] = []
@@ -207,9 +206,7 @@ def test_a_wait_park_narrates_the_attach_remedy(
 
 
 def test_tty_prompt_ends_once_until_holds(tmp_path: Path) -> None:
-    """A prompt whose answer arrives by another route ends with None instead of
-    waiting for a line the operator will never type; what they had typed so far
-    is discarded, not left for the next prompt."""
+    """A prompt answered by another route ends with None, and the partial line is discarded."""
     flag = tmp_path / "answered"
 
     def child() -> int:
@@ -249,11 +246,11 @@ def test_tty_prompt_ends_once_until_holds(tmp_path: Path) -> None:
 
 
 def test_a_filed_answer_ends_the_terminal_prompt(tmp_path: Path) -> None:
-    """A foreground run blocked on its own terminal takes an answer written
-    over the file bridge (`agent6 answer`, the web, a front-end attached after
-    the prompt): the approval and the question both read it, and the journal
-    names the source. Before, that run never looked at the file, so every
-    other seat's "answered" was a lie and the run waited on the terminal."""
+    """A foreground run blocked on its terminal takes an answer written over the file bridge.
+
+    The approval and the question both read it and the journal names the source; every other
+    seat's "answered" was a lie while the run waited on the terminal.
+    """
     from agent6.sessions.ipc import write_answer, write_question_answers
     from agent6.tools.operator_prompts import OperatorPrompts
     from agent6.ui.cli._interact import build_approver, build_questioner
@@ -306,9 +303,7 @@ def test_a_filed_answer_ends_the_terminal_prompt(tmp_path: Path) -> None:
 
 
 def test_the_pause_menu_takes_a_steer_written_while_it_is_open(tmp_path: Path) -> None:
-    """A steer sent from a front-end (the web composer, `agent6 steer`) while
-    the Ctrl-C pause menu was open sat in the file until the next boundary:
-    the menu read only the terminal. The menu polls the file and takes it."""
+    """The Ctrl-C pause menu polls the steer file and takes a front-end's steer."""
     from agent6.sessions.ipc import submit_steer
 
     session_dir = tmp_path / "run"
@@ -355,12 +350,10 @@ def test_the_pause_menu_takes_a_steer_written_while_it_is_open(tmp_path: Path) -
 
 
 def test_detach_away_mode_asks_on_the_terminal_with_stdin_redirected(tmp_path: Path) -> None:
-    """A foreground run started with stdin redirected (`agent6 run TASK
-    </dev/null`) still has the terminal the away-mode question is asked on:
-    /dev/tty carries it, as it carried the pause prompt that produced the
-    detach. Gated on `sys.stdin.isatty()`, the detach recorded `wait` in
-    silence: no question, and no notice that the run would block at its first
-    approval."""
+    """A foreground run with stdin redirected still asks the away-mode question on /dev/tty.
+
+    Gated on `sys.stdin.isatty()`, the detach recorded `wait` in silence.
+    """
 
     def child() -> int:
         from agent6.sessions.ipc import COMMAND_SCOPE, away_mode, session_allow_set

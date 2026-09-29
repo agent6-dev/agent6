@@ -81,7 +81,7 @@ def test_typecheck_catches_type_error(tmp_path: Path) -> None:
 
 
 def test_typecheck_skips_test_files(tmp_path: Path) -> None:
-    """ty is NOT run on *_test.py (mock internals trip it); ruff still is."""
+    """Ty is NOT run on *_test.py (mock internals trip it); ruff still is."""
     _need("ty")
     # A type error that only ty would catch, in a *_test.py file -> not flagged.
     _write(tmp_path / "scripts", "x_test.py", "def f(a: str) -> int:\n    return a + 1\n")
@@ -99,11 +99,13 @@ def test_missing_scripts_dir_is_clean(tmp_path: Path) -> None:
 
 
 def test_lint_follows_the_bundles_ruff_config(tmp_path: Path) -> None:
-    """`machine check` linted with `ruff --isolated`, so its verdict tracked the
-    installed ruff's default rules rather than anything the operator wrote: the
-    shipped code-fixer bundle failed on rules a newer ruff turned on. Ruff now
-    runs on the real files, so its own discovery applies and the nearest config
-    above the machine file (here the bundle's own ruff.toml) pins the rules."""
+    """Lint follows the bundle's ruff config.
+
+    Ruff runs on the real files, so its own discovery applies and the nearest config above the
+    machine file (here the bundle's own ruff.toml) pins the rules; under `ruff --isolated` the
+    verdict tracks the installed ruff's defaults, and the shipped code-fixer bundle fails on rules a
+    newer ruff turns on.
+    """
     _need("ruff")
     (tmp_path / "ruff.toml").write_text('[lint]\nignore = ["F401"]\n', encoding="utf-8")
     _write(tmp_path / "scripts", "imports.py", "import json\n")
@@ -111,10 +113,12 @@ def test_lint_follows_the_bundles_ruff_config(tmp_path: Path) -> None:
 
 
 def test_create_fix_mode_lints_under_the_destinations_config(tmp_path: Path) -> None:
-    """`machine create` drafts in a scratch dir outside the repo, where ruff's
-    discovery cannot see the config the published bundle will be checked under;
-    `ruff_config_from` resolves it from the publish destination so the draft
-    gate and the operator's later `machine check` agree."""
+    """`machine create` in fix mode lints under the destination's config.
+
+    The draft lives in a scratch dir outside the repo, where ruff's discovery cannot see the config
+    the published bundle will be checked under; `ruff_config_from` resolves it from the publish
+    destination so the draft gate and the operator's later `machine check` agree.
+    """
     _need("ruff")
     dest = tmp_path / "repo"
     dest.mkdir()
@@ -299,11 +303,12 @@ def test_offline_tests_get_a_fresh_data_dir_per_test(
 def test_offline_tests_run_from_a_copy_outside_the_state_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The real bundle lives under the per-repo state dir, which the jail
-    MASKS: tests run in place saw an empty tree ('python3: can't open file')
-    or the launcher failed rootfs setup. The runner must hand the jail a
-    private temp copy instead (caught by a live machine-create run; the old
-    tmp_path fixtures covered the in-place path vacuously)."""
+    """The real bundle lives under the per-repo state dir, which the jail MASKS.
+
+    Tests run in place saw an empty tree ('python3: can't open file') or the launcher failed rootfs
+    setup. The runner must hand the jail a private temp copy instead (caught by a live machine-
+    create run; the old tmp_path fixtures covered the in-place path vacuously).
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "statehome"))
     bundle = tmp_path / "statehome" / "repo-id" / "sessions" / "machines" / "draft"
     _write(bundle / "scripts", "thing_test.py", "print('ok')\n")
@@ -325,10 +330,12 @@ def test_offline_tests_run_from_a_copy_outside_the_state_dir(
 
 
 def test_fix_mode_applies_safe_fixes_and_writes_back(tmp_path: Path) -> None:
-    """machine create validates its OWN generated bundle: a fixable-only
-    problem (an unused import) must be fixed in place and not fail the
-    attempt — a whole authoring round burned on it before. The default
-    (operator-facing check/test) never mutates."""
+    """Machine create validates its OWN generated bundle.
+
+    A fixable-only problem (an unused import) is fixed in place and does not fail the attempt,
+    which would burn a whole authoring round on it. The default (operator-facing check/test) never
+    mutates.
+    """
     _need("ruff")
     body = "import json\nimport os\n\n\ndef f(x: int) -> str:\n    return json.dumps({'v': x})\n"
     _write(tmp_path / "scripts", "fixable.py", body)
@@ -345,9 +352,12 @@ def test_fix_mode_applies_safe_fixes_and_writes_back(tmp_path: Path) -> None:
 def test_the_create_lint_anchors_relative_patterns_where_machine_check_does(
     tmp_path: Path,
 ) -> None:
-    """`--config` anchors a relative per-file-ignores glob to the cwd, so a
-    `scripts/*` ignore in the repo's pyproject silenced the draft (linted from
-    its workspace) and fired on the published bundle under `machine check`."""
+    """The create lint anchors relative patterns where `machine check` does.
+
+    `--config` anchors a relative per-file-ignores glob to the cwd, so a `scripts/*` ignore in the
+    repo's pyproject would silence the draft (linted from its workspace) and fire on the published
+    bundle under `machine check`.
+    """
     from agent6.app.machine._scriptcheck import (
         _resolve_tool,  # pyright: ignore[reportPrivateUsage]
         lint_and_typecheck,

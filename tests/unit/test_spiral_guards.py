@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""SpiralGuard transitions: the streak and reset rules the dispatch loop
-relies on, pinned at the object so call sites cannot drift."""
+"""SpiralGuard's streak and reset rules, pinned at the object so call sites cannot drift."""
 
 from __future__ import annotations
 

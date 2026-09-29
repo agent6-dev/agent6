@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Gateless wiring: with no verify_command, the verify tool is hidden and the
-system prompt swaps the verify block for the no-verify block."""
+"""Gateless wiring: no verify_command hides the verify tool and swaps in the no-verify block."""
 
 from __future__ import annotations
 
@@ -52,10 +51,11 @@ def test_verify_tool_hidden_when_command_unset(tmp_path: Path) -> None:
 
 
 def test_adopt_verify_command_probes_the_jail_path(tmp_path: Path) -> None:
-    """Mid-run adoption refuses a bare runner the jail PATH cannot resolve
-    (adopting it would turn an honest settle into an unexecutable-verify
-    abort) and accepts a resolvable one, which also unhides the verify tool.
-    Path-form commands pass through: they resolve against the mounted cwd."""
+    """Mid-run adoption refuses a bare runner the jail PATH cannot resolve and accepts one it can.
+
+    Adopting an unresolvable runner would turn an honest settle into an unexecutable-verify
+    abort; a path-form command resolves against the mounted cwd.
+    """
     d = ToolDispatcher(root=tmp_path, config=_cfg(verify=False))
     assert d.adopt_verify_command(("no-such-binary-zq9", "test")) is False
     assert "run_verify_command" not in d.available_tool_names()
@@ -88,9 +88,10 @@ def test_system_prompt_switches_verify_block(tmp_path: Path) -> None:
 
 
 def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
-    """The gateless block states the gate's absence and nothing else, in every
-    mode: the terminal tool is each base prompt's fact (run: `finish_session
-    ends the run`; plan: `finish_planning` ends the pass); ask has none."""
+    """The gateless block states the gate's absence and nothing else, in every mode.
+
+    The terminal tool is each base prompt's fact; ask has none.
+    """
     repo = _repo(tmp_path)
     cfg = _cfg(verify=False)
     run = build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
@@ -118,11 +119,11 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
 def test_a_execution_that_cannot_run_commands_is_gateless_wherever_it_starts(
     tmp_path: Path,
 ) -> None:
-    """The rule lived only in preflight's fresh-run path, so a RESUMED execution was
-    re-gated with every command tool withheld: nothing could go green, the execution
-    committed nothing, and the manifest was re-pinned to claim a gate that
-    never judged anything. Both lifecycles make the decision now, once, at execution
-    start -- with the system prompt, which is frozen from the same config."""
+    """Both lifecycles decide gatedness once, at execution start, with the frozen system prompt.
+
+    The rule lived only in preflight's fresh-run path, so a resumed execution was re-gated with
+    every command tool withheld and re-pinned to claim a gate that never judged anything.
+    """
     from agent6.app.preflight import drop_gate_if_unrunnable
     from agent6.app.reporter import Reporter
     from agent6.sessions.ipc import set_away_mode
@@ -162,11 +163,11 @@ def test_a_execution_that_cannot_run_commands_is_gateless_wherever_it_starts(
 
 
 def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: Path) -> None:
-    """Reading the LIVE policy for the verdict made a mid-run "deny for the
-    rest of the run" erase a gate that had already run and failed: verified
-    flipped to not_applicable, the exit code to 0, and `git.auto_merge` merged
-    the red branch. Gatedness is frozen at execution start; a later deny withdraws
-    the tools, never the verdict."""
+    """Gatedness is frozen at execution start; a later deny withdraws the tools, never the verdict.
+
+    Reading the live policy let a mid-run deny flip a failed gate to not_applicable, the exit
+    code to 0, and `git.auto_merge` merged the red branch.
+    """
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
@@ -196,9 +197,10 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: Path) -> 
 
 
 def test_a_deny_mid_run_takes_the_gate_with_it(tmp_path: Path) -> None:
-    """`deny for the rest of the run` and an away-mode of deny both flip the
-    EFFECTIVE policy to "no" while the config still names a gate. The execution kept
-    the gate, lost the tool, and ended red."""
+    """An effective policy of "no" under a configured gate keeps the gate, loses the tool, ends red.
+
+    `deny for the rest of the run` and an away-mode of deny both flip it.
+    """
     from agent6.config import Config
     from agent6.sessions.ipc import set_away_mode
     from agent6.tools.dispatch import ToolDispatcher
@@ -214,8 +216,7 @@ def test_a_deny_mid_run_takes_the_gate_with_it(tmp_path: Path) -> None:
 
 
 def test_a_gate_is_never_adopted_when_the_worker_cannot_run_one(tmp_path: Path) -> None:
-    """Adoption checked the jail PATH but not the policy, so a --no-commands
-    run re-acquired a gate mid-run and undid the preflight drop."""
+    """Adoption checks the policy too, so a --no-commands run never re-acquires a gate mid-run."""
     from agent6.config import Config
     from agent6.tools.dispatch import ToolDispatcher
 
@@ -228,9 +229,11 @@ def test_a_gate_is_never_adopted_when_the_worker_cannot_run_one(tmp_path: Path) 
 
 
 def test_the_worker_gets_the_tool_for_a_gate_adopted_mid_run(tmp_path: Path) -> None:
-    """The tool list was built once per execution. A gateless run that adopted a gate
-    was TOLD to run run_verify_command while that tool was absent from every
-    remaining call: commits stopped, the finish was graded failed, exit 4."""
+    """The tool list was built once per execution.
+
+    A gateless run that adopted a gate was TOLD to run run_verify_command while that tool was absent
+    from every remaining call: commits stopped, the finish was graded failed, exit 4.
+    """
     from agent6.config import Config
     from agent6.harness._toolset import tool_definitions
     from agent6.tools.dispatch import ToolDispatcher
@@ -292,11 +295,13 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     origin: str,
 ) -> None:
     """Adoption re-pins the manifest before the after-tools snapshot advances.
-    A crash in that window leaves the snapshot's gate stale in either direction;
-    resume must keep the newer pin rather than undoing adoption or un-adoption."""
+
+    A crash in that window leaves the snapshot's gate stale in either direction; resume must keep
+    the newer pin rather than undoing adoption or un-adoption.
+    """
     import agent6.app._setup as setup_mod
     import agent6.app.resume as resume_mod
-    from agent6.app._execution import ExecutionInputs, ExecutionEnd
+    from agent6.app._execution import ExecutionEnd, ExecutionInputs
     from agent6.config.layer import EffectiveConfig
 
     repo = tmp_path / "repo"
@@ -350,7 +355,9 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
     used: list[tuple[str, ...]] = []
 
-    def _execution(_cfg: Config, _layout: object, inputs: ExecutionInputs, **_kw: object) -> ExecutionEnd:
+    def _execution(
+        _cfg: Config, _layout: object, inputs: ExecutionInputs, **_kw: object
+    ) -> ExecutionEnd:
         used.append(inputs.gate(_cfg, MagicMock()).harness.verify_command)
         return ExecutionEnd(0)
 
@@ -369,11 +376,13 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
 def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The drop must have the last word at execution start. With commands withheld,
-    the snapshot-reuse block ran AFTER drop_gate_if_unrunnable and handed the
-    dropped gate straight back: the execution resumed gated-but-unwinnable, printed
-    two contradictory preamble lines, committed nothing all execution, and exited 4
-    over a gate that never ran."""
+    """The drop must have the last word at execution start.
+
+    With commands withheld, the snapshot-reuse block ran AFTER drop_gate_if_unrunnable and handed
+    the dropped gate straight back: the execution resumed gated-but-unwinnable, printed two
+    contradictory preamble lines, committed nothing all execution, and exited 4 over a gate that
+    never ran.
+    """
     import agent6.app._session as session_mod
     import agent6.app._setup as setup_mod
     import agent6.app.resume as resume_mod
@@ -457,9 +466,10 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
 def test_a_withheld_fresh_execution_is_not_regated_by_inference(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The same rule at the other lifecycle: with commands withheld, inference
-    ran AFTER the drop, re-gated the execution from AGENTS.md, and the pin labelled
-    the inferred command "configured"."""
+    """With commands withheld, inference never re-gates the execution from AGENTS.md.
+
+    The pin labelled the inferred command "configured".
+    """
     import agent6.app._session as session_mod
     import agent6.app.preflight as preflight_mod
     import agent6.app.run as run_mod
@@ -516,10 +526,7 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
 
 
 def test_hardened_fs_rule_renders_only_under_hardened(tmp_path: Path) -> None:
-    """The hardened create-a-top-level-entry workaround is a real constraint
-    only under hardened; a strict run reading it would route file creation
-    through apply_edit for no reason (found reading a strict run's real
-    prompt: the rule rendered unconditionally)."""
+    """The hardened create-a-top-level-entry workaround renders only under hardened."""
     repo = _repo(tmp_path)
     cfg = _cfg(verify=True)
     strict = build_system_prompt(
@@ -536,8 +543,7 @@ def test_hardened_fs_rule_renders_only_under_hardened(tmp_path: Path) -> None:
 def test_patch_only_prompt_names_only_the_offered_edit_tool(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The patch-only experiment removes apply_edit from the schema, so its
-    system prompt must remove that tool's contract too."""
+    """The patch-only experiment removes apply_edit's contract from the prompt with the tool."""
     monkeypatch.setenv("AGENT6_DISABLE_APPLY_EDIT", "1")
     cfg = _cfg(verify=True)
     prompt = build_system_prompt(config=cfg, repo=_repo(tmp_path), mode="run", skills=None)
@@ -550,9 +556,10 @@ def test_patch_only_prompt_names_only_the_offered_edit_tool(
 
 
 def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: Path) -> None:
-    """The .git read-only bind exists only under strict with protect_git on;
-    every unjailed run (isolation none, e.g. the SWE-bench containers) was
-    told '.git/ is protected inside the jail' while nothing protected it."""
+    """The '.git/ is protected' line renders only under strict with protect_git on.
+
+    Every unjailed run was told it while nothing protected it.
+    """
     repo = _repo(tmp_path)
     on = _cfg(verify=True)
     off = Config.model_validate(
@@ -577,8 +584,7 @@ def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: Path) -> N
 
 
 def test_agents_md_section_absent_when_repo_has_none(tmp_path: Path) -> None:
-    """A repo without AGENTS.md got an 'AGENTS.md (project conventions):
-    (empty)' header on every run -- noise standing where signal goes."""
+    """A repo without AGENTS.md gets no empty conventions header."""
     repo = _repo(tmp_path)
     out = build_system_prompt(config=_cfg(verify=True), repo=repo, mode="run", skills=None)
     assert "AGENTS.md (project conventions):" not in out
@@ -586,10 +592,7 @@ def test_agents_md_section_absent_when_repo_has_none(tmp_path: Path) -> None:
 
 
 def test_prompt_git_rules_match_git_control(tmp_path: Path) -> None:
-    """The prompt states the world that exists: under [git].control = "model"
-    the auto-commit chain does not run, so claiming "the harness commits
-    automatically" (base block and gateless block both did) misdirects the
-    model into never committing."""
+    """Under [git].control = "model" the prompt never claims the harness commits automatically."""
     repo = _repo(tmp_path)
     agent6_cfg = Config.model_validate({"harness": {"verify_command": ["true"]}})
     model_cfg = Config.model_validate(
@@ -622,8 +625,7 @@ def test_prompt_git_rules_match_git_control(tmp_path: Path) -> None:
 
 
 def test_model_git_rule_does_not_offer_a_withheld_run_command(tmp_path: Path) -> None:
-    """Model-controlled git cannot tell the worker to commit through
-    run_command when the operator withheld every command tool."""
+    """Model-controlled git never tells the worker to commit through a withheld run_command."""
     cfg = Config.model_validate(
         {
             "git": {"control": "model"},
@@ -643,9 +645,10 @@ def test_model_git_rule_does_not_offer_a_withheld_run_command(tmp_path: Path) ->
 
 
 def test_budget_block_names_the_plan_meter_for_subscription_runs(tmp_path: Path) -> None:
-    """A subscription run meters in plan percent; a budget block naming only
-    USD and fallback caps describes meters that never bind it. The plan line
-    renders exactly when a configured role rides a chatgpt provider."""
+    """A subscription run's budget block names the plan meter, not USD caps that never bind it.
+
+    The plan line renders exactly when a configured role rides a chatgpt provider.
+    """
     repo = _repo(tmp_path)
     sub = Config.model_validate(
         {
@@ -664,9 +667,7 @@ def test_budget_block_names_the_plan_meter_for_subscription_runs(tmp_path: Path)
 
 
 def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: Path) -> None:
-    """An unset verify_command always ran the inference tiers; with a repo
-    that infers (an AGENTS.md fence here) the run could never be made
-    gateless on purpose. verify_infer = false skips every tier."""
+    """verify_infer = false skips every inference tier, so a run can be gateless on purpose."""
     import json
     from unittest.mock import MagicMock
 
@@ -705,9 +706,10 @@ def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: Path) -> No
 
 
 def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: Path) -> None:
-    """The mid-run adoption re-armed a gate on every gateless run whose tree
-    is a recognizable project; inside a container whose python3 lacks pytest
-    that gate was an always-red no-op. The same knob turns adoption off."""
+    """The same knob turns mid-run adoption off.
+
+    Inside a container whose python3 lacks pytest the adopted gate was an always-red no-op.
+    """
     from unittest.mock import MagicMock
 
     from agent6.config import Config
@@ -731,9 +733,7 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: Path) -> Non
 
 
 def test_prompt_says_nothing_commits_under_commit_per_step_off(tmp_path: Path) -> None:
-    """With `[git].commit_per_step = false` nothing commits, and the prompt
-    still promised a commit after every passing verify; the model's work
-    stayed uncommitted in the worktree while it was told otherwise."""
+    """With `[git].commit_per_step = false` the prompt never promises a commit after a green."""
     repo = _repo(tmp_path)
     cfg = Config.model_validate(
         {"harness": {"verify_command": ["true"]}, "git": {"commit_per_step": False}}
@@ -744,10 +744,10 @@ def test_prompt_says_nothing_commits_under_commit_per_step_off(tmp_path: Path) -
 
 
 def test_hardened_rule_renders_only_where_the_jail_carries_protect_paths(tmp_path: Path) -> None:
-    """Landlock denies new top-level entries only when it carves around
-    protect paths (a machine's bundle, a read-only session); an ordinary
-    hardened run has none and was told to `apply_edit` placeholders it never
-    needed."""
+    """The placeholder rule renders only when Landlock carves around protect paths.
+
+    An ordinary hardened run has none and was told to `apply_edit` placeholders it never needed.
+    """
     repo = _repo(tmp_path)
     cfg = Config.model_validate({"harness": {"verify_command": ["true"]}})
     plain = build_system_prompt(
@@ -761,10 +761,11 @@ def test_hardened_rule_renders_only_where_the_jail_carries_protect_paths(tmp_pat
 
 
 def test_the_dag_block_and_tools_follow_the_curator(tmp_path: Path) -> None:
-    """A run built without a curator (a machine agent state in run mode) was
-    taught add_task / update_task / list_tasks and offered them, and every
-    call errored "DAG curator not available"; with decompose on, the block's
-    first instruction was unsatisfiable."""
+    """A run built without a curator is neither taught nor offered the task tools.
+
+    Every call errored "DAG curator not available", and the block's first instruction was
+    unsatisfiable.
+    """
     from agent6.harness._toolset import tool_definitions
     from agent6.tools.dispatch import ToolDispatcher
 
@@ -783,9 +784,7 @@ def test_the_dag_block_and_tools_follow_the_curator(tmp_path: Path) -> None:
 
 
 def test_the_stale_gate_sentence_is_run_mode_only(tmp_path: Path) -> None:
-    """The verify block's fixed part named `finish_session`'s stale_gate field
-    in plan and ask prompts too; plan has finish_planning and ask no finish
-    tool at all."""
+    """The verify block names `finish_session`'s stale_gate field in run prompts only."""
     repo = _repo(tmp_path)
     cfg = _cfg(verify=True)
     assert "stale_gate" in build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
@@ -796,8 +795,7 @@ def test_the_stale_gate_sentence_is_run_mode_only(tmp_path: Path) -> None:
 def test_a_resumes_key_check_precedes_isolation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The same preflight as a fresh run, in the same place: `select_isolation`
-    prices the model from the cache the key check refreshes."""
+    """A resume runs the fresh run's preflight in the same place, pricing the model too."""
     import agent6.app._setup as setup_mod
     import agent6.app.resume as resume_mod
 
@@ -860,14 +858,13 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     capsys: pytest.CaptureFixture[str],
     configured: bool,
 ) -> None:
-    """A resume under withheld commands printed the withheld note, then "this
-    run's verify gate changed: was <the whole argv>, now none", and for a gate
-    reused from the snapshot "reusing this run's verify command: <the whole
-    argv>" before both: one cause reported up to three times, kilobytes of
-    argv each time. One line, the argv clipped."""
+    """A resume under withheld commands reports the gate change once, with the argv clipped.
+
+    One cause was reported up to three times, kilobytes of argv each time.
+    """
     import agent6.app._setup as setup_mod
     import agent6.app.resume as resume_mod
-    from agent6.app._execution import ExecutionInputs, ExecutionEnd
+    from agent6.app._execution import ExecutionEnd, ExecutionInputs
     from agent6.app.preflight import GATE_TEXT_WIDTH
 
     repo = tmp_path / "repo"
@@ -923,7 +920,9 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)
     monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
 
-    def _execution(_cfg: Config, _layout: object, inputs: ExecutionInputs, **_kw: object) -> ExecutionEnd:
+    def _execution(
+        _cfg: Config, _layout: object, inputs: ExecutionInputs, **_kw: object
+    ) -> ExecutionEnd:
         inputs.gate(_cfg, MagicMock())
         return ExecutionEnd(0)
 

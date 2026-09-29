@@ -40,9 +40,7 @@ def test_reasoning_tool_call_and_result_all_render() -> None:
 
 
 def test_non_streamed_role_result_renders_once() -> None:
-    """A redirected run and an old journal carry settled prose only on
-    role.result; the live console must not require delta events to show it or
-    repeat the settled copy after streaming it."""
+    """Settled prose on role.result renders once, with or without delta events before it."""
     settled: dict[str, object] = {
         "type": "role.result",
         "role": "worker",
@@ -62,8 +60,7 @@ def test_non_streamed_role_result_renders_once() -> None:
 
 
 def test_whitespace_only_text_prints_no_empty_block() -> None:
-    # The turn streams only whitespace text then calls a tool. The old renderer
-    # printed a "── worker: response ──" bar with nothing under it; this must not.
+    # Only whitespace text streams before the tool call, so no "worker: response" bar prints.
     out = _render(
         [
             {"type": "role.call", "role": "worker"},
@@ -96,8 +93,7 @@ def test_failed_tool_shows_its_output_tail() -> None:
 
 
 def test_steer_request_closes_open_dim_block() -> None:
-    # A Ctrl-C pause message prints to the same terminal; the open dim thinking
-    # block must be closed (reset) first so the message doesn't inherit the dim.
+    # The open dim thinking block is reset before the pause message, so it does not inherit the dim.
     buf = StringIO()
     view = ConsoleView(buf, color=True)
     view.feed({"type": "role.thinking_delta", "text": "pondering the fix"})
@@ -181,10 +177,10 @@ _STALL_WAIT_S = 3.0
 def test_cli_heartbeat_shows_working_when_the_stream_stalls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A turn that goes silent mid-flight (a stalled SSE stream) shows a ticking
-    'working… Ns' line so the CLI never looks hung (the user's exact symptom).
-    Mid-block the real threshold is 10s (see the no-split test below); shrink it
-    so the genuine-stall path stays testable without a 10s sleep."""
+    """A turn that goes silent mid-flight shows a ticking 'working… Ns' line.
+
+    Mid-block the real threshold is 10s; it is shrunk here so the stall path needs no 10s sleep.
+    """
     import time
 
     monkeypatch.setattr("agent6.ui.cli._console_view._MID_BLOCK_STALL_S", 1.5)
@@ -213,10 +209,10 @@ class _CountingTTY(_FakeTTY):
 
 
 def test_the_heartbeat_flushes_a_partial_line_while_output_flows() -> None:
-    """`_raw` coalesces streaming flushes and leaves the tail of a line in the
-    buffer; the heartbeat's tick is what makes it visible during a stall
-    shorter than the spinner's threshold. Tying that flush to an erased
-    spinner left a stream wedged mid-token invisible for the whole threshold."""
+    """The heartbeat's tick flushes a partial streamed line during a short stall.
+
+    `_raw` coalesces flushes and leaves a line's tail in the buffer until the spinner's threshold.
+    """
     import time
 
     out = _CountingTTY()
@@ -233,9 +229,10 @@ def test_the_heartbeat_flushes_a_partial_line_while_output_flows() -> None:
 
 
 def test_cli_heartbeat_does_not_split_a_streaming_block_at_short_gaps() -> None:
-    """A few-seconds gap in a flowing prose block must NOT draw the spinner:
-    doing so closes the block and the next delta opens a new bullet, visibly
-    splitting a streamed word (a file path, mid-token) in two."""
+    """A few-seconds gap in a flowing prose block draws no spinner.
+
+    A spinner there closes the block and splits a streamed word in two.
+    """
     import time
 
     out = _FakeTTY()
@@ -253,9 +250,7 @@ def test_cli_heartbeat_does_not_split_a_streaming_block_at_short_gaps() -> None:
 
 
 def test_cli_heartbeat_spins_during_a_long_tool_run() -> None:
-    """A long verify / run_command executes between role.result and the next
-    role.call; the heartbeat must still spin so a running test suite doesn't look
-    frozen (gap: a role-only flag missed this)."""
+    """The heartbeat spins during a long tool run between role.result and the next role.call."""
     import time
 
     out = _FakeTTY()
@@ -272,8 +267,7 @@ def test_cli_heartbeat_spins_during_a_long_tool_run() -> None:
 
 
 def test_cli_heartbeat_silent_on_a_non_tty() -> None:
-    """No spinner thread (and no spinner bytes) when the sink is not a terminal --
-    a piped/redirected run or a test stays clean."""
+    """No spinner thread or bytes when the sink is not a terminal."""
     import time
 
     buf = StringIO()
@@ -285,9 +279,7 @@ def test_cli_heartbeat_silent_on_a_non_tty() -> None:
 
 
 def test_notice_clears_the_spinner_before_printing() -> None:
-    """A harness notice (auto-commit, review) routes through the ConsoleView so
-    it clears the spinner line first and writes to the same stream -- no garble
-    with the stderr heartbeat on a shared terminal."""
+    """A harness notice clears the spinner line first and writes to the same stream."""
     import time
 
     out = _FakeTTY()
@@ -305,9 +297,7 @@ def test_notice_clears_the_spinner_before_printing() -> None:
 
 
 def test_pause_suspends_the_heartbeat_spinner() -> None:
-    """An interactive /dev/tty prompt (ask_user, a run_command approval) wraps the
-    read in console_view.pause() so the spinner stops erasing the question and the
-    operator's keystrokes; it resumes once the prompt returns."""
+    """console_view.pause() stops the spinner around a /dev/tty prompt and resumes after it."""
     import time
 
     out = _FakeTTY()
@@ -328,10 +318,7 @@ def test_pause_suspends_the_heartbeat_spinner() -> None:
 
 
 def test_replayed_history_does_not_reset_the_idle_timer() -> None:
-    """`agent6 attach` replays the whole log through feed(): each replayed line
-    bumped the idle anchor to ARRIVAL time, so a run wedged 40 minutes read
-    "working… 3s" -- the timer meant to tell thinking from hung concealed the
-    hang. The anchor is the fed event's own ts."""
+    """Replayed history anchors the idle timer on each event's own ts, not its arrival time."""
     import time
 
     out = _FakeTTY()
@@ -351,10 +338,11 @@ def test_replayed_history_does_not_reset_the_idle_timer() -> None:
 
 
 def test_streamed_model_text_cannot_reach_the_terminal_with_controls() -> None:
-    """The live CLI stream printed model deltas raw: the fold's previews were
-    scrubbed but this path was not, so OSC 52 in streamed text could write the
-    operator's clipboard. A split sequence cannot reassemble: the opener's
-    piece loses its tail, and the continuation prints as inert text."""
+    """Streamed model text is scrubbed of control sequences before it reaches the terminal.
+
+    A split sequence cannot reassemble: the opener's piece loses its tail, and the continuation
+    prints as inert text.
+    """
     out = _FakeTTY()
     view = ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
@@ -369,9 +357,7 @@ def test_streamed_model_text_cannot_reach_the_terminal_with_controls() -> None:
 
 
 def test_the_policy_line_is_read_when_the_task_prints() -> None:
-    """The gate is inferred and pinned AFTER the view is built and BEFORE
-    session.start; a policy read at construction said "no verify gate" over a
-    run that had one, so the line is read when it prints."""
+    """The policy line is read when the task prints, after the gate is inferred and pinned."""
     buf = StringIO()
     facts = ["kimi · strict · commands ask · no verify gate"]
     view = ConsoleView(buf, color=False, policy=lambda: facts[0])
@@ -383,9 +369,7 @@ def test_the_policy_line_is_read_when_the_task_prints() -> None:
 
 
 def test_the_task_headline_is_the_first_line_clipped() -> None:
-    """A `--from` task carries the whole plan; flattening it made the
-    headline one endless line. The first user-authored line, clipped, is the
-    headline every other surface shows."""
+    """The headline is the first user-authored line, clipped, as every other surface shows it."""
     out = _render(
         [
             {
@@ -401,9 +385,7 @@ def test_the_task_headline_is_the_first_line_clipped() -> None:
 
 
 def test_the_receipt_reads_the_mode_from_the_start_the_console_prints_itself() -> None:
-    """The console prints its own headline for session.start; the fold must
-    still see the event (mode, first timestamp), or an ask's receipt reads
-    "0 commits" on the live console while every other surface omits it."""
+    """The fold still sees session.start though the console prints its own headline for it."""
     out = _render(
         [
             {"type": "session.start", "mode": "ask", "user_task": "why?"},
@@ -418,8 +400,7 @@ def test_the_receipt_reads_the_mode_from_the_start_the_console_prints_itself() -
 
 
 def test_the_cli_prints_a_tool_once_when_it_settles() -> None:
-    """The fold announces a call before its result; the CLI's heartbeat covers
-    the wait, so the call prints once, head and result together."""
+    """The CLI prints a tool once when it settles, head and result together."""
     out = _render(
         [
             {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
@@ -431,10 +412,7 @@ def test_the_cli_prints_a_tool_once_when_it_settles() -> None:
 
 
 def test_a_provider_retry_says_so_instead_of_resetting_the_clock() -> None:
-    """The retry event bumps the idle clock, so with nothing rendered the
-    "working… Ns" counter restarted with no explanation: a run wedged behind
-    four provider failures read as freshly started, and the Ctrl-C hint (which
-    needs 20s idle) never appeared."""
+    """A provider retry says so instead of restarting the 'working… Ns' counter unexplained."""
     out = _render(
         [
             {

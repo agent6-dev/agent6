@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Per-turn checkpoint store + `agent6 fork` (clone-to-new-session recovery).
+"""The per-turn checkpoint store and `agent6 fork`.
 
-Covers:
-- the loop's pre-call save writes the append-only `checkpoints/<NNNN>.json`
-  carrying head_sha + graph_version (every save advances loop_state.json),
-- `agent6 fork` clones state, writes lineage manifest fields, cuts the branch,
-  and appends `lineage.jsonl`,
-- forking a pre-checkpoint (old) run degrades gracefully.
+The loop's pre-call save writes `checkpoints/<NNNN>.json` with head_sha and graph_version; `agent6
+fork` clones state, writes the lineage fields, cuts the branch and appends `lineage.jsonl`; a run
+from before checkpoints existed forks with a warning.
 """
 
 from __future__ import annotations
@@ -102,8 +99,7 @@ def _wf(
 
 
 def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
-    """`_save_resume_snapshot` writes both loop_state.json AND a per-turn
-    checkpoints/<NNNN>.json carrying head_sha + graph_version."""
+    """`_save_resume_snapshot` writes loop_state.json and a per-turn checkpoint with the sha."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     session_dir = tmp_path / "run"
@@ -183,11 +179,10 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
 
 
 def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: Path) -> None:
-    """A turn's number used to be written by up to three saves (pre-call,
-    post-tools, the parallel-group bump), each with a different state, so
-    `fork --at-turn N` meant whichever write came last. Only the pre-call save
-    (write_checkpoint=True) names a checkpoint; every save still advances
-    loop_state.json, the pointer resume and default fork follow."""
+    """Only the pre-call save names a checkpoint, so `fork --at-turn N` means one state.
+
+    Every save still advances loop_state.json, which resume and the default fork follow.
+    """
     repo = tmp_path / "repo"
     _git_repo(repo)
     session_dir = tmp_path / "run"
@@ -242,8 +237,7 @@ def test_list_checkpoint_turns_empty_for_old_run(tmp_path: Path) -> None:
 
 
 def test_load_run_snapshot_rejects_malformed_shapes(tmp_path: Path) -> None:
-    """A wrong-shape checkpoint (null / list / missing key) fails with a clean
-    ValueError, which fork's loader catches, instead of an AttributeError."""
+    """A wrong-shape checkpoint (null, list, missing key) fails with a ValueError fork catches."""
     cp = tmp_path / "0001.json"
     for bad in ("null", "[]", '"x"'):
         cp.write_text(bad, encoding="utf-8")
@@ -254,9 +248,7 @@ def test_load_run_snapshot_rejects_malformed_shapes(tmp_path: Path) -> None:
     )  # missing required keys
     with pytest.raises(ValueError, match="malformed run-state snapshot"):
         load_session_snapshot(cp)
-    # A torn file is the likeliest corruption of all (a full disk, a power
-    # loss), and its refusal named neither the run nor the file: just a JSON
-    # position, where both of its siblings above carry the path.
+    # A torn file is the likeliest corruption, and its refusal named neither the run nor the file.
     cp.write_text('{"messages": [{"role":', encoding="utf-8")
     with pytest.raises(ValueError, match=r"unreadable run-state snapshot at .*0001\.json"):
         load_session_snapshot(cp)
@@ -266,8 +258,10 @@ def test_load_run_snapshot_rejects_malformed_shapes(tmp_path: Path) -> None:
 
 
 def _seed_graph(layout: SessionLayout) -> tuple[str, str]:
-    """A two-node DAG through the real curator: root (graph_version 1), child
-    (2), child passed (3). Returns (root_id, child_id)."""
+    """A two-node DAG through the real curator: root (version 1), child (2), child passed (3).
+
+    Returns (root_id, child_id).
+    """
     from agent6.graph.curator import GraphCurator
     from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
 
@@ -311,8 +305,7 @@ def _seed_source_run(
                     "review_trigger": "off",
                     "revise_prompt": "off",
                     "preset": workflow_profile,
-                    # Default: a seeded preset is one the fork replays (flag-selected);
-                    # pass preset_from_flag=False for a config-selected source.
+                    # A flag-selected preset the fork replays; False for a config-selected one.
                     "preset_from_flag": (
                         bool(workflow_profile) if preset_from_flag is None else preset_from_flag
                     ),
@@ -321,9 +314,7 @@ def _seed_source_run(
         ),
         encoding="utf-8",
     )
-    # A REAL curator DAG, so a fork exercises the journal replay: the root lands
-    # at graph_version 1, the child at 2, and the child passes at 3 -- matching
-    # the per-turn graph_version the checkpoints below record.
+    # A real curator DAG: root at graph_version 1, child at 2, child passed at 3, as recorded.
     _seed_graph(layout)
     for turn in turns:
         payload = {
@@ -347,9 +338,7 @@ def _seed_source_run(
 
 
 def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # Forking a plan run must resume in plan mode. Stamping mode="run" would pair
-    # the frozen planning system prompt (which drives finish_planning) with
-    # run-mode mutating tools and auto-commits.
+    # A plan fork resumes in plan mode; mode="run" would pair the planning prompt with edits.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -359,16 +348,14 @@ def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.Monk
     rc = _cmd_fork(None, "plan-src", new_session_id="plan-fork-BBBB22", no_run=True)
     assert rc == 0
 
-    # The fork inherits mode="plan", so its dir belongs in plans/ -- not in the
-    # runs/ bucket the default layout would have put it in.
+    # The fork inherits mode="plan", so its dir belongs in plans/, not runs/.
     dst = SessionLayout(state_dir=state, session_id="plan-fork-BBBB22", subdir="plans")
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["mode"] == "plan"
     assert not (state / "sessions" / "runs" / "plan-fork-BBBB22").exists()
 
 
 def test_a_plan_fork_creates_no_git_refs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A plan makes no commits, so its fork must not create the visible run
-    branch or hidden commit-chain ref that only run mode owns."""
+    """A plan's fork creates neither the run branch nor the chain ref that only run mode owns."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -401,9 +388,7 @@ def test_a_plan_fork_creates_no_git_refs(tmp_path: Path, monkeypatch: pytest.Mon
 def test_fork_refuses_an_explicit_id_held_by_any_bucket(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Ids are one public namespace, so a fork --session-id that any bucket
-    already holds is refused up front, naming the holder, before any child
-    state exists."""
+    """A fork --session-id any bucket already holds is refused up front, naming the holder."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -420,9 +405,7 @@ def test_fork_refuses_an_explicit_id_held_by_any_bucket(
 
 
 def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # A fork carries the source run's effective preset forward so `resume`
-    # re-applies the same strategy; dropping it (writing preset="") would
-    # silently change how the forked run behaves.
+    # A fork carries the source's effective preset so `resume` re-applies the same strategy.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -440,11 +423,7 @@ def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.M
 def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The fork's child runs under the SOURCE's preset (resume replays it), so
-    the child manifest's models stamp must come from that profiled config --
-    not the base config, which permanently recorded a worker model the forked
-    run never used."""
-
+    """The fork's child manifest stamps the models of the source's preset, which resume replays."""
     gdir = global_config_dir()
     gdir.mkdir(parents=True, exist_ok=True)
     (gdir / "config.toml").write_text(
@@ -475,11 +454,7 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
 def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A CONFIG-selected preset (from_flag False) re-resolves from the CURRENT
-    config on fork, so the child stamps the current config's preset name, not the
-    source manifest's possibly-stale one -- the fork sibling of the parked-resume
-    stamp fix. Only a FLAG-selected preset is pinned by name."""
-
+    """A config-selected preset re-resolves on fork; only a flag-selected one is pinned by name."""
     global_config_dir().mkdir(parents=True, exist_ok=True)
     (global_config_dir() / "config.toml").write_text('preset = "quick"\n', encoding="utf-8")
     repo = tmp_path / "repo"
@@ -509,10 +484,11 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
 def test_fork_snapshots_the_dag_under_the_source_curator_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A live source's curator atomic-renames and prunes node files; an
-    unlocked copy could hit a vanishing file mid-copytree or produce a torn,
-    mixed-instant DAG. The copy must run under the source's per-mutation
-    curator flock (the same <run>/.lock every write_node holds)."""
+    """The DAG copy runs under the source curator's per-mutation flock.
+
+    A live source atomic-renames and prunes node files, so an unlocked copy could hit a vanishing
+    file or produce a torn DAG.
+    """
     from agent6.app import fork as fork_mod
 
     repo = tmp_path / "repo"
@@ -539,10 +515,7 @@ def test_fork_snapshots_the_dag_under_the_source_curator_lock(
 def test_fork_fails_loud_on_a_bad_source_manifest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A missing, corrupt-JSON, or non-object source manifest must refuse the
-    # fork (exit 2, no run dir, no branch), never fall open to the privileged
-    # default mode="run" -- `mode` gates write-tool access (same contract as
-    # resume's fail-loud manifest read).
+    # A missing, corrupt or non-object manifest refuses the fork, never falls open to mode="run".
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -570,9 +543,7 @@ def test_fork_fails_loud_on_a_bad_source_manifest(
 def test_fork_cleans_up_run_dir_when_branch_cut_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # If the fork branch already exists at a DIFFERENT sha, create_branch_at
-    # refuses (we never move a branch) -- the just-materialized run dir must be
-    # cleaned up, not left orphaned.
+    # A fork branch at a different sha refuses (a branch never moves) and the run dir is cleaned up.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -595,9 +566,10 @@ def test_fork_cleans_up_run_dir_when_branch_cut_fails(
 def test_fork_clones_state_writes_lineage_and_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`agent6 fork --no-run` clones the checkpoint + DAG into a new run, writes
-    the lineage manifest fields, cuts agent6/<new> at the checkpoint sha, and
-    appends lineage.jsonl."""
+    """`agent6 fork --no-run` clones the checkpoint and DAG into a new run with its lineage.
+
+    The lineage manifest fields, agent6/<new> at the checkpoint sha, and lineage.jsonl.
+    """
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -613,8 +585,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
     seed = load_session_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "turn 3"
     assert (dst.session_dir / "loop_state.json").is_file()
-    # DAG rebuilt at the latest checkpoint's graph_version (3): both nodes, the
-    # child still passed, and the journal prefix that produced that version.
+    # DAG rebuilt at graph_version 3: both nodes, the child passed, the journal prefix behind it.
     from agent6.graph.storage import load_graph
 
     forked_nodes = load_graph(dst)
@@ -666,8 +637,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
 def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Default fork mirrors resume's latest pointer even if a crash left the
-    matching per-turn checkpoint absent."""
+    """A default fork mirrors resume's latest pointer even without a matching checkpoint."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -701,8 +671,10 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
 def test_latest_fork_does_not_run_ahead_of_loop_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A crash after checkpoint write but before loop_state write leaves a newer
-    checkpoint on disk; default fork must still mirror resume."""
+    """A crash between the checkpoint write and the loop_state write leaves a newer checkpoint.
+
+    The default fork still mirrors resume.
+    """
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -752,9 +724,10 @@ def test_fork_unknown_turn_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 def test_fork_at_turn_refuses_without_checkpoint_store(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--at-turn` selects only from `checkpoints/`: a run with an empty store
-    refuses (rc 2, no fork dir) rather than silently substituting the rolling
-    snapshot; the default fork (no `--at-turn`) still follows loop_state.json."""
+    """`--at-turn` selects only from `checkpoints/`; an empty store refuses (rc 2, no fork dir).
+
+    The default fork still follows loop_state.json.
+    """
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -832,10 +805,7 @@ def test_fork_without_id_forks_most_recent_run(
 def test_fork_continue_resumes_without_force(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The default `agent6 fork` continue path just cloned the checkpoint and cut
-    # the branch at its head_sha, so the resume head guard passes by
-    # construction. force stays OFF so a genuinely misaligned fork still
-    # refuses instead of resuming against the wrong worktree.
+    # The clone cut the branch at head_sha, so the head guard passes; force stays off.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -863,11 +833,11 @@ def test_fork_continue_resumes_without_force(
 def test_fork_refuses_an_unanswerable_continuation_before_creating_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A continuing fork under run_commands = "ask" with no terminal, no TUI and
-    no away-mode refuses like `run` does: BEFORE the fork exists. Refused after
-    materializing, a never-started fork stayed listed with its branch cut, and
-    the retry with the fix made a second one. `--no-run` continues nothing, so
-    it still creates the fork."""
+    """A continuing fork that cannot ask for approvals is refused before the fork exists.
+
+    Refused after materializing, a never-started fork stays listed with its branch cut, and the
+    retry makes a second one. `--no-run` continues nothing, so it still creates the fork.
+    """
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -921,9 +891,7 @@ def test_resume_without_id_and_no_runs_errors_cleanly(
 def test_resume_config_refusal_leaves_checkout_untouched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # No providers configured: resume refuses BEFORE any workspace mutation.
-    # It used to check out agent6/<id> first and leave the operator parked
-    # there on every preflight refusal.
+    # No providers: resume refuses before any workspace mutation, the operator's checkout untouched.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -945,8 +913,7 @@ def test_resume_config_refusal_leaves_checkout_untouched(
 def test_resume_diverged_branch_refuses_without_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The head guard reads the CHAIN ref's tip: a rewritten chain refuses
-    # with the operator's checkout untouched.
+    # The head guard reads the chain ref tip: a rewritten chain refuses, the checkout untouched.
     repo = tmp_path / "repo"
     base = _git_repo(repo)
     sp.run(["git", "update-ref", chain_ref_for("divg-AAAA11"), base], cwd=repo, check=True)
@@ -965,10 +932,7 @@ def test_resume_diverged_branch_refuses_without_checkout(
 
 
 def test_fork_steer_passes_through_to_the_continuation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Forking exists to try an alternative direction; --steer seeds it at the
-    forked session's first safe boundary. Without the pass-through the only
-    route was fork --no-run followed by resume --steer, defeating the default
-    immediate continuation."""
+    """`fork --steer` seeds the new direction at the forked session's first safe boundary."""
     import agent6.ui.cli.fork as fork_cli
 
     def _fake_fork(*_a: object, **_k: object) -> tuple[str, int]:
@@ -992,10 +956,10 @@ def test_fork_steer_passes_through_to_the_continuation(monkeypatch: pytest.Monke
 def test_forking_a_finished_run_with_no_new_work_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The child would continue a conversation that already ended: a paid call,
-    a nudge, a silent finish, a new branch, and a listing row offering a merge
-    of the parent's own tree. `resume` refuses exactly this and cannot see it
-    from the child, whose log is empty by construction."""
+    """A fork of a session whose conversation already ended is refused, as `resume` refuses it.
+
+    The child's log is empty by construction, so the check runs on the source.
+    """
     import agent6.ui.cli.fork as fork_cli
 
     monkeypatch.chdir(tmp_path)
@@ -1023,9 +987,7 @@ def test_forking_a_finished_run_with_no_new_work_is_refused(
 def test_fork_steer_with_no_run_is_refused(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """--steer only means something for the immediate continuation; with
-    --no-run nothing ever ran to receive it, so refuse up front (before any
-    fork dir is created) instead of dropping the instruction silently."""
+    """`--steer` with `--no-run` is refused up front: nothing ever runs to receive it."""
     import agent6.ui.cli.fork as fork_cli
 
     def _must_not_fork(*_a: object, **_k: object) -> tuple[str, int]:
@@ -1042,10 +1004,7 @@ def test_fork_steer_with_no_run_is_refused(
 def test_a_past_turn_fork_starts_on_the_task_that_turn_was_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The cursor is the run's focus, and a fork replays it like every other
-    fact. Falling back to the SOURCE's current cursor when the prefix set none
-    handed the child the last turn's task: it worked the newest task first and
-    the earlier ones after it."""
+    """A fork replays the cursor like every other fact, never the source's current one."""
     from agent6.graph.curator import GraphCurator
     from agent6.graph.models import SetCursorIntent
 
@@ -1068,11 +1027,11 @@ def test_a_past_turn_fork_starts_on_the_task_that_turn_was_on(
 def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A past-turn fork gets the DAG as it stood at that turn, not the run's
-    latest. Copying the newest graph handed the forked session tasks it never
-    created and `passed` statuses for work absent from its tree -- and, since
-    DAG statuses drive the focus frontier and the finish gate, a turn-1 fork
-    resumed with an already-satisfied gate."""
+    """A past-turn fork gets the DAG as it stood at that turn, not the run's latest.
+
+    DAG statuses drive the focus frontier and the finish gate, so the newest graph hands a turn-1
+    fork an already-satisfied gate.
+    """
     from agent6.graph.storage import load_graph
 
     repo = tmp_path / "repo"
@@ -1091,10 +1050,7 @@ def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
     assert [n.title for n in nodes.values()] == ["root task"]
     assert [n.status for n in nodes.values()] == ["pending"]
     assert [n.children for n in nodes.values()] == [()]
-    # The cursor cannot point into the future: the run held none at turn 1, and
-    # inheriting the SOURCE's current one started the child on the last turn's
-    # task with every earlier one pending. `in (None, first)` accepted that
-    # while the graph had one node.
+    # The cursor cannot point into the future; inheriting the source's put the child on its last.
     assert json.loads(dst.cursor_path.read_text(encoding="utf-8"))["node_id"] is None
     versions = [
         json.loads(line)["graph_version"]
@@ -1106,10 +1062,10 @@ def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
 def test_a_past_turn_fork_reopens_without_a_lost_tail_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The rebuild undoes the mutations stamped after the forked turn; a node
-    kept its newer stamp, so the fork's curator read its (correctly shorter)
-    journal as one that lost its tail, warned so on every open, and resumed
-    numbering from the source's future. Stamps clamp to the forked version."""
+    """The rebuild clamps every stamp to the forked version.
+
+    A newer stamp makes the fork's curator read its shorter journal as one that lost its tail.
+    """
     from agent6.graph.curator import GraphCurator
     from agent6.graph.storage import load_graph
 
@@ -1131,9 +1087,10 @@ def test_a_past_turn_fork_reopens_without_a_lost_tail_warning(
 def test_fork_copies_the_dag_when_the_checkpoint_has_no_graph_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """graph_version 0 means the checkpoint predates the stamp (or the curator
-    was unreadable when it was written). With no version to rebuild at, the
-    fork copies the DAG verbatim rather than rebuilding to an empty graph."""
+    """A checkpoint with graph_version 0 copies the DAG verbatim, not an empty graph.
+
+    0 means the checkpoint predates the stamp or the curator was unreadable when it was written.
+    """
     from agent6.graph.storage import load_graph
 
     repo = tmp_path / "repo"
@@ -1154,9 +1111,7 @@ def test_fork_copies_the_dag_when_the_checkpoint_has_no_graph_version(
 def test_an_auto_minted_fork_id_skips_a_taken_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A fork names a session DIRECTORY, so its auto-minted id goes through the
-    owner that checks the bucket. Minting a raw token instead wrote into
-    whatever already stood there."""
+    """A fork's auto-minted id goes through the owner that checks the bucket, never a raw token."""
     from agent6.sessions import id as id_mod
 
     repo = tmp_path / "repo"
@@ -1179,8 +1134,7 @@ def test_an_auto_minted_fork_id_skips_a_taken_directory(
 def test_fork_manifest_stamps_the_resolved_isolation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A fork's policy stamp is the level it would run at on this host, like
-    a run's, never the `auto` knob (which tells `exec` and the pages nothing)."""
+    """A fork's policy stamp is the resolved level, never the `auto` knob."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -1209,9 +1163,10 @@ def _commit_all(repo: Path, message: str) -> str:
 
 
 def _fork_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, str, str]:
-    """A repo whose checkout moved past the source run's turn-1 sha (a later
-    commit, an uncommitted edit, an operator file), and that source run.
-    Returns (repo, turn-1 sha, HEAD sha)."""
+    """Return a repo whose checkout moved past the source run's turn-1 sha, with that source run.
+
+    A later commit, an uncommitted edit and an operator file. Returns (repo, turn-1 sha, HEAD sha).
+    """
     repo = tmp_path / "repo"
     turn1 = _git_repo(repo)
     (repo / "seed.txt").write_text("later\n", encoding="utf-8")
@@ -1226,11 +1181,11 @@ def _fork_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
 def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`fork --at-turn N` gives the fork a linked worktree detached at the
-    checkpoint sha, recorded in its manifest; a chain commit made there records
-    the fork's own edit and nothing of the source checkout, which stays as it
-    was. Seeding only the refs left the fork sharing the checkout, so its
-    first commit snapshotted the source's later content as its own work."""
+    """`fork --at-turn N` gives the fork its own linked worktree at the checkpoint sha.
+
+    Recorded in its manifest; a chain commit made there records the fork's own edit and nothing of
+    the source checkout.
+    """
     from agent6.git_ops import chain_commit, tree_diff_paths
 
     repo, turn1, head = _fork_fixture(tmp_path, monkeypatch)
@@ -1267,13 +1222,12 @@ def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
 def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`agent6 resume <fork>` from the repo drives the execution with the fork's
-    worktree as its checkout (the process cwd stays the repo: its state dir
-    and config are the repo's). Run in the repo instead, the fork committed
-    the operator's checkout."""
+    """`agent6 resume <fork>` drives the execution with the fork's worktree as its checkout.
 
+    The process cwd stays the repo: its state dir and config are the repo's.
+    """
     from agent6.app import resume as resume_mod
-    from agent6.app._execution import ExecutionInputs, ExecutionEnd
+    from agent6.app._execution import ExecutionEnd, ExecutionInputs
 
     global_config_dir().mkdir(parents=True, exist_ok=True)
     (global_config_dir() / "config.toml").write_text(
@@ -1319,8 +1273,7 @@ def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
 def test_resume_of_a_fork_whose_worktree_is_gone_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A pruned or deleted worktree is named, not silently replaced by the
-    operator's checkout."""
+    """A pruned or deleted worktree is named, not silently replaced by the operator's checkout."""
     import shutil
 
     from agent6.app import resume as resume_mod
@@ -1347,10 +1300,7 @@ def test_resume_of_a_fork_whose_worktree_is_gone_refuses(
 def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A merged fork whose branch and worktree are gone (deleted here by hand,
-    as `sessions prune --delete-squashed` and the worktree sweep leave them):
-    the refusal points at the merge stamp, what `sessions commits` prints,
-    never at the branch it named unchecked."""
+    """A merged fork whose branch and worktree are gone is refused, pointing at the merge stamp."""
     import shutil
 
     from agent6.app import resume as resume_mod
@@ -1380,10 +1330,10 @@ def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
 def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fork merged, then resumed (a later commit on its branch and chain),
-    then its branch deleted and its worktree removed: the stamp covers only
-    the earlier tip, so the refusal names the chain ref that holds the later
-    commit, never the merge (which trusted the stamp unchecked)."""
+    """A fork resumed after its merge is refused with the chain ref that holds the later commit.
+
+    The stamp covers only the earlier tip, so the refusal never names the merge.
+    """
     import shutil
 
     from agent6.app import resume as resume_mod
@@ -1419,8 +1369,10 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
 
 
 def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A worker route in the global config and an execution that ends at once, so a
-    resume runs past every refusal without a provider call."""
+    """A worker route in the global config and an execution that ends at once.
+
+    A resume runs past every refusal without a provider call.
+    """
     import agent6.app.resume as resume_mod
     from agent6.app._execution import ExecutionEnd
 
@@ -1450,11 +1402,7 @@ def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_a_steered_fork_takes_the_steer_as_its_own_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A fork carries its source's task until the operator sends it elsewhere.
-
-    Left as the source's, the steer's work merged under the source's subject
-    and `sessions list` showed the fork under a task it was never given.
-    """
+    """A fork carries its source's task until a steer sends it elsewhere."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -1475,9 +1423,7 @@ def test_a_steered_fork_takes_the_steer_as_its_own_task(
 def test_a_refused_resume_leaves_the_forks_task_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The steer was stamped as the fork's task before the resume's refusals,
-    so a resume refused at its providers titled the fork with work no execution ever
-    read (the queued steer itself is swept at the next execution's start)."""
+    """The steer becomes the fork's task after the resume's refusals, not before."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -1493,10 +1439,10 @@ def test_a_refused_resume_leaves_the_forks_task_alone(
 
 
 def test_only_the_first_steer_names_a_fork(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The steer that sends a fork elsewhere is its task; a later one is a
-    follow-up within that task, as it is for a run of its own. Stamping every
-    steer re-titled a fork on each resume, and ACP passes every editor prompt
-    as one."""
+    """The steer that sends a fork elsewhere is its task; a later one is a follow-up within it.
+
+    ACP passes every editor prompt as a steer.
+    """
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -1516,8 +1462,7 @@ def test_only_the_first_steer_names_a_fork(tmp_path: Path, monkeypatch: pytest.M
 def test_a_steered_ordinary_run_keeps_its_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`resume --steer` on a run of its own is a follow-up within that task,
-    not a new one: the headline it has carried all along stays."""
+    """`resume --steer` on a run of its own is a follow-up within that task; the headline stays."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -1532,10 +1477,11 @@ def test_a_steered_ordinary_run_keeps_its_task(
 def test_a_fork_records_the_untracked_files_of_its_own_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A fork's worktree is a fresh checkout of the checkpoint sha, so the
-    source's untracked paths are not in it. Inheriting that set described the
-    wrong checkout and left a file dropped into the fork's worktree unexcluded,
-    so its first commit swept the operator's file in."""
+    """A fork's worktree is a fresh checkout, so the source's untracked paths are not inherited.
+
+    Inherited, a file dropped into the fork's worktree stays unexcluded and its first commit sweeps
+    it in.
+    """
     from agent6.sessions.layout import read_untracked_at_start
 
     repo = tmp_path / "repo"
@@ -1557,9 +1503,7 @@ def test_a_fork_records_the_untracked_files_of_its_own_checkout(
 def test_a_refused_fork_leaves_no_chain_ref_behind(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions rm` keeps a run's branch, so forking onto a reused id hits the
-    branch refusal. The chain ref was written first and never removed, and a
-    later run with that id would build its chain on the dead fork's tip."""
+    """`sessions rm` keeps a run's branch, so forking onto a reused id hits the branch refusal."""
     from agent6.git_ops import chain_ref_for, chain_tip, set_ref
 
     repo = tmp_path / "repo"
@@ -1579,8 +1523,7 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
     assert chain_tip(repo, chain_ref_for("brave-yak-BBBB22")) is None
     assert not SessionLayout(state_dir=state, session_id="brave-yak-BBBB22").session_dir.exists()
 
-    # The same refusal over an id whose chain ref already holds commits: that
-    # ref is the earlier run's anchor and must survive.
+    # The same refusal over an id whose chain ref holds commits: the earlier run's anchor survives.
     anchor = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
@@ -1594,11 +1537,7 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
 def test_fork_refuses_a_run_the_model_controls_git_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fork runs in a linked worktree whose `.git` the jail grants read-only;
-    under `[git].control = "model"` the prompt would tell the model to commit
-    and the sandbox would refuse every commit. The fork refuses up front, with
-    nothing materialized."""
-
+    """A fork under `[git].control = "model"` refuses up front: its `.git` is read-only jailed."""
     global_config_dir().mkdir(parents=True, exist_ok=True)
     (global_config_dir() / "config.toml").write_text(
         '[git]\ncontrol = "model"\n[sandbox]\nprotect_git = false\n', encoding="utf-8"

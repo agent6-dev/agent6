@@ -13,14 +13,12 @@ from agent6.ui.cli import config_cmds as cc
 
 
 def _noop_overlay(*_a: object, **_k: object) -> None:
-    # Stub for load_effective_with_overlay so the test isolates machine-spec
-    # validation from the cwd-dependent [config]-overlay validation.
+    # load_effective_with_overlay is stubbed to isolate the machine-spec validation.
     return None
 
 
 def test_extra_body_value_completer_offers_routing_presets() -> None:
-    # TAB after `config set providers.<name>.extra_body` suggests the routing
-    # presets for any provider name (matched by suffix).
+    # TAB after `config set providers.<name>.extra_body` suggests the routing presets by suffix.
     import argparse
 
     from agent6.ui.cli.completers import (
@@ -42,8 +40,7 @@ def test_extra_body_value_completer_offers_routing_presets() -> None:
 def test_profile_value_completer_offers_profile_names(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # TAB after `config set preset` offers the selectable names: built-ins
-    # plus user [presets.*] tables.
+    # TAB after `config set preset` offers built-ins plus user [presets.*] tables.
     import argparse
 
     from agent6.ui.cli.completers import (
@@ -64,11 +61,7 @@ def test_profile_value_completer_offers_profile_names(
 def test_config_key_completer_offers_user_profile_paths(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # `config set presets.<TAB>` completes leaf paths for USER-defined presets
-    # only. Built-in names never complete in the KEY position: writing
-    # presets.ultra.* creates a user table that REPLACES the built-in
-    # wholesale, a footgun TAB should not put one keystroke away (the same
-    # rule keeps `none` out of sandbox.isolation completion).
+    # `config set presets.<TAB>` completes user presets only; a built-in name would replace it.
     from agent6.ui.cli.completers import (
         _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
     )
@@ -93,9 +86,7 @@ def test_config_key_completer_offers_user_profile_paths(
 def test_parallel_models_completer_completes_after_last_comma(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # TAB on `run --parallel` completes the `provider/model` routes the config
-    # can run, and only the entry AFTER the last comma so a list grows entry by
-    # entry (the head is preserved on each completion).
+    # TAB on `run --parallel` completes routes, only the entry after the last comma.
     from agent6.config import Config
     from agent6.ui.cli import completers
 
@@ -136,11 +127,11 @@ _BAD = (
 def test_config_set_names_the_inline_table_a_leaf_lives_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`config show` and TAB both offer the leaves inside an inline table (the
-    routing preset agent6 itself suggests writes one), but the leaf surgery only
-    knows [table] headers, so setting one emitted a header that collides with
-    the inline parent. The write is refused either way; say WHICH value owns the
-    leaf instead of leaking `Cannot declare (...) twice`."""
+    """`config set` on a leaf inside an inline table refuses naming the value that owns the leaf.
+
+    The leaf surgery knows only [table] headers, so a header for such a leaf would collide with the
+    inline parent.
+    """
     from agent6.ui.cli import cli_main
 
     gdir = tmp_path / "g"
@@ -169,11 +160,7 @@ def test_config_set_names_the_inline_table_a_leaf_lives_in(
 def test_config_set_refuses_a_target_that_does_not_parse(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`config set` never parsed the file it edits. Over a target with a typo'd
-    bracket it appended line-surgery output, could not find the malformed header,
-    and left the file still unparseable -- then reported success, because the
-    "config was already invalid, so blame another layer" branch swallows a parse
-    error in the very file just written. Repeating it kept appending."""
+    """`config set` refuses a target that does not parse instead of appending to it."""
     from agent6.ui.cli import cli_main
 
     cfg = tmp_path / "config.toml"
@@ -196,12 +183,10 @@ def test_config_set_refuses_a_target_that_does_not_parse(
 
 
 def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: Path) -> None:
-    """The CLI guard documents itself as mirroring the MachineSpec validator but
-    checked only providers/sandbox, so `config set --machine-file` wrote
-    presets.*, machine.notify.*, and git.run_repo_hooks into an overlay the
-    loader then always rejects -- and the compensating load re-check is skipped
-    while the file is not yet a valid machine (a `machine create` draft), so the
-    operator got a success and a file that can never load."""
+    """The machine-file write guard refuses every key the MachineSpec validator forbids.
+
+    The compensating load re-check is skipped while the file is a `machine create` draft.
+    """
     m = tmp_path / "m.asm.toml"
     for key in (
         "providers.openai.base_url",
@@ -221,8 +206,7 @@ def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: Path
 def test_revalidate_machine_rejects_invalid_spec_and_rolls_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Isolate the machine-spec validation from the cwd-dependent [config]-overlay
-    # validation by stubbing the latter.
+    # The cwd-dependent [config]-overlay validation is stubbed out.
     monkeypatch.setattr(cc, "load_effective_with_overlay", _noop_overlay)
     target = tmp_path / "m.asm.toml"
     target.write_text(_BAD, encoding="utf-8")
@@ -240,8 +224,7 @@ def test_revalidate_machine_accepts_valid_spec(
     target = tmp_path / "m.asm.toml"
     target.write_text(_GOOD, encoding="utf-8")
 
-    # prior_text=_GOOD makes _machine_is_valid true, so load_machine(target)
-    # actually runs (None would skip the machine check and pass vacuously).
+    # prior_text=_GOOD makes _machine_is_valid true, so load_machine(target) runs.
     assert cc._revalidate_machine(target, _GOOD) is None  # pyright: ignore[reportPrivateUsage]
     assert target.read_text(encoding="utf-8") == _GOOD  # untouched
 
@@ -261,8 +244,7 @@ def test_config_show_and_get_share_the_unknown_key_error(
 def test_config_get_suggests_a_key_from_the_layers_it_was_given(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The did-you-mean pool was reloaded from the cwd alone, so a key one
-    letter off an entry `--config` adds got no suggestion."""
+    """`config get`'s did-you-mean pool comes from the layers it was given, `--config` included."""
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
@@ -290,11 +272,7 @@ def test_config_get_distinguishes_a_section_from_an_unknown_key(
 def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A value left invalid by a schema change (prompt.decompose = true, once a bool,
-    # now Literal["auto","on","off"]) must NOT block setting an unrelated valid key:
-    # the write is kept (not reverted) and a WARNING names the exact file + command
-    # to fix the stale value, so it is self-service. The old strict behaviour made a
-    # broken config impossible to fix through `config set`.
+    # A value a schema change left invalid never blocks an unrelated valid key; a warning names it.
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -319,9 +297,7 @@ def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
 def test_config_set_rejects_a_masked_invalid_value(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A repo overlay masks the key in the merged view; setting an INVALID value in
-    # a lower layer must still be rejected, or it lands unvalidated and only
-    # explodes later where the mask is absent.
+    # A repo overlay masks the key; an invalid value in a lower layer is still rejected.
     import subprocess
 
     from agent6.ui.cli import main
@@ -342,8 +318,7 @@ def test_config_set_rejects_a_masked_invalid_value(
 def test_config_set_rejects_a_newly_invalid_value(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Setting an invalid VALUE still fails loud and reverts, so a typo cannot land in
-    # the config even though a stale value elsewhere no longer blocks a valid write.
+    # An invalid value still fails loud and reverts, whatever stale value sits elsewhere.
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -359,10 +334,10 @@ def test_config_set_rejects_a_newly_invalid_value(
 def test_a_refused_write_still_hands_the_config_back_to_the_operator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Under sudo the config dir is created as root and every write publishes a
-    fresh root-owned inode -- the rollback of a refused value included. The
-    handover ran only after a successful write, so `sudo agent6 config set` with
-    a bad value left the operator's own config owned by root."""
+    """A refused write still hands the config back to the operator under sudo.
+
+    Every write publishes a fresh root-owned inode, the rollback of a refused value included.
+    """
     from agent6.config import write as write_mod
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
@@ -383,10 +358,7 @@ def test_a_refused_write_still_hands_the_config_back_to_the_operator(
 def test_config_set_keeps_a_write_on_an_already_invalid_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # config set never lands a known-INVALID written value (it validates the value
-    # standalone), but a config left invalid by a stale value elsewhere STAYS
-    # fixable: a VALID write still succeeds. So on an already-broken config,
-    # writing another invalid value is rejected, while a valid value lands + clears.
+    # On an already-broken config an invalid value is rejected, while a valid one lands and clears.
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -404,8 +376,7 @@ def test_config_set_keeps_a_write_on_an_already_invalid_config(
 def test_config_set_unknown_leaf_gets_a_did_you_mean(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # An unknown key under a known section spoke pydantic ("Extra inputs are
-    # not permitted"); a typo deserves the near-miss and the show pointer.
+    # A typo under a known section gets the near-miss and the show pointer, not pydantic's text.
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
@@ -420,9 +391,7 @@ def test_config_set_unknown_leaf_gets_a_did_you_mean(
 def test_config_set_unknown_section_gets_the_same_friendly_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # An unknown TOP-LEVEL section errors at the section loc (a parent of the
-    # written key); it used to fall through to the merged-layer dump with
-    # "(merged config layers)" and a raw type=extra_forbidden.
+    # An unknown top-level section errors at the section loc, a parent of the written key.
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -440,9 +409,7 @@ def test_config_set_unknown_section_gets_the_same_friendly_path(
 def test_config_set_accepts_a_profiles_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # [presets.*] is meta-config stripped before validation (_apply_preset),
-    # so the schema forbids it by design; the unknown-key reroute must not
-    # reject a legitimate, documented preset write (it did: rc 2 + revert).
+    # [presets.*] is stripped before validation, so the unknown-key reroute does not reject it.
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -468,9 +435,7 @@ def test_config_set_bool_error_speaks_human(
 def test_config_set_global_keeps_a_valid_write_shadowed_by_a_stale_repo_layer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The exact motivating case: prompt.decompose is stale in the REPO layer; setting a
-    # VALID value GLOBALLY (which the repo still shadows) must be KEPT + warn, NEVER
-    # reverted -- the leaf appears in the merged error but this write is not its cause.
+    # prompt.decompose is stale in the repo layer; a valid global write is kept with a warning.
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -489,10 +454,7 @@ def test_config_set_global_keeps_a_valid_write_shadowed_by_a_stale_repo_layer(
 def test_config_set_sub_leaf_on_an_existing_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # providers.<name> is a discriminated union on api_format, so a leaf's isolated dict
-    # lacks the union tag and errors on the parent providers.<name>; the pre-check must
-    # not attribute that to the written child, or every providers.<name>.* set on an
-    # already-complete provider would be rejected.
+    # A leaf's isolated dict lacks the union tag; the parent's error is not the written child's.
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -508,9 +470,7 @@ def test_config_set_sub_leaf_on_an_existing_provider(
 def test_config_set_submodel_inline_table_completed_by_a_lower_layer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # An inline-table value for a submodel key that a LOWER layer completes must be
-    # accepted: the isolated pre-check sees only the partial table (missing a required
-    # child), so it must not attribute that descendant error to the written key.
+    # An inline table a lower layer completes is accepted; the missing child is not this write's.
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -527,8 +487,7 @@ def test_config_set_submodel_inline_table_completed_by_a_lower_layer(
 def test_config_fix_drops_a_bad_value_and_keeps_valid_ones(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # prompt.decompose = true is invalid (now Literal["auto","on","off"]); the valid
-    # budget entry beside it must survive the repair.
+    # The valid budget entry beside the stale prompt.decompose survives the repair.
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -579,9 +538,7 @@ def test_config_fix_drops_a_masked_invalid_global_value(
 def test_config_fix_keeps_a_table_whose_validator_the_repo_layer_satisfies(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A section validator satisfied only by the repo layer fails in the lower
-    layers alone at the section's loc; dropping that whole table from the
-    global file destroyed valid settings."""
+    """`config fix` keeps a table whose validator only the repo layer satisfies."""
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -778,10 +735,7 @@ def test_config_fix_machine_overlay_leaves_the_spec_untouched(
 def test_config_set_unknown_provider_key_speaks_human(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A provider entry is a discriminated union; the standalone minimal dict
-    # cannot resolve a member, so every provider-key error used to fall through
-    # to the merged-layer pydantic dump (with the member tag leaking into the
-    # displayed loc). The member models answer directly now.
+    # The standalone minimal dict cannot resolve a union member; the member models answer directly.
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
@@ -810,8 +764,7 @@ def test_config_set_invalid_provider_value_names_the_field(
     err = capsys.readouterr().err
     assert "providers.p.http_timeout_s" in err
     assert "merged config layers" not in err
-    # A Field-constraint violation (gt=0) gets the same member answer, not the
-    # merged dump with the discriminator tag leaking into the loc.
+    # A Field-constraint violation gets the same member answer, no discriminator tag in the loc.
     rc = main(["config", "set", "providers.p.http_timeout_s", "-5"])
     assert rc == 2
     err = capsys.readouterr().err
@@ -824,9 +777,10 @@ def test_config_set_invalid_provider_value_names_the_field(
 def test_config_fix_skips_an_entry_another_writer_already_fixed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """find_invalid_entries reads unlocked and removal deletes by key NAME, so a
-    `config set` that replaced the offending key with a VALID value in between
-    had it deleted -- after that writer was told it had been saved."""
+    """`config fix` skips an entry another writer replaced with a valid value in between.
+
+    find_invalid_entries reads unlocked and removal deletes by key name.
+    """
     from agent6.config.layer import ConfigDiagnosis, InvalidEntry
 
     cfg = tmp_path / "config.toml"
@@ -857,10 +811,10 @@ def test_config_fix_skips_an_entry_another_writer_already_fixed(
 def test_config_fix_removes_a_nan_entry_instead_of_claiming_valid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """TOML `nan` never compares equal to itself, so the under-lock staleness
-    re-check read a still-present nan as "replaced by a concurrent writer",
-    skipped it, and the no-progress break printed "Config is valid; nothing
-    to fix." rc=0 over a config every next command still refuses."""
+    """`config fix` removes a `nan` entry instead of claiming the config valid.
+
+    TOML `nan` never compares equal to itself, so an identity re-check reads it as replaced.
+    """
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -891,10 +845,10 @@ def test_equal_tolerating_nan_matches_nan_at_every_depth() -> None:
 def test_revalidate_machine_no_lock_keeps_the_write_and_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Without the config lock a whole-file restore could clobber a concurrent
-    writer, so the machine path (like the layer writers) KEEPS the invalid write
-    and says the lock was missing, rather than rolling back over a snapshot that
-    predates the other writer's update."""
+    """Without the config lock the machine path keeps an invalid write and says so.
+
+    A whole-file restore could clobber a concurrent writer's update.
+    """
     monkeypatch.setattr(cc, "load_effective_with_overlay", _noop_overlay)
     target = tmp_path / "m.asm.toml"
     target.write_text(_BAD, encoding="utf-8")
@@ -908,9 +862,7 @@ def test_revalidate_machine_no_lock_keeps_the_write_and_says_so(
 def test_config_set_names_the_flag_file_that_shadows_the_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 --config F config set` writes the global config while F keeps
-    overriding the key for every invocation that carries the flag; without the
-    note the successful edit reads as ineffective."""
+    """`agent6 --config F config set` notes that F keeps overriding the key it just wrote."""
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
@@ -932,8 +884,7 @@ def test_config_set_names_the_flag_file_that_shadows_the_write(
 def test_config_show_legend_names_the_flag_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The source column says "flag"; the legend must read back to the one
-    path the operator typed."""
+    """The legend reads a "flag" source back to the one path the operator typed."""
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
@@ -948,8 +899,7 @@ def test_config_show_legend_names_the_flag_file(
 
 
 def test_a_machine_overlay_refusal_reads_like_every_other_writer() -> None:
-    """`config set --machine-file` prints the leaf lines the global and repo
-    writers print: no validation header, no error type."""
+    """`config set --machine-file` refuses with the leaf lines every other writer prints."""
     from agent6.ui.cli.config_cmds import (
         _leaf_problems,  # pyright: ignore[reportPrivateUsage]
     )
@@ -968,8 +918,7 @@ def test_a_machine_overlay_refusal_reads_like_every_other_writer() -> None:
 def test_config_unset_on_an_mcp_server_names_the_verb_that_removes_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A `[mcp.servers.<name>]` entry is a table, not a leaf, so `config unset`
-    cannot name it; the refusal points at the verb that can."""
+    """`config unset` on a `[mcp.servers.<name>]` table points at the verb that removes it."""
     monkeypatch.chdir(tmp_path)
     cfg = tmp_path / "config.toml"
     cfg.write_text(
@@ -1006,9 +955,10 @@ def test_config_unset_on_an_unknown_key_matches_show_and_get(
 def test_config_unset_repairs_a_config_that_no_longer_loads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An unset is how an operator repairs a config that stopped validating, so
-    the shape precheck must not be the thing that refuses: it loaded the merged
-    config first and died on the very value being removed."""
+    """`config unset` repairs a config that no longer loads.
+
+    Its precheck does not load the merged config.
+    """
     monkeypatch.chdir(tmp_path)
     cfg_home = tmp_path / "cfg"
     (cfg_home / "agent6").mkdir(parents=True, exist_ok=True)

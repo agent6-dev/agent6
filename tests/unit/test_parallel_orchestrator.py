@@ -4,7 +4,7 @@
 
 Driven with a fake spawner that, for each LaneSpec, really clones the origin,
 commits on the lane's `agent6/<id>` branch, and fabricates a finished run dir
-(manifest.json + logs.jsonl) -- so the orchestrator's clone-independent behavior
+(manifest.json + logs.jsonl), so the orchestrator's clone-independent behavior
 (symlink live view, import, lineage stamp, ranked report, resilience to a failed
 lane) is exercised on real tmp git repos without spawning real runs.
 """
@@ -114,9 +114,11 @@ def _write_fake_run(
 
 
 class _FakeSpawner:
-    """A synchronous stand-in for the bridge spawner: clone, commit on the lane
-    branch, and fabricate a finished run dir. Records what it observed so a test
-    can assert the orchestrator's symlink-then-replace behavior."""
+    """A synchronous stand-in for the bridge spawner.
+
+    Clone, commit on the lane branch, and fabricate a finished run dir. Records what it observed so
+    a test can assert the orchestrator's symlink-then-replace behavior.
+    """
 
     def __init__(
         self,
@@ -185,10 +187,11 @@ def origin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 def runtime() -> LaneRuntime:
-    """The real front-end LaneRuntime the pipeline drives (detached process spawn
-    + reviewer/judging wiring). Tests faking one primitive use `dataclasses.replace`
-    on it (e.g. a fake `spawn`), or `monkeypatch` the module-level `worker_is_alive`
-    (the run-dir bridge, imported directly -- no longer a LaneRuntime field)."""
+    """The real front-end LaneRuntime the pipeline drives: detached spawn, reviewer and judging.
+
+    A test faking one primitive uses `dataclasses.replace` on it (a fake `spawn`), or monkeypatches
+    the module-level `worker_is_alive` (the run-dir bridge, imported directly).
+    """
     return lane_runtime()
 
 
@@ -218,8 +221,10 @@ def test_build_lane_specs_int_layout(tmp_path: Path) -> None:
 
 
 def test_build_lane_specs_model_list(tmp_path: Path) -> None:
-    """Each entry resolves once: `provider/model` names its provider, a bare
-    id runs on the worker's."""
+    """Each entry resolves once.
+
+    `provider/model` names its provider, a bare id runs on the worker's.
+    """
     cfg = _provider_cfg().model_copy(
         update={
             "providers": {
@@ -358,10 +363,12 @@ def test_dispatch_parallel_gives_the_lanes_the_coordinators_away_mode(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """One owner decides a lane's away-mode: a hub's marker on the coordinator
-    (a hub-spawned fan-out has no terminal but a hub that answers), else a
-    terminal to attach from means `wait`, else `deny` with a warning that
-    names what a lane loses."""
+    """One owner decides a lane's away-mode.
+
+    A hub's marker on the coordinator (a hub-spawned fan-out has no terminal but a hub that
+    answers), else a terminal to attach from means `wait`, else `deny` with a warning that names
+    what a lane loses.
+    """
     from agent6.ui.cli import _interact as interactmod
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
@@ -387,9 +394,11 @@ def test_dispatch_parallel_gives_the_lanes_the_coordinators_away_mode(
 def test_dispatch_parallel_forwards_pins_to_run_parallel(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`run --parallel --pin X` must reach run_parallel: the CLI fan-out
-    returns before run_task, so my C5 threaded --pin only through the in-loop
-    /parallel path -- the flag's own help promised the CLI fan-out."""
+    """`run --parallel --pin X` must reach run_parallel.
+
+    The CLI fan-out returns before run_task, so my C5 threaded --pin only through the in-loop
+    /parallel path, the flag's own help promised the CLI fan-out.
+    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     captured: list[object] = []
 
@@ -407,9 +416,11 @@ def test_dispatch_parallel_forwards_pins_to_run_parallel(
 def test_coordinator_dispatch_refuses_unknown_model(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
-    """The ui-built group dispatcher validates before cloning: an unknown model
-    raises, and the loop's group-failure feedback (its `except Exception`) carries
-    the message to the coordinator -- so harness needs no models dependency."""
+    """The ui-built group dispatcher validates before cloning.
+
+    An unknown model raises, and the loop's group-failure feedback (its `except Exception`) carries
+    the message to the coordinator, so harness needs no models dependency.
+    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     _write_models_cache(tmp_path / "cache" / "agent6", "o", ["moonshotai/kimi-k2.6"])
 
@@ -438,9 +449,11 @@ def test_coordinator_dispatch_refuses_unknown_model(
 def test_coordinator_dispatch_wait_honors_a_stop_request(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
-    """`stop` writes stop.request, but the in-run coordinator's lane
-    wait polled only the separate immediate-abort answer and could block until
-    every lane ended on its own."""
+    """The in-run coordinator's lane wait honours a stop request.
+
+    `stop` writes stop.request; a wait that polls only the separate immediate-abort answer blocks
+    until every lane ends on its own.
+    """
     origin_state = tmp_path / "ostate"
     coordinator_dir = origin_state / "sessions" / "runs" / "coord"
     coordinator_dir.mkdir(parents=True)
@@ -470,10 +483,12 @@ def test_coordinator_dispatch_wait_honors_a_stop_request(
 def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
-    """A lane thread that RAISES (a bug, not a lane failure -- those return
-    ok=False) must abort the group NOW: awaiting futures in submission order
-    left the raise unobserved (and hard_stop unset) until every
-    earlier-submitted lane happened to finish on its own."""
+    """A lane thread that raises aborts the group at once.
+
+    A raise is a bug, not a lane failure (those return ok=False); awaiting futures in submission
+    order leaves the raise unobserved, and hard_stop unset, until every earlier lane finishes on its
+    own.
+    """
     import time
 
     origin_state = tmp_path / "ostate"
@@ -514,10 +529,12 @@ def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
 def test_bridge_spawner_argv_ends_options_before_task(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """The lane spawner puts every flag before `--` and the task after it, so a
-    task that looks like a flag can never be parsed as one (matches web/TUI). The
-    agent6 executable is folded into the injected `spawn`, so the argv it receives
-    starts at the subcommand."""
+    """The lane spawner puts every flag before `--` and the task after it.
+
+    A task that looks like a flag can never be parsed as one, matching the web and TUI spawns. The
+    agent6 executable is folded into the injected `spawn`, so the argv it receives starts at the
+    subcommand.
+    """
     captured: list[list[str]] = []
 
     def fake_spawn(argv: list[str], workdir: Path, **_k: object) -> tuple[Path, str]:
@@ -542,8 +559,10 @@ def test_bridge_spawner_argv_ends_options_before_task(
 def test_a_lane_is_seeded_with_the_repos_memory(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """A lane clones the repo, so its state dir is new and its memory empty: the
-    lanes ran blind to the facts and rulings every other run on that repo gets."""
+    """A lane clones the repo, so its state dir is new and its memory empty.
+
+    The lanes ran blind to the facts and rulings every other run on that repo gets.
+    """
     cfg = Config()
     origin_state = state_dir(origin)
     memory.add(origin_state, "house-style", "Docstrings end in a period.")
@@ -568,8 +587,10 @@ def test_a_lane_is_seeded_with_the_repos_memory(
 def test_bridge_spawner_argv_includes_auto_approve_when_set(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """A coordinator/fan-out started with --auto-approve must forward it to the
-    lane, or the lane sits on run_commands=ask with nothing to answer it."""
+    """A coordinator or fan-out started with `--auto-approve` forwards it to the lane.
+
+    Otherwise the lane sits on `run_commands=ask` with nothing to answer it.
+    """
     captured: list[list[str]] = []
 
     def fake_spawn(argv: list[str], workdir: Path, **_k: object) -> tuple[Path, str]:
@@ -612,9 +633,11 @@ def test_bridge_spawner_argv_omits_auto_approve_by_default(
 def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
-    """When no *spawner* is injected, `run_lane_to_completion` builds the real
-    bridge spawner itself (the coordinator's path); auto_approve must reach it
-    exactly like max_usd already does."""
+    """`run_lane_to_completion` forwards auto_approve to the default spawner it builds.
+
+    With no spawner injected (the coordinator's path), auto_approve reaches the real bridge spawner
+    exactly like max_usd does.
+    """
     captured: list[dict[str, object]] = []
 
     def fake_bridge(spec: LaneSpec, task: str, **kw: object) -> LaneResult:
@@ -647,8 +670,10 @@ def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
 def test_run_parallel_forwards_pins_to_the_default_spawner(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
-    """run_parallel must carry --pin into every lane's bridge spawner (which
-    turns them into repeatable --pin argv, already tested)."""
+    """`run_parallel` carries `--pin` into every lane's bridge spawner.
+
+    The spawner turns them into repeatable `--pin` argv.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -712,11 +737,11 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     capsys: pytest.CaptureFixture[str],
     runtime: LaneRuntime,
 ) -> None:
-    """Since the status unification a lane blocked on an unanswered prompt
-    reads "waiting", not "running" -- the word the hint was keyed on, so the
-    fan-out sat on a bare "waiting" forever with no pointer at the hub. The
-    hint must fire on the real word, with pending_prompt supplying only the
-    approval-vs-question wording."""
+    """The await's status line flags a lane blocked on a prompt by its real word, "waiting".
+
+    A hint keyed on "running" leaves the fan-out on a bare "waiting" forever with no pointer at the
+    hub; `pending_prompt` supplies only the approval-versus-question wording.
+    """
     from agent6.viewmodel import SessionSummary
 
     lane = tmp_path / "lane"
@@ -801,12 +826,13 @@ def test_run_parallel_imports_branches_and_stamps_lineage(
 def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
     origin: Path, tmp_path: Path, runtime: LaneRuntime, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The harness nudges a lane to write memory like any run, and the import
-    carried only its rulings before tearing the lane's state dir down: every
-    memory file the lane wrote, and its index line, went with it. A name the
-    origin already holds with other content (written here before the lane was
-    seeded, so not a seeded copy) is held back, kept in the lane's imported
-    run dir, and the note says where."""
+    """A lane's memory files are carried into the origin at import.
+
+    The harness nudges a lane to write memory like any run; an import that carries only its rulings
+    before tearing the lane's state dir down loses every memory file and index line the lane wrote.
+    A name the origin already holds with other content (written before the lane was seeded, so not a
+    seeded copy) is held back in the lane's imported run dir, and the note says where.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -849,8 +875,10 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
 def test_run_parallel_forwards_auto_approve_to_the_default_spawner(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
-    """`run --parallel --auto-approve` must reach the lane's own default (real)
-    bridge spawner, same plumbing as --max-usd."""
+    """`run --parallel --auto-approve` reaches the lane's own default bridge spawner.
+
+    The same plumbing as `--max-usd`.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -877,9 +905,11 @@ def test_run_parallel_forwards_auto_approve_to_the_default_spawner(
 def test_compare_outcome_stamped_into_each_lane_manifest(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """The fan-out's auto-compare stamps a `compare` block into EVERY imported
-    lane's manifest (winner + loser), recording rank/of/winner and, with no
-    reviewer configured, ranked_by="mechanical" with an empty rationale."""
+    """The fan-out's auto-compare stamps a `compare` block into every imported lane's manifest.
+
+    Winner and loser alike record rank, of and winner; with no reviewer configured,
+    `ranked_by="mechanical"` with an empty rationale.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -920,9 +950,10 @@ def test_compare_outcome_stamped_into_each_lane_manifest(
 def test_compare_stamp_records_judge_rationale_truncated(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
-    """When the judge ranks (not the mechanical fallback), every lane records
-    ranked_by="judge", the SAME rationale, truncated to bound the manifest, and
-    the SAME group judge cost."""
+    """When the judge ranks, every lane records the same truncated rationale and judge cost.
+
+    Each records `ranked_by="judge"`; the rationale is truncated to bound the manifest.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -958,8 +989,10 @@ def test_compare_stamp_records_judge_rationale_truncated(
 def test_run_parallel_removes_its_emptied_workdir_levels(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """`run --parallel` clones sit at `<base>/<repo>/<fan-out>/lane-N`: the
-    fan-out dir and the per-repo dir go once empty, the base stays."""
+    """`run --parallel` clones sit at `<base>/<repo>/<fan-out>/lane-N`.
+
+    The fan-out dir and the per-repo dir go once empty, the base stays.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1122,9 +1155,11 @@ def test_lineage_stamp_oserror_does_not_abort_import_loop(
     capsys: pytest.CaptureFixture[str],
     runtime: LaneRuntime,
 ) -> None:
-    """An atomic_write OSError while stamping lineage (disk full / read-only
-    mount) must not abort the import loop mid-way: each lane's import stands, the
-    degradation prints, and the remaining lanes still import + report."""
+    """An OSError while stamping lineage does not abort the import loop.
+
+    A disk-full or read-only mount at `atomic_write` leaves each lane's import standing; the
+    degradation prints, and the remaining lanes still import and report.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1164,9 +1199,10 @@ def test_ctrl_c_during_spawn_loop_stops_imports_and_reports(
     capsys: pytest.CaptureFixture[str],
     runtime: LaneRuntime,
 ) -> None:
-    """A KeyboardInterrupt while still spawning (before the await) routes into the
-    same stop-grace + import-what-exists + report path: the already-started lane
-    is imported, the run exits 130, and lanes never spawned are simply absent."""
+    """A KeyboardInterrupt during the spawn loop stops, imports what exists and reports.
+
+    The already-started lane is imported, the run exits 130, and lanes never spawned are absent.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1215,9 +1251,11 @@ def test_await_waits_for_worker_pid_to_clear(
     runtime: LaneRuntime,
 ) -> None:
     """session.end lands in logs.jsonl BEFORE the lane's teardown clears worker.pid.
-    The await gate must keep waiting through that window (terminal = non-running
-    status AND pid cleared/dead); importing inside it would misread the lane as
-    still running and cleanup would destroy its only copy."""
+
+    The await gate must keep waiting through that window (terminal = non-running status AND pid
+    cleared/dead); importing inside it would misread the lane as still running and cleanup would
+    destroy its only copy.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1264,9 +1302,11 @@ def test_await_waits_for_worker_pid_to_clear(
 def test_cleanup_preserves_unimported_lane(
     origin: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], runtime: LaneRuntime
 ) -> None:
-    """A lane whose import is refused keeps its clone, run state, and live
-    symlink (the clone holds the only copy of its branch), and the report names
-    what was kept. Imported lanes are still cleaned up."""
+    """A lane whose import is refused keeps its clone, run state and live symlink.
+
+    The clone holds the only copy of its branch; the report names what was kept. Imported lanes are
+    still cleaned up.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1310,9 +1350,11 @@ def test_await_uses_real_run_dir_not_symlink(
     capsys: pytest.CaptureFixture[str],
     runtime: LaneRuntime,
 ) -> None:
-    """The symlink is a view for the hub, not the source of truth: with symlink
-    creation failing entirely, the lane is still awaited on its REAL run dir
-    (its true status is observed, not '?') and imported."""
+    """The symlink is a view for the hub, not the source of truth.
+
+    With symlink creation failing entirely, the lane is still awaited on its REAL run dir (its true
+    status is observed, not '?') and imported.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1355,10 +1397,11 @@ def test_run_lane_to_completion_imports_and_stamps(
     runtime: LaneRuntime,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """One lane fully: spawn (fake), symlink it live into the origin's runs/,
-    await to terminal, import its branch + run dir into the origin, and stamp
-    `<group>` lineage. The live symlink is visible while the lane runs (so a hub
-    can see + answer it) and is replaced by the real dir after import."""
+    """One lane runs end to end: spawn, live symlink, await, import and the lineage stamp.
+
+    The live symlink into the origin's runs/ is visible while the lane runs, so a hub can see and
+    answer it, and is replaced by the real dir after import.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1440,11 +1483,12 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
 def test_a_failed_lane_never_joins_the_coordinator(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """`/parallel` dispatch gated only on died-without-end, so a lane that ended
-    `provider_error` (folded "failed") came back ok=True: join_lane_result
-    merged its half-done branch into the coordinator's checkout and told the
-    model "joined at <sha>". Candidacy is ONE question (`produced_result`),
-    the same one the fan-out asks."""
+    """A failed lane never joins the coordinator.
+
+    Candidacy is one question, `produced_result`, the same one the fan-out asks; gating only on
+    died-without-end lets a lane that ended `provider_error` come back ok=True, merge its half-done
+    branch into the coordinator's checkout and tell the model "joined at <sha>".
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1479,8 +1523,10 @@ def test_a_failed_lane_never_joins_the_coordinator(
 def test_a_crashed_lane_never_joins_the_coordinator(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """The died-without-end half of the same gate (a lane with no session.end
-    folds "stale"): imported, named in the error, never joined."""
+    """The died-without-end half of the same gate (a lane with no session.end folds "stale").
+
+    Imported, named in the error, never joined.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1513,10 +1559,11 @@ def test_a_crashed_lane_never_joins_the_coordinator(
 def test_build_lane_spawner_over_cap_refused(
     origin: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
-    """[parallel].max_lanes is documented as a hard cap per fan-out, and a live
-    /parallel steer is a fan-out: it must refuse over-cap BEFORE any clone or
-    spawn, exactly as `run --parallel` does in build_lane_specs. The loop turns
-    the raise into 'group dispatch failed' coordinator feedback."""
+    """A `/parallel` steer over `[parallel].max_lanes` is refused before any clone or spawn.
+
+    The cap is a hard cap per fan-out, exactly as `run --parallel` enforces it in build_lane_specs;
+    the loop turns the raise into 'group dispatch failed' coordinator feedback.
+    """
     from agent6.paths import state_dir
 
     cfg = Config.model_validate({"parallel": {"max_lanes": 2}})
@@ -1541,8 +1588,10 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
     runtime: LaneRuntime,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The group's *import_lock* is held ACROSS import_run: two lane threads
-    fetching into one origin race on refs/objects."""
+    """The group's *import_lock* is held ACROSS import_run.
+
+    Two lane threads fetching into one origin race on refs/objects.
+    """
     origin_state = state_dir(origin)
     lock = threading.Lock()
     held: list[bool] = []
@@ -1578,13 +1627,13 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
 def test_run_lane_to_completion_cleans_up_imported_clone(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """The coordinator path must honor the module contract 'clones + lane state
-    are torn down after import': every /parallel group otherwise leaked one full
-    repo clone + state dir + lane config per lane, forever. Its clones sit at
-    `<base>/<repo>/<coordinator>/<group>/lane-N`: every emptied level up to and
-    including the per-repo dir goes, the base above it stays. Only the imported
-    (ok=True) lane is cleaned; a failed import keeps its clone and its live
-    symlink (the clone may hold the only copy of the branch)."""
+    """The coordinator path tears down an imported lane's clone and state.
+
+    Otherwise every `/parallel` group leaks a full repo clone, a state dir and a lane config per
+    lane. Clones sit at `<base>/<repo>/<coordinator>/<group>/lane-N`: every emptied level up to and
+    including the per-repo dir goes, the base above it stays. Only the imported (ok=True) lane is
+    cleaned; a failed import keeps its clone and its live symlink.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1640,8 +1689,10 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
 def test_build_lane_spawner_builds_specs_and_preserves_order(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
-    """The group dispatcher names lanes `<coord>-<group>-l<i>`, puts them under a
-    per-group workdir, and returns results in dispatch order despite the pool."""
+    """The group dispatcher names lanes `<coord>-<group>-l<i>` and returns results in order.
+
+    Lanes go under a per-group workdir; the order holds despite the pool.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1704,9 +1755,11 @@ def test_build_lane_spawner_forwards_auto_approve(
 def test_build_coordinator_spawner_forwards_auto_approve(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
-    """A coordinator started with --auto-approve dispatches lanes that inherit
-    it; one started without does not (build_coordinator_spawner -> build_lane_
-    spawner, same param as max_usd)."""
+    """A coordinator started with `--auto-approve` dispatches lanes that inherit it.
+
+    One started without does not; `build_coordinator_spawner` passes it to `build_lane_spawner` as
+    it passes max_usd.
+    """
     origin_state = tmp_path / "ostate"
     origin_state.mkdir()
     cfg = Config()
@@ -1734,9 +1787,11 @@ def test_build_coordinator_spawner_forwards_auto_approve(
 
 
 def test_await_lane_returns_when_should_stop_fires(tmp_path: Path, runtime: LaneRuntime) -> None:
-    """The single-lane await honors should_stop: without it, the poll loop
-    blocked until the lane ended on its own, so a coordinator stop (or Ctrl-C
-    teardown) sat on a lane that might run for hours."""
+    """The single-lane await honors should_stop.
+
+    Without it, the poll loop blocked until the lane ended on its own, so a coordinator stop (or
+    Ctrl-C teardown) sat on a lane that might run for hours.
+    """
     import os as _os
 
     lane_dir = tmp_path / "lane-run"
@@ -1760,9 +1815,11 @@ def test_await_lane_returns_when_should_stop_fires(tmp_path: Path, runtime: Lane
 def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """An interrupted await requests a clean stop on the lane and returns
-    ok=False WITHOUT importing (the lane keeps running detached); with
-    hard_stop set the bounded grace is skipped so teardown is prompt."""
+    """An interrupted await asks the lane to stop and returns ok=False without importing.
+
+    The lane keeps running detached; with hard_stop set the bounded grace is skipped, so teardown is
+    prompt.
+    """
     import os as _os
     import threading as _threading
 
@@ -1801,11 +1858,13 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
 def test_crashed_lane_is_not_a_rankable_candidate(
     origin: Path, tmp_path: Path, runtime: LaneRuntime, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A lane that died without a session.end folds to "stale", which verify_ok maps
-    to None -- the same tri-state as a clean unverified finish. Mechanical
-    ranking then sorts by cost, so the cheapest (earliest-crashing) lane ranked
-    first and was stamped compare.winner=true, wearing the winner glyph in every
-    listing while the report called it "no-verify"."""
+    """A crashed lane is not a rankable candidate.
+
+    A lane that died without a session.end folds to "stale", which verify_ok maps to None, the same
+    tri-state as a clean unverified finish; ranked by cost, the cheapest (earliest-crashing) lane
+    would be stamped compare.winner=true and wear the winner glyph while the report says "no-
+    verify".
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1862,10 +1921,11 @@ def test_crashed_lane_is_not_a_rankable_candidate(
 
 
 def test_lane_config_forces_a_run_branch(tmp_path: Path) -> None:
-    """A lane's branch is how its work is imported (bridge_spawner fetches
-    agent6/<session_id>), but the origin's [git].branch_per_run=false materialized
-    into the lane config, so the branch was never cut: every lane completed and
-    billed, then failed at import with a raw git 'couldn't find remote ref'."""
+    """A lane's config forces a run branch.
+
+    The import fetches `agent6/<session_id>`, so a lane config that materialises the origin's
+    `[git].branch_per_run=false` completes and bills, then fails at import on a missing ref.
+    """
     import tomllib
 
     from agent6.app.parallel import _write_lane_config  # pyright: ignore[reportPrivateUsage]
@@ -1879,8 +1939,7 @@ def test_lane_config_forces_a_run_branch(tmp_path: Path) -> None:
 
 
 def test_lane_config_carries_the_lane_route(tmp_path: Path) -> None:
-    """A lane's route names its provider too, so a lane on another provider
-    than the worker's loads that provider."""
+    """A lane's route names its provider, so a lane on another provider loads it."""
     import tomllib
 
     from agent6.app.parallel import _write_lane_config  # pyright: ignore[reportPrivateUsage]
@@ -1913,8 +1972,9 @@ def test_a_fanout_where_every_lane_failed_crowns_nobody(
     ended `provider_error` sailed into the candidate set: the fan-out stamped one
     `compare.winner=true`, wore the star in every listing, printed a merge
     command for a branch with nothing on it, and exited 0. `failed` is reserved
-    for a run that did not finish deliberately -- a deliberate finish over a red
-    gate is `finished` and still ranks, which the sibling test above covers."""
+    for a run that did not finish deliberately, a deliberate finish over a red
+    gate is `finished` and still ranks, which the sibling test above covers.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1966,10 +2026,12 @@ def test_a_fanout_where_every_lane_failed_crowns_nobody(
 def test_a_compare_where_every_candidate_failed_its_own_gate_crowns_nobody(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """Both lanes finished deliberately, but each one's own verify gate ran
-    and failed this execution: mechanical ranking still orders them by cost, and the
-    cheaper one was stamped compare.winner=true even though nobody's gate
-    passed -- the fan-out's own exit code (4) says the opposite."""
+    """A compare where every candidate failed its own gate crowns nobody.
+
+    Both lanes finished deliberately and each one's verify gate failed; mechanical ranking still
+    orders them by cost, and stamping the cheaper one compare.winner=true contradicts the fan-out's
+    own exit code (4).
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -2005,13 +2067,14 @@ def test_a_compare_where_every_candidate_failed_its_own_gate_crowns_nobody(
 def test_a_judge_that_misranks_a_failed_gate_lane_first_crowns_nobody(
     origin: Path, tmp_path: Path, runtime: LaneRuntime, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The judge is untrusted LLM output: its system prompt says a passing
-    candidate outranks a failing one, but nothing enforces that. When it
-    ranks the lane whose OWN gate failed first anyway, `winner` keyed off the
-    whole group's exit code (some lane DID pass, so `crown` read True) and
-    stamped that failed lane compare.winner=true: a crown on a lane that
-    never passed its gate, wearing the star in every listing over the lane
-    that actually did."""
+    """The judge is untrusted LLM output.
+
+    Its system prompt says a passing candidate outranks a failing one, but nothing enforces that.
+    When it ranks the lane whose OWN gate failed first anyway, `winner` keyed off the whole group's
+    exit code (some lane DID pass, so `crown` read True) and stamped that failed lane
+    compare.winner=true: a crown on a lane that never passed its gate, wearing the star in every
+    listing over the lane that actually did.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -2051,10 +2114,12 @@ def test_a_judge_that_misranks_a_failed_gate_lane_first_crowns_nobody(
 
 
 def test_fanout_exit_reflects_the_gate_verdicts() -> None:
-    """An all-red fan-out exited 0: every lane finished over a red gate, one
-    was still crowned rank 1, and the fan-out read as success to every script.
-    The exit now mirrors session_exit_code: 4 when gates ran and none passed,
-    0 when some lane verified green or no lane had a gate, 1 for no candidates."""
+    """An all-red fan-out exits 4, not 0.
+
+    Every lane finished over a red gate and one is still crowned rank 1, so without this the fan-out
+    reads as success to every script. The exit mirrors session_exit_code: 4 when gates ran and none
+    passed, 0 when some lane verified green or no lane had a gate, 1 for no candidates.
+    """
     from agent6.app.parallel import fanout_exit_code
     from agent6.harness.judge import CandidateBrief
 
@@ -2069,10 +2134,12 @@ def test_fanout_exit_reflects_the_gate_verdicts() -> None:
 
 
 def test_the_judge_is_capped_like_a_lane(tmp_path: Path) -> None:
-    """The fan-out advertises "$X/lane x N + judge = $Y total", but the
-    judge's tracker took the full config budget, so the effective ceiling
-    quietly exceeded the printed one. rank caps the judge at the lane cap
-    when one is given; the config budget stays the fallback."""
+    """The judge is capped like a lane.
+
+    The fan-out advertises "$X/lane x N + judge = $Y total"; a judge tracker on the full config
+    budget quietly exceeds the printed ceiling. `rank` caps the judge at the lane cap when one is
+    given, with the config budget as the fallback.
+    """
     from contextlib import contextmanager
 
     from agent6.app.compare import rank
@@ -2119,10 +2186,11 @@ def test_the_judge_is_capped_like_a_lane(tmp_path: Path) -> None:
 def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """Every lane ran with the away-mode `wait`, so an unattended fan-out (a
-    pipe, a cron) with a model that asks a question parked every lane until
-    someone attached, which nobody could. `bridge_spawner` stamps the lane
-    with the away-mode it is given."""
+    """An unattended fan-out does not park its lanes on a question.
+
+    `bridge_spawner` stamps each lane with the away-mode it is given; a lane run with `wait` under a
+    pipe or a cron parks on a model's question until someone attaches, which nobody can.
+    """
     captured: list[dict[str, str]] = []
 
     def fake_spawn(argv: list[str], workdir: Path, **kw: object) -> tuple[Path, str]:
@@ -2149,10 +2217,12 @@ def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
 def test_lane_is_self_describing_from_birth(
     origin: Path, tmp_path: Path, runtime: LaneRuntime, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The spawn env carries the fan-out lineage and the manifest's one writer
-    records it, so the grouping survives a coordinator death -- the old
-    post-import stamp existed only while the coordinator lived, leaving
-    orphaned lanes listed as unrelated runs."""
+    """A lane is self-describing from birth.
+
+    The spawn env carries the fan-out lineage and the manifest's one writer records it, so the
+    grouping survives a coordinator death; a stamp written only after import leaves orphaned lanes
+    listed as unrelated runs.
+    """
     from agent6.app.manifest import write_session_manifest
     from agent6.sessions.layout import SessionLayout
     from agent6.sessions.manifest import read_manifest
@@ -2207,12 +2277,13 @@ def test_lane_is_self_describing_from_birth(
 def test_sweep_keeps_a_clone_holding_unmerged_commits(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The sweep is content-safe by commit proof: a fan-out dir whose lane
-    clone holds any commit the origin lacks is kept whole (the clone may be
-    the only copy); one whose every lane tip the origin holds is deleted.
-    The scan is scoped to this repo's `<repo-id>` subdir: another repo's
-    clones can neither be swept by a commit proof made against the wrong
-    origin nor kept forever with advice that cannot apply here."""
+    """The sweep is content-safe by commit proof.
+
+    A fan-out dir whose lane clone holds any commit the origin lacks is kept whole (the clone may be
+    the only copy); one whose every lane tip the origin holds is deleted. The scan is scoped to this
+    repo's `<repo-id>` subdir: another repo's clones can neither be swept by a commit proof made
+    against the wrong origin nor kept forever with advice that cannot apply here.
+    """
     from agent6.app.parallel import sweep_fanout_clones
     from agent6.paths import repo_id
 
@@ -2247,10 +2318,12 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
 def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     origin: Path, tmp_path: Path
 ) -> None:
-    """A lane checkpoints nothing before its first run ref, so its clone is
-    kept while its worker lives; kept unconditionally, every lane that died
-    before its first checkpoint (and every plan or ask lane) held a full repo
-    clone for good, under a prune message about commits it never held."""
+    """The sweep keeps a commitless clone only while its lane lives.
+
+    A lane checkpoints nothing before its first run ref; kept unconditionally, every lane that died
+    before its first checkpoint (and every plan or ask lane) holds a full repo clone for good, under
+    a prune message about commits it never held.
+    """
     from agent6.app.parallel import sweep_fanout_clones
     from agent6.paths import repo_id
     from agent6.sessions.ipc import write_worker_pid
@@ -2286,10 +2359,12 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
 def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
     origin: Path, tmp_path: Path
 ) -> None:
-    """The proof was `rev-parse <sha>^{commit}` in the origin, which succeeds
-    for a loose object no ref reaches -- exactly what the operator is left with
-    after the `git branch -D` prune's own message tells them to run. The clone
-    was then deleted and the work went with the next `git gc`."""
+    """The sweep keeps a clone whose tip the origin cannot reach.
+
+    `rev-parse <sha>^{commit}` succeeds for a loose object no ref reaches, exactly what the operator
+    is left with after the `git branch -D` prune's own message tells them to run; deleting the clone
+    on that proof sends the work with the next `git gc`.
+    """
     import subprocess as sp
 
     from agent6.app.parallel import sweep_fanout_clones
@@ -2319,10 +2394,11 @@ def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
 def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Only a group dir holding `lane-*` clones is agent6's to judge by commit
-    proof. A directory the operator put under the workdir scope (a clone
-    named otherwise, a plain dir with files) holds no lane clone, and the
-    sweep read that as "nothing to prove" and deleted it."""
+    """Only a group dir holding `lane-*` clones is agent6's to judge by commit proof.
+
+    A directory the operator put under the workdir scope (a clone named otherwise, a plain dir with
+    files) holds no lane clone, and the sweep read that as "nothing to prove" and deleted it.
+    """
     from agent6.app.parallel import sweep_fanout_clones
     from agent6.paths import repo_id
 
@@ -2346,8 +2422,11 @@ def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
 def test_carry_back_names_the_kept_dir_only_when_it_holds_something(
     origin: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A held-back deletion keeps nothing, so a note pointing at memory-held/
-    named a directory that did not exist."""
+    """The carry-back note names the kept dir only when it holds something.
+
+    A held-back deletion keeps nothing, so a note pointing at memory-held/ would name a directory
+    that does not exist.
+    """
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -2366,12 +2445,13 @@ def test_carry_back_names_the_kept_dir_only_when_it_holds_something(
 def test_run_parallel_is_a_session_of_its_own(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """The fan-out has a session record under the origin's runs: a manifest
-    carrying the fan-out stamp and no run branch, a journal that opens with
-    session.start, records the dispatch and the ranking, and ends with
-    session.end, and no worker pid left behind. Before it, `ps` printed "no
-    live agent6 sessions" through the whole judge call and nothing grouped
-    the lanes."""
+    """The fan-out has a session record under the origin's runs.
+
+    A manifest carrying the fan-out stamp and no run branch, a journal that opens with
+    session.start, records the dispatch and the ranking, and ends with session.end, and no worker
+    pid left behind. Before it, `ps` printed "no live agent6 sessions" through the whole judge call
+    and nothing grouped the lanes.
+    """
     from agent6.sessions.manifest import FanoutStamp
     from agent6.viewmodel.listing import scan_session_log
 
@@ -2413,9 +2493,11 @@ def test_run_parallel_is_a_session_of_its_own(
 def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`stop <fan-out>` writes the coordinator's stop marker; the
-    await reads it between polls, asks every live lane to stop, and returns
-    interrupted so the import and the report still run."""
+    """A stop request on the coordinator ends the await like Ctrl+C.
+
+    `stop <fan-out>` writes the coordinator's stop marker; the await reads it between polls, asks
+    every live lane to stop, and returns interrupted so the import and the report still run.
+    """
     from agent6.sessions.ipc import stop_request_pending
 
     lane = tmp_path / "lane"
@@ -2472,10 +2554,12 @@ def test_a_stop_during_spawn_prevents_more_lanes(
 def test_the_coordinator_journals_a_crash_and_an_interrupt(
     origin: Path, tmp_path: Path, runtime: LaneRuntime, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An escape after the fan-out's record opens (a spawner fault, Ctrl+C
-    during the judge) still ends the journal (`crashed` / `interrupted`) and
-    clears the pid, the way every other execution does; without the end the
-    operator's own interrupt read as a lost worker ("stale")."""
+    """The coordinator journals a crash and an interrupt.
+
+    An escape after the fan-out's record opens (a spawner fault, Ctrl+C during the judge) still ends
+    the journal (`crashed` or `interrupted`) and clears the pid, as every other execution does;
+    without the end the operator's own interrupt reads as a lost worker ("stale").
+    """
     from agent6.viewmodel.listing import scan_session_log
 
     origin_state = state_dir(origin)
@@ -2525,8 +2609,11 @@ def test_the_coordinator_journals_a_crash_and_an_interrupt(
 def test_a_fan_out_leaves_no_stop_marker_behind(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    """A stop request in the coordinator's dir, honoured or arrived after the
-    lanes ended, is consumed with the session: nothing outlives it there."""
+    """A fan-out leaves no stop marker behind.
+
+    A stop request in the coordinator's dir, honoured or arrived after the lanes ended, is consumed
+    with the session.
+    """
     from agent6.sessions.ipc import request_stop, stop_request_pending
 
     origin_state = state_dir(origin)

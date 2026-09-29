@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The headless loop logger must FLUSH each line; the live one drops narration.
+"""The headless loop logger flushes each line; the live one drops narration.
 
-A `nohup agent6 run > log` (or any run whose stdout/stderr is a pipe, not a TTY)
-is block-buffered: without an explicit flush the whole LOOP trace only lands
-when the process exits, so the log reads as a dead run for its entire duration.
-This drives the logger in a subprocess whose stdout is a pipe and asserts the
-line arrives BEFORE the process ends.
+A run whose stdout is a pipe is block-buffered, so without the flush the whole trace lands only at
+exit and the log reads as a dead run.
 """
 
 from __future__ import annotations
@@ -22,12 +19,11 @@ from agent6.ui.cli._live import loop_logger
 
 
 def _drive(mode: str, stream: str) -> bool:
-    """Run the *mode* headless logger in a child that logs then sleeps 3s, with
-    the given std *stream* piped. Return whether the child was STILL ALIVE when
-    its line arrived: a flushing logger delivers mid-sleep; a block-buffered one
-    delivers only at exit. Structural, not wall-clock -- a timing threshold
-    here flaked under machine load, where the child's cold import alone
-    outspent the budget."""
+    """Run the headless logger in a child and return whether it was alive when its line arrived.
+
+    The child logs then sleeps; a flushing logger delivers mid-sleep, a block-buffered one only at
+    exit. Structural, not wall-clock: a timing threshold flaked under load.
+    """
     code = (
         "import time\n"
         "from agent6.ui.cli._live import loop_logger\n"
@@ -63,11 +59,10 @@ def test_ask_logger_flushes_each_line() -> None:
 
 
 def test_live_console_drops_the_loop_narration(monkeypatch: pytest.MonkeyPatch) -> None:
-    """On the live console the loop's state narration (LOOP: transitions, a
-    compaction, the thresholds compaction will fire at) is noise between the
-    glyphs; a tool_error line repeats the error the stream shows under its red
-    glyph, an auto-commit line the sha on the ✎ item, and the STEER pair the
-    operator item; genuine notices pass. `AGENT6_DEBUG=1` shows everything."""
+    """The live console skips the loop's state narration and duplicate tool_error lines.
+
+    Genuine notices pass; `AGENT6_DEBUG=1` shows everything.
+    """
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     out = io.StringIO()
     log = loop_logger("run", ConsoleView(out, color=False))

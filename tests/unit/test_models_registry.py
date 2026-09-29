@@ -72,10 +72,11 @@ def _window(tokens: int) -> Callable[[str, str], int]:
 def test_a_small_window_clamps_the_verbatim_tail_and_says_so(
     cache_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The config validator refuses an explicit pair whose verbatim tail alone
-    re-triggers tier 2. A small window sizes exactly that pair from the
-    80,000-char default, and under it the restart kept NO verbatim turns at
-    all -- the freshest tool results, paraphrased away, every restart."""
+    """The config validator refuses an explicit pair whose verbatim tail alone re-triggers tier 2.
+
+    A small window sizes exactly that pair from the 80,000-char default, and under it the restart
+    kept NO verbatim turns at all, the freshest tool results, paraphrased away, every restart.
+    """
     from agent6.app.providers import resolve_compaction_thresholds
     from agent6.config import Config, RoleModel
 

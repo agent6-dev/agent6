@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 ps` lists every live session machine-wide, machine instances
-included: their worker.pid sits at the instance root, not under a bucket."""
+"""`agent6 ps` lists every live session machine-wide, machine instances included.
+
+Their worker.pid sits at the instance root, not under a bucket.
+"""
 
 from __future__ import annotations
 
@@ -48,10 +50,12 @@ reason = "signalled"
 def test_ps_reads_a_live_machine_through_the_shared_status_word(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A live worker in a wait state is "waiting" on every other surface
-    (`machine_word_for_dir`); ps printed a hardcoded "running". The repo has
-    run only a machine, so its state dir holds no sessions/ at all: ps must
-    still list it."""
+    """`ps` reads a live machine through the shared status word.
+
+    A live worker in a wait state is "waiting" on every other surface (`machine_word_for_dir`), not
+    a hardcoded "running". The repo has run only a machine, so its state dir holds no sessions/ at
+    all: ps must still list it.
+    """
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "waiter.asm.toml"
     f.write_text(WAITER, encoding="utf-8")
@@ -71,8 +75,10 @@ def test_ps_reads_a_live_machine_through_the_shared_status_word(
 def test_ps_lists_a_linked_lane_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fan-out lane's run dir is linked under the coordinator repo as well as
-    its own state dir: one live session, one row."""
+    """A fan-out lane's run dir is linked under the coordinator repo as well as its own state dir.
+
+    One live session, one row.
+    """
     base = tmp_path / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(base))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -118,8 +124,10 @@ def test_ps_lists_same_named_live_sessions_from_different_repositories(
 def test_ps_json_carries_the_row_facts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`ps` was the one listing with no --json, so the cross-repo view could
-    not be read by a script."""
+    """`ps --json` carries the row facts.
+
+    Without it the cross-repo view cannot be read by a script.
+    """
     base = tmp_path / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(base))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -151,9 +159,11 @@ def _live(session_dir: Path, manifest: dict[str, object]) -> None:
 def test_ps_folds_a_live_lane_under_its_live_coordinator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fan-out in flight is one row with its live lane count; `--lanes`
-    lists the lanes under it; a lane whose coordinator is not live stays a
-    row of its own."""
+    """`ps` folds a live lane under its live coordinator.
+
+    A fan-out in flight is one row with its live lane count; `--lanes` lists the lanes under it; a
+    lane whose coordinator is not live stays a row of its own.
+    """
     base = tmp_path / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(base))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -182,11 +192,12 @@ def test_ps_folds_a_live_lane_under_its_live_coordinator(
 def test_ps_nests_a_lane_under_its_coordinator_whatever_the_scan_order(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A live lane is seen twice: in its clone's own state dir and through
-    the origin's symlink. Keyed on the repo id, the nesting held only when
-    the origin's entry happened to be scanned last; the origin's view wins
-    and the lane nests under its coordinator regardless, its lanes in lane
-    order."""
+    """A live lane is seen twice: in its clone's own state dir and through the origin's symlink.
+
+    Keyed on the repo id, the nesting held only when the origin's entry happened to be scanned last;
+    the origin's view wins and the lane nests under its coordinator regardless, its lanes in lane
+    order.
+    """
     base = tmp_path / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(base))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))

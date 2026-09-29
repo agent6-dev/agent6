@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The test-edits-only flip notice: a gate that goes red, then green while
-every file changed in between is a test file, gets a notice naming them and
-an event that counts it. Decided by a git tree diff between the red and the
-green, so a run_command edit is seen like an apply_edit. In the SWE-rebench
-autopsy, 7 of 8 broke-P2P executions greened a red gate by editing the failing
-test; the flip rendered as an ordinary success."""
+"""The test-edits-only flip notice, decided by a git tree diff between the red and the green.
+
+A gate that goes red, then green while only test files changed, gets a notice naming them
+and an event that counts it; a run_command edit is seen like an apply_edit. In the
+SWE-rebench autopsy, 7 of 8 broke-P2P executions greened a red gate by editing the test.
+"""
 
 from __future__ import annotations
 
@@ -35,8 +35,7 @@ def test_is_test_path_conventions() -> None:
 
 
 def test_the_notice_states_the_world_and_caps_its_list() -> None:
-    """World-state only, the `[harness verify]` prefix of its siblings, no
-    advice; the list stops at twelve paths with the rest counted."""
+    """World state only, the `[harness verify]` prefix, no advice; twelve paths then a count."""
     text = _nudges.test_only_green_notice([f"tests/test_{i:02d}.py" for i in range(15)])
     assert text.startswith(NOTICE_HEAD)
     assert "tests/test_00.py, " in text
@@ -90,8 +89,7 @@ def _turn(iteration: int) -> TurnState:
 
 
 def _edit(wf: Harness, state: LoopState, turn: TurnState, rel: str) -> None:
-    """apply_edit through the real path: the file changes on disk, then the
-    loop notes the result."""
+    """Apply an edit through the real path: the file changes on disk, then the loop notes it."""
     (wf.chain.root / rel).write_text("y = 2\n", encoding="utf-8")
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "apply_edit", EditResult(applied=("replace",), path=rel), {"path": rel}
@@ -101,8 +99,7 @@ def _edit(wf: Harness, state: LoopState, turn: TurnState, rel: str) -> None:
 def _command(
     wf: Harness, state: LoopState, turn: TurnState, *, writes: tuple[str, ...] = ()
 ) -> None:
-    """run_command through the real path: whatever it wrote is on disk when
-    the loop asks git whether the tree moved."""
+    """A run_command edit is on disk when the loop asks git whether the tree moved."""
     before = wf._tree_before_command("run_command")  # pyright: ignore[reportPrivateUsage]
     for rel in writes:
         (wf.chain.root / rel).write_text("z = 3\n", encoding="utf-8")
@@ -126,10 +123,11 @@ def _fired(emitted: Emitted) -> list[dict[str, Any]]:
 
 
 def test_a_source_edit_then_red_then_a_test_edit_then_green_is_noticed(tmp_path: Path) -> None:
-    """The realistic flow: the edit that broke the gate and the red land in
-    one turn, a read-only command follows, then only a test file changes
-    before the green. The tree diff between the red and the green names
-    exactly the test file, and the event carries the same list."""
+    """The tree diff between the red and the green names exactly the test file that changed.
+
+    The breaking edit and the red land in one turn, a read-only command follows, then only a
+    test file changes before the green.
+    """
     wf, emitted = _wf(_repo(tmp_path))
     state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(1)
@@ -147,8 +145,7 @@ def test_a_source_edit_then_red_then_a_test_edit_then_green_is_noticed(tmp_path:
 
 
 def test_a_command_that_wrote_a_source_file_withholds_the_notice(tmp_path: Path) -> None:
-    """A run_command edit is in the tree diff like any other: a source file
-    changed in the window, so the claim would be false."""
+    """A source file changed by run_command in the window makes the claim false, so none is made."""
     wf, emitted = _wf(_repo(tmp_path))
     state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(1)
@@ -188,8 +185,7 @@ def test_a_green_after_no_edits_has_no_notice(tmp_path: Path) -> None:
 
 
 def test_the_notice_is_withheld_when_git_cannot_say(tmp_path: Path) -> None:
-    """No repository under the root: neither tree sha exists, so nothing is
-    claimed, whatever the edit tools reported."""
+    """With no repository under the root nothing is claimed, whatever the edit tools reported."""
     (tmp_path / "tests").mkdir()
     wf, emitted = _wf(tmp_path)
     state = LoopState(original_task="t", tool_calls=0)

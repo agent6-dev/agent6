@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the machine `agent` state interactivity bridges.
+"""The machine `agent` state's interactivity bridges.
 
-Answers live in the per-state dir; the liveness gate probes the instance dir
-where a front-end registers its `frontends/` claim.
+Answers live in the per-state dir; the liveness gate probes the instance dir where a front-end
+registers its claim.
 """
 
 from __future__ import annotations
@@ -36,9 +36,7 @@ def _dirs(tmp_path: Path) -> tuple[Path, Path, EventSink]:
 
 
 def test_a_machine_command_grant_does_not_answer_another_scopes_prompt(tmp_path: Path) -> None:
-    """The run approver honoured the prompt's scope and the machine one did not,
-    so a machine state's "allow every command" auto-passed the gates that
-    deliberately have no standing answer -- the same defect, in the copy."""
+    """The machine approver honours the prompt's scope, as the run approver does."""
     from agent6.sessions.ipc import COMMAND_SCOPE, set_session_allow
 
     instance, state = tmp_path / "inst", tmp_path / "inst" / "1-agent"
@@ -52,9 +50,7 @@ def test_a_machine_command_grant_does_not_answer_another_scopes_prompt(tmp_path:
 
 
 def test_stale_answers_cleared_before_state_reexecution(tmp_path: Path) -> None:
-    # Crash recovery re-executes the same `<seq>-<state>` dir with fresh prompt-id
-    # counters; an answer file left by the aborted attempt must not satisfy this
-    # execution's first prompt. Building the bridges drops the stale files.
+    # A re-executed `<seq>-<state>` dir drops the aborted attempt's stale answer files.
     instance, state, events = _dirs(tmp_path)
     register_frontend(instance, os.getpid())
     write_answer(state, "approval-1", "yes")  # stale: from the aborted attempt
@@ -85,9 +81,7 @@ def test_approval_answer_read_from_per_state_dir(tmp_path: Path) -> None:
     instance, state, events = _dirs(tmp_path)
     register_frontend(instance, os.getpid())  # a live front-end owns the instance
     b = _build_machine_bridges(instance, state, events)  # clears pre-existing answers
-    # A real front-end writes the answer AFTER approve() emits the prompt (approve
-    # clears any premature pre-write first). A writer thread does exactly that;
-    # the answer lands in the PER-STATE dir and read_answer picks it up promptly.
+    # A writer thread answers after approve() emits the prompt, into the per-state dir.
     threading.Thread(
         target=lambda: (time.sleep(0.2), write_answer(state, "approval-1", "yes")),
         daemon=True,
@@ -108,16 +102,12 @@ def test_question_answer_read_from_per_state_dir(tmp_path: Path) -> None:
 
 
 def test_machine_approval_ignores_a_premature_answer(tmp_path: Path) -> None:
-    # The security property on the machine surface: an answer pre-written before
-    # the prompt is emitted (a premature /api/machine/<name>/approve) is cleared
-    # and not consumed -- the headless default (deny) applies instead.
+    # An answer pre-written before the prompt is cleared, not consumed; the headless deny applies.
     instance, state, events = _dirs(tmp_path)
     register_frontend(instance, os.getpid())
     b = _build_machine_bridges(instance, state, events)
     write_answer(state, "approval-1", "yes")  # premature: no prompt yet
-    # No writer thread: nothing arrives after the prompt, so with the premature
-    # answer cleared the approver falls through to the headless deny. Shrink the
-    # read timeout so the poll gives up quickly instead of blocking 600s.
+    # No writer thread, so the approver falls through to the deny; a short timeout keeps it quick.
     from agent6.app import machine_agent
 
     orig = machine_agent.read_answer
@@ -150,12 +140,10 @@ def test_steer_request_and_answer_bridge(tmp_path: Path) -> None:
 def test_machine_agent_wires_the_summariser_seat(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The machine agent built its Harness without a summariser_provider, so
-    compaction side-calls fell back to the worker-stamped provider and their
-    transcripts carried seat="worker" -- the class of misfold the seat
-    stamping exists to prevent. It now wires the same reviewer-role
-    summariser the run path uses, sharing ONE TranscriptSink so the per-run
-    seq counter cannot collide."""
+    """The machine agent wires the reviewer-role summariser and shares one TranscriptSink.
+
+    Compaction side-calls otherwise fell back to the worker provider and were stamped seat="worker".
+    """
     from typing import Any
 
     from agent6.app import machine_agent
@@ -216,11 +204,10 @@ def test_machine_agent_wires_the_summariser_seat(
 
 
 def test_away_wait_parks_a_prompt_for_the_frontend(tmp_path: Path) -> None:
-    """A hub-spawned machine (away-mode "wait") parks approvals and questions
-    for the front-end instead of inventing the headless answer -- the claim's
-    TIMING no longer decides: an answer that arrives after the prompt fired
-    (the viewer registering post-spawn) is honoured, exactly like a detached
-    run's."""
+    """A hub-spawned machine parks approvals and questions for the front-end, whenever it claims.
+
+    The headless answer is never invented; an answer arriving after the prompt fired is honoured.
+    """
     from agent6.sessions.ipc import set_away_mode
 
     instance, state, events = _dirs(tmp_path)
@@ -249,8 +236,7 @@ def test_away_wait_parks_a_prompt_for_the_frontend(tmp_path: Path) -> None:
 
 
 def test_away_wait_prompt_stops_with_the_run(tmp_path: Path) -> None:
-    """A parked prompt must not outlive the operator's Stop: the steer abort
-    breaks the wait and the approval resolves to the safe deny."""
+    """A parked prompt does not outlive the operator's Stop: the approval resolves to deny."""
     from agent6.sessions.ipc import request_steer, set_away_mode, write_steer_answer
 
     instance, state, events = _dirs(tmp_path)
@@ -271,9 +257,7 @@ def test_away_wait_prompt_stops_with_the_run(tmp_path: Path) -> None:
 def test_the_agent_seat_journals_under_a_driving_role(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The seat stamped `role="agent"`, a label no SessionKind carries, so a
-    reader deriving the session's own words from the kind table (read_session,
-    the transcript fold) dropped a machine execution's every reply as a side call's."""
+    """The machine execution's seat carries a role a SessionKind knows, so its replies fold."""
     from unittest.mock import MagicMock
 
     from agent6.app import machine_agent

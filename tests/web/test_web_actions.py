@@ -90,8 +90,7 @@ def test_merge_and_config_argv_end_options_before_values(
     ],
 )
 def test_cli_parser_accepts_double_dash_before_positionals(argv: list[str]) -> None:
-    # The argv shapes the web actions build must parse: `--` ends options and the
-    # dashy value lands in the positional.
+    # `--` ends options, so a dashy value lands in the positional.
     ns = build_parser().parse_args(_inject_default_verb(argv))
     positional = ns.task if hasattr(ns, "task") else getattr(ns, "session_id", None) or ns.value
     assert str(positional).startswith("-")
@@ -118,9 +117,7 @@ def test_spawn_machine_run_propagates_refusal(
 def test_spawn_machine_run_started_signal_is_child_worker_pid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # started(pid) fires only when the instance worker.pid holds the CHILD's own
-    # pid: a live worker.pid from an already-running machine (lock held) must
-    # not read as "this spawn started".
+    # started(pid) fires only when worker.pid holds the child's own pid, never a running machine's.
     from agent6.sessions.ipc import write_worker_pid
 
     mf = tmp_path / "tiny.asm.toml"
@@ -203,8 +200,7 @@ def test_machine_steer_refuses_ended_machine(tmp_path: Path) -> None:
 
 
 def _parked_machine(cwd: Path, name: str) -> Path:
-    """An instance parked on an armed wait (no live worker, no MachineEnd) whose
-    newest state dir is a COMPLETED agent state."""
+    """An instance parked on an armed wait whose newest state dir is a completed agent state."""
     inst = state_dir(cwd) / "machines" / name
     (inst / "states" / "0001-work").mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -220,10 +216,11 @@ def _parked_machine(cwd: Path, name: str) -> Path:
 
 
 def test_machine_steer_refuses_when_no_state_is_executing(tmp_path: Path) -> None:
-    """A parked/stopped machine's newest state dir is a finished agent state
-    whose run loop has exited, so nothing polls its steer marker. Reporting
-    "steer requested" dropped the operator's course-correction on the floor --
-    the run steer refuses "run is not live" for exactly this reason."""
+    """Steering a parked or stopped machine is refused, as the run steer refuses a dead run.
+
+    Its newest state dir is a finished agent state whose loop has exited, so nothing polls the
+    steer marker; "steer requested" dropped the course-correction on the floor.
+    """
     inst = _parked_machine(tmp_path, "tiny")
     ok, msg = actions.machine_steer(tmp_path, "tiny", "skip the deploy this cycle")
     assert not ok
@@ -233,11 +230,11 @@ def test_machine_steer_refuses_when_no_state_is_executing(tmp_path: Path) -> Non
 
 
 def test_approve_and_answer_refuse_a_dead_run(tmp_path: Path) -> None:
-    """A run killed while blocked on a prompt still renders its Allow/Deny box
-    (the client filters on `answered`, not liveness), and these two POSTs wrote
-    the answer and reported success with no worker left to consume it -- the
-    same shape as the typed steer that used to reach a corpse. Every sibling
-    action already refuses "run is not live"."""
+    """Answering a run killed while blocked on a prompt is refused, like every sibling action.
+
+    The client filters the prompt box on `answered`, not liveness, so the box still renders;
+    writing the answer reported success with no worker left to consume it.
+    """
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / "dead-run-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
@@ -259,10 +256,11 @@ def test_approve_and_answer_refuse_a_dead_run(tmp_path: Path) -> None:
 
 
 def test_approve_and_answer_reach_a_run_waiting_at_its_own_terminal(tmp_path: Path) -> None:
-    """A foreground run's terminal prompt reads the answer file while it waits,
-    so a live run with no away-mode and no front-end claim takes the web's
-    answer. The web once refused it as "waiting at its own terminal"; before
-    that it wrote the file and said "answered" to a run that never looked."""
+    """A live run with no away mode and no front-end claim takes the web's answer.
+
+    Its terminal prompt reads the answer file while it waits; refusing it as "waiting at its own
+    terminal" left the operator with no way to answer.
+    """
     import os
 
     from agent6.sessions.ipc import read_answer, read_question_answers
@@ -291,8 +289,10 @@ def test_approve_and_answer_reach_a_run_waiting_at_its_own_terminal(tmp_path: Pa
 
 
 def test_an_approval_the_run_already_journaled_is_refused(tmp_path: Path) -> None:
-    """Once the worker consumes and journals an approval, a stale prompt box
-    must not recreate its answer file while another prompt may be opening."""
+    """Once the worker journals an approval, a stale prompt box cannot recreate its answer file.
+
+    Another prompt may be opening under the same path.
+    """
     import os
 
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / "approved-A1"
@@ -317,8 +317,7 @@ def test_an_approval_the_run_already_journaled_is_refused(tmp_path: Path) -> Non
 
 
 def test_an_approval_answer_already_on_disk_is_refused(tmp_path: Path) -> None:
-    """A repeated POST can arrive before the worker consumes and journals the
-    first approval; it must not replace the choice the operator already sent."""
+    """A repeated approval POST before the worker consumes the first keeps the operator's choice."""
     import os
 
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / "approving-A1"
@@ -346,8 +345,7 @@ def test_an_approval_answer_already_on_disk_is_refused(tmp_path: Path) -> None:
 
 
 def test_a_question_answer_already_on_disk_is_refused(tmp_path: Path) -> None:
-    """A repeated POST can arrive before the worker consumes and journals the
-    first answer; it must not replace the answer the operator already sent."""
+    """A repeated answer POST before the worker consumes the first keeps the operator's answer."""
     import json
     import os
 
@@ -379,8 +377,7 @@ def test_a_question_answer_already_on_disk_is_refused(tmp_path: Path) -> None:
 
 
 def test_machine_prompt_answers_already_on_disk_are_refused(tmp_path: Path) -> None:
-    """Repeated machine prompt POSTs must preserve the first answers while the
-    current state worker has not consumed and journaled them yet."""
+    """Repeated machine prompt POSTs keep the first answers until the state worker journals them."""
     import json
     import os
 
@@ -422,8 +419,10 @@ def test_machine_prompt_answers_already_on_disk_are_refused(tmp_path: Path) -> N
 
 
 def test_machine_prompt_answers_must_match_the_open_prompt(tmp_path: Path) -> None:
-    """Machine prompt ids reset in each state, so stale ids and a mis-sized
-    answer list must be refused before they create files the worker cannot use."""
+    """A stale prompt id or a mis-sized answer list is refused before it creates files.
+
+    Machine prompt ids reset in each state.
+    """
     import os
 
     inst = state_dir(tmp_path) / "machines" / "open-prompts"
@@ -456,10 +455,12 @@ def test_machine_prompt_answers_must_match_the_open_prompt(tmp_path: Path) -> No
 
 
 def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(tmp_path: Path) -> None:
-    """The newest state dir of a parked or dead machine is a FINISHED agent state
-    whose loop has exited, so a marker written there is polled by nobody. steer
-    already refused; approve and answer reported {"ok": true, "answered"} and the
-    prompt box never cleared, so the operator had every reason to think it landed."""
+    """Approving or answering a parked or dead machine is refused, as steer is.
+
+    The newest state dir is a finished agent state whose loop has exited, so a marker written
+    there is polled by nobody; reporting "answered" left the prompt box open and the operator
+    sure it landed.
+    """
     from agent6.ui.web import actions
 
     inst = state_dir(tmp_path) / "machines" / "dead"
@@ -489,7 +490,7 @@ def test_an_unknown_machine_is_named_as_unknown_not_as_stopped(
     """A machine that does not exist must not be described as one that stopped.
 
     The liveness gate read a missing instance dir as LIVE, so the action sailed
-    past it and failed one step later with "no active agent state" -- telling
+    past it and failed one step later with "no active agent state", telling
     the operator to go looking for a state belonging to a machine that was
     never there.
     """
@@ -503,12 +504,11 @@ def test_an_unknown_machine_is_named_as_unknown_not_as_stopped(
 def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A run the agent ENDED has nothing to continue, and the web spawn is
-    DETACHED -- the same refusal from `agent6 resume` would land on a process
-    nobody reads, so the composer would report "resuming" for a run that never
-    started. Refused here instead, naming the composer (the CLI wording quotes
-    a --steer line that is not the remedy on this surface), and an instruction
-    still goes straight through.
+    """Continuing a run the agent ended is refused here, naming the composer.
+
+    The web spawn is detached, so the same refusal from `agent6 resume` would land on a process
+    nobody reads and the composer would report "resuming". An instruction still goes straight
+    through.
     """
     import json
 
@@ -549,8 +549,10 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
 
 
 def test_machine_stop_notes_ended_and_marks_a_live_one(tmp_path: Path) -> None:
-    """The stop verb never plants a marker an ended or dead instance would
-    trip over later; a live worker gets the durable stop marker."""
+    """The stop verb plants a marker only for a live worker.
+
+    An ended or dead instance would trip over a marker planted for it later.
+    """
     from unittest.mock import patch
 
     from agent6.viewmodel import machine_state as machine_state_mod
@@ -582,9 +584,10 @@ def test_machine_stop_notes_ended_and_marks_a_live_one(tmp_path: Path) -> None:
 def test_run_plan_spawns_from_plan_and_refuses_non_plans(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ "Run this plan" spawns `agent6 run --from <id>` detached and hands
-    back the new run id; a non-plan session and a plan with no plan.md refuse
-    without spawning (the plan itself is untouched either way)."""
+    """Run this plan spawns `agent6 run --from <id>` detached and hands back the new run id.
+
+    A non-plan session and a plan with no plan.md refuse without spawning; the plan is untouched.
+    """
     import json
 
     plan = state_dir(tmp_path) / "sessions" / "plans" / "planny-one-AAAAAA"
@@ -634,8 +637,10 @@ def test_run_plan_spawns_from_plan_and_refuses_non_plans(
 def test_spawn_machine_run_takes_the_listed_name_or_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The hub lists a file by path and name; both name it. An unknown value
-    is refused with the accepted forms."""
+    """The hub lists a file by path and name; both name it.
+
+    An unknown value is refused with the accepted forms.
+    """
     mf = tmp_path / "tiny.asm.toml"
     mf.write_text(TINY, encoding="utf-8")
     spawned: list[list[str]] = []
@@ -654,8 +659,10 @@ def test_spawn_machine_run_takes_the_listed_name_or_path(
 def test_prune_carries_the_squash_opt_in_only_when_asked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The hub's prune ran the bare verb, so under the default squash strategy
-    it deleted nothing: every merged run's branch is unreachable and kept."""
+    """The hub's prune passes the squash flag, or under the default strategy it deletes nothing.
+
+    Every merged run's branch is unreachable from the bare verb and kept.
+    """
     captured: list[list[str]] = []
 
     def _fake_capture(argv: list[str], cwd: Path, **_k: object) -> tuple[bool, str]:
@@ -673,8 +680,10 @@ def test_prune_carries_the_squash_opt_in_only_when_asked(
 def test_a_now_steer_writes_the_urgent_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`/now <text>` on the web composer is the CLI's `steer --now`: the answer
-    is the text alone and the request marker carries the urgency."""
+    """`/now <text>` on the web composer is the CLI's `steer --now`.
+
+    The answer is the text alone and the request marker carries the urgency.
+    """
     import os
 
     from agent6.paths import state_dir

@@ -24,8 +24,7 @@ _COMMAND_TOOLS = {"run_command", "run_verify_command", "stop_background"}
 
 @pytest.mark.parametrize("configured", ["yes", "no"])
 def test_a_standing_policy_is_not_movable_in_run(tmp_path: Path, configured: str) -> None:
-    """Only "ask" is a question. A configured yes or no is the operator's
-    standing policy, and no in-run choice overrides it."""
+    """Only "ask" is a question; a configured yes or no is the operator's standing policy."""
     set_session_allow(tmp_path, COMMAND_SCOPE)
     set_session_deny(tmp_path, COMMAND_SCOPE)
     set_away_mode(tmp_path, "deny")
@@ -39,15 +38,16 @@ def test_ask_is_what_the_session_choice_moves(tmp_path: Path) -> None:
 
 
 def test_deny_for_the_session_is_the_mirror_of_allow(tmp_path: Path) -> None:
-    """A single no answers one call, exactly as a single yes approves one; only
-    the session choices persist, and denying withdraws rather than refuses."""
+    """A single no answers one call as a single yes approves one.
+
+    Only the session choices persist.
+    """
     set_session_deny(tmp_path, COMMAND_SCOPE)
     assert effective_run_commands("ask", tmp_path) == "no"
 
 
 def test_an_away_mode_of_deny_withdraws_the_tools(tmp_path: Path) -> None:
-    """Same wiring: "deny while away" and "deny for the session" and
-    `run_commands = "no"` all mean the tools are gone, not refused per call."""
+    """Deny while away, deny for the session and `run_commands = "no"` all withdraw the tools."""
     set_away_mode(tmp_path, "deny")
     assert effective_run_commands("ask", tmp_path) == "no"
 
@@ -58,10 +58,11 @@ def test_waiting_is_still_a_question(tmp_path: Path) -> None:
 
 
 def test_withdrawn_tools_leave_the_model_s_surface(tmp_path: Path) -> None:
-    """The point of withdrawing rather than refusing: the model never sees a
-    door it cannot open, so it stops spending turns on one."""
-    # A gate must be configured, or run_verify_command is hidden for its own
-    # reason (a gateless run is not offered a tool that would only error).
+    """Withdrawn tools leave the model's surface.
+
+    It never spends turns on a door it cannot open.
+    """
+    # A gate must be configured, or run_verify_command is hidden for its own reason.
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": "ask"}, "harness": {"verify_command": ["true"]}}
     )
@@ -72,8 +73,7 @@ def test_withdrawn_tools_leave_the_model_s_surface(tmp_path: Path) -> None:
 
 
 def test_the_policy_is_re_read_not_cached(tmp_path: Path) -> None:
-    """An operator who allows for the session stops being prompted from the
-    next call, without restarting anything."""
+    """The policy is re-read on every call, so a session allow stops the prompts at once."""
     cfg = Config.model_validate({"sandbox": {"run_commands": "ask"}})
     d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
     assert d.command_policy() == "ask"
@@ -86,10 +86,10 @@ def test_the_policy_is_re_read_not_cached(tmp_path: Path) -> None:
     [("ask", True), ("yes", False), ("no", False)],
 )
 def test_parallel_makes_the_operator_decide_once(commands: str, refused: bool) -> None:
-    """ "Wait for someone to approve" is incoherent across detached lanes: it
-    would mean attaching a front-end to each in turn, which is most of what
-    running them in parallel was for. So `ask` refuses at launch and names the
-    two coherent choices."""
+    """`--parallel` under `ask` refuses at launch and names the two coherent choices.
+
+    Waiting for approval across detached lanes would mean attaching to each in turn.
+    """
     from agent6.ui.cli.parallel import (
         _parallel_approval_refusal,  # pyright: ignore[reportPrivateUsage]
     )
@@ -99,17 +99,14 @@ def test_parallel_makes_the_operator_decide_once(commands: str, refused: bool) -
     assert (err is not None) is refused
     if err is not None:
         assert "--auto-approve" in err and "--no-commands" in err
-        # A hub (TUI/web new task) relays this refusal and has no flags to
-        # pass; the config remedy is the one it can act on.
+        # A hub relays this refusal with no flags to pass; the config remedy is what it can act on.
         assert "agent6 config set sandbox.run_commands" in err
 
 
 def test_a_single_no_refuses_one_call_and_withdraws_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The asymmetry that matters: "no" to THIS command is not "no commands".
-    Only deny-for-session, `run_commands = "no"` and `--no-commands` withdraw
-    the tools; a single answer -- either way -- decides a single call."""
+    """A single "no" refuses one call and withdraws nothing."""
     from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import CommandResult
     from agent6.sessions.ipc import session_deny_set
@@ -131,8 +128,7 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(
         assert d.command_policy() == "ask"
         assert set(d.available_tool_names()) >= _COMMAND_TOOLS
 
-    # The mirror: the third call's single "yes" runs exactly that call (the
-    # jail stubbed out) and widens nothing either -- still "ask" for the next.
+    # The mirror: a single "yes" runs exactly that call and widens nothing.
     def _ran(policy: JailPolicy, **_kw: object) -> CommandResult:
         return CommandResult(
             argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.01
@@ -187,9 +183,7 @@ def test_every_ask_command_tool_uses_the_command_scope(
 
 
 def test_a_stop_during_the_approval_wait_is_named_as_such(tmp_path: Path) -> None:
-    """A stop reaches a run blocked on an approval by breaking the
-    wait; the tool result then said "not approved (run_commands='ask')" as
-    if the policy had refused. With a stop request pending it names the stop."""
+    """A stop during the approval wait is named as a stop, not as a policy refusal."""
     from agent6.sessions.ipc import request_stop
 
     cfg = Config.model_validate(
@@ -209,10 +203,10 @@ def test_a_stop_during_the_approval_wait_is_named_as_such(tmp_path: Path) -> Non
 
 
 def test_an_interactive_start_drops_the_detach_grants_with_the_away_mode(tmp_path: Path) -> None:
-    """A detach's approve-all answer is one `session.allow.<scope>` marker per
-    scope, which nothing cleared: a run detached with approve-all kept
-    auto-approving every command with the operator back and watching, while
-    its deny and wait siblings were cleared at an interactive start."""
+    """An interactive start clears a detach's `session.allow.<scope>` markers.
+
+    Its deny and wait siblings are cleared the same way.
+    """
     from agent6.sessions.ipc import (
         clear_session_grants,
         session_allow_set,

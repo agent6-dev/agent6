@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The shared jail-test gate: skip where the jail cannot run, FAIL where a
-host policy blocks a capable kernel (a userns-restricted dev machine read
-green while 35 jail tests silently skipped and 72 failed unguarded)."""
+"""The shared jail-test gate: skip where the jail cannot run, fail where a host policy blocks it."""
 
 from __future__ import annotations
 

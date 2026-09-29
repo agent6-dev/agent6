@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The metric plateau advisor: a tie draws the notice while runway remains,
-counts against the patience in the final budget slice, then stops; a
-ceiling stops at once. Its end grounds on the tree."""
+"""The metric plateau advisor.
+
+A tie draws the notice while runway remains, counts against the patience in the final budget slice,
+then stops; a ceiling stops at once. Its end grounds on the tree.
+"""
 
 from __future__ import annotations
 

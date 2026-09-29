@@ -27,8 +27,7 @@ def _run(args: list[str]) -> int:
 
 
 def _refuse(args: list[str]) -> int:
-    """Run through the guarded entry point: operator errors present as
-    `ERROR:` + exit 2 there, while `main` raises them."""
+    """Run through the guarded entry point, where operator errors present as `ERROR:` and exit 2."""
     from agent6.ui.cli import cli_main
 
     return cli_main(args)
@@ -62,8 +61,7 @@ def test_get_unknown_key_errors(iso: Path) -> None:
 def test_machine_get_on_malformed_toml_is_clean_error(
     iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A malformed --machine-file must produce a clean ERROR (exit 2),
-    # not an uncaught TOMLDecodeError traceback.
+    # A malformed --machine-file is a clean ERROR at exit 2, not a TOMLDecodeError traceback.
     bad = tmp_path / "broken.asm.toml"
     bad.write_text("this is = not valid [[[\n", encoding="utf-8")
     assert _refuse(["config", "get", "git.merge_strategy", "--machine-file", str(bad)]) == 2
@@ -87,8 +85,7 @@ def test_unset_reverts_to_default(iso: Path, capsys: pytest.CaptureFixture[str])
 
 
 def test_unset_last_leaf_drops_the_empty_table(iso: Path) -> None:
-    # Unsetting a section's only key must not leave a dangling [sandbox]
-    # header accreting in the file; a sibling key keeps the section.
+    # Unsetting a section's only key leaves no dangling [sandbox] header; a sibling keeps it.
     from agent6.paths import global_config_path
 
     _run(["config", "set", "git.dirty_tree", "stash"])
@@ -134,10 +131,7 @@ def test_unset_top_level_profile(iso: Path, capsys: pytest.CaptureFixture[str]) 
 
 
 def test_set_profile_heals_a_profile_table_typo(iso: Path) -> None:
-    # A leftover `[preset]` TABLE (from `config set preset.<name>`) breaks the
-    # config; the advertised fix `config set preset <name>` must heal it in one
-    # step, not stack a bare key on top of the table (unparseable TOML, kept by
-    # the lenient already-invalid path).
+    # A leftover `[preset]` table breaks the config; `config set preset <name>` heals it.
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "agent6" / "config.toml").write_text(
         '[preset]\nporifle = "ultra"\n', encoding="utf-8"
@@ -149,9 +143,7 @@ def test_set_profile_heals_a_profile_table_typo(iso: Path) -> None:
 def test_set_profile_table_typo_reports_profile_error(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `config set preset.porifle x` over a valid config must fail with the
-    # preset-must-be-a-string message and roll back, even when the bare
-    # `preset` key it collides with is already set.
+    # `config set preset.porifle x` fails with the preset-must-be-a-string message and rolls back.
     assert _run(["config", "set", "preset", "ultra"]) == 0
     assert _run(["config", "set", "preset.porifle", "x"]) == 2
     assert "must be a preset name string" in capsys.readouterr().err
@@ -168,8 +160,7 @@ def test_set_profile_repo_targets_repo_config(iso: Path) -> None:
 def test_set_profile_machine_file_is_refused(
     iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A machine [config] overlay must not smuggle a preset selection
-    # (_forbid_layer_preset); the write is rolled back.
+    # A machine [config] overlay cannot smuggle a preset selection; the write is rolled back.
     mf = tmp_path / "m.asm.toml"
     mf.write_text("[config]\n", encoding="utf-8")
     assert _run(["config", "set", "preset", "ultra", "--machine-file", str(mf)]) == 2
@@ -208,8 +199,7 @@ def test_config_profiles_none_selected(iso: Path, capsys: pytest.CaptureFixture[
 def test_config_profiles_user_shadow_replaces_builtin(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A user [presets.ultra] REPLACES the built-in wholesale; the listing must
-    # show the user's contents (not the dead built-in's) and say so.
+    # A user [presets.ultra] replaces the built-in wholesale; the listing shows the user's contents.
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "agent6" / "config.toml").write_text(
         "[presets.ultra.review]\nconcurrency = 9\n", encoding="utf-8"
@@ -276,9 +266,7 @@ def test_machine_overlay_set_and_get(iso: Path, capsys: pytest.CaptureFixture[st
 def test_config_show_reads_through_a_machine_overlay(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Every write verb, `get` and `fix` took --machine-file; `show`, the audit
-    of every leaf, did not, so "what will this machine see" was answerable one
-    leaf at a time."""
+    """`config show` takes --machine-file like every other config verb."""
     mf = _machine_file(iso)
     assert (
         _run(["config", "set", "review.trigger", "on_verify_fail", "--machine-file", str(mf)]) == 0
@@ -324,21 +312,21 @@ def test_machine_config_readers_refuse_a_hand_edited_protected_overlay(
 
 
 def test_config_fill_has_no_repo_flag(iso: Path) -> None:
-    """Filling the repo layer makes it explicitly set everything, shadowing the
-    global config permanently -- future edits included -- which defeats the
-    layering `config show` exists to explain. The flag stays gone; the global
-    fill keeps resolving defaults plus global, never the repo layer."""
+    """`config fill` has no --repo flag.
+
+    Filling the repo layer would shadow the global config permanently, defeating the layering
+    `config show` explains; the global fill resolves defaults plus global only.
+    """
     with pytest.raises(SystemExit) as exc:
         _run(["config", "fill", "--repo"])
     assert exc.value.code == 2
 
 
 def test_config_fill_serializes_against_a_concurrent_set(iso: Path) -> None:
-    """`config fill` read the effective config, then published it with an
-    unlocked, non-atomic write_text; a `config set` landing between the read
-    and the write was overwritten by the stale snapshot (lost update). fill now
-    holds the target's lock across load+publish, so a concurrent set blocks and
-    lands after -- its value survives."""
+    """`config fill` holds the target's lock across load and publish.
+
+    A concurrent `config set` blocks and lands after, so its value survives.
+    """
     import threading
     import time
     from unittest import mock
@@ -385,10 +373,10 @@ def test_config_fill_serializes_against_a_concurrent_set(iso: Path) -> None:
 def test_unset_refuses_a_leaf_inside_an_undeclared_table(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sandbox.protect_git = false` written as a dotted top-level key: unset
-    said "nothing to unset" rc=0 while `config get` showed the leaf set -- the
-    one write surface that lied about this shape (set refuses it, fix reports
-    it stuck)."""
+    """Unset refuses a leaf inside an undeclared table, as set refuses it and fix reports it.
+
+    The shape: `sandbox.protect_git = false` written as a dotted top-level key.
+    """
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     cfg = iso / "g" / "agent6" / "config.toml"
     cfg.write_text("sandbox.protect_git = false\n", encoding="utf-8")
@@ -402,9 +390,10 @@ def test_unset_refuses_a_leaf_inside_an_undeclared_table(
 def test_add_rejects_a_value_masked_by_a_higher_layer(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`config add` writes the whole new list through the same standalone value
-    check as `config set`: a repo overlay masking the leaf must not let a bad
-    global element land, to explode only once the mask is gone."""
+    """`config add` checks the whole new list as `config set` does.
+
+    Under a masking repo overlay too.
+    """
     assert _run(["config", "set", "--repo", "sandbox.fetch_hosts", '["ok.example"]']) == 0
     capsys.readouterr()
     rc = _refuse(["config", "add", "sandbox.fetch_hosts", "5"])
@@ -417,9 +406,10 @@ def test_add_rejects_a_value_masked_by_a_higher_layer(
 def test_set_warns_when_another_layer_is_still_broken(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A valid write over a config broken in ANOTHER layer lands, exits 0, and
-    warns with the other layer's error; delegating the CLI writers to the
-    engine must not silence the warning."""
+    """A valid write over a config broken in another layer lands.
+
+    Exits 0 and warns with that error.
+    """
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "agent6" / "config.toml").write_text('[cli]\ninput = "x"\n', encoding="utf-8")
     rc = _run(["config", "set", "--repo", "sandbox.protect_git", "false"])
@@ -428,10 +418,7 @@ def test_set_warns_when_another_layer_is_still_broken(
 
 
 def test_get_honours_the_global_config_flag(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """`--config FILE` reaches `config get`, not just `config show`.
-
-    `get` answered from the default/global stack while `show` reported the
-    flag layer, so the two config readers disagreed about the same leaf."""
+    """`--config FILE` reaches `config get`, so `get` and `show` agree about the same leaf."""
     explicit = iso / "x.toml"
     explicit.write_text("[review]\nperiod = 77\n", encoding="utf-8")
     assert _run(["--config", str(explicit), "config", "get", "review.period"]) == 0
@@ -441,17 +428,17 @@ def test_get_honours_the_global_config_flag(iso: Path, capsys: pytest.CaptureFix
 
 
 def test_get_refuses_a_missing_global_config_file(iso: Path) -> None:
-    """A `--config` file that does not exist is refused, as `config show`
-    refuses it: answering from the defaults reports a value the named file
-    never set."""
+    """`get` refuses a missing `--config` file, as `show` does.
+
+    Instead of answering from defaults.
+    """
     assert _refuse(["--config", str(iso / "nope.toml"), "config", "get", "review.period"]) == 2
 
 
 def test_get_refuses_a_machine_file_that_does_not_exist(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A missing overlay path read as an EMPTY overlay, so a typo'd
-    --machine-file answered confidently from the stack below it at exit 0."""
+    """`get` refuses a --machine-file that does not exist instead of reading it as empty."""
     assert (
         _refuse(["config", "get", "--machine-file", str(iso / "nope.asm.toml"), "review.period"])
         == 2
@@ -471,8 +458,7 @@ def test_fix_refuses_a_machine_file_that_does_not_exist(
 def test_set_refuses_a_machine_file_holding_a_protected_table(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The write verbs read the file too: one that get, show and fix refuse
-    must not take a leaf from set."""
+    """`set` refuses a machine file holding a protected table, as get, show and fix do."""
     machine = iso / "protected.asm.toml"
     text = '[config.sandbox]\nnetwork = "host"\n'
     machine.write_text(text, encoding="utf-8")
@@ -486,9 +472,7 @@ def test_set_refuses_a_machine_file_holding_a_protected_table(
 def test_a_provider_leaf_error_names_every_valid_value(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`api_format` is a discriminator with two legal values, and only the first
-    member's complaint was reported -- telling someone configuring an
-    OpenAI-compatible provider that 'anthropic' was the only option."""
+    """A provider leaf error names every valid value of the `api_format` discriminator."""
     assert _run(["config", "set", "providers.p.api_format", "nonsense"]) == 2
     err = capsys.readouterr().err
     assert "anthropic" in err
@@ -496,11 +480,10 @@ def test_a_provider_leaf_error_names_every_valid_value(
 
 
 def test_an_unreadable_config_refuses_rather_than_crashing(iso: Path) -> None:
-    """A root-owned config after a sudo run is the operator's file, not a defect.
+    """A root-owned config after a sudo run is refused as the operator's file.
 
-    The reader wrapped a TOML parse error but not an OSError, so a permission
-    problem escaped as "unexpected PermissionError" with a saved traceback,
-    "please report this", and exit 1."""
+    A crash report.
+    """
     gdir = iso / "g" / "agent6"
     gdir.mkdir(parents=True, exist_ok=True)
     cfg = gdir / "config.toml"
@@ -528,9 +511,7 @@ _CRASH_MARKERS = ("unexpected", "full traceback", "report this")
 def test_write_commands_refuse_an_unreadable_target(
     iso: Path, capsys: pytest.CaptureFixture[str], argv: list[str]
 ) -> None:
-    """The unreadable-config fix landed in the readers while every write command
-    still read the target directly first: `config set`/`unset` crashed through
-    the bug reporter at exit 1 on a root-owned config the readers refused."""
+    """Write commands refuse an unreadable target as the readers do."""
     gdir = iso / "g" / "agent6"
     gdir.mkdir(parents=True, exist_ok=True)
     cfg = gdir / "config.toml"
@@ -549,8 +530,7 @@ def test_write_commands_refuse_an_unreadable_target(
 def test_a_write_command_bug_still_crash_reports(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Routing operator errors to the boundary must not soften real bugs: an
-    unexpected exception inside `config set` keeps the crash report at exit 1."""
+    """An unexpected exception inside `config set` keeps the crash report at exit 1."""
     from agent6.config import write as write_mod
 
     def _boom(*_a: object, **_k: object) -> None:
@@ -568,9 +548,7 @@ def test_a_write_command_bug_still_crash_reports(
 def test_set_of_an_unserializable_cli_value_refuses(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """parse_cli_value reads `2024-01-01` as a TOML date, which the writer cannot
-    serialize. That refusal used to live in a per-command except arm; it must
-    survive the arm's deletion as a refusal, never become a crash report."""
+    """A value the writer cannot serialize (`2024-01-01`, a TOML date) is a refusal, not a crash."""
     assert _refuse(["config", "set", "harness.max_iterations", "2024-01-01"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("ERROR: ")
@@ -580,9 +558,10 @@ def test_set_of_an_unserializable_cli_value_refuses(
 def test_commit_trailer_validates_placeholders_and_shape(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """[git.commit].trailer takes a git trailer line with {model} as its one
-    placeholder; an unknown placeholder or a shapeless string is refused at
-    config set, not at commit time."""
+    """[git.commit].trailer takes a trailer line with {model} as its one placeholder.
+
+    An unknown placeholder or a shapeless string is refused at config set, not at commit time.
+    """
     assert _run(["config", "set", "git.commit.trailer", "Assisted-by: agent6:{model}"]) == 0
     capsys.readouterr()
     assert _refuse(["config", "set", "git.commit.trailer", "Assisted-by: {agent}"]) == 2
@@ -594,8 +573,7 @@ def test_commit_trailer_validates_placeholders_and_shape(
 
 
 def test_checkpoint_style_refuses_combine(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """combine is git's own squash message; a checkpoint has nothing to
-    combine, so the checkpoint table refuses it while squash accepts it."""
+    """The checkpoint table refuses `combine`, git's own squash message, while squash accepts it."""
     assert _run(["config", "set", "git.commit.squash.message", "combine"]) == 0
     assert _refuse(["config", "set", "git.commit.checkpoint.message", "combine"]) == 2
 
@@ -607,8 +585,7 @@ def test_coauthor_is_gone(iso: Path, capsys: pytest.CaptureFixture[str]) -> None
 
 
 def test_the_paired_context_thresholds_are_settable_together(iso: Path) -> None:
-    """Both leaves must move together, so neither can be set alone. The
-    inline-table form writes the pair in ONE validated upsert."""
+    """The paired context thresholds move together in one validated inline-table upsert."""
     inline = "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"
     assert _run(["config", "set", "context", inline]) == 0
     ctx = _global_toml(iso)["context"]
@@ -619,8 +596,7 @@ def test_the_paired_context_thresholds_are_settable_together(iso: Path) -> None:
 def test_setting_one_threshold_names_the_command_that_works(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A refusal that does not name the working form leaves the operator with
-    no way in: both single-leaf orderings refuse."""
+    """Setting one threshold alone refuses and names the inline-table command that works."""
     assert _refuse(["config", "set", "context.drop_at_chars", "200000"]) == 2
     err = capsys.readouterr().err
     assert "config set context '{ drop_at_chars =" in err
@@ -633,9 +609,7 @@ def _fill_and_read(iso: Path) -> dict[str, object]:
 
 
 def test_fill_never_bakes_the_repo_layer_into_the_global_config(iso: Path) -> None:
-    """fill writes the GLOBAL file; loading the full merge baked this repo's
-    overrides into it, so a value set for one repo followed the operator
-    everywhere."""
+    """Fill writes the global file from defaults plus global, never this repo's overrides."""
     assert _run(["config", "set", "--repo", "sandbox.memory_limit_mb", "4321"]) == 0
     filled = _fill_and_read(iso)
     sandbox = filled["sandbox"]
@@ -644,15 +618,13 @@ def test_fill_never_bakes_the_repo_layer_into_the_global_config(iso: Path) -> No
 
 
 def test_fill_keeps_the_preset_selector_and_does_not_bake_its_effects(iso: Path) -> None:
-    """A selected preset stays selected: baking its effects and dropping the
-    selector froze the old values and made later preset edits do nothing."""
+    """Fill keeps a selected preset selected and does not bake its effects."""
     assert _run(["config", "set", "preset", "quick"]) == 0
     filled = _fill_and_read(iso)
     assert filled.get("preset") == "quick", "the selector was dropped"
     review = filled["review"]
     assert isinstance(review, dict)
-    # `quick` sets review.trigger = "off"; the filled value must be the
-    # DEFAULT, with the preset still applying over it at runtime.
+    # `quick` sets review.trigger = "off"; the filled value is the default and the preset applies.
     from agent6.config import Config
 
     assert review["trigger"] == Config().review.trigger
@@ -672,10 +644,10 @@ def test_fill_keeps_authored_preset_bodies(iso: Path) -> None:
 def test_config_path_lists_every_directory_agent6_writes_to(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Four XDG bases each holding a different thing is correct and
-    unguessable, so one command answers "where did agent6 put that": the
-    config/repo/secrets files plus every directory, this repo's state dir
-    included."""
+    """`config path` lists the config, repo and secrets files plus every directory agent6 writes to.
+
+    Four XDG bases each holding a different thing is correct and unguessable.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(iso / "st"))
     monkeypatch.setenv("XDG_DATA_HOME", str(iso / "dt"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(iso / "ch"))
@@ -692,8 +664,7 @@ def test_config_path_lists_every_directory_agent6_writes_to(
 def test_top_level_help_names_the_directories(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Discoverable without knowing `config path` exists: `agent6 --help` ends
-    with the four XDG dirs, resolved, and points at the fuller listing."""
+    """`agent6 --help` ends with the four XDG dirs, resolved, and points at `config path`."""
     monkeypatch.setenv("XDG_STATE_HOME", str(iso / "st"))
     monkeypatch.setenv("XDG_DATA_HOME", str(iso / "dt"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(iso / "ch"))
@@ -727,11 +698,10 @@ def test_a_preset_leaf_with_a_valid_sibling_can_be_changed(iso: Path) -> None:
 def test_a_preset_leaf_is_validated_and_has_an_inverse(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`config set presets.demo.sandbox.network banana` wrote a value the
-    schema forbids (and any key at all), `config fix` called the file clean,
-    `config unset` refused to remove it as "not a config leaf", and the
-    failure surfaced only at `run --preset demo`, naming neither the preset
-    nor the file."""
+    """A preset leaf is validated on set, seen by fix and removable by unset.
+
+    An invalid `presets.demo.sandbox.network` otherwise surfaces only at `run --preset demo`.
+    """
     assert _run(["config", "set", "presets.demo.sandbox.network", "banana"]) == 2
     assert "sandbox.network" in capsys.readouterr().err
     assert _run(["config", "set", "presets.demo.sandbox.nosuch", "1"]) == 2
@@ -749,9 +719,7 @@ def test_a_preset_leaf_is_validated_and_has_an_inverse(
 def test_config_fix_reports_an_entry_it_cannot_auto_remove(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A `preset` naming no preset fails the model's own check, not a leaf the
-    fix can drop: it says so and exits non-zero, never reporting a still-broken
-    config as fixed."""
+    """`config fix` says when an entry is not a leaf it can drop and exits non-zero."""
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 

@@ -72,10 +72,12 @@ def test_machine_env_mechanism_forces_none(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_overrides_render_as_the_flags_that_set_them() -> None:
-    """A continuation this invocation spawns (a detached resume) carries the
-    overrides as flags; an execution that dropped them ran under the config's
-    defaults (an --auto-approve run detached and waited on its first
-    approval; a --max-usd cap fell back to the config's)."""
+    """Overrides render as the flags that set them.
+
+    A continuation this invocation spawns (a detached resume) carries the overrides as flags; an
+    execution that drops them runs under the config's defaults (an `--auto-approve` run detaches and
+    waits on its first approval; a `--max-usd` cap falls back to the config's).
+    """
     from agent6.app._setup import BudgetOverrides, override_flags
 
     sandbox = _SandboxOverrides(disable_sandbox=True, auto_approve=True)

@@ -80,10 +80,11 @@ def test_import_run_lands_branch_and_moves_run_dir(tmp_path: Path) -> None:
 
 
 def test_import_run_lands_a_lane_that_never_committed(tmp_path: Path) -> None:
-    """A lane stopped before its first commit has no branch to land. Reported
-    as a failed fetch, every lane of a fleet stopped by an expired key read
-    "couldn't find remote ref", and the reason stayed in a session dir the
-    operator could no longer reach."""
+    """A lane stopped before its first commit has no branch to land.
+
+    Reported as a failed fetch, every lane of a fleet stopped by an expired key reads "couldn't find
+    remote ref", with the reason left in a session dir the operator cannot reach.
+    """
     origin = tmp_path / "origin"
     _init_repo(origin)
     lane_repo = tmp_path / "lane-1"

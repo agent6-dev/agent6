@@ -27,8 +27,7 @@ def _is_sys_executable(node: ast.expr) -> bool:
 
 
 def _python_m_agent6_spawns() -> list[tuple[str, int, list[str]]]:
-    """(file, lineno, string args) for every argv list literal that runs
-    `sys.executable ... -m agent6...`."""
+    """(file, lineno, string args) for every argv literal running `sys.executable ... -m agent6`."""
     src = Path(agent6.__file__).resolve().parent
     found: list[tuple[str, int, list[str]]] = []
     for py in src.rglob("*.py"):

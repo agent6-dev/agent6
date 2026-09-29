@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Regression tests: how `agent6 run` starts on a working tree that is not
-clean.
+"""Regression tests: how `agent6 run` starts on a working tree that is not clean.
 
 Untracked files are the operator's: a run starts on them without a word,
 records them as `untracked-at-start`, and never commits them (an earlier
@@ -110,8 +109,10 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_po
 
 
 def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[UserQuestion]:
-    """A front-end that can ask and answers every question with *answer*;
-    returns the list the asked questions land in."""
+    """Return a front-end that can ask and answers every question with the answer.
+
+    The list the asked questions land in comes with it.
+    """
     asked: list[UserQuestion] = []
     real = run_mod.session_frontend
 
@@ -296,9 +297,12 @@ def test_dirty_tree_include_includes_without_asking(
 def test_the_last_runs_unmerged_work_is_named_as_such(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run's edits sit uncommitted on the checkout until its branch merges;
-    the next run's dirty-tree text then names that run and its merge, instead
-    of calling agent6's own work the operator's uncommitted changes."""
+    """The last run's unmerged work is named as such.
+
+    A run's edits sit uncommitted on the checkout until its branch merges; the next run's dirty-tree
+    text names that run and its merge, instead of calling agent6's own work the operator's
+    uncommitted changes.
+    """
     from agent6.git_ops import chain_commit, chain_ref_for
     from agent6.sessions.layout import bucket_dir
 

@@ -23,8 +23,7 @@ def _paint_run_body() -> str:
 
 def test_paint_run_reads_no_free_id() -> None:
     body = _paint_run_body()
-    # A bare `id` token: not a property (`.id`), not `_id`, not a key (`id:`),
-    # not the string 'id'.
+    # A bare `id` token: not a property, not `_id`, not a key, not the string 'id'.
     free = [m.group(0) for m in re.finditer(r"(?<![.\w'\"])id(?![\w:'\"])", body)]
     assert free == [], f"paintRun references a free `id` {len(free)} time(s)"
 
@@ -51,9 +50,7 @@ def test_the_machine_watch_gates_on_the_shared_refusals() -> None:
 
 
 def test_the_machine_header_paints_the_wire_status_as_a_pill() -> None:
-    """The detail view renders `machine_state_as_dict.status` and its level
-    without rebuilding either: a failed machine read plain on its own page
-    while the hub row carried the error level."""
+    """The detail view renders the machine's `status` and its level as the hub row does."""
     from agent6.ui.web.page import CLIENT_JS as JS
 
     start = JS.index("function paintMachine(")
@@ -63,8 +60,10 @@ def test_the_machine_header_paints_the_wire_status_as_a_pill() -> None:
 
 
 def test_a_stop_and_an_end_each_notify_once_across_a_resume() -> None:
-    """One flag served both the worker_lost banner and the ended banner, so a
-    tab that followed a stop and a resume never announced the machine's end."""
+    """The worker_lost banner and the ended banner have their own flags.
+
+    One flag for both never announced the end after a stop and a resume.
+    """
     from agent6.ui.web.page import CLIENT_JS as JS
 
     start = JS.index("function paintMachine(")
@@ -79,8 +78,7 @@ def test_a_stop_and_an_end_each_notify_once_across_a_resume() -> None:
 
 
 def test_the_machine_composer_hint_names_enter() -> None:
-    """Every docked entry's hint says what Enter does (docs/web.md); the
-    machine composer's did not."""
+    """Every docked entry's hint says what Enter does, the machine composer's included."""
     from agent6.ui.web.page import CLIENT_JS as JS
 
     start = JS.index("async function renderMachine")
@@ -126,8 +124,10 @@ def test_enter_submits_the_available_machine_composer_verb() -> None:
 
 
 def test_the_web_approval_box_offers_every_answer() -> None:
-    """The box offered three of the four. The answers come from `ui.keymap`, so
-    a fifth would fail here rather than quietly go unoffered."""
+    """The box offered three of the four.
+
+    The answers come from `ui.keymap`, so a fifth would fail here rather than quietly go unoffered.
+    """
     from agent6.ui.keymap import APPROVAL_ANSWERS
     from agent6.ui.web.page import CLIENT_JS as JS
 
@@ -142,9 +142,10 @@ def test_the_web_approval_box_offers_every_answer() -> None:
 
 
 def test_a_failure_toast_holds_until_it_is_dismissed() -> None:
-    """Every message was one 4-second toast at one fixed position: two
-    overlapped, and a captured CLI refusal (several lines) was gone before it
-    could be read."""
+    """Messages stack, and a captured refusal stays until dismissed.
+
+    One 4-second toast at one position overlapped and vanished before it could be read.
+    """
     from agent6.ui.web.page import CLIENT_JS as JS
     from agent6.ui.web.page import PAGE_HTML
 
@@ -156,8 +157,7 @@ def test_a_failure_toast_holds_until_it_is_dismissed() -> None:
 
 
 def test_the_machine_page_offers_stop() -> None:
-    """`agent6 machine stop` and the TUI's `x` park a machine at its next
-    transition; the page had no way to ask, though its route was there."""
+    """The page can park a machine at its next transition, as `machine stop` does."""
     from agent6.ui.web.page import CLIENT_JS as JS
 
     start = JS.index("async function renderMachine")
@@ -167,16 +167,19 @@ def test_the_machine_page_offers_stop() -> None:
 
 
 def test_the_in_flight_mark_needs_a_live_run() -> None:
-    """A killed worker leaves a `role.call` with no `role.result`, so
-    `in_flight` stays true forever: the Overview card printed the working
-    ellipsis beside the word "stale"."""
+    """A stale run's Overview card shows no working ellipsis.
+
+    A killed worker leaves a `role.call` with no `role.result`, so `in_flight` stays true.
+    """
     body = _paint_run_body()
     assert "r.in_flight && s.live" in body, "the in-flight mark must read liveness too"
 
 
 def test_a_typed_stream_error_is_not_replayed_on_reconnect() -> None:
-    """A server-side stream error closes that stream after showing its reason;
-    automatic reconnect would otherwise replay the same terminal frame forever."""
+    """A server-side stream error closes that stream after showing its reason.
+
+    Automatic reconnect would replay the same terminal frame forever.
+    """
     from importlib import resources
 
     web = resources.files("agent6.ui.web")
@@ -188,8 +191,10 @@ def test_a_typed_stream_error_is_not_replayed_on_reconnect() -> None:
 
 
 def test_a_submitted_prompt_disables_its_controls_until_repaint() -> None:
-    """After a successful answer POST, every control in that prompt stays
-    disabled until an SSE frame removes it; a failed POST restores the controls."""
+    """After a successful answer POST the prompt's controls stay disabled until a frame removes it.
+
+    A failed POST restores the controls.
+    """
     assert "async function postPrompt(" in CLIENT_JS
     start = CLIENT_JS.index("function paintPrompts(")
     body = CLIENT_JS[start : CLIENT_JS.index("function paintDetails(", start)]
@@ -201,8 +206,7 @@ def test_a_submitted_prompt_disables_its_controls_until_repaint() -> None:
 
 
 def test_the_web_tool_row_counts_the_args_lines_it_drops() -> None:
-    """The TUI row folds every args line (`clip_cell`); the web row showed
-    line one and dropped the rest unmarked, counting only the result's."""
+    """The web row folds every args line, as the TUI row does."""
     start = CLIENT_JS.index("// tools: one clipped line per call")
     body = CLIENT_JS[start : CLIENT_JS.index("// shells:", start)]
     extra = body[body.index("const extra") : body.index("\n", body.index("const extra"))]
@@ -210,8 +214,7 @@ def test_the_web_tool_row_counts_the_args_lines_it_drops() -> None:
 
 
 def test_delete_is_gated_on_the_run_being_over() -> None:
-    """Merge dims itself on a live run; Delete stayed enabled, asked for
-    confirmation, and only then surfaced the server's refusal as a toast."""
+    """Delete dims itself on a live run, as Merge does, instead of asking and then refusing."""
     assert "cards._rm_btn = rmBtn" in CLIENT_JS
     start = CLIENT_JS.index("function paintRun(")
     body = CLIENT_JS[start : CLIENT_JS.index("function renderDiff(", start)]

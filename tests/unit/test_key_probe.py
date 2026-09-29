@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`probe_provider_key` — the `agent6 connect` key-validation probe."""
+"""`probe_provider_key`, the `agent6 connect` key-validation probe."""
 
 from __future__ import annotations
 
@@ -87,8 +87,7 @@ def test_probe_non_openrouter_uses_models(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_probe_openrouter_match_is_host_not_substring(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A proxy whose URL merely CONTAINS "openrouter.ai" (in the path) must use
-    # /models, not OpenRouter's /key. The real host (and subdomains) use /key.
+    # A URL merely containing "openrouter.ai" in its path uses /models, not OpenRouter's /key.
     urls = _patch_get(monkeypatch, _FakeResp(200, {"data": []}))
     proxy = OpenAIProviderEntry(
         api_format="openai", base_url="https://myproxy.com/openrouter.ai/v1"

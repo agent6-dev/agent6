@@ -93,10 +93,11 @@ def test_is_grounded_line_in_range_path_only_and_misses() -> None:
 
 
 def test_is_grounded_accepts_a_line_col_citation() -> None:
-    """`path:line:col` is the standard compiler/grep -n location a reviewer
-    copies. The single rpartition read the COLUMN as the line and the rest as
-    the path, so the lookup missed and a real block was silently downgraded to
-    a warning."""
+    """`path:line:col` is the standard compiler/grep -n location a reviewer copies.
+
+    The single rpartition read the COLUMN as the line and the rest as the path, so the lookup missed
+    and a real block was silently downgraded to a warning.
+    """
     ranges = diff_hunks(SAMPLE_DIFF)
     assert is_grounded("foo.py:11:5", ranges)  # line 11 is inside 10..14
     assert not is_grounded("foo.py:99:5", ranges)  # column must not rescue it
@@ -336,11 +337,12 @@ def test_grounding_range_overlap_not_just_start_line() -> None:
 
 
 def test_a_citation_under_a_real_top_level_a_or_b_dir_grounds() -> None:
-    """Hunks are keyed on repo paths (git pins `a/` `b/` onto its headers), so a
-    citation resolves on the repo path first and drops a prefix only when the
-    unstripped path is not in the diff: in a repo with a real top-level `a/`
-    dir, a block on `a/foo.py` stayed ungrounded and every block there was
-    downgraded to a warning in silence."""
+    """A citation under a real top-level `a/` or `b/` dir grounds on the repo path first.
+
+    Hunks are keyed on repo paths (git pins `a/` and `b/` onto its headers), so a prefix is dropped
+    only when the unstripped path is not in the diff; otherwise a block on `a/foo.py` in a repo with
+    a real `a/` dir stays ungrounded and is downgraded to a warning in silence.
+    """
     diff = "--- a/a/foo.py\n+++ b/a/foo.py\n@@ -1,2 +1,2 @@\n x\n-y\n+z\n"
     ranges = diff_hunks(diff)
     assert list(ranges) == ["a/foo.py"]
@@ -364,10 +366,12 @@ def test_range_block_with_unchanged_start_still_gates() -> None:
 def test_all_abstain_panel_prints_inconclusive_not_pass(
     monkeypatch: Any, capsys: Any, tmp_path: Path
 ) -> None:
-    """3 seats, 3 abstains, real dollars spent, ZERO review produced -- and the
-    command printed "VERDICT: PASS". Nothing was reviewed; "0 blocking" is not
-    a verdict. (The gate itself is fine: run_panel short-circuits on an
-    all-abstain panel. The PRINTED verdict was the lie, so this pins the CLI.)"""
+    """An all-abstain panel prints INCONCLUSIVE, never PASS.
+
+    Three seats, three abstains and real dollars spent produce no review; "0 blocking" is not a
+    verdict. `run_panel` already short-circuits on an all-abstain panel; the printed verdict is the
+    CLI's, so this pins the CLI.
+    """
     from agent6.budget import BudgetTracker
     from agent6.config import Config
     from agent6.providers import TranscriptSink
@@ -430,9 +434,10 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
 def test_review_exit_code_is_consistent_across_verdicts(
     monkeypatch: Any, capsys: Any, tmp_path: Path
 ) -> None:
-    """The exit code carried the verdict for INCONCLUSIVE (1) but left BLOCK at
-    0 -- a CI gate passed a security block and failed on 'nothing reviewed'.
-    PASS 0, INCONCLUSIVE 1, BLOCK 2, consistently."""
+    """The exit code carries the verdict consistently: PASS 0, INCONCLUSIVE 1, BLOCK 2.
+
+    A BLOCK left at 0 lets a CI gate pass a security block while failing on 'nothing reviewed'.
+    """
     from agent6.budget import BudgetTracker
     from agent6.config import Config
     from agent6.ui.cli import review_cmds
@@ -550,9 +555,11 @@ def test_panel_is_inconclusive_owner() -> None:
 def test_review_degrades_on_an_unreadable_agents_md(
     monkeypatch: Any, tmp_path: Any, capsys: Any
 ) -> None:
-    """AGENTS.md is optional review context (the run path reads it tolerantly);
-    an unreadable one crashed `agent6 review` through the bug reporter instead
-    of reviewing without it."""
+    """An unreadable AGENTS.md degrades the review instead of crashing it.
+
+    AGENTS.md is optional review context, read tolerantly on the run path; `agent6 review` reviews
+    without it rather than raising through the bug reporter.
+    """
     from types import SimpleNamespace
 
     from agent6.config import Config
@@ -600,8 +607,11 @@ def test_review_degrades_on_an_unreadable_agents_md(
 def test_the_panel_reviews_under_the_freeform_reviews_label(
     monkeypatch: Any, tmp_path: Any
 ) -> None:
-    """One label for both reviews: the panel's header and transcript named the
-    range alone, dropping the `-- paths` the freeform review's label carries."""
+    """One label for both reviews.
+
+    The panel's header and transcript named the range alone, dropping the `-- paths` the freeform
+    review's label carries.
+    """
     from types import SimpleNamespace
 
     from agent6.config import Config
@@ -645,8 +655,10 @@ def test_the_panel_reviews_under_the_freeform_reviews_label(
 
 
 def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
-    """A binary change, a pure rename and a mode flip carry no hunks, so the
-    path is recorded with no ranges: grounded by path, not by line."""
+    """A file touched without hunks is recorded with no ranges: grounded by path, not by line.
+
+    A binary change, a pure rename and a mode flip carry no hunks.
+    """
     diff = (
         "diff --git a/img.png b/img.png\n"
         "index 1111111..2222222 100644\n"
@@ -666,9 +678,11 @@ def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
 
 
 def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
-    """`agent6 review` runs no verify command, and the loop has none to run
-    when none is configured; the prompt told the seats "none configured" in
-    both cases, wrong for a review of a repo that has one."""
+    """The seat prompt says verify was not run when there is no result.
+
+    `agent6 review` runs no verify command and the loop has none when none is configured; "none
+    configured" is wrong for a review of a repo that has one.
+    """
     from agent6.harness._reviewer import _build_user_message  # pyright: ignore[reportPrivateUsage]
 
     prompt = _build_user_message(ReviewContext(task="t"))
@@ -692,9 +706,11 @@ TWO_HUNKS_DIFF = SAMPLE_DIFF.replace(
 
 
 def test_two_findings_in_different_hunks_of_one_file_both_survive() -> None:
-    """The dedup key was (path, category): a second finding in another hunk of
-    the same file was dropped as a duplicate of the first, and the report
-    never said it existed. The key carries the hunk."""
+    """The dedup key was (path, category).
+
+    A second finding in another hunk of the same file was dropped as a duplicate of the first, and
+    the report never said it existed. The key carries the hunk.
+    """
     ctx = ReviewContext(diff=TWO_HUNKS_DIFF)
     seat = _seat("m1", _block("security", "foo.py:11"), _block("security", "foo.py:43"))
     res = _agg([seat], ctx=ctx)
@@ -702,9 +718,12 @@ def test_two_findings_in_different_hunks_of_one_file_both_survive() -> None:
 
 
 def test_a_re_citation_in_one_hunk_dedups_and_a_prior_one_does_not_gate() -> None:
-    """Two seats citing one defect two lines apart collapse to one finding; a
-    prior finding in that hunk absorbs the re-citation and, already injected,
-    counts toward no gate. A path-only citation is its own finding."""
+    """A re-citation in one hunk dedups, and a prior finding there gates nothing.
+
+    Two seats citing one defect two lines apart collapse to one finding; a prior finding in that
+    hunk absorbs the re-citation and, already injected, counts toward no gate. A path-only citation
+    is its own finding.
+    """
     a = _block("security", "foo.py:11")
     b = _block("security", "foo.py:13")
     res = _agg([_seat("m1", a), _seat("m2", b, seat="t")])
@@ -716,12 +735,13 @@ def test_a_re_citation_in_one_hunk_dedups_and_a_prior_one_does_not_gate() -> Non
 
 
 def test_the_two_sides_of_one_hunk_key_alike_and_a_deletion_does_not_swallow_a_later_hunk() -> None:
-    """The map listed a hunk's old-side and new-side spans as separate ranges,
-    so a pre-image citation (`foo.py:40`) and a post-image one (`foo.py:42`)
-    of one hunk keyed apart (an injected prior finding re-gated the run), and
-    a large deletion's old-side span swallowed a later hunk's new-side
-    citation (the second finding vanished). A hunk is one unit; the new side
-    decides first."""
+    """The two sides of one hunk key alike, and a deletion does not swallow a later hunk.
+
+    Listed as separate ranges, a pre-image citation (`foo.py:40`) and a post-image one (`foo.py:42`)
+    of one hunk key apart, so an injected prior finding re-gates the run, and a large deletion's
+    old-side span swallows a later hunk's new-side citation. A hunk is one unit; the new side
+    decides first.
+    """
     diff = (
         "--- a/foo.py\n+++ b/foo.py\n"
         "@@ -40,3 +42,3 @@ def f():\n     a = 1\n-    b = 2\n+    b = 3\n     return a\n"
@@ -739,10 +759,12 @@ def test_the_two_sides_of_one_hunk_key_alike_and_a_deletion_does_not_swallow_a_l
 
 
 def test_a_renames_two_names_do_not_ground_each_others_lines() -> None:
-    """One Hunk with both spans was filed under the pre-image and the
-    post-image path alike, so for a rename each name grounded the other's
-    line numbers (`old.py:201`, `new.py:11`) and the gate failed open. Each
-    name carries its own side."""
+    """A rename's two names do not ground each other's lines.
+
+    One hunk filed under both the pre-image and the post-image path lets each name ground the
+    other's line numbers (`old.py:201`, `new.py:11`), and the gate fails open. Each name carries its
+    own side.
+    """
     diff = "--- a/old.py\n+++ b/new.py\n@@ -10,3 +200,3 @@\n a\n-b\n+B\n c\n"
     hunks = diff_hunks(diff)
     assert hunks == {
@@ -760,8 +782,11 @@ def test_a_renames_two_names_do_not_ground_each_others_lines() -> None:
 
 
 def test_a_review_notice_is_cut_head_first_at_a_character_boundary() -> None:
-    """The cut keeps the head (the findings lead), lands on a character
-    boundary inside the byte budget, and names the bytes it dropped."""
+    """A review notice is cut head first at a character boundary.
+
+    The cut keeps the head (the findings lead), lands inside the byte budget, and names the bytes it
+    dropped.
+    """
     from agent6.harness._panel import REVIEW_NOTICE_BYTES, review_notice
 
     assert review_notice("short") == "[review]\nshort"

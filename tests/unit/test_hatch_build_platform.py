@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The jail build hook is host-gated.
+"""The jail build hook is host-gated: non-Linux hosts skip the crate and install the pure wheel.
 
-The agent6-jail crate is Linux-only (namespaces, Landlock, seccomp), but the
-hook keyed the build on cargo's PRESENCE alone: a mac with cargo installed
-failed the sdist install on Linux-only symbols while a bare one happened to
-pass. Non-Linux hosts skip the build and install the pure wheel (isolation
-"none" is their documented posture)."""
+Keyed on cargo's presence alone, a mac with cargo failed the sdist install on Linux-only symbols.
+"""
 
 from __future__ import annotations
 
@@ -22,8 +19,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 
 
 def _load_hook_module() -> ModuleType:
-    # hatchling is a build-time dependency, absent from the dev venv; the
-    # pin's subject is the hook's own gate logic, so a bare base suffices.
+    # hatchling is absent from the dev venv; the subject is the hook's gate, so a bare base does.
     iface = ModuleType("hatchling.builders.hooks.plugin.interface")
     iface.BuildHookInterface = object  # type: ignore[attr-defined]
     for name in (

@@ -1,13 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Regression tests for SymbolIndex out-of-band staleness and thread-safety.
+"""SymbolIndex heals out-of-band changes by stat and serializes its readers and mutators.
 
-Covers two fixes:
-  * stat-based self-healing when a file is changed/deleted outside
-    apply_edit (e.g. a run_command formatter, ``rm``, ``git mv``, ``sed``)
-    without any mark_changed/mark_deleted call.
-  * a lock around the public readers/mutators so the index can be shared
-    across the concurrent explore-review seats.
+A file changed or deleted outside apply_edit (a formatter, `rm`, `git mv`) is noticed without a mark
+call, and the index is shared across the explore-review seats.
 """
 
 from __future__ import annotations
@@ -20,8 +16,7 @@ from agent6.tools.index import SymbolIndex
 
 
 def _bump_mtime(p: Path) -> None:
-    """Force a distinct (mtime_ns, size) so the stat check fires even on a
-    coarse-resolution clock / same-tick write."""
+    """Force a distinct (mtime_ns, size) so the stat check fires on a coarse clock."""
     st = p.stat()
     import os
 
@@ -37,8 +32,7 @@ def test_index_self_heals_on_out_of_band_edit(tmp_path: Path) -> None:
     assert len(defs) == 1
     assert idx.find_definition("beta") == []
 
-    # Rewrite the file WITHOUT calling mark_changed (simulates a formatter or
-    # sed run via run_command).
+    # Rewritten without mark_changed, as a formatter or sed under run_command would.
     src.write_text("def beta():\n    pass\n", encoding="utf-8")
     _bump_mtime(src)
 
@@ -64,8 +58,7 @@ def test_index_evicts_deleted_file(tmp_path: Path) -> None:
 
 
 def test_index_concurrent_readers_do_not_raise(tmp_path: Path) -> None:
-    # Many files so iteration over _symbols.values() is non-trivial and the
-    # outline on-demand path keeps adding new keys while other threads read.
+    # Many files, so the outline path keeps adding keys while other threads iterate.
     for i in range(40):
         (tmp_path / f"f{i}.py").write_text(f"def fn_{i}():\n    helper()\n", encoding="utf-8")
     idx = SymbolIndex(Workspace(root=tmp_path))

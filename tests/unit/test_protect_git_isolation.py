@@ -27,8 +27,11 @@ def _said() -> tuple[Reporter, list[str]]:
 
 
 def test_a_default_degrades_with_a_warning(tmp_path: Path) -> None:
-    """`protect_git` defaults to true, and a default this host cannot honour
-    must still run -- loudly, never silently ineffective."""
+    """A default degrades with a warning.
+
+    `protect_git` defaults to true, and a default this host cannot honour must still run, loudly,
+    never silently ineffective.
+    """
     reporter, lines = _said()
     env = Environment(
         in_container=False,
@@ -63,8 +66,10 @@ def test_opting_out_never_refuses(tmp_path: Path) -> None:
 
 
 def test_only_strict_carves_git_out_of_the_jail(tmp_path: Path) -> None:
-    """The carve-out is what cost the top-level writes. On hardened there is
-    now nothing to carve, so `touch newfile` at the workspace root works."""
+    """Top-level writes work on hardened because there is no carve-out.
+
+    A carve-out at the workspace root is what would cost them; `touch newfile` there works.
+    """
     from agent6.tools.dispatch import jail_policy
 
     (tmp_path / ".git").mkdir()
@@ -76,8 +81,11 @@ def test_only_strict_carves_git_out_of_the_jail(tmp_path: Path) -> None:
 
 @pytest.mark.needs_namespaces
 def test_a_new_top_level_entry_can_be_created_on_hardened(tmp_path: Path) -> None:
-    """The whole point: `mkfifo`, `touch`, `mkdir` at the workspace root all
-    failed with a misleading "File exists" while the carve-out was there."""
+    """A new top-level entry can be created on hardened.
+
+    `mkfifo`, `touch` and `mkdir` at the workspace root must not fail with a misleading "File
+    exists" while the carve-out is there.
+    """
     from agent6.sandbox.jail import run_in_jail
     from agent6.tools.dispatch import jail_policy
 
@@ -94,10 +102,12 @@ def test_a_new_top_level_entry_can_be_created_on_hardened(tmp_path: Path) -> Non
 
 
 def test_the_default_reaches_the_check_as_a_default(tmp_path: Path) -> None:
-    """The caller asked `effective.sources` for the explicit leaves, and that
-    dict holds EVERY leaf with its layer, so a default read as operator intent:
-    on a host without user namespaces (auto -> hardened) `agent6 run`/`ask`
-    refused to start at all, against a config nobody had written."""
+    """The default reaches the check as a default.
+
+    `effective.sources` holds every leaf with its layer, so reading it for the explicit leaves makes
+    a default read as operator intent: on a host without user namespaces (auto -> hardened) `agent6
+    run` and `ask` would refuse to start at all, against a config nobody had written.
+    """
     from agent6.config.layer import load_effective
 
     effective = load_effective(tmp_path, None)

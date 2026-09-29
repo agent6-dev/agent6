@@ -140,10 +140,7 @@ def test_branch_fixture_steers_routing(tmp_path: Path) -> None:
 
 
 def test_branch_on_empty_record_default_synthesizes_fields(tmp_path: Path) -> None:
-    # The realistic shape: an agent verdict var with the required `default = {}`
-    # routed by a branch reading `verdict.field`. The dry-run must synthesize
-    # the schema-zero record so the predicate evaluates instead of erroring on
-    # a missing field (which made every such machine fail `machine test`).
+    # The dry-run synthesizes the schema-zero record so a `verdict.field` predicate evaluates.
     text = DEMO.replace(
         'verdict = { type = "review", default = { label = "low", score = 0 } }',
         'verdict = { type = "review", default = {} }',
@@ -179,10 +176,7 @@ def test_cli_machine_test_passes(tmp_path: Path, capsys: pytest.CaptureFixture[s
 def test_cli_machine_test_verdict_names_unrun_offline_tests(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """On a host that cannot jail the offline script tests, the OK verdict
-    itself says how many were NOT run and why. The skip lived only in a stderr
-    aside, so `machine test` read as "tests ran green" while a deliberately
-    failing test never executed."""
+    """The OK verdict says how many offline script tests were not run and why."""
     from types import SimpleNamespace
 
     from agent6.ui.cli import machine_check, main
@@ -210,18 +204,14 @@ def test_cli_machine_test_with_blackboard(
     bb.write_text("approved = true\n", encoding="utf-8")
     assert main(["machine", "test", str(f), "--blackboard", str(bb)]) == 0
     out = capsys.readouterr().out
-    # The branch ROW must show clause 0 routing to judge ("judge" alone also
-    # matches the unconditional per-state row, proving nothing about routing).
+    # The branch row must show clause 0 routing to judge; "judge" alone matches the per-state row.
     assert re.search(r"check\s+\[0\]\s+judge", out), out
 
 
 def test_cli_machine_test_rejects_a_fixture_off_the_blackboard_schema(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The fixture merged into the blackboard unvalidated: a typo'd key was
-    silently ignored and a string "false" replaced a bool and routed branches
-    as truthy. Every key must name a declared var; every value must satisfy
-    its type, exactly like the declared defaults."""
+    """The fixture is validated: every key names a declared var, every value satisfies its type."""
     from agent6.ui.cli import main
 
     f = _write(tmp_path)
@@ -267,9 +257,7 @@ def test_cli_machine_test_bad_fixture_toml(tmp_path: Path) -> None:
 
 
 def test_cli_machine_test_unreadable_fixture_refuses(tmp_path: Path) -> None:
-    """The fixture read caught a TOML parse error but not an OSError, so a
-    root-owned blackboard crashed through the bug reporter instead of the
-    operator-error refusal every other unreadable operator file gets."""
+    """An unreadable fixture is the operator-error refusal every unreadable operator file gets."""
     from agent6.errors import OperatorError
     from agent6.ui.cli import main
 
@@ -285,10 +273,11 @@ def test_cli_machine_test_unreadable_fixture_refuses(tmp_path: Path) -> None:
 
 
 def test_synthesized_records_omit_optional_fields(tmp_path: Path) -> None:
-    """Dry-run models the weakest state the capture gate permits: an optional
-    field stays absent, so a branch reading it unguarded fails `machine test`
-    exactly as it halts live, instead of routing on invented data; the
-    has()-guarded twin routes cleanly."""
+    """Dry-run models the weakest state the capture gate permits: an optional field stays absent.
+
+    A branch reading it unguarded fails `machine test` as it halts live; the has()-guarded twin
+    routes.
+    """
     from agent6.ui.cli import main
 
     unguarded = tmp_path / "unguarded.asm.toml"

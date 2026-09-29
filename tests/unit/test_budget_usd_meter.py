@@ -82,9 +82,10 @@ def test_estimate_usd_cache_read_priced_at_10_percent() -> None:
 
 
 def test_estimate_usd_cache_creation_priced_at_125_percent() -> None:
-    """Anthropic bills 5-minute cache_creation at 1.25x the input
-    rate (cache-write surcharge). Sonnet at $3/Mtok input -> $3.75/Mtok
-    for cache_creation."""
+    """Anthropic bills 5-minute cache_creation at 1.25x the input rate.
+
+    Sonnet at $3/Mtok input is $3.75/Mtok for cache_creation.
+    """
     bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
@@ -98,9 +99,7 @@ def test_estimate_usd_cache_creation_priced_at_125_percent() -> None:
 
 
 def test_estimate_usd_fresh_input_excludes_cache_creation() -> None:
-    """regression: prior to the fix, cache_creation_tokens were
-    summed into the `input` term at full rate, double-counting the cache
-    write. Verify the two are now priced via independent terms."""
+    """cache_creation tokens are priced as their own term, never summed into the input term."""
     bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
@@ -138,13 +137,9 @@ def test_estimate_usd_matches_format_summary_total() -> None:
 
 
 def test_reported_cost_overrides_table_estimate() -> None:
-    """When the provider returns ``usage.cost`` for every call to
-    a model, the reported sum is used verbatim instead of the price-table
-    estimate. This is what OpenRouter does."""
+    """A reported `usage.cost` on every call to a model overrides the table estimate verbatim."""
     bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
-    # A model that IS in the price table; provider also reports a cost
-    # different from what the table would compute, to prove the reported
-    # value wins.
+    # A priced model whose provider also reports a different cost, so the reported value wins.
     bt.record(
         model="claude-sonnet-4-5",
         input_tokens=1_000_000,
@@ -163,8 +158,7 @@ def test_reported_cost_overrides_table_estimate() -> None:
 
 
 def test_reported_cost_works_for_unknown_model() -> None:
-    """A model not in the price table contributes its reported cost
-    instead of being silently dropped."""
+    """A model not in the price table contributes its reported cost."""
     bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="future/unknown-model",
@@ -180,11 +174,10 @@ def test_reported_cost_works_for_unknown_model() -> None:
 
 
 def test_mixed_reported_cost_adds_table_estimate_for_unreported_calls() -> None:
-    """When only some calls to a model carried ``usage.cost``, the reported
-    dollars are authoritative for those calls and the table prices ONLY the
-    unreported calls' tokens. The whole-model table fallback discarded the
-    reported $50.00 for a $36.00 estimate presented as exact -- under-counting
-    the enforced ceiling by the same amount."""
+    """When only some calls carried `usage.cost`, the table prices only the unreported calls.
+
+    A whole-model table fallback would present a lower estimate as exact.
+    """
     bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
@@ -211,8 +204,7 @@ def test_mixed_reported_cost_adds_table_estimate_for_unreported_calls() -> None:
 
 
 def test_mixed_reported_cost_counts_toward_usd_ceiling() -> None:
-    """The enforced ceiling sees reported + estimated, not the whole-model
-    table figure: $50 reported + $18 estimated must trip a $60 cap ($36 did not)."""
+    """The enforced ceiling sees reported plus estimated spend."""
     bt = BudgetTracker(max_usd=60.0, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
@@ -233,16 +225,12 @@ def test_mixed_reported_cost_counts_toward_usd_ceiling() -> None:
 
 
 def test_fraction_remaining_tracks_usd_ceiling() -> None:
-    """`fraction_remaining` must count the USD ceiling, not just the token caps.
+    """`fraction_remaining` counts the USD ceiling, not just the token caps.
 
-    On a USD-budgeted, cache-heavy run the USD ceiling (which alone includes
-    cache cost) is what hard-stops the run; if `fraction_remaining` ignored it,
-    the token fractions would report plenty of budget left and the graceful
-    wind-down nudges would never fire before `BudgetExceededError`.
+    On a cache-heavy run the USD ceiling alone includes cache cost, so it is what hard-stops the run
+    and what the wind-down nudges have to see.
     """
-    # Token caps sized huge so only the $5 USD ceiling binds. Cache-heavy turn:
-    # tiny fresh input/output, large cache_read (billed at 0.1x, counting zero
-    # toward the token caps).
+    # Token caps huge so only the $5 USD ceiling binds; a cache-heavy turn counts zero toward them.
     bt = BudgetTracker(max_usd=5.0, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
@@ -253,14 +241,12 @@ def test_fraction_remaining_tracks_usd_ceiling() -> None:
     )
     usd, _ = bt.estimate_usd()
     assert usd == pytest.approx(4.8)  # 0.30 + 1.50 + 3.00
-    # Token axes are ~1% used, but 96% of the USD budget is gone, so the
-    # decision-relevant figure is ~0.04, not ~0.99.
+    # Token axes are ~1% used but 96% of the USD budget is gone, so the figure is ~0.04.
     assert bt.fraction_remaining() == pytest.approx(1.0 - 4.8 / 5.0, abs=1e-6)
 
 
 def test_fraction_remaining_unlimited_usd_never_depletes() -> None:
-    """max_usd = -1 (unlimited): metered spend reduces nothing; only a positive
-    cap in a ledger can deplete the fraction."""
+    """With max_usd = -1, metered spend depletes nothing; only a positive cap can."""
     bt = BudgetTracker(max_usd=-1, max_tokens_fallback=1_000, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
@@ -281,11 +267,10 @@ def test_fraction_remaining_unlimited_usd_never_depletes() -> None:
 
 
 def test_partially_reported_unpriced_model_keeps_the_reported_spend() -> None:
-    """A model with no cached price where SOME calls reported usage.cost: the
-    all-or-nothing rule fell through to the price table, found none, and
-    returned unknown -- dropping the reported dollars entirely, so the estimate
-    read $0.00 and the best-effort USD cap never tripped however much was spent.
-    Keep what the provider did report, marked partial."""
+    """A partially reported unpriced model keeps the reported spend, marked partial.
+
+    Dropping it would read $0.00 and never trip the best-effort USD cap.
+    """
     bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="future/unpriced-model",
@@ -308,9 +293,10 @@ def test_partially_reported_unpriced_model_keeps_the_reported_spend() -> None:
 
 
 def test_a_sub_cent_cap_prints_at_the_spends_precision() -> None:
-    """`--max-usd 0.004` printed as "$0.00" beside a "$0.0046" spend, and the
-    exhaustion reason read "~$0.0046 >= $0.00"; cap and spend share one
-    formatter (cents at >= $1, four decimals below)."""
+    """A sub-cent cap prints at the spend's precision: cap and spend share one formatter.
+
+    Cents at $1 and above, four decimals below.
+    """
     from agent6.budget import format_usd
 
     assert format_usd(0.004) == "$0.0040"

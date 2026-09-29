@@ -28,9 +28,7 @@ def test_same_signature_extends_the_streak_a_new_one_restarts_it() -> None:
 
 
 def test_a_red_verdict_covers_its_tree_like_a_green_one() -> None:
-    """A green clears edited_since (the verdict covers the current tree); a red
-    now does the same, so the harness does not re-run the gate on a red tree
-    nothing has touched and does not count that red twice."""
+    """A red clears edited_since like a green: an untouched red tree is not re-run or recounted."""
     v = VerifyVerdict()
     v.note_edit()
     v.note_fail("sig")

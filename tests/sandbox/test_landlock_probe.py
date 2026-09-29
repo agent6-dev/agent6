@@ -12,9 +12,11 @@ from agent6.sandbox import landlock_abi
 
 
 def test_landlock_abi_reports_the_kernel_version() -> None:
-    """0 means "no Landlock" and makes warn_sandbox_gaps drop confinement
-    everywhere, so `>= 0` passed for exactly the regression that matters. On a
-    Landlock kernel the probe must report the real ABI (>= 1)."""
+    """On a Landlock kernel the probe reports the real ABI, at least 1.
+
+    0 means "no Landlock" and makes warn_sandbox_gaps drop confinement everywhere, so `>= 0`
+    passes for exactly the regression that matters.
+    """
     abi = landlock_abi()
     assert isinstance(abi, int)
     lsm = Path("/sys/kernel/security/lsm")

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The session snapshot carries the background-shell roster: the web's
-Background shells card shows what the CLI `/shells` prints."""
+"""The session snapshot carries the background-shell roster the CLI `/shells` prints."""
 
 from __future__ import annotations
 

@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`detect_env` asks the jail binary itself whether `strict` actually works.
+"""`detect_env` asks the jail binary itself whether `strict` works.
 
-`detect.probe_userns_supported` runs `/usr/bin/unshare`, which answers a
-narrower question and is wrong in both directions: it under-reports where an
-AppArmor profile grants the *agent6-jail* binary userns but not unshare, and it
-over-reports inside Docker with a relaxed seccomp profile, where unshare
-succeeds and AppArmor then denies the jail's mount. So the real binary settles
-it either way.
+`probe_userns_supported` runs `/usr/bin/unshare`, which is wrong in both directions: an AppArmor
+profile can grant the jail binary userns but not unshare, and inside Docker with a relaxed seccomp
+profile unshare succeeds while AppArmor denies the jail's mount.
 """
 
 from __future__ import annotations
@@ -56,11 +53,11 @@ def test_detect_env_keeps_userns_when_the_jail_agrees(monkeypatch: pytest.Monkey
 def test_detect_env_drops_to_hardened_when_the_jail_cannot_do_strict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The Docker case, measured: `unshare` succeeds under a relaxed seccomp
-    profile and the default AppArmor profile then denies the jail's `mount`, so
-    the cheap probe promised `strict` and every command died with a raw
-    "namespace setup failed: EACCES". A capability we cannot deliver has to
-    resolve DOWN to one we can, not be announced and then fail."""
+    """A jail that fails its own probe resolves `auto` down, never announces strict and then dies.
+
+    The Docker case: `unshare` succeeds under a relaxed seccomp profile and AppArmor then denies the
+    jail's `mount`.
+    """
     monkeypatch.setattr(_setup, "detect", lambda: _env(True))
     monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: False)
     env = _setup.detect_env()
@@ -78,12 +75,10 @@ def test_detect_env_upgrades_to_strict_via_jail_probe(monkeypatch: pytest.Monkey
 def test_detect_env_refuses_over_a_binary_it_cannot_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A 0644 or wrong-architecture AGENT6_JAIL_BIN answered the strict probe
-    False: `check` printed "userns supported: False", an explicit strict
-    refused blaming the host's namespaces, and `auto` picked hardened over a
-    binary no command would run. The probe answers only the namespace
-    question; the binary's own refusal propagates, and the isolation
-    preflight refuses with it."""
+    """The probe answers only the namespace question; an unusable binary's own refusal propagates.
+
+    A 0644 or wrong-architecture AGENT6_JAIL_BIN is not "userns supported: False".
+    """
     from agent6.app._session import select_isolation
     from agent6.app.preflight import SessionRefusedError
     from agent6.app.reporter import Reporter
@@ -129,9 +124,11 @@ def test_degrade_reason_full_strength_is_none() -> None:
 
 
 def test_degrade_reason_names_the_blocking_mechanism(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The reason names the MECHANISM (AppArmor sysctl / max_user_namespaces /
-    container policy), because each has a different fix; every reporting
-    surface prints this one line."""
+    """The degrade reason names the mechanism, since each has a different fix.
+
+    AppArmor sysctl, max_user_namespaces or container policy; every reporting surface prints the
+    line.
+    """
     e = _env(False)
     monkeypatch.setattr(detect, "apparmor_userns_restricted", lambda: True)
     assert "apparmor_restrict_unprivileged_userns" in (detect.degrade_reason(e) or "")
@@ -160,10 +157,7 @@ def test_degrade_reason_covers_the_landlock_less_floor(monkeypatch: pytest.Monke
 
 
 def test_unsupported_seccomp_arch_degrades_auto_and_refuses_explicit() -> None:
-    """strict and hardened promise the jail's seccomp filter, which exists for
-    x86_64/aarch64 only (mirrored from main.rs, where apply_seccomp fails
-    closed). Off that set `auto` resolves to the loudly-warned `none`, an
-    explicit strict/hardened refuses by name, and degrade_reason says why."""
+    """With no seccomp filter (off x86_64 and aarch64) `auto` degrades to none, strict refuses."""
     from dataclasses import replace
 
     e = replace(_env(True), seccomp_arch_supported=False)

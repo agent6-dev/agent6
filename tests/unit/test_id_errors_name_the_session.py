@@ -2,10 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """An id that resolves nothing is not "no run".
 
-These messages are what an operator sees from `agent6 sessions show <id>`,
-`attach <id>`, `resume <id>` -- all of which reach every bucket. Calling the
-miss a "run" is wrong for the plan or ask they just tried to open, and it reads
-as "that is not a run" rather than "there is nothing by that id".
+`sessions show`, `attach` and `resume` reach every bucket, so the miss names the id, not a kind.
 """
 
 from __future__ import annotations

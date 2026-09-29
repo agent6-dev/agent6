@@ -61,8 +61,7 @@ def test_logscreen_renders_structural_events(tmp_path: Path) -> None:
 
 
 def test_logscreen_skips_streaming_deltas(tmp_path: Path) -> None:
-    # A reasoning model emits thousands of role.thinking_delta events; they are
-    # live-stream noise, not audit-log lines, so LogScreen must not render them.
+    # Thousands of role.thinking_delta events are live-stream noise, not audit-log lines.
     logs = tmp_path / "logs.jsonl"
     _write_log(
         logs,
@@ -87,9 +86,7 @@ def test_logscreen_skips_streaming_deltas(tmp_path: Path) -> None:
 
 
 def test_logscreen_skips_the_loop_mirrors_like_the_dashboard_tail(tmp_path: Path) -> None:
-    """loop.tool.call / loop.budget mirror events already rendered (the tool
-    call carries the args, budget.update the totals) and format to an empty
-    detail; the dashboard's log tail drops them, so the full log view does too."""
+    """Events that format to an empty detail are dropped from the full log view as from the tail."""
     logs = tmp_path / "logs.jsonl"
     _write_log(
         logs,

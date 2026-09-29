@@ -65,8 +65,11 @@ def test_decisions_prints_the_rulings_or_says_none(
 
 
 def test_rm_keeps_the_index_bytes_it_does_not_touch(tmp_path: Path) -> None:
-    """The index rewrite read through the replacing decoder, so `memory rm`
-    turned every byte that is not UTF-8 anywhere in the file into U+FFFD."""
+    """`memory rm` keeps the index bytes it does not touch.
+
+    An index rewrite read through the replacing decoder turns every byte that is not UTF-8 anywhere
+    in the file into U+FFFD.
+    """
     from agent6.memory import index_path, remove
 
     idx = index_path(tmp_path)
@@ -81,8 +84,10 @@ def test_rm_keeps_the_index_bytes_it_does_not_touch(tmp_path: Path) -> None:
 def test_list_shows_who_wrote_and_read_each_fact(
     env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The use record prints under its entry: an operator-added fact reads
-    `written ... by operator, never read`; a run's reads follow."""
+    """The use record prints under its entry.
+
+    An operator-added fact reads `written ... by operator, never read`; a run's reads follow.
+    """
     from agent6.memory import memory_dir, record_use
 
     assert _cmd_memory_add("build-quirk", "Needs FOO=1.") == 0
@@ -112,8 +117,10 @@ def test_list_shows_who_wrote_and_read_each_fact(
 def test_list_names_orphans_when_the_index_is_absent_or_blank(
     env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The one orphan whose line went was the only entry: the list said
-    "no memories" and named nothing to prune."""
+    """The one orphan whose line went was the only entry.
+
+    The list said "no memories" and named nothing to prune.
+    """
     from agent6.memory import index_path, memory_dir
 
     _cmd_memory_add("only", "The only fact.")
@@ -156,9 +163,11 @@ def test_format_use_says_each_state_plainly() -> None:
 def test_list_names_the_files_the_index_no_longer_lists(
     env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run that drops a fact's index line leaves its file behind, invisible
-    to every later run and to `memory list`; the operator pruning the store
-    saw nothing to prune. The list names such files under the index."""
+    """`memory list` names the files the index does not list.
+
+    A run that drops a fact's index line leaves its file behind, invisible to every later run; the
+    operator pruning the store needs to see it under the index.
+    """
     from agent6.memory import index_path, memory_dir
 
     _cmd_memory_add("kept", "A fact that stays.")

@@ -2,13 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """`exec` and `forward` command grammars.
 
-The optional session positional used to eat the first command word
-(`agent6 exec -- echo hi` treated `echo` as the session), `forward 8000`
-read the port as a session id, and dispatch stripped EVERY literal `--`
-from the command, corrupting valid argv like `git log -- path`. The
-contract now: only the FIRST `--` separates an optional session from the
-command, the command rides verbatim, and a bare number to `forward` is a
-port of the newest session."""
+Only the first `--` separates an optional session from the command, the command rides verbatim, and
+a bare number to `forward` is a port of the newest session.
+"""
 
 from __future__ import annotations
 
@@ -100,11 +96,11 @@ def test_forward_without_a_listener_is_a_refusal(
 def test_exec_refuses_a_session_network_nobody_holds(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`[sandbox].network = "session"` + an ended run used to reach
-    `os.open("/proc/None/ns/user")` -- an unexpected traceback instead of a
-    refusal naming the situation. exec joins a LIVE session's network only.
-    The isolation seam is pinned to strict so the policy derives "session"
-    on every host this suite runs on."""
+    """`exec` joins a live session's network only; an ended run is refused by name.
+
+    The isolation seam is pinned to strict so the policy derives "session" on every host this suite
+    runs on.
+    """
     from agent6.config import Config
     from agent6.ui.cli import net_cmds
 
@@ -125,8 +121,7 @@ def test_exec_refuses_a_session_network_nobody_holds(
 def test_attach_presentation_modes_are_mutually_exclusive(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """--json silently won over --raw/--tui when combined; one presentation
-    at a time, refused by the parser."""
+    """Combining --json with --raw or --tui is refused by the parser: one presentation at a time."""
     with pytest.raises(SystemExit) as exc:
         cli.main(["attach", "--json", "--raw"])
     assert exc.value.code == 2
@@ -134,8 +129,7 @@ def test_attach_presentation_modes_are_mutually_exclusive(
 
 
 def test_attach_since_needs_raw(capsys: pytest.CaptureFixture[str]) -> None:
-    """--since replays event lines only the --raw tail renders; it was
-    silently ignored elsewhere."""
+    """--since replays event lines only the --raw tail renders; other views ignored it silently."""
     rc = cli.main(["attach", "--since", "5"])
     assert rc == 2
     err = capsys.readouterr().err
@@ -145,10 +139,10 @@ def test_attach_since_needs_raw(capsys: pytest.CaptureFixture[str]) -> None:
 def test_exec_uses_the_runs_recorded_policy_over_current_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The run's manifest records its resolved isolation and network; exec
-    reproduces THEM after a config change (run strict, config later flipped
-    to none: exec must not run unconfined against "same jail"). A run with no
-    stamp falls back to the current config with a warning."""
+    """`exec` reproduces the isolation and network the run's manifest recorded, not the config.
+
+    A run with no stamp falls back to the current config with a warning.
+    """
     from types import SimpleNamespace
 
     from agent6.config import Config
@@ -208,9 +202,7 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
 def test_exec_and_forward_resolve_a_session_the_way_every_other_verb_does(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Each rolled its own id lookup, so an ambiguous prefix -- which `attach`
-    and `sessions show` name as ambiguous -- read as "no session 'ambig'",
-    which is false: two matched."""
+    """`exec` and `forward` name an ambiguous prefix as ambiguous, as `attach` does."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -236,10 +228,10 @@ def test_exec_and_forward_resolve_a_session_the_way_every_other_verb_does(
 
 
 def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: Path) -> None:
-    """A run's session network lives only while the run does; `forward` on a
-    finished run used to explain isolation levels and network modes as if
-    the config were the reason. It says the run is finished; the config
-    explanation is kept for a LIVE run that made no network."""
+    """`forward` on a finished run says so: a session network lives only while the run does.
+
+    The config explanation is kept for a live run that made no network.
+    """
     import io
     import json
     import os
@@ -278,10 +270,7 @@ def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: Pa
 def test_exec_refuses_a_run_that_is_over(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The help promises the run's own jail; a finished run's is gone, and
-    `exec` built a fresh one (today's HEAD, none of the run's processes) and
-    ran the command there in silence, refusing only a run that had recorded
-    the session network, with a remedy that made it worse."""
+    """`exec` on a finished run is refused: the help promises the run's own jail, which is gone."""
     import json
     import os
 
@@ -322,10 +311,11 @@ def test_exec_refuses_a_run_that_is_over(
 def test_exec_keeps_a_host_network_run_on_the_host_network(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A run with `[sandbox].network = "host"` and one MCP server scoped to the
-    session holds a session netns while its own commands run on the host
-    network. exec read the holder as the answer and put the operator's command
-    on the routeless session network, contradicting the stamp it had read."""
+    """`exec` under `network = "host"` stays on the host network beside a session netns.
+
+    A run with one MCP server scoped to the session holds a session netns while its own commands run
+    on the host network; the holder is not the answer.
+    """
     from types import SimpleNamespace
 
     from agent6.config import Config
@@ -383,11 +373,10 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
 def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The holder can exit between exec's `read_session_netns_pid` and its open
-    of `/proc/<pid>/ns/*`: the bare `os.open` pair raised an uncaught
-    FileNotFoundError (exit 1 plus a saved crash traceback) where the identical
-    open in `join_session_network` says the network is gone. The holder here is
-    a real process, really killed inside that window."""
+    """A holder that exits before `exec` opens its namespaces is refused, not a traceback.
+
+    The holder here is a real process, killed inside that window.
+    """
     import subprocess
 
     from agent6.config import Config
@@ -424,11 +413,11 @@ def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
 def test_forward_leaves_no_connect_timeout_on_the_bridge(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`socket.create_connection(..., timeout=10)` sets the 10 s on the socket
-    it returns and never clears it, so a dev server merely slow to drain made
-    `sendall` raise TimeoutError ten seconds in, which `_pump` reads as a
-    hang-up and answers by dropping the connection in silence. The bound is the
-    connect's, not the bridge's."""
+    """The forwarded socket's connect timeout is cleared before the pump reads it.
+
+    `create_connection(timeout=10)` leaves the timeout on the socket, so a slow dev server made
+    `sendall` raise and the pump drop the connection. The bound is the connect's, not the bridge's.
+    """
     import io
     import socket
     import subprocess
@@ -448,8 +437,7 @@ def test_forward_leaves_no_connect_timeout_on_the_bridge(
     layout = SessionLayout(state_dir=tmp_path, session_id="busy-run", subdir="runs")
     layout.session_dir.mkdir(parents=True)
     write_session_netns_pid(layout.session_dir, os.getpid())  # a live holder: us
-    # The client ends the run once connected, so the next accept timeout
-    # returns the loop; the bridge for its connection is already forked.
+    # The client ends the run once connected, so the next accept timeout returns the loop.
     client_script = (
         "import os, socket, time\n"
         "for _ in range(40):\n"
@@ -491,11 +479,7 @@ def test_forward_leaves_no_connect_timeout_on_the_bridge(
 def test_forward_drops_a_connection_it_cannot_fork_for(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A fork() that fails (EAGAIN under a process cap, ENOMEM under memory
-    pressure) left the accept loop, which guarded only KeyboardInterrupt: the
-    whole bridge died as `ERROR: unexpected BlockingIOError`, exit 1, on the
-    first connection it could not fork for. One connection is dropped and the
-    bridge keeps accepting."""
+    """A failed fork() in the accept loop drops one connection and the bridge keeps accepting."""
     import errno
     import io
     import socket
@@ -543,9 +527,7 @@ def test_forward_drops_a_connection_it_cannot_fork_for(
 
 
 def test_forward_closes_its_listener_when_the_bind_fails(tmp_path: Path) -> None:
-    """A taken local port returned from the bind-failure branch before the
-    try/finally that closed the listener, leaving the socket to the garbage
-    collector (ResourceWarning: unclosed socket)."""
+    """A taken local port is refused with the listener closed."""
     import gc
     import io
     import socket
@@ -574,8 +556,7 @@ def test_forward_closes_its_listener_when_the_bind_fails(tmp_path: Path) -> None
 
 
 def test_exec_module_imports_without_linux_namespace_constants() -> None:
-    """Importing the exec verb crashed on non-Linux hosts before a host-network
-    command could take the unconfined path."""
+    """The exec verb imports on a non-Linux host, where a host-network command runs unconfined."""
     import subprocess
     import sys
 
@@ -588,8 +569,7 @@ def test_exec_module_imports_without_linux_namespace_constants() -> None:
 
 @pytest.mark.parametrize("local_port", [-1, 65536])
 def test_forward_refuses_an_out_of_range_local_port(tmp_path: Path, local_port: int) -> None:
-    """An integer outside TCP's port range escaped the bind refusal as an
-    unexpected OverflowError and a crash report."""
+    """A port outside TCP's range is refused, not an OverflowError."""
     import io
 
     from agent6.sessions.ipc import write_session_netns_pid
@@ -608,8 +588,7 @@ def test_forward_refuses_an_out_of_range_local_port(tmp_path: Path, local_port: 
 def test_forward_local_port_zero_picks_a_free_port(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--local-port 0` read as "unset" and bound the remote number; 0 asks the
-    host for a free port and the start line names the one it got."""
+    """`--local-port 0` asks the host for a free port and the start line names the one it got."""
     import io
 
     from agent6.sessions.layout import SessionLayout

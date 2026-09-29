@@ -2,13 +2,12 @@
 # Copyright 2026 Eric Lesiuta
 """A repo-defined git content driver never runs a host command on agent6's ops.
 
-`filter.<n>.clean/smudge/process` and `merge.<n>.driver` defined in a repo's
-own `.git/config` are host commands. The clean filter fires on the per-step
-auto-commit's `git add`; the merge driver fires on the chain merge's
-`merge-tree`. A cloned repo brings them pre-poisoned, and under hardened a
-jailed command can write `.git/config` mid-run -- either way, no model action
-is needed. agent6 neutralizes each by name unless `git.run_repo_filters` opts
-in (the Git-LFS setting, since LFS uses exactly these drivers).
+`filter.<n>.clean/smudge/process` and `merge.<n>.driver` in a repo's own `.git/config`
+are host commands: the clean filter fires on the per-step auto-commit's `git add`, the
+merge driver on the chain merge's `merge-tree`. A cloned repo brings them pre-poisoned,
+and under hardened a jailed command can write `.git/config` mid-run; either way no model
+action is needed. agent6 neutralizes each by name unless `git.run_repo_filters` opts in
+(the Git-LFS setting, since LFS uses exactly these drivers).
 """
 
 from __future__ import annotations
@@ -54,9 +53,10 @@ def _poison_clean_filter(root: Path, marker: Path) -> None:
 
 
 def test_the_auto_commit_does_not_run_a_repo_clean_filter(tmp_path: Path) -> None:
-    """chain_commit is the live per-step commit; its temp-index `git add` runs
-    the clean filter. Off by default: the payload must not fire, and the commit
-    still records the (raw) content."""
+    """The per-step commit's temp-index `git add` does not run a clean filter by default.
+
+    The payload must not fire, and the commit still records the raw content.
+    """
     marker = tmp_path / "pwned"
     root = _repo(tmp_path / "r")
     base = _git(root, "rev-parse", "HEAD").stdout.strip()
@@ -68,8 +68,10 @@ def test_the_auto_commit_does_not_run_a_repo_clean_filter(tmp_path: Path) -> Non
 
 
 def test_run_repo_filters_true_honors_the_driver(tmp_path: Path) -> None:
-    """The Git-LFS opt-in: with the knob on, the repo's driver runs (which is
-    what LFS needs -- its clean filter turns a big file into a pointer)."""
+    """The Git-LFS opt-in: with the knob on, the repo's driver runs.
+
+    LFS needs it; its clean filter turns a big file into a pointer.
+    """
     marker = tmp_path / "pwned"
     root = _repo(tmp_path / "r")
     _poison_clean_filter(root, marker)
@@ -79,10 +81,11 @@ def test_run_repo_filters_true_honors_the_driver(tmp_path: Path) -> None:
 
 
 def test_the_chain_merge_does_not_run_a_repo_merge_driver(tmp_path: Path) -> None:
-    """chain_merge merges with `merge-tree --write-tree`, which runs a custom
-    merge driver. Off by default the payload must not fire; a neutralized
-    driver makes the merge report a conflict, so chain_merge returns None
-    (chain + worktree untouched) rather than half-merging."""
+    """`merge-tree --write-tree` runs no custom merge driver by default.
+
+    A neutralized driver makes the merge report a conflict, so chain_merge returns None
+    (chain and worktree untouched) rather than half-merging.
+    """
     marker = tmp_path / "pwned"
     root = _repo(tmp_path / "r")
     _git(root, "checkout", "-qb", "other")
@@ -107,8 +110,10 @@ def test_the_chain_merge_does_not_run_a_repo_merge_driver(tmp_path: Path) -> Non
 
 
 def test_a_clean_repo_commits_normally_with_filters_off(tmp_path: Path) -> None:
-    """The overrides are added per name from the repo's own config, so a repo
-    that defines no drivers gets none and commits exactly as before."""
+    """A repo that defines no drivers gets no overrides and commits exactly as before.
+
+    The overrides are added per name from the repo's own config.
+    """
     root = _repo(tmp_path / "r")
     (root / "new.txt").write_text("hello\n", encoding="utf-8")
     git_ops.set_repo_filter_policy(False)
@@ -117,8 +122,10 @@ def test_a_clean_repo_commits_normally_with_filters_off(tmp_path: Path) -> None:
 
 
 def test_driver_names_enumerate_and_dedup(tmp_path: Path) -> None:
-    """A filter with both clean and smudge is one driver, one set of overrides;
-    dotted subsection names survive the split."""
+    """A filter with both clean and smudge is one driver, one set of overrides.
+
+    Dotted subsection names survive the split.
+    """
     root = _repo(tmp_path / "r")
     cfg = root / ".git" / "config"
     cfg.write_text(
@@ -137,11 +144,11 @@ def test_driver_names_enumerate_and_dedup(tmp_path: Path) -> None:
 
 
 def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: Path) -> None:
-    """`git config --local` alone stops at `.git/config`, but a git op follows
-    an `[include]` there to a repo-controlled file -- so a filter hidden behind
-    one would run while a naive enumeration missed it. The enumeration uses
-    `--includes` to match what the op sees (reproduced: without it, the
-    include-hidden clean filter fired on the auto-commit)."""
+    """The driver enumeration follows `[include]`, as a git op does.
+
+    `git config --local` alone stops at `.git/config`, so a filter hidden behind an include
+    to a repo-controlled file would run on the auto-commit while the enumeration missed it.
+    """
     root = _repo(tmp_path / "r")
     base = _git(root, "rev-parse", "HEAD").stdout.strip()
     marker = tmp_path / "pwned"
@@ -159,9 +166,11 @@ def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: Path) 
 
 
 def test_the_review_diff_does_not_run_a_repo_clean_filter(tmp_path: Path) -> None:
-    """`agent6 review`'s working-tree diff shells out to git directly, and its
-    hardening carried the fixed `-c` set without the per-name driver overrides,
-    so `git diff HEAD` ran the repo's clean filter on the host."""
+    """`agent6 review`'s working-tree diff carries the per-name driver overrides.
+
+    It shells out to git directly; the fixed `-c` set alone would let `git diff HEAD` run the
+    repo's clean filter on the host.
+    """
     from agent6.ui.cli.review_cmds import (
         _collect_review_diff,  # pyright: ignore[reportPrivateUsage]
     )

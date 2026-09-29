@@ -46,10 +46,10 @@ def test_save_preserves_other_keys(cfg: Path) -> None:
 
 @pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX symlinks")
 def test_save_does_not_follow_a_planted_tmp_symlink(cfg: Path) -> None:
-    """The old fixed `ui.toml.tmp` + write_text followed a planted symlink; since
-    the save chowns back to the real user it can run under sudo, making that an
-    arbitrary-file truncate-as-root primitive. atomic_write's mkstemp temp is
-    unpredictable, so a planted `ui.toml.tmp` is simply ignored."""
+    """A planted `ui.toml.tmp` symlink is ignored: the save writes through an unpredictable temp.
+
+    The save chowns back to the real user, so under sudo a followed symlink was a truncate-as-root.
+    """
     secret = cfg / "root_secret"
     secret.write_text("do-not-truncate", encoding="utf-8")
     (cfg / "ui.toml.tmp").symlink_to(secret)
@@ -59,9 +59,7 @@ def test_save_does_not_follow_a_planted_tmp_symlink(cfg: Path) -> None:
 
 
 def test_a_control_character_in_a_ui_value_round_trips(tmp_path: Path) -> None:
-    """The TUI's own TOML writer escaped only backslash and quote, the drift
-    `toml_basic_string`'s docstring forbids: a newline in a value wrote a file
-    that failed to parse on read after the write reported success."""
+    """The settings writer escapes a newline in a value, so the written file parses on read."""
     import tomllib
 
     from agent6.ui.tui.settings import _render_ui_toml  # pyright: ignore[reportPrivateUsage]

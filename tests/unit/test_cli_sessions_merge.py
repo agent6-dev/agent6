@@ -30,8 +30,11 @@ def _setup_run(
     commits: list[tuple[str, str, str]],
     run_branch: str | None = "<auto>",
 ) -> str:
-    """Init a repo, cut agent6/<session_id> off main with *commits* (name, content,
-    message), return to main, and write the run manifest. Returns the base sha."""
+    """Init a repo with agent6/<session_id> cut off main and the run manifest written.
+
+    Each commit is a (name, content, message) triple; the checkout returns to main. Returns the base
+    sha.
+    """
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "config", "user.email", "t@t")
     _git(tmp_path, "config", "user.name", "t")
@@ -69,10 +72,11 @@ def _setup_run(
 def test_merge_follows_the_chain_when_the_branch_stopped_tracking_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The chain is the run's record and the branch is a view of it. A commit of
-    the operator's on the run branch takes it off the chain, and every later
-    chain commit then lands on the chain alone: merging the branch there landed
-    a frozen prefix of the run, said "merged", and stamped it so."""
+    """The chain is the run's record and the branch a view of it, so a merge follows the chain.
+
+    An operator's commit on the run branch takes it off the chain; every later chain commit lands on
+    the chain alone.
+    """
     monkeypatch.chdir(tmp_path)
     base = _setup_run(tmp_path, "frozen-branch1", commits=[("a.txt", "one\n", "iter 1")])
     chain = chain_ref_for("frozen-branch1")
@@ -83,7 +87,7 @@ def test_merge_follows_the_chain_when_the_branch_stopped_tracking_it(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "operator work")
     _git(tmp_path, "checkout", "-q", "main")
-    # The run keeps committing: on the chain, which the branch no longer covers.
+    # The run keeps committing on the chain, which the branch stopped covering.
     tree = _git(tmp_path, "rev-parse", f"{chain}^{{tree}}")
     later = subprocess.run(
         ["git", "-C", str(tmp_path), "commit-tree", tree, "-p", chain, "-m", "iter 2"],
@@ -107,8 +111,7 @@ def test_merge_follows_the_chain_when_the_branch_stopped_tracking_it(
 def test_commits_follows_the_chain_when_the_visible_branch_diverged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The visible run branch can survive after the run's chain moves past it;
-    commits must list the chain rather than report that hidden ref as a pruned branch."""
+    """Commits lists the chain when the visible branch diverged, not a pruned branch."""
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "frozen-commits1", commits=[("a.txt", "one\n", "agent6 iter 1")])
     chain = chain_ref_for("frozen-commits1")
@@ -133,10 +136,11 @@ def test_commits_follows_the_chain_when_the_visible_branch_diverged(
 def test_a_fork_of_a_squash_merged_run_lands_only_its_own_work(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Run A adds a file and is squash-merged; a fork continues A's chain with
-    one more line in that file. git relates the squash to nothing, so its base
-    was the commit before A and the fork's merge conflicted on the file both
-    sides "added". The base is A's landed tip, and the fork's own line lands."""
+    """A fork of a squash-merged run merges from A's landed tip, so only its own line lands.
+
+    git relates the squash to nothing, so the commit before A would conflict on the file both sides
+    added.
+    """
     monkeypatch.chdir(tmp_path)
     guarded = "def f(x):\n    if not x:\n        return 0\n    return 1\n"
     base = _setup_run(tmp_path, "parent-run1", commits=[("f.py", guarded, "guard")])
@@ -205,12 +209,11 @@ def test_runs_merge_squash_is_one_commit_and_records_manifest(
 def test_runs_merge_refuses_while_the_worker_is_alive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Merging a LIVE run hijacks the shared checkout: execute_merge switches
-    it to the base branch and the still-running worker's next auto-commit then
-    lands mid-run WIP directly on the base. A run's tree is clean for the whole
-    duration of every provider call, so every other _plan_merge guard passes
-    mid-run; the liveness gate is the one that must refuse (matching
-    stop/resume/compact). Killing the worker (stale pid) restores the merge."""
+    """`sessions merge` refuses while the worker is alive; a stale pid restores the merge.
+
+    A merge switches the shared checkout to the base branch, where the worker's next auto-commit
+    would land mid-run WIP; every other guard passes on a run's clean tree.
+    """
     from agent6.sessions.ipc import write_worker_pid
 
     monkeypatch.chdir(tmp_path)
@@ -266,9 +269,7 @@ def test_runs_merge_refuses_when_no_branch_recorded(
 def test_runs_merge_lands_over_a_worktree_carrying_the_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """After every run the worktree holds the run's work uncommitted against
-    HEAD; the merge is ref plumbing and lands anyway, and unrelated operator
-    files are untouched."""
+    """The merge is ref plumbing, so it lands over a worktree holding the run's uncommitted work."""
     monkeypatch.chdir(tmp_path)
     base = _setup_run(tmp_path, "run-DIRT11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     (tmp_path / "a.txt").write_text("a\n", encoding="utf-8")  # the run's work, uncommitted
@@ -284,10 +285,11 @@ def test_runs_merge_lands_over_a_worktree_carrying_the_run(
 def test_a_conflicting_merge_prints_a_by_hand_command_that_runs_from_this_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The recovery line for a plumbing conflict must run from the checkout as
-    it stands: after a run the tree carries the run's work uncommitted, and git
-    refuses `merge` over modified tracked files, so the printed command stashes
-    first; a checkout on another branch is moved to the target."""
+    """The by-hand command for a conflict runs from the checkout as it stands.
+
+    It stashes first, since git refuses `merge` over modified tracked files, and moves a checkout on
+    another branch to the target.
+    """
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-CONF11", commits=[("README.md", "theirs\n", "agent6 iter 1")])
     (tmp_path / "README.md").write_text("ours\n", encoding="utf-8")
@@ -344,9 +346,7 @@ def test_runs_merge_restores_original_checkout(
 def test_runs_merge_never_switches_the_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The merge is ref plumbing: wherever the operator's checkout sits (here
-    # they checked the run branch out themselves), it stays there while the
-    # target still gains the work.
+    # The merge is ref plumbing: the operator's checkout stays put while the target gains the work.
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-STRAND1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     _git(tmp_path, "checkout", "-q", "agent6/run-STRAND1")
@@ -359,8 +359,7 @@ def test_runs_merge_never_switches_the_checkout(
 def test_runs_merge_without_identity_refuses_with_clean_tree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # No git identity anywhere: isolate from the real ~/.gitconfig, then drop the
-    # local identity that _setup_run configured for its commits.
+    # No git identity anywhere: isolate from ~/.gitconfig and drop the fixture's local identity.
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
     monkeypatch.chdir(tmp_path)
@@ -396,8 +395,7 @@ def test_runs_commits_lists_per_step(
 def test_runs_merge_zero_commit_branch_is_a_stated_noop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A run branch with no commits used to print a success line
-    # indistinguishable from a real merge.
+    # A run branch with no commits is not reported as a merge.
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-EMPTY1", commits=[])
     head_before = _git(tmp_path, "rev-parse", "main")
@@ -422,10 +420,7 @@ def test_runs_diff_zero_commit_branch_prints_no_changes(
 def test_runs_diff_notes_uncommitted_work_on_the_live_run_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # A live run mid-work has uncommitted edits on its branch (a run commits
-    # only after a verify pass), so base..HEAD shows no committed changes. If
-    # that branch is the current checkout and dirty, say so instead of a bare
-    # "(no changes)" that reads as "the agent did nothing".
+    # A live run's edits are uncommitted, so the diff says the branch is dirty, not "(no changes)".
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-LIVE01", commits=[])
     _git(tmp_path, "checkout", "-q", "agent6/run-LIVE01")  # the run's own checkout
@@ -440,8 +435,7 @@ def test_runs_diff_notes_uncommitted_work_on_the_live_run_branch(
 def test_runs_diff_stays_silent_when_dirty_tree_is_a_different_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # The note only fires when the CURRENT branch is the diffed run's branch;
-    # uncommitted work on main (or another run) is not attributed to this run.
+    # The note fires only when the current branch is the diffed run's; main's dirt is not the run's.
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-OTHER1", commits=[])
     (tmp_path / "unrelated.py").write_text("x\n", encoding="utf-8")  # dirty, but on main
@@ -465,9 +459,10 @@ def test_runs_diff_with_commits_prints_the_patch(
 def test_the_repl_diff_keeps_gits_pager_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """`run -i`'s /diff runs `git --no-pager diff ...`: on a terminal git's
-    pager would take over the REPL's prompt loop (the next command typed
-    became a `less` search)."""
+    """The REPL's /diff runs `git --no-pager diff`.
+
+    Git's pager never takes over the prompt loop.
+    """
     import subprocess
 
     from agent6.ui.cli._repl import repl_run_diff
@@ -497,9 +492,7 @@ def test_the_repl_diff_keeps_gits_pager_out(
 def test_runs_diff_neutralizes_poisoned_diff_external(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # A checkout with `[diff] external = CMD` in .git/config must not execute
-    # CMD on the host when the operator runs `agent6 sessions diff`; the -c
-    # hardening overrides force the builtin diff.
+    # `[diff] external = CMD` in .git/config never runs on `sessions diff`; the -c hardening wins.
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-EVIL01", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     marker = tmp_path / "pwned"
@@ -516,9 +509,7 @@ def test_runs_diff_neutralizes_poisoned_diff_external(
 def test_ff_merge_of_a_diverged_base_refuses_with_a_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `git merge --ff-only` would spew `fatal: Not possible to fast-forward`
-    # plus rebase hints with no agent6 framing; the pre-check refuses with the
-    # reason and the way out instead.
+    # The pre-check refuses with the reason and the way out, not git's fast-forward fatal.
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-FFDIV1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     # main moves after the branch was cut: ff is now impossible.
@@ -536,8 +527,7 @@ def test_ff_merge_of_a_diverged_base_refuses_with_a_reason(
 def test_ff_merge_lands_when_the_base_has_not_moved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Pins the pre-check's is_ancestor argument order: an unmoved base IS an
-    # ancestor of the run branch, so the ff must not be falsely refused.
+    # Pins is_ancestor's argument order: an unmoved base is an ancestor of the run branch.
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-FFOK1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     rc = main(["sessions", "merge", "run-FFOK1", "--strategy", "ff"])
@@ -550,9 +540,7 @@ def test_ff_merge_lands_when_the_base_has_not_moved(
 def test_ff_merge_of_an_already_contained_branch_is_a_clean_no_op(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The run branch's commits are already in main (merged earlier) and main
-    # has moved on: `git merge --ff-only` says "Already up to date" (rc 0), so
-    # the moved-base pre-check must not refuse it.
+    # Already-merged commits with a moved main: `--ff-only` says up to date; the pre-check agrees.
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-FFIN1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     _git(tmp_path, "merge", "-q", "--ff-only", "agent6/run-FFIN1")  # contain it
@@ -569,19 +557,12 @@ def test_ff_merge_of_an_already_contained_branch_is_a_clean_no_op(
 def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A second `sessions merge` of the same run is a no-op, and says so.
+    """A second `sessions merge` of the same run is a no-op and says "nothing left to merge".
 
-    `git merge --squash` on an up-to-date branch stages nothing and leaves HEAD
-    alone, so the merge helpers return the TARGET'S CURRENT HEAD. That was
-    printed as the merge sha and stamped into the manifest, so an unrelated
-    commit made between the two merges was reported as the run's work and
-    overwrote the real merge record -- which `sessions diff` then pointed at
-    after a prune.
-
-    Worded "nothing left to merge" rather than "already merged": git also
-    stages nothing when the branch's CONTENT arrived by another route, and the
-    branch is then not an ancestor, so `prune` would call it unmerged in the
-    same minute."""
+    `git merge --squash` on an up-to-date branch stages nothing, so the target's current HEAD is not
+    a merge sha to print or stamp. "Already merged" would be wrong when the content arrived by
+    another route and the branch is not an ancestor.
+    """
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-AAAA77", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     assert main(["sessions", "merge", "run-AAAA77", "--strategy", "squash"]) == 0
@@ -607,14 +588,11 @@ def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
 def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run branch whose tree the target already holds (the same edit landed
-    there by another route) merges nothing, and that IS merged: the content
-    is on the target. Left unstamped, the run listed `unmerged` for good,
-    `prune` kept a fork's worktree forever, and only `sessions rm` released
-    it. The stamp names no merge commit (the all-zero sentinel: the target's
-    own tip would have named an operator's by-hand commit as the run's) and
-    the branch tip it covers; a later merge leaves that record alone, and
-    the readers say the content is already on the target."""
+    """A merge that adds nothing still records the run as merged.
+
+    The stamp names the all-zero sentinel (the target's own tip could be an operator's commit) and
+    the branch tip it covers; a later merge leaves the record alone.
+    """
     from agent6.git_ops import run_ref_tips
     from agent6.sessions.manifest import NO_MERGE_COMMIT
     from agent6.viewmodel import summarize_session_dir
@@ -652,12 +630,10 @@ def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
 def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run merged, resumed (a new commit), then merged again with nothing to
-    add (the target got the same content by another route) kept its stale
-    stamp: the tip no longer matched the branch, so the run read unmerged for
-    good and prune kept a fork's worktree. A noop whose branch tip differs
-    from the stamp's re-stamps: no merge commit, and the tip it now covers.
-    A noop over the tip already recorded leaves the record alone."""
+    """A no-op merge whose branch tip differs from the stamp's re-stamps the tip it covers.
+
+    A no-op over the tip already recorded leaves the record alone.
+    """
     from agent6.git_ops import run_ref_tips
     from agent6.sessions.manifest import NO_MERGE_COMMIT
     from agent6.viewmodel import summarize_session_dir
@@ -695,9 +671,10 @@ def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
 def test_diff_on_a_session_that_cannot_commit_does_not_show_your_own_work(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A plan has no run branch, and diffing `base..HEAD` for one presented the
-    operator's own commits as the plan's work. A plan cannot write to the repo
-    at all, so the honest answer is that it made none."""
+    """Diff on a plan shows no work: it cannot write to the repo.
+
+    `base..HEAD` is the operator's.
+    """
     monkeypatch.chdir(tmp_path)
     base = _setup_run(tmp_path, "plan-AAA044", commits=[], run_branch=None)
     (tmp_path / "human.txt").write_text("mine\n", encoding="utf-8")
@@ -718,9 +695,10 @@ def test_diff_on_a_session_that_cannot_commit_does_not_show_your_own_work(
 def test_a_parked_run_does_not_claim_the_run_it_was_parked_behind(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A parked run has mode="run" and no branch, so keying only on whether the
-    MODE can edit let it fall through to `base..HEAD` -- and parking happens
-    because another run holds the checkout, so those commits are that run's."""
+    """A parked run does not claim the commits of the run it was parked behind.
+
+    It has mode run and no branch; `base..HEAD` is the other run's.
+    """
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-PARK01", commits=[], run_branch=None)
     (tmp_path / "other.txt").write_text("theirs\n", encoding="utf-8")
@@ -762,9 +740,7 @@ def _set_manifest_field(tmp_path: Path, session_id: str, **fields: str) -> None:
 def test_diff_of_a_branch_per_run_off_run_reads_the_chain(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """branch_per_run off records no run branch; the run's commits live on its
-    hidden chain ref and diff reads base..refs/agent6/<id> -- never base..HEAD,
-    which is the operator's line."""
+    """Diff of a branch_per_run-off run reads base..refs/agent6/<id>, never base..HEAD."""
     from agent6.git_ops import chain_commit
 
     monkeypatch.chdir(tmp_path)
@@ -785,8 +761,7 @@ def test_diff_of_a_branch_per_run_off_run_reads_the_chain(
 def test_commits_of_a_branch_per_run_off_run_lists_the_chain_like_diff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions commits` and `sessions diff` accept the same branchless run,
-    both reading its chain ref."""
+    """`sessions commits` reads a branchless run's chain ref as `sessions diff` does."""
     from agent6.git_ops import chain_commit
 
     monkeypatch.chdir(tmp_path)
@@ -820,9 +795,10 @@ def test_merge_with_a_branch_but_no_base_sha_refuses_before_mutating(
 def test_commits_with_a_branch_but_no_base_sha_does_not_blame_branch_per_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A manifest that records a run branch but lost base_sha (agent6 never
-    writes that pair) is a base_sha problem; the combined guard called it
-    "branch_per_run was off", a branch it plainly recorded."""
+    """A manifest with a run branch but no base_sha is a base_sha problem.
+
+    The guard does not blame branch_per_run for a branch it recorded.
+    """
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-NOBASE1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     _set_manifest_field(tmp_path, "run-NOBASE1", base_sha="")
@@ -840,8 +816,7 @@ def _head_message(repo: Path) -> str:
 def test_merge_squash_combine_style_uses_gits_own_message(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[git.commit.squash].message = combine commits with git's squash message
-    (the concatenated per-step log)."""
+    """[git.commit.squash].message = combine commits with git's own squash message."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
@@ -878,9 +853,7 @@ def test_merge_squash_conventional_style_derives_the_subject(
 def test_merge_squash_default_style_writes_the_run_message(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The default `agent6` style fell off the end of `_squash_message` and
-    returned None, so the squash commit read git's "Merge agent6/<id>" instead
-    of the run's task and its condensed steps."""
+    """The default `agent6` squash style writes the run's task and its condensed steps."""
     monkeypatch.chdir(tmp_path)
     _setup_run(
         tmp_path,
@@ -899,9 +872,11 @@ def test_merge_squash_default_style_writes_the_run_message(
 def test_merge_squash_model_style_degrades_on_a_budget_fault(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The narrowed catch let a `BudgetExceededError` from the provider's build
-    escape a finished run's teardown (auto_merge runs the draft there): the
-    draft degrades with its reason on every fault its setup can raise."""
+    """The model squash style degrades with its reason on every fault its setup can raise.
+
+    auto_merge runs the draft in a finished run's teardown, where a BudgetExceededError must not
+    escape.
+    """
     from agent6.app import merge as merge_mod
     from agent6.budget import BudgetExceededError
 
@@ -925,8 +900,7 @@ def test_merge_squash_model_style_degrades_on_a_budget_fault(
 def test_merge_squash_model_style_degrades_with_a_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """No provider is reachable in this environment, so the model style must
-    fall back to the agent6 message and say so, never fail the merge."""
+    """With no provider reachable, the model style falls back to the agent6 message and says so."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
@@ -954,9 +928,10 @@ def test_merge_squash_trailer_lands_once(tmp_path: Path, monkeypatch: pytest.Mon
 def test_merge_squash_trailer_names_every_code_writer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A later execution's worker wrote code on a second model: the squash trailer
-    joins the journal's worker models first-seen order, not the manifest's
-    starting driver alone, and a message-writing role never appears."""
+    """The squash trailer names the journal's worker models in first-seen order.
+
+    A message-writing role never appears.
+    """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
@@ -986,11 +961,10 @@ def test_merge_squash_trailer_names_every_code_writer(
 def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The squash call built a FRESH full-cap BudgetTracker and a bare
-    provider: real spend that never counted against the run's remainder and
-    never reached the log (only InstrumentedProvider emits budget.update).
-    Inside a run it now uses the run's tracker and is instrumented;
-    `sessions merge` passes neither and keeps its per-invocation ceiling."""
+    """Inside a run the squash draft spends the run's tracker and is instrumented.
+
+    `sessions merge` passes neither and keeps its per-invocation ceiling.
+    """
     from typing import Any
 
     from agent6.app import merge as merge_mod
@@ -1049,11 +1023,11 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
 def test_merge_adopts_an_orphaned_fanout_lane(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A coordinator death leaves a finished lane's branch only in its clone,
-    with the origin state holding the live-view symlink. `sessions merge`
-    adopts it (fetch from the clone, replace the symlink) and lands it like
-    any run; `sessions prune` then sweeps the fan-out clone dir, whose every
-    commit the origin now holds."""
+    """`sessions merge` adopts an orphaned fan-out lane from its clone and lands it like any run.
+
+    A coordinator death leaves a finished lane's branch only in its clone; `sessions prune` then
+    sweeps the clone dir.
+    """
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "config", "user.email", "t@t")
@@ -1063,8 +1037,7 @@ def test_merge_adopts_an_orphaned_fanout_lane(
     _git(tmp_path, "commit", "-q", "-m", "init")
     base_sha = _git(tmp_path, "rev-parse", "HEAD")
 
-    # The lane clone, as the spawner leaves it: workdir cache / repo-id /
-    # fanout / lane-1.
+    # The lane clone as the spawner leaves it: workdir cache / repo-id / fanout / lane-1.
     workdir = tmp_path / "cache" / "parallel"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     (tmp_path / "cfg" / "agent6").mkdir(parents=True, exist_ok=True)
@@ -1081,8 +1054,7 @@ def test_merge_adopts_an_orphaned_fanout_lane(
     _git(clone, "add", "-A")
     _git(clone, "commit", "-q", "-m", "agent6 iter 1: work")
 
-    # The lane's session dir in ITS bucket + the origin's live-view symlink,
-    # with the birth-stamped lineage.
+    # The lane's session dir in its bucket plus the origin's live-view symlink, lineage stamped.
     lane_state = tmp_path / "lane-state" / "sessions" / "runs" / "fan-l1"
     lane_state.mkdir(parents=True)
     (lane_state / "manifest.json").write_text(
@@ -1124,8 +1096,7 @@ def test_merge_adopts_an_orphaned_fanout_lane(
 def test_diff_explains_an_ask_the_same_way_merge_does(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An ask records no base commit either; `sessions diff` named the missing
-    manifest field where its siblings name the fact (an ask writes nothing)."""
+    """`sessions diff` on an ask says an ask writes nothing, as merge does."""
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "ask-AAA056", commits=[], run_branch=None)
     layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="ask-AAA056")
@@ -1142,10 +1113,10 @@ def test_diff_explains_an_ask_the_same_way_merge_does(
 def test_a_resumed_run_merges_again_from_its_own_landed_tip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run is squash-merged, resumed, and merged again: the second execution's
-    commits sit on the same chain above a tip git relates to nothing on the
-    base, so the merge read the first execution as new work and conflicted with the
-    squash holding the same lines. The base is the run's own landed tip."""
+    """A resumed run merges again from its own landed tip.
+
+    The second execution's commits sit on the chain above a tip git relates to nothing on the base.
+    """
     monkeypatch.chdir(tmp_path)
     guarded = "def f(x):\n    if not x:\n        return 0\n    return 1\n"
     base = _setup_run(tmp_path, "resume-run1", commits=[("f.py", guarded, "guard")])
@@ -1170,9 +1141,7 @@ def test_a_resumed_run_merges_again_from_its_own_landed_tip(
 def test_the_branch_verbs_refuse_a_fan_out_coordinator_by_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fan-out's record is the newest run once it ends, so the bare
-    `sessions merge` landed on it and called it a run that "recorded no
-    commits"; it never commits by design, its lanes hold the work."""
+    """The branch verbs refuse a fan-out coordinator by name: its lanes hold the work."""
     from agent6.paths import state_dir
     from agent6.sessions.layout import SessionLayout
     from agent6.ui.cli.sessions_cmds import (
@@ -1197,10 +1166,7 @@ def test_the_branch_verbs_refuse_a_fan_out_coordinator_by_name(
 def test_diff_reads_the_chain_ref_when_the_branch_is_gone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """The verb resolved the chain ref as the commit source, then refused on
-    the branch's absence anyway: a run whose branch was deleted by hand
-    printed "is gone with no merge recorded" and exited 0 with no diff, while
-    `sessions merge` on the same run proceeded from the ref."""
+    """Diff reads the chain ref when the branch is gone, as merge does."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-GONE01", commits=[("a.py", "x = 1\n", "step 1")])

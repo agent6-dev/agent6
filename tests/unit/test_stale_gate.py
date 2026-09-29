@@ -16,9 +16,10 @@ from agent6.viewmodel.listing import status_word
 
 
 def test_the_reason_reads_as_a_failure_with_its_cause() -> None:
-    """No new status word: `died_without_end`, the compare gates and the TUI
-    colours all key off the existing set. "gate stale" is a reason, and the
-    reason field already carries reasons."""
+    """A stale gate is a reason, not a new status word.
+
+    `died_without_end`, the compare gates and the TUI colours key off the existing set.
+    """
     assert status_word(finished=True, all_passed=False, end_reason="gate_stale") == (
         "failed",
         "gate_stale",
@@ -26,15 +27,15 @@ def test_the_reason_reads_as_a_failure_with_its_cause() -> None:
 
 
 def test_a_green_tree_is_still_what_passes() -> None:
-    """`gate_stale` never reaches a green run (see finish_reason), but the
-    word mapping is grounded on all_passed either way: the worker records a
-    proposal, it does not certify itself."""
+    """The word mapping is grounded on all_passed; the worker records a proposal, never a verdict.
+
+    `gate_stale` never reaches a green run (see finish_reason).
+    """
     assert status_word(finished=True, all_passed=True, end_reason="gate_stale") == ("passed", "")
 
 
 def test_the_tool_result_says_nothing_changed() -> None:
-    """A model that finished believing it swapped the gate would carry that
-    belief into its summary."""
+    """The tool result says nothing changed, so the model cannot believe it swapped the gate."""
     wire = FinishSessionResult(
         summary_text="done", result=None, stale_gate="uv run pytest tests/unit"
     ).to_wire()
@@ -44,8 +45,7 @@ def test_the_tool_result_says_nothing_changed() -> None:
 
 
 def test_the_operator_gets_a_paste_ready_line() -> None:
-    """Applying the proposal is the operator's call, so the run prints the
-    exact command rather than doing anything."""
+    """Applying the proposal is the operator's call, so the run prints the exact command instead."""
     from agent6.app.finalize import _print_stale_gate  # pyright: ignore[reportPrivateUsage]
 
     out = io.StringIO()
@@ -130,9 +130,10 @@ def test_a_declaration_names_the_end_only_over_a_red_tree(
 
 
 def test_the_verify_result_names_the_command_that_judged_the_run() -> None:
-    """A worker cannot tell a real failure from a stale gate without knowing
-    WHICH command ran -- and it never chose this one: the gate is the
-    operator's, or inferred from the repo."""
+    """A worker cannot tell a real failure from a stale gate without knowing which command ran.
+
+    It never chose this one: the gate is the operator's, or inferred from the repo.
+    """
     from agent6.tools.results import ExecResult
 
     wire = ExecResult(

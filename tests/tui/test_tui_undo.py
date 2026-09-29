@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""/undo in the TUI: the fork is the continuation, and the message taken back is
-the operator's to edit and resend. The fold's `undone_to` (a live /undo) and
-this view's own `undo_fork` on a finished run both route the composer there."""
+"""/undo in the TUI: the fork is the continuation, and the message taken back is editable.
+
+The fold's `undone_to` and this view's own `undo_fork` both route the composer there.
+"""
 
 from __future__ import annotations
 
@@ -38,8 +39,7 @@ def _undone_run(d: Path) -> None:
 def test_a_live_undo_hands_both_resumes_to_the_fork_under_the_picks(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """The composer holds the undone text, its title names the fork, and both
-    Enter and bare Resume continue that fork under the row's choices."""
+    """The composer holds the undone text, its title names the fork, and Enter continues it."""
     spawned: list[tuple[str, str, str, str]] = []
 
     def _fake_resume(
@@ -91,8 +91,7 @@ def test_a_live_undo_hands_both_resumes_to_the_fork_under_the_picks(
 def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """The non-live path forks in-process (no event lands in this run's log);
-    the view still hands the follow-up to the child."""
+    """The non-live path forks in-process, and the view still hands the follow-up to the child."""
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
@@ -148,10 +147,10 @@ def test_composer_labels_name_the_fork(continue_as: str) -> None:
 def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """Run > Fork used to spawn `agent6 fork <id>` continuing at once; with
-    no direction, a fork of a finished run re-read a done conversation and
-    ended as a silent finish. It now creates the fork unstarted; on a finished
-    run the composer routes the next line to the fork (Enter resumes it)."""
+    """Run > Fork creates the fork unstarted; on a finished run the composer routes to it.
+
+    A fork continued at once with no direction re-read a done conversation and ended silently.
+    """
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
@@ -199,8 +198,7 @@ def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
 def test_fork_of_a_live_run_leaves_the_composer_steering_this_run(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """The live composer steers THIS run; a fork made while live is created
-    unstarted and the notice says how it starts."""
+    """The live composer steers this run; a fork made while live is created unstarted."""
     import os
 
     from agent6.sessions.ipc import write_worker_pid
@@ -235,11 +233,11 @@ def test_fork_of_a_live_run_leaves_the_composer_steering_this_run(
 def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """Run > Resume on a run the agent ended spawned a detached `agent6 resume`
-    that refused ("already finished; give it new work") on a stderr nobody
-    read, while the toast said "resuming…". The refusal lands here; the
-    composer below is how it gets new work. A stopped/crashed run still
-    resumes."""
+    """Run > Resume on a run the agent ended lands the refusal here; the composer gives new work.
+
+    The detached child refused on a stderr nobody read while the toast said "resuming…"; a
+    stopped or crashed run still resumes.
+    """
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
@@ -299,10 +297,10 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
 
 
 def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any) -> None:
-    """Run > Run this plan on a finished plan spawns `agent6 run --from
-    <id>` with the detached env and, from the hub, ends the view with the new
-    run to open; standalone it names the run to attach to. A non-plan session
-    refuses without spawning."""
+    """Run > Run this plan on a finished plan spawns `agent6 run --from <id>` detached.
+
+    From the hub it ends the view with the new run; standalone it names the run to attach to.
+    """
     from agent6.ui.tui.app import TuiExit
 
     seen: dict[str, Any] = {}
@@ -387,9 +385,7 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any)
 
 
 def test_a_refused_btw_toasts_as_a_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`open_btw` carries its outcome, and the composer dropped it: a refused
-    side question toasted at the success severity, unlike every other refusal
-    beside it."""
+    """A refused side question toasts at the error severity, like every other refusal."""
 
     def refused(_session_dir: Path, _question: str) -> tuple[bool, str]:
         return False, "no live run to ask beside"
@@ -397,8 +393,7 @@ def test_a_refused_btw_toasts_as_a_warning(tmp_path: Path, monkeypatch: pytest.M
     def controllable(_app: Agent6TUI) -> bool:
         return True
 
-    # The one directive owner spawns the side ask now, so the patch goes
-    # where the name is read.
+    # The one directive owner spawns the side ask, so the patch goes where the name is read.
     monkeypatch.setattr("agent6.ui.directives.open_btw", refused)
     monkeypatch.setattr(Agent6TUI, "session_controllable", controllable)
     run = tmp_path / "sessions" / "runs" / "runny-two-BBBBBB"

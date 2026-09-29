@@ -28,8 +28,10 @@ def _cfg(command: list[str]) -> Config:
 
 
 def test_a_server_that_cannot_spawn_is_recorded_not_just_logged(tmp_path: Path) -> None:
-    """The manager knows which servers are missing; before this it only said so
-    in passing, to a logger that may go nowhere."""
+    """A server that cannot spawn is recorded, not just logged.
+
+    The manager knows which servers are missing; a logger that may go nowhere is not a record.
+    """
     mgr = start_mcp_manager_if_enabled(_cfg(["/nonexistent/mcp-server"]), tmp_path, "none")
     assert mgr is not None
     try:
@@ -58,8 +60,10 @@ def test_the_failure_reaches_the_journal(tmp_path: Path) -> None:
 def test_a_server_that_starts_emits_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Only the failure is news. A per-server "started" event would be noise in
-    every conversation."""
+    """Only the failure is news.
+
+    A per-server "started" event would be noise in every conversation.
+    """
     from agent6.tools import mcp_client
 
     def _ok(_self: object) -> None:
@@ -74,8 +78,11 @@ def test_a_server_that_starts_emits_nothing(
 
 
 def test_the_conversation_shows_it_on_every_surface() -> None:
-    """A marker in the shared transcript fold, so the CLI, TUI, web and ACP all
-    render it without each learning the event."""
+    """The conversation shows an unavailable server on every surface.
+
+    A marker in the shared transcript fold, so the CLI, TUI, web and ACP all render it without each
+    learning the event.
+    """
     fold = TranscriptFold()
     items = list(
         fold.feed(
@@ -95,8 +102,11 @@ def test_the_conversation_shows_it_on_every_surface() -> None:
 
 
 def test_the_editor_is_told_too() -> None:
-    """The whole reason it is an event: ACP projects the same fold, so the
-    editor gets it in the conversation instead of a log pane it may not show."""
+    """The whole reason it is an event.
+
+    ACP projects the same fold, so the editor gets it in the conversation instead of a log pane it
+    may not show.
+    """
     from agent6.ui.acp.updates import updates_for
     from agent6.viewmodel.transcript import TranscriptFold
 
@@ -114,8 +124,10 @@ def test_the_editor_is_told_too() -> None:
 
 
 def test_check_names_the_spawn_error_not_a_symptom(capsys: pytest.CaptureFixture[str]) -> None:
-    """`agent6 check` called a server that never started "started but exposed no
-    tools" -- a symptom, and a false claim about what happened."""
+    """`agent6 check` names the spawn error, not a symptom.
+
+    "started but exposed no tools" for a server that never started is a symptom and a false claim.
+    """
     from agent6.ui.cli import check_cmds
 
     _doctor_check_mcp = check_cmds._doctor_check_mcp  # pyright: ignore[reportPrivateUsage]

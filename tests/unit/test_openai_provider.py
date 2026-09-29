@@ -72,9 +72,11 @@ def test_call_translates_messages_and_parses_usage() -> None:
 
 
 def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
-    """api.openai.com o-series/gpt-5 take a TOP-LEVEL ``reasoning_effort``; the
-    nested ``reasoning`` object (OpenRouter's convention) 400s there. A non-direct
-    host keeps the nested object. (Found by GLM during dogfood, rewritten here.)"""
+    """Direct OpenAI reasoning models take a top-level `reasoning_effort`.
+
+    The nested `reasoning` object (OpenRouter's convention) 400s on api.openai.com; a non-direct
+    host keeps the nested object.
+    """
     captured: dict[str, Any] = {}
 
     def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
@@ -104,10 +106,12 @@ def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
 
 
 def test_openai_direct_gpt5_honors_reasoning_effort() -> None:
-    """gpt-5 / bare o1 / o3 match _is_openai_direct_reasoning_model but NOT
-    _is_reasoning_model, so a configured reasoning_effort used to be silently
-    dropped (the reasoning block was gated on _is_reasoning_model alone). It must
-    emit the top-level reasoning_effort like any other openai-direct reasoner."""
+    """gpt-5 and the bare o-series honour a configured reasoning_effort.
+
+    They match `_is_openai_direct_reasoning_model` but not `_is_reasoning_model`, so a reasoning
+    block gated on the latter alone drops the setting silently; they emit the top-level
+    `reasoning_effort` like any other openai-direct reasoner.
+    """
     from agent6.providers.openai import _is_reasoning_model  # pyright: ignore[reportPrivateUsage]
 
     assert _is_reasoning_model("gpt-5") is False  # the exact gap this closes
@@ -150,10 +154,12 @@ def test_call_merges_extra_body() -> None:
 
 
 def test_extra_body_cannot_replace_the_structural_request_shape() -> None:
-    """Tuning keys merge last and win (max_tokens); the structural set the
-    loop depends on (tools, tool_choice, response_format, n) never does --
-    replacing the tool schema silently changes the model's surface, and a
-    response the parser cannot read as choices[0] breaks every call."""
+    """`extra_body` cannot replace the structural request shape.
+
+    Tuning keys merge last and win (max_tokens); the structural set the loop depends on (tools,
+    tool_choice, response_format, n) never does, since replacing the tool schema silently changes
+    the model's surface and a response the parser cannot read as choices[0] breaks every call.
+    """
     provider = OpenAIProvider(
         api_key="sk-test",
         model="kimi",
@@ -183,9 +189,11 @@ def test_extra_body_cannot_replace_the_structural_request_shape() -> None:
 
 
 def test_call_clamps_negative_fresh_input_to_zero() -> None:
-    """Defensive: a misbehaving upstream reporting cached > prompt must not
-    produce a negative `input_tokens` (which would corrupt the BudgetTracker
-    counters)."""
+    """Negative fresh input is clamped to zero.
+
+    An upstream reporting cached > prompt must not produce a negative `input_tokens`, which corrupts
+    the BudgetTracker counters.
+    """
     provider = OpenAIProvider(api_key="sk", model="gpt-x")
 
     def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
@@ -242,8 +250,10 @@ def test_call_raises_provider_error_on_http_status() -> None:
 
 
 def test_an_empty_key_sends_no_auth_header() -> None:
-    """An Ollama-style local endpoint takes no key: the provider sends no
-    authorization header rather than an empty bearer."""
+    """An Ollama-style local endpoint takes no key.
+
+    The provider sends no authorization header rather than an empty bearer.
+    """
     provider = OpenAIProvider(api_key="", model="gpt-x")
     captured: dict[str, Any] = {}
 
@@ -323,11 +333,13 @@ def test_is_reasoning_model_detects_thinking_models() -> None:
 
 
 def test_reasoning_floor_covers_kimi_latest_without_the_effort_default() -> None:
-    """The max_tokens FLOOR and the effort DEFAULT are split: `kimi-latest`
-    (Moonshot's rolling alias) emits reasoning_content and needs the headroom, but
-    the `kimi-k` family match misses it -- and adding it to the effort set would
-    pin it to an UNMEASURED reasoning_effort="low" for whatever it resolves to. It
-    gets the floor only; the floor set is a superset of the effort set."""
+    """The max_tokens FLOOR and the effort DEFAULT are split.
+
+    `kimi-latest` (Moonshot's rolling alias) emits reasoning_content and needs the headroom, but the
+    `kimi-k` family match misses it, and adding it to the effort set would pin it to an UNMEASURED
+    reasoning_effort="low" for whatever it resolves to. It gets the floor only; the floor set is a
+    superset of the effort set.
+    """
     from agent6.providers import openai as oai
 
     needs_headroom = oai._needs_reasoning_headroom  # pyright: ignore[reportPrivateUsage]
@@ -345,10 +357,11 @@ def test_reasoning_floor_covers_kimi_latest_without_the_effort_default() -> None
 
 
 def test_call_bumps_max_tokens_for_reasoning_models() -> None:
-    """Kimi-K2-Thinking should get >=32768 max_tokens even if caller asks
-    for 16384 - reasoning_content shares the budget with content + tool
-    calls and starves them at low caps. Non-reasoning models keep the
-    caller-supplied value."""
+    """A reasoning model gets at least 32768 max_tokens, whatever the caller asked for.
+
+    `reasoning_content` shares the budget with content and tool calls and starves them at low caps;
+    non-reasoning models keep the caller's value.
+    """
     from agent6.providers.openai import REASONING_MODEL_MIN_MAX_TOKENS
 
     provider = OpenAIProvider(api_key="sk", model="kimi-k2-thinking")
@@ -382,11 +395,11 @@ def test_call_does_not_bump_max_tokens_for_normal_models() -> None:
 
 
 def test_reasoning_effort_arg_overrides_default(monkeypatch: Any) -> None:
-    """An explicit ``reasoning_effort`` argument takes precedence
-    over the AGENT6_REASONING_EFFORT env override and the built-in
-    default. : ``"off"`` sends ``reasoning={"enabled": False}`` to
-    truly disable the reasoning channel (omitting the block left it ON by
-    default on K2.6, so the recovery turn still starved)."""
+    """An explicit `reasoning_effort` argument wins over the env override and the default.
+
+    `"off"` sends `reasoning={"enabled": False}` to disable the reasoning channel; omitting the
+    block leaves it on by default on K2.6, so the recovery turn still starves.
+    """
     monkeypatch.setenv("AGENT6_REASONING_EFFORT", "medium")
     provider = OpenAIProvider(api_key="sk", model="moonshotai/kimi-k2.6")
     captured: dict[str, Any] = {}
@@ -416,10 +429,11 @@ def test_reasoning_effort_arg_overrides_default(monkeypatch: Any) -> None:
 
 
 def test_call_captures_reasoning_content_in_raw() -> None:
-    """Kimi-shaped ``reasoning_content`` is preserved on resp.raw["content"]
-    as a Anthropic-style ``{"type": "thinking"}`` block, but does NOT leak
-    into resp.text (harness.loop strips ``<thinking>`` prefixes from the
-    auto-commit summary, and we don't want it double-printed)."""
+    """Kimi-shaped `reasoning_content` is kept in `resp.raw` and never leaks into `resp.text`.
+
+    It is preserved on `resp.raw["content"]` as an Anthropic-style `{"type": "thinking"}` block; the
+    loop strips `<thinking>` prefixes from the auto-commit summary and must not print it twice.
+    """
     provider = OpenAIProvider(api_key="sk", model="kimi-k2-thinking")
 
     def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
@@ -548,12 +562,13 @@ def test_401_without_credential_is_not_retried() -> None:
 
 
 def test_an_upstream_error_completion_is_retryable_and_still_metered() -> None:
-    """Observed from OpenRouter: a 200 whose choice carries
-    `finish_reason: "error"`, a null content and nothing else, after the model
-    spent its whole budget in the reasoning channel. Returned as a finished
-    turn it spends a went-quiet nudge on an upstream failure and abstains a
-    review seat as if the model had answered; the tokens are billed either
-    way, so it meters first and then retries."""
+    """Observed from OpenRouter.
+
+    A 200 whose choice carries `finish_reason: "error"`, a null content and nothing else, after the
+    model spent its whole budget in the reasoning channel. Returned as a finished turn it spends a
+    went-quiet nudge on an upstream failure and abstains a review seat as if the model had answered;
+    the tokens are billed either way, so it meters first and then retries.
+    """
     from agent6.budget import BudgetTracker
 
     failed = {
@@ -588,10 +603,12 @@ def test_an_upstream_error_completion_is_retryable_and_still_metered() -> None:
 
 
 def test_a_streamed_upstream_error_completion_is_refused_the_same_way() -> None:
-    """A live front-end takes the streaming path, which assembles its own body:
-    metering and this refusal have one owner so the two shapes cannot drift.
-    Checked only on the decoded shape, a streamed upstream failure came back as
-    a finished, silent turn."""
+    """A streamed upstream error completion is refused the same way as a decoded one.
+
+    A live front-end takes the streaming path, which assembles its own body; metering and this
+    refusal have one owner so the two shapes cannot drift, or a streamed upstream failure comes back
+    as a finished, silent turn.
+    """
     from agent6.budget import BudgetTracker
     from tests.unit.test_anthropic_streaming import FakeStreamResponse
 
@@ -708,8 +725,11 @@ def test_openai_response_fields_are_not_coerced(choice: dict[str, Any]) -> None:
 
 
 def test_a_nameless_tool_call_is_dropped_beside_a_valid_one() -> None:
-    """A native tool_call with no `function.name` is dropped, as the comment
-    above the check says; requiring a string there refused the whole body."""
+    """A nameless tool call is dropped beside a valid one.
+
+    A native tool_call with no `function.name` is dropped, as the comment above the check says;
+    requiring a string there refuses the whole body.
+    """
     from agent6.providers._openai_parse import parse_response
 
     body = {

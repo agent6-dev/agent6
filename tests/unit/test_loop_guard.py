@@ -1,13 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""degenerate-loop guard in Harness._drive_loop.
+"""The degenerate-loop guard in Harness._drive_loop.
 
-When the worker calls the same (tool_name, args) back-to-back >=3 times,
-the harness appends a one-shot "loop-guard" text block to the next user
-turn telling the worker the result has not changed and to pivot. Behaviour
-observed live with Kimi K2.6 on the perf takehome: 15 consecutive
-`read_file(path="problem.py")` calls returning the same 19826 bytes,
-followed by went_quiet.
+The same (tool_name, args) called back-to-back three times draws a one-shot loop-guard block telling
+the worker the result has not changed.
 """
 
 from __future__ import annotations
@@ -137,8 +133,7 @@ def test_loop_guard_fires_on_three_identical_calls(tmp_path: Path) -> None:
     assert result.completed is True
     assert provider.call.call_count == 4
 
-    # Reconstruct messages from the provider call history (last call's
-    # messages arg holds the full conversation).
+    # The last call's messages arg holds the full conversation.
     last_args = provider.call.call_args_list[-1]
     final_messages: list[dict[str, Any]] = last_args.kwargs.get("messages") or last_args.args[1]
     notices = _loop_guard_blocks(final_messages)
@@ -148,12 +143,11 @@ def test_loop_guard_fires_on_three_identical_calls(tmp_path: Path) -> None:
 
 
 def test_polling_a_growing_result_is_not_a_spiral(tmp_path: Path) -> None:
-    """`run_command`'s own description tells the model to poll a background
-    job with `read_background`, whose args never change until the job ends.
-    Counted as a repeat it drew three nudges and then killed the run for
-    following the instruction. A poll is not a repeat -- and a repeat of any
-    OTHER tool still is, however its bytes differ (a duration, a timestamp):
-    re-running the same failing command is the spiral the guard exists for."""
+    """Polling a background job with `read_background` is not a repeated call; other repeats are.
+
+    `run_command`'s own description tells the model to poll, with args that never change until the
+    job ends.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
 
@@ -179,9 +173,7 @@ def test_polling_a_growing_result_is_not_a_spiral(tmp_path: Path) -> None:
     final_messages: list[dict[str, Any]] = last_args.kwargs.get("messages") or last_args.args[1]
     assert _loop_guard_blocks(final_messages) == []
 
-    # The same shape on a NON-poll tool is a spiral, whatever its bytes do: a
-    # command re-run with identical arguments whose only difference is its own
-    # duration is the case the guard was written for.
+    # The same shape on a non-poll tool is a spiral: a command re-run with identical arguments.
     spiraller = MagicMock()
     spiraller.call.side_effect = itertools.chain(
         (_resp_with_tool("run_command", {"argv": ["pytest"]}, tu_id=f"s{i}") for i in range(1, 10)),
@@ -245,17 +237,12 @@ def test_loop_guard_does_not_re_fire_back_to_back(tmp_path: Path) -> None:
     last_args = provider.call.call_args_list[-1]
     final_messages: list[dict[str, Any]] = last_args.kwargs.get("messages") or last_args.args[1]
     notices = _loop_guard_blocks(final_messages)
-    # The guard fires once when streak hits 3. The
-    # `spiral.warned_at_iteration < iteration - 1` gate suppresses
-    # re-emission at iter 4 (consecutive) but allows re-emission at
-    # iter 5 (one-iteration gap) if the streak persists. So we expect
-    # 1 or 2 notices, but NOT one per iteration.
+    # Fires at streak 3, suppressed at iter 4, re-emitted at iter 5: two notices, not one per turn.
     assert 1 <= len(notices) <= 2, f"expected 1-2 notices, got {len(notices)}"
 
 
 def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: Path) -> None:
-    """Notice is advisory; when the streak reaches
-    `loop_guard_kill_threshold` the run terminates."""
+    """The notice is advisory; at `loop_guard_kill_threshold` the streak ends the run."""
     repo = tmp_path / "repo"
     _init_repo(repo)
 
@@ -346,9 +333,10 @@ def _knobs(cfg: Any, **knobs: Any) -> Any:
 
 
 def _gated_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock, **kw: Any) -> Harness:
-    """A GATED harness (verify_command set), where the per-turn auto-commit
-    fires only on a green verify -- so a run_command-authored edit stays in the
-    worktree and only a final checkpoint can get it into git history."""
+    """Return a gated harness whose auto-commit fires only on a green verify.
+
+    A run_command-authored edit stays in the worktree, and only a final checkpoint gets it into git.
+    """
     return Harness(
         chain=RunChain(
             repo,
@@ -402,10 +390,10 @@ def _git_log(repo: Path) -> str:
 
 
 def test_loop_guard_kill_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
-    """A harness-initiated stop must not drop run_command-authored edits: every
-    agent6 surface (runs diff, merge, resume, score) reads git history, not the
-    worktree, so a kill that leaves the tree dirty loses the work from all of
-    them. The sibling max_iterations stop already checkpoints."""
+    """A harness-initiated stop does not drop run_command-authored edits.
+
+    Every surface (diff, merge, resume, score) reads git history, not the worktree.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = MagicMock()
@@ -449,10 +437,7 @@ def test_max_iterations_stop_checkpoints_the_dirty_worktree(tmp_path: Path) -> N
 
 
 def test_budget_exhausted_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
-    """Every harness-initiated end must checkpoint (the loop-guard rule): a
-    BudgetExceededError on the next provider call ended the run with the prior
-    turn's run_command edit only in the worktree, invisible to runs
-    diff/merge/score."""
+    """Every harness-initiated end checkpoints, a BudgetExceededError on the next call included."""
     from agent6.budget import BudgetExceededError
 
     repo = tmp_path / "repo"
@@ -469,9 +454,7 @@ def test_budget_exhausted_checkpoints_the_dirty_worktree(tmp_path: Path) -> None
 
 
 def test_provider_error_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
-    """A fatal provider error (permanent status / retries exhausted) is a
-    harness-initiated end too; the run is resumable and its edits must be in
-    git history like every sibling stop."""
+    """A fatal provider error is a harness-initiated end too: the run's edits land in git."""
     from agent6.providers import ProviderError
 
     repo = tmp_path / "repo"
@@ -488,8 +471,7 @@ def test_provider_error_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
 
 
 def test_went_quiet_checkpoints_the_dirty_worktree(tmp_path: Path, monkeypatch: Any) -> None:
-    """A model that starves into empty turns after making real edits must not
-    lose them from git history on the way out."""
+    """A model that starves into empty turns after real edits keeps them in git history."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = MagicMock()
@@ -510,10 +492,10 @@ def test_went_quiet_checkpoints_the_dirty_worktree(tmp_path: Path, monkeypatch: 
 
 
 def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
-    """The worst sibling: the operator's verify command cannot execute in the
-    jail, so verify can NEVER go green and the per-turn auto-commit never
-    fires -- ALL of the run's edits existed only in the worktree at the
-    abort."""
+    """A verify that cannot execute in the jail still ends with the run's edits checkpointed.
+
+    Verify never goes green, so the per-turn auto-commit never fires.
+    """
     from agent6.tools.dispatch import OperatorCommandUnexecutableError
 
     repo = tmp_path / "repo"
@@ -562,11 +544,11 @@ def _final_messages(provider: MagicMock) -> list[dict[str, Any]]:
 
 
 def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
-    """Wall clock past the threshold with zero edit and zero verify calls
-    injects the notice exactly once, however many turns follow. Recall
-    spirals make 3-10 total calls with long reasoning between them, so the
-    identical-signature guard structurally never sees them (P1: 5 of 6
-    spiral empties ended by timeout, not guard)."""
+    """Wall clock past the threshold with no edit and no verify injects the notice once.
+
+    Recall spirals make few calls with long reasoning between them, so the identical-signature guard
+    never sees them.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = MagicMock()
@@ -585,14 +567,11 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
     assert result.completed is True
     notices = _stagnation_blocks(_final_messages(provider))
     assert len(notices) == 1, notices
-    # This harness configures no verify command, so the notice names no gate:
-    # sending a gateless run after `run_verify_command` names a tool the same
-    # run's prompt says it does not have.
+    # No verify command here, so the notice names no gate the prompt says the run lacks.
     assert "nothing edited yet" in notices[0]
     assert "verify" not in notices[0]
 
-    # A gate the POLICY withholds is not a gate either: `run_commands = "no"`
-    # takes run_verify_command away, and the same run's prompt says so.
+    # A gate the policy withholds is not a gate either: `run_commands = "no"` takes it away.
     denied = MagicMock()
     denied.call.side_effect = itertools.chain(
         [_resp_with_tool("read_file", {"path": "x.txt"}, tu_id="d1")],
@@ -621,8 +600,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
 
 
 def test_stagnation_ignores_time_blocked_on_the_operator(tmp_path: Path) -> None:
-    """The stagnation clock is the model's own time: an hour spent waiting on
-    an approval never reads as an hour of research."""
+    """The stagnation clock is the model's own time; an hour at an approval is not research."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = MagicMock()
@@ -642,8 +620,7 @@ def test_stagnation_ignores_time_blocked_on_the_operator(tmp_path: Path) -> None
 
 
 def test_stagnation_notice_suppressed_by_an_edit(tmp_path: Path) -> None:
-    """An edit attempt before the threshold crossing means no notice: the
-    guard targets attemptless runs only."""
+    """An edit attempt before the threshold means no notice: the guard targets attemptless runs."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = MagicMock()
@@ -681,9 +658,7 @@ def test_stagnation_notice_zero_disables(tmp_path: Path) -> None:
 
 
 def test_unlimited_iterations_is_minus_one(tmp_path: Path) -> None:
-    """[harness].max_iterations = -1 runs unbounded. The pre-knob loop fed -1
-    into range(start, 0), which is EMPTY: the run exited max_iterations at
-    zero iterations without a single provider call."""
+    """[harness].max_iterations = -1 runs unbounded, not range(start, 0)."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = MagicMock()
@@ -703,10 +678,7 @@ def test_unlimited_iterations_is_minus_one(tmp_path: Path) -> None:
 
 
 def test_resume_execution_rearms_the_iteration_allowance(tmp_path: Path) -> None:
-    """A resumed execution gets a fresh max_iterations window relative to its own
-    start. The counter used to be absolute: a run capped at max_iterations
-    resumed into range(cap+1, cap+1) and made ZERO provider calls (observed
-    live: a standing run's resume execution ended instantly)."""
+    """A resumed execution gets a fresh max_iterations window relative to its own start."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = MagicMock()
@@ -732,9 +704,10 @@ def test_resume_execution_rearms_the_iteration_allowance(tmp_path: Path) -> None
 
 
 def test_the_notice_fires_at_three_and_re_arms_after_a_quiet_iteration() -> None:
-    """The advisor itself: the third identical call draws the notice with
-    the tool's name and the streak, the next iteration is quiet, the one
-    after that hears it again; a shorter streak draws nothing."""
+    """The third identical call draws the notice, the next turn is quiet, the one after hears it.
+
+    A shorter streak draws nothing.
+    """
     from agent6.harness._conversation import AssistantTurn
     from agent6.harness._guards import loop_guard_notice
     from agent6.harness._loop_state import LoopState, TurnState
@@ -762,9 +735,10 @@ def test_the_notice_fires_at_three_and_re_arms_after_a_quiet_iteration() -> None
 
 
 def test_the_kill_is_a_hard_stop_at_the_threshold_and_off_at_zero() -> None:
-    """The advisor itself: at the threshold the stop names the tool and the
-    streak, in its summary, its event fields and its log line; below it, or
-    with the knob at 0, nothing."""
+    """At the threshold the stop names the tool and the streak everywhere; below it, nothing.
+
+    In the summary, the event fields and the log line; the knob at 0 disables it.
+    """
     from agent6.harness._conversation import AssistantTurn
     from agent6.harness._guards import loop_guard_kill
     from agent6.harness._loop_state import LoopState, TurnState

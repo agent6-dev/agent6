@@ -22,18 +22,21 @@ def _session(cwd: Path) -> JailSession:
 
 
 def _run(session: JailSession, argv: tuple[str, ...], **kw: object) -> CommandResult:
-    """A run with no check-in always completes, so it is a CommandResult; the
-    hand-off shape is exercised in test_jail_session_levels.py."""
+    """A run with no check-in always completes, so it is a CommandResult.
+
+    The hand-off shape is exercised in test_jail_session_levels.py.
+    """
     res = session.run(argv, **kw)  # pyright: ignore[reportArgumentType]
     assert isinstance(res, CommandResult), f"unexpected hand-off: {res}"
     return res
 
 
 def test_the_session_netns_has_loopback_up(tmp_path: Path) -> None:
-    """An empty netns leaves `lo` DOWN, so nothing inside can reach even
-    itself -- which is what a shared address between a run's commands needs.
-    Loopback in a namespace with no other interface reaches nothing outside
-    it."""
+    """An empty netns leaves `lo` down, so nothing inside reaches even itself.
+
+    A shared address between a run's commands needs loopback up; in a namespace with no
+    other interface it reaches nothing outside it.
+    """
     session = _session(tmp_path)
     try:
         got = _run(session, ("ip", "link", "show", "lo"))
@@ -44,8 +47,11 @@ def test_the_session_netns_has_loopback_up(tmp_path: Path) -> None:
 
 
 def test_commands_in_one_session_share_a_tmp(tmp_path: Path) -> None:
-    """The private /tmp is per-launcher, so per-command launchers gave every
-    command a fresh one; a run's commands must see one."""
+    """A run's commands see one private /tmp.
+
+    The private /tmp is per launcher, so per-command launchers would give each command a
+    fresh one.
+    """
     session = _session(tmp_path)
     try:
         first = _run(session, ("sh", "-c", "echo shared > /tmp/marker; echo wrote"))
@@ -58,9 +64,11 @@ def test_commands_in_one_session_share_a_tmp(tmp_path: Path) -> None:
 
 
 def test_a_backgrounded_server_answers_the_next_command(tmp_path: Path) -> None:
-    """The point of one process per run: a server one command starts is
-    reachable by the next. A per-command launcher put each in its own empty
-    netns, and the escapee killpg took the server down with its command."""
+    """A server one command starts is reachable by the next.
+
+    The point of one process per run: a per-command launcher puts each command in its own
+    empty netns, and the escapee killpg takes the server down with its command.
+    """
     session = _session(tmp_path)
     try:
         listener = (
@@ -92,16 +100,15 @@ def test_a_backgrounded_server_answers_the_next_command(tmp_path: Path) -> None:
 
 
 def test_a_jailed_command_cannot_write_the_launchers_answer_pipe(tmp_path: Path) -> None:
-    """The serving launcher is PID 1 of the jail's own PID namespace and answers
-    every request on its stdout, so a command that can open `/proc/1/fd/1`
-    writes its own result. The agent then reads model-authored JSON as that
-    command's exit code, and every later answer is one request behind: a verify
-    gate is handed the result of a command the model chose, reports green on a
-    broken tree, and the run auto-merges it.
+    """A command cannot open `/proc/1/fd/1` and write its own result.
 
-    seccomp denying ptrace(2) does not cover this -- reaching another process's
-    /proc/<pid>/fd is a permission check (ptrace_may_access), not that syscall
-    -- and Landlock exempts a pipe reopened through /proc/<pid>/fd.
+    The serving launcher is PID 1 of the jail's PID namespace and answers every request on
+    its stdout; a command that could write there would hand the agent model-authored JSON as
+    its exit code, with every later answer one request behind (a verify gate handed the
+    result of a command the model chose reports green on a broken tree, and the run
+    auto-merges it). seccomp denying ptrace(2) does not cover this: reaching another
+    process's /proc/<pid>/fd is a permission check (ptrace_may_access), not that syscall,
+    and Landlock exempts a pipe reopened through /proc/<pid>/fd.
     """
     session = _session(tmp_path)
     try:
@@ -117,15 +124,13 @@ def test_a_jailed_command_cannot_write_the_launchers_answer_pipe(tmp_path: Path)
 
 
 def test_a_daemonizing_command_does_not_wedge_the_run(tmp_path: Path) -> None:
-    """`setsid` puts a grandchild outside the command's process group, so the
-    teardown killpg misses it and it keeps the capture pipe open. Joining the
-    reader threads then never returns: the launcher never answers, and the
-    request read above it has nothing to time out -- the whole run hangs on one
-    tool call, with no error and no diagnostic. Any command that daemonizes by
-    double-fork + setsid does this, not just a hostile one.
+    """A `setsid` grandchild holding the capture pipe does not hang the run.
 
-    Bounded here rather than by the suite: an unfixed hang must fail this test,
-    not stall every test after it.
+    It leaves the command's process group, so the teardown killpg misses it and the reader
+    threads would join forever: the launcher never answers, the request read above has
+    nothing to time out, and one tool call stalls the whole run with no diagnostic. Any
+    command that daemonizes by double-fork + setsid does this. Bounded here rather than by
+    the suite: an unfixed hang fails this test, not every test after it.
     """
     session = _session(tmp_path)
     answered: list[CommandResult] = []
@@ -149,10 +154,11 @@ def test_a_daemonizing_command_does_not_wedge_the_run(tmp_path: Path) -> None:
 
 
 def test_a_command_that_cannot_be_executed_does_not_end_the_session(tmp_path: Path) -> None:
-    """A missing binary is the model's typo, not a broken sandbox. The
-    per-command launcher answers 127 so the model fixes its argv; the session
-    has to answer the same, or one bad argv takes the run's jail process down
-    -- with every backgrounded server inside it."""
+    """A missing binary answers 127 from the session, like the per-command launcher.
+
+    It is the model's typo, not a broken sandbox; one bad argv must not take the run's jail
+    process down with every backgrounded server inside it.
+    """
     session = _session(tmp_path)
     try:
         bad = _run(session, ("definitely-not-a-real-binary", "-q"))
@@ -167,15 +173,14 @@ def test_a_command_that_cannot_be_executed_does_not_end_the_session(tmp_path: Pa
 
 
 def test_a_dead_session_refuses_with_its_own_error(tmp_path: Path) -> None:
-    """Every caller is written against JailUnavailableError. A raw OSError from
-    the pipe escapes all of them: past the dispatcher's jail handler, past
-    SessionJob's status, and out of ToolDispatcher.close() before teardown has
-    stopped the shells or closed the LSP.
+    """A dead launcher pipe surfaces as JailUnavailableError, and the whole group is killed.
 
-    The whole GROUP is killed, not just the launcher we hold: under strict the
-    request-serving process is a namespaced child the launcher forked, and it
-    keeps the pipes if only its parent dies. (Normal teardown never kills
-    either -- `close()` shuts stdin and the serve loop exits on EOF.)"""
+    Every caller is written against JailUnavailableError; a raw OSError would escape the
+    dispatcher's jail handler, SessionJob's status and ToolDispatcher.close() before teardown
+    stopped the shells. Under strict the request-serving process is a namespaced child the
+    launcher forked, and it keeps the pipes if only its parent dies; normal teardown kills
+    neither, since `close()` shuts stdin and the serve loop exits on EOF.
+    """
     import os
     import signal
 
@@ -193,9 +198,11 @@ def test_a_dead_session_refuses_with_its_own_error(tmp_path: Path) -> None:
 
 
 def test_a_session_command_gets_the_configured_memory_cap(tmp_path: Path) -> None:
-    """The cap belongs to the run's policy, and the requests carry it: sending
-    only argv left every command in the run on the launcher's own default,
-    silently ignoring `[sandbox] memory_limit_mb`."""
+    """Every request carries the run policy's memory cap.
+
+    Sending only argv would leave every command on the launcher's own default, silently
+    ignoring `[sandbox] memory_limit_mb`.
+    """
     session = JailSession.open(
         JailPolicy(
             cwd=tmp_path, argv=("true",), isolation="strict", timeout_s=30.0, memory_limit_mb=256
@@ -210,9 +217,11 @@ def test_a_session_command_gets_the_configured_memory_cap(tmp_path: Path) -> Non
 
 
 def test_a_backgrounded_command_gets_the_same_memory_cap(tmp_path: Path) -> None:
-    """The cap must not depend on the transport: the detached spawn shares the
-    capture transport's child setup, so a backgrounded command cannot allocate
-    past the `[sandbox] memory_limit_mb` every foreground command honours."""
+    """A backgrounded command honours `[sandbox] memory_limit_mb` like a foreground one.
+
+    The detached spawn shares the capture transport's child setup, so the cap does not
+    depend on the transport.
+    """
     session = JailSession.open(
         JailPolicy(
             cwd=tmp_path, argv=("true",), isolation="strict", timeout_s=30.0, memory_limit_mb=256
@@ -240,9 +249,11 @@ def test_a_backgrounded_command_gets_the_same_memory_cap(tmp_path: Path) -> None
 
 
 def test_a_backgrounded_command_stops_through_the_session(tmp_path: Path) -> None:
-    """Its pid is namespace-local, so only the launcher can signal it: stop
-    forwards the pid there. The kill is followed by a reap, or the pid stays
-    a zombie and every liveness check still answers "running"."""
+    """Stop forwards the namespace-local pid to the launcher, which kills and reaps it.
+
+    Only the launcher can signal it; unreaped, the pid stays a zombie and every liveness
+    check still answers "running".
+    """
     session = _session(tmp_path)
     try:
         pid = session.start_background(("sleep", "300"))
@@ -256,8 +267,7 @@ def test_a_backgrounded_command_stops_through_the_session(tmp_path: Path) -> Non
 
 
 def test_the_session_reports_a_backgrounded_command_s_exit(tmp_path: Path) -> None:
-    """The launcher is the only process that can wait on it, so the exit code
-    a surface reports has to come back over the same channel."""
+    """The exit code comes back over the launcher's channel; only it can wait on the command."""
     session = _session(tmp_path)
     try:
         pid = session.start_background(("sh", "-c", "exit 7"))
@@ -273,8 +283,7 @@ def test_the_session_reports_a_backgrounded_command_s_exit(tmp_path: Path) -> No
 
 
 def test_closing_the_session_takes_the_namespace_down(tmp_path: Path) -> None:
-    """Nothing a run started outlives it: closing the request channel ends the
-    PID namespace, and everything inside it goes."""
+    """Closing the request channel ends the PID namespace and everything inside it."""
     session = _session(tmp_path)
     started = _run(session, ("sh", "-c", "(sleep 300 &) ; echo bg"))
     assert started.returncode == 0, started.stderr
@@ -286,9 +295,11 @@ def test_closing_the_session_takes_the_namespace_down(tmp_path: Path) -> None:
 
 
 def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(tmp_path: Path) -> None:
-    """A run's commands share one jail process: the second sees what the first
-    left in the private /tmp. A bare dispatcher (no run to scope it to) keeps
-    the per-command launcher, so nothing outside a run changes."""
+    """A run's commands share one jail process; a bare dispatcher keeps the per-command launcher.
+
+    The second command sees what the first left in the private /tmp; nothing outside a run
+    changes.
+    """
     from agent6.config import Config
     from agent6.tools.dispatch import ToolDispatcher
 
@@ -318,10 +329,11 @@ def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(tmp_path: 
 
 
 def test_a_backgrounded_server_is_reachable_by_the_run_s_next_command(tmp_path: Path) -> None:
-    """What a run's own jail process is for: a background command starts a dev
-    server and a later `run_command` reaches it on loopback. Per-command
-    launchers put each in its own empty netns, so the address was unreachable
-    however long the server ran."""
+    """A background dev server is reachable by a later `run_command` on loopback.
+
+    What a run's own jail process is for: per-command launchers put each in its own empty
+    netns, so the address would be unreachable however long the server ran.
+    """
     from agent6.config import Config
     from agent6.tools.dispatch import ToolDispatcher
 
@@ -368,9 +380,11 @@ def test_a_backgrounded_server_is_reachable_by_the_run_s_next_command(tmp_path: 
 
 
 def test_a_hung_command_times_out_without_ending_the_session(tmp_path: Path) -> None:
-    """One command's timeout must not cost the run its jail process: the
-    launcher bounds each request itself (killing that command's group and
-    answering 124), so the next command still runs in the same namespaces."""
+    """One command's timeout does not cost the run its jail process.
+
+    The launcher bounds each request itself, killing that command's group and answering
+    124, so the next command runs in the same namespaces.
+    """
     session = _session(tmp_path)
     try:
         _run(session, ("sh", "-c", "echo before > /tmp/timeout-marker"))
@@ -384,11 +398,12 @@ def test_a_hung_command_times_out_without_ending_the_session(tmp_path: Path) -> 
 
 
 def test_a_clean_session_reports_no_startup_warning(tmp_path: Path) -> None:
-    """open() reads the launcher's setup stderr at the ready handshake and
-    stores it. A jail that came up cleanly (this host) has nothing to say, so
-    the field is empty -- only a degraded setup (a refused /proc mount under
-    rootless podman, a skipped grant) fills it, and the dispatcher surfaces it
-    once."""
+    """A clean jail leaves the setup-stderr field empty.
+
+    open() reads the launcher's setup stderr at the ready handshake; only a degraded setup
+    (a refused /proc mount under rootless podman, a skipped grant) fills it, and the
+    dispatcher surfaces it once.
+    """
     session = _session(tmp_path)
     try:
         assert _run(session, ("/bin/echo", "ok")).stdout.strip() == "ok"

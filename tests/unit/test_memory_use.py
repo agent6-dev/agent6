@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The memory use record: the loop counts each fact an execution writes and reads
-through the in-process tools (the jail never sees the store), and the execution's
-end persists them to `<state-dir>/memory-use.json`, the record
-`agent6 memory list` shows under each entry."""
+"""The memory use record.
+
+The loop counts each fact an execution writes and reads through the in-process tools (the jail never
+sees the store), and the execution's end persists them to `<state-dir>/memory-use.json`, the record
+`agent6 memory list` shows under each entry.
+"""
 
 from __future__ import annotations
 
@@ -105,10 +107,11 @@ def test_an_edit_under_the_store_records_the_fact_name(tmp_path: Path) -> None:
 
 
 def test_the_edit_tools_create_marks_the_fact_created(tmp_path: Path) -> None:
-    """`memory list` said `written by <session>` for a fact the session only
-    edited: the record tells a create (the edit tool's result says the file
-    is new, whichever kind wrote it; a patch's `--- /dev/null` or
-    `*** Add File:`) from an edit."""
+    """`memory list` said `written by <session>` for a fact the session only edited.
+
+    The record tells a create (the edit tool's result says the file is new, whichever kind wrote it;
+    a patch's `--- /dev/null` or `*** Add File:`) from an edit.
+    """
     wf = _wf(tmp_path)
     state = _state()
     store = memory_dir(tmp_path)
@@ -122,9 +125,11 @@ def test_the_edit_tools_create_marks_the_fact_created(tmp_path: Path) -> None:
 
 
 def test_a_deletion_ends_the_fact_for_the_record(tmp_path: Path) -> None:
-    """A fact the model deleted through a patch stayed in the record as an
-    edit, so `memory list` kept a line for a file that was gone and a later
-    re-creation was not seen as one."""
+    """A deletion ends the fact for the record.
+
+    A fact the model deleted through a patch must not stay in the record as an edit, or `memory
+    list` keeps a line for a file that is gone and a later re-creation is not seen as one.
+    """
     wf = _wf(tmp_path)
     state = _state()
     store = memory_dir(tmp_path)
@@ -165,9 +170,12 @@ def test_the_execution_end_drops_a_deleted_fact_and_starts_a_recreated_one_afres
 
 
 def test_a_state_dir_behind_a_symlink_still_counts(tmp_path: Path) -> None:
-    """The model is told the store's unresolved path (a symlinked
-    XDG_STATE_HOME); the check resolved the model's path against the
-    unresolved store, so every memory edit counted as workspace work."""
+    """A state dir behind a symlink still counts.
+
+    The model is told the store's unresolved path (a symlinked XDG_STATE_HOME); a check that
+    resolves the model's path against the unresolved store counts every memory edit as workspace
+    work.
+    """
     real = tmp_path / "real"
     real.mkdir()
     link = tmp_path / "link"
@@ -183,8 +191,10 @@ def test_a_state_dir_behind_a_symlink_still_counts(tmp_path: Path) -> None:
 
 
 def test_only_names_the_store_accepts_are_counted(tmp_path: Path) -> None:
-    """A read of `<store>/Quirk.md` recorded a `Quirk` entry the list can never
-    show: the name rule (`memory add`'s) filters the facts a call touched."""
+    """A read of `<store>/Quirk.md` recorded a `Quirk` entry the list can never show.
+
+    The name rule (`memory add`'s) filters the facts a call touched.
+    """
     wf = _wf(tmp_path)
     state = _state()
     store = memory_dir(tmp_path)
@@ -226,8 +236,10 @@ def test_a_execution_that_touched_nothing_writes_no_record(tmp_path: Path) -> No
 
 
 def test_a_resumed_execution_starts_its_own_count_with_the_nudge_flags_carried() -> None:
-    """The nudge flags are run-lifetime (the snapshot); the touched facts are
-    execution-local: a resumed execution records only what it touches itself."""
+    """The nudge flags are run-lifetime (the snapshot); the touched facts are execution-local.
+
+    A resumed execution records only what it touches itself.
+    """
     from agent6.harness._loop_state import restore_completion_state
     from agent6.harness._snapshot import SessionSnapshot
 
@@ -257,8 +269,11 @@ def test_a_resumed_execution_starts_its_own_count_with_the_nudge_flags_carried()
 
 
 def test_finish_records_the_use(tmp_path: Path) -> None:
-    """Every end goes through `_finish`, so the record lands whichever way a
-    execution ends; a write fault there must not break the end."""
+    """Finish records the use.
+
+    Every end goes through `_finish`, so the record lands whichever way an execution ends; a write
+    fault there must not break the end.
+    """
     wf = _wf(tmp_path)
     state = _state()
     state.memory = MemoryState(read={"quirk": 1})
@@ -269,8 +284,10 @@ def test_finish_records_the_use(tmp_path: Path) -> None:
 
 
 def test_a_record_that_cannot_be_written_logs_and_lets_the_end_stand(tmp_path: Path) -> None:
-    """A read-only state dir must not turn a finished run into a crash: the
-    end stands and the log names the fault."""
+    """A read-only state dir must not turn a finished run into a crash.
+
+    The end stands and the log names the fault.
+    """
     import os
     import stat
 

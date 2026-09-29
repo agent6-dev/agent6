@@ -47,12 +47,11 @@ def test_parse_spec_zero_and_empty_models_raise() -> None:
 
 
 def test_parse_spec_over_limit_refuses_before_allocating() -> None:
-    """`[None] * n` ran before any cap, so a mistyped 12-digit count requested a
-    terabytes-scale list and the kernel OOM-killed the process before
-    [parallel].max_lanes (checked on the RESULT) could refuse. The refusal now
-    happens before the list is built, on both branches. Pinned with SMALL
-    values: a test that proves the bound by allocating past it is the bug it is
-    testing for."""
+    """`/parallel N` refuses an oversized count before building the list.
+
+    Pinned with small values: a test that proves the bound by allocating past it is the bug it tests
+    for.
+    """
     with pytest.raises(DirectiveError, match=r"max_lanes = 4"):
         parse_spec("9", limit=4)
     with pytest.raises(DirectiveError, match=r"max_lanes = 2"):
@@ -112,8 +111,7 @@ def test_bare_model_name_stays_task_text() -> None:
 
 
 def test_slash_first_task_word_parses_as_spec_documented_ambiguity() -> None:
-    # A task whose FIRST word is a path parses as a (bogus) model spec; the lane
-    # then fails loudly at the provider (documented: start the task with a verb).
+    # A task whose first word is a path parses as a model spec; the lane fails at the provider.
     assert _segs("/parallel src/foo.py needs a docstring") == [("src/foo.py", "needs a docstring")]
 
 
@@ -190,11 +188,11 @@ def test_segment_is_a_frozen_dataclass() -> None:
 
 
 def test_superscript_digit_is_not_a_lane_count() -> None:
-    """str.isdigit() is True for superscripts int() rejects, so '/parallel ²'
-    classified '²' as a spec and int('²') raised a bare ValueError past every
-    DirectiveError-catching caller (500 in the web composer; escaped the
-    coordinator's never-end-the-run guard). isdecimal() is exactly int()'s
-    accepted set: a superscript is now ordinary task text / a model token."""
+    """A count is parsed with `isdecimal()`, exactly `int()`'s accepted set.
+
+    `isdigit()` accepts superscripts `int()` rejects, so `/parallel ²` raised a bare ValueError past
+    every DirectiveError-catching caller.
+    """
     assert parse_spec("\u00b2", limit=4) == ["\u00b2"]  # a (bogus) model token, no raise
     assert _segs("/parallel \u00b2 fix the bug") == [("", "\u00b2 fix the bug")]
     # A genuine Unicode decimal digit still counts as a lane count (int('٢')==2).
@@ -256,18 +254,15 @@ def test_parse_compact_none_unless_leading_exact_token() -> None:
 
 
 def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None:
-    """The one check a front-end runs before starting an execution on steer text:
-    a bare /pin or a /parallel with no task is named; ordinary text and a
-    well-formed directive pass.
+    """The steer-text check names a bare `/pin` or an empty `/parallel`; text and directives pass.
 
-    The refusal reaches an operator typing into a composer, so it names the
-    category mistake and what to do, never the composer they are already in."""
+    The refusal reaches an operator typing into a composer, so it names the mistake and what to do.
+    """
     assert steer_problem("/pin") is not None and "pin needs an instruction" in (
         steer_problem("/pin") or ""
     )
     assert steer_problem("/parallel 2") is not None
-    # /now included: the composers parse it and the loop never does, so an execution
-    # started on it handed "OPERATOR STEERING ... /now hurry up" to the model.
+    # /now included: the composers parse it and the loop never does.
     for live_only in (
         "/compact",
         "/compact keep the auth work",
@@ -298,10 +293,7 @@ def test_spec_fragment_first_segment() -> None:
 
 
 def test_spec_fragment_later_segment_under_construction() -> None:
-    """A second (or later) `/parallel` segment's spec is still under
-    construction the same way the first one is: `_SPEC_TAIL.match` anchored
-    at the string's start, so only the FIRST segment ever offered a
-    suggestion; typing a second `/parallel gpt-5,op` never did."""
+    """A later `/parallel` segment's spec fragment completes like the first one's."""
     from agent6.directive import spec_fragment
 
     assert spec_fragment("/parallel 2 task A /parallel gp") == "gp"
@@ -336,8 +328,7 @@ def test_parse_now_carries_the_steer_and_the_urgency() -> None:
 
 
 def test_directive_words_fold_case_once() -> None:
-    """The pause menu lowercased the word while the composers did not, so
-    `/Pin x` pinned at the menu and reached the model as text elsewhere."""
+    """The pause menu and the composers fold case the same way: `/Pin x` pins everywhere."""
     from agent6.directive import parse_compact, parse_pin, parse_task
 
     assert parse_pin("/Pin keep the tests green") == "keep the tests green"

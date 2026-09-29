@@ -2,13 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Subprocess round-trip for the four-seam machine-agent IPC.
 
-Spawns the real `python -m agent6.ui.cli.machine_agent <request.json>
-<result.json>` on a request that REFUSES (no API key / network needed), and
-asserts the process exits 0 with a `result.json` that validates back as an
-`AgentExecResult`. Locks the argv contract + the request/result file shapes
-end-to-end, and pins that a preflight refusal (or a config-setup error) is
-salvaged into a written `error` result rather than a bare traceback + a
-missing result the host has to recover from.
+The real subprocess runs on a request that refuses (no API key or network needed) and exits 0 with a
+`result.json` that validates back; a preflight refusal is salvaged into a written `error` result.
 """
 
 from __future__ import annotations
@@ -42,8 +37,7 @@ def _round_trip(tmp_path: Path, req: MachineAgentRequest) -> tuple[int, AgentExe
 
 
 def test_network_refusal_writes_a_valid_error_result(tmp_path: Path) -> None:
-    # network='session' on 'hardened' is an unenforceable combo (no netns):
-    # check_network_support refuses before any provider call. No key/network.
+    # network='session' on 'hardened' is unenforceable: refused before any provider call.
     cwd = tmp_path / "repo"
     cwd.mkdir()
     req = MachineAgentRequest(
@@ -62,9 +56,7 @@ def test_network_refusal_writes_a_valid_error_result(tmp_path: Path) -> None:
 
 
 def test_config_error_is_salvaged_not_a_traceback(tmp_path: Path) -> None:
-    # A bad machine [config] overlay makes the config re-validation raise. run_one
-    # must catch it and write an `error` result -- not let a pydantic traceback
-    # escape with a non-zero exit and no result.json (host-side salvage only).
+    # A bad [config] overlay lands as an `error` result, not a pydantic traceback with no result.
     cwd = tmp_path / "repo"
     cwd.mkdir()
     req = MachineAgentRequest(
@@ -81,9 +73,7 @@ def test_config_error_is_salvaged_not_a_traceback(tmp_path: Path) -> None:
 
 
 def test_machine_agent_child_dies_with_its_parent(tmp_path: Path) -> None:
-    """PDEATHSIG ties the spawned tree to the supervisor: kill the parent and
-    the child goes too, so machine work cannot run on -- spending and
-    committing -- after the supervisor is gone."""
+    """PDEATHSIG ties the spawned tree to the supervisor: kill the parent and the child goes too."""
     import contextlib
     import os
     import signal

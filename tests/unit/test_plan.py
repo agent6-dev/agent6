@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""plan-mode unit tests covering schema, dispatcher, system prompt,
-tool-filter, and the Harness's plan-output side effect.
-"""
+"""Plan mode: the schema, the dispatcher, the system prompt, the tool filter and the plan output."""
 
 from __future__ import annotations
 
@@ -188,9 +186,11 @@ def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: Pa
 
 
 def test_decompose_swaps_dag_rules_block(tmp_path: Path) -> None:
-    """[prompt].decompose swaps the run-mode 'DAG optional' block for the
-    'decompose first' directive; default keeps the optional block. The sentinel
-    is always filled (never leaks) and only run mode is affected."""
+    """`[prompt].decompose` swaps the run-mode 'DAG optional' block for the 'decompose first' one.
+
+    The default keeps the optional block; the sentinel is always filled (never leaks), and only run
+    mode is affected.
+    """
     repo = RepoSummary(
         root=tmp_path,
         branch="main",
@@ -222,11 +222,12 @@ def test_decompose_defaults_auto(tmp_path: Path) -> None:
 
 
 def test_dag_hint_renders_only_where_the_dag_tools_exist() -> None:
-    """The decompose-first directive is run-only (it references the run-only
-    <decompose-first> block and tells the worker to edit), and ANY hint renders
-    only for modes whose tool surface has `add_task` (run, plan): ask wires a
-    curator too but exposes no DAG tools, so its hint named a tool the model
-    could not call."""
+    """The DAG hint renders only for modes whose tool surface has `add_task`.
+
+    The decompose-first directive is run-only (it references the run-only `<decompose-first>` block
+    and tells the worker to edit); ask wires a curator too but exposes no DAG tools, so a hint there
+    names a tool the model cannot call.
+    """
     hint = loopmod.initial_dag_hint  # pyright: ignore[reportPrivateUsage]
     rid = "01" + "A" * 24
     run_dec = hint(rid, "run", True)
@@ -327,12 +328,13 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> N
 def test_run_commands_no_withholds_the_command_tools_and_every_rule_about_them(
     tmp_path: Path,
 ) -> None:
-    """One answer per run: `run_commands = "no"` withholds every command tool,
-    so the gate does not exist -- and the tool list, the verify block, the
-    metric block and the auto-commit rule all say so. The metric tool is an
-    EXTRA, outside ALL_TOOLS, so the offer side could not see the policy and
-    handed the model a tool with only a refusal behind it, while the commit
-    rule went on naming a verify the same prompt called absent."""
+    """`run_commands = "no"` withholds the command tools and every rule about them.
+
+    One answer per run: the gate does not exist, and the tool list, the verify block, the metric
+    block and the auto-commit rule all say so. The metric tool is an extra outside ALL_TOOLS, so the
+    offer side must read the policy rather than hand the model a tool with only a refusal behind it
+    while the commit rule names a verify the same prompt calls absent.
+    """
     p = tmp_path / "agent6.toml"
     p.write_text(
         _VALID_TOML.replace(  # carries run_commands = "no" and a verify_command
@@ -367,8 +369,7 @@ def test_run_commands_no_withholds_the_command_tools_and_every_rule_about_them(
 
 
 def test_no_commands_removes_run_command_from_read_only_mode_prompts(tmp_path: Path) -> None:
-    """Plan and ask must not advertise probes when run_command is withheld from
-    the same call's tool definitions."""
+    """Plan and ask do not advertise probes when run_command is withheld from the tools."""
     cfg = _config(tmp_path)  # run_commands = "no"
     repo = RepoSummary(
         root=tmp_path,
@@ -389,8 +390,11 @@ def test_no_commands_removes_run_command_from_read_only_mode_prompts(tmp_path: P
 
 
 def test_read_only_mode_prompts_splice_the_command_note_cleanly(tmp_path: Path) -> None:
-    """Plan's rule block opens on a bullet with no blank line, and ask's prose
-    carries the command note as a sentence, not a bullet."""
+    """The read-only mode prompts splice the command note cleanly.
+
+    Plan's rule block opens on a bullet with no blank line, and ask's prose carries the command note
+    as a sentence, not a bullet.
+    """
     from agent6.config import Config
 
     repo = RepoSummary(
@@ -453,12 +457,13 @@ def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(tmp_path:
 
 
 def test_mcp_tools_are_run_mode_only(tmp_path: Path) -> None:
-    """MCP tools are arbitrary external capabilities agent6 cannot classify as
-    read-only. They were appended to the tool list in EVERY mode and the
-    dispatcher routed mcp__* before its mode guards, so a "read-only"
-    plan/ask (or a machine-authoring loop told not to touch anything) could
-    call a mutating filesystem/GitHub MCP tool. Both layers now gate on run
-    mode: the list omits them, and the dispatcher refuses them."""
+    """MCP tools are arbitrary external capabilities agent6 cannot classify as read-only.
+
+    Appended to the tool list in every mode, or routed by the dispatcher before its mode guards, a
+    "read-only" plan/ask (or a machine-authoring loop told not to touch anything) could call a
+    mutating filesystem/GitHub MCP tool. Both layers gate on run mode: the list omits them, and the
+    dispatcher refuses them.
+    """
     from types import SimpleNamespace
 
     from agent6.tools.dispatch import ToolError
@@ -649,10 +654,11 @@ def _plan_wf(repo: Path, provider: Any, plan_path: Path, state_path: Path) -> Ha
 
 
 def test_an_operator_edit_to_plan_md_survives_the_next_finish_planning(tmp_path: Path) -> None:
-    """`agent6 plan edit` writes plan.md, then `agent6 resume --steer` continues
-    the planner. plan.md on disk is the plan; the conversation only ever holds a
-    copy, so the resumed planner must be shown the FILE. Before this it worked
-    from its snapshot and the next finish_planning erased the operator's answer.
+    """An operator edit to plan.md survives the next finish_planning.
+
+    `agent6 plan edit` writes plan.md, then `agent6 resume --steer` continues the planner; plan.md
+    on disk is the plan and the conversation holds only a copy, so the resumed planner is shown the
+    file, not its snapshot.
     """
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -686,8 +692,10 @@ def test_an_operator_edit_to_plan_md_survives_the_next_finish_planning(tmp_path:
 
 
 def test_an_unchanged_plan_md_is_not_injected_twice(tmp_path: Path) -> None:
-    """Re-read every turn, inject only on change: an untouched plan.md costs
-    tokens once, not once per turn."""
+    """Re-read every turn, inject only on change.
+
+    An untouched plan.md costs tokens once, not once per turn.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
     plan_path, state_path = tmp_path / "plan.md", tmp_path / "loop_state.json"
@@ -711,8 +719,11 @@ def test_an_unchanged_plan_md_is_not_injected_twice(tmp_path: Path) -> None:
 
 
 def test_an_unreadable_plan_parks_the_execution(tmp_path: Path) -> None:
-    """Continuing on the planner's own copy burns budget on direction the
-    operator may have superseded; the execution ends with the remedy instead."""
+    """An unreadable plan parks the execution.
+
+    Continuing on the planner's own copy burns budget on direction the operator may have superseded;
+    the execution ends with the remedy instead.
+    """
     from agent6.harness.loop import SessionResult
 
     plan = tmp_path / "plan.md"
@@ -741,8 +752,11 @@ def test_an_unreadable_plan_parks_the_execution(tmp_path: Path) -> None:
 
 
 def test_the_decisions_block_renders_when_rulings_exist(tmp_path: Path) -> None:
-    """The operator's rulings ride the system prompt in every mode, after the
-    memory block; nothing renders when none are recorded."""
+    """The decisions block renders when rulings exist.
+
+    The operator's rulings ride the system prompt in every mode, after the memory block; nothing
+    renders when none are recorded.
+    """
     from agent6.config import Config
     from agent6.harness.loop import build_system_prompt  # pyright: ignore[reportPrivateUsage]
     from agent6.kinds import RepoSummary

@@ -2,14 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Background ids continue across a resume instead of restarting.
 
-A resumed run reuses its session dir, so numbering from `bg1` again handed the
-next command an id whose log directory already existed. `_open_log` refuses
-that -- two commands sharing one log would mix their output -- with a message
-blaming a command for planting the directory, so a resumed run's first
-background command failed on a collision it had caused itself.
-
-Every long command reaches this since the check-in landed: one that outlives
-`command_checkin_s` is handed back as a background shell.
+A resumed run reuses its session dir, and `_open_log` refuses an id whose log directory exists.
+Every command that outlives `command_checkin_s` is handed back as a background shell.
 """
 
 from __future__ import annotations
@@ -36,8 +30,10 @@ def test_a_resumed_execution_does_not_reuse_an_id(tmp_path: Path) -> None:
 
 
 def test_the_scan_covers_a_execution_that_died_between_its_two_dirs(tmp_path: Path) -> None:
-    """`start` creates <root>/bg<N> and `_open_log` creates <root>/logs/bg<N>;
-    an execution killed between them leaves only one, and either must still count."""
+    """The scan covers an execution that died between its two dirs.
+
+    `start` creates <root>/bg<N> and `_open_log` creates <root>/logs/bg<N>; either alone counts.
+    """
     root = tmp_path / "shells"
     (root / "logs").mkdir(parents=True)
     (root / "bg7").mkdir()  # shell dir only

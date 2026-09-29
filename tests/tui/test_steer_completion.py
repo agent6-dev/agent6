@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Composer slash completion: the hint line and Tab, honest to what the
-composer parses (/pin always, /compact live-only, /parallel always)."""
+"""Composer slash completion is honest to what the composer parses."""
 
 from __future__ import annotations
 
@@ -59,8 +58,7 @@ def test_a_draft_offers_only_the_fan_out() -> None:
 def test_tab_completes_unique_and_stalls_ambiguous() -> None:
     assert complete_steer("/pa", mode="steer") == "/parallel "
     assert complete_steer("/pin", mode="steer") == "/pin "
-    # Ambiguous with no common-prefix progress: consumed but unchanged, so Tab
-    # never yanks focus away mid-command.
+    # Ambiguous with no common-prefix progress: consumed but unchanged, so Tab never yanks focus.
     assert complete_steer("/p", mode="steer") == "/p"
     assert complete_steer("q", mode="steer") is None
 

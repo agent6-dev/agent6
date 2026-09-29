@@ -88,8 +88,7 @@ def test_watch_machine_json_snapshot(
 def test_attach_refuses_raw_event_tail_for_a_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """--raw promises run event lines; a machine silently opened its ordinary
-    state-overview follower and ignored both --raw and --since."""
+    """--raw and --since reach a machine's follower, which opened its overview and ignored both."""
     monkeypatch.chdir(tmp_path)
     machine_dir = state_dir(tmp_path) / "machines" / "tiny"
     machine_dir.mkdir(parents=True)
@@ -126,8 +125,7 @@ def test_attach_refuses_raw_event_tail_for_a_machine(
 def test_attach_since_zero_still_needs_raw(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An explicit --since 0 was indistinguishable from the default and was
-    silently ignored by the conversation and TUI modes."""
+    """An explicit --since 0 is honored by the conversation and TUI modes."""
     monkeypatch.chdir(tmp_path)
     _make_run(
         tmp_path,
@@ -145,8 +143,7 @@ def test_attach_since_zero_still_needs_raw(
 def test_attach_refuses_a_negative_since_count(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A negative --since silently acted like zero even though it asks for a
-    count of prior events."""
+    """A negative --since is refused; it asks for a count of prior events."""
     monkeypatch.chdir(tmp_path)
     _make_run(
         tmp_path,
@@ -190,11 +187,11 @@ def test_watch_ambiguous_prefix_surfaces_disambiguation(
 def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A crashed worker never writes session.end: attach used to replay, re-ask the
-    dead worker's pending approval, then follow forever behind a "working"
-    spinner while `sessions show` called the same run stopped. With a stale
-    worker.pid it must render read-only, never prompt, and end with the
-    truthful crashed line."""
+    """Attach to a crashed worker renders read-only, never prompts, and ends with the crashed line.
+
+    It replayed, re-asked the dead worker's pending approval, then followed forever behind a
+    "working" spinner while `sessions show` called the run stopped.
+    """
     import threading
 
     from agent6.ui.cli import plan_watch as pw
@@ -234,9 +231,11 @@ def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A parked submission (the busy-checkout refusal saved it) has no log yet.
-    Every listing calls it "parked · checkout busy"; attach answered "ERROR: no
-    logs.jsonl in <path>" and exited 2, so the operator who clicked through from
-    a listing got a path instead of the state and the way out."""
+
+    Every listing calls it "parked · checkout busy"; attach answered "ERROR: no logs.jsonl in
+    <path>" and exited 2, so the operator who clicked through from a listing got a path instead of
+    the state and the way out.
+    """
     monkeypatch.chdir(tmp_path)
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / "parked-run-77"
     session_dir.mkdir(parents=True)
@@ -268,10 +267,10 @@ def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
 def test_attach_to_a_launching_run_says_starting_not_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run still in preflight (egress + the ~80s verify inference before the
-    first log line) has a LIVE worker but no log yet -> status "starting". It IS
-    running, not resumable: telling the operator to `resume` would refuse or fork
-    a second worker, so attach says it is starting instead."""
+    """A run still in preflight, with a live worker and no log, reads "starting", not resumable.
+
+    Telling the operator to `resume` would refuse or fork a second worker.
+    """
     monkeypatch.chdir(tmp_path)
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / "launching-run-88"
     session_dir.mkdir(parents=True)
@@ -292,12 +291,9 @@ def test_attach_to_a_launching_run_says_starting_not_resume(
 def test_attach_to_a_run_whose_pid_file_is_gone_does_not_follow_forever(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The sibling of the crashed-run case, and the commoner one: a worker that
-    unwound through its finally CLEARS worker.pid and writes no session.end.
+    """A worker that cleared worker.pid without a session.end reads stale to attach as to the list.
 
-    attach had its own liveness rule -- "no pid is not dead" -- so it followed a
-    log nothing would ever append to, while `sessions list` called the same
-    session stale. One session, two surfaces, opposite answers.
+    attach's own liveness rule, "no pid is not dead", followed a log nothing would append to.
     """
     import threading
 
@@ -385,8 +381,7 @@ def test_attach_to_a_finished_run_reports_its_outcome_not_a_crash(
 def test_attach_prints_the_runs_policy_line_like_the_run_did(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The replay of a finished run carries the same header the live console
-    printed under the task: model, isolation, command policy, gate."""
+    """The replay of a finished run carries the console's header: model, isolation, policy, gate."""
     _make_run(
         tmp_path,
         "done-run",
@@ -414,9 +409,7 @@ def test_attach_prints_the_runs_policy_line_like_the_run_did(
 def test_watch_json_checks_the_merged_claim_against_the_repo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`attach --json` claims merged only while the stamp still describes the
-    branch (a run resumed after its merge commits past it), like the web
-    snapshot and `sessions show`."""
+    """`attach --json` claims merged only while the stamp still describes the branch."""
     import subprocess
 
     monkeypatch.chdir(tmp_path)
@@ -459,10 +452,10 @@ def test_watch_json_checks_the_merged_claim_against_the_repo(
 def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The watch read "finished" off the journal's LAST line while every other
-    surface reads the listing fold, which only a resumed execution un-finishes. A
-    side answer journaled after session.end made the replay follow a finished
-    run until its watcher's own pid died."""
+    """The watch reads finished off the listing fold, not the journal's last line.
+
+    A side answer journaled after session.end made the replay follow a finished run forever.
+    """
     import os
     import threading
 
@@ -495,8 +488,7 @@ def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
 def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The raw tail's docstring promises a return on EOF (run dir gone); it
-    polled the vanished path forever, treating every stat failure as a hiccup."""
+    """The raw tail returns on EOF when the run dir is gone, instead of polling the path forever."""
     import shutil
     import threading
 
@@ -517,10 +509,10 @@ def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(
 def test_attach_to_a_husk_names_the_crash_not_a_missing_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A husk (no manifest, no log, no live worker) resolves to a real session
-    directory, so attach must say why it refuses. It reported "no run or
-    machine matches", the wording for an id that does not exist, while
-    `sessions show` on the same id named the crash and the `sessions rm` remedy."""
+    """Attach on a husk says why it refuses, naming the crash and the `sessions rm` remedy.
+
+    It reported "no run or machine matches", the wording for an id that does not exist.
+    """
     monkeypatch.chdir(tmp_path)
     (state_dir(tmp_path) / "sessions" / "runs" / "husky-one-AAAAAA").mkdir(parents=True)
     assert main(["attach", "husky-one-AAAAAA"]) == 2

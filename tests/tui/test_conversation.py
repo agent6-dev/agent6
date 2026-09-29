@@ -35,8 +35,7 @@ def _nlines(app: Agent6TUI) -> int:
 _EVENTS: list[dict[str, object]] = [
     {"type": "session.start", "user_task": "do X"},
     {"type": "role.call", "role": "worker"},
-    # Multi-line on purpose: collapsed shows only the first line, so expanded
-    # is distinguishable from collapsed by the second line's presence.
+    # Multi-line on purpose: collapsed shows only the first line, so expanded is distinguishable.
     {"type": "role.thinking_delta", "role": "worker", "text": "thinking hard here\nsecond thought"},
     {"type": "role.text_delta", "role": "worker", "text": "on it"},
     {"type": "role.result", "role": "worker"},
@@ -51,10 +50,11 @@ def _write(logs: Path, events: list[dict[str, object]]) -> None:
 
 
 def _hosted(run: Path, events: list[dict[str, object]] | None, *, live: bool = False) -> Agent6TUI:
-    """The run app over *run*, the host whose fold, dir status and prompt
-    dispatcher the conversation screen reads; the screen is its first view.
-    *live* plants this process as the run's worker, so the dir status reads
-    live; None writes no journal at all."""
+    """Return the run app over the run, with the conversation screen as its first view.
+
+    `live` plants this process as the run's worker, so the dir status reads live; None writes
+    no journal at all.
+    """
     run.mkdir(parents=True, exist_ok=True)
     if events is not None:
         _write(run / "logs.jsonl", events)
@@ -75,14 +75,13 @@ def test_conversation_screen_cycles_detail_level(tmp_path: Path) -> None:
                 return _body_text(app)
 
             assert _nlines(app) > 0  # the conversation rendered
-            # Collapsed default: the first line of the reasoning as a one-line
-            # summary (with a more-count when it spans lines), not the bulk.
+            # Collapsed default: the first line of the reasoning with a more-count, not the bulk.
             assert "thinking hard here" in body_text()
             assert body_text().count("thinking hard here") == 1
             assert "second thought" not in body_text()  # the bulk stays folded
             screen.action_cycle_detail()  # collapsed -> expanded
             await pilot.pause()
-            assert "second thought" in body_text()  # the bulk is now shown
+            assert "second thought" in body_text()  # the bulk is shown
             screen.action_cycle_detail()  # expanded -> hidden
             await pilot.pause()
             assert "thinking" not in body_text()  # thinking omitted entirely
@@ -95,8 +94,7 @@ def test_conversation_screen_cycles_detail_level(tmp_path: Path) -> None:
 def test_an_unrendered_finish_call_with_bad_args_does_not_crash_the_screen(
     tmp_path: Path,
 ) -> None:
-    """A corrupt finish call is not a transcript item, so its non-object args
-    must not take down the conversation screen while it tries to find a summary."""
+    """A corrupt finish call's non-object args do not take down the conversation screen."""
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "do X"},
         {"type": "tool.call", "name": "finish_session", "args": "not an object"},
@@ -132,8 +130,7 @@ def test_conversation_screen_follows_live(tmp_path: Path) -> None:
 
 
 def test_steer_bar_stays_for_a_finished_run_as_the_resume_composer(tmp_path: Path) -> None:
-    """The conversation view is the run app's main screen: after the run
-    ends the bar stays, and Enter resumes the run with the typed follow-up."""
+    """After the run ends the bar stays, and Enter resumes the run with the typed follow-up."""
 
     async def scenario() -> None:
         app = _hosted(tmp_path / "run", _EVENTS)  # ends with session.end: finished
@@ -165,10 +162,11 @@ def test_steer_bar_shows_for_a_live_run_and_submits_over_the_bridge(tmp_path: Pa
 
 def test_resumed_execution_is_live_and_steers_over_the_bridge(tmp_path: Path) -> None:
     """A resumed execution emits ONLY loop.resume.start (never a second session.start).
-    The screen must read it as live, as the host's dir status does once the
-    execution's worker is up, so a submit routes to the steer bridge; an execution read as
-    finished had Enter spawn a second resume that died on the run lock while
-    the toast claimed the instruction was delivered."""
+
+    The screen must read it as live, as the host's dir status does once the execution's worker is
+    up, so a submit routes to the steer bridge; an execution read as finished had Enter spawn a
+    second resume that died on the run lock while the toast claimed the instruction was delivered.
+    """
     from agent6.sessions.ipc import STEER_ANSWER_FILE, steer_request_pending
 
     run = tmp_path / "run"
@@ -207,8 +205,7 @@ def test_live_run_auto_focuses_the_steer_bar(tmp_path: Path) -> None:
 
 
 def test_esc_backs_out_even_with_the_bar_focused(tmp_path: Path) -> None:
-    # A live run auto-focuses the bar; Esc is a priority binding, so it still
-    # leaves the view (the host's to_hub) instead of the bar eating the key.
+    # Esc is a priority binding, so it leaves the view instead of the focused bar eating the key.
     async def scenario() -> None:
         app = _hosted(tmp_path / "run", _EVENTS[:-1], live=True)
         async with app.run_test() as pilot:
@@ -221,8 +218,7 @@ def test_esc_backs_out_even_with_the_bar_focused(tmp_path: Path) -> None:
 
 
 def test_follow_survives_the_live_pane_growing(tmp_path: Path) -> None:
-    # A live turn that only THINKS (no completed turn appended) still grows the live
-    # pane, shrinking the scroll viewport. Follow mode must survive that nudge.
+    # A turn that only thinks grows the live pane and shrinks the viewport; follow survives it.
     logs = tmp_path / "logs.jsonl"
     events: list[dict[str, object]] = [{"type": "session.start", "user_task": "x"}]
     for i in range(20):  # overflow a short viewport
@@ -240,9 +236,7 @@ def test_follow_survives_the_live_pane_growing(tmp_path: Path) -> None:
             await pilot.pause()
             scroll = app.screen.query_one("#conv-scroll", VerticalScroll)
             assert _following(scroll)  # _reload pins to the bottom
-            # Expanded detail streams the reasoning tail into the live pane, so
-            # a thinking burst grows it by whole lines (collapsed keeps the
-            # pane a constant one-liner and nothing would move).
+            # Expanded detail streams the reasoning tail into the live pane, growing it.
             conv_screen = app.screen
             assert isinstance(conv_screen, ConversationScreen)
             conv_screen._detail = "expanded"
@@ -254,18 +248,14 @@ def test_follow_survives_the_live_pane_growing(tmp_path: Path) -> None:
             await wait_for(
                 pilot, lambda: scroll.max_scroll_y > overflow_before, "the live pane to grow"
             )
-            # Follow re-pins on the app's next tick, one frame after the growth
-            # is first visible: wait for it to settle rather than asserting on
-            # that first frame (a real follow break never re-pins, so a broken
-            # regression still times this out).
+            # Follow re-pins on the next tick; a real follow break never re-pins.
             await wait_for(pilot, lambda: _following(scroll), "follow to re-pin after growth")
 
     asyncio.run(scenario())
 
 
 def test_detail_cycle_keeps_the_top_block_anchored(tmp_path: Path) -> None:
-    # Expanding a big failed-tool block above the viewport must not carry your place
-    # away: the block at the top of the viewport stays put across the re-render.
+    # Expanding a big block above the viewport keeps the block at the top of the viewport in place.
     events: list[dict[str, object]] = [{"type": "session.start", "user_task": "x"}]
     big: list[dict[str, object]] = [
         {"type": "tool.call", "name": "apply_edit", "args": {"path": "b"}},
@@ -305,8 +295,7 @@ def test_detail_cycle_keeps_the_top_block_anchored(tmp_path: Path) -> None:
 
 
 def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: Path) -> None:
-    # A turn that is still thinking (no role.result yet) shows in the live pane,
-    # so a long reasoning generation doesn't look frozen.
+    # A turn still thinking shows in the live pane, so a long generation does not look frozen.
     run = tmp_path / "run"
     logs = run / "logs.jsonl"
     events: list[dict[str, object]] = [
@@ -321,9 +310,7 @@ def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: Path) -> No
             await pilot.pause()
             live = app.screen.query_one("#conv-live", Static)
             assert live.display  # the in-progress turn is shown live
-            # A completed turn (role.result) hands its prose to the
-            # scrollback and hides the live pane. A live worker does not imply
-            # that its next model call has begun.
+            # A completed turn hands its prose to the scrollback; no next call is implied.
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "role.result", "role": "worker"}) + "\n")
             await wait_for(pilot, lambda: not live.display, "the live pane handoff")
@@ -342,8 +329,7 @@ def test_conversation_screen_empty(tmp_path: Path) -> None:
 
 
 def test_conversation_screen_esc_backs_out(tmp_path: Path) -> None:
-    """Esc leaves the conversation view: the host's to_hub exits with the
-    back-to-hub code."""
+    """Esc leaves the conversation view: the host's to_hub exits with the back-to-hub code."""
 
     async def scenario() -> None:
         app = _hosted(tmp_path / "run", _EVENTS)
@@ -357,9 +343,7 @@ def test_conversation_screen_esc_backs_out(tmp_path: Path) -> None:
 
 
 def test_jump_to_bottom_pill_shows_when_scrolled_up(tmp_path: Path) -> None:
-    """The floating jump pill appears only while the transcript is scrolled up
-    (never displacing layout: it overlays), and clicking home again via its
-    action returns to the tail and hides it."""
+    """The jump pill overlays only while scrolled up; its action returns to the tail."""
     from agent6.ui.tui.conversation import _JumpButton
 
     many = [dict(e) for _ in range(30) for e in _EVENTS[:-1]]  # a tall transcript
@@ -386,10 +370,10 @@ def test_jump_to_bottom_pill_shows_when_scrolled_up(tmp_path: Path) -> None:
 
 
 def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: Path) -> None:
-    """A worker killed mid-stream leaves its deltas in the buffers forever (only
-    role.call/role.result clear them), so the pane kept saying "thinking…" over a
-    corpse -- on the primary view, which carries no status label to contradict
-    it. The host's dir status knows the corpse; the composer already read it."""
+    """A worker killed mid-stream leaves no "thinking…" over a corpse on the primary view.
+
+    Only role.call and role.result clear the delta buffers; the host's dir status knows the corpse.
+    """
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "fix it"},
         {"type": "role.call", "role": "worker"},
@@ -414,10 +398,7 @@ def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: Path) -> None:
 
 
 def test_live_pane_says_waiting_while_the_operator_holds_the_answer(tmp_path: Path) -> None:
-    """Blocked on an approval or a question, the run is neither thinking nor
-    running a tool; the pane kept pulsing "thinking…" (the last turn's streamed
-    reasoning) under the very modal asking. The host's dir status says
-    "waiting"; the pane says so too."""
+    """Blocked on an approval or a question, the pane says waiting, not "thinking…"."""
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "fix it"},
         {"type": "role.call", "role": "worker"},
@@ -441,9 +422,7 @@ def test_live_pane_says_waiting_while_the_operator_holds_the_answer(tmp_path: Pa
 
 
 def test_an_ended_run_with_no_conversation_says_so_in_the_past_tense(tmp_path: Path) -> None:
-    """The conversation pane is the first thing a run opens on, and it promised
-    a dead run's output "appears as the session streams": the host's dir status
-    knows the worker died, and the placeholder says so."""
+    """The placeholder of a dead run says the worker died, not that output will stream."""
     events: list[dict[str, object]] = [{"type": "session.start", "user_task": "do X"}]
 
     async def scenario() -> None:
@@ -458,9 +437,11 @@ def test_an_ended_run_with_no_conversation_says_so_in_the_past_tense(tmp_path: P
 
 
 def test_live_pane_moves_only_while_a_model_call_is_in_flight(tmp_path: Path) -> None:
-    """A live worker between calls is not a model at work. The live pane stays
-    hidden after role.result, then appears and advances when the next role.call
-    enters flight."""
+    """A live worker between calls is not a model at work.
+
+    The live pane stays hidden after role.result, then appears and advances when the next role.call
+    enters flight.
+    """
     import os
 
     from agent6.ui.tui.app import Agent6TUI
@@ -507,9 +488,11 @@ def test_live_pane_moves_only_while_a_model_call_is_in_flight(tmp_path: Path) ->
 
 
 def test_an_in_flight_tool_call_shows_in_the_live_pane_then_settles(tmp_path: Path) -> None:
-    """A long run_command read as a bare "working…" until its result. The
-    call shows in the live pane as soon as it is seen; its settled item lands
-    in the scrollback and the pane line goes with it."""
+    """A long run_command read as a bare "working…" until its result.
+
+    The call shows in the live pane as soon as it is seen; its settled item lands in the scrollback
+    and the pane line goes with it.
+    """
     run = tmp_path / "run"
     logs = run / "logs.jsonl"
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
@@ -534,10 +517,10 @@ def test_an_in_flight_tool_call_shows_in_the_live_pane_then_settles(tmp_path: Pa
 
 
 def test_the_live_pane_says_awaiting_approval_under_an_open_prompt(tmp_path: Path) -> None:
-    """The dispatcher journals tool.call before the approval gate, so the
-    call is in flight while its prompt is open: the host's dir status says
-    the run waits on the answer, the pane says so, and the call never reads
-    "running"."""
+    """A call in flight while its approval prompt is open reads as waiting, never running.
+
+    The dispatcher journals tool.call before the approval gate.
+    """
     events: list[dict[str, object]] = [
         _EVENTS[0],
         {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1},

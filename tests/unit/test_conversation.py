@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The Conversation type: wire round-trip fidelity, structural pair safety,
-and the rolling cache-mark semantics (ported from the _cache module tests)."""
+"""The Conversation type: wire round-trip fidelity, pair safety and the rolling cache marks."""
 
 from __future__ import annotations
 
@@ -89,8 +88,7 @@ def test_from_wire_pairs_results_to_their_calls() -> None:
     items = [it for it in results_turn.items if isinstance(it, ToolResultItem)]
     assert [it.for_call.name for it in items] == ["read_file", "run_verify_command"]
     assert items[0].for_call.input == {"path": "a.py"}
-    # The notice survives, canonicalized after the results (results lead the
-    # wire message; see test_wire_leads_with_tool_results_never_notice_text).
+    # The notice survives, canonicalized after the results.
     assert isinstance(results_turn.items[-1], Notice)
 
 
@@ -104,8 +102,7 @@ def test_assistant_raw_blocks_pass_through_verbatim() -> None:
 
 
 def test_trailing_tool_use_turn_is_accepted() -> None:
-    # A crash between the assistant append and its results is transient-legal
-    # in memory; from_wire mirrors that (snapshots are never written there).
+    # A crash between the assistant append and its results is transient-legal; from_wire mirrors it.
     conv = Conversation()
     conv.notice("t")
     conv.assistant([_tool_use_block("t1")])
@@ -326,8 +323,7 @@ def test_roll_is_idempotent_without_new_turns() -> None:
 
 
 def test_roll_survives_the_wire_round_trip() -> None:
-    # Marks persist in snapshots as cache_control keys; a resumed conversation
-    # must keep rolling from the same positions.
+    # Marks persist in snapshots as cache_control keys; a resumed conversation keeps rolling.
     conv = Conversation()
     conv.notice("TASK")
     conv.roll_cache_marks()
@@ -340,8 +336,7 @@ def test_roll_survives_the_wire_round_trip() -> None:
 
 
 def test_roll_skips_a_trailing_assistant_turn() -> None:
-    # The loop always rolls with a user tail; a (transient) trailing assistant
-    # turn is never stamped -- the newest user block takes the mark.
+    # The loop always rolls with a user tail; a trailing assistant turn is never stamped.
     conv = Conversation()
     conv.notice("TASK")
     conv.assistant([{"type": "thinking", "thinking": "..."}, _tool_use_block("t1")])
@@ -362,12 +357,10 @@ def test_restart_then_roll_starts_a_fresh_pair() -> None:
 
 
 def test_wire_leads_with_tool_results_never_notice_text() -> None:
-    """Anthropic refuses a user message whose tool_result blocks do not lead:
-    a text block first reads as "tool_use without tool_result immediately
-    after" and 400s the whole run (reproduced live: the baseline-verify
-    notice landed before the verify's own result and every such run died as
-    provider_error). results() canonicalizes: results first in call order,
-    notices after."""
+    """results() puts tool_result blocks first in call order and notices after.
+
+    Anthropic 400s a user message whose tool_result blocks do not lead.
+    """
     conv = Conversation()
     conv.notice("TASK")
     conv.assistant([_tool_use_block("t1", "run_verify_command")])
@@ -381,7 +374,7 @@ def test_wire_leads_with_tool_results_never_notice_text() -> None:
     )
     blocks = conv.to_wire()[-1]["content"]
     assert [b["type"] for b in blocks] == ["tool_result", "text"]
-    # from_wire heals a persisted pre-fix snapshot the same way.
+    # from_wire heals a persisted snapshot with the old order the same way.
     healed = Conversation.from_wire(
         [
             {"role": "user", "content": [{"type": "text", "text": "TASK"}]},
@@ -403,8 +396,7 @@ def test_wire_leads_with_tool_results_never_notice_text() -> None:
 
 
 def test_restart_with_kept_tail_preserves_recent_turns_verbatim() -> None:
-    """pi-shaped tier-2: the most recent turns survive the restart after the
-    summary notice, so fresh work is never paraphrased away."""
+    """A tier-2 restart keeps the most recent turns verbatim after the summary notice."""
     conv = Conversation()
     conv.notice("the task")
     conv.assistant([{"type": "text", "text": "old thinking"}])
@@ -424,8 +416,10 @@ def test_restart_with_kept_tail_preserves_recent_turns_verbatim() -> None:
 
 
 def test_restart_refuses_a_tail_leading_with_tool_results() -> None:
-    """A kept tail starting on a results turn answers an assistant turn the
-    restart summarised away; the wire would refuse the orphan pairing."""
+    """Restart refuses a kept tail that leads with tool results.
+
+    The wire would refuse the orphan pairing.
+    """
     conv = Conversation()
     conv.notice("the task")
     conv.assistant([_tool_use_block("t1", path="a.py")])
@@ -436,8 +430,7 @@ def test_restart_refuses_a_tail_leading_with_tool_results() -> None:
 
 
 def test_format_transcript_tail_renders_roles_and_strips_thinking() -> None:
-    """The summariser's plain-text tail shows user text, assistant text, tool
-    calls, and tool results; assistant thinking blocks never leak into it."""
+    """The summariser's plain-text tail shows every role's text and tool calls, never thinking."""
     from agent6.harness._conversation import format_transcript_tail
 
     conversation = Conversation.from_wire(

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`sessions transcript --seq` windows: N, N-M, and a reversed M-N refuses
-instead of printing an empty transcript with exit 0."""
+"""`sessions transcript --seq` windows N and N-M; a reversed M-N refuses instead of printing."""
 
 from __future__ import annotations
 

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The startup consent gate for the one dangerous combination: the sandbox is
-disabled AND run_command is auto-approved (no confinement, no prompt)."""
+"""The startup consent gate for a disabled sandbox with run_command auto-approved."""
 
 from __future__ import annotations
 

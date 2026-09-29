@@ -65,10 +65,11 @@ def test_remove_deletes_file_and_index_line(tmp_path: Path) -> None:
 
 
 def test_add_reindexes_a_file_the_index_lost(tmp_path: Path) -> None:
-    """A fault between add's two writes leaves the file present and the index
-    line missing: the fact is invisible to runs, and a retry refused with
-    "exists" while nothing could ever see it. The retry now re-indexes from
-    the file's own first line and says the new body was not saved."""
+    """A fault between add's two writes leaves the file present and the index line missing.
+
+    The fact is invisible to runs, so a retry refused with "exists" would leave it unseen forever.
+    The retry re-indexes from the file's own first line and says the new body was not saved.
+    """
     d = memory_dir(tmp_path)
     d.mkdir(parents=True)
     (d / "orphan.md").write_text("The original fact.\n", encoding="utf-8")
@@ -79,9 +80,11 @@ def test_add_reindexes_a_file_the_index_lost(tmp_path: Path) -> None:
 
 
 def test_remove_heals_either_remnant(tmp_path: Path) -> None:
-    """A fault between remove's two writes leaves one remnant: a dangling
-    index line (a prompt naming a memory that will not open) or an unindexed
-    file. Either alone is removable; only a name with neither refuses."""
+    """A fault between remove's two writes leaves one remnant.
+
+    A dangling index line (a prompt naming a memory that will not open) or an unindexed file. Either
+    alone is removable; only a name with neither refuses.
+    """
     add(tmp_path, "dangling", "fact one")
     (memory_dir(tmp_path) / "dangling.md").unlink()
     remove(tmp_path, "dangling")
@@ -104,11 +107,12 @@ def test_show_reads_one_entry(tmp_path: Path) -> None:
 
 
 def test_a_bad_byte_costs_one_character_not_the_index(tmp_path: Path) -> None:
-    """Memory is context: an absent index is "" for injection, never an error
-    that kills every run in the repo. A byte that is not UTF-8 costs itself and
-    nothing else -- read strictly, one of them emptied the index for every run,
-    and the next `memory add` rebuilt the file from that empty read, deleting
-    every line the operator had."""
+    """A byte that is not UTF-8 costs one character, never the index.
+
+    Memory is context: an absent index is "" for injection, never an error that kills every run in
+    the repo. Read strictly, one bad byte empties the index for every run, and the next `memory add`
+    rebuilds the file from that empty read, deleting every line the operator had.
+    """
     from agent6.memory import add
 
     assert index_text(tmp_path) == ""
@@ -128,8 +132,11 @@ def test_a_bad_byte_costs_one_character_not_the_index(tmp_path: Path) -> None:
 
 
 def test_index_lines_stay_adjacent_across_adds(tmp_path: Path) -> None:
-    """The append asked the STRIPPED index text for its trailing newline, which
-    it never has, so every add after the first opened with a blank line."""
+    """Index lines stay adjacent across adds.
+
+    Asking the stripped index text for its trailing newline, which it never has, opens every add
+    after the first with a blank line.
+    """
     add(tmp_path, "one", "first fact")
     add(tmp_path, "two", "second fact")
     add(tmp_path, "three", "third fact")
@@ -139,8 +146,10 @@ def test_index_lines_stay_adjacent_across_adds(tmp_path: Path) -> None:
 
 
 def test_index_add_starts_a_line_of_its_own(tmp_path: Path) -> None:
-    """An index edited by hand without a final newline gets one before the
-    appended entry, so the two never share a line."""
+    """An index add starts a line of its own.
+
+    An index edited by hand without a final newline gets one before the appended entry.
+    """
     idx = index_path(tmp_path)
     idx.parent.mkdir(parents=True)
     idx.write_text("- hand: written by hand", encoding="utf-8")
@@ -149,9 +158,11 @@ def test_index_add_starts_a_line_of_its_own(tmp_path: Path) -> None:
 
 
 def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(tmp_path: Path) -> None:
-    """The harness-owned DECISIONS.md: append-only entries (question, answer
-    verbatim with continuation lines indented, session, UTC time); the
-    injected text keeps the newest rulings behind a pointer past the cap."""
+    """The harness-owned DECISIONS.md.
+
+    Append-only entries (question, answer verbatim with continuation lines indented, session, UTC
+    time); the injected text keeps the newest rulings behind a pointer past the cap.
+    """
     from agent6.memory import DECISIONS_INJECT_CAP, decisions_path, decisions_text, record_decision
 
     assert decisions_text(tmp_path) == ""
@@ -176,8 +187,10 @@ def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(tmp_p
 
 
 def test_merge_decisions_appends_a_lanes_rulings(tmp_path: Path) -> None:
-    """A fan-out lane's rulings land in the coordinator's DECISIONS.md after its
-    own; a lane that recorded none writes nothing."""
+    """A fan-out lane's rulings land in the coordinator's DECISIONS.md after its own.
+
+    A lane that recorded none writes nothing.
+    """
     lane, origin = tmp_path / "lane", tmp_path / "origin"
     assert merge_decisions(lane, origin) == (0, 0)
     assert not decisions_path(origin).exists()
@@ -191,8 +204,10 @@ def test_merge_decisions_appends_a_lanes_rulings(tmp_path: Path) -> None:
 
 
 def test_merge_decisions_skips_a_ruling_the_origin_already_holds(tmp_path: Path) -> None:
-    """N lanes asked the same question and got the same answer: one ruling,
-    recorded once, however many session tags it arrived under."""
+    """N lanes asked the same question and got the same answer.
+
+    One ruling, recorded once, however many session tags it arrived under.
+    """
     l1, l2, origin = tmp_path / "l1", tmp_path / "l2", tmp_path / "origin"
     record_decision(l1, question="Tabs?", answer="spaces", session="fan-l1", when=0)
     record_decision(l2, question="Tabs?", answer="spaces", session="fan-l2", when=60)
@@ -206,8 +221,10 @@ def test_merge_decisions_skips_a_ruling_the_origin_already_holds(tmp_path: Path)
 
 
 def test_a_ruling_larger_than_the_cap_shows_its_tail(tmp_path: Path) -> None:
-    """One ruling longer than the injection cap left the block holding the
-    clip marker alone; its tail is the newest words the operator said."""
+    """A ruling longer than the injection cap shows its tail.
+
+    The tail is the newest words the operator said; the block never holds the clip marker alone.
+    """
     from agent6.memory import DECISIONS_INJECT_CAP, decisions_text
 
     record_decision(
@@ -228,8 +245,10 @@ def test_record_decision_dedupes_a_ruling_already_recorded(tmp_path: Path) -> No
 
 
 def test_merge_decisions_skips_a_repeat_within_the_source(tmp_path: Path) -> None:
-    """A lane that recorded one ruling twice carries it over once; a ruling
-    the origin recorded long ago, under another session, is a skip too."""
+    """A repeat within the source is carried over once.
+
+    A ruling the origin recorded long ago, under another session, is a skip too.
+    """
     lane, origin = tmp_path / "lane", tmp_path / "origin"
     record_decision(origin, question="Tabs?", answer="spaces", session="old", when=0)
     record_decision(lane, question="Tabs?", answer="spaces", session="lane", when=3600)
@@ -244,8 +263,11 @@ def test_merge_decisions_skips_a_repeat_within_the_source(tmp_path: Path) -> Non
 
 
 def test_merge_decisions_starts_on_its_own_line(tmp_path: Path) -> None:
-    """A destination cut short of its trailing newline (a partial write, a
-    hand edit) gets one before the first appended entry."""
+    """A merged ruling starts on its own line.
+
+    A destination cut short of its trailing newline (a partial write, a hand edit) gets one before
+    the first appended entry.
+    """
     lane, origin = tmp_path / "lane", tmp_path / "origin"
     path = decisions_path(origin)
     path.parent.mkdir(parents=True)
@@ -264,10 +286,12 @@ def _seeded_lane(tmp_path: Path, origin: Path, name: str = "lane") -> Path:
 
 
 def test_merge_memory_lands_new_facts_and_leaves_untouched_copies_alone(tmp_path: Path) -> None:
-    """A lane's store is a copy of the origin's. At import a fact the lane
-    added lands with its index line; the copies it never touched are nothing
-    to report (every one read as "already recorded" before), and the same
-    content on both sides is nothing either."""
+    """A lane's store is a copy of the origin's.
+
+    At import a fact the lane added lands with its index line; the copies it never touched are
+    nothing to report (every one read as "already recorded" before), and the same content on both
+    sides is nothing either.
+    """
     origin = tmp_path / "origin"
     add(origin, "repo-fact", "The build needs BUILD_ID set.")
     lane = _seeded_lane(tmp_path, origin)
@@ -285,10 +309,11 @@ def test_merge_memory_lands_new_facts_and_leaves_untouched_copies_alone(tmp_path
 
 
 def test_merge_memory_fast_forwards_a_lanes_edit_and_deletion(tmp_path: Path) -> None:
-    """Over a copy the origin has not touched since seeding, the lane's edit
-    replaces the file and its index line in place, and its deletion removes
-    both: the branch rule, applied to the store. Before, an edit was held
-    back silently and the lane's version ended with its state dir."""
+    """A lane's edit and deletion fast-forward over a copy the origin has not touched.
+
+    The lane's edit replaces the file and its index line in place, and its deletion removes both:
+    the branch rule, applied to the store.
+    """
     origin = tmp_path / "origin"
     add(origin, "a-fact", "A first.")
     add(origin, "b-fact", "B first.")
@@ -309,10 +334,11 @@ def test_merge_memory_fast_forwards_a_lanes_edit_and_deletion(tmp_path: Path) ->
 
 
 def test_merge_memory_holds_back_a_change_on_both_sides(tmp_path: Path) -> None:
-    """Changed in the lane and in the origin since seeding: the origin keeps
-    its version, the lane's is kept under held_dir, and both names are
-    reported. A lane deletion over an origin edit is held the same way, with
-    nothing to keep."""
+    """Changed in the lane and in the origin since seeding.
+
+    The origin keeps its version, the lane's is kept under held_dir, and both names are reported. A
+    lane deletion over an origin edit is held the same way, with nothing to keep.
+    """
     origin = tmp_path / "origin"
     add(origin, "a-fact", "A first.")
     add(origin, "d-fact", "D first.")
@@ -330,9 +356,11 @@ def test_merge_memory_holds_back_a_change_on_both_sides(tmp_path: Path) -> None:
 
 
 def test_merge_memory_holds_back_a_name_two_lanes_invented(tmp_path: Path) -> None:
-    """Two lanes recording different facts under one new name: the first
-    lands, the second is held with its version kept, so neither silently
-    overwrites the other."""
+    """Two lanes recording different facts under one new name.
+
+    The first lands, the second is held with its version kept, so neither silently overwrites the
+    other.
+    """
     origin = tmp_path / "origin"
     l1, l2 = _seeded_lane(tmp_path, origin, "l1"), _seeded_lane(tmp_path, origin, "l2")
     add(l1, "shared-name", "What lane one saw.")
@@ -348,11 +376,12 @@ def test_merge_memory_holds_back_a_name_two_lanes_invented(tmp_path: Path) -> No
 
 
 def test_merge_memory_skips_a_name_outside_the_stores_rule(tmp_path: Path) -> None:
-    """A seed key or a stray file whose name breaks the store's rule (a path
-    fragment, an upper-case name) is not a memory and names no path: the
-    import skips it on both sides. A seed key of `../escape` matching a file
-    beside the store would otherwise be "deleted in the lane" and unlinked
-    outside the store."""
+    """A name outside the store's rule is skipped on both sides.
+
+    A seed key or a stray file whose name breaks the rule (a path fragment, an upper-case name) is
+    not a memory and names no path; a seed key of `../escape` matching a file beside the store would
+    otherwise read as "deleted in the lane" and be unlinked outside the store.
+    """
     origin = tmp_path / "origin"
     add(origin, "a-fact", "A first.")
     lane = _seeded_lane(tmp_path, origin)
@@ -371,9 +400,11 @@ def test_merge_memory_skips_a_name_outside_the_stores_rule(tmp_path: Path) -> No
 
 
 def test_merge_memory_lands_an_edit_whose_index_line_the_lane_lost(tmp_path: Path) -> None:
-    """A lane that edits a fact and rewrites MEMORY.md without its line (a
-    model tidying the index) crashed the import on a bare assert. The edit
-    lands and the origin's own index line stays."""
+    """An edit whose index line the lane lost still lands.
+
+    A lane that edits a fact and rewrites MEMORY.md without its line (a model tidying the index)
+    must not crash the import; the edit lands and the origin's own index line stays.
+    """
     origin = tmp_path / "origin"
     add(origin, "a-fact", "A first.")
     lane = _seeded_lane(tmp_path, origin)
@@ -387,9 +418,11 @@ def test_merge_memory_lands_an_edit_whose_index_line_the_lane_lost(tmp_path: Pat
 
 
 def test_merge_memory_deletes_over_an_origin_with_no_index(tmp_path: Path) -> None:
-    """The origin's MEMORY.md gone (an operator's rm): a lane's deletion of an
-    untouched fact raised FileNotFoundError out of the import instead of
-    removing the file."""
+    """The origin's MEMORY.md gone (an operator's rm).
+
+    A lane's deletion of an untouched fact raised FileNotFoundError out of the import instead of
+    removing the file.
+    """
     origin = tmp_path / "origin"
     add(origin, "a-fact", "A first.")
     lane = _seeded_lane(tmp_path, origin)
@@ -402,9 +435,11 @@ def test_merge_memory_deletes_over_an_origin_with_no_index(tmp_path: Path) -> No
 
 
 def test_seed_store_keeps_the_digests_of_an_earlier_seeding(tmp_path: Path) -> None:
-    """A second seeding into the same lane store rewrote the manifest with the
-    files it copied this time alone, so every earlier copy read as new at
-    import and was held back."""
+    """A second seeding keeps the digests of an earlier one.
+
+    A manifest rewritten with this seeding's files alone makes every earlier copy read as new at
+    import and be held back.
+    """
     origin = tmp_path / "origin"
     add(origin, "a-fact", "A first.")
     lane = _seeded_lane(tmp_path, origin)
@@ -415,9 +450,11 @@ def test_seed_store_keeps_the_digests_of_an_earlier_seeding(tmp_path: Path) -> N
 
 
 def test_a_seed_manifest_that_is_not_an_object_reads_as_no_seeds(tmp_path: Path) -> None:
-    """A hand-edited manifest holding a JSON array raised TypeError out of
-    seed_store and AttributeError out of merge_memory; one reader owns the
-    manifest's shape and reads anything else as empty."""
+    """A seed manifest that is not an object reads as no seeds.
+
+    One reader owns the manifest's shape; a hand-edited JSON array raises neither TypeError out of
+    seed_store nor AttributeError out of merge_memory.
+    """
     origin = tmp_path / "origin"
     add(origin, "a-fact", "A first.")
     lane = _seeded_lane(tmp_path, origin)
@@ -430,8 +467,10 @@ def test_a_seed_manifest_that_is_not_an_object_reads_as_no_seeds(tmp_path: Path)
 
 
 def test_merge_memory_finishes_a_carried_fact_after_a_crash(tmp_path: Path) -> None:
-    """A crash after publishing a carried fact but before its index line must
-    heal on retry rather than leave the fact invisible forever."""
+    """A carried fact left without its index line by a crash heals on retry.
+
+    Otherwise the fact stays invisible forever.
+    """
     origin = tmp_path / "origin"
     lane = _seeded_lane(tmp_path, origin)
     add(lane, "lane-fact", "The parser is generated.")
@@ -446,8 +485,10 @@ def test_merge_memory_finishes_a_carried_fact_after_a_crash(tmp_path: Path) -> N
 
 
 def test_seed_store_recovers_a_copy_published_before_its_digest(tmp_path: Path) -> None:
-    """A crash after copying a seed fact but before publishing the manifest
-    must let a retry record that fact's digest."""
+    """A seed copy published before its digest is recorded on retry.
+
+    A crash between copying a seed fact and publishing the manifest must not lose the digest.
+    """
     origin, lane = tmp_path / "origin", tmp_path / "lane"
     add(origin, "a-fact", "A first.")
     dst = memory_dir(lane)
@@ -517,8 +558,11 @@ def test_an_index_rewrite_cannot_erase_a_concurrent_add(
 
 
 def test_record_use_keeps_who_wrote_and_who_read(tmp_path: Path) -> None:
-    """The use record: the creating write stays as `created`, the latest as
-    `updated`, reads accumulate with the last reader."""
+    """The use record keeps who wrote and who read.
+
+    The creating write stays as `created`, the latest as `updated`; reads accumulate with the last
+    reader.
+    """
     record_use(tmp_path, session="run-a", wrote=("fact",), created=("fact",), read={}, when=0.0)
     record_use(tmp_path, session="run-b", wrote=("fact",), read={"fact": 2}, when=3600.0)
     record_use(tmp_path, session="run-c", wrote=(), read={"fact": 1, "other": 1}, when=7200.0)
@@ -616,8 +660,10 @@ def test_index_name_reads_the_entry_a_line_names() -> None:
 
 
 def test_merge_use_carries_a_lanes_record_into_the_origin(tmp_path: Path) -> None:
-    """A --parallel lane's use record died with its state dir: the origin
-    never named the lane as a fact's writer or reader."""
+    """A --parallel lane's use record died with its state dir.
+
+    The origin never named the lane as a fact's writer or reader.
+    """
     from agent6.memory import merge_use
 
     origin, lane = tmp_path / "origin", tmp_path / "lane"
@@ -653,8 +699,10 @@ def test_merge_use_carries_a_lanes_record_into_the_origin(tmp_path: Path) -> Non
 
 
 def test_carry_back_lands_a_lanes_use_record(tmp_path: Path) -> None:
-    """The lane import carried the facts and the rulings and dropped the use
-    record with the lane's state dir."""
+    """The lane import carries the use record along with the facts and the rulings.
+
+    Otherwise it goes with the lane's state dir.
+    """
     from agent6.app.parallel import carry_back
     from agent6.app.reporter import Reporter
 

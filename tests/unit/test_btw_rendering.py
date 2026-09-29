@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A btw answer lands whole, at a clean break -- never through the transcript."""
+"""A btw answer lands whole at a clean break, never through the transcript."""
 
 from __future__ import annotations
 
@@ -15,8 +15,7 @@ def _view() -> tuple[ConsoleView, io.StringIO]:
 
 
 def test_an_answer_queued_mid_stream_waits_for_the_turn_boundary() -> None:
-    """A btw finishes while the run is streaming. Printing it then would cut a
-    sentence in half; it waits and lands whole."""
+    """A btw that finishes mid-stream waits for the turn boundary and lands whole."""
     view, out = _view()
     view.feed({"type": "role.text_delta", "text": "the first half "})
     view.queue_btw("\n--- btw: why\nbecause\n--- end btw\n")
@@ -58,8 +57,7 @@ def test_nothing_queued_prints_nothing() -> None:
 
 
 def test_an_answer_that_lands_after_the_last_turn_is_not_lost() -> None:
-    """The queue drains at turn boundaries, and a run ending is the last one.
-    Without this a btw answered just as the run finished vanished silently."""
+    """The queue drains at turn boundaries, and the run's end is the last one."""
     view, out = _view()
     view.queue_btw("\n--- btw: late\nthe answer\n--- end btw\n")
     view.feed({"type": "session.end", "reason": "finish_session", "all_passed": True})

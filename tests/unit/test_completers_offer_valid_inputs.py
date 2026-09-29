@@ -2,9 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """A completer offers exactly what its argument accepts.
 
-Offering less is a lie by omission: the operator tabs, sees no plan or ask, and
-concludes the verb does not take one -- when it does. Offering more is worse,
-since the suggestion is refused on Enter.
+Offering less hides a valid input; offering more suggests one refused on Enter.
 """
 
 from __future__ import annotations
@@ -77,8 +75,7 @@ def test_every_session_id_is_offered_where_any_is_accepted(
 def test_resume_offers_only_what_it_can_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A machine draft is a session, but `resume` refuses it -- so suggesting it
-    would be a suggestion the operator cannot act on."""
+    """Resume does not offer a machine draft, which it refuses."""
     monkeypatch.chdir(tmp_path)
     _seed(tmp_path)
     offered = set(completers._complete_resumable_ids(""))  # pyright: ignore[reportPrivateUsage]
@@ -98,9 +95,7 @@ def test_attach_offers_every_session_and_every_machine(
 def test_enum_value_completion_is_derived_from_the_schema(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A hand-kept enum table drifts: leaves whose type is a Literal got
-    nothing on TAB because nobody added them. The choices come from the schema
-    the config view already reads, so a new enum leaf completes for free."""
+    """Enum value completion comes from the schema, so a new Literal leaf completes for free."""
     import argparse
 
     from agent6.config import Config
@@ -120,9 +115,7 @@ def test_enum_value_completion_is_derived_from_the_schema(
         )
         assert offered, f"{key} offers no values on TAB"
 
-    # A bool is as closed a set as any enum, and `config set` takes exactly
-    # `true` or `false` there: the 17 bool leaves completed to nothing while
-    # every enum completed, and `True` and `yes` are both refused.
+    # A bool is as closed a set as any enum; `config set` takes exactly `true` or `false`.
     bools = {
         s.key for s in build_config_view(load_effective(tmp_path)).settings if s.py_type == "bool"
     }
@@ -133,8 +126,7 @@ def test_enum_value_completion_is_derived_from_the_schema(
         )
         assert set(offered) == {"true", "false"}, f"{key} offers {offered}"
 
-    # sandbox.isolation keeps its deliberate omission: TAB must not put
-    # "disable the sandbox" one keystroke away.
+    # sandbox.isolation keeps its omission: TAB never puts "disable the sandbox" a keystroke away.
     iso = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
         "", argparse.Namespace(key="sandbox.isolation")
     )
@@ -145,8 +137,7 @@ def test_enum_value_completion_is_derived_from_the_schema(
 def test_live_only_verbs_offer_only_live_sessions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """steer, stop, answer, exec and forward refuse a finished run,
-    so offering every session offered four suggestions that fail on Enter."""
+    """steer, stop, answer, exec and forward offer only live sessions."""
     import argparse
     import os
 
@@ -179,9 +170,10 @@ def test_live_only_verbs_offer_only_live_sessions(
 def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The verbs gate on `session_is_live` (the affordance question); the
-    completer gated on `worker_is_alive`, so a run that had ended while its
-    worker pid was still up was offered and then refused on Enter."""
+    """The live-only completers gate on `session_is_live`, as the verbs do.
+
+    A run that ended while its worker pid was still up is not offered.
+    """
     import json
     import os
 
@@ -204,8 +196,7 @@ def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
 def test_config_list_edit_completion_offers_only_list_leaves(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`config add/remove` reject scalar leaves, so their shared key completer
-    must be narrowed to the list fields those verbs edit."""
+    """`config add` and `remove` complete only the list leaves they edit."""
     import argparse
 
     monkeypatch.chdir(tmp_path)
@@ -222,8 +213,7 @@ def test_config_list_edit_completion_offers_only_list_leaves(
 def test_config_list_edit_value_completion_omits_scalar_choices(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A scalar key typed by hand on `config add/remove` must not get enum
-    suggestions that those list-only verbs reject."""
+    """A scalar key typed on `config add` or `remove` gets no enum suggestions."""
     import argparse
 
     monkeypatch.chdir(tmp_path)
@@ -241,8 +231,7 @@ def test_config_list_edit_value_completion_omits_scalar_choices(
 def test_config_show_completion_offers_accepted_section_prefixes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`config show KEY...` accepts a whole section, so TAB must not force an
-    operator typing `sand` past the valid `sandbox` candidate to `sandbox.`."""
+    """`config show` completion offers a whole section, so `sand` completes to `sandbox`."""
     import argparse
 
     monkeypatch.chdir(tmp_path)
@@ -260,9 +249,10 @@ def test_config_show_completion_offers_accepted_section_prefixes(
 def test_machine_overlay_key_completion_omits_operator_only_leaves(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`config set --machine-file` refuses sandbox leaves, so its key
-    completer must not offer them as writable machine-overlay inputs; `config
-    get --machine-file` reads them, so its completer keeps every key."""
+    """`config set --machine-file` completes no sandbox leaf.
+
+    `config get --machine-file` keeps every key.
+    """
     import argparse
 
     monkeypatch.chdir(tmp_path)
@@ -286,8 +276,7 @@ def test_machine_overlay_key_completion_omits_operator_only_leaves(
 def test_machine_overlay_value_completion_omits_operator_only_leaves(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A manually typed protected machine-overlay key must not get a suggested
-    value that the write command will reject on Enter."""
+    """A protected machine-overlay key typed by hand gets no suggested value the write rejects."""
     import argparse
 
     monkeypatch.chdir(tmp_path)
@@ -305,8 +294,7 @@ def test_machine_overlay_value_completion_omits_operator_only_leaves(
 def test_config_key_completion_reads_user_presets_from_the_typed_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A preset declared only by `--config FILE` is a writable key namespace
-    for that invocation and must be completed from the same layer stack."""
+    """A preset declared only by `--config FILE` completes as a writable key namespace."""
     import argparse
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -327,8 +315,7 @@ def test_config_key_completion_reads_user_presets_from_the_typed_config(
 def test_config_value_completion_under_a_preset_uses_the_leafs_choices(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A generated `presets.<name>.<leaf>` key accepts the same closed values
-    as that schema leaf, rather than losing completion at the preset prefix."""
+    """A `presets.<name>.<leaf>` key completes the leaf's own closed values."""
     import argparse
 
     monkeypatch.chdir(tmp_path)
@@ -344,8 +331,7 @@ def test_config_value_completion_under_a_preset_uses_the_leafs_choices(
 def test_mcp_remove_offers_only_servers_in_the_selected_layer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`mcp remove` edits one layer, so its completion must not offer a server
-    that the effective config inherits only from the other layer."""
+    """`mcp remove` completes only servers in the layer it edits."""
     import argparse
 
     from agent6.paths import global_config_path, repo_config_path
@@ -374,8 +360,10 @@ def test_mcp_remove_offers_only_servers_in_the_selected_layer(
 def test_model_provider_completion_reads_the_typed_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Model completion reads the typed config: it offers that file's provider,
-    not disconnected provider presets that only `connect` accepts."""
+    """Model completion offers the typed config's provider.
+
+    Disconnected provider presets, which only `connect` accepts, are not offered.
+    """
     import argparse
 
     from agent6.ui.cli.model import _connected_providers  # pyright: ignore[reportPrivateUsage]
@@ -427,8 +415,10 @@ def test_model_verb_completion_offers_the_typed_configs_routes(
 def test_forward_offers_the_newest_sessions_ports_in_its_first_slot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A bare number means that port on the newest session, so the second
-    optional positional's completer must offer those ports in the first slot."""
+    """`forward`'s first slot completes the newest session's ports.
+
+    A bare number means one.
+    """
     import argparse
 
     monkeypatch.chdir(tmp_path)
@@ -453,9 +443,7 @@ def test_forward_offers_the_newest_sessions_ports_in_its_first_slot(
 def test_state_restricted_machine_verbs_offer_only_machines_they_accept(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`machine poke` takes only an open wait and `machine stop` takes only a
-    running instance, so every suggestion works on Enter. `status` and `replay`
-    still take any instance."""
+    """`machine poke` offers only open waits and `machine stop` only running instances."""
     import argparse
     from collections.abc import Callable
     from typing import cast
@@ -516,9 +504,7 @@ def test_state_restricted_machine_verbs_offer_only_machines_they_accept(
 def test_machine_files_complete_relative_to_the_working_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--machine-file` takes a path as typed, so a file under cwd is offered
-    relative to it: an absolute suggestion never matches the relative prefix
-    the operator is typing, and TAB offered nothing."""
+    """`--machine-file` completes paths relative to cwd, matching the prefix the operator types."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "demo.asm.toml").write_text("", encoding="utf-8")
     (tmp_path / "sub").mkdir()

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Wire-level checks for the api_format x deployment x auth provider model:
-URL shape, model placement (body vs URL path), protocol-version placement, and
-auth-header style, asserted by capturing the mocked HTTP request."""
+"""Wire-level checks for the api_format x deployment x auth provider model.
+
+URL shape, model placement (body or URL path), protocol-version placement and auth-header style,
+asserted by capturing the mocked HTTP request.
+"""
 
 from __future__ import annotations
 
@@ -154,10 +156,12 @@ def test_api_key_header_is_redacted_in_transcripts() -> None:
     ],
 )
 def test_auth_header_refuses_a_credential_that_is_not_header_safe(bad: str) -> None:
-    """A credential carrying a newline/NUL/DEL/non-ASCII byte is refused at the
-    single chokepoint, before it reaches httpx2/h11 -- where a transport error
-    would carry the secret into a log or transcript. The refusal names the fault
-    but never the value."""
+    """auth_header refuses a credential that is not header-safe.
+
+    A credential carrying a newline, NUL, DEL or non-ASCII byte is refused at the single chokepoint,
+    before it reaches httpx2 or h11, where a transport error would carry the secret into a log or
+    transcript. The refusal names the fault but never the value.
+    """
     for style in ("bearer", "x_api_key", "api_key_header"):
         with pytest.raises(ProviderError) as excinfo:
             auth_header(style, bad)  # type: ignore[arg-type]
@@ -173,8 +177,11 @@ def test_auth_header_still_accepts_an_ordinary_ascii_token() -> None:
 
 
 def test_a_bad_credential_never_reaches_the_http_client() -> None:
-    """The provider call path routes through auth_header, so a malformed key
-    fails as a ProviderError with no HTTP request attempted at all."""
+    """A bad credential never reaches the HTTP client.
+
+    The provider call path routes through auth_header, so a malformed key fails as a ProviderError
+    with no HTTP request attempted at all.
+    """
     p = OpenAIProvider(api_key="sk-live\r\nX-Injected: 1", model="gpt-x")
     with (
         mock.patch(
@@ -191,9 +198,12 @@ def test_a_bad_credential_never_reaches_the_http_client() -> None:
     [("family/model", "family%2Fmodel"), ("m?x=1", "m%3Fx%3D1"), ("a b", "a%20b")],
 )
 def test_a_model_id_is_percent_quoted_in_the_url_path(raw: str, quoted: str) -> None:
-    """Vertex-Anthropic and Azure carry the model/deployment id in the URL path;
-    an unquoted slash, `?`, or space would reshape the URL (a different path, an
-    injected query) away from the base_url host the egress allow-list trusts."""
+    """A model id is percent-quoted in the URL path.
+
+    Vertex-Anthropic and Azure carry the model or deployment id in the URL path; an unquoted slash,
+    `?` or space would reshape the URL (a different path, an injected query) away from the base_url
+    host the egress allow-list trusts.
+    """
     vurl, in_body = request_url(
         api_format="anthropic",
         deployment="vertex",
@@ -213,8 +223,10 @@ def test_a_model_id_is_percent_quoted_in_the_url_path(raw: str, quoted: str) -> 
 
 
 def test_anthropic_extra_body_cannot_replace_the_structural_request_shape() -> None:
-    """The anthropic twin of the openai structural filter: tools/tool_choice
-    never inject (the loop owns the tool schema); tuning keys still win."""
+    """The anthropic twin of the openai structural filter.
+
+    Tools/tool_choice never inject (the loop owns the tool schema); tuning keys still win.
+    """
     p = AnthropicProvider(
         api_key="sk-test",
         model="claude-x",

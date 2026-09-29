@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A machine `tool` state receives an operator secret only through two
-declarations: its own `pass_env` names the variable, the operator's
-`[machine].pass_env` allows it (global/repo config, never the machine
-overlay), and the run refuses at startup when the two disagree."""
+"""A machine `tool` state receives an operator secret only through two declarations.
+
+Its own `pass_env` names the variable, the operator's `[machine].pass_env` allows it (never the
+machine overlay), and the run refuses at startup when the two disagree.
+"""
 
 from __future__ import annotations
 
@@ -86,11 +87,7 @@ def test_a_variable_the_operator_has_not_allowed_refuses_the_run(tmp_path: Path)
 def test_a_pass_env_refusal_never_enters_the_network_fix_flow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The refusal was handed to the frontend's network-fix flow, which on
-    `hardened` offered `sandbox.network = host` (a false cause), re-checked
-    the network alone, and let the run proceed with the variable copied into
-    the jail. A pass_env refusal is refused outright: its fix is an allowlist
-    entry, never a network change."""
+    """A pass_env refusal is final: its fix is an allowlist entry, never a network change."""
     from unittest.mock import MagicMock
 
     from agent6.app.machine.run import run_machine

@@ -34,8 +34,7 @@ def _seeded(tmp_path: Path) -> tuple[GraphCurator, str, Harness]:
 
 
 def test_only_a_fresh_run_takes_the_flag() -> None:
-    """A continuation offered `--standing` and then kept the goal it already
-    had, which is a flag that does nothing on a session that has one."""
+    """A continuation never offers `--standing`; the flag does nothing on a session with a goal."""
     parser = build_parser()
 
     assert parser.parse_args(["run", "do it", "--standing", "keep it green"]).standing

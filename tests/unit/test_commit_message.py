@@ -51,10 +51,7 @@ def test_unclosed_thinking_block_falls_back() -> None:
 
 
 def test_the_configured_identity_reaches_the_commit(tmp_path: Path) -> None:
-    """`[git.commit].name`/`.email` are the only identity on a machine whose
-    git has none. Preflight accepts them, and the loop dropped them: every
-    chain commit died with "Author identity unknown", the run reported
-    "finished", and no branch existed."""
+    """`[git.commit].name` and `.email` reach the chain commit where git has no identity."""
     cfg = Config.model_validate(
         {"git": {"commit": {"name": "Agent Six", "email": "agent6@example.com"}}}
     )

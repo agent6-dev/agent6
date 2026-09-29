@@ -68,8 +68,11 @@ def test_a_server_that_answers_is_written_with_its_tools_shown(
 def test_the_enable_hint_names_the_config_the_entry_went_to(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Following the hint after `--repo` must enable MCP for this repository,
-    not for every repository on the machine."""
+    """The enable hint names the config the entry went to.
+
+    Following the hint after `--repo` enables MCP for this repository, not for every repository on
+    the machine.
+    """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
@@ -104,9 +107,11 @@ def test_a_second_connect_under_the_same_name_says_it_replaces(
 def test_an_entry_in_the_other_layer_is_named_not_called_replaced(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The merged config is not the layer being written: a repo-layer entry
-    plus a global connect leaves the repo entry winning, and the inverse
-    shadows the global one; each write says which."""
+    """The merged config is not the layer being written.
+
+    A repo-layer entry plus a global connect leaves the repo entry winning, and the inverse shadows
+    the global one; each write says which.
+    """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     args: dict[str, object] = {"url": "", "token_env": "", "pass_env": []}
@@ -131,8 +136,10 @@ def test_an_entry_in_the_other_layer_is_named_not_called_replaced(
 def test_a_binary_missing_on_the_host_is_named_without_a_sandbox_hint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A path that exists nowhere is a plain ENOENT: no `read_paths` grant
-    would change it, so the sandbox hint stays out."""
+    """A path that exists nowhere is a plain ENOENT.
+
+    No `read_paths` grant would change it, so the sandbox hint stays out.
+    """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
@@ -192,8 +199,10 @@ def test_a_server_that_does_not_answer_writes_nothing(
 def test_a_server_with_no_tools_writes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """It handshakes fine and is still useless: naming it would add a server
-    the model can never call."""
+    """It handshakes fine and is still useless.
+
+    Naming it would add a server the model can never call.
+    """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
@@ -226,8 +235,11 @@ def test_a_mismatched_transport_and_env_flag_is_named(
     kwargs: dict[str, object],
     message: str,
 ) -> None:
-    """Each transport owns one env flag, so the wrong pairing is a mistake
-    worth naming rather than a setting that silently does nothing."""
+    """A mismatched transport and env flag is named.
+
+    Each transport owns one env flag, so the wrong pairing is a mistake worth naming rather than a
+    setting that silently does nothing.
+    """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     args: dict[str, object] = {"token_env": "", "pass_env": [], "to_repo": False, **kwargs}
@@ -242,8 +254,10 @@ def test_a_mismatched_transport_and_env_flag_is_named(
 def test_an_argv_round_trips_through_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Written as a TOML array, not a shell string: a string would validate as
-    a tuple of characters and the server would never start again."""
+    """Written as a TOML array, not a shell string.
+
+    A string would validate as a tuple of characters and the server would never start again.
+    """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     argv = [*_server_argv(), "--flag=a b", 'quote"inside']
@@ -289,8 +303,7 @@ def test_the_listing_of_nothing_says_how_to_add_one(
 def test_the_probe_leaves_no_server_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """It starts one to ask what it can do, and must not leak it into the
-    operator's session."""
+    """It starts one to ask what it can do, and must not leak it into the operator's session."""
     import os
     import subprocess
 
@@ -313,9 +326,12 @@ def test_the_probe_leaves_no_server_running(
 def test_a_passed_secret_is_redacted_from_a_server_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A third-party server may echo a pass_env credential to stderr; that tail
-    rides into MCPError and the durable mcp.server_unavailable event, so the
-    passed value must be redacted before it leaves the transport."""
+    """A passed secret is redacted from a server failure.
+
+    A third-party server may echo a pass_env credential to stderr; that tail rides into MCPError and
+    the durable mcp.server_unavailable event, so the passed value is redacted before it leaves the
+    transport.
+    """
     from agent6.tools.mcp_client import MCPError, _MCPServer  # pyright: ignore[reportPrivateUsage]
 
     srv_py = tmp_path / "srv.py"
@@ -350,9 +366,11 @@ def test_a_passed_secret_is_redacted_from_a_server_failure(
 
 
 def test_direct_config_also_refuses_a_provider_key_in_pass_env() -> None:
-    """The invariant lives in Config, not only `mcp connect`: a direct TOML edit
-    naming a provider's api_key_env in a server's pass_env is rejected at load,
-    so it cannot hand a third-party server a provider API key."""
+    """The invariant lives in Config, not only `mcp connect`.
+
+    A direct TOML edit naming a provider's api_key_env in a server's pass_env is rejected at load,
+    so it cannot hand a third-party server a provider API key.
+    """
     from agent6.config import Config
 
     with pytest.raises(Exception, match="never passes a provider key"):
@@ -367,10 +385,12 @@ def test_direct_config_also_refuses_a_provider_key_in_pass_env() -> None:
 def test_connect_confirms_a_plaintext_nonloopback_token_and_no_is_the_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """url + token_env over plaintext http to a non-loopback host is
-    connectable (a VPN or internal endpoint is a real case) but confirmed
-    first, naming the cost. Declining (the default) probes nothing and writes
-    nothing."""
+    """Connect confirms a plaintext non-loopback token, and no is the default.
+
+    A url and token_env over plaintext http to a non-loopback host is connectable (a VPN or internal
+    endpoint is a real case) but confirmed first, naming the cost. Declining probes nothing and
+    writes nothing.
+    """
     from agent6.tools.mcp_client import MCPServerSpec, MCPToolDescriptor
     from agent6.ui.cli import mcp_connect
 
@@ -404,8 +424,10 @@ def test_connect_confirms_a_plaintext_nonloopback_token_and_no_is_the_default(
 def test_connect_headless_warns_and_proceeds_on_plaintext_nonloopback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With no terminal to ask, the connect proceeds with the same loud warning
-    (warn, never refuse: the config is explicit)."""
+    """With no terminal to ask, the connect proceeds with the same loud warning (warn, never refuse.
+
+    The config is explicit).
+    """
     import io
 
     from agent6.tools.mcp_client import MCPServerSpec, MCPToolDescriptor
@@ -442,9 +464,12 @@ def test_connect_headless_warns_and_proceeds_on_plaintext_nonloopback(
 
 
 def test_mcp_connect_argv_does_not_clobber_the_dispatch_verb() -> None:
-    """The `connect` positional shared its dest with the root subparser's
-    command verb, so `mcp connect files -- npx srv` dispatched on a LIST and
-    crashed (unhashable dict key) before any of connect's own validation."""
+    """The `mcp connect` argv does not clobber the dispatch verb.
+
+    A `connect` positional sharing its dest with the root subparser's command verb makes the
+    `--`-separated argv dispatch on a list and crash (unhashable dict key) before any of connect's
+    own validation.
+    """
     from agent6.ui.cli.parser import build_parser
 
     args = build_parser().parse_args(["mcp", "connect", "files", "--", "npx", "-y", "srv"])
@@ -455,8 +480,10 @@ def test_mcp_connect_argv_does_not_clobber_the_dispatch_verb() -> None:
 def test_mcp_connect_without_a_transport_refuses_cleanly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`mcp connect x` reached the dispatch table with args.command rebound to
-    an empty list: "unexpected TypeError", a crash log, exit 1."""
+    """`mcp connect x` reached the dispatch table with args.command rebound to an empty list.
+
+    "unexpected TypeError", a crash log, exit 1.
+    """
     from agent6.ui.cli import cli_main
 
     monkeypatch.chdir(tmp_path)
@@ -471,8 +498,10 @@ def test_mcp_connect_without_a_transport_refuses_cleanly(
 def test_connect_probes_a_spawned_server_under_the_runs_sandbox(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The handshake proves the server the run will spawn: a spawned server is
-    probed with the run's jail policy, a --url server with none."""
+    """The handshake proves the server the run will spawn.
+
+    A spawned server is probed with the run's jail policy, a --url server with none.
+    """
     from agent6.tools.mcp_client import MCPServerSpec, MCPToolDescriptor
     from agent6.ui.cli import mcp_connect
 
@@ -530,8 +559,10 @@ def test_remove_drops_the_entry_from_the_layer_that_declares_it(
 def test_remove_names_the_other_layer_rather_than_removing_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A global-only entry is not in the repo config: the refusal says which
-    command reaches it, instead of "nothing to remove"."""
+    """A global-only entry is not in the repo config.
+
+    The refusal says which command reaches it, instead of "nothing to remove".
+    """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     assert (
@@ -552,9 +583,12 @@ def test_remove_names_the_other_layer_rather_than_removing_nothing(
 def test_remove_refuses_an_entry_it_cannot_rewrite_instead_of_claiming_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The line surgery deletes a `[mcp.servers.<name>]` header; a dotted key or
-    an inline table is invisible to it. Reporting "removed" there left the entry
-    live and its tools reaching the model."""
+    """Remove refuses an entry it cannot rewrite instead of claiming success.
+
+    The line surgery deletes a `[mcp.servers.<name>]` header; a dotted key or an inline table is
+    invisible to it, and reporting "removed" there leaves the entry live and its tools reaching the
+    model.
+    """
     monkeypatch.chdir(tmp_path)
     cfg_home = tmp_path / "cfg"
     (cfg_home / "agent6").mkdir(parents=True, exist_ok=True)

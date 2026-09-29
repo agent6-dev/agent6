@@ -2,9 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """What the model may do to the operator's own nodes.
 
-Two rules, both in the curator so every caller gets them: a task the operator
-queued is finished, never dismissed, and the standing slot belongs to the
-operator alone, so `--standing` stays the one and only way to set one.
+A task the operator queued is finished, never dismissed, and the standing slot belongs to the
+operator alone, so `--standing` stays the one way to set one.
 """
 
 from __future__ import annotations
@@ -45,8 +44,7 @@ def _queued(c: GraphCurator, root: str, title: str = "add a --json flag") -> str
 def test_the_model_cannot_retire_a_task_the_operator_queued(
     tmp_path: Path, retirement: NodeStatus
 ) -> None:
-    """The model's route refuses; the curator stays permissive, because it is
-    also the operator's route (`/retire`)."""
+    """The model's route refuses; the curator stays permissive as the operator's `/retire` route."""
     c, root = _curator(tmp_path)
     queued = _queued(c, root)
 
@@ -67,17 +65,14 @@ def test_an_operator_task_still_passes(tmp_path: Path) -> None:
 
 
 def test_the_root_is_retirable_though_the_operator_owns_it(tmp_path: Path) -> None:
-    """The seeded root is `created_by="user"` too, and a run that is abandoned
-    retires it; only queued SUBTASKS are the operator's to keep."""
+    """An abandoned run retires the seeded root; only queued subtasks are the operator's to keep."""
     c, root = _curator(tmp_path)
 
     assert c.update_status(UpdateStatusIntent(id=root, new_status="obsolete")).status == "obsolete"
 
 
 def test_the_models_standing_task_lands_as_an_ordinary_one(tmp_path: Path) -> None:
-    """`--standing` is the one way to set a standing goal, so there is exactly
-    one and it is the operator's. The curator owns that: a draft from any other
-    actor keeps its task and loses the flag, whatever route built it."""
+    """`--standing` is the one way to set a standing goal; another actor's draft loses the flag."""
     c, root = _curator(tmp_path)
 
     node = c.add_subtask(
@@ -93,9 +88,7 @@ def test_the_models_standing_task_lands_as_an_ordinary_one(tmp_path: Path) -> No
 
 
 def test_add_task_offers_no_standing_flag(tmp_path: Path) -> None:
-    """The model's tool carries no argument the graph will not honour: the
-    standing goal is `--standing`, so add_task does not mention it and a stale
-    call naming it is refused rather than quietly downgraded."""
+    """add_task carries no standing argument, and a stale call naming it is refused."""
     c, root = _curator(tmp_path)
 
     assert "standing" not in DagAddTaskInput.TOOL_DESCRIPTION
@@ -107,9 +100,7 @@ def test_add_task_offers_no_standing_flag(tmp_path: Path) -> None:
 
 
 def test_a_new_sibling_lands_before_the_standing_goal(tmp_path: Path) -> None:
-    """The standing goal is seeded right after the root, so every later task
-    would otherwise queue behind the run's last resort. The tree reads in the
-    order the frontier works: ordinary tasks, then the standing goal."""
+    """The standing goal is seeded right after the root, so every later task queues ahead of it."""
     c, root = _curator(tmp_path)
     standing = c.add_subtask(
         AddSubtaskIntent(

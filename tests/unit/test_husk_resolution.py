@@ -18,16 +18,14 @@ from agent6.ui.cli._common import (  # pyright: ignore[reportPrivateUsage]
 
 
 def _husk(repo: Path, session_id: str = "husky-one-AAAAAA") -> Path:
-    """A session dir with neither manifest.json nor logs.jsonl: it crashed
-    before it ever started."""
+    """A session dir with neither manifest.json nor logs.jsonl crashed before it ever started."""
     d = bucket_dir(state_dir(repo), "runs") / session_id
     d.mkdir(parents=True)
     return d
 
 
 def test_an_explicit_husk_id_refuses_with_the_remedy(tmp_path: Path) -> None:
-    """`attach`/`sessions show` presented a husk as real and advised a resume
-    that fails; the resolver answers once, for every surface."""
+    """The resolver answers a husk once, for every surface, never as a session to resume."""
     _husk(tmp_path)
     with pytest.raises(SessionIdError, match="crashed before it ever started"):
         resolve_session_layout(tmp_path, "husky-one-AAAAAA")

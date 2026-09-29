@@ -180,10 +180,10 @@ class TestResolveStates:
 
 
 def test_unreadable_skill_dir_warns_instead_of_crashing_every_run(tmp_path: Path) -> None:
-    """A dir listed in extra_dirs (or the installed dir) that exists but cannot
-    be listed (permission denied) crashed discovery via a bare `iterdir()`,
-    same failure class as an unreadable SKILL.md: every run dies before a
-    healthy sibling skill ever loads. It must degrade to a warning instead."""
+    """An unlistable skills dir degrades to a warning instead of killing every run.
+
+    A permission-denied `iterdir()` crashed discovery before a healthy sibling skill loaded.
+    """
     if os.geteuid() == 0:
         pytest.skip("root lists through a 000 mode")
     base = tmp_path / "extra"
@@ -216,11 +216,11 @@ def test_unreadable_skill_dir_warns_instead_of_crashing_every_run(tmp_path: Path
 
 
 def test_unreadable_skill_warns_instead_of_crashing_every_run(tmp_path: Path) -> None:
-    """A SKILL.md with one non-UTF-8 byte (or an unreadable file) crashed
-    discovery, and discovery runs at startup: every `agent6 run` then died with
-    a bare UnicodeDecodeError naming no file, after session.start and before any
-    session.end. A bad skill must degrade to a warning like every other malformed
-    one, leaving the healthy skills usable."""
+    """A SKILL.md with a non-UTF-8 byte or an unreadable file degrades to a warning.
+
+    Discovery runs at startup, so every `agent6 run` died with a bare UnicodeDecodeError naming
+    no file, between session.start and any session.end.
+    """
     bad = tmp_path / "broken"
     bad.mkdir()
     (bad / "SKILL.md").write_bytes(b"---\nname: broken\ndescription: caf\xe9\n---\nbody\n")
@@ -239,10 +239,11 @@ def test_unreadable_skill_warns_instead_of_crashing_every_run(tmp_path: Path) ->
 def test_a_skill_dir_the_operator_cannot_search_warns_instead_of_vanishing(
     tmp_path: Path,
 ) -> None:
-    """A candidate under an extra dir with mode 0600 (readable, not
-    searchable): `Path.is_dir()` and `is_file()` report it absent from Python
-    3.13 on, so discovery dropped it with no warning; the explicit stats raise
-    into the same warning as an unlistable dir."""
+    """A candidate with mode 0600 under an extra dir warns instead of vanishing silently.
+
+    `Path.is_dir()` and `is_file()` report it absent from Python 3.13 on; the explicit stats
+    raise into the same warning as an unlistable dir.
+    """
     if os.geteuid() == 0:
         pytest.skip("root searches through a 0600 dir")
     base = tmp_path / "extra"

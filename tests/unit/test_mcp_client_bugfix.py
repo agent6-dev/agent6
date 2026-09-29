@@ -27,8 +27,10 @@ from agent6.tools.mcp_client import (
 
 
 def _iserror_server_argv() -> tuple[str, ...]:
-    """A server whose tools/call returns a tool-level failure as a normal
-    JSON-RPC result with isError=true (spec-compliant), no top-level error."""
+    """A server whose tools/call returns a tool-level failure as a normal result with isError=true.
+
+    Spec-compliant: no top-level error.
+    """
     script = textwrap.dedent(
         """
         import json, sys
@@ -100,8 +102,7 @@ def _echoed_secret_server_argv(*, tool_level: bool = False) -> tuple[str, ...]:
 def test_a_passed_secret_echoed_in_a_protocol_error_is_redacted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A passed credential stays out of the transcript even when the server
-    copies it into a JSON-RPC error rather than stderr."""
+    """A passed credential stays out of the transcript when a JSON-RPC error echoes it."""
     secret = "secret-from-environment-" + "x" * 3000
     monkeypatch.setenv("MCP_TEST_SECRET", secret)
     mgr = MCPManager.start(
@@ -151,10 +152,12 @@ def test_a_passed_secret_echoed_in_a_tool_error_is_redacted(
 
 
 def _server_request_collision_argv() -> tuple[str, ...]:
-    """A server that, when tools/call arrives, FIRST emits its own request
-    (id=1, method='roots/list') — colliding with the client's first id — and
-    THEN the genuine response. The pre-fix reader stored the server request
-    under id=1 and popped it as the response (no result -> non-dict failure)."""
+    """A server whose own request collides with the client's first id.
+
+    On tools/call it first emits a request (id=1, method='roots/list') and then the genuine
+    response; a reader that stores the server request under id=1 pops it as the response (no result,
+    a non-dict failure).
+    """
     script = textwrap.dedent(
         """
         import json, sys
@@ -199,8 +202,11 @@ def _server_request_collision_argv() -> tuple[str, ...]:
 
 
 def test_a_json_rpc_error_cannot_flood_the_context() -> None:
-    """A server controls its JSON-RPC error message, which reaches the model's
-    context, so it gets the same inline bound as a tool-level error."""
+    """A JSON-RPC error cannot flood the context.
+
+    A server controls its error message, which reaches the model's context, so it gets the same
+    inline bound as a tool-level error.
+    """
     from agent6.tools.mcp_client import (
         _MAX_INLINE_TEXT_CHARS,  # pyright: ignore[reportPrivateUsage]
         _result_of,  # pyright: ignore[reportPrivateUsage]
@@ -259,8 +265,10 @@ def test_server_initiated_request_not_treated_as_response() -> None:
 
 
 def test_tools_list_follows_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every tools/list page is part of one listing; stopping at nextCursor
-    silently hid every tool after the server's first page."""
+    """tools/list follows pagination.
+
+    Every page is part of one listing; stopping at nextCursor hides every tool after the first page.
+    """
     from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
     from agent6.tools.mcp_http import HttpTransport
 
@@ -297,8 +305,11 @@ def test_tools_list_follows_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_tools_list_pagination_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A server minting a fresh nextCursor on every page would otherwise hold
-    the handshake forever and grow the roster without bound."""
+    """tools/list pagination is bounded.
+
+    A server minting a fresh nextCursor on every page would otherwise hold the handshake forever and
+    grow the roster without bound.
+    """
     from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
     from agent6.tools.mcp_http import HttpTransport
 
@@ -334,9 +345,11 @@ def test_tools_list_pagination_is_bounded(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def _poison_tools_server_argv() -> tuple[str, ...]:
-    """A server whose tools/list advertises, besides a valid `echo`: a tool
-    whose 54-char name pushes the qualified name past the 64-char provider
-    bound, and a duplicate `echo` entry."""
+    """A server whose tools/list advertises, besides a valid `echo`.
+
+    A tool whose 54-char name pushes the qualified name past the 64-char provider bound, and a
+    duplicate `echo` entry.
+    """
     script = textwrap.dedent(
         """
         import json, sys
@@ -374,10 +387,11 @@ def _poison_tools_server_argv() -> tuple[str, ...]:
 
 
 def test_registration_skips_tools_that_would_poison_the_tools_array() -> None:
-    """An over-64-char qualified name or a duplicate name would 400 the WHOLE
-    provider tools array every turn; both are dropped at registration (first
-    occurrence wins) like the invalid-char skip, so one bad entry cannot take
-    the run down."""
+    """Registration skips tools that would poison the tools array.
+
+    An over-64-character qualified name or a duplicate name would 400 the whole provider tools array
+    every turn; both are dropped at registration (first occurrence wins) like the invalid-char skip.
+    """
     mgr = MCPManager.start(
         [
             MCPServerSpec(
@@ -397,9 +411,10 @@ def test_registration_skips_tools_that_would_poison_the_tools_array() -> None:
 
 
 def _slow_call_server_argv() -> tuple[str, ...]:
-    """Handshake replies promptly; every tools/call sleeps 0.5s before
-    replying, so a short-call-timeout client times out and the reply arrives
-    late."""
+    """A server that handshakes promptly and sleeps 0.5s before every tools/call reply.
+
+    A short-call-timeout client times out and the reply arrives late.
+    """
     script = textwrap.dedent(
         """
         import json, sys, time
@@ -437,10 +452,12 @@ def _slow_call_server_argv() -> tuple[str, ...]:
 
 
 def test_timed_out_requests_leave_no_pending_residue() -> None:
-    """A reply landing after its caller timed out must be dropped, not stored:
-    the reader retained ANY response-shaped message forever once no _request
-    was left to pop it, growing _pending (up to 8 MiB per entry) without
-    bound against a slow or runaway server."""
+    """Timed-out requests leave no pending residue.
+
+    A reply landing after its caller timed out is dropped, not stored; a reader that retains any
+    response-shaped message once no request is left to pop it grows `_pending` (up to 8 MiB per
+    entry) without bound against a slow or runaway server.
+    """
     mgr = MCPManager.start(
         [
             MCPServerSpec(

@@ -81,9 +81,7 @@ def test_unbalanced_braces_is_error() -> None:
 
 
 def test_an_expression_in_an_interpolation_is_refused_naming_the_grammar() -> None:
-    """`{{ not result.passed }}` is the shape a drafting model keeps trying; the
-    error states what an interpolation holds (one dotted name, at most one
-    filter) so the fix is in the message, not the docs."""
+    """The interpolation error states the accepted shape (one dotted name, at most one filter)."""
     with pytest.raises(TemplateError) as exc:
         parse_template("{{ not result.passed }}")
     msg = str(exc.value)

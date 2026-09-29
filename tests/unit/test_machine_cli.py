@@ -77,9 +77,7 @@ def test_run_exit_on_wait_yields_waiting(
 def test_a_foreground_wait_says_where_it_parked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The wait blocks in-process with nothing on the terminal otherwise, so a
-    `machine run` that parked for an hour read as a hang; `machine status` in
-    another terminal had the sentence all along."""
+    """A foreground wait says so on the terminal, so a parked `machine run` never looks hung."""
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "waiter.asm.toml"
     ticks_at_once = WAITER_DELAYED.replace(
@@ -98,9 +96,7 @@ def test_a_foreground_wait_says_where_it_parked(
 def test_run_prints_a_notify_on_the_foreground_terminal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A notify was journal-only: the foreground run is its own watcher, so the
-    # message must land on the terminal too (attach and the web already showed
-    # it). The operator [machine.notify].on_event hook is unset here.
+    # The foreground run is its own watcher, so a notify must land on the terminal too.
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "waiter.asm.toml"
     f.write_text(
@@ -123,16 +119,14 @@ def test_status_reports_waiting_state_and_spend(
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
-    # `machine run --exit-on-wait` exits the process, so the worker pid is dead;
-    # in-process it is this live pytest, so clear it to model the parked reality.
+    # `--exit-on-wait` exits the process; in-process the pid is this pytest, so clear it.
     root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     clear_worker_pid(root)
     code = main(["machine", "status", "waiter_delayed"])
     assert code == 0
     out = capsys.readouterr().out
     assert "waiter_delayed" in out
-    # A parked instance reads "waiting" (the word run --exit-on-wait/web use), not
-    # the engine's raw "incomplete".
+    # A parked instance reads "waiting", not the engine's raw "incomplete".
     assert "status: waiting" in out
     # A timed wait wakes on its own; the poke is offered as the way to wake it NOW.
     assert "waiting in 'poll': wakes at " in out
@@ -143,10 +137,7 @@ def test_status_reports_waiting_state_and_spend(
 def test_status_hints_poke_for_a_live_foreground_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A foreground `machine run` blocked in a wait persists the wait record
-    BEFORE it sleeps (the same wait.json --exit-on-wait leaves), so a live
-    worker in a wait carries one. The readout gated the poke line on the
-    record's absence, so a blocking wait never printed it."""
+    """A foreground `machine run` persists its wait record before sleeping; the poke line shows."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
@@ -166,9 +157,7 @@ def test_status_hints_poke_for_a_live_foreground_wait(
 def test_status_names_a_poke_only_for_an_armed_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The poke line fell back to the fold (a live worker in a wait-kind state)
-    when no record was armed, and named a poke `machine poke` refused; the line
-    comes from the record, the poke's own fact."""
+    """The poke line comes from the wait record, never from the fold's guess."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
@@ -187,9 +176,7 @@ def test_status_names_a_poke_only_for_an_armed_wait(
 def test_status_shows_a_pending_poke_until_it_is_acked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A poke the machine has not acted on is state the readout owes the
-    operator: its payload shows from the poke until the wake's step is acked,
-    a claimed-but-unacked take included."""
+    """A poke the machine has not acted on shows its payload until the wake's step is acked."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
@@ -212,10 +199,7 @@ def test_status_shows_a_pending_poke_until_it_is_acked(
 def test_status_of_an_alive_but_parked_instance_reads_waiting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """machine_word_for_dir (the shared status-word owner) checks `parked` BEFORE
-    `alive`, so an alive-but-parked instance (a persisted wait written while the
-    worker is still live -- a teardown race) must read "waiting" like the watch
-    screen / web pill, not the CLI alive-branch's hardcoded "running"."""
+    """machine_word_for_dir checks `parked` before `alive`: alive-but-parked reads "waiting"."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
@@ -232,10 +216,7 @@ def test_status_of_an_alive_but_parked_instance_reads_waiting(
 def test_status_tolerates_a_corrupt_pending_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A corrupt wait.json must not abort the whole readout: the shared dir word
-    (machine_word_for_dir -> machine_is_parked) tolerates it as parked, so status
-    mirrors that -- it notes the wait file is unreadable and still prints the
-    state / spend, instead of ERROR + exit 1 (the CLI was off that shared rule)."""
+    """A corrupt wait.json does not abort the readout: status reads parked and notes the file."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
@@ -286,11 +267,7 @@ reason = "bad"
 def test_status_reports_stopped_for_a_crashed_instance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A worker that died mid-state (a step recorded, no MachineEnd, no armed
-    # wait, dead pid) is "stopped" -- the word machine watch, the TUI header, and
-    # the web pill all show via machine_status_word, the one owner of the
-    # distinction -- not the engine's raw "incomplete", which only that owner
-    # translates.
+    # A worker dead mid-state is "stopped" on every surface, through machine_status_word.
     from agent6.machine.journal import StepEvent, ToolFact
 
     monkeypatch.chdir(tmp_path)
@@ -328,8 +305,7 @@ def test_status_missing_instance_errors(
 def test_uncommitted_refusal_logs_a_git_error_instead_of_silently_failing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The dirty-file gate fails OPEN on a GitError (it is review-discipline, not
-    # security) but must never do so SILENTLY: a broken-git env stays visible.
+    # The dirty-file gate fails open on a GitError but never silently.
     import agent6.app.machine.run as machine_run
     from agent6.git_ops import GitError
 
@@ -349,9 +325,7 @@ def test_uncommitted_refusal_logs_a_git_error_instead_of_silently_failing(
 def test_status_asm_file_path_hints_the_instance_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `machine run` takes a FILE (waiter.asm.toml); status/replay/poke/watch take
-    # the instance ID (waiter_delayed). Passing the file where the id belongs must
-    # suggest the id, not dead-end.
+    # `machine run` takes a file; the other verbs take the instance id and suggest it for a file.
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)  # machine = "waiter_delayed"
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
@@ -367,8 +341,7 @@ def test_status_asm_file_path_hints_the_instance_id(
 def test_status_on_an_invalid_machine_file_names_it_as_a_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An unparsable .asm.toml where an id belongs is still a file, and the
-    hint says so; the load failure fell through to the near-miss id search."""
+    """An unparsable .asm.toml where an id belongs is still a file, and the hint says so."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "bad.asm.toml").write_text('machine = "bad"\n', encoding="utf-8")
     assert main(["machine", "status", "bad.asm.toml"]) == 2
@@ -378,9 +351,7 @@ def test_status_on_an_invalid_machine_file_names_it_as_a_file(
     assert "agent6 machine check bad.asm.toml" in err, err  # `machine run` would refuse it too
 
 
-# A no-I/O machine that reaches a terminal immediately (branch -> terminal), so
-# `agent6 attach` on it takes the finished path (overview + end) without blocking
-# in the follow loop and without needing a model or the jail.
+# A no-I/O machine that reaches a terminal at once, so `attach` takes the finished path.
 TINY = """
 machine = "tiny"
 version = 1
@@ -414,9 +385,7 @@ def test_watch_finished_instance_shows_overview_and_end(
     f.write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0
     capsys.readouterr()  # drop run output
-    # A finished instance has a journaled MachineEnd, so the unified `agent6 attach`
-    # (which routes a machine name to the machine follower) prints the overview +
-    # the final state and returns instead of entering the (blocking) follow loop.
+    # A finished instance has a MachineEnd, so `attach` prints the overview and returns.
     code = main(["attach", "tiny"])
     assert code == 0
     out = capsys.readouterr().out
@@ -427,8 +396,10 @@ def test_watch_finished_instance_shows_overview_and_end(
 
 
 def _stalled_instance(tmp_path: Path, *, parked: bool) -> None:
-    """An instance whose journal has begun but not ended, with a dead worker
-    pid -- plus an armed pending wait when *parked*."""
+    """Return an instance whose journal has begun but not ended, with a dead worker pid.
+
+    An armed pending wait when *parked*.
+    """
     from agent6.machine.journal import MachineJournal, PendingWait
 
     inst = state_dir(tmp_path) / "machines" / "tiny"
@@ -457,9 +428,7 @@ def _watch_in_thread(timeout_s: float) -> tuple[list[int], bool]:
 def test_watch_exits_on_a_parked_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A parked (--exit-on-wait) machine has an armed wait and no worker: the
-    docstring promises watch "exits when the machine ends/waits", but the loop
-    only ever ended on MachineEnd and spun silently forever."""
+    """The watch exits on a parked (--exit-on-wait) machine, as its docstring promises."""
     monkeypatch.chdir(tmp_path)
     _stalled_instance(tmp_path, parked=True)
     result, still_running = _watch_in_thread(5.0)
@@ -472,9 +441,7 @@ def test_watch_exits_on_a_parked_machine(
 def test_watch_follows_a_live_machine_in_a_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A live worker blocked in a foreground wait still writes: attach follows
-    it and exits only once the worker is gone. It exited at once on the word
-    "waiting", live or not."""
+    """A live worker blocked in a foreground wait is followed; attach exits once it is gone."""
     import threading
 
     monkeypatch.chdir(tmp_path)
@@ -495,8 +462,7 @@ def test_watch_follows_a_live_machine_in_a_wait(
 def test_watch_exits_on_a_crashed_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A crashed worker (stale worker.pid, no MachineEnd, no armed wait) left
-    watch presenting "watching..." forever over a dead machine."""
+    """A crashed worker reads crashed in watch, never "watching..." forever."""
     monkeypatch.chdir(tmp_path)
     _stalled_instance(tmp_path, parked=False)
     result, still_running = _watch_in_thread(5.0)
@@ -519,8 +485,7 @@ def test_watch_exits_on_a_stopped_machine_without_a_pid_file(
     assert not still_running, "watch followed a stopped machine with no worker"
     assert result == [1]
     err = capsys.readouterr().err
-    # An operator's `machine stop` leaves the same dir as a crash: the line
-    # states what is known and asserts no cause.
+    # An operator's `machine stop` leaves the same dir as a crash: the line asserts no cause.
     assert "STOPPED in 'route': no worker is running" in err
     assert "exited" not in err
 
@@ -542,8 +507,7 @@ def test_replay_pluralizes_the_transition_count(
 def test_run_refuses_uncommitted_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # docs §7.1/§9: `machine run` only accepts a committed machine. An untracked
-    # .asm.toml is refused before any execution.
+    # `machine run` only accepts a committed machine; an untracked file is refused first.
     monkeypatch.chdir(tmp_path)
     _git_init(tmp_path)
     f = tmp_path / "tiny.asm.toml"
@@ -594,8 +558,7 @@ def test_uncommitted_refusal_checks_the_machine_symlink_not_its_target(tmp_path:
 
 
 def test_uncommitted_refusal_follows_a_symlinked_repo_path(tmp_path: Path) -> None:
-    """A repo reached through a symlinked prefix keeps its committed-bundle
-    gate: the unresolved piece under the resolved base skipped it silently."""
+    """A repo reached through a symlinked prefix keeps its committed-bundle gate."""
     from agent6.app.machine.run import uncommitted_refusal
 
     real = tmp_path / "real"
@@ -613,10 +576,10 @@ def test_uncommitted_refusal_follows_a_symlinked_repo_path(tmp_path: Path) -> No
 
 
 def test_uncommitted_refusal_covers_the_scripts_bundle(tmp_path: Path) -> None:
-    """One committed-bundle rule: a tool executes `scripts/` as trusted logic
-    exactly like the .asm.toml, so a dirty bundle REFUSES (not a warning a
-    scrolling launch buries); `machine test` stays the ungated iteration
-    loop."""
+    """A dirty bundle refuses `machine run`; `machine test` stays the ungated iteration loop.
+
+    A tool executes `scripts/` as trusted logic exactly like the .asm.toml.
+    """
     from agent6.app.machine.run import uncommitted_refusal
 
     f = tmp_path / "tiny.asm.toml"
@@ -639,10 +602,7 @@ def test_uncommitted_refusal_covers_the_scripts_bundle(tmp_path: Path) -> None:
 def test_first_run_records_the_bundle_and_drift_refuses_continuation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A live instance runs the bundle it recorded: the first run persists the
-    .asm.toml + scripts tree under the instance root, an edited script refuses
-    continuation by name (never executes under the old instance identity), and
-    a restored bundle continues cleanly."""
+    """A live instance runs the bundle it recorded; an edited script refuses continuation."""
     monkeypatch.chdir(tmp_path)
     _git_init(tmp_path)
     f = _write_machine(tmp_path)  # waiter: parks WAITING under --exit-on-wait
@@ -673,9 +633,7 @@ def test_first_run_records_the_bundle_and_drift_refuses_continuation(
 def test_continuation_refuses_an_edited_machine_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An edited .asm.toml with the same name/version drifts from the recorded
-    source and refuses continuation -- identity strings alone let an
-    incompatible edit land on the old journal."""
+    """An edited machine file with the same name and version refuses continuation."""
     monkeypatch.chdir(tmp_path)
     _git_init(tmp_path)
     f = _write_machine(tmp_path)
@@ -693,8 +651,7 @@ def test_continuation_refuses_an_edited_machine_file(
 def test_run_refuses_rerun_of_ended_instance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # An ended instance can only be replayed, never advanced. A rerun must refuse
-    # BEFORE stamping worker.pid, so a dead machine never reads "running".
+    # An ended instance can only be replayed; a rerun refuses before stamping worker.pid.
     from agent6.machine import drive, load_machine
     from agent6.sessions.ipc import read_worker_pid, write_worker_pid
 
@@ -765,8 +722,7 @@ def test_poke_rejects_invalid_json_data(
 def test_poke_refuses_ended_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A terminal machine consumes no signals; poking it would sit unread, so the
-    # CLI refuses instead of claiming "it will wake on its next signal check".
+    # A terminal machine consumes no signals, so poking it is refused.
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
@@ -890,9 +846,7 @@ on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done"
 def test_run_says_where_a_machines_work_landed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A machine with run states commits to `agent6/machine-<id>` and never
-    touches the checkout, so "tests passing" was reported over a tree whose
-    tests still fail, with nothing naming where the work went."""
+    """A machine with run states commits to `agent6/machine-<id>` and never touches the checkout."""
     cfg_home = tmp_path.parent / (tmp_path.name + "-cfg")  # outside the workspace
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
@@ -973,11 +927,7 @@ def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
 def test_run_warns_on_mode_run_states_under_ask_policy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # An unattended machine auto-denies run_command under 'ask'; a mode='run'
-    # state burns its budget against denials, so machine run says so up front
-    # and names both remedies. No provider is configured here, so the run then
-    # refuses at require_runnable, which keeps this test spend-free; the note
-    # must already have printed.
+    # An unattended 'ask' machine auto-denies run_command; the note names both remedies up front.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "runwarn.asm.toml"
@@ -1009,10 +959,7 @@ def test_run_auto_approve_suppresses_the_warning_and_sets_the_env_grant(
 def test_a_fresh_instance_over_a_stale_chain_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A machine chain ref outlives an archived instance dir; a fresh instance
-    silently continued the dead instance's tree (a live execution saw its fix and
-    reported tests passed over a broken repo). The run refuses instead, naming
-    the branch and both remedies."""
+    """A machine chain ref that outlives its instance dir refuses the run, naming both remedies."""
     import subprocess
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -1059,8 +1006,7 @@ model = "m"
     assert code == 2
     assert "chain branch 'agent6/machine-run-warn' exists" in err
     assert "git branch -D agent6/machine-run-warn" in err
-    # A preflight refusal is not a running worker. The pid was stamped before
-    # this check and never cleared, so in-process callers reported it as live.
+    # A preflight refusal is not a running worker; the stamped pid must be cleared.
     from agent6.sessions.ipc import read_worker_pid
 
     root = state_dir(repo) / "machines" / "run-warn"
@@ -1109,10 +1055,7 @@ reason = "done"
 def test_a_fresh_instance_over_a_merged_chain_starts_from_head(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The refusal's keep remedy is `git merge <branch>`, then rerun: the merge
-    left the chain ref in place, so the rerun refused again with the same
-    remedy. A chain whose tip HEAD already holds is spent: the instance drops
-    it and starts from HEAD, saying so."""
+    """A chain whose tip HEAD already holds is spent: the instance drops it and starts from HEAD."""
     import subprocess
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -1164,9 +1107,7 @@ model = "m"
 def test_run_no_commands_withholds_them_from_the_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--no-commands` reached `machine run`'s parser and stopped there: the
-    dispatch never read it, so an operator running an unfamiliar machine with
-    it got the machine's full command surface."""
+    """`--no-commands` reaches `machine run`'s dispatch, not only its parser."""
     import os
 
     from agent6.app.machine_agent import (
@@ -1175,8 +1116,7 @@ def test_run_no_commands_withholds_them_from_the_machine(
     from agent6.config import Config
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    # setenv, not delenv: monkeypatch records an absent var as nothing to
-    # restore, so `main` setting it would leak into the next test.
+    # setenv, not delenv: monkeypatch records an absent var as nothing to restore.
     monkeypatch.setenv("AGENT6_NO_COMMANDS", "")
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "nocmd.asm.toml"
@@ -1238,8 +1178,7 @@ def test_offline_validation_reads_the_explicit_config_layer(
     capsys: pytest.CaptureFixture[str],
     verb: str,
 ) -> None:
-    """The top-level `--config` layer applies to every command; check/test must
-    reject the same malformed explicit config before `machine run` sees it."""
+    """The top-level `--config` layer applies to every machine command, check and test included."""
     monkeypatch.chdir(tmp_path)
     machine = tmp_path / "tiny.asm.toml"
     machine.write_text(TINY, encoding="utf-8")
@@ -1254,9 +1193,7 @@ def test_offline_validation_reads_the_explicit_config_layer(
 def test_check_validates_the_config_overlay_run_will_merge(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`machine run` merges the file's [config] table into the effective
-    config; check and test skipped that merge, so an unknown config key
-    returned OK from both and failed first at run."""
+    """`machine check` and `test` merge the file's [config] table as `machine run` does."""
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "bad.asm.toml"
     f.write_text(
@@ -1272,11 +1209,7 @@ def test_check_validates_the_config_overlay_run_will_merge(
 def test_check_warns_on_binaries_unreachable_in_the_jail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Offline validation mocks subprocess, so a machine whose tool calls a
-    # binary absent from the jail PATH passed check/test and died on its first
-    # real transition. The probe covers tool-state command[0] AND literal
-    # subprocess argv inside bundle scripts; reachable binaries stay quiet and
-    # the warnings are advisory (check still exits 0).
+    # The probe covers tool-state command[0] and literal subprocess argv in bundle scripts.
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "probe.asm.toml"
     f.write_text(TOOL_PROBE_MACHINE, encoding="utf-8")
@@ -1303,11 +1236,10 @@ def test_check_warns_on_binaries_unreachable_in_the_jail(
 def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`machine stop` writes the durable marker only for a live worker; a
-    parked/dead instance gets the note and exit 0 (a stop that finds nothing
-    running has done what was asked, the answer `agent6 stop` gives), never
-    a marker that would ambush the next `machine run` at its first boundary."""
+    """`machine stop` writes the durable marker only for a live worker.
 
+    A parked or dead instance gets the note and exit 0, never a marker that ambushes the next run.
+    """
     from agent6.viewmodel import machine_state as machine_state_mod
 
     monkeypatch.chdir(tmp_path)
@@ -1342,8 +1274,7 @@ def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
 def test_run_start_clears_a_stale_stop_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A leftover stop marker must not park the next invocation at its first
-    boundary: starting the machine is the answer to any stale request."""
+    """A leftover stop marker does not park the next invocation at its first boundary."""
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
@@ -1359,10 +1290,10 @@ def test_run_start_clears_a_stale_stop_marker(
 def test_hub_spawn_away_mode_reaches_the_instance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A hub-spawned machine (AGENT6_DETACHED_AWAY=wait in the spawn env)
-    records "wait" on its instance dir at run start, so every agent state's
-    bridges park prompts for the front-end regardless of when its viewer
-    registers."""
+    """A hub-spawned machine records "wait" on its instance dir at run start.
+
+    Every agent state's bridges then park prompts for the front-end, whenever its viewer registers.
+    """
     from agent6.sessions.ipc import away_mode
 
     monkeypatch.chdir(tmp_path)
@@ -1377,9 +1308,7 @@ def test_hub_spawn_away_mode_reaches_the_instance(
 def test_attach_degrades_a_corrupt_journal_like_status(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`machine status` prints a clean ERROR for a corrupt journal; the watch
-    (attach's machine arm) must degrade identically, never propagate the
-    JournalError as a traceback."""
+    """`machine status` and the watch print a clean ERROR for a corrupt journal, no traceback."""
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
@@ -1396,11 +1325,7 @@ def test_attach_degrades_a_corrupt_journal_like_status(
 def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`machine run` had its own hand-assembled preflight and skipped the
-    protect_git check `run`/`ask` make, so on hardened an explicit
-    `protect_git = true` warned and ran instead of refusing (docs/security.md
-    states the refusal without qualification). Both lifecycles now run
-    `config_refusal`."""
+    """`machine run` makes the same protect_git check `run` and `ask` make (`config_refusal`)."""
     from agent6.app import _session as session_mod
     from agent6.app.machine import run as run_mod
 
@@ -1434,9 +1359,7 @@ def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
 def test_run_refuses_a_state_dir_inside_the_workspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 run` refuses a state base inside the workspace (jailed commands
-    could read transcripts, and commits would stage them); `machine run` did
-    not, so the same config ran there."""
+    """`machine run` refuses a state base inside the workspace, as `run` does."""
     from agent6.app import _session as session_mod
     from agent6.app.machine import run as run_mod
 
@@ -1463,10 +1386,11 @@ def test_run_refuses_a_state_dir_inside_the_workspace(
 def test_list_joins_instances_with_their_files_and_names_the_rest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 machine` (== `machine list`) is the CLI's machines page: each
-    instance's status and current state (the web hub's words) joined with the
-    authored file that declares it (the TUI page's spec column), then the
-    files no instance has run, and an unparsable file kept by path alone."""
+    """`agent6 machine` (`machine list`) is the CLI's machines page.
+
+    Each instance's status and current state joined with the authored file, then the files no
+    instance has run, and an unparsable file kept by path alone.
+    """
     monkeypatch.chdir(tmp_path)
     assert main(["machine"]) == 0
     assert "no machines yet" in capsys.readouterr().out
@@ -1509,8 +1433,7 @@ def test_list_names_a_corrupt_machine_journal(
 def test_status_and_list_name_a_parked_approval(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A live worker whose agent state holds an unanswered approval reads
-    "waiting" on both surfaces, and status names the state to answer in."""
+    """A worker holding an unanswered approval reads "waiting" and status names the state."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
@@ -1537,10 +1460,7 @@ def test_status_and_list_name_a_parked_approval(
 def test_machine_stop_refuses_an_instance_whose_journal_it_cannot_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A corrupt journal is not "nothing to stop": the verb refused it before
-    the nothing-to-stop note existed and kept refusing it after, with exit 2
-    and no marker, whether the worker is dead or alive (a live one's full
-    journal read raised out of the command)."""
+    """A corrupt journal is not "nothing to stop": the verb refuses with exit 2 and no marker."""
     import os
 
     from agent6.sessions.ipc import write_worker_pid
@@ -1551,8 +1471,7 @@ def test_machine_stop_refuses_an_instance_whose_journal_it_cannot_read(
     capsys.readouterr()
     root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     journal = root / "journal.jsonl"
-    # Corrupt at the head with a valid tail: a tail-only guard let this one
-    # through to the fold, whose error then printed as the note with exit 0.
+    # Corrupt at the head with a valid tail: a tail-only guard let it through to the fold.
     journal.write_text("{not json\n" + journal.read_text(encoding="utf-8"), encoding="utf-8")
     for alive in (False, True):
         if alive:
@@ -1561,8 +1480,7 @@ def test_machine_stop_refuses_an_instance_whose_journal_it_cannot_read(
         err = capsys.readouterr().err
         assert err.startswith("REFUSING: machine 'waiter_delayed':") and "journal" in err
         assert not (root / "stop").exists()
-    # Poke reads the whole journal too: on the tail-only read it wrote a
-    # signal into an instance `machine run` can never resume.
+    # Poke reads the whole journal too: a tail-only read wrote a signal into a dead instance.
     assert main(["machine", "poke", "waiter_delayed"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("REFUSING: machine 'waiter_delayed':") and "journal" in err

@@ -101,8 +101,7 @@ def test_driverless_prestart_hub_row_matches_the_cli_status_and_label(tmp_path: 
 
 
 def test_run_summary_survives_torn_utf8_tail(tmp_path: Path) -> None:
-    # A live writer can leave the log's last line torn mid multibyte UTF-8
-    # sequence; the hub summary must fold the complete lines, not raise.
+    # A live writer can leave the last line torn mid multibyte sequence; the fold keeps whole lines.
     d = _bucket(tmp_path, "runs") / "torn"
     d.mkdir(parents=True)
     full = json.dumps({"type": "role.text_delta", "text": "café"}, ensure_ascii=False).encode()
@@ -114,9 +113,7 @@ def test_run_summary_survives_torn_utf8_tail(tmp_path: Path) -> None:
 
 
 def test_conversation_payload_folds_the_event_log(tmp_path: Path) -> None:
-    # Items come from the shared TranscriptFold + item_lines renderer: a tool's
-    # multi-line result is clipped to its first line + a "+N more lines" note,
-    # with the full rendering carried separately for per-item expansion.
+    # A multi-line result is clipped to its first line plus a note; the full text rides beside.
     dump = "3 validation errors for ApplyEditInput\npath\n  Field required"
     d = _run(
         tmp_path,
@@ -139,8 +136,7 @@ def test_conversation_payload_folds_the_event_log(tmp_path: Path) -> None:
 
 
 def test_run_snapshot_embeds_the_compare_outcome(tmp_path: Path) -> None:
-    # A fan-out lane's manifest carries the compare block; the run snapshot
-    # embeds it so the page header can render rank/winner/rationale.
+    # A lane's manifest carries the compare block; the snapshot embeds it for the page header.
     d = _run(tmp_path, "lane1", [{"type": "session.start", "user_task": "x"}])
     (d / "manifest.json").write_text(
         json.dumps(
@@ -158,10 +154,10 @@ def test_run_snapshot_embeds_the_compare_outcome(tmp_path: Path) -> None:
 
 
 def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> None:
-    """The fold sets user_task only from session.start, so a parked/created/forked
-    run folds it empty. The wire owner (session_state_as_dict) fills it from the
-    manifest -- ONE task field; a second fallback_task the client had to
-    coalesce is gone."""
+    """The wire's `user_task` is filled from the manifest when the fold has no session.start.
+
+    One task field; the client coalesces nothing.
+    """
     d = _bucket(tmp_path, "runs") / "parked1"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
@@ -174,9 +170,10 @@ def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> Non
 
 
 def test_run_snapshot_carries_the_one_line_task_the_listings_show(tmp_path: Path) -> None:
-    """The run card took the raw first line of the task, so a resumed execution whose
-    task the manifest filled showed a seed block's opener, and a TASK.md task its
-    heading marks. The snapshot carries the same task_line the hub rows read."""
+    """The run card's title is the task line the hub rows read, not the raw first line.
+
+    The raw first line of a resumed or TASK.md task showed a seed block's opener or a heading mark.
+    """
     d = _bucket(tmp_path, "runs") / "titled1"
     d.mkdir(parents=True)
     task = '<prior-run id="agile-echo-H2EWX5">\ndigest\n</prior-run>\n\n# Fix the parser\n\nbody'
@@ -189,9 +186,7 @@ def test_run_snapshot_carries_the_one_line_task_the_listings_show(tmp_path: Path
 
 
 def test_plan_snapshot_carries_the_plan_md(tmp_path: Path) -> None:
-    """A planning run's deliverable rides the snapshot as plan_md (the web shows
-    it in a Plan card; `agent6 plan show` prints the same file). A run, or a
-    plan that has not written one, carries no such key."""
+    """A planning run's deliverable rides the snapshot as `plan_md`; a run carries no such key."""
     d = _bucket(tmp_path, "plans") / "plan1"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
@@ -219,9 +214,10 @@ def test_hub_marks_the_fan_out_winner(tmp_path: Path) -> None:
 
 
 def test_conversation_payload_carries_operator_inputs(tmp_path: Path) -> None:
-    """The composer's Ctrl-R history search reads `operator_inputs`: the task,
-    then every steer, raw text in journal order (the client flattens and
-    reverses for display)."""
+    """`operator_inputs` carries the task, then every steer, raw text in journal order.
+
+    The composer's Ctrl-R history search reads it; the client flattens and reverses for display.
+    """
     d = _run(
         tmp_path,
         "r2h",
@@ -276,9 +272,10 @@ reason = "routed"
 
 
 def test_machine_snapshot_carries_the_dir_status_word(tmp_path: Path) -> None:
-    """The machine wire payload stamps `status` (machine_word_for_dir), so a
-    client can gate Steer and the prompt boxes on liveness -- with only
-    `ended` it cannot tell a parked machine from a running one."""
+    """The machine wire payload stamps `status`, so a client can gate Steer and the prompts on it.
+
+    With only `ended` a client cannot tell a parked machine from a running one.
+    """
     md = machines_root(state_dir(tmp_path)) / "m3"
     md.mkdir(parents=True)
     (md / "machine.asm.toml").write_text(TINY_MACHINE, encoding="utf-8")
@@ -289,8 +286,7 @@ def test_machine_snapshot_carries_the_dir_status_word(tmp_path: Path) -> None:
 
 
 def test_hub_machine_pill_keeps_the_failure_reason(tmp_path: Path) -> None:
-    """A failed machine's hub entry carries the reason label (failed · why), like
-    run and draft rows, not a bare 'failed' word."""
+    """A failed machine's hub entry carries the reason label, like run and draft rows."""
     md = machines_root(state_dir(tmp_path)) / "m-fail"
     md.mkdir(parents=True)
     (md / "machine.asm.toml").write_text(TINY_MACHINE, encoding="utf-8")
@@ -323,9 +319,10 @@ def test_reasoning_snapshot_empty_without_state_log(tmp_path: Path) -> None:
 
 
 def test_an_id_in_two_buckets_resolves_to_neither(tmp_path: Path) -> None:
-    """State from before ids were one namespace can hold the same id in two
-    buckets; showing whichever bucket iterates first silently served one of
-    two sessions. Ambiguity resolves to None (a 404 the CLI resolver names)."""
+    """An id found in two buckets resolves to None, a 404, never to whichever bucket iterates first.
+
+    State from before ids were one namespace can hold the same id twice.
+    """
     _run(tmp_path, "twin", [{"type": "session.start"}])
     assert model.session_dir_for(tmp_path, "twin") is not None
     d = _bucket(tmp_path, "plans") / "twin"
@@ -370,8 +367,7 @@ def test_hub_payload_lists_machine_drafts(tmp_path: Path) -> None:
 
 
 def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: Path) -> None:
-    # A husk (neither manifest nor logs) is not listed, and must not shadow a
-    # real ask of the same id when resolving #/session/<id>.
+    # A husk (neither manifest nor logs) is not listed and does not shadow a real ask with its id.
     (_bucket(tmp_path, "runs") / "echo-fern-AA11BB").mkdir(parents=True)
     ask = _bucket(tmp_path, "asks") / "echo-fern-AA11BB"
     ask.mkdir(parents=True)
@@ -394,10 +390,10 @@ def test_hub_skips_husk_machine_draft_dirs(tmp_path: Path) -> None:
 
 
 def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: Path) -> None:
-    """`prompt.decompose = auto` and the unset compaction thresholds resolve
-    from the worker model at runtime; the page showed the raw placeholders
-    (`auto`, `(unset)`) where `config show` printed the resolved values
-    marked adaptive."""
+    """The config page shows `auto` and unset thresholds resolved and marked adaptive.
+
+    They resolve from the worker model at runtime; `config show` prints the same.
+    """
     cfg = tmp_path / "c.toml"
     cfg.write_text(
         '[providers.o]\napi_format = "openai"\nbase_url = "https://x/v1"\n'
@@ -432,10 +428,7 @@ def test_config_payload_carries_round_trippable_editor_values(tmp_path: Path) ->
 def test_config_suggestions_providers_and_models(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # models.<role>.provider carries the configured provider names as CHOICES
-    # in the config payload (a select, like an enum); models.<role>.model is
-    # suggested from the role's provider's model ids via the one cache-first
-    # listing the TUI config page and CLI completion use (`models.choices`).
+    # `provider` offers the configured names as choices; `model` suggests the provider's cached ids.
     from agent6.models import choices
 
     cfg_home = global_config_dir()
@@ -473,8 +466,7 @@ def test_config_suggestions_providers_and_models(
 def test_config_suggestions_parallel_models_pseudo_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The /parallel composer autocomplete: every provider's routes, the models
-    # the roles name included, cache-only so it never blocks.
+    # The /parallel autocomplete lists every provider's routes, cache-only so it never blocks.
     cfg_home = global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
@@ -522,9 +514,10 @@ def test_parallel_models_suggestions_span_every_provider(
 
 
 def test_run_snapshot_labels_a_parked_submission(tmp_path: Path) -> None:
-    """A parked run (the busy-checkout refusal saved the task) has no events by
-    construction, so the event fold alone reads it as "running" while the hub row
-    says parked. The run page must not disagree with the hub about the same run."""
+    """A parked run reads parked on the run page, as on the hub.
+
+    It has no events, so the event fold alone reads it as running.
+    """
     d = _bucket(tmp_path, "runs") / "parked1"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
@@ -543,9 +536,10 @@ def test_run_snapshot_labels_a_parked_submission(tmp_path: Path) -> None:
 
 
 def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: Path) -> None:
-    """A fresh manifest carried the configured verify command with no origin
-    (the execution's pin fills it in), so a run parked before its execution read
-    `python3 -m pytest -q (unknown origin)` in every header."""
+    """A run parked before its execution shows the verify command without an unknown origin.
+
+    A fresh manifest carries the configured command with no origin until the execution pins it.
+    """
     from agent6.app.manifest import stamp_parked, write_session_manifest
     from agent6.config import Config
     from agent6.sessions.layout import SessionLayout
@@ -579,20 +573,22 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: Path) 
 
 
 def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: Path) -> None:
-    """A run whose recorded worker is gone and that never logged session.end folds to
-    "running". The hub calls it stale off the same pid probe; the one-shot payload
-    the page first paints from has to say so too, not only the SSE frame."""
+    """A run whose recorded worker is gone and that never logged session.end folds to "running".
+
+    The hub calls it stale off the same pid probe; the one-shot payload the page first paints from
+    has to say so too, not only the SSE frame.
+    """
     d = _run(tmp_path, "crashed1", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     (d / "worker.pid").write_text("999999 12345678", encoding="utf-8")  # dead pid
     assert session_snapshot(d)["status_label"] == "stale"
 
 
 def test_run_snapshot_labels_waiting_starting_created(tmp_path: Path) -> None:
-    """The run page speaks EVERY listing word, not just parked/stale: blocked
-    on an operator answer reads "waiting · needs answer" (it read "running"
-    and sent the operator off to wait on the model while the run waited on
-    THEM), a live pre-session.start worker "starting", a never-started dir
-    "created"."""
+    """The run page speaks every listing word: waiting, starting, created, parked, stale.
+
+    A run blocked on an operator answer read "running", sending the operator off to wait on the
+    model while the run waited on them.
+    """
     import os
 
     from agent6.sessions.ipc import write_worker_pid
@@ -637,10 +633,12 @@ def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: Path) -> None:
 
 
 def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
-    """The page keys its composer and Stop/Compact buttons on liveness. The fold
-    calls every unfinished run "running", so a parked run offered a steer
-    composer and a Stop button that both dead-ended while resume -- the one
-    action that works -- was unreachable. `live` is the dir-aware answer."""
+    """The page keys its composer and Stop/Compact buttons on liveness.
+
+    The fold calls every unfinished run "running", so a parked run offered a steer composer and a
+    Stop button that both dead-ended while resume, the one action that works, was unreachable.
+    `live` is the dir-aware answer.
+    """
     import os
 
     from agent6.sessions.ipc import write_worker_pid
@@ -679,12 +677,13 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
 
 
 def test_the_states_that_offer_resume_are_not_live(tmp_path: Path) -> None:
-    """The composer's resume-takeover poll waits for the run to come alive. It
-    polled `finished === false`, which is ALREADY true for the parked and stale
-    runs it routes into resume mode, so takeover was declared on the first poll
-    and a resume that died on spawn was reported as success -- the spawn's
-    stderr goes to DEVNULL, so nothing else could surface it. `live` is what
-    separates the two, and both these states must read false."""
+    """The composer's resume-takeover poll waits for the run to come alive.
+
+    It polled `finished === false`, which is ALREADY true for the parked and stale runs it routes
+    into resume mode, so takeover was declared on the first poll and a resume that died on spawn was
+    reported as success: the spawn's stderr goes to DEVNULL, so nothing else could surface it.
+    `live` is what separates the two, and both these states must read false.
+    """
     parked = _bucket(tmp_path, "runs") / "parked-live"
     parked.mkdir(parents=True)
     (parked / "manifest.json").write_text(
@@ -702,8 +701,7 @@ def test_the_states_that_offer_resume_are_not_live(tmp_path: Path) -> None:
 
 
 def test_conversation_payload_carries_an_in_flight_call(tmp_path: Path) -> None:
-    """The page rebuilds its items from each payload, so a call the fold
-    reports in flight shows as running until its result replaces it."""
+    """A call the fold reports in flight shows as running until its result replaces it."""
     from agent6.sessions.ipc import write_worker_pid
 
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
@@ -723,8 +721,7 @@ def test_conversation_payload_carries_an_in_flight_call(tmp_path: Path) -> None:
 
 
 def test_a_dead_workers_open_call_reads_dead_not_running(tmp_path: Path) -> None:
-    """No session.end will ever settle a call the killed worker left open; the
-    payload probes the worker and settles it, and /restate agrees."""
+    """The payload probes the worker and settles a call it left open; /restate agrees."""
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
     d = _run(tmp_path, "r4", [{"type": "session.start", "user_task": "x"}, {**call, "call_id": 1}])
     (d / "worker.pid").write_text("4194304", encoding="utf-8")  # past pid_max: gone
@@ -761,8 +758,7 @@ def test_the_hub_row_and_the_cli_json_row_are_one_shape(
 def test_the_hub_row_carries_the_one_line_task_the_cli_table_shows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The card title is the task's first user-authored line, as the CLI table
-    and the TUI hub render it; the whole composed task rides beside it."""
+    """The card title is the task's first user-authored line, with the composed task beside it."""
     from agent6.viewmodel.listing import task_snippet
 
     monkeypatch.chdir(tmp_path)
@@ -796,9 +792,10 @@ def test_the_draft_hub_row_keeps_the_full_cli_json_task(
 
 
 def test_a_waiting_machine_is_not_labelled_failed(tmp_path: Path) -> None:
-    """`reason` is set for a live machine blocked on an operator prompt as well
-    as for a failed end; hardcoding "failed · <reason>" told the operator it
-    had died instead of sending them to answer the prompt."""
+    """A live machine blocked on a prompt reads as waiting, not as failed.
+
+    `reason` is set for a blocked machine as well as a failed end.
+    """
     from agent6.viewmodel.machine_state import MachineSummary
 
     row = model._machine_row(  # pyright: ignore[reportPrivateUsage]
@@ -817,9 +814,7 @@ def test_a_waiting_machine_is_not_labelled_failed(tmp_path: Path) -> None:
 
 
 def test_the_web_machine_header_does_not_hide_a_zero_cost(tmp_path: Path) -> None:
-    """`machine status` and the TUI watch print `spend: $0.0000`; the web
-    header appended the cost only when `spend.usd` was truthy, so the figure
-    an unattended machine is watched for was missing while it was zero."""
+    """The web header appends the cost while it is zero, as `machine status` and the watch do."""
     from agent6.machine.journal import BranchFact, MachineJournal, StepEvent
     from agent6.ui.web.page import CLIENT_JS
 
@@ -867,8 +862,7 @@ reason = "routed"
 
 
 def test_hub_folds_a_fan_outs_lanes_under_its_row(tmp_path: Path) -> None:
-    """The hub's session rows nest a fan-out's lanes under it, the same shape
-    `sessions list --json` prints."""
+    """The hub's session rows nest a fan-out's lanes under it, as `sessions list --json` prints."""
     start: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
     end: dict[str, object] = {"type": "session.end", "all_passed": True}
     fan = _run(tmp_path, "fan", [start, end])

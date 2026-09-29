@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""sandbox.network: isolation compatibility, machine refusals, and
-the supervisor subprocess that runs a machine `agent` state self-confined."""
+"""sandbox.network: isolation compatibility, machine refusals, and the self-confined supervisor.
+
+The supervisor subprocess runs a machine `agent` state self-confined.
+"""
 
 from __future__ import annotations
 
@@ -78,10 +80,13 @@ def test_refusal_explicit_none_state_on_hardened() -> None:
 
 
 def test_refusal_networked_tool_under_the_auto_default() -> None:
-    """`auto` is the DEFAULT sandbox.network, and it intends no tool network, so a
-    state demanding network="host" is refused on both isolation levels -- and the
-    message names the ACTUAL value. Every other case here pins block/allow/
-    only_explicit_states, leaving the default path unexercised."""
+    """A networked tool is refused under the `auto` default.
+
+    `auto` is the default sandbox.network and intends no tool network, so a state demanding
+    `network="host"` is refused on both isolation levels, and the message names the actual value.
+    Every other case here pins block, allow and only_explicit_states, leaving the default path to
+    this one.
+    """
     for isolation in ("strict", "hardened"):
         r = machine_network_refusal(_cfg("auto"), isolation, [_NET_TOOL])
         assert r is not None and "network" in r.message

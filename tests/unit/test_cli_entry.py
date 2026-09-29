@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The guarded console-script entry point `cli_main`: the boundary that sorts
-failures by fault. An OperatorError refuses at exit 2 with no traceback;
-anything else is a bug and crash-reports at exit 1."""
+"""The guarded console-script entry point `cli_main` sorts failures by fault.
+
+An OperatorError refuses at exit 2 with no traceback; anything else crash-reports at exit 1.
+"""
 
 from __future__ import annotations
 
@@ -50,9 +51,7 @@ def test_cli_main_converts_unexpected_exception_to_friendly_error(
 def test_an_operator_error_refuses_without_a_crash_report(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The whole contract: a bad value or unreadable file from the operator
-    raises OperatorError; cli_main turns that into `ERROR:` + exit 2, and
-    everything else into a crash report."""
+    """An operator error is `ERROR:` and exit 2; everything else is a crash report."""
 
     def _bad(_argv: list[str] | None = None) -> int:
         raise OperatorError("no such machine file: overlay.toml")
@@ -67,9 +66,7 @@ def test_an_operator_error_refuses_without_a_crash_report(
 def test_a_config_error_is_an_operator_error(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A malformed config is the operator's, not a bug in agent6: ConfigError
-    subclasses OperatorError, so every reader that raises it gets the refusal
-    surface without its own except arm."""
+    """ConfigError subclasses OperatorError, so every reader gets the refusal surface for free."""
 
     def _bad(_argv: list[str] | None = None) -> int:
         raise ConfigError("Config file is not valid TOML (/x/config.toml): line 1")
@@ -86,8 +83,7 @@ def test_a_config_error_is_an_operator_error(
 def test_an_unreadable_config_file_refuses_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Root-owned after a sudo run, or plain chmod 000: the named file and the
-    OS reason reach the operator, with no crash-report language anywhere."""
+    """An unreadable config file refuses with the file name and the OS reason, end to end."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "s"))
@@ -109,8 +105,7 @@ def test_an_unreadable_config_file_refuses_end_to_end(
 def test_a_bad_budget_flag_refuses_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`run --max-usd inf` names the flag it refuses, at exit 2, not a saved
-    ValidationError traceback and an invitation to file a bug."""
+    """`run --max-usd inf` names the flag it refuses at exit 2, not a saved traceback."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # past the git wall
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))

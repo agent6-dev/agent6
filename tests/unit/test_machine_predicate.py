@@ -46,10 +46,7 @@ def test_rejects_lambda() -> None:
 
 
 def test_rejects_arithmetic_binop() -> None:
-    """The BinOp rejection names the constraint and the fix, not the AST class:
-    `machine create` feeds validation diagnostics back to the drafting model
-    verbatim, and "unsupported syntax: BinOp" told it (and a human author)
-    nothing about what to change."""
+    """The BinOp rejection names the constraint and the fix, not the AST class."""
     with pytest.raises(PredicateError, match="arithmetic is not allowed"):
         parse_predicate("a + b == 2")
 
@@ -102,11 +99,7 @@ def test_evaluate_chained_comparison() -> None:
 
 
 def test_order_preserves_large_int_precision() -> None:
-    """Ordering coerced both operands through float(), collapsing distinct
-    ints above 2^53 (nanosecond epochs: float spacing ~256 at 1.75e18) to the
-    same value -- `a > b` read False for a = b + 100 and the machine silently
-    skipped events after its cursor. Python orders numbers natively and
-    exactly; the coercion is gone."""
+    """Ordering compares ints exactly, never through float(), which collapses values above 2^53."""
     a = 1_750_000_000_000_000_100
     b = 1_750_000_000_000_000_000
     pred = parse_predicate("a > b")
@@ -118,19 +111,14 @@ def test_order_preserves_large_int_precision() -> None:
 
 
 def test_in_with_an_unhashable_left_operand_is_a_predicate_error() -> None:
-    """`item in record` hashes the left operand, so a list/record var raised a
-    raw TypeError. PredicateError is what the engine catches and journals; the
-    bare TypeError escaped run_machine as a traceback with no MachineEnd, so
-    `machine check` passed and `machine run` crashed un-ended."""
+    """`item in record` on an unhashable operand is a PredicateError, never a raw TypeError."""
     pred = parse_predicate("item in blob")
     with pytest.raises(PredicateError, match="`in`"):
         evaluate(pred, {"item": [1, 2], "blob": {"a": 1}})
 
 
 def test_has_guards_an_absent_reference() -> None:
-    """`has(ref)` is the presence guard an optional record field needs:
-    False when any path segment is absent, True when the full path resolves,
-    and `and` short-circuits so the guarded read never fires on absence."""
+    """`has(ref)` is the presence guard an optional record field needs, and `and` short-circuits."""
     board = {"out": {"summary": "hi"}}
     assert evaluate(parse_predicate("has(out.summary)"), board) is True
     assert evaluate(parse_predicate("has(out.score)"), board) is False
@@ -147,8 +135,7 @@ def test_has_guards_an_absent_reference() -> None:
 
 
 def test_has_takes_only_a_reference() -> None:
-    """`has(1)` or `has(len(x))` is meaningless; the parse refuses so the
-    check surfaces it, never a runtime surprise."""
+    """`has(1)` or `has(len(x))` is refused at parse time."""
     with pytest.raises(PredicateError, match="reference"):
         parse_predicate("has(1)")
     with pytest.raises(PredicateError, match="reference"):

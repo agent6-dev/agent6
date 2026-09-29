@@ -15,8 +15,7 @@ from importlib import resources
 
 from agent6.ui.web.page import CLIENT_JS, PAGE_HTML
 
-# sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
-# styles.css moves it; update it in the same commit as that edit.
+# sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
 PAGE_SHA256 = "bb6a1d4132dc47fdc46e42a84e9ddccafd86899c75cf6f4b6904bf9398ee8058"
 
 
@@ -28,8 +27,7 @@ def test_rendered_page_bytes_are_pinned() -> None:
 
 
 def test_page_assets_load_non_empty() -> None:
-    # Guards a packaging regression (an asset missing from the wheel) that the
-    # build-time wheel check would otherwise catch only at release.
+    # An asset missing from the wheel would otherwise surface only at the release build.
     from agent6.ui.web.page import _CLIENT_FILES  # pyright: ignore[reportPrivateUsage]
 
     web = resources.files("agent6.ui.web")
@@ -38,13 +36,11 @@ def test_page_assets_load_non_empty() -> None:
 
 
 def test_the_sessions_card_folds_a_fan_outs_lanes() -> None:
-    """The hub renders the server's nested lane rows (`row_json`'s `lanes`)
-    under their fan-out behind a `lanes: N` line, never as top-level rows."""
+    """The hub renders nested lane rows under their fan-out behind a `lanes: N` line."""
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     assert "const lanes = r.lanes || [];" in client
     assert "lanes: ${lanes.length}" in client and "expandedFanouts" in client
-    # Enter on the toggle toggles (the row's key handler does not swallow it),
-    # and a lane row is a keyboard-reachable button like every other row.
+    # Enter toggles the row (its key handler does not swallow it), and a lane row is a button.
     assert "toggle.onkeydown = (e) => e.stopPropagation();" in client
     assert "actionable(li, " in client
 
@@ -57,9 +53,7 @@ def test_a_session_row_shows_its_mode() -> None:
 
 
 def test_new_work_route_refresh_clears_and_ignores_stale_models() -> None:
-    """A mode or preset change cannot submit the previous pair's model while
-    its route request is pending, and late older responses cannot replace the
-    newest pair's choices."""
+    """A pending route request cannot submit the previous pair's model or override a newer one."""
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     refresh = client[client.index("function newWorkDock") : client.index("// The create-machine")]
     request = refresh.index("const request = ++routeRequest;")
@@ -71,8 +65,7 @@ def test_new_work_route_refresh_clears_and_ignores_stale_models() -> None:
 
 
 def test_the_pickers_sit_in_a_row_above_each_composer() -> None:
-    """New work and resume both put their dropdowns in one labelled row above
-    the text (beside it, the model dropdown squeezed the task box)."""
+    """New work and resume put their dropdowns in one labelled row above the text."""
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     dock = client[client.index("function newWorkDock") : client.index("// The create-machine")]
     assert "row.appendChild(task); row.appendChild(go);" in dock
@@ -84,17 +77,17 @@ def test_the_pickers_sit_in_a_row_above_each_composer() -> None:
 
 
 def test_the_commit_step_row_is_a_picker_row() -> None:
-    """The Latest commit card's dropdown shares the picker rows' style, so it
-    does not show the browser's light default on the dark page."""
+    """The Latest commit card's dropdown shares the picker rows' style on the dark page."""
     run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "const nav = el('div', 'row pickers');" in run
     assert "const sel = el('select', 'field');" in run
 
 
 def test_a_tool_call_clips_its_args_instead_of_breaking_words() -> None:
-    """In the narrow details drawer the args column was a sliver, so a path
-    broke mid-word ("mylib/u" / "rl_parse.py"). Each call is its name over one
-    clipped line of args, with the full text on hover."""
+    """Each call in the details drawer is its name over one clipped line of args.
+
+    The full text is on hover; a narrow args column broke a path mid-word.
+    """
     run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "const calls = el('div', 'calls');" in run and "const a = el('div', 'args');" in run
     css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
@@ -105,8 +98,7 @@ def test_a_tool_call_clips_its_args_instead_of_breaking_words() -> None:
 
 
 def test_the_config_filter_and_its_action_share_a_row_in_the_tuis_words() -> None:
-    """The Add provider button sat under the filter's edge with no gap, and the
-    page said "key" / "filter keys…" where the TUI says "setting"."""
+    """The Add provider button keeps a gap from the filter, and the page says "setting"."""
     cfg = resources.files("agent6.ui.web").joinpath("client_config.js").read_text(encoding="utf-8")
     assert "const bar = el('div', 'row cfg-bar');" in cfg
     assert "bar.appendChild(filter); bar.appendChild(addBtn);" in cfg
@@ -115,9 +107,7 @@ def test_the_config_filter_and_its_action_share_a_row_in_the_tuis_words() -> Non
 
 
 def test_native_controls_take_the_page_theme() -> None:
-    """A checkbox (the config editor's "set for this repo only") and an open
-    dropdown's option list rendered in the browser's light default on the dark
-    page: the page declares its colour scheme per theme."""
+    """The page declares its colour scheme per theme, so checkboxes and dropdowns follow it."""
     css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
     root, light = css.index(":root {"), css.index(":root.light {")
     assert "color-scheme: dark;" in css[root:light]
@@ -126,9 +116,10 @@ def test_native_controls_take_the_page_theme() -> None:
 
 
 def test_the_resume_row_asks_what_a_bare_resume_runs_under() -> None:
-    """The resume row's first options name what a resume without flags runs
-    under: asked when the row appears and on a preset pick, and a late answer
-    never replaces a newer one."""
+    """The resume row's first options name what a resume without flags runs under.
+
+    Asked when the row appears and on a preset pick; a late answer never replaces a newer one.
+    """
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     composer = client[client.index("function makeComposer") :]
     assert "'/resume_defaults?preset=' + encodeURIComponent(preset.value)" in composer
@@ -138,8 +129,7 @@ def test_the_resume_row_asks_what_a_bare_resume_runs_under() -> None:
 
 
 def test_parallel_model_completion_handles_each_whole_fragment() -> None:
-    """A repeated `/parallel` segment completes too, replacing the whole
-    comma-delimited fragment when the caret sits in its middle."""
+    """A repeated `/parallel` segment completes, replacing the whole fragment around the caret."""
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     suggest = client[
         client.index("function attachParallelSuggest") : client.index("// The new-work composer")
@@ -157,8 +147,10 @@ def test_add_provider_does_not_keep_another_names_autofilled_url() -> None:
 
 
 def test_the_config_editor_keeps_a_list_as_toml_on_an_untouched_save() -> None:
-    """The edit field must contain the server's round-trippable TOML value;
-    joining a list with commas turned an untouched Save into a rejected string."""
+    """The edit field holds the server's round-trippable TOML value.
+
+    Joining a list with commas turned an untouched Save into a rejected string.
+    """
     config = resources.files("agent6.ui.web").joinpath("client_config.js")
     text = config.read_text(encoding="utf-8")
     assert "const cur = s.input;" in text
@@ -166,8 +158,7 @@ def test_the_config_editor_keeps_a_list_as_toml_on_an_untouched_save() -> None:
 
 
 def test_the_config_editor_sends_a_string_leaf_as_a_toml_string() -> None:
-    """A str leaf is posted quoted, as the TUI's editor sends it, so a value
-    that parses as another TOML type (`true`, `42`, `[a]`) stays a string."""
+    """A str leaf is posted quoted, so a value that parses as another TOML type stays a string."""
     config = resources.files("agent6.ui.web").joinpath("client_config.js")
     assert "s.type === 'str' ? JSON.stringify(field.value) : field.value" in config.read_text(
         encoding="utf-8"
@@ -175,14 +166,12 @@ def test_the_config_editor_sends_a_string_leaf_as_a_toml_string() -> None:
 
 
 def test_the_empty_machines_card_says_what_the_tui_says() -> None:
-    """The web card read "no machine instances" where the TUI's machines screen
-    says "no machines yet"."""
+    """The web card says "no machines yet", as the TUI's machines screen does."""
     assert "'no machines yet'" in CLIENT_JS and "no machine instances" not in CLIENT_JS
 
 
 def test_the_hub_keeps_its_maintenance_actions_behind_one_control() -> None:
-    """Two danger buttons and a checkbox sat under every session list; the
-    actions the TUI's File menu holds open from one "more…" disclosure."""
+    """The danger actions open from one "more…" disclosure, as the TUI's File menu holds them."""
     assert "el('details', 'more')" in CLIENT_JS
     for label in ("Prune merged runs", "Prune merged runs, squash-merged too", "Clear saved asks"):
         assert f"action('{label}'" in CLIENT_JS
@@ -190,9 +179,7 @@ def test_the_hub_keeps_its_maintenance_actions_behind_one_control() -> None:
 
 
 def test_the_phone_widget_menu_can_show_the_run_review() -> None:
-    """Under the phone layout only the active widget shows; the review card
-    had no menu entry and was never activated, so a review that landed on a
-    phone was invisible."""
+    """The review card has a menu entry, so a review that lands on a phone is visible."""
     client = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "['review', 'Run review']" in client
     assert "setW('review')" in client

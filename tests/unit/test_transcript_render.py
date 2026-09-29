@@ -236,11 +236,11 @@ _RESPONSES = [
 
 
 def test_fold_and_render_the_responses_shape() -> None:
-    """A ChatGPT (Responses) transcript: `instructions` is the system turn,
-    `input` items fold into turns (one model response spans reasoning, a
-    message and calls, so those items make ONE assistant turn), the next
-    request's echo of the recorded output items is not printed twice, and a
-    call output is labelled with its call's name."""
+    """A ChatGPT (Responses) transcript folds into turns without printing the echo twice.
+
+    `instructions` is the system turn; one model response's reasoning, message and calls make
+    one assistant turn; a call output is labelled with its call's name.
+    """
     turns = fold_conversation(_RESPONSES)
     assert [(t.role, t.seq) for t in turns] == [
         ("system", 1),
@@ -315,12 +315,10 @@ def test_render_flags_hide_thinking_and_tools() -> None:
 
 
 def test_seq_window_never_splits_a_call_from_its_result() -> None:
-    """A tool's result is stamped with the seq of the request that echoes it
-    back (one round after the call that dispatched it), so windowing turns by
-    that seq alone drops the result when the window ends at the call's own
-    round, or drops the call when the window starts at the result's round.
-    `window_turns` extends the bound in each case so a call and its result
-    always show together.
+    """`window_turns` extends the bound so a call and its result always show together.
+
+    A result is stamped with the seq of the request that echoes it back, one round after the
+    call, so windowing by that seq alone dropped one or the other.
     """
     turns = fold_conversation(_OPENAI)
     assert [(t.role, t.seq) for t in turns] == [
@@ -339,10 +337,10 @@ def test_seq_window_never_splits_a_call_from_its_result() -> None:
 
 
 def test_provider_retry_does_not_duplicate_history() -> None:
-    """A transient 5xx writes an error transcript (string body, no assistant
-    turns) and the retry re-sends the IDENTICAL message list. The fold must
-    treat that as no growth -- not as a compaction restart that prints a false
-    'context summarised' marker and the entire history twice."""
+    """A retry after a transient 5xx re-sending the identical message list is not a restart.
+
+    It printed a false 'context summarised' marker and the entire history twice.
+    """
     error_attempt = {
         "seq": 2,
         "request": _OPENAI[1]["request"],
@@ -393,8 +391,7 @@ _GIST_ELIDED_A = (
 
 
 def _anthropic_followup(elided_content: str) -> dict[str, Any]:
-    """A seq-3 anthropic call: history grew by (assistant, user) AND the old
-    tool_result at index 2 was mutated in place to an elision placeholder."""
+    """A seq-3 anthropic call whose old tool_result was mutated in place to a placeholder."""
     return {
         "seq": 3,
         "request": {
@@ -433,9 +430,7 @@ def _anthropic_followup(elided_content: str) -> dict[str, Any]:
 
 
 def test_tier1_elision_shows_marker_with_identity() -> None:
-    """When a later request mutates an old tool_result into an elision
-    placeholder, the conversation view says so instead of silently implying the
-    model still sees the original."""
+    """The conversation view says when a later request elided an old tool_result."""
     turns = fold_conversation([*_ANTHROPIC, _anthropic_followup(_BARE_ELIDED_A)])
     markers = [t for t in turns if t.role == "marker"]
     assert len(markers) == 1
@@ -487,8 +482,7 @@ def test_tier1_elision_marker_openai_shape() -> None:
 
 
 def test_gist_demotion_is_not_reported_as_a_fresh_elision() -> None:
-    """A gist decaying to the bare marker changes the placeholder bytes, but the
-    result was already reported elided -- no second 'elided' marker."""
+    """A gist decaying to the bare marker draws no second 'elided' marker."""
     seq4 = _anthropic_followup(_BARE_ELIDED_A)
     seq4["seq"] = 4
     turns = fold_conversation([*_ANTHROPIC, _anthropic_followup(_GIST_ELIDED_A), seq4])
@@ -498,9 +492,10 @@ def test_gist_demotion_is_not_reported_as_a_fresh_elision() -> None:
 
 
 def test_second_same_identity_elision_in_a_later_pass_is_counted() -> None:
-    """Two results of the SAME call identity in one message, elided in two
-    different passes: the second pass's marker must count the newly elided one
-    (an identity SET would see it as already-reported and under-count)."""
+    """Two results of the same call identity elided in two passes are both counted.
+
+    An identity set would see the second as already reported and under-count.
+    """
     both = {
         "role": "user",
         "content": [
@@ -555,8 +550,7 @@ def test_second_same_identity_elision_in_a_later_pass_is_counted() -> None:
 
 
 def test_elision_marker_prefix_matches_the_compaction_placeholder() -> None:
-    """The renderer detects placeholders by prefix; this pins the cross-module
-    coupling without a runtime viewmodel->harness import."""
+    """The renderer detects placeholders by prefix, pinned without a viewmodel-to-harness import."""
     from agent6.harness._compaction import ELISION_PREFIX
     from agent6.viewmodel.transcript_render import ELISION_MARKER_PREFIX
 
@@ -577,8 +571,7 @@ def test_load_transcripts_sorted_by_seq(tmp_path: Path) -> None:
 def test_cmd_history_transcript_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 sessions transcript <run>` resolves the run, folds its transcripts,
-    and prints the conversation (full tool I/O), with --json as the raw escape."""
+    """`agent6 sessions transcript <run>` folds the run's transcripts; --json is the raw escape."""
     from agent6.ui.cli.history_cmds import (
         _cmd_history_transcript,  # pyright: ignore[reportPrivateUsage]
     )
@@ -638,11 +631,11 @@ def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
 
 
 def test_streamed_openai_response_without_a_role_is_the_assistant() -> None:
-    """The streaming path synthesises choices[0].message with no "role" key (a
-    real OpenAI response always carries one), and that body is what the recorder
-    writes. Rendering it fell through to the generic branch, so the model's words
-    printed under '## user', tool_calls were dropped, reasoning was lost, and the
-    unresolved call id left every later result unlabelled."""
+    """A streamed OpenAI message with no "role" key renders as the assistant turn it is.
+
+    Fallen through to the generic branch, the model's words printed under '## user', tool_calls
+    and reasoning were dropped, and every later result went unlabelled.
+    """
     streamed = [
         {
             "seq": 1,
@@ -706,11 +699,11 @@ def test_streamed_openai_response_without_a_role_is_the_assistant() -> None:
 
 
 def test_a_compaction_side_call_is_not_a_conversation_turn(tmp_path: Path) -> None:
-    """The gist distiller and the tier-2 summariser share the run's transcript
-    sink, and their ONE-message requests shrink the history, which the fold reads
-    as a compaction restart: it printed a phantom "context summarised" marker,
-    rendered the side-call's scratch prompt as a user turn, and re-emitted the
-    history behind it. Only the worker seat is the conversation."""
+    """Only the worker seat is the conversation; a side call's one-message request is no restart.
+
+    The gist distiller and the tier-2 summariser share the sink; the fold printed a phantom
+    "context summarised" marker and rendered the scratch prompt as a user turn.
+    """
     import json
 
     d = tmp_path / "transcripts"
@@ -755,11 +748,11 @@ def test_a_compaction_side_call_is_not_a_conversation_turn(tmp_path: Path) -> No
 
 
 def test_the_conversation_seat_is_the_driving_provider_not_always_worker(tmp_path: Path) -> None:
-    """The seat filter first kept only "worker", but the loop's driving provider
-    takes its role from the mode: plan mode's is "planner", so every plan run's
-    transcripts were filtered out and `history transcript` said the run had none
-    while the files sat on disk. Review seats must still be excluded -- they
-    share the run's sink and their one-message requests read as a restart."""
+    """The seat filter keeps the mode's driving role, plan mode's "planner" included.
+
+    Keeping only "worker" filtered every plan run out; review seats stay excluded since their
+    one-message requests read as a restart.
+    """
     import json
 
     d = tmp_path / "transcripts"
@@ -784,10 +777,10 @@ def test_the_conversation_seat_is_the_driving_provider_not_always_worker(tmp_pat
 
 
 def test_load_transcripts_stays_raw_for_the_json_dump(tmp_path: Path) -> None:
-    """`sessions transcript --json` advertises "the raw transcript array", and it is
-    the one CLI surface for a side-call's actual request/response (the thing you
-    need to debug a bad compaction). The seat filter lives in the CONVERSATION
-    fold, not the loader, so the dump keeps every seat."""
+    """`sessions transcript --json` keeps every seat; the seat filter is the conversation fold's.
+
+    It is the one CLI surface for a side call's actual request and response.
+    """
     import json
 
     d = tmp_path / "transcripts"
@@ -808,10 +801,10 @@ def test_load_transcripts_stays_raw_for_the_json_dump(tmp_path: Path) -> None:
 
 
 def test_a_replayed_message_stripped_of_its_id_is_not_printed_twice() -> None:
-    """The ChatGPT wire records a message item with an id, status, phase and
-    content annotations, and replays it without them; the fold compared the
-    two dicts whole, so every assistant message printed twice (once from its
-    response, once from the next request's echo)."""
+    """A message item's echo without its id, status and phase is the same message, not a repeat.
+
+    Compared whole, every assistant message printed twice.
+    """
     import json
 
     transcripts = json.loads(json.dumps(_RESPONSES))
@@ -830,10 +823,7 @@ def test_a_replayed_message_stripped_of_its_id_is_not_printed_twice() -> None:
 
 
 def test_a_transcript_whose_seq_is_not_a_number_is_kept_and_marked(tmp_path: Path) -> None:
-    """A `seq` that is not an integer crashed the sort, the fold and the
-    `--seq` window (a bare TypeError, then a ValueError). It orders as 0, the
-    record still reaches `sessions transcript --json` verbatim, and the fold
-    says what it could not place."""
+    """A non-integer `seq` orders as 0, reaches `--json` verbatim, and the fold says so."""
     from agent6.viewmodel.transcript_render import fold_conversation, load_transcripts
 
     tdir = tmp_path / "transcripts"
@@ -853,9 +843,7 @@ def test_a_transcript_whose_seq_is_not_a_number_is_kept_and_marked(tmp_path: Pat
 
 
 def test_two_text_blocks_in_one_turn_render_as_two_paragraphs() -> None:
-    """The providers keep a blank line between a turn's text blocks in the
-    settled text; the view joined them with one newline on both wire shapes,
-    which Markdown reads as one paragraph."""
+    """A turn's text blocks keep the providers' blank line, a paragraph break in Markdown."""
     from agent6.viewmodel.transcript_render import fold_conversation
 
     anthropic = [

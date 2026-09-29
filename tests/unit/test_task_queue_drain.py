@@ -94,8 +94,7 @@ def test_the_drain_takes_each_task_once(tmp_path: Path) -> None:
 
 
 def test_a_queued_task_is_journalled_for_the_surfaces(tmp_path: Path) -> None:
-    """The operator sees it arrive without the model having read anything: one
-    line in the transcript and the graph snapshot every viewer folds."""
+    """A queued task arrives as a transcript line and a graph snapshot before the model reads it."""
     curator, sink, root = _run_dir(tmp_path)
     queue_request(sink.path.parent, "task", "note it")
     wf = _workflow(curator, sink)
@@ -149,8 +148,7 @@ def test_the_banner_leaves_the_models_own_tasks_alone(tmp_path: Path) -> None:
 
 
 def test_a_queued_task_inherits_prompt_revision(tmp_path: Path) -> None:
-    """`[prompt].revise_prompt` covers a queued task too, and the revision
-    folds in the operator's words as the authoritative version."""
+    """`[prompt].revise_prompt` covers a queued task, with the operator's words authoritative."""
     curator, sink, root = _run_dir(tmp_path)
     queue_request(sink.path.parent, "task", SPEC)
     reviser = MagicMock()
@@ -185,8 +183,7 @@ def test_a_failed_revision_keeps_the_task_as_written(tmp_path: Path) -> None:
 
 
 def test_a_parked_run_takes_a_queued_task_and_continues(tmp_path: Path) -> None:
-    """An interactive run that went quiet parks until a steer: a `/task` typed
-    then was acknowledged and sat in the queue until some steer arrived."""
+    """A `/task` typed into a parked interactive run wakes it instead of waiting for a steer."""
     curator, sink, root = _run_dir(tmp_path)
     wf = _workflow(curator, sink)
     taken: list[int] = []

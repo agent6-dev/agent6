@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The no-progress ladder: a plain run's streak of identical verify failures
-draws a nudge, an escalation, then a soft stop; a metric run is left alone."""
+"""The no-progress ladder.
+
+A plain run's streak of identical verify failures draws a nudge, an escalation, then a soft stop; a
+metric run is left alone.
+"""
 
 from __future__ import annotations
 

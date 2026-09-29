@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 tui <target>` opens what `attach --tui <target>` opens.
-
-`web` took a target and `tui` did not: `agent6 tui <id>` was an argparse
-refusal and completion offered only `-h`."""
+"""`agent6 tui <target>` opens what `attach --tui <target>` opens, with completion."""
 
 from __future__ import annotations
 

@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The stagnation advisor: one notice when the wall clock passes the knob
-with no edit and no verify, the operator's time excluded."""
+"""The stagnation advisor: one notice past the knob with no edit and no verify.
+
+The operator's time is excluded.
+"""
 
 from __future__ import annotations
 

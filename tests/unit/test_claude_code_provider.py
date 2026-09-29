@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The claude_code provider against `fake_claude.py`, a stand-in binary that
-speaks the stream-json protocol in the exact line order Claude Code 2.1.251
-uses: argv and environment, the MCP handshake, one round per call with the
-tool calls answered by the next call, the continuation rule, the restart
-replay, plan-metered budgeting, and every failure mapped to ProviderError."""
+"""The claude_code provider against `fake_claude.py`.
+
+The stand-in speaks the stream-json protocol in the exact line order Claude Code 2.1.251 uses:
+argv and environment, the MCP handshake, one round per call with the tool calls answered by
+the next call, the continuation rule, the restart replay, plan-metered budgeting, and every
+failure mapped to ProviderError.
+"""
 
 from __future__ import annotations
 
@@ -73,8 +75,11 @@ USER0: list[dict[str, Any]] = [
 
 
 def _install(tmp_path: Path, scenario: dict[str, Any]) -> tuple[str, Path]:
-    """The fake as `<tmp>/bin/claude`; the stub carries the scenario and capture
-    paths itself because the provider's curated env passes nothing else."""
+    """Install the fake as `<tmp>/bin/claude`.
+
+    The stub carries the scenario and capture paths itself; the provider's curated env passes
+    nothing else.
+    """
     scen = tmp_path / "scenario.json"
     scen.write_text(json.dumps(scenario), encoding="utf-8")
     cap = tmp_path / "capture.jsonl"
@@ -183,9 +188,10 @@ def test_argv_is_operator_config_only_and_the_private_dir_is_removed_on_close(
 
 
 def test_the_child_is_kept_out_of_the_escapee_sweep(tmp_path: Path) -> None:
-    """Spawned in its own session and never registered, the persistent child
-    matched the escapee test exactly, so an unrelated `stop_background` sweep
-    SIGKILLed it mid-run."""
+    """The persistent child is kept out of the escapee sweep.
+
+    Spawned in its own session, it matches the escapee shape unless registered.
+    """
     from agent6.sandbox import jail as jail_mod
 
     binary, cap = _install(tmp_path, {"turns": [[_round(text="hi")]]})
@@ -231,8 +237,7 @@ def test_handshake_answers_mcp_initialize_first_and_advertises_tools_verbatim(
     provider.call(system="s", messages=USER0, tools=TOOLS)
     lines = _stdin(cap)
     kinds = [line["type"] for line in lines]
-    # our initialize, the MCP initialize answer (before the CLI answered ours), the user
-    # message, then the notifications/initialized ack and the tools/list answer
+    # Our initialize, the MCP initialize answer, the user message, then the ack and tools/list.
     assert kinds[:3] == ["control_request", "control_response", "user"]
     listing = lines[4]["response"]["response"]["mcp_response"]["result"]["tools"]
     assert listing == [
@@ -524,8 +529,7 @@ def test_budget_sums_rounds_and_fails_closed_without_a_reading_or_usage(tmp_path
     refused = _provider(binary)
     with pytest.raises(ProviderError, match="no usage input tokens"):
         refused.call(system="s", messages=USER0, tools=None)
-    # The round was generated and the plan window moved: on the ledger before
-    # the refusal, or a retry loop had no ceiling.
+    # The round was generated and the plan window moved: on the ledger before the refusal.
     assert refused.budget is not None and refused.budget.snapshot().output_total == 5
 
 
@@ -552,9 +556,10 @@ def test_message_start_input_usage_is_combined_with_message_delta_output_usage(
 
 
 def test_abort_and_interrupt_kill_the_child_and_the_next_call_respawns(tmp_path: Path) -> None:
-    """The flags flip once the child has recorded its spawn: an abort at the
-    first poll can kill it before it has started, and then there is no pid to
-    check."""
+    """Abort and interrupt kill the child and the next call respawns.
+
+    The flags flip once the child has recorded its spawn, so there is a pid to check.
+    """
     binary, cap = _install(tmp_path, {"hang_s": 30, "turns": [[_round(text="x")]]})
     provider = _provider(binary)
     started = time.monotonic()
@@ -606,9 +611,10 @@ def test_stream_ping_does_not_mask_an_idle_child(
 def test_a_repeated_plan_reading_does_not_mask_an_idle_child(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The CLI repeats `rate_limit_event` while it waits out a window; each
-    line re-marked the idle clock, so a call sat inside one wait for 25
-    minutes with no output and no error."""
+    """A repeated `rate_limit_event` does not re-mark the idle clock.
+
+    The CLI repeats it while it waits out a window.
+    """
     monkeypatch.setattr(claude_code, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
     binary, _ = _install(
         tmp_path,
@@ -622,11 +628,11 @@ def test_a_repeated_plan_reading_does_not_mask_an_idle_child(
 def test_a_call_the_cli_refused_before_any_answer_is_the_loops_to_record(
     tmp_path: Path,
 ) -> None:
-    """The CLI checks a tool call's input itself and, on a failure, feeds the
-    model its own error and starts the next round without a `tools/call`;
-    the provider reported "claude moved on" and the loop respawned the CLI
-    and replayed the whole history. The refusal reaches the loop as the
-    call's result instead, and the continuation owes the CLI nothing."""
+    """A call the CLI refused before any answer reaches the loop as the call's result.
+
+    The CLI checks the input itself, feeds the model its own error and starts the next round without
+    a `tools/call`; the continuation owes the CLI nothing.
+    """
     refusal = (
         "<tool_use_error>InputValidationError: mcp__agent6__run_command was called with"
         " input that could not be parsed as JSON.\nYou sent (first 27 of 27 bytes): x"
@@ -683,9 +689,11 @@ def test_a_call_the_cli_refused_before_any_answer_is_the_loops_to_record(
 def test_a_call_the_cli_refuses_after_an_answer_ends_the_call_with_its_reason(
     tmp_path: Path,
 ) -> None:
-    """The calls behind an accepted one wait on its answer, so a refusal of
-    a later call arrives after agent6 has run it: the call ends with the
-    CLI's reason and the loop's retry replays the turn."""
+    """A call the CLI refuses after an answer ends the call with the CLI's reason.
+
+    The calls behind an accepted one wait on its answer, so the refusal arrives after agent6 has run
+    it; the loop's retry replays the turn.
+    """
     refusal = "<tool_use_error>InputValidationError: bad input"
     binary, _ = _install(
         tmp_path,
@@ -758,10 +766,10 @@ def test_failures_map_to_provider_errors(tmp_path: Path) -> None:
 def test_a_dying_childs_stderr_reaches_the_error_when_the_drain_lags(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The stderr drain is a thread. On a loaded box it can still be scheduled
-    out when stdout closes and the exit status lands, and the error then read
-    `no stderr` for a message the child had already written. The exit path
-    waits for the drain to reach EOF first."""
+    """The exit path waits for the stderr drain thread to reach EOF before wording the error.
+
+    On a loaded box the drain can be scheduled out when stdout closes and the exit status lands.
+    """
     import agent6.providers.claude_code as module
 
     binary, _ = _install(
@@ -770,8 +778,7 @@ def test_a_dying_childs_stderr_reaches_the_error_when_the_drain_lags(
     real = module.drain_stderr
 
     def lagging(pipe: IO[bytes], keep: list[bytes], *, close: bool = False) -> None:
-        # Scheduled out AFTER the child has written: wait for its stderr to
-        # become readable, then sleep well inside the exit path's join cap.
+        # Scheduled out after the child wrote: wait for its stderr, then sleep inside the join cap.
         select.select([pipe], [], [], 5.0)
         time.sleep(0.2)
         real(pipe, keep, close=close)
@@ -976,9 +983,10 @@ def test_instrumented_provider_close_forwards_to_the_inner_close() -> None:
 
 
 def test_close_terminates_a_child_blocked_on_a_tool_call(tmp_path: Path) -> None:
-    """An execution ends on an unanswered tools/call, where the CLI ignores stdin EOF;
-    close() sends SIGTERM, which the CLI handles (exit 143, socket removed),
-    before any SIGKILL."""
+    """Close sends SIGTERM to a child blocked on a tools/call, where the CLI ignores stdin EOF.
+
+    The CLI handles it (exit 143, socket removed) before any SIGKILL.
+    """
     marker = tmp_path / "up"
     binary, cap = _install(
         tmp_path,
@@ -996,9 +1004,10 @@ def test_close_terminates_a_child_blocked_on_a_tool_call(tmp_path: Path) -> None
 
 
 def test_an_unclosed_session_is_reaped_at_interpreter_exit(tmp_path: Path) -> None:
-    """A caller that never closes (a machine agent's worker) still leaves no
-    child and no private directory behind: the session's finalizer runs at
-    exit."""
+    """An unclosed session's finalizer runs at interpreter exit.
+
+    Leaving no child and no directory.
+    """
     binary, cap = _install(
         tmp_path,
         {"turns": [[_round(tool_uses=[{"id": "toolu_1", "name": "read_file", "input": {}}])]]},
@@ -1020,10 +1029,10 @@ def test_an_unclosed_session_is_reaped_at_interpreter_exit(tmp_path: Path) -> No
 
 
 def test_a_side_call_leaves_the_live_worker_session_untouched(tmp_path: Path) -> None:
-    """A no-tools call on the worker's provider (a model-drafted commit
-    message) runs in its own throwaway process; the worker's session and its
-    pending tools/call survive, so the next worker call continues instead of
-    replaying."""
+    """A side call runs in its own throwaway process and leaves the worker's session untouched.
+
+    The worker's pending tools/call survives, so its next call continues instead of replaying.
+    """
     binary, cap = _install(
         tmp_path,
         {
@@ -1059,9 +1068,11 @@ def test_a_side_call_leaves_the_live_worker_session_untouched(tmp_path: Path) ->
 
 
 def test_a_rewritten_prefix_restarts_even_at_the_same_length(tmp_path: Path) -> None:
-    """A tier-2 restart replaces the consumed prefix with the first turn plus
-    a summary; at the same length only the content tells it from a
-    continuation, and the summary must reach a fresh process."""
+    """A rewritten prefix restarts the process even at the same length.
+
+    A tier-2 restart replaces the consumed prefix with the first turn plus a summary; only the
+    content tells it from a continuation.
+    """
     binary, cap = _install(
         tmp_path,
         {
@@ -1092,9 +1103,7 @@ def test_a_rewritten_prefix_restarts_even_at_the_same_length(tmp_path: Path) -> 
 
 
 def test_tier1_rewrites_and_thinking_strips_keep_the_process(tmp_path: Path) -> None:
-    """Tier-1 elision rewrites a consumed tool_result in place and thinking
-    strips drop a consumed turn's thinking; neither changes what the process
-    was sent, so the session continues."""
+    """Tier-1 rewrites and thinking strips change nothing the process was sent, so it continues."""
     binary, cap = _install(
         tmp_path,
         {
@@ -1142,8 +1151,7 @@ def test_tier1_rewrites_and_thinking_strips_keep_the_process(tmp_path: Path) -> 
 
 
 def test_a_later_rounds_plan_reading_is_recorded_for_that_round(tmp_path: Path) -> None:
-    """A round that moved a window is followed by its reading right after
-    message_stop; that round records it, not the previous reading."""
+    """A reading that follows a round's message_stop is recorded for that round."""
     binary, _ = _install(
         tmp_path,
         {
@@ -1187,9 +1195,11 @@ def test_a_later_rounds_plan_reading_is_recorded_for_that_round(tmp_path: Path) 
 
 
 def test_streamed_deltas_never_carry_the_account_email(tmp_path: Path) -> None:
-    """The scrub holds back the tail that could be the start of an email
-    split across deltas and flushes it at content_block_stop, so the stream
-    reads the same as the settled block."""
+    """Streamed deltas never carry the account email.
+
+    The scrub holds back a tail that could start an email split across deltas and flushes it at
+    content_block_stop.
+    """
     email = "leak@example.test"
     binary, _ = _install(
         tmp_path,
@@ -1225,8 +1235,7 @@ def test_streaming_callback_exception_does_not_break_the_round(tmp_path: Path) -
 
 
 def test_result_and_stderr_error_text_is_scrubbed(tmp_path: Path) -> None:
-    """A failed turn's result text and the child's stderr tail reach the
-    ProviderError (and the journal) with the account email replaced."""
+    """The result text and stderr tail of a failed turn reach the error with the email scrubbed."""
     email = "leak@example.test"
     binary, _ = _install(
         tmp_path,
@@ -1254,9 +1263,10 @@ def test_result_and_stderr_error_text_is_scrubbed(tmp_path: Path) -> None:
 
 
 def test_a_result_with_an_api_error_status_carries_it(tmp_path: Path) -> None:
-    """The CLI's result line names the API status of a failed turn
-    (`api_error_status`, 404 for an unknown model); the ProviderError carries
-    it, so the loop's retry ladder skips the permanent ones."""
+    """A result's `api_error_status` rides the ProviderError.
+
+    The retry ladder skips permanent ones.
+    """
     binary, _ = _install(
         tmp_path,
         {
@@ -1287,8 +1297,10 @@ def test_an_mcp_ping_is_answered_with_an_empty_result(tmp_path: Path) -> None:
 
 
 def test_the_child_stdout_is_read_buffered(tmp_path: Path) -> None:
-    """An unbuffered pipe makes readline one read syscall per byte (741 ms
-    for a 1 MiB line, measured); the reader gets a BufferedReader."""
+    """The child's stdout is read through a BufferedReader.
+
+    An unbuffered pipe makes readline one syscall per byte: 741 ms for a 1 MiB line, measured.
+    """
     binary, _ = _install(tmp_path, {"turns": [[_round(text="x")]]})
     provider = _provider(binary)
     provider.call(system="s", messages=USER0, tools=TOOLS)
@@ -1301,9 +1313,11 @@ def test_the_child_stdout_is_read_buffered(tmp_path: Path) -> None:
 def test_an_oversize_tool_result_is_refused_before_claude_code_persists_it(
     tmp_path: Path,
 ) -> None:
-    """A result over the 50,000-byte threshold would be written under
-    ~/.claude/projects and reach the model as a preview: the provider refuses
-    it (fatal) instead of lying about what the model saw."""
+    """An oversize tool result is refused, fatally, before Claude Code persists it.
+
+    A result over the 50,000-byte threshold would be written under ~/.claude/projects and reach the
+    model as a preview.
+    """
     binary, _cap = _install(
         tmp_path,
         {"turns": [[_round(tool_uses=[{"id": "toolu_1", "name": "read_file", "input": {}}])]]},
@@ -1325,10 +1339,11 @@ def test_an_oversize_tool_result_is_refused_before_claude_code_persists_it(
 
 
 def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
-    """One bound in one unit: the loop's cap for this provider sits under the
-    byte threshold the provider refuses at with room for the notices the same
-    turn folds into the payload, so a capped result never reaches that
-    refusal, whatever its characters weigh."""
+    """The loop's cap for this provider sits under the byte threshold the provider refuses at.
+
+    Room is left for the notices the same turn folds into the payload, whatever the characters
+    weigh.
+    """
     from agent6.app._session import tool_result_cap_bytes
     from agent6.harness._compaction import (
         CLAUDE_CODE_RESULT_CAP_BYTES,
@@ -1370,9 +1385,7 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
 
 
 def test_a_raising_operator_poll_leaves_the_watch_ticking() -> None:
-    """A should_abort/should_interrupt that raises reads False in the wait
-    loop's tick: an exception there would end the call instead of the idle
-    clock."""
+    """A should_abort or should_interrupt that raises reads False in the wait loop's tick."""
 
     def boom() -> bool:
         raise RuntimeError("operator state unreadable")
@@ -1381,9 +1394,7 @@ def test_a_raising_operator_poll_leaves_the_watch_ticking() -> None:
 
 
 def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
-    """A plan session is driven by the planner role; the cap read the worker's
-    provider, so a plan on Claude Code beside an HTTP worker kept the loose
-    generic cap over Claude Code's 50,000-byte threshold."""
+    """The result cap follows the role that drives the session, the planner's on a plan."""
     from agent6.app._session import tool_result_cap_bytes
     from agent6.config import Config
     from agent6.harness._compaction import CLAUDE_CODE_RESULT_CAP_BYTES, TOOL_RESULT_CAP_BYTES
@@ -1405,10 +1416,11 @@ def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
 
 
 def test_the_turns_notices_survive_a_turn_the_cli_refused_whole(tmp_path: Path) -> None:
-    """The turn's notices ride the last answered call. With every call refused
-    the CLI's next round already runs, and the notices (the operator's steer
-    among them) were dropped with the refused ids: they go in as the user
-    line after that round instead."""
+    """The turn's notices ride the last answered call.
+
+    With every call refused the CLI's next round already runs; the notices go in as the user line
+    after that round.
+    """
     refusal = "<tool_use_error>InputValidationError: bad json"
     binary, cap = _install(
         tmp_path,
@@ -1450,9 +1462,7 @@ def test_the_turns_notices_survive_a_turn_the_cli_refused_whole(tmp_path: Path) 
 
 
 def test_two_text_blocks_in_a_round_stay_separated(tmp_path: Path) -> None:
-    """The Anthropic and ChatGPT parsers keep a blank line between a turn's
-    text blocks; this one joined them bare, so two messages around a thinking
-    block ran together in the settled text the journal carries."""
+    """Two text blocks in a round stay separated by a blank line in the settled text."""
     binary, _cap = _install(
         tmp_path,
         {

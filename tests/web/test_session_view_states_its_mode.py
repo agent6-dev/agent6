@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The web session view says what kind of session it is showing.
 
-The page opens for any session, but its snapshot carried no mode -- so the
+The page opens for any session, but its snapshot carried no mode, so the
 details panel was headed a hard-coded "Run" and the composer said "continue the
 run" over a plan or an ask. The heading is exactly where the mode belongs, and
 it was stating the opposite.
@@ -41,36 +41,36 @@ def test_the_snapshot_carries_the_mode(tmp_path: Path, bucket: str, mode: str) -
 
 
 def test_the_page_heads_the_panel_with_the_mode_not_a_fixed_word() -> None:
-    """A hard-coded 'Run' is right one time in three: paintRun must write the
-    snapshot's mode into the heading (the old absence check passed forever
-    without saying what the page does instead)."""
+    """`paintRun` writes the snapshot's mode into the heading.
+
+    A hard-coded 'Run' is right one time in three.
+    """
     client = CLIENT_JS
     assert "cards._head_title.textContent = s.mode" in client
 
 
 def test_the_session_view_is_the_one_conversation_page() -> None:
-    """A second route rendered the same conversation with its own stream
-    handler, which had already drifted (no `/undo` branch), and nothing
-    linked to it. The session view is the conversation page."""
+    """The session view is the conversation page; there is no second route with its own handler."""
     assert "renderConversation" not in CLIENT_JS
     assert "parts[0] === 'conversation'" not in CLIENT_JS
 
 
 def test_the_session_view_paints_the_prompts_it_claims_to_answer() -> None:
-    """Opening the session view's stream claims the run as an answer front-end
-    (`WebServer.claim_session`), so `paintRun` must paint its prompts: a run
-    blocked on an approval would otherwise wait on the page that took the
-    claim while it showed nothing."""
+    """`paintRun` paints the run's prompts, since opening the stream claims the run as a front-end.
+
+    A run blocked on an approval would otherwise wait on a page that showed nothing.
+    """
     start = CLIENT_JS.index("function paintRun(")
     body = CLIENT_JS[start : CLIENT_JS.index("function renderDiff(", start)]
     assert "paintPrompts(cards, isDead ? {} : s)" in body
 
 
 def test_the_run_crumb_carries_the_state_word() -> None:
-    """A phone shows one widget at a time and opens on the conversation, so the
-    state was on a card the operator had to go find: a run could be waiting on
-    an approval, or dead, and the page it opened said neither. The crumb sits in
-    the fixed header on every widget page."""
+    """The state crumb sits in the fixed header on every widget page.
+
+    A phone shows one widget at a time and opens on the conversation, so a run waiting on an
+    approval, or dead, said neither on the page it opened.
+    """
     client = CLIENT_JS
     assert "setCrumb(runState(s) + ' · ' + cards._crumb)" in client
     # One owner for the word: the state row reads the same helper.
@@ -89,9 +89,10 @@ def test_the_composer_does_not_flatten_an_outcome_to_finished() -> None:
 
 
 def test_the_run_card_shows_the_task_line_the_hub_rows_show() -> None:
-    """The card printed the whole composed task into one cell, then its raw first
-    line (a seed block's opener, a TASK.md heading's marks). It reads the
-    snapshot's task_line, the same headline the hub rows and the TUI show."""
+    """The card reads the snapshot's task_line, the headline the hub rows and the TUI show.
+
+    The whole composed task, or its raw first line, showed a seed block's opener or a heading.
+    """
     client = CLIENT_JS
     assert "add('task', s.task_line || '(none)')" in client
     assert "s.user_task || '').split(" not in client
@@ -99,7 +100,6 @@ def test_the_run_card_shows_the_task_line_the_hub_rows_show() -> None:
 
 
 def test_a_session_that_never_commits_shows_no_commit_card() -> None:
-    """An ask or a plan never commits; the run page still gave "Latest commit"
-    a card saying "no commit yet". Hidden by mode, as the shells card is by count."""
+    """The Latest commit card is hidden for an ask or a plan, as the shells card is by count."""
     hidden = "cards.diff.parentElement.style.display = "
     assert hidden + "s.mode === 'ask' || s.mode === 'plan' ? 'none' : '';" in CLIENT_JS

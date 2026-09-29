@@ -152,8 +152,7 @@ def test_read_names_the_size_when_the_byte_cap_cuts_the_output(
 def test_read_drops_the_line_the_byte_cap_cut_through(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The cap cuts bytes, not lines: the remainder of the line it landed in
-    read as an ordinary first line. A cut on a line boundary keeps the line."""
+    """Read drops the line the byte cap cut through; a cut on a line boundary keeps the line."""
     job = _Job()
 
     def start_in_jail(*_args: object, **_kwargs: object) -> _Job:

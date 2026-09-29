@@ -93,8 +93,7 @@ def test_run_refuses_an_explicit_id_held_by_another_bucket(
 def test_run_refuses_an_invalid_id_before_sandbox_and_git_preflight(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A malformed identifier is already conclusive, so the run must not ask
-    whether to proceed unconfined or report an unrelated host failure first."""
+    """A malformed identifier is refused before the unconfined prompt or a host failure."""
     from agent6.app import run as run_mod
 
     def _must_not_preflight(*_args: object, **_kwargs: object) -> object:
@@ -119,8 +118,7 @@ def test_run_refuses_an_invalid_id_before_sandbox_and_git_preflight(
 def test_an_existing_finished_id_names_a_runnable_resume_command(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A finished run refuses bare resume, so its collision hint must include
-    the --steer that gives that run new work."""
+    """A finished run's collision hint includes the --steer that gives it new work."""
     from agent6.app import run as run_mod
 
     session = state_dir(repo) / "sessions" / "runs" / "done-run"
@@ -151,8 +149,7 @@ def test_an_existing_finished_id_names_a_runnable_resume_command(
 def test_a_damaged_existing_id_does_not_name_an_unusable_resume_command(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Resume cannot load a malformed manifest, so this refusal must not send
-    the operator to a command known to fail on the same record."""
+    """The refusal for a malformed manifest never points at a resume known to fail on it."""
     from agent6.app import run as run_mod
 
     session = state_dir(repo) / "sessions" / "runs" / "damaged-run"

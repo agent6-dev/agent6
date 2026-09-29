@@ -24,9 +24,10 @@ from agent6.viewmodel.state import (
 
 
 def test_the_wire_carries_needs_new_work_from_the_one_predicate() -> None:
-    """`session_state_as_dict` stamps `needs_new_work` from the fold's end
-    facts, so a client never re-derives it: a finish over a red gate reads
-    False (resume takes new work or none), a certified finish True."""
+    """`session_state_as_dict` stamps `needs_new_work` from the fold's end facts.
+
+    A finish over a red gate reads False, a certified finish True.
+    """
     from agent6.viewmodel.state import apply_event, initial_state, session_state_as_dict
 
     start = {"type": "session.start", "user_task": "t"}
@@ -42,10 +43,11 @@ def test_the_wire_carries_needs_new_work_from_the_one_predicate() -> None:
 
 
 def test_a_log_line_is_one_line() -> None:
-    """Every log pane paints the return value as a row, and the scrubber keeps
-    newlines (a transcript needs them): a provider error carrying an SSE dump
-    or a traceback painted a dozen rows, every one after the first with no
-    timestamp and no event name."""
+    """The log-line scrubber keeps newlines, and every log pane paints one row per line.
+
+    A provider error carrying an SSE dump or a traceback painted a dozen rows, every one after
+    the first with no timestamp and no event name.
+    """
     line = format_log_line(
         {
             "type": "loop.provider.retry",
@@ -58,10 +60,11 @@ def test_a_log_line_is_one_line() -> None:
 
 
 def test_format_log_line_keeps_the_compaction_reason() -> None:
-    """A failed compaction carries its reason in `error`; with no case for these
-    types the log view printed the bare event name and dropped it, so a 429'd
-    summariser read as nothing having happened. The operator's /compact focus
-    was invisible for the same reason."""
+    """A failed compaction's reason and the operator's /compact focus reach the log view.
+
+    With no case for these types the view printed the bare event name, so a 429'd summariser
+    read as nothing having happened.
+    """
     failed = format_log_line(
         {"type": "loop.compact.summarise.failed", "error": "provider 429: rate limited"}
     )
@@ -73,9 +76,7 @@ def test_format_log_line_keeps_the_compaction_reason() -> None:
 
 
 def test_a_jail_degraded_row_carries_its_reason() -> None:
-    """With no case for the type the row was the timestamp and the event name:
-    a sandbox that came up weaker than asked, or a stop that left a process
-    behind, read as nothing having happened."""
+    """A degraded sandbox and a stop that left a process behind render their detail in the log."""
     line = format_log_line(
         {"type": "jail.degraded", "detail": "[agent6-jail] warning: fresh /proc\nmount failed"}
     )
@@ -84,10 +85,10 @@ def test_a_jail_degraded_row_carries_its_reason() -> None:
 
 
 def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The `ctx N%` readout every surface shows (TUI header + composer, the
-    pause menu, the web budget card) comes from one rule: the last completed
-    call's prompt tokens over the model's window; None until both are known.
-    The wire dict carries it as `context_pct`."""
+    """The `ctx N%` readout every surface shows comes from one rule, carried as `context_pct`.
+
+    The last completed call's prompt tokens over the model's window; None until both are known.
+    """
     from agent6.viewmodel import state as state_mod
     from agent6.viewmodel.state import apply_event, context_fill, initial_state
 
@@ -119,9 +120,10 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
 
 
 def test_format_log_line_names_the_pins_in_force() -> None:
-    """loop.pin.restored announces the pins in force at execution start, whether a
-    fresh run's --pin or a resume's snapshot; the line said "restored from the
-    snapshot" for both, false for --pin, and named none of them."""
+    """loop.pin.restored names the pins in force at execution start, for a --pin run or a resume.
+
+    The line said "restored from the snapshot" for both and named none of them.
+    """
     line = format_log_line(
         {"type": "loop.pin.restored", "pins": ["never touch test_calc.py"], "count": 1}
     )
@@ -133,8 +135,7 @@ def test_format_log_line_names_the_pins_in_force() -> None:
 
 
 def test_format_log_line_tool_result_appends_output_tail() -> None:
-    """An execution tool's tool.result line shows a one-line stderr/stdout hint
-    (full tail is in the event), while a plain result stays summary-only."""
+    """An execution tool's result line shows a one-line output hint; a plain one stays a summary."""
     line = format_log_line(
         {
             "type": "tool.result",
@@ -203,10 +204,10 @@ def test_graph_update_builds_task_tree_dfs_with_depth() -> None:
 
 
 def test_graph_update_orders_multiple_roots_like_tree_order() -> None:
-    """Two roots (a repeat ask/run execution, or an orphan re-rooted on resume) must
-    render in id order -- the order `tree_order` gives `list_tasks` and every
-    other surface -- not the node map's iteration order, which is insertion
-    order live and filesystem order after a resume."""
+    """Two roots render in id order, the order `tree_order` gives every surface.
+
+    The node map's iteration order is insertion order live and filesystem order after a resume.
+    """
     nodes = {
         "01LATER00000000000000000A": {"title": "second", "parent_id": None, "children": []},
         "01EARLY00000000000000000A": {"title": "first", "parent_id": None, "children": []},
@@ -216,8 +217,7 @@ def test_graph_update_orders_multiple_roots_like_tree_order() -> None:
 
 
 def test_graph_update_shows_an_orphan_after_the_roots_like_tree_order() -> None:
-    """A node whose parent is missing is not a root: `tree_order` visits the
-    roots first and appends it, and the tree rendered it among the roots."""
+    """A node whose parent is missing is not a root; `tree_order` appends it after the roots."""
     nodes = {
         "01AAAA00000000000000000000": {"title": "orphan", "parent_id": "gone", "children": []},
         "01BBBB00000000000000000000": {"title": "root", "parent_id": None, "children": []},
@@ -522,9 +522,10 @@ def test_run_state_as_dict_is_json_serializable() -> None:
 
 
 def test_run_state_as_dict_owns_the_dir_backed_identity(tmp_path: Path) -> None:
-    """A resumed/forked execution's log can start at loop.resume.start (no session.start),
-    folding session_id/user_task empty. With the dir in hand THE wire owner fills
-    them (dir name + manifest task) so no consumer patches its own copy."""
+    """The wire owner fills session_id and user_task from the dir when the log has no session.start.
+
+    A resumed or forked execution's log can start at loop.resume.start.
+    """
     import json
 
     session_dir = tmp_path / "sunny-otter-K4Q7B2"
@@ -548,9 +549,7 @@ def test_run_state_as_dict_always_carries_live(tmp_path: Path) -> None:
 
 
 def test_run_state_as_dict_flags_operator_blocked() -> None:
-    """The wire carries operator_blocked from the fold so a DIR-LESS consumer (the
-    machine watch, which folds an agent-state log with no session_dir) can quiet its
-    heartbeat when the agent is blocked on a prompt, not paint 'agent working…'."""
+    """The wire carries operator_blocked from the fold for a dir-less consumer."""
     idle = session_state_as_dict(fold_session([{"type": "session.start", "user_task": "t"}]))
     assert idle["operator_blocked"] is False
     blocked = session_state_as_dict(
@@ -618,10 +617,10 @@ def test_resume_start_unfinishes_the_run() -> None:
 
 
 def test_role_result_tracks_context_tokens_and_provider() -> None:
-    """role.call carries the provider; role.result folds the call's full prompt
-    (fresh + cache read + cache write) into ctx_tokens -- the context size the
-    ctx% readout is computed from. The value survives the next role.call (no
-    per-turn blink) and an error result without usage keeps the last known."""
+    """role.result folds the call's full prompt into ctx_tokens, which survives the next role.call.
+
+    Fresh, cache read and cache write together; an error result without usage keeps the last known.
+    """
     from agent6.viewmodel.state import apply_event, initial_state
 
     s = initial_state()
@@ -647,11 +646,11 @@ def test_role_result_tracks_context_tokens_and_provider() -> None:
 
 
 def test_run_start_after_run_end_unfinishes_without_banking() -> None:
-    """The ask REPL re-enters wf.run() per follow-up, emitting a fresh session.start
-    on the same log with no resume marker. A session.start begins an execution: it must
-    clear the terminal state (or the streaming follow-up renders "answered").
-    It must NOT bank usd like ResumeStart: the REPL reuses one BudgetTracker,
-    so usd_total is already cumulative and banking would double-count."""
+    """A session.start without a resume marker clears the terminal state and banks no usd.
+
+    The ask REPL re-enters run() per follow-up on one BudgetTracker, so usd_total is already
+    cumulative and banking would double-count.
+    """
     s = initial_state()
     s = apply_event(s, {"type": "session.start", "user_task": "q"})
     s = apply_event(s, {"type": "budget.update", "usd_total": 0.02})
@@ -667,10 +666,11 @@ def test_run_start_after_run_end_unfinishes_without_banking() -> None:
 
 
 def test_resume_resets_the_execution_token_counters() -> None:
-    """ResumeStart banks usd but must also drop the dead execution's token counters
-    and caps: BudgetView documents them as the CURRENT execution's, and scan_session_log
-    already resets -- until the resumed execution's first budget.update the header
-    would otherwise render the finished execution's ~100%%."""
+    """ResumeStart banks usd and drops the dead execution's token counters and caps.
+
+    BudgetView documents them as the current execution's; the header would otherwise render the
+    finished execution's ~100%.
+    """
     s = initial_state()
     s = apply_event(s, {"type": "session.start", "user_task": "t"})
     s = apply_event(
@@ -697,9 +697,7 @@ def test_resume_resets_the_execution_token_counters() -> None:
 
 
 def test_resume_resets_the_execution_plan_counters() -> None:
-    """Subscription-plan usage is documented as execution-local, like the token
-    counters and caps: until the resumed execution's first budget.update, the header
-    must not keep showing the finished execution's plan percent/consumed/cap."""
+    """Subscription-plan usage is execution-local, dropped at ResumeStart like the token counts."""
     s = initial_state()
     s = apply_event(s, {"type": "session.start", "user_task": "t"})
     s = apply_event(
@@ -721,9 +719,10 @@ def test_resume_resets_the_execution_plan_counters() -> None:
 
 
 def test_concurrent_same_name_results_pair_by_call_id() -> None:
-    """Two review seats call read_file concurrently through the shared
-    dispatcher; last-entry name pairing cross-stamped the summaries and left
-    one row in-flight forever. Results pair on the stamped call_id."""
+    """Concurrent calls pair their results on the stamped call_id.
+
+    Last-entry name pairing cross-stamped two review seats' read_file summaries.
+    """
     s = initial_state()
     s = apply_event(
         s, {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "call_id": 1}
@@ -743,8 +742,7 @@ def test_concurrent_same_name_results_pair_by_call_id() -> None:
 
 
 def test_interleaved_result_for_an_earlier_call_pairs_by_call_id() -> None:
-    """call A, call B, result A: name-vs-last matching dropped A's result and
-    left A in-flight forever; with call_id it lands on A while B stays open."""
+    """Call A, call B, result A lands on A while B stays open."""
     s = initial_state()
     s = apply_event(
         s, {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "call_id": 1}
@@ -761,8 +759,7 @@ def test_interleaved_result_for_an_earlier_call_pairs_by_call_id() -> None:
 
 
 def test_compaction_events_fold_into_elision_counters() -> None:
-    """/status truth source: counts of elided markers / live gists in the
-    CURRENT context (a demoted gist is no longer held as a gist)."""
+    """/status counts elided markers and live gists in the current context."""
     s = initial_state()
     s = apply_event(
         s, {"type": "loop.compact.dropped", "n": 3, "calls": ["read_file a.py", "grep 'q'"]}
@@ -813,9 +810,7 @@ def test_pin_added_events_accumulate() -> None:
 
 
 def test_tier2_restart_resets_elision_counters() -> None:
-    """A summarise-and-restart wipes every elision marker and gist from the
-    model's context; the /status counters must reset with it or the surface
-    claims markers the model no longer holds."""
+    """A summarise-and-restart resets the /status elision counters with the context it wiped."""
     s = initial_state()
     s = apply_event(s, {"type": "loop.compact.dropped", "n": 9, "calls": ["read_file a.py"]})
     s = apply_event(
@@ -836,9 +831,7 @@ def test_tier2_restart_resets_elision_counters() -> None:
 
 
 def test_pins_restored_event_replaces_not_appends() -> None:
-    """loop.pin.restored carries the full restored list: a plain resume (whose
-    log already holds the pin.added events) must not double-count, and a fork
-    (fresh log, snapshot-only pins) must show them at all."""
+    """loop.pin.restored never double-counts a resume's pins and shows a fork's snapshot pins."""
     s = initial_state()
     s = apply_event(s, {"type": "loop.pin.added", "text": "keep A", "chars": 6, "count": 1})
     s = apply_event(s, {"type": "loop.pin.restored", "pins": ["keep A"], "count": 1})
@@ -869,10 +862,11 @@ _WRONG_SHAPE_EVENTS: list[dict[str, Any]] = [
     "bad", _WRONG_SHAPE_EVENTS, ids=lambda e: f"{e['type']}-{type(sorted(e)[0]).__name__}"
 )
 def test_fold_is_total_for_wrong_shaped_containers(bad: dict[str, Any]) -> None:
-    """Any syntactically valid JSON object must fold, not raise: the fold runs
-    unwrapped inside live tails (attach, TUI, web SSE), so one wrong-shaped
-    field in a corrupted or foreign log crashed every viewer and turned the
-    web run endpoint into a 500."""
+    """Any syntactically valid JSON object folds without raising.
+
+    The fold runs unwrapped inside live tails, so one wrong-shaped field crashed every viewer
+    and turned the web run endpoint into a 500.
+    """
     state = fold_session(
         [
             {"type": "session.start", "user_task": "t"},
@@ -884,10 +878,10 @@ def test_fold_is_total_for_wrong_shaped_containers(bad: dict[str, Any]) -> None:
 
 
 def test_a_question_asked_while_no_model_runs_is_the_harness_s() -> None:
-    """agent6 asks its own start questions (the dirty-tree gate) before
-    session.start, and again before a resumed execution starts (after the last
-    session.end); a question while the model runs is the model's. The TUI
-    modal and the web prompt box name the asker from this flag."""
+    """A question before session.start or a resumed execution's start is agent6's, not the model's.
+
+    The TUI modal and the web prompt box name the asker from this flag.
+    """
     q = {"type": "question.prompt", "id": "question-1", "questions": [{"question": "stash?"}]}
     before = fold_session([q])
     assert before.pending_questions[0].from_harness is True
@@ -904,9 +898,7 @@ def test_a_question_asked_while_no_model_runs_is_the_harness_s() -> None:
 
 
 def test_run_state_as_dict_carries_what_the_run_serves(tmp_path: Path) -> None:
-    """`ports` is the wire form of `listening_ports`: the ports the run's
-    network listens on ([] with no network), so the web/TUI headers can name
-    a dev server the agent started, as `sessions show` and `forward` do."""
+    """`ports` is the wire form of `listening_ports`, so a header can name the agent's server."""
     import os
     import socket
 
@@ -924,9 +916,7 @@ def test_run_state_as_dict_carries_what_the_run_serves(tmp_path: Path) -> None:
 
 
 def test_approval_parts_is_the_one_shape_every_surface_renders() -> None:
-    """A dispatch prompt is "Allow <tool>: <payload>"; the head is the question
-    and the payload the command (possibly several lines). A prompt with no
-    payload is all head, and the web JSON carries both parts."""
+    """A dispatch prompt splits into the "Allow <tool>" head and the payload; JSON carries both."""
     from agent6.viewmodel import approval_parts
 
     assert approval_parts("Allow run_command: pytest -q tests") == (
@@ -941,9 +931,7 @@ def test_approval_parts_is_the_one_shape_every_surface_renders() -> None:
 
 
 def test_auto_commits_fold_into_the_step_list() -> None:
-    """Every per-step commit lands in `steps` (oldest first) with its iteration
-    and subject: the dashboards' step selector; a sha-less auto_commit (nothing
-    to commit) adds no step."""
+    """Every per-step commit lands in `steps` oldest first; a sha-less auto_commit adds no step."""
     from agent6.viewmodel.state import apply_event, initial_state
 
     s = apply_event(
@@ -961,8 +949,7 @@ def test_auto_commits_fold_into_the_step_list() -> None:
 
 
 def test_fold_until_commit_stops_at_that_step() -> None:
-    """The details a step selector time-travels to: the fold up to and including
-    the step's auto_commit, nothing after; None for a sha the run never made."""
+    """A step's details are the fold up to and including its auto_commit; None for a foreign sha."""
     events = [
         {"type": "session.start", "session_id": "s", "mode": "run", "user_task": "t"},
         {"type": "loop.auto_commit", "iteration": 1, "sha": "a" * 40, "subject": "one"},
@@ -979,8 +966,7 @@ def test_fold_until_commit_stops_at_that_step() -> None:
 
 
 def test_a_cut_log_line_says_it_was_cut() -> None:
-    """Every long field of a log line was bare-sliced ([:160], [:120], [:100],
-    [:80]), so a provider error read as if it ended where the slice did."""
+    """A clipped log-line field is marked, so a provider error never reads as ending there."""
     error = "E" * 150 + "-TRUNCATION-BOUNDARY-" + "Z" * 60
     line = format_log_line(
         {"ts": "2026-09-01T22:00:00.000Z", "type": "role.result", "role": "worker", "error": error}
@@ -993,9 +979,11 @@ def test_a_cut_log_line_says_it_was_cut() -> None:
 
 
 def test_one_owner_for_the_open_approval() -> None:
-    """The server took an answer to the oldest open approval while the
-    conversation view offered the newest and the dashboard the oldest with no
-    regard to a modal already up: three rules, latent until two are pending."""
+    """One rule picks which pending approval an answer goes to.
+
+    The server took the oldest, the conversation view offered the newest and the dashboard the
+    oldest with no regard to a modal already up.
+    """
     from agent6.viewmodel.state import open_approval_of
 
     s = initial_state()
@@ -1012,8 +1000,7 @@ def test_one_owner_for_the_open_approval() -> None:
 
 
 def test_a_step_label_is_one_line_every_surface_shows() -> None:
-    """The TUI spelled the step line twice and the web once; one copy still
-    ended in a dangling separator when a step had no subject."""
+    """One step line for the TUI and the web, with no dangling separator on a subjectless step."""
     from agent6.viewmodel.state import CommitStep
 
     assert CommitStep(3, "abcdef1234", "fix: parse").label == "iter 3 · abcdef1 · fix: parse"

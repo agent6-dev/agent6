@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The verify finish gate: finish_session can never report 'passed' over a red or
-stale verify, and `[harness].verify_when` has the harness run the gate itself
-at finish (or every step), returning a red finish `verify_retries` times. Both
-ground on VerifyGate.tree_green."""
+"""The verify finish gate: no 'passed' over a red or stale verify; `verify_when` runs it.
+
+A red finish returns `verify_retries` times; both ground on VerifyGate.tree_green.
+"""
 
 from __future__ import annotations
 
@@ -98,14 +98,11 @@ def _verified(wf: Harness, **verdict_kw: Any) -> str:
 
 
 def test_verification_carries_the_same_verdict_the_event_does() -> None:
-    """SessionResult.verified is the app layer's copy of session.end.all_passed's
-    grounding, so exit code, auto-merge, and the notify hook read the verify
-    truth instead of `completed` (true for any deliberate finish).
+    """SessionResult.verified copies session.end.all_passed; "failed" means an observed red.
 
-    "failed" means someone OBSERVED a red gate. Folding "no verify ran this
-    execution" into it printed "the gate is red" over a gate that never ran and sent
-    the operator to bisect the base commit for a failure that never happened;
-    those finishes are "unverified"."""
+    Exit code, auto-merge and the notify hook read it instead of `completed`; folding "no
+    verify ran" into failed sent the operator to bisect a failure that never happened.
+    """
     assert _verified(_wf(verify=True), last_ok=True, edited_since=False) == "passed"
     assert _verified(_wf(verify=True), last_ok=False) == "failed"
     # Red, then edited without re-verifying: the red observation stands.
@@ -119,13 +116,12 @@ def test_verification_carries_the_same_verdict_the_event_does() -> None:
 
 
 def test_a_gateless_end_and_its_verdict_agree() -> None:
-    """The grounded end turned the gateless None into all_passed=True
-    (`is not False`) while `_verification` mapped the same None to
-    not_applicable: the run read "passed" on every surface though nothing ever
-    gated it, and the docstring claimed the two could never disagree.
-    all_passed=True needs an OBSERVED green; the gateless end carries the
-    tri-state's None on the wire (words as "finished", never "passed" or
-    "failed"), agreeing with the not_applicable verdict."""
+    """all_passed=True needs an observed green; the gateless end carries None on the wire.
+
+    The grounded end turned the gateless None into True while `_verification` mapped it to
+    not_applicable, so the run read "passed" on every surface though nothing gated it. None
+    words as "finished", never "passed" or "failed".
+    """
     emitted: list[dict[str, Any]] = []
 
     def _capture(_type: str, **fields: Any) -> None:
@@ -156,10 +152,11 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
 
 
 def test_the_end_event_carries_whether_the_certifying_gate_ran_scoped() -> None:
-    """A scoped green is a pass with a qualifier: `session.end` carries
-    `scoped`, and every surface words it "passed · scoped gate" through the
-    one status_word. A run that ended over a red or a stale scoped gate is
-    "finished" as before: the qualifier belongs to a pass only."""
+    """A scoped green is a pass with a qualifier, worded "passed · scoped gate" through status_word.
+
+    A run that ended over a red or a stale scoped gate is "finished"; the qualifier belongs to a
+    pass only.
+    """
     emitted: list[dict[str, Any]] = []
 
     def _capture(_type: str, **fields: Any) -> None:
@@ -191,23 +188,23 @@ def test_the_end_event_carries_whether_the_certifying_gate_ran_scoped() -> None:
 
 
 def test_plan_and_ask_are_never_gated_on_verify() -> None:
-    """plan/ask end clean whatever the tree looks like -- finish_planning and
-    the ask answer both emit session.end all_passed=True -- so they have no verify
-    verdict to report. Reporting one made `agent6 plan` exit 4 (preflight
-    INFERS a verify command for plan, and plan never runs it, so the tree read
-    as red) while its own journal and every listing said passed."""
+    """Plan and ask end clean whatever the tree looks like and report no verify verdict.
+
+    Reporting one made `agent6 plan` exit 4: preflight infers a verify command for plan, which
+    never runs it, so the tree read as red while every listing said passed.
+    """
     for mode in ("plan", "ask"):
         assert _verified(_wf(verify=True, mode=mode), last_ok=None) == "not_applicable"
         assert _verified(_wf(verify=True, mode=mode), last_ok=False) == "not_applicable"
 
 
 def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(tmp_path: Path) -> None:
-    """A green verify must not survive a run_command that changed the tree:
-    edited_since_verify was set only by apply_edit/apply_patch, so a model
-    could verify green, then mutate through run_command (or an MCP tool) and
-    still finish reporting verified="passed" -- defeating exit 4,
-    the finish certification, and the auto-merge gate together. Grounded on
-    git, so a read-only command keeps the pass it had."""
+    """A green verify does not survive a run_command that changed the tree.
+
+    edited_since_verify was set only by the edit tools, so a model could verify green, mutate
+    through run_command or an MCP tool, and finish "passed". Grounded on git, a read-only command
+    keeps the pass.
+    """
     import subprocess as sp
 
     sp.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
@@ -235,11 +232,11 @@ def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(tmp_path: P
 
 
 def test_a_read_only_command_over_uncommitted_work_keeps_the_verify_pass(tmp_path: Path) -> None:
-    """The check asked git whether anything was uncommitted, not whether the
-    command changed the tree: over work the chain had not recorded (a red
-    gate's leftovers, `commit_per_step` off) every `rg` or `git diff` through
-    run_command re-marked the tree edited, so `step` mode re-ran the gate on
-    identical bytes and a green verdict died under a read-only probe."""
+    """The edited check asks whether the command changed the tree, not whether it is uncommitted.
+
+    Over work the chain had not recorded, every `rg` through run_command re-marked the tree
+    edited, so `step` mode re-ran the gate on identical bytes.
+    """
     _git_seed(tmp_path)
     (tmp_path / "a.txt").write_text("uncommitted\n", encoding="utf-8")
     wf = _wf(verify=True, root=tmp_path)
@@ -301,11 +298,11 @@ def _resumed_state(wf: Harness, snap: Any) -> LoopState:
 def test_a_resumed_execution_carries_the_verify_verdict_over_an_unmoved_tree(
     tmp_path: Path,
 ) -> None:
-    """last_verify_ok was execution-scoped, so resuming a green-finished run and
-    finishing without edits read "unverified" (previously: exit 4 claiming a
-    red gate) over the very tree the gate approved. The verdict carries when
-    HEAD is the snapshot's and the worktree is clean; baseline_ok is about the
-    base commit, which resume never moves, so it always carries."""
+    """The verdict carries across executions when HEAD is the snapshot's and the worktree is clean.
+
+    Execution-scoped, resuming a green-finished run and finishing without edits read "unverified";
+    baseline_ok is about the base commit, which resume never moves, so it always carries.
+    """
     head = _git_seed(tmp_path)
     wf = _wf(verify=True, root=tmp_path)
     snap = _snap(head_sha=head, last_verify_ok=True, edited_since_verify=False, baseline_ok=False)
@@ -320,9 +317,10 @@ def test_a_resumed_execution_carries_the_verify_verdict_over_an_unmoved_tree(
 
 
 def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: Path) -> None:
-    """An operator commit or edit between executions means no observation covers
-    THIS tree: the execution starts unobserved (fails closed, like the baseline
-    probe), never wrongly green or red."""
+    """An operator commit or edit between executions starts the execution unobserved.
+
+    No observation covers this tree, so it fails closed like the baseline probe.
+    """
     import subprocess as sp
 
     head = _git_seed(tmp_path)
@@ -344,10 +342,11 @@ def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: Path) -> N
 
 
 def test_a_resumed_execution_carries_the_scoped_gate(tmp_path: Path) -> None:
-    """The full gate overran once: the resumed execution goes straight to the
-    scoped form instead of burning the timeout again. Carried whatever the
-    tree did between executions (the fact is about the suite, not the tree), while
-    the verdict itself still drops when the tree moved."""
+    """After the full gate overran once, a resumed execution goes straight to the scoped form.
+
+    The fact is about the suite, so it carries whatever the tree did; the verdict still drops
+    when the tree moved.
+    """
     _git_seed(tmp_path)
     wf = _wf(verify=True, root=tmp_path)
     (tmp_path / "a.txt").write_text("edited\n", encoding="utf-8")
@@ -408,9 +407,10 @@ def _notices(turn: Any) -> list[str]:
 
 
 def test_finish_mode_runs_the_gate_when_a_finish_arrives_over_an_unverified_tree() -> None:
-    """`verify_when = "finish"`: the harness runs the gate on finish_session and the
-    model sees the verdict; a green run certifies the tree (the verdict's own
-    bookkeeping, so the finish gate sees green and auto-commit sees a pass)."""
+    """`verify_when = "finish"` runs the gate on finish_session, and a green run certifies the tree.
+
+    The verdict's own bookkeeping, so the finish gate sees green and auto-commit sees a pass.
+    """
     wf, dispatcher = _harness_wf("finish")
     dispatcher.run_verify.return_value = _exec(0, "3 passed")
     state = LoopState(original_task="t", tool_calls=0)
@@ -426,8 +426,7 @@ def test_finish_mode_runs_the_gate_when_a_finish_arrives_over_an_unverified_tree
 
 
 def test_a_red_finish_certification_returns_to_the_model_verify_retries_times() -> None:
-    """A red gate at finish returns the finish with the output `verify_retries`
-    times; the next red finish stands (reported finished, never passed)."""
+    """A red gate at finish returns the finish `verify_retries` times; the next red stands."""
     wf, dispatcher = _harness_wf("finish", retries=2)
     dispatcher.run_verify.return_value = _exec(1, "1 failed")
     state = LoopState(original_task="t", tool_calls=0)
@@ -458,8 +457,10 @@ def test_zero_retries_lets_the_first_red_finish_stand() -> None:
 
 
 def test_a_tree_the_model_already_certified_is_not_judged_twice() -> None:
-    """Green and untouched since: the finish needs no second run. And a turn
-    whose own run_verify_command judged the tree is never judged on top."""
+    """Green and untouched since: the finish needs no second run.
+
+    And a turn whose own run_verify_command judged the tree is never judged on top.
+    """
     wf, dispatcher = _harness_wf("finish")
     state = LoopState(original_task="t", tool_calls=0)
     state.verify.note_pass()
@@ -488,8 +489,11 @@ def test_step_mode_judges_every_editing_turn_and_finish_mode_does_not() -> None:
 
 
 def test_never_mode_leaves_a_finish_over_an_unverified_tree_alone() -> None:
-    """`never`: the measured model-driven shape. The harness neither runs the gate
-    nor returns the finish; the end is reported finished, not passed."""
+    """`never`: the measured model-driven shape.
+
+    The harness neither runs the gate nor returns the finish; the end is reported finished, not
+    passed.
+    """
     wf, dispatcher = _harness_wf("never")
     state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
@@ -511,11 +515,11 @@ def test_run_commands_no_withholds_the_gate_from_the_harness_too() -> None:
 
 
 def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
-    """Not approved under `ask` (a human's no, or the unattended auto-deny):
-    the gate is withheld for the rest of the run like `run_commands = "no"`,
-    the model is told so, and the finish stands unverified. Bouncing the
-    finish against a denial burned every retry on a wall nobody could open
-    (a live machine execution failed with its fix committed and tests green)."""
+    """A gate not approved under `ask` is withheld for the rest of the run, and the finish stands.
+
+    The model is told so; bouncing the finish against a denial burned every retry on a wall
+    nobody could open.
+    """
     from agent6.tools.errors import ToolDeniedError
 
     wf, dispatcher = _harness_wf("finish", retries=2)
@@ -572,9 +576,7 @@ def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
 
 
 def test_a_verify_followed_by_an_edit_in_one_turn_is_judged_again() -> None:
-    """`step`: the model runs the gate green, then edits later in the same
-    turn; the turn's final tree is unjudged, so the harness runs the gate.
-    Self-review 2026-08-23: the turn-wide boolean skipped it."""
+    """Under `step` an edit after a green gate in the same turn makes the harness run it again."""
     wf, dispatcher = _harness_wf("step")
     dispatcher.run_verify.return_value = _exec(0)
     state = LoopState(original_task="t", tool_calls=0)
@@ -613,12 +615,11 @@ def _fake_diff(_self: Harness) -> str:
 def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """The full gate overran verify_timeout_s (exit 124): the harness re-runs
-    the same pytest command scoped to the tests nearest the run's diff, the
-    verdict comes from the scoped run, and the notice names the scope. Later
-    gates go straight to the scoped form instead of burning the timeout again.
-    Grounds the SWE-rebench broke-P2P class: big-repo executions finished over a
-    gate that timed out and certified nothing."""
+    """A full gate that overran verify_timeout_s is re-run scoped to the tests nearest the diff.
+
+    The verdict comes from the scoped run and the notice names the scope; later gates go straight
+    to the scoped form. Big-repo executions had finished over a gate that certified nothing.
+    """
     monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     emitted: list[tuple[str, dict[str, Any]]] = []
@@ -653,8 +654,7 @@ def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
 def test_a_timed_out_non_pytest_gate_stays_a_plain_timeout(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """Only pytest takes file-path selection; a make/other gate that times out
-    is reported as-is, one run, no scoped rerun."""
+    """Only pytest takes file-path selection; another gate that times out is reported as is."""
     monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["make", "test"])
     dispatcher.run_verify.return_value = _exec(124)
@@ -677,10 +677,11 @@ def test_a_timed_out_non_pytest_gate_stays_a_plain_timeout(
 def test_a_gate_that_cannot_take_appended_paths_stays_a_plain_timeout(
     tmp_path: Path, monkeypatch: Any, command: list[str]
 ) -> None:
-    """A `sh -c` script binds appended paths as $0/$1 with the script
-    unchanged, and `pytest tests` unions the dir with the files: the re-run
-    would be the identical full command, a second timeout, and a false "ran
-    scoped" notice. The substring predicate scoped both; neither scopes."""
+    """Neither a `sh -c` script nor `pytest tests` scopes.
+
+    The script binds appended paths as $0 and $1, and the dir unions with the files: an identical
+    full command, a second timeout, and a false "ran scoped" notice.
+    """
     monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, command)
     dispatcher.run_verify.return_value = _exec(124)
@@ -693,8 +694,7 @@ def test_a_gate_that_cannot_take_appended_paths_stays_a_plain_timeout(
 
 
 def test_a_timeout_with_no_nearby_tests_stands(tmp_path: Path, monkeypatch: Any) -> None:
-    """Nothing near the change to run: the timeout is the verdict; scoping
-    never arms on an empty selection."""
+    """With nothing near the change to run, the timeout is the verdict and scoping never arms."""
 
     def no_tests_diff(_self: Harness) -> str:
         return "diff --git a/docs/page.md b/docs/page.md\n"
@@ -713,10 +713,11 @@ def test_a_timeout_with_no_nearby_tests_stands(tmp_path: Path, monkeypatch: Any)
 def test_a_models_own_timed_out_gate_gets_the_scoped_followup(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """run_verify_command exit 124 from the model's OWN call gets the scoped
-    follow-up too. The harness-gate fallback alone never reached this flow (a
-    self-judged turn is not re-judged), so pilot executions timed out at the full
-    budget with no scoped re-run ever firing."""
+    """run_verify_command exit 124 from the model's OWN call gets the scoped follow-up too.
+
+    The harness-gate fallback alone never reached this flow (a self-judged turn is not re-judged),
+    so pilot executions timed out at the full budget with no scoped re-run ever firing.
+    """
     monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.return_value = _exec(0)
@@ -740,8 +741,7 @@ def test_a_models_own_timed_out_gate_gets_the_scoped_followup(
 def test_never_mode_leaves_the_models_timed_out_gate_alone(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """`never`: only the model's own run_verify_command calls run the gate, so
-    a timeout there gets no harness re-run; the 124 is the turn's verdict."""
+    """Under `never` a timeout in the model's own run_verify_command gets no harness re-run."""
     monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"], when="never")
     state = LoopState(original_task="t", tool_calls=0)
@@ -757,9 +757,7 @@ def test_never_mode_leaves_the_models_timed_out_gate_alone(
 def test_a_full_green_from_the_models_own_gate_unarms_scoping(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """The model's own run_verify_command runs the full argv: a green there is
-    a full pass, so scoping (armed by an earlier timeout) ends and the run's
-    end reads a plain "passed", never "passed · scoped gate"."""
+    """A green from the model's own full run_verify_command ends scoping and reads "passed"."""
     monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.return_value = _exec(0)
@@ -780,9 +778,7 @@ def test_a_full_green_from_the_models_own_gate_unarms_scoping(
 def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """One denial means the same on both call sites: the scoped re-run not
-    approved withholds the gate for the rest of the run, in the harness
-    path's words, and a later finish never asks again."""
+    """One denial means the same on both call sites, and a later finish never asks again."""
     from agent6.tools.errors import ToolDeniedError
 
     monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
@@ -807,10 +803,12 @@ def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
 
 
 def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
-    """The model ran the gate itself and it was red; its next turn is prose
-    with no tool call. The harness gate is skipped (that red already covers
-    the untouched tree), so no verify fails on THIS turn, and the end was
-    accepted as if the gate had never been red. The standing verdict decides."""
+    """The model ran the gate itself and it was red; its next turn is prose with no tool call.
+
+    The harness gate is skipped (that red already covers the untouched tree), so no verify fails on
+    THIS turn, and the end was accepted as if the gate had never been red. The standing verdict
+    decides.
+    """
     from agent6.tools.results import ExecResult
 
     dispatcher = MagicMock()
@@ -850,9 +848,10 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
 def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     policy: str, denied: bool
 ) -> None:
-    """The standing red decides the hand-back, with the guards finish_session
-    already carries: a gate the operator withheld (`run_commands = "no"`) or
-    denied is not the model's to fix, and bouncing the end told it to."""
+    """The standing red decides the hand-back, with finish_session's own guards.
+
+    A withheld or denied gate is not the model's to fix, and bouncing the end told it to.
+    """
     dispatcher = MagicMock()
     dispatcher.command_policy.return_value = policy
     wf = Harness(

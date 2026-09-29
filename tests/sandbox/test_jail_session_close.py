@@ -1,13 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`JailSession.close()` must never propagate an exception at teardown.
+"""`JailSession.close()` never propagates an exception at teardown.
 
-Found via the wheel CI-mirror execution on Python 3.12: close() used to `stdin.close()`
-then `communicate()`, whose flush re-hits the now-closed pipe and raises
-`ValueError: flush of closed file`. Python 3.14 (the dev interpreter) tolerates
-that, so no gate caught it -- but AGENTS.md supports 3.12+, where it was an
-unhandled crash in `ToolDispatcher.close()`. These tests use a fake launcher
-proc, so they need no namespaces and run on every interpreter.
+`stdin.close()` followed by `communicate()` re-hits the closed pipe in the flush and
+raises `ValueError: flush of closed file` on Python 3.12 and 3.13 (3.14 tolerates it).
+These tests use a fake launcher proc, so they need no namespaces and run on every
+interpreter.
 """
 
 from __future__ import annotations
@@ -63,9 +61,11 @@ def test_close_swallows_the_closed_stdin_flush_valueerror() -> None:
 
 
 def test_close_kills_a_launcher_that_outlived_the_drain(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A communicate() that times out leaves the launcher alive; close() then
-    SIGKILLs its group. The kill must reach the pid, and close() must not raise
-    even if the (already-exited) killpg errors."""
+    """close() SIGKILLs the group of a launcher left alive by a timed-out communicate().
+
+    The kill reaches the pid, and close() does not raise when the killpg of an already-exited
+    process errors.
+    """
     killed: list[int] = []
 
     def _fake_killpg(pid: int, sig: int) -> None:
@@ -83,10 +83,12 @@ def test_close_kills_a_launcher_that_outlived_the_drain(monkeypatch: pytest.Monk
 def test_a_survivor_of_the_sweep_is_named_by_every_stop(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """`JailedProcess.close`, `LocalJob.stop` and `BackgroundJob.stop` discarded
-    the sweep's survivors, so the MCP-server path and `stop_background` under
-    `none` and `hardened` answered "stopped" over a process the sweep could
-    not kill; `SessionJob.stop` under hardened never swept at all."""
+    """A stop that could not kill an escapee says so on every path.
+
+    `JailedProcess.close`, `LocalJob.stop`, `BackgroundJob.stop` and `SessionJob.stop` report
+    the sweep's survivors, so the MCP-server path and `stop_background` under `none` and
+    `hardened` never answer "stopped" over a process the sweep could not kill.
+    """
     from agent6.sandbox.jail import (
         BackgroundJob,
         BackgroundStatus,
@@ -139,9 +141,10 @@ def test_a_survivor_of_the_sweep_is_named_by_every_stop(
 def test_a_survivor_of_the_sweep_fails_the_command_and_comes_back_from_close(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`run_in_jail` fails a command whose escapee the sweep could not kill;
-    the session path every run_command takes discarded the sweep's answer in
-    `run` and in `close`, so a process outlived the run in silence."""
+    """The session path fails a command whose escapee the sweep could not kill, like `run_in_jail`.
+
+    `run` and `close` keep the sweep's answer, so no process outlives the run in silence.
+    """
 
     def sweep(exclude: frozenset[int]) -> frozenset[int]:
         return frozenset({4321})

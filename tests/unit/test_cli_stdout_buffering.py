@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6` line-buffers a redirected stdout: a run's log file fills as the
-run prints, not at exit (a hub-spawned run's log stayed empty for minutes)."""
+"""`agent6` line-buffers a redirected stdout, so a run's log file fills as the run prints."""
 
 from __future__ import annotations
 

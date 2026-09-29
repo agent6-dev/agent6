@@ -4,7 +4,7 @@
 
 The pid is what every surface gates on: `sessions list` reads a run without
 one as "created", and `agent6 answer` refuses it as "not running". A run
-parked on its own dirty-tree start question is neither -- it is a live worker
+parked on its own dirty-tree start question is neither, it is a live worker
 waiting for exactly that answer. Refusals BEFORE the first prompt still write
 none, and the teardown clears it on every exit path.
 """
@@ -85,8 +85,11 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
 def test_a_cancelled_start_question_leaves_no_pid_behind(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The teardown clears it on every exit path, so a run that asked and was
-    then cancelled does not go on reading as live."""
+    """A cancelled start question leaves no pid behind.
+
+    The teardown clears it on every exit path, so a run that asked and was then cancelled does not
+    go on reading as live.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     _repo(repo)
@@ -125,8 +128,11 @@ def test_a_cancelled_start_question_leaves_no_pid_behind(
 def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An in-process frontend outlives the run, so its PID must not remain the
-    session's worker identity when closing its console view fails."""
+    """A front-end teardown failure still clears the worker pid.
+
+    An in-process front-end outlives the run, so its pid must not remain the session's worker
+    identity when closing its console view fails.
+    """
     from agent6.app._execution import ExecutionEnd
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -162,9 +168,11 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
 def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The stash pop shares the teardown with the pid clear: a console
-    teardown that raises must not leave the operator's pre-run changes
-    stashed with nothing said."""
+    """The stash pop shares the teardown with the pid clear.
+
+    A console teardown that raises must not leave the operator's pre-run changes stashed with
+    nothing said.
+    """
     from agent6.app._execution import ExecutionEnd
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The before-call budget nudges: a planner's one-shot finish directive on a
-low budget or too many turns, and a plain run's one-shot wrap-up directive on
-a low budget, each once per run and only in its mode."""
+"""The before-call budget nudges.
+
+A planner's one-shot finish directive on a low budget or too many turns, and a plain run's one-shot
+wrap-up directive on a low budget, each once per run and only in its mode.
+"""
 
 from __future__ import annotations
 

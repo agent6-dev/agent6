@@ -27,8 +27,7 @@ from agent6.viewmodel import machine_files
 from agent6.viewmodel.machine_state import machine_verb_refusal
 from tests.tui._waits import answerable, focus_answers, wait_for
 
-# A no-I/O machine that reaches a terminal immediately (branch -> terminal), so a
-# `machine run` produces a finished instance with no model/jail needed.
+# A no-I/O machine that reaches a terminal at once, so `machine run` finishes with no model or jail.
 TINY = """
 machine = "tiny"
 version = 1
@@ -103,8 +102,7 @@ def test_machine_detail_text_parses_a_valid_machine(tmp_path: Path) -> None:
     # Named for what it ran: this view checks semantics, not the script bundle.
     assert "semantics: OK" in text
     assert "graph (mermaid):" in text
-    # States read as the user's kind word (agent/tool/wait/terminal), matching the
-    # watch screen + web, not the internal class name (AgentState/TerminalState).
+    # States read as the user's kind word, matching the watch screen and web, not the class name.
     assert "poll  (wait)" in text and "done  (terminal)" in text
     assert "State)" not in text
 
@@ -116,8 +114,11 @@ def test_machine_detail_text_reports_a_bad_file(tmp_path: Path) -> None:
 
 
 async def _spawn_settled(app: App[None]) -> None:
-    """Wait for a spawn worker. One that hands its draft to `app.exit` cancels
-    the worker group on the way out, so its completion reads as cancelled."""
+    """Wait for a spawn worker.
+
+    One that hands its draft to `app.exit` cancels the worker group on the way out, so its
+    completion reads as cancelled.
+    """
     from textual.worker import WorkerCancelled
 
     with contextlib.suppress(WorkerCancelled):
@@ -151,8 +152,7 @@ def test_machines_menu_items_all_resolve(tmp_path: Path) -> None:
 
 
 def test_row_actions_are_dimmed_on_an_empty_machines_page(tmp_path: Path) -> None:
-    """View, Run and Watch all need a row; with none they were silent no-ops
-    the footer still offered."""
+    """View, Run and Watch need a row; with none they refuse instead of silently doing nothing."""
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -160,8 +160,7 @@ def test_row_actions_are_dimmed_on_an_empty_machines_page(tmp_path: Path) -> Non
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, MachinesScreen)
-            # None greys the key; False would hide it, and a missing key reads
-            # as a capability the page does not have.
+            # None greys the key; False would hide it, reading as a missing capability.
             assert [screen.check_action(a, ()) for a in ("view", "run", "watch")] == [
                 None,
                 None,
@@ -173,8 +172,10 @@ def test_row_actions_are_dimmed_on_an_empty_machines_page(tmp_path: Path) -> Non
 
 
 def test_watch_is_dimmed_for_an_authored_machine_that_has_not_run(tmp_path: Path) -> None:
-    """Watch attaches to an instance; offering it for a file-only row created
-    an empty instance directory and showed a synthetic stopped machine."""
+    """Watch is not offered for a file-only row.
+
+    It attaches to an instance; offered, it created an empty instance dir and a stopped machine.
+    """
     _write(tmp_path / "tiny.asm.toml", TINY)
 
     async def scenario() -> None:
@@ -195,8 +196,7 @@ def test_watch_is_dimmed_for_an_authored_machine_that_has_not_run(tmp_path: Path
 def test_watch_screen_carries_the_menu_bar_and_its_items_resolve(
     tmp_path: Path, monkeypatch: object
 ) -> None:
-    """The watch screen has the chrome every other screen has (a menu bar,
-    `?` help), and every menu item resolves to an action."""
+    """The watch screen has every screen's chrome, and every menu item resolves to an action."""
     from textual.widgets import Footer
 
     from agent6.machine import load_machine
@@ -230,9 +230,7 @@ def test_watch_screen_carries_the_menu_bar_and_its_items_resolve(
 
 
 def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypatch: object) -> None:
-    """The Machines watch screen renders the state overview (current marked `>`,
-    visited `.`), the transition in the log, and the ended status -- the in-TUI
-    equivalent of `agent6 attach`."""
+    """The watch screen renders the state overview, the log transition and the ended status."""
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
@@ -268,10 +266,11 @@ def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypat
 
 
 def test_watch_screen_does_not_reannounce_a_stale_end(tmp_path: Path, monkeypatch: object) -> None:
-    """Reviewing a machine that finished long ago must not pop a fresh toast +
-    desktop notification for the stale end; the end flag seeds from the same
-    fold that seeds notification history. A machine ending WHILE watched still
-    announces (ended is None at mount)."""
+    """Reviewing a machine that finished long ago pops no toast or desktop notification.
+
+    The end flag seeds from the fold that seeds notification history; a machine ending while
+    watched still announces.
+    """
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
     from agent6.ui.tui import machines as machines_mod
@@ -312,9 +311,7 @@ def test_watch_screen_does_not_reannounce_a_stale_end(tmp_path: Path, monkeypatc
 def test_watch_screen_disables_steer_and_message_when_ended(
     tmp_path: Path, monkeypatch: object
 ) -> None:
-    """An ended machine takes no input: the watch screen dims Steer/Message (like
-    the web disables both buttons) and their actions are no-ops, never dropping a
-    steer marker into the dead per-state dir."""
+    """An ended machine takes no input: Steer and Message dim and their actions are no-ops."""
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
@@ -324,7 +321,7 @@ def test_watch_screen_disables_steer_and_message_when_ended(
     assert cli_main(["machine", "run", str(f)]) == 0
     instance = state_dir(tmp_path) / "machines" / "tiny"
     spec = load_machine(f)
-    # A per-state dir so _current_state_dir() resolves -- the "dead dir" a steer would hit.
+    # A per-state dir so _current_state_dir() resolves: the dead dir a steer would hit.
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
     (state / "logs.jsonl").write_text("", encoding="utf-8")
@@ -359,8 +356,7 @@ def test_watch_screen_disables_steer_and_message_when_ended(
 def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
     tmp_path: Path, monkeypatch: object
 ) -> None:
-    """An ended machine's final agent-state log ends on a role.call ("thinking…"),
-    which must NOT render as a live thinking line while the header says ended."""
+    """An ended machine's log ending on a role.call renders no live thinking line."""
     from textual.widgets import RichLog
 
     from agent6.machine import load_machine
@@ -397,17 +393,14 @@ def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
 
 
 def test_discrete_log_line_renders_tool_events_only() -> None:
-    # The shared journal fold (current/visited/transitions) is tested in
-    # tests/unit/test_viewmodel_machine_state.py; this covers the TUI-only
-    # presentation helper for the per-state agent log.
+    # The journal fold is covered in test_viewmodel_machine_state; this is the TUI helper.
     from agent6.ui.tui.machines import _discrete_log_line
 
     # A tool call renders compactly; a thinking delta is not a discrete line.
     assert _discrete_log_line({"type": "role.effort_delta", "text": "hm"}) is None
     line = _discrete_log_line({"type": "tool.call", "name": "grep", "args": {"q": "x"}})
     assert line is not None and "grep" in line.plain
-    # The verdict goes through the shared coercion (tool_result_ok), never
-    # bool(): a historical stringified "False" would have painted a green tick.
+    # The verdict goes through tool_result_ok, never bool(): "False" is not a green tick.
     bad = _discrete_log_line({"type": "tool.result", "ok": "False", "summary": "boom"})
     assert bad is not None and "✗" in bad.plain
     good = _discrete_log_line({"type": "tool.result", "ok": "True", "summary": "fine"})
@@ -415,9 +408,10 @@ def test_discrete_log_line_renders_tool_events_only() -> None:
 
 
 def test_create_opens_dashboard_on_the_draft(tmp_path: Path, monkeypatch: object) -> None:
-    """Creating a machine spawns `machine create`, locates the draft it produces,
-    and hands that dir to the dashboard via app.exit -- so it is watchable live,
-    not fire-and-forget."""
+    """Creating a machine spawns `machine create`, locates the draft and hands it to the dashboard.
+
+    The machine is watchable live, not fire-and-forget.
+    """
     draft = tmp_path / "draft"
     draft.mkdir()
 
@@ -441,10 +435,10 @@ def test_create_opens_dashboard_on_the_draft(tmp_path: Path, monkeypatch: object
 
 
 def test_create_spawns_off_the_ui_thread(tmp_path: Path, monkeypatch: object) -> None:
-    """The three spawns ran on the event loop, so the whole TUI froze for the
-    locate (seconds on a real `machine create`, which waits on an authoring
-    run's first event). The handler returns at once; the spawn's answer lands
-    from a worker thread."""
+    """The create spawns run off the event loop, so the TUI does not freeze for the locate.
+
+    The handler returns at once; the spawn's answer lands from a worker thread.
+    """
     import threading
 
     draft = tmp_path / "draft"
@@ -502,8 +496,7 @@ def test_machines_page_lists_and_views(tmp_path: Path) -> None:
 
 
 def test_machines_page_title_counts_or_names_the_empty_case(tmp_path: Path) -> None:
-    """An empty machines table read as still loading (the CLI says "no machines
-    yet" and how to draft one); the title carries the count, like the hub's."""
+    """An empty machines table says so, and the title carries the count, like the hub's."""
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -521,8 +514,7 @@ def test_machines_page_title_counts_or_names_the_empty_case(tmp_path: Path) -> N
 
 
 def test_machines_menu_bar_dispatches_an_item(tmp_path: Path) -> None:
-    """Selecting an item from the menu bar (not just the key binding) runs its
-    action -- exercises action_menu + on_menu_bar_selected, the dead-menu bug class."""
+    """Selecting an item from the menu bar runs its action, not only the key binding."""
     from agent6.ui.tui.menubar import MenuBar, _Dropdown
 
     async def scenario() -> None:
@@ -573,8 +565,7 @@ def test_machine_run_confirms_then_spawns(tmp_path: Path, monkeypatch: object) -
 
 
 def test_machine_run_refusal_notifies_and_skips_watch(tmp_path: Path, monkeypatch: object) -> None:
-    """A `machine run` refusal (lock held, exit 2) must surface as an error
-    notification, not open a watch screen on nothing."""
+    """A `machine run` refusal surfaces as an error notification, not a watch screen on nothing."""
     _write(tmp_path / "m.asm.toml")
 
     def _fake_spawn(argv: list[str], cwd: Path, **_k: object) -> str:
@@ -602,8 +593,10 @@ def test_machine_run_refusal_notifies_and_skips_watch(tmp_path: Path, monkeypatc
 
 
 def test_watch_screen_survives_corrupt_journal(tmp_path: Path) -> None:
-    """A corrupt journal line must not crash the watch screen every poll tick;
-    the header shows the corruption and polling continues."""
+    """A corrupt journal line does not crash the watch screen.
+
+    The header shows the corruption and polling continues.
+    """
     from textual.widgets import Static
 
     from agent6.machine import load_machine
@@ -633,9 +626,10 @@ def test_watch_screen_survives_corrupt_journal(tmp_path: Path) -> None:
 
 
 def test_watch_screen_tolerates_torn_utf8_state_log(tmp_path: Path) -> None:
-    """A per-state agent log whose tail ends mid multibyte UTF-8 sequence (the
-    writer flushes long lines in several syscalls) must not crash the poll; the
-    complete prefix renders and the torn tail is picked up once completed."""
+    """A state log whose tail ends mid multibyte sequence renders its complete prefix.
+
+    The writer flushes long lines in several syscalls; the torn tail is picked up once complete.
+    """
     import json as _json
 
     from textual.widgets import RichLog
@@ -683,8 +677,7 @@ def test_watch_screen_tolerates_torn_utf8_state_log(tmp_path: Path) -> None:
 
 
 def test_machine_create_spawns_with_task(tmp_path: Path, monkeypatch: object) -> None:
-    """The create modal threads the typed task into `agent6 machine create <task>`
-    (then the draft is located + handed to the dashboard)."""
+    """The create modal threads the typed task into `agent6 machine create <task>`."""
     captured: list[list[str]] = []
     draft = tmp_path / "d"
     draft.mkdir()
@@ -713,10 +706,11 @@ def test_machine_create_spawns_with_task(tmp_path: Path, monkeypatch: object) ->
 def test_watch_screen_refuses_a_steer_no_state_would_read(
     tmp_path: Path, monkeypatch: object
 ) -> None:
-    """A parked machine has not ENDED, but its worker is gone and its newest
-    state dir is a finished agent state, so nothing will ever poll the marker.
-    The web refuses this with a reason; the TUI wrote the marker and reported
-    success, silently dropping the operator's course-correction."""
+    """Steering a parked machine is refused with a reason, as the web refuses it.
+
+    Its worker is gone and its newest state dir is a finished agent state, so nothing polls
+    the marker; writing it reported success and dropped the course-correction.
+    """
     from agent6.machine import load_machine
 
     monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
@@ -759,9 +753,7 @@ def test_watch_screen_refuses_a_steer_no_state_would_read(
 
 
 def test_watch_header_reads_a_corrupt_wait_as_waiting(tmp_path: Path) -> None:
-    """A corrupt pending-wait file counts as parked (the rule machine_is_parked
-    documents: never read "dead pid" as "crashed" while a wait may be armed),
-    so the watch header says "waiting", not "stopped"."""
+    """A corrupt pending-wait file counts as parked, so the watch header says "waiting"."""
     from textual.widgets import Static
 
     from agent6.machine import load_machine
@@ -795,10 +787,10 @@ def test_watch_header_reads_a_corrupt_wait_as_waiting(tmp_path: Path) -> None:
 
 
 def test_watch_footer_steer_key_follows_liveness(tmp_path: Path) -> None:
-    """check_action("steer") reads _steerable(), but refresh_bindings only
-    fired on the _ended edge -- a killed worker (or an --exit-on-wait park)
-    kept the footer's Steer key lit for a machine nobody can steer. The poll
-    now refreshes bindings when steerability flips."""
+    """The footer's Steer key follows steerability, refreshing when it flips.
+
+    Refreshed only on the ended edge, a killed worker kept Steer lit for a machine nobody can steer.
+    """
     import os
 
     from agent6.machine import load_machine
@@ -835,8 +827,7 @@ def test_watch_footer_steer_key_follows_liveness(tmp_path: Path) -> None:
 
 
 def _blocked_machine(tmp_path: Path, *, alive: bool) -> tuple[Path, MachineSpec]:
-    """A machine instance whose newest agent state is blocked on an unanswered
-    approval, with a live or dead worker."""
+    """A machine instance whose newest agent state is blocked on an unanswered approval."""
     import json
     import os
 
@@ -864,11 +855,11 @@ def _blocked_machine(tmp_path: Path, *, alive: bool) -> tuple[Path, MachineSpec]
 
 
 def test_watch_screen_offers_no_approval_on_a_dead_machine(tmp_path: Path) -> None:
-    """The fold keeps an unanswered prompt in the newest agent state past a
-    worker death, so the watch screen offered live-looking Allow/Deny (a
-    destructive-command approval among them) over a machine nobody can answer
-    and wrote the answer into a per-state dir whose loop has exited. The
-    machine twin of the run views' liveness gate."""
+    """Allow/Deny is not offered over a machine nobody can answer.
+
+    The fold keeps an unanswered prompt past a worker death, so the watch screen wrote the
+    answer into a per-state dir whose loop has exited: the machine twin of the run views' gate.
+    """
     from textual.widgets import Static
 
     instance, spec = _blocked_machine(tmp_path, alive=False)
@@ -913,9 +904,11 @@ def test_watch_screen_docks_the_approval_on_a_live_machine(tmp_path: Path) -> No
 def test_machines_page_lists_instances_with_their_files(
     tmp_path: Path, monkeypatch: object
 ) -> None:
-    """The page shows the rows `agent6 machine` lists: an instance's status
-    and current state joined with its authored file, then the files no
-    instance ran (blank status)."""
+    """The page shows the rows `agent6 machine` lists: instances with their file, then bare files.
+
+    An instance's status and current state join its authored file; a file no instance ran has
+    a blank status.
+    """
     from agent6.ui.cli import main as cli_main
 
     monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
@@ -949,10 +942,10 @@ def test_machines_page_lists_instances_with_their_files(
 def test_a_create_whose_screen_was_left_still_opens_its_draft(
     tmp_path: Path, monkeypatch: object
 ) -> None:
-    """The worker read `self.app` from its thread, where the screen it belongs
-    to may already be popped: the locate's answer then died in the thread and
-    the draft never opened. The worker reaches the app it was handed on the
-    UI thread."""
+    """The create worker reaches the app it was handed on the UI thread.
+
+    Reading `self.app` from the thread died once the screen was popped, so the draft never opened.
+    """
     import threading
 
     draft = tmp_path / "draft"
@@ -990,10 +983,10 @@ def test_a_create_whose_screen_was_left_still_opens_its_draft(
 def test_a_run_whose_screen_was_left_still_opens_its_watch(
     tmp_path: Path, monkeypatch: object
 ) -> None:
-    """The worker read `self.app` from its thread, where the Machines page it
-    belongs to may already be popped: the confirm's answer then died in the
-    thread and the watch never opened. The worker reaches the app it was
-    handed on the UI thread."""
+    """The run worker reaches the app it was handed on the UI thread.
+
+    Reading `self.app` from the thread died once the page was popped, so the watch never opened.
+    """
     import threading
 
     path = _write(tmp_path / "m.asm.toml")
@@ -1030,8 +1023,10 @@ def test_a_run_whose_screen_was_left_still_opens_its_watch(
 def test_watch_screen_stop_on_a_parked_machine_says_why(
     tmp_path: Path, monkeypatch: object
 ) -> None:
-    """`x` on a machine with no live worker prints the CLI's refusal. Disabling
-    the binding made it a silent no-op that Help still listed."""
+    """`x` on a machine with no live worker prints the CLI's refusal.
+
+    Disabling the binding made it a silent no-op that Help still listed.
+    """
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
@@ -1089,9 +1084,10 @@ def test_machine_run_confirm_backs_out_on_q(tmp_path: Path, monkeypatch: object)
 
 
 def test_a_live_machine_marks_only_the_turn_in_flight(tmp_path: Path) -> None:
-    """The watch screen replays the whole state log on open and marked every
-    historical `role.call` as thinking, gated on the MACHINE being live: three
-    finished turns and one in flight read as four live markers."""
+    """Replaying the state log marks only an open `role.call` as thinking, and only when live.
+
+    Three finished turns and one in flight read as four live markers.
+    """
     import json
     import os
     from typing import Any
@@ -1180,8 +1176,7 @@ reason = "done"
 
 
 def test_watch_footer_keeps_every_machine_verb_visible_and_gates_it(tmp_path: Path) -> None:
-    """An ended machine takes no verb, but the footer hid Steer and Message and
-    left Stop enabled instead of showing all three controls as unavailable."""
+    """An ended machine's footer shows Steer, Message and Stop all as unavailable."""
     from textual.widgets._footer import FooterKey
 
     from agent6.machine import load_machine
@@ -1207,8 +1202,7 @@ def test_watch_footer_keeps_every_machine_verb_visible_and_gates_it(tmp_path: Pa
             keys = {key.description: key for key in app.screen.query(FooterKey)}
             assert {"Steer", "Message", "Stop"} <= keys.keys()
             assert all(keys[label].has_class("-disabled") for label in ("Steer", "Message", "Stop"))
-            # A click on a dimmed key only rang the bell; it shows the refusal
-            # the key shows.
+            # A click on a dimmed key shows the refusal the key shows, not only the bell.
             await pilot.click(keys["Steer"])
             await pilot.pause()
             notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
@@ -1218,8 +1212,7 @@ def test_watch_footer_keeps_every_machine_verb_visible_and_gates_it(tmp_path: Pa
 
 
 def test_watch_footer_refreshes_when_only_poke_availability_changes(tmp_path: Path) -> None:
-    """Consuming an armed wait disables Message even though steerability stays
-    false; the footer refreshed only on a steerability edge and stayed lit."""
+    """Consuming an armed wait disables Message even though steerability stays false."""
     from textual.widgets._footer import FooterKey
 
     from agent6.machine import load_machine
@@ -1256,8 +1249,7 @@ def test_watch_footer_refreshes_when_only_poke_availability_changes(tmp_path: Pa
 
 
 def test_a_steer_refused_while_its_modal_is_open_writes_nothing(tmp_path: Path) -> None:
-    """A worker can die after `s` opens the steer modal; submitting then must
-    re-check the shared gate, show its exact refusal, and not write to the dead state."""
+    """A steer submitted after the worker died re-checks the gate and shows its exact refusal."""
     import json
     import os
 
@@ -1307,8 +1299,10 @@ def test_a_steer_refused_while_its_modal_is_open_writes_nothing(tmp_path: Path) 
 
 
 def test_a_poke_refused_while_its_modal_is_open_writes_nothing(tmp_path: Path) -> None:
-    """An armed wait can close after `m` opens the message modal; submitting
-    then must re-check the shared gate instead of leaving an unconsumable signal."""
+    """A message submitted after the armed wait closed re-checks the gate.
+
+    Otherwise it leaves an unconsumable signal.
+    """
     from agent6.machine import load_machine
     from agent6.machine.journal import MachineJournal, PendingWait
     from agent6.ui.tui.modals import TextInputModal
@@ -1346,9 +1340,10 @@ def test_a_poke_refused_while_its_modal_is_open_writes_nothing(tmp_path: Path) -
 
 
 def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: Path) -> None:
-    """The answer gate read the poll's cached refusals, so an approval submitted
-    in the tick after the worker died landed in a dead state dir with no word;
-    the gate is re-read at submit, as a steer's and a poke's are."""
+    """The answer gate is re-read at submit, as a steer's and a poke's are.
+
+    Read from the poll's cache, an approval submitted after the worker died landed in a dead dir.
+    """
     from agent6.ui.tui.machines import _ANSWER_LOST  # pyright: ignore[reportPrivateUsage]
 
     instance, spec = _blocked_machine(tmp_path, alive=True)
@@ -1366,8 +1361,7 @@ def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: Path
             assert isinstance(screen, MachineWatchScreen)
             await wait_for(pilot, lambda: answerable(screen), "the approval row")
             await focus_answers(screen, pilot)
-            # The next poll would withdraw the row of a dead machine; the
-            # answer under test lands before it.
+            # The next poll would withdraw the dead machine's row; the answer lands first.
             screen._poll_timer.pause()  # pyright: ignore[reportPrivateUsage]
             (instance / "worker.pid").write_text("999999999", encoding="utf-8")  # dies
             await pilot.press("y")
@@ -1380,10 +1374,7 @@ def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: Path
 
 
 def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: Path) -> None:
-    """One poll read and folded the journal twice (the refusals, then the
-    render) and folded the newest state log twice; the render's fold feeds the
-    refusals, and the newest state log is read incrementally (no fold from
-    scratch on a poll)."""
+    """One poll folds the journal once and reads the newest state log incrementally."""
     import os
 
     import agent6.ui.tui.machines as tui_mod
@@ -1437,10 +1428,11 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: Path)
 
 
 def test_a_click_on_a_stale_lit_verb_explains_itself_once(tmp_path: Path) -> None:
-    """An unfocused terminal keeps the footer as it was painted (textual's
-    Footer skips its rebuild while the app is blurred), so a click can land on
-    a key the screen already refuses. The footer simulates that key, which
-    on_key explains; the click explained it a second time."""
+    """A footer click on a refused key explains it once.
+
+    An unfocused terminal keeps the footer as painted, so a click can land on a refused key; the
+    footer simulates the key, which on_key explains.
+    """
     import os
 
     from textual.widgets._footer import FooterKey

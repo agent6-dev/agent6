@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tier-1 gist elision: a large read_file result decays to a distilled-gist
-placeholder (batched distiller call per pass) before the bare marker, hot and
-small reads are never gisted, and continued pressure demotes gists so the
-byte bound still holds (bench/longhorizon FINDINGS #1)."""
+"""Tier-1 gist elision decays large reads to distilled gists before the bare marker.
+
+Hot and small reads are never gisted, and continued pressure demotes gists so the byte bound still
+holds.
+"""
 
 from __future__ import annotations
 
@@ -174,8 +175,7 @@ def test_gist_longer_than_content_stays_bare() -> None:
 
 
 def test_the_headroom_goes_to_the_newest_read() -> None:
-    """`demote` drops gists oldest-first, so headroom for exactly one gist has
-    to go to the newest read; spending it in victim order kept the oldest."""
+    """`demote` drops gists oldest-first, so headroom for one gist goes to the newest read."""
     conv = Conversation()
     _add_read(conv, "old.py", "o" * 4000)
     _add_read(conv, "new.py", "n" * 4000)
@@ -213,9 +213,7 @@ def test_a_short_gist_frees_headroom_for_an_older_gist() -> None:
 
 
 def test_a_gist_the_budget_cannot_hold_is_never_reported_as_kept() -> None:
-    """A gist costing more than the plan's headroom was applied, demoted back
-    to the bare marker in the same pass, and still counted: the run line read
-    "1 kept as distilled gists" over a marker holding none."""
+    """A gist demoted in the same pass it was applied is not counted as kept."""
     conv = Conversation()
     _add_call(conv, "read_file", {"path": "a.md"}, "z" * 2100)
     _add_read(conv, "b.py", "x" * 500)
@@ -275,9 +273,7 @@ def test_stats_carry_gist_and_demotion_identities() -> None:
 
 
 def test_gist_placeholder_identity_matches_bare_for_long_paths() -> None:
-    """The gist placeholder names the call through the same truncated identity
-    as the bare marker, so a gist->bare demotion of a >120-char path is not
-    re-reported as a fresh elision by the conversation differ."""
+    """The gist placeholder names the call by the same truncated identity as the bare marker."""
     import re
 
     from agent6.harness._compaction import call_label, elision_placeholder
@@ -292,10 +288,7 @@ def test_gist_placeholder_identity_matches_bare_for_long_paths() -> None:
 
 
 def test_gist_placeholder_identity_matches_bare_for_a_ranged_read() -> None:
-    """The placeholder rebuilt the identity from the path alone, so a gisted
-    read_file with offset/limit carried a DIFFERENT identity than its bare
-    marker: the differ read the demotion as a fresh elision and every surface
-    reported a second, phantom marker for one read."""
+    """A gisted read with offset and limit carries the same identity as its bare marker."""
     import re
 
     from agent6.harness._compaction import call_label, elision_placeholder

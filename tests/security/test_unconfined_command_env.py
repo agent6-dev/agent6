@@ -2,11 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """An unconfined command carries none of agent6's own provider keys.
 
-At `isolation = "none"` a model-chosen command runs as the operator, so the
-filesystem is already open to it -- but a key named by `[providers.*]
-.api_key_env` lives in the shell environment and NOT on that disk. The jailed
-path builds its env from the policy and never carries one; this path merged
-the whole `os.environ`, so `run_command` could print it.
+At `isolation = "none"` a model-chosen command runs as the operator, so the filesystem
+is already open to it, but a key named by `[providers.*].api_key_env` lives in the shell
+environment and not on that disk. The jailed path builds its env from the policy and
+never carries one; this path must not merge the whole `os.environ`.
 """
 
 from __future__ import annotations

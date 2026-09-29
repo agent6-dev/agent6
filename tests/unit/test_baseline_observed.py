@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Was the gate already red before this run touched anything?
 
-Observed for free during the run -- a verify against an unmodified tree IS the
-answer -- rather than bought with a second full gate run in the teardown.
+Observed during the run: a verify against an unmodified tree is the answer, with no second gate run
+in the teardown.
 """
 
 from __future__ import annotations
@@ -90,8 +90,7 @@ def test_a_verify_at_the_base_commit_is_the_baseline(
 
 
 def test_the_worker_is_told_when_it_inherited_a_red_gate(monkeypatch: pytest.MonkeyPatch) -> None:
-    """So it stops chasing failures it did not cause, DURING the run -- which
-    is worth more than the same fact explained afterwards."""
+    """The worker is told during the run when it inherited a red gate."""
     state, turn = _state(), _turn()
     wf = _wf()
     _patch_git(monkeypatch, wf)
@@ -102,11 +101,11 @@ def test_the_worker_is_told_when_it_inherited_a_red_gate(monkeypatch: pytest.Mon
 def test_a_execution_that_moved_past_the_base_claims_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """THE resume bug: every reason an operator resumes -- a budget stop, an
-    iteration cap, a provider error -- commits the execution's work first. Execution two
-    then opens on a CLEAN tree whose HEAD already carries execution one's breakage,
-    and "has the model edited yet" read that as the base. `/parallel` does the
-    same by merging lane commits into the workspace."""
+    """An execution that moved past the base claims nothing.
+
+    A resume commits the previous execution's work first, so execution two opens on a clean tree
+    whose HEAD carries execution one's breakage; `/parallel` merges lane commits the same way.
+    """
     state, turn = _state(), _turn()
     wf = _wf(head="c" * 40)
     _patch_git(monkeypatch, wf)
@@ -123,8 +122,10 @@ def test_a_dirty_tree_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_an_unreadable_git_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every other caller treats an unreadable git as "assume clean". Here that
-    would exonerate the run for its own breakage, so it fails closed."""
+    """An unreadable git fails closed here.
+
+    "assume clean" would exonerate the run's own breakage.
+    """
     from agent6.git_ops import GitError
 
     def _boom(_root: object, **_kw: object) -> object:
@@ -137,8 +138,7 @@ def test_an_unreadable_git_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_a_run_that_already_went_green_owns_its_later_red(monkeypatch: pytest.MonkeyPatch) -> None:
-    """It demonstrably could pass, so a later red is its own -- even if the
-    gate was red at the base."""
+    """A run that already went green owns its later red, even with a red gate at the base."""
     state, turn = _state(), _turn()
     state.verify.ever_passed = True
     wf = _wf()
@@ -148,8 +148,10 @@ def test_a_run_that_already_went_green_owns_its_later_red(monkeypatch: pytest.Mo
 
 
 def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
-    """Once this run made an inherited red gate green, its later red is
-    actionable and must not retain the inherited-failure finish label."""
+    """Once this run made an inherited red gate green.
+
+    Later red loses the inherited-failure label.
+    """
     wf = _wf()
     wf.mode = "run"
     wf.dispatcher = MagicMock()
@@ -207,9 +209,7 @@ def test_a_gate_that_never_produced_a_verdict_is_not_a_red_baseline(
 
 
 def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
-    """Plan mode can run the gate but never edits, so a red one is always
-    "already red" -- and `finish_planning` would have been relabelled, turning
-    a clean plan into "gate was already red"."""
+    """A plan pass is never relabelled as a red gate: plan mode runs the gate but never edits."""
     wf = Harness.__new__(Harness)
     wf.chain = RunChain(Path("/nonexistent"))
     wf.mode = "plan"
@@ -243,8 +243,10 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
 
 
 def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
-    """Attribution belongs in the word, not the exit code: a script reading 0
-    would take it as a passing gate, and the tree is not green either way."""
+    """A red tree exits red whoever caused it; attribution belongs in the word.
+
+    The exit code.
+    """
     from agent6.app.finalize import session_exit_code
     from agent6.harness._snapshot import SessionResult
 
@@ -269,9 +271,10 @@ def test_the_listing_and_the_header_agree_on_the_word() -> None:
 
 
 def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path) -> None:
-    """The finish certification returns a red finish until the gate goes green.
-    Over a gate that was already red, that is demanding the worker repair
-    whatever it inherited before it may stop."""
+    """A red finish is returned until the gate goes green.
+
+    Whatever the gate looked like at start.
+    """
     wf = _wf()
     wf.mode = "run"
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]

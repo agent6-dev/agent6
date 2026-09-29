@@ -36,11 +36,11 @@ def test_the_owner_gives_up_rather_than_reusing_a_directory(
 def test_an_id_taken_in_another_bucket_is_not_minted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Ids are one public namespace: the CLI resolver, the web lookup, and the
-    agent6/<id> branch all address a session by bare id, so a plan minted with
-    a run's id was ambiguous on every surface (the CLI refused it as ambiguous,
-    the web silently picked one). The mint skips a candidate that exists in ANY
-    bucket."""
+    """The mint skips a candidate id that exists in any bucket.
+
+    Ids are one public namespace (the CLI resolver, the web lookup, the agent6/<id> branch),
+    so a plan minted with a run's id was ambiguous on every surface.
+    """
     from agent6.sessions import id as id_mod
 
     minted = iter(["same-name-AAAAAA", "fresh-name-BBBBBB"])

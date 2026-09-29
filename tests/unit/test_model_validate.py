@@ -32,8 +32,10 @@ def no_live_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _fresh(monkeypatch: pytest.MonkeyPatch, result: list[str] | None) -> None:
-    """Stub the miss-path live re-fetch: *result* is the fresh listing, None a
-    failed fetch (offline / provider down)."""
+    """Stub the miss-path live re-fetch.
+
+    *result* is the fresh listing, None a failed fetch (offline / provider down).
+    """
 
     def _stub(cfg: Config, provider: str) -> list[str] | None:
         return result

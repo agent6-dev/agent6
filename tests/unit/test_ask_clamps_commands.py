@@ -19,16 +19,17 @@ def _cfg(run_commands: str) -> Config:
 
 
 def test_auto_approval_becomes_a_prompt_in_ask() -> None:
-    """An ask is a question with the operator sitting there, often in a
-    directory that is not a repo. `run_commands = "yes"` there means the answer
-    to "give me a command to convert these files" could run it first."""
+    """Auto approval becomes a prompt in ask.
+
+    An ask is a question with the operator sitting there; `run_commands = "yes"` could run the
+    command it was asked to write.
+    """
     assert _cfg("yes").with_run_commands_clamped().sandbox.run_commands == "ask"
 
 
 @pytest.mark.parametrize("setting", ["ask", "no"])
 def test_the_clamp_only_ever_tightens(setting: str) -> None:
-    """`no` must stay refused: a run may narrow a boundary the operator set,
-    never widen one. `ask` is already the clamped value."""
+    """`no` stays refused: a run may narrow a boundary the operator set, never widen one."""
     assert _cfg(setting).with_run_commands_clamped().sandbox.run_commands == setting
 
 
@@ -45,8 +46,7 @@ def test_the_clamp_leaves_the_rest_of_the_config_alone() -> None:
 def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The clamp has to land before the session is built, or the tool gate, the
-    status line and the detach prompt each answer differently."""
+    """The ask lifecycle clamps before the session is built, so every reader of the knob agrees."""
     from agent6.app import run as run_mod
     from agent6.app.preflight import SessionRefusedError
 
@@ -69,18 +69,17 @@ def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
 
 
 def test_no_commands_pins_the_knob_shut() -> None:
-    """The symmetric flag to --auto-approve: one knob, two per-invocation pins.
-    A btw uses it, but an operator asking a quick question in a strange repo
-    has the same reason to."""
+    """--no-commands is the symmetric flag to --auto-approve: one knob, two per-invocation pins."""
     for start in ("yes", "ask", "no"):
         cfg = Config.model_validate({"sandbox": {"run_commands": start}})
         assert cfg.with_sandbox_overrides(no_commands=True).sandbox.run_commands == "no"
 
 
 def test_tightening_needs_no_permission_but_widening_does() -> None:
-    """--auto-approve must never resurrect a withheld "no" (a flag cannot grant
-    what the standing policy denied); --no-commands always may, because
-    tightening is always allowed."""
+    """Tightening needs no permission but widening does.
+
+    --auto-approve never resurrects a withheld "no"; --no-commands always may tighten.
+    """
     withheld = Config.model_validate({"sandbox": {"run_commands": "no"}})
     assert withheld.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "no"
     asked = Config.model_validate({"sandbox": {"run_commands": "ask"}})
@@ -90,14 +89,10 @@ def test_tightening_needs_no_permission_but_widening_does() -> None:
 def test_an_explicit_auto_approve_survives_the_ask_clamp(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The clamp exists to stop an ask inheriting a STANDING `run_commands =
-    "yes"` while nobody watches. An operator typing --auto-approve on this
-    invocation is the opposite: the most specific layer, and unreachable by the
-    LLM.
+    """An explicit --auto-approve survives the ask clamp.
 
-    Clamping it made the flag inert, and every headless `ask --auto-approve`
-    was then refused by the approval preflight -- whose message recommends
-    --auto-approve, the flag that had just been undone.
+    The clamp stops an ask inheriting a standing `run_commands = "yes"`; the flag typed on this
+    invocation is the most specific layer and unreachable by the LLM.
     """
     from agent6.app import run as run_mod
     from agent6.app._setup import SandboxOverrides

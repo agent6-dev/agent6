@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""agent6's own git ops run on the host, outside the jail, and inherit the
-environment. A provider API key sitting in the environment (the operator set
-`ANTHROPIC_API_KEY` in their shell) has no business reaching git -- a
-credential helper or a content driver we could not neutralize would inherit
-it. The configured provider-key env vars are stripped from git's environment;
-everything git actually needs (PATH, HOME, ...) stays.
+"""agent6's own git ops run on the host and inherit the environment, minus the provider keys.
+
+A credential helper or content driver would otherwise inherit an API key set in the operator's
+shell; everything git needs (PATH, HOME) stays.
 """
 
 from __future__ import annotations
@@ -75,8 +73,7 @@ def test_a_variable_that_is_not_a_provider_key_is_left_alone(
         )
     )
     env = _captured_git_env(monkeypatch, tmp_path)
-    # Only the CONFIGURED key name is stripped -- not every token-shaped var,
-    # which would risk breaking a git setup that reads its own env.
+    # Only the configured key name is stripped, not every token-shaped var.
     assert env.get("GIT_SSH_COMMAND") == "ssh -i /home/me/.ssh/id_ed25519"
     assert env.get("SOME_OTHER_TOKEN") == "not-a-configured-key"
 
@@ -84,8 +81,7 @@ def test_a_variable_that_is_not_a_provider_key_is_left_alone(
 def test_no_providers_configured_strips_nothing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Keys living only in secrets.toml never enter the environment, so there
-    is nothing to strip and no false positive on a same-named var."""
+    """Keys living only in secrets.toml never enter the environment; a same-named var stays."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "from-the-shell")
     apply_git_ops_policy(Config())
     env = _captured_git_env(monkeypatch, tmp_path)

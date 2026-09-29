@@ -1,13 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The web client shows lines the server renders; it keeps no copy of a
-Python rendering decision.
+"""The web client shows lines the server renders; it keeps no copy of a Python rendering decision.
 
-client.js carried a `fmtUsd` twin of `format_usd`, a task-glyph map, a
-`format_compare` mirror and a `format_transition` mirror, each with a "keep in
-sync" comment and no pin. The cost twin had drifted: Python's `%.4f` rounds
-half to even on the binary value and JS `toFixed` rounds half away, so
-0.15625 printed `$0.1562` on the CLI and `$0.1563` on the web.
+client.js carried a `fmtUsd` twin of `format_usd`, a task-glyph map, a `format_compare` mirror and a
+`format_transition` mirror, each with a "keep in sync" comment and no pin. The cost twin had
+drifted: Python's `%.4f` rounds half to even on the binary value and JS `toFixed` rounds half away,
+so 0.15625 printed `$0.1562` on the CLI and `$0.1563` on the web.
 """
 
 from __future__ import annotations
@@ -71,8 +69,7 @@ def test_the_budget_line_is_rendered_once() -> None:
 
 
 def test_a_partial_total_marks_the_execution_figure_too() -> None:
-    """A resumed execution's dollar figure is sliced from the same under-estimate as
-    the cumulative total: the `~` belongs on both, not just the total."""
+    """A resumed execution's dollar figure carries the `~` its cumulative total carries."""
     assert budget_usd_text(0.42, partial=True, usd_cap=1.0, usd_prior_executions=0.1) == (
         "~$0.42 · execution ~$0.32 / $1.00"
     )

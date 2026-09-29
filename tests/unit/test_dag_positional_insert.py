@@ -30,8 +30,7 @@ def _add(cur: GraphCurator, parent: str | None, title: str, after: str | None = 
 
 
 def test_a_task_lands_after_the_sibling_it_names(tmp_path: Path) -> None:
-    """Ordering was faked with add_dependency because add_task only appended:
-    inserting work between two steps meant re-planning the whole tail."""
+    """A task lands after the sibling it names, so work can be inserted between two steps."""
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")
     first = _add(cur, root, "first")
@@ -49,8 +48,7 @@ def test_no_position_still_appends(tmp_path: Path) -> None:
 
 
 def test_after_must_name_a_sibling(tmp_path: Path) -> None:
-    """A position under a different parent is a mistake, not a move: refusing
-    keeps the children list a faithful order of THIS parent's work."""
+    """`after` must name a sibling; a position under another parent is refused."""
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")
     branch = _add(cur, root, "branch")
@@ -60,8 +58,7 @@ def test_after_must_name_a_sibling(tmp_path: Path) -> None:
 
 
 def test_the_inserted_task_is_focused_next(tmp_path: Path) -> None:
-    """The point of placing work: the frontier surfaces it in its new
-    position, not at the end of the list."""
+    """The frontier surfaces an inserted task in its new position, not at the end."""
     from agent6.harness._dag_focus import first_ready_subtask
 
     cur = _curator(tmp_path)
@@ -71,22 +68,13 @@ def test_the_inserted_task_is_focused_next(tmp_path: Path) -> None:
     middle = _add(cur, root, "middle", after=first)
     nodes = cur.nodes()
     assert nodes[root].children[1] == middle
-    # first is still open, so it stays the focus; the inserted task is next in
-    # line rather than behind "last".
+    # first is still open, so it stays the focus; the inserted task is next in line.
     assert first_ready_subtask(nodes) == first
     assert [c for c in nodes[root].children][1] == middle
 
 
 def test_list_tasks_reads_back_the_order_the_frontier_executes(tmp_path: Path) -> None:
-    """The point of placing a task is that the model can insert work between
-    two steps. `list_tasks` iterated the node MAP -- insertion order live, and
-    filesystem order after a resume -- so the model read back a plan it did not
-    write: the task it placed second showed up last, and every id it planned
-    around had moved by the next session.
-
-    Both surfaces walk the same tree order now; the human-facing renderers
-    already did.
-    """
+    """`list_tasks` reads back the tree order the frontier executes, not the node map's order."""
     from agent6.graph.order import tree_order
     from agent6.tools._dag_tools import list_tasks
 
@@ -103,9 +91,10 @@ def test_list_tasks_reads_back_the_order_the_frontier_executes(tmp_path: Path) -
 
 
 def test_standing_task_is_the_fallback_never_the_frontier(tmp_path: Path) -> None:
-    """A standing task runs only when every ordinary subtask is settled:
-    pending work always outranks it, new work preempts it (the cursor on a
-    standing node yields to a fresh ordinary task), and it never passes."""
+    """A standing task runs only when every ordinary subtask is settled, and never passes.
+
+    New work preempts it: the cursor on a standing node yields to a fresh ordinary task.
+    """
     import pytest
 
     from agent6.graph.curator import CuratorError
@@ -157,11 +146,10 @@ def test_standing_survives_the_storage_round_trip(tmp_path: Path) -> None:
 
 
 def test_the_model_cannot_retire_the_operators_standing_goal(tmp_path: Path) -> None:
-    """`run --standing` seeds the goal with created_by="steering"; update_task
-    (the model's route) refuses to skip/obsolete it, or the never-finishing
-    fallback becomes an ordinary early finish (seen live: the goal worked
-    once, marked skipped, run over at half budget). A model asking for a
-    standing task of its own gets an ordinary one, which stays retirable."""
+    """update_task refuses to skip or obsolete the operator's standing goal.
+
+    A model asking for a standing task of its own gets an ordinary one, which stays retirable.
+    """
     from agent6.graph.models import TaskNodeDraft, UpdateStatusIntent
     from agent6.tools._dag_tools import update_task
     from agent6.tools.errors import ToolError
@@ -194,10 +182,7 @@ def test_the_model_cannot_retire_the_operators_standing_goal(tmp_path: Path) -> 
 def test_a_parent_over_a_failed_child_is_focused_and_its_refusal_names_the_child(
     tmp_path: Path,
 ) -> None:
-    """A failed child leaves its parent the unit of work (the frontier's
-    answer) and unable to pass (the curator's): the refusal names the child,
-    so the retry or the retirement is one call away, and the parent passes
-    once the child is retired."""
+    """A parent over a failed child is focused, and its refusal to pass names the child."""
     import pytest
 
     from agent6.graph.curator import CuratorError

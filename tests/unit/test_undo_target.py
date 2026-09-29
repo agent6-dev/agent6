@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`/undo` resolution: the newest checkpoint whose restored conversation ends
-before the last operator message, following fork lineage past a fork's one
-seed checkpoint."""
+"""`/undo` resolves the newest checkpoint before the last operator message, across forks."""
 
 from __future__ import annotations
 
@@ -80,9 +78,7 @@ def test_undo_walks_back_one_operator_message(tmp_path: Path) -> None:
 
 
 def test_undo_finds_the_last_message_across_a_compacted_checkpoint(tmp_path: Path) -> None:
-    """Compaction can drop older steers, so the newest conversation can hold
-    fewer operator messages than the checkpoint before it. Undo still selects
-    the checkpoint immediately before the latest steer first appeared."""
+    """Compaction dropping older steers still resolves the checkpoint before the latest steer."""
     layout = _layout(tmp_path, "run-compacted")
     _checkpoint(layout, 1, [_task("do the thing")])
     _checkpoint(layout, 2, [_task("do the thing"), _steer("first steer")])
@@ -110,9 +106,7 @@ def test_undo_finds_the_last_message_across_a_compacted_checkpoint(tmp_path: Pat
 
 
 def test_undo_with_only_the_task_restarts_from_the_first_checkpoint(tmp_path: Path) -> None:
-    """The composer gets the operator's words back, never the skill block or
-    digest composed in front of them (here with no manifest to read them
-    from, so they come out of the checkpoint's opening message)."""
+    """The composer gets the operator's words back, never the skill block or digest before them."""
     from agent6.task_text import SKILLS_PREAMBLE
 
     composed = f'{SKILLS_PREAMBLE}\n<skill name="tidy">be tidy</skill>\n---\ndo the thing'
@@ -137,8 +131,7 @@ def test_undo_refuses_at_the_opening_message(tmp_path: Path) -> None:
 
 
 def test_repeated_undo_follows_the_fork_lineage(tmp_path: Path) -> None:
-    """A fork carries one seed checkpoint; the next /undo resolves in the
-    parent it was cut from -- the walk-back that makes B -> C -> D chains work."""
+    """A fork's one seed checkpoint sends the next /undo to its parent, so B -> C -> D works."""
     parent = _layout(tmp_path, "run-p")
     _checkpoint(parent, 1, [_task("do the thing")])
     _checkpoint(parent, 2, [_task("do the thing"), _steer("first steer")])
@@ -166,9 +159,7 @@ def test_repeated_undo_follows_the_fork_lineage(tmp_path: Path) -> None:
 
 
 def test_a_cyclic_lineage_does_not_crash(tmp_path: Path) -> None:
-    """A corrupt/hand-edited manifest whose parent_session_id points at itself
-    (or forms a cycle) must not recurse forever: the lineage walk ends on a
-    revisited id and /undo refuses cleanly instead of a RecursionError."""
+    """A manifest whose parent lineage cycles ends the walk on a revisited id and refuses."""
     layout = _layout(tmp_path, "cyclic-run")
     # Only the task in the checkpoint, so the resolver must walk to the parent.
     _checkpoint(layout, 0, [_task("do the thing"), _steer("focus the parser")])

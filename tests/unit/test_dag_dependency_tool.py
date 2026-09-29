@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""DAG dependency edges at the LLM-facing layer: `depends_on` rides `add_task`
-and `update_task` (there is no separate dependency tool).
+"""DAG dependency edges at the LLM-facing layer: `depends_on` rides `add_task` and `update_task`.
 
-Curator-level semantics (cycle rejection, journal op, focus gating on
-depends_on) are covered by test_graph_curator.py and test_workflow.py; these
-tests cover the LLM-facing layer added on top.
+Curator semantics (cycles, the journal op, focus gating) are covered by test_graph_curator.py and
+test_harness.py.
 """
 
 from __future__ import annotations
@@ -55,8 +53,7 @@ def _curator(tmp_path: Path) -> GraphCurator:
 def test_no_separate_dependency_tool_and_both_carriers_expose_depends_on(
     tmp_path: Path,
 ) -> None:
-    """The folded surface: no mode lists an `add_dependency` tool, and the two
-    carriers' schemas expose `depends_on` instead."""
+    """No mode lists an `add_dependency` tool; both carriers' schemas expose `depends_on`."""
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     for mode in ("run", "plan", "ask", "machine", "agent"):
         names = {t.name for t in loopmod.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
@@ -146,12 +143,12 @@ def test_status_and_edges_apply_together(tmp_path: Path) -> None:
 
 
 def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
-    """FROZEN wire surface: the list_tasks result dict is JSON'd verbatim to the
-    model. Each task projects to exactly {id, parent_id, title, status,
-    acceptance, relevant_paths, depends_on} with the sequence fields as JSON
-    lists (not tuples), under a top-level {tasks, count}. Interface-independent:
-    drives a real curator + real dispatcher, so it pins the returned shape
-    regardless of how the curator hands state to the tool internally."""
+    """The list_tasks result dict is a frozen wire surface, JSON'd verbatim to the model.
+
+    Each task projects to exactly {id, parent_id, title, status, acceptance, relevant_paths,
+    depends_on} with JSON lists, under a top-level {tasks, count}; a real curator and dispatcher
+    drive it.
+    """
     cur = _curator(tmp_path)
     root = cur.add_subtask(
         AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root", created_by="planner"))
@@ -177,10 +174,7 @@ def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
 
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
     out = d.dispatch("list_tasks", {}).to_wire()
-    # Exact equality also pins list-vs-tuple: ("a.py",) != ["a.py"]. `standing`
-    # rides along because the finish gate excludes those: without it the model
-    # read three open tasks while the gate counted one, with no way to tell
-    # which.
+    # Exact equality pins list-vs-tuple; `standing` rides along since the finish gate excludes it.
     assert out == {
         "tasks": [
             {
@@ -233,9 +227,10 @@ def test_dag_prompt_blocks_teach_depends_on_not_a_tool() -> None:
 
 
 def test_update_task_refuses_a_note_without_a_status(tmp_path: Path) -> None:
-    """The graph records a note on a status change only; the description
-    listed `note` as a third updatable field, and a note sent alone or beside
-    depends_on was dropped without a word."""
+    """update_task refuses a note without a status.
+
+    The graph records a note on a status change only.
+    """
     from agent6.tools._dag_tools import update_task
 
     curator = GraphCurator(SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1"))

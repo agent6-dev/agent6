@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""runs.manifest: the typed SessionManifest reader. Every failure shape (missing,
-unreadable, corrupt JSON, torn UTF-8, non-object) degrades through the typed
-ManifestError; every historical run dir (old ``version: 1`` shapes, the pre-v2
-flat merged_* keys, the legacy ``compare.group``) still parses for rendering;
-and the fork/resume ``session_mode`` gate refuses an unknown mode rather than
-falling open to write access."""
+"""runs.manifest: the typed SessionManifest reader.
+
+Every failure shape (missing, unreadable, corrupt JSON, torn UTF-8, non-object) degrades through the
+typed ManifestError; every historical run dir (old ``version: 1`` shapes, the pre-v2 flat merged_*
+keys, the legacy ``compare.group``) still parses for rendering; and the fork/resume ``session_mode``
+gate refuses an unknown mode rather than falling open to write access.
+"""
 
 from __future__ import annotations
 
@@ -62,9 +63,10 @@ def test_legacy_version_1_and_missing_profile(tmp_path: Path) -> None:
 
 
 def test_unknown_keys_are_dropped_never_folded(tmp_path: Path) -> None:
-    """Superseded or foreign keys are ignored, not converted: a manifest
-    carrying only flat merged_* keys reads as unmerged (`merged is None`), the
-    safe direction -- prune's force-delete keys off the nested stamp."""
+    """Superseded or foreign merge keys are ignored, not converted.
+
+    A manifest carrying only flat merged_* keys reads as unmerged, the safe direction.
+    """
     _write(
         tmp_path,
         {"run_branch": "agent6/r", "merged_into": "main", "merged_sha": "abc123", "merged_ts": "t"},
@@ -220,10 +222,11 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
 
 
 def test_rewriting_a_newer_manifest_is_refused(tmp_path: Path) -> None:
-    """Reads stay tolerant so every historical run keeps rendering, but a
-    REWRITE of a manifest a newer agent6 wrote is refused: extra="ignore" drops
-    the keys this binary doesn't know, and a merge/compare stamp would silently
-    downgrade the record it was only supposed to annotate."""
+    """A rewrite of a manifest a newer agent6 wrote is refused; reads stay tolerant.
+
+    `extra="ignore"` drops the keys this binary does not know, so a stamp would silently
+    downgrade the record it was meant to annotate.
+    """
     from agent6.app.manifest import write_manifest
 
     _write(tmp_path, {"version": MANIFEST_VERSION + 1, "session_id": "r-1", "future_key": {"x": 1}})
@@ -238,8 +241,7 @@ def test_rewriting_a_newer_manifest_is_refused(tmp_path: Path) -> None:
 
 
 def test_rewriting_an_older_manifest_upgrades_it(tmp_path: Path) -> None:
-    """An OLDER manifest has no keys this binary can lose, so a stamp rewrite
-    upgrades the version claim to the shape it actually wrote."""
+    """A stamp rewrite of an older manifest upgrades the version claim to the shape it wrote."""
     from agent6.app.manifest import write_manifest
     from agent6.sessions.manifest import MANIFEST_VERSION
 
@@ -251,9 +253,7 @@ def test_rewriting_an_older_manifest_upgrades_it(tmp_path: Path) -> None:
 
 
 def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: Path) -> None:
-    """Both rewrite paths degrade instead of crashing on a manifest they may not
-    rewrite: the merge already happened and the lane import already stands, so
-    each leaves the newer record untouched and (for the lane) reports it."""
+    """Both rewrite paths degrade on a manifest they may not rewrite, and the lane reports it."""
     from agent6.app.merge import record_merge_in_manifest
     from agent6.app.parallel import _stamp  # pyright: ignore[reportPrivateUsage]
     from agent6.sessions.layout import SessionLayout
@@ -273,10 +273,11 @@ def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: Path) -> None:
 
 
 def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: Path) -> None:
-    """`sessions show` reads one field for "the model that drove this run". It used
-    to be the worker unconditionally, so a plan run -- driven by the planner --
-    displayed a model that never ran, and disagreed with both the web (which
-    reads the role events) and its own cost block."""
+    """`sessions show` reads one field for "the model that drove this run".
+
+    Reading the worker unconditionally, a plan run (driven by the planner) displays a model that
+    never ran, disagreeing with both the web (which reads the role events) and its own cost block.
+    """
     from agent6.app.manifest import write_session_manifest
     from agent6.config import Config
     from agent6.sessions.layout import SessionLayout
@@ -308,9 +309,11 @@ def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: Path) -> None:
 
 
 def test_write_session_manifest_stores_the_operators_words(tmp_path: Path) -> None:
-    """`user_task` is the display twin of the OPERATOR's words: `run --skill`
-    and `--from` prepend a skill block and a prior-run digest to the task the
-    engine gets, and the composed prompt reached every listing as the task."""
+    """`user_task` is the operator's words, not the composed prompt.
+
+    `run --skill` and `--from` prepend a skill block and a digest to the engine's task, and the
+    composed prompt reached every listing as the task.
+    """
     from agent6.app.manifest import write_session_manifest
     from agent6.config import Config
     from agent6.sessions.layout import SessionLayout
@@ -337,10 +340,11 @@ def test_write_session_manifest_stores_the_operators_words(tmp_path: Path) -> No
 
 
 def test_a_manifest_with_no_mode_key_does_not_fall_open_to_run(tmp_path: Path) -> None:
-    """The privilege gate refused an unknown mode VALUE but not a missing KEY:
-    the field defaulted to "run", so a manifest that lost its mode (truncated,
-    hand-edited, written by something else) resumed or forked with the
-    write-tool surface -- the exact escalation session_mode exists to stop."""
+    """A manifest with no mode key is refused, like an unknown mode value.
+
+    The field defaulted to "run", so a manifest that lost its mode resumed or forked with the
+    write-tool surface, the escalation session_mode exists to stop.
+    """
     _write(tmp_path, {"version": 3, "session_id": "r", "user_task": "t"})
     m = read_manifest(tmp_path)
     with pytest.raises(ManifestError, match="unknown session mode"):
@@ -354,9 +358,11 @@ def test_a_plan_manifest_still_gates_as_plan(tmp_path: Path) -> None:
 
 
 def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: Path) -> None:
-    """A run records the verify gate it is judged by AND its origin, so a later
-    edit to the file an inferred gate came from cannot move it, and any surface
-    can say whether an operator or the repo chose it."""
+    """A run records the verify gate it is judged by and its origin.
+
+    A later edit to the file an inferred gate came from cannot move it, and any surface can say
+    whether an operator or the repo chose it.
+    """
     from agent6.app.manifest import stamp_verify_gate
 
     (tmp_path / "manifest.json").write_text(
@@ -384,9 +390,10 @@ def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: Path) -> None:
 def test_a_resumed_execution_reports_whose_gate_it_used(
     configured: bool, has_gate: bool, pinned: str, expected: str
 ) -> None:
-    """Precedence across executions: an operator's config outranks whatever the run
-    pinned, the pin outranks re-inference, and the manifest names which one
-    this execution actually ran under."""
+    """An operator's config outranks the pinned gate, and the pin outranks re-inference.
+
+    The manifest names which one this execution ran under.
+    """
     from agent6.app.resume import execution_gate_origin
 
     assert (
@@ -436,8 +443,7 @@ def test_each_mode_gets_its_own_tool_surface() -> None:
 
 
 def test_a_execution_restamps_a_config_selected_preset(tmp_path: Path) -> None:
-    """A plain resume re-resolves a config-selected preset, so the manifest
-    must replace the prior execution's name with the preset this execution uses."""
+    """A plain resume replaces the prior execution's preset name with the one it re-resolved."""
     from agent6.app.manifest import stamp_execution
     from agent6.config import Config
 
@@ -459,10 +465,11 @@ def test_a_execution_restamps_a_config_selected_preset(tmp_path: Path) -> None:
 
 
 def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: Path) -> None:
-    """Written once at run start, they described execution 1 forever: `agent6 exec`
-    joins the RECORDED policy, so a run started unsandboxed and resumed under
-    strict ran the operator's command unconfined against a jailed agent, and
-    every policy surface named execution 1's model while another one answered."""
+    """The sandbox and model stamps describe this execution, not execution 1.
+
+    Written once at run start, `agent6 exec` joined a recorded unsandboxed policy against a
+    jailed agent, and every policy surface named a model another one answered for.
+    """
     from agent6.app.manifest import stamp_execution
     from agent6.config import Config
 
@@ -495,8 +502,10 @@ def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: Path
 
 
 def test_a_version_3_manifest_keeps_its_stamp_under_the_old_key(tmp_path: Path) -> None:
-    """The stamp's key was `workflow` through manifest version 3; `extra="ignore"`
-    dropped it silently, so a resumed session lost its preset and gate pin."""
+    """A version-3 manifest's `workflow` stamp is read under the `harness` key.
+
+    `extra="ignore"` dropped it silently, so a resumed session lost its preset and gate pin.
+    """
     (tmp_path / "manifest.json").write_text(
         json.dumps(
             {

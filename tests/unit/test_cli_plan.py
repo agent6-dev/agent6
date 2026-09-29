@@ -50,8 +50,7 @@ def test_plan_show_prefix_ignores_a_run_of_the_same_prefix(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`plan show` resolves inside plans/: a run sharing the prefix is not a
-    second match."""
+    """`plan show` resolves inside plans/: a run sharing the prefix is not a second match."""
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: foo\n")
     (state_dir(tmp_path) / "sessions" / "runs" / "happy-tree-zzzz").mkdir(parents=True)
@@ -73,16 +72,14 @@ def test_plan_show_omit_id_uses_most_recent_plan(
 
 
 def test_from_plan_task_leads_with_the_plan_title() -> None:
-    # The run's task (shown in listings / DAG root) must read as the plan, not
-    # the 'The following plan was prepared...' boilerplate.
+    # The run's task reads as the plan, not the 'The following plan was prepared...' boilerplate.
     from agent6.task_text import operator_task_text
     from agent6.ui.cli import _from_plan_task  # pyright: ignore[reportPrivateUsage]
 
     task = _from_plan_task("# Plan: Add a --count flag\n\n1. do it", "serene-geyser-NP20")
     assert task.startswith("Execute the prepared plan: Add a --count flag")
     assert "1. do it" in task  # the full plan is still fed to the agent
-    # The plan rides as composed context: the recorded task is the headline
-    # alone, so no session id or plan text reaches a listing or a commit.
+    # The recorded task is the headline alone; no session id or plan text reaches a listing.
     assert operator_task_text(task) == "Execute the prepared plan: Add a --count flag"
 
 
@@ -127,8 +124,7 @@ def test_plan_requires_task_or_show(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    # Bare `plan` (no task, no verb) injects the `run` verb and reports the
-    # missing-task error rather than the most-recent-plan prompt (no runs here).
+    # Bare `plan` injects the `run` verb and reports the missing task.
     rc = main(["plan"])
     assert rc == 2
     assert "ERROR" in capsys.readouterr().err
@@ -155,9 +151,7 @@ def test_plan_edit_honors_a_multi_word_editor(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """$EDITOR may be a command with flags ("code --wait"); the steer editor
-    already splits it, but plan edit spawned the whole string as one binary
-    name and failed every time for VS Code/emacsclient users."""
+    """Plan edit splits a multi-word $EDITOR ("code --wait") as the steer editor does."""
     monkeypatch.chdir(tmp_path)
     plan = _seed_plan(tmp_path, "happy-tree-efgh", "original\n")
     marker = tmp_path / "editor_ran"
@@ -177,8 +171,7 @@ def test_plan_edit_honors_a_multi_word_editor(
 def test_run_from_a_plan_with_no_task_runs_that_plan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--from` folded into `--from`: a plan id alone is the task (the
-    plan's own text), and the seed is not digested a second time."""
+    """`run --from <plan>` with no task runs the plan's own text, without digesting it twice."""
     from agent6.ui import cli
 
     monkeypatch.chdir(tmp_path)
@@ -241,8 +234,7 @@ def test_run_from_a_plan_with_empty_plan_md_names_the_plan(
 def test_seeding_from_a_plan_carries_its_text(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With a task, `--from <plan>` digests the plan session, plan.md included;
-    the digest of a session that wrote no code said nothing about the plan."""
+    """With a task, `--from <plan>` digests the plan session, plan.md included."""
     import json
 
     from agent6.ui.cli._ask import build_session_seed
@@ -259,10 +251,7 @@ def test_seeding_from_a_plan_carries_its_text(
 def test_an_unreadable_plan_refuses_rather_than_crashing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A file-permission problem is the operator's, not an agent6 defect.
-
-    The reader raises OperatorError (no bespoke except arm at the call site);
-    cli_main is the one place that turns it into `ERROR:` + exit 2."""
+    """An unreadable plan file raises OperatorError; cli_main turns it into `ERROR:` and exit 2."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     plan = _seed_plan(tmp_path, "quiet-fox-abcd", "# Plan: do it\n")
@@ -283,8 +272,7 @@ def test_an_unreadable_plan_refuses_rather_than_crashing(
 def test_an_unreadable_plan_refuses_in_plan_show_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`plan show` reads the same operator file `--from` does; the same
-    refusal, from the same shared reader."""
+    """`plan show` refuses an unreadable plan through the same shared reader `--from` uses."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     plan = _seed_plan(tmp_path, "quiet-owl-abcd", "# Plan: do it\n")
@@ -299,8 +287,7 @@ def test_an_unreadable_plan_refuses_in_plan_show_too(
 
 
 def test_plan_takes_tui_like_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`agent6 plan --tui "<task>"` opens the TUI on the planning run as `run
-    --tui` does on a run (it read "unrecognized arguments: --tui")."""
+    """`agent6 plan --tui "<task>"` opens the TUI on the planning run as `run --tui` does."""
     from agent6.ui import cli
 
     seen: dict[str, object] = {}
@@ -323,8 +310,7 @@ def test_plan_takes_tui_like_run(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_plan_edit_reports_an_editor_that_failed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An editor exiting non-zero (a crash, a refused lock) came back through
-    `plan edit` as its bare code, with no word about it."""
+    """Plan edit reports an editor that exited non-zero instead of returning its bare code."""
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-ijkl", "original\n")
     script = tmp_path / "failing_editor.sh"
@@ -338,9 +324,7 @@ def test_plan_edit_reports_an_editor_that_failed(
 def test_plan_edit_refuses_a_malformed_editor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An $EDITOR shlex cannot tokenize (an unbalanced quote from a shell
-    profile) crashed `plan edit` as an unexpected ValueError that told the
-    operator to file a bug, instead of naming their own setting."""
+    """An $EDITOR shlex cannot tokenize is refused naming the setting, not crash-reported."""
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-mnop", "original\n")
     monkeypatch.setenv("EDITOR", "'oops")
@@ -352,10 +336,10 @@ def test_plan_edit_refuses_a_malformed_editor(
 def test_a_bare_run_names_the_plan_the_way_its_execution_does(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A bare `agent6 run` suggests the most recent plan by its title; it
-    embedded the raw `# Plan:` line while the execution prompt strips that
-    convention, so the same plan read "Plan: Do the thing" in one place and
-    "Do the thing" in the other."""
+    """A bare `agent6 run` names the most recent plan by its title.
+
+    The `# Plan:` line is stripped, as the execution prompt strips it.
+    """
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-qrst", "# Plan: Do the thing\n\n1. step\n")
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
@@ -369,8 +353,7 @@ def test_a_bare_run_names_the_plan_the_way_its_execution_does(
 def test_plan_show_names_a_session_that_is_not_a_plan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], bucket: str
 ) -> None:
-    """An existing ask or run given to a plan verb read "no session matches";
-    it is named as what it is, so the operator knows which id they typed."""
+    """A plan verb given an ask or a run names it as what it is, not "no session matches"."""
     monkeypatch.chdir(tmp_path)
     session_id = f"existing-{bucket}-abcd"
     session_dir = state_dir(tmp_path) / "sessions" / bucket / session_id

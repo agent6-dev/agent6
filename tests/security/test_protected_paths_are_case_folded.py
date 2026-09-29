@@ -2,17 +2,13 @@
 # Copyright 2026 Eric Lesiuta
 """A protected location is protected however its name is cased.
 
-The edit tools write in-process, outside the jail, so their own refusals are
-the whole protection -- and on macOS, where agent6 runs unsandboxed, they are
-the ONLY protection for `.git`. macOS and Windows match filenames
-case-insensitively, so an exact comparison let `.GIT/config` through while it
-opened the real `.git/config`: reproduced on a casefolded ext4, where the
-model planted `filter.pwn.clean` in the live config -- the command agent6's
-own auto-commit then runs on the host, which is the attack the guard exists
-to stop.
-
-The refusals here hold on every platform; the folding is not conditional on
-the filesystem, so a case-sensitive host refuses a distinct `.GIT` too.
+The edit tools write in-process, outside the jail, so their own refusals are the whole
+protection, and on macOS, where agent6 runs unsandboxed, the only protection for `.git`.
+macOS and Windows match filenames case-insensitively, so an exact comparison lets
+`.GIT/config` through while it opens the real `.git/config` (reproducible on a casefolded
+ext4): a planted `filter.pwn.clean` is the command agent6's own auto-commit then runs on
+the host. The folding is not conditional on the filesystem, so a case-sensitive host
+refuses a distinct `.GIT` too.
 """
 
 from __future__ import annotations
@@ -58,8 +54,10 @@ def test_the_git_dir_is_refused_in_any_casing(tmp_path: Path, cased: str) -> Non
 
 
 def test_a_protect_path_covers_the_same_name_cased_differently(tmp_path: Path) -> None:
-    """The machine-bundle guard: a `mode="run"` state must not rewrite the
-    scripts the next run executes, whichever way it spells them."""
+    """The machine-bundle guard: a `mode="run"` state cannot rewrite the next run's scripts.
+
+    Whichever way it spells them.
+    """
     protected = tmp_path / "scripts"
     protected.mkdir()
     (protected / "build.sh").write_text("echo real\n", encoding="utf-8")
@@ -85,8 +83,7 @@ def test_a_protect_path_covers_the_same_name_cased_differently(tmp_path: Path) -
 
 
 def test_an_installed_package_tree_is_refused_in_any_casing(tmp_path: Path) -> None:
-    """Editing an installed tree corrupts the operator's venv, and being
-    gitignored the damage never shows in a diff."""
+    """Editing an installed tree corrupts the operator's venv, unseen in any diff (gitignored)."""
     for cased in ("site-packages", "SITE-PACKAGES", "Site-Packages"):
         tree = tmp_path / "lib" / cased / "pkg"
         tree.mkdir(parents=True)

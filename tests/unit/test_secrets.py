@@ -36,10 +36,11 @@ def test_save_secret_is_0600(gcfg: Path) -> None:
 
 
 def test_an_unreadable_secrets_file_is_a_named_refusal(gcfg: Path) -> None:
-    """Root-owned after a `sudo connect`, or a plain chmod 000: the operator's
-    environment, not a bug in agent6. It escaped as an unexpected
-    PermissionError with a saved traceback and an invitation to report it, and
-    no run could start."""
+    """Root-owned after a `sudo connect`, or a plain chmod 000.
+
+    The operator's environment, not a bug in agent6. It escaped as an unexpected PermissionError
+    with a saved traceback and an invitation to report it, and no run could start.
+    """
     path = secrets.save_secret("anthropic", "sk-ant-xyz")
     path.chmod(0o000)
     try:
@@ -92,9 +93,12 @@ def test_load_secrets_absent_is_empty(gcfg: Path) -> None:
 
 
 def test_save_secret_does_not_follow_a_planted_tmp_symlink(gcfg: Path, tmp_path: Path) -> None:
-    """A pre-planted `secrets.toml.tmp` symlink must not redirect the write to
-    its target (the sudo-connect symlink-redirect vector). atomic_write uses an
-    unpredictable mkstemp name, so a fixed-name symlink is simply ignored."""
+    """save_secret does not follow a planted tmp symlink.
+
+    A pre-planted `secrets.toml.tmp` symlink must not redirect the write to its target (the sudo-
+    connect symlink-redirect vector); atomic_write uses an unpredictable mkstemp name, so a fixed-
+    name symlink is ignored.
+    """
     victim = tmp_path / "victim"
     victim.write_text("KEEP ME\n", encoding="utf-8")
     gcfg.mkdir(parents=True, exist_ok=True)
@@ -106,9 +110,12 @@ def test_save_secret_does_not_follow_a_planted_tmp_symlink(gcfg: Path, tmp_path:
 
 
 def test_concurrent_save_secret_loses_no_provider(gcfg: Path) -> None:
-    """Two concurrent connects both read the same base file and the later
-    publish silently dropped the earlier provider's credential (lost update).
-    save_secret serializes on portable.locked_file, removed on release."""
+    """Concurrent save_secret calls lose no provider.
+
+    Two concurrent connects reading the same base file would let the later publish drop the earlier
+    provider's credential (a lost update); save_secret serializes on portable.locked_file, removed
+    on release.
+    """
     n = 8
     barrier = threading.Barrier(n)
 
@@ -145,8 +152,11 @@ def test_oauth_tokens_round_trip_beside_api_keys(gcfg: Path) -> None:
 
 
 def test_load_oauth_tokens_absent_or_mangled_is_none(gcfg: Path) -> None:
-    """No entry, an api-key-only entry, and an unparseable expiry all read as
-    absent (the caller's repair path is `agent6 connect` either way)."""
+    """load_oauth_tokens reads an absent or mangled entry as None.
+
+    No entry, an api-key-only entry and an unparseable expiry all read as absent; the caller's
+    repair path is `agent6 connect` either way.
+    """
     assert load_oauth_tokens("chatgpt") is None
     save_secret("chatgpt", "sk-not-oauth")
     assert load_oauth_tokens("chatgpt") is None
@@ -177,10 +187,13 @@ def test_delete_provider_secrets_preserves_siblings(gcfg: Path) -> None:
 
 
 def test_a_logout_on_a_fresh_machine_creates_no_open_config_dir(gcfg: Path) -> None:
-    """`delete_provider_secrets` took its lock before anything had created the
-    config dir, and the lock file's own parent walk made `$XDG_CONFIG_HOME/agent6`
-    at the umask's 755 with nothing left to tighten it. The config dir is
-    created by the state tree's one creator, 0700, or not at all."""
+    """A logout on a fresh machine creates no open config dir.
+
+    `delete_provider_secrets` takes its lock before anything has created the config dir, and the
+    lock file's own parent walk would make `$XDG_CONFIG_HOME/agent6` at the umask's 755 with nothing
+    left to tighten it; the config dir is created by the state tree's one creator, 0700, or not at
+    all.
+    """
     import os
 
     old = os.umask(0o022)

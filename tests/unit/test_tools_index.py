@@ -407,9 +407,10 @@ def test_symbol_is_frozen_dataclass() -> None:
 
 
 def test_outline_names_why_it_has_no_symbols(tmp_path: Path) -> None:
-    """A file no grammar covers, or one outside the indexed workspace (a
-    granted read path), answered `symbols: []`: the one thing the model acts
-    on, stated wrongly. Each is refused with its cause."""
+    """A file no grammar covers, or outside the indexed workspace, is refused with its cause.
+
+    `symbols: []` was the one thing the model acts on, stated wrongly.
+    """
     from agent6.config import Config
     from agent6.tools.dispatch import ToolDispatcher, ToolError
 

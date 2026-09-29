@@ -52,8 +52,7 @@ def _client_api_paths() -> set[str]:
     source = CLIENT_JS
     found: set[str] = set()
     for raw in re.findall(r"'(/api/[^']*)'", source):
-        # `'/api/session/' + encodeURIComponent(id) + '/steer'` arrives as two
-        # fragments; a trailing slash means an id follows.
+        # A concatenated route arrives as fragments; a trailing slash means an id follows.
         found.add(raw)
     return found
 
@@ -78,8 +77,7 @@ def _unrouted(port: int, path: str, method: str) -> bool:
 
 
 def test_every_api_path_the_page_calls_is_routed(served: int) -> None:
-    """A 404 "not found: <path>" is the server saying it has no such route --
-    which for the page means a dead button, not an error anyone sees."""
+    """A 404 "not found: <path>" means a dead button on the page, not an error anyone sees."""
     missing: list[str] = []
     for fragment in sorted(_client_api_paths()):
         path = fragment if not fragment.endswith("/") else f"{fragment}{_ID}"
@@ -89,11 +87,9 @@ def test_every_api_path_the_page_calls_is_routed(served: int) -> None:
 
 
 def test_the_page_reads_the_keys_the_hub_actually_sends(tmp_path: Path) -> None:
-    """`d.runs` survived the rename as a silently-undefined lookup: the hub kept
-    answering 200 and the list rendered empty.
+    """The hub's `build(d)` reads no key the server does not send.
 
-    Scoped to the hub's own `build(d)` body, because `d` is the page's generic
-    name for any decoded response.
+    `d.runs` survived a rename as a silently undefined lookup: 200 and an empty list.
     """
     source = CLIENT_JS
     start = source.index("const build = (d) => {")

@@ -24,17 +24,17 @@ def _manifest(session_dir: Path, **over: object) -> None:
 
 
 def test_the_line_carries_what_an_operator_needs(tmp_path: Path) -> None:
-    """Model, sandbox, command setting and the gate -- the facts that used to
-    need an interrupt or a config read."""
+    """Model, sandbox, command setting and the gate, without an interrupt or a config read."""
     _manifest(tmp_path)
     line = session_policy(tmp_path).line()
     assert line == "claude-x · strict · commands ask · uv run pytest (configured)"
 
 
 def test_the_gate_says_whose_it_is(tmp_path: Path) -> None:
-    """An inferred gate came from a file the model can edit; a configured one
-    did not. A surface that hides the difference hides the only thing that
-    makes "passed" mean something."""
+    """An inferred gate came from a file the model can edit; a configured one did not.
+
+    A surface that hides the difference hides the only thing that makes "passed" mean something.
+    """
     _manifest(tmp_path, harness={"verify_command": ["make", "test"], "verify_origin": "inferred"})
     assert session_policy(tmp_path).gate() == "make test (inferred)"
 
@@ -49,7 +49,6 @@ def test_an_unreadable_dir_reports_nothing_rather_than_guessing(tmp_path: Path) 
 
 
 def test_an_asks_line_names_no_gate(tmp_path: Path) -> None:
-    """An ask never verifies, so its policy line carries no gate (a configured
-    verify_command still rides in its manifest)."""
+    """An ask's policy line carries no gate; a configured gate still rides its manifest."""
     _manifest(tmp_path, mode="ask")
     assert session_policy(tmp_path).line() == "claude-x · strict · commands ask"

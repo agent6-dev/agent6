@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The jail's HOME, live: strict's private one leaves nothing on the host, and
-the persistent one is bound read-write at its real path with nothing beside
-it."""
+"""The jail's HOME, live.
+
+Strict's private one leaves nothing on the host; the persistent one is bound read-write at
+its real path with nothing beside it.
+"""
 
 from __future__ import annotations
 
@@ -26,9 +28,11 @@ pytestmark = pytest.mark.needs_namespaces
 
 @pytest.fixture
 def cache_home(monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """A cache dir outside every other grant. pytest's tmp_path sits under
-    /tmp, which hardened grants wholesale, so a HOME there would be writable
-    with or without its own grant; /var/tmp is granted by nothing."""
+    """A cache dir outside every other grant.
+
+    pytest's tmp_path sits under /tmp, which hardened grants wholesale, so a HOME there would
+    be writable with or without its own grant; /var/tmp is granted by nothing.
+    """
     base = Path("/var/tmp")
     if not (base.is_dir() and os.access(base, os.W_OK)):
         pytest.skip("/var/tmp is not writable here")
@@ -41,9 +45,11 @@ def cache_home(monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
 
 
 def _operator_home_probe() -> str:
-    """A command that READS the operator's own home (a directory listing or a
-    file open, which Landlock gates; a bare stat it does not) and succeeds on
-    the host, so its failure inside the jail is a denial."""
+    """A command that reads the operator's own home and succeeds on the host.
+
+    A directory listing or a file open, which Landlock gates (a bare stat it does not), so
+    its failure inside the jail is a denial.
+    """
     home = Path.home()
     if (home / ".ssh").is_dir():
         return f"ls {shlex.quote(str(home / '.ssh'))}"
@@ -60,10 +66,12 @@ def _operator_home_probe() -> str:
 def test_the_persistent_home_is_writable_and_the_operators_home_is_not(
     tmp_path: Path, cache_home: Path, isolation: str, cfg: Config
 ) -> None:
-    """`touch ~/probe` lands on the host cache dir; the operator's own home
-    stays out of reach (strict: absent from the rootfs; hardened: no Landlock
-    rule covers it). No preflight runs here: the policy builder alone creates
-    the dir, as it does for `agent6 exec` and an MCP probe."""
+    """`touch ~/probe` lands on the host cache dir; the operator's own home stays out of reach.
+
+    Strict: absent from the rootfs; hardened: no Landlock rule covers it. No preflight runs
+    here: the policy builder alone creates the dir, as it does for `agent6 exec` and an MCP
+    probe.
+    """
     ws = tmp_path / "ws"
     ws.mkdir()
     assert jail_cache_home() == cache_home
@@ -82,9 +90,10 @@ def test_the_persistent_home_is_writable_and_the_operators_home_is_not(
 
 
 def test_the_tmpfs_home_goes_with_the_run(tmp_path: Path, cache_home: Path) -> None:
-    """strict's default HOME is created by the launcher inside the private
-    /tmp: `cd ~` works, the write never reaches the host, and the cache dir
-    is left alone."""
+    """Strict's default HOME is created by the launcher inside the private /tmp.
+
+    `cd ~` works, the write never reaches the host, and the cache dir is left alone.
+    """
     res = run_in_jail(
         jail_policy(
             tmp_path,

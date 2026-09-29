@@ -20,8 +20,10 @@ from agent6.sessions.layout import (
 
 
 def test_a_bucket_is_the_mode_plus_s() -> None:
-    """The bucket is derived rather than stored: a record cannot disagree
-    with where its sessions actually go."""
+    """The bucket is derived rather than stored.
+
+    A record cannot disagree with where its sessions actually go.
+    """
     assert [session_bucket(name) for name in ("run", "plan", "ask", "machine")] == [
         "runs",
         "plans",
@@ -36,17 +38,17 @@ def test_an_unknown_mode_has_no_bucket() -> None:
 
 
 def test_an_agent_execution_has_no_sessions_bucket() -> None:
-    """A machine's agent states live inside their machine instance's own
-    directory. Answering "agents" here minted a bucket nothing writes, so a
-    misrouted session landed somewhere no listing scans instead of failing
-    loudly at the routing bug."""
+    """A machine's agent states live inside their machine instance's own directory.
+
+    Answering "agents" here minted a bucket nothing writes, so a misrouted session landed somewhere
+    no listing scans instead of failing loudly at the routing bug.
+    """
     with pytest.raises(UnknownSessionKindError):
         session_bucket("agent")
 
 
 def test_every_mode_has_a_scanned_bucket() -> None:
-    """A mode whose bucket no listing scans writes a session dir nothing can
-    find."""
+    """A mode whose bucket no listing scans writes a session dir nothing can find."""
     for name in SESSION_KINDS:
         if name == "agent":
             continue  # no directory of its own (see the refusal test)
@@ -54,8 +56,11 @@ def test_every_mode_has_a_scanned_bucket() -> None:
 
 
 def test_session_dirs_live_under_the_sessions_root() -> None:
-    """Nesting the buckets is what frees `machines/` at the top level for live
-    machine INSTANCES, so the authoring sessions can be named for their mode."""
+    """Session dirs live under the sessions root.
+
+    Nesting the buckets frees `machines/` at the top level for live machine instances, so the
+    authoring sessions can be named for their mode.
+    """
     layout = SessionLayout(state_dir=Path("/s"), session_id="brave-oak-AAAAAA", subdir="machines")
     assert layout.session_dir == Path("/s") / SESSIONS_ROOT / "machines" / "brave-oak-AAAAAA"
     assert layout.session_dir != Path("/s") / "machines" / "brave-oak-AAAAAA"
@@ -75,9 +80,11 @@ def test_hub_buckets_are_session_buckets_without_the_machine_ones() -> None:
 def test_bare_resume_finds_the_newest_session_in_every_resumable_bucket(
     tmp_path: Path, bucket: str
 ) -> None:
-    """Splitting plans/ out of runs/ must not hide a plan from bare `resume`:
-    before the split the newest-run scan saw plans because they shared runs/.
-    A machine draft is deliberately absent -- `machine` is not resumable."""
+    """Bare `resume` finds the newest session in every resumable bucket.
+
+    Splitting plans/ out of runs/ must not hide a plan from bare `resume`; a machine draft is
+    deliberately absent, since `machine` is not resumable.
+    """
     from agent6.app.resume import resumable_bucket_dirs
     from agent6.viewmodel import newest_session_dir
 
@@ -100,9 +107,11 @@ def test_every_hub_lists_every_hub_bucket(
     capsys: pytest.CaptureFixture[str],
     bucket: str,
 ) -> None:
-    """A bucket a hub does not scan is a session the operator cannot see. Each
-    surface carried its own `("runs", "asks")` tuple, so adding plans/ left
-    `agent6 sessions` printing "no sessions yet" over a real plan."""
+    """A bucket a hub does not scan is a session the operator cannot see.
+
+    Each surface carried its own `("runs", "asks")` tuple, so adding plans/ left `agent6 sessions`
+    printing "no sessions yet" over a real plan.
+    """
     from agent6.ui.cli import main
     from agent6.ui.web import model as web_model
     from agent6.viewmodel import session_dirs
@@ -123,8 +132,11 @@ def test_every_hub_lists_every_hub_bucket(
 
 
 def test_a_machine_draft_does_not_collide_with_a_machine_instance(tmp_path: Path) -> None:
-    """The reason for the nesting: `machine create` authoring sessions are named
-    for their mode without landing in the directory holding live instances."""
+    """The reason for the nesting.
+
+    `machine create` authoring sessions are named for their mode without landing in the directory
+    holding live instances.
+    """
     draft = bucket_dir(tmp_path, session_bucket("machine")) / "same-name"
     instance = tmp_path / "machines" / "same-name"
     draft.mkdir(parents=True)
@@ -135,9 +147,11 @@ def test_a_machine_draft_does_not_collide_with_a_machine_instance(tmp_path: Path
 def test_a_machine_instance_is_not_reachable_as_a_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`machines` names two things now, and only the path separates them. A
-    session lookup that reached the INSTANCES dir would let `sessions rm` delete
-    a running machine's state -- so the buckets must never resolve there."""
+    """`machines` names two things, and only the path separates them.
+
+    A session lookup that reached the INSTANCES dir would let `sessions rm` delete a running
+    machine's state, so the buckets must never resolve there.
+    """
     from agent6.ui.cli._common import resolve_session_layout
 
     monkeypatch.chdir(tmp_path)

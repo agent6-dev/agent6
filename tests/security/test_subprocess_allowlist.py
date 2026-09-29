@@ -1,16 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The subprocess audit as a test: every module that spawns a child process
-directly is on the reviewed allow-list below (argv fixed or operator-chosen,
-never LLM output -- that goes through run_in_jail). A new name here is a
-security review with a `Security review note:` commit paragraph, not a test to
-update in passing.
+"""The subprocess audit as a test: every module that spawns a child directly is on the allow-list.
 
-Broader than the AGENTS.md `rg` one-liner on purpose: subprocess.call /
-check_call / check_output, a bare `from subprocess import Popen`, an aliased
-`import subprocess as sp`, and the os.system / os.exec* / os.posix_spawn family
-all spawn children too, and a regex for run|Popen alone would wave them
-through."""
+argv there is fixed or operator-chosen, never LLM output, which goes through run_in_jail.
+A new name here is a security review with a `Security review note:` commit paragraph, not
+a test to update in passing. Broader than the AGENTS.md `rg` one-liner on purpose:
+subprocess.call / check_call / check_output, a bare `from subprocess import Popen`, an
+aliased `import subprocess as sp`, and the os.system / os.exec* / os.posix_spawn family
+all spawn children too, and a regex for run|Popen alone would wave them through.
+"""
 
 from __future__ import annotations
 
@@ -105,8 +103,9 @@ _EXECUTING_FORMS = (
 
 @pytest.mark.parametrize("form", _EXECUTING_FORMS)
 def test_the_scan_catches_every_way_to_run_something(form: str) -> None:
-    """`getoutput`/`getstatusoutput`/`os.popen`/`pty.spawn` each run a command
-    through a SHELL and were absent from the pattern, so adding one would have
-    kept this file green -- the one test standing between a new execution site
-    and the release."""
+    """The pattern catches `getoutput`, `getstatusoutput`, `os.popen` and `pty.spawn`.
+
+    Each runs a command through a shell; absent from the pattern, adding one would keep this
+    file green, the one test standing between a new execution site and the release.
+    """
     assert _PATTERN.search(form), f"a new execution site written as {form!r} would pass unnoticed"

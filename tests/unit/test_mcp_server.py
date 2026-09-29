@@ -69,8 +69,7 @@ def _server(tmp_path: Path, **kwargs: Any) -> MCPServer:
 
 
 def _roundtrip(server: MCPServer, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Feed messages into the server's stdin, drive serve() to EOF,
-    and parse responses from stdout."""
+    """Feed messages into the server's stdin, drive serve() to EOF and parse the responses."""
     payload = b"".join(json.dumps(m).encode("utf-8") + b"\n" for m in messages)
     server._stdin = io.BytesIO(payload)  # type: ignore[attr-defined]  # test-only stdin swap
     server._stdout = io.BytesIO()  # type: ignore[attr-defined]
@@ -122,10 +121,11 @@ def test_tools_list_advertises_five_tools(tmp_path: Path) -> None:
 
 
 def test_withdrawn_command_tools_are_absent_and_named(tmp_path: Path) -> None:
-    """Under run_commands = "no" (or the non-interactive "ask" clamp) the
-    command tools are GONE from tools/list -- offered-and-failing lied about
-    the surface -- and a client calling one by name is told the real reason,
-    not "unknown tool"."""
+    """Withdrawn command tools are absent from tools/list, and a call by name says why.
+
+    Under `run_commands = "no"` (or the non-interactive "ask" clamp) an offered-and-failing tool
+    lies about the surface; a client calling one is told the real reason, not "unknown tool".
+    """
     server = _server(tmp_path)  # the fixture's default is "no"
     resps = _roundtrip(
         server,
@@ -146,10 +146,12 @@ def test_withdrawn_command_tools_are_absent_and_named(tmp_path: Path) -> None:
 
 
 def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(tmp_path: Path) -> None:
-    """With no verify command there is nothing to run: `run_verify` reached the
-    jail with an empty argv and answered "tuple index out of range", and
-    `apply_patch_in_sandbox` applied the patch and THEN failed the same way,
-    leaving the workspace changed under a call reported as failed."""
+    """With no verify command there is nothing to run.
+
+    `run_verify` reached the jail with an empty argv and answered "tuple index out of range", and
+    `apply_patch_in_sandbox` applied the patch and THEN failed the same way, leaving the workspace
+    changed under a call reported as failed.
+    """
     p = tmp_path / "agent6.toml"
     p.write_text(
         _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"').replace(
@@ -215,9 +217,11 @@ def test_notifications_produce_no_response(tmp_path: Path) -> None:
 
 
 def test_malformed_json_answers_a_parse_error(tmp_path: Path) -> None:
-    """JSON-RPC's answer to an unparseable request is -32700 with a null id
-    (silence left the client hanging on a request it believes it sent); the
-    next well-formed request still works."""
+    """Malformed JSON answers a -32700 parse error with a null id.
+
+    Silence leaves the client hanging on a request it believes it sent; the next well-formed request
+    still works.
+    """
     server = _server(tmp_path)
     server._stdin = io.BytesIO(  # type: ignore[attr-defined]
         b"not json\n"
@@ -320,9 +324,11 @@ def test_query_dag_missing_run_returns_tool_error(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("bad", ["../../elsewhere/runs/x", "/etc", "a/b", ".."])
 def test_query_dag_rejects_traversing_run_id(tmp_path: Path, bad: str) -> None:
-    """A client-supplied session_id builds a path under the session buckets; a `..` or
-    absolute id would read another repo's state (or anywhere). It must be
-    rejected as a single-component id, like the web surface's guard."""
+    """query_dag rejects a traversing session id.
+
+    A client-supplied id builds a path under the session buckets; a `..` or absolute id would read
+    another repo's state, so it must be a single component, like the web surface's guard.
+    """
     server = _server(tmp_path)
     resps = _roundtrip(
         server,
@@ -442,11 +448,13 @@ def test_run_in_sandbox_validates_argv(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 def test_every_published_schema_type_is_one_the_checker_validates(tmp_path: Path) -> None:
-    """`_schema_violation` validates the object/array/string subset and silently
-    skips any other `type`, so a tool field of an uncovered type (integer, say)
-    would advertise `additionalProperties: false` validation it never gets.
-    Holds the published table to the checker's covered set; growing the table
-    past it means growing the checker first."""
+    """Every published schema type is one the checker validates.
+
+    `_schema_violation` validates the object, array and string subset and silently skips any other
+    `type`, so a field of an uncovered type (integer, say) would advertise `additionalProperties:
+    false` validation it never gets. Growing the table past the covered set means growing the
+    checker first.
+    """
     checked_types = {"object", "array", "string"}
 
     def _types(schema: dict[str, Any]) -> set[str]:
@@ -466,11 +474,13 @@ def test_every_published_schema_type_is_one_the_checker_validates(tmp_path: Path
 def test_tool_arguments_are_checked_against_the_published_schema(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """tools/list advertises each tool's inputSchema with additionalProperties:
-    false and typed fields; a client that ignores it is still held to it at the
-    call boundary. An unknown field, a wrong-typed element, a missing required
-    field, or a wrong scalar type is a -32602 invalid-params error, not a value
-    that rides through to the handler and the jail."""
+    """Tool arguments are checked against the published schema at the call boundary.
+
+    tools/list advertises each tool's inputSchema with `additionalProperties: false` and typed
+    fields; a client that ignores it is still held to it. An unknown field, a wrong-typed element, a
+    missing required field or a wrong scalar type is a -32602 invalid-params error, not a value that
+    rides through to the handler and the jail.
+    """
     server = _server(tmp_path, run_commands="yes")
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
@@ -572,10 +582,12 @@ def test_apply_patch_surfaces_tool_error(tmp_path: Path, monkeypatch: pytest.Mon
 def test_unexecutable_operator_command_surfaces_as_iserror(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """OperatorCommandUnexecutableError is deliberately not a ToolError (the loop
-    aborts a run on it), but the MCP server's contract is isError results:
-    letting it escape killed the whole `agent6 mcp serve` process, and every
-    later client call died on a broken pipe."""
+    """An unexecutable operator command surfaces as an isError result.
+
+    `OperatorCommandUnexecutableError` is deliberately not a ToolError (the loop aborts a run on
+    it), but the MCP server's contract is isError results; letting it escape kills the whole `agent6
+    mcp serve` process, and every later client call dies on a broken pipe.
+    """
     server = _server(tmp_path, run_commands="yes")
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
@@ -609,11 +621,12 @@ def test_unexecutable_operator_command_surfaces_as_iserror(
     [("ask", False), ("yes", True), ("no", False)],
 )
 def test_no_one_to_ask_withdraws_rather_than_breaks(configured: str, offered: bool) -> None:
-    """There is no human on a JSON-RPC transport, so `ask` cannot be answered.
-    Offering a tool that refuses every call was worse than not offering it:
-    run_verify and run_in_sandbox failed on every call under the DEFAULT config,
-    and apply_patch_in_sandbox applied the patch and then errored on verify --
-    leaving the workspace changed and the call failed."""
+    """With no one to ask, the asking tools are withdrawn rather than offered and broken.
+
+    There is no human on a JSON-RPC transport, so `ask` cannot be answered; offered, run_verify and
+    run_in_sandbox fail on every call under the default config, and apply_patch_in_sandbox applies
+    the patch and then errors on verify, leaving the workspace changed and the call failed.
+    """
     from agent6.config import Config
     from agent6.ui.mcp_server import _no_one_to_ask  # pyright: ignore[reportPrivateUsage]
 
@@ -651,10 +664,11 @@ def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: Pa
 
 
 def test_serve_bounds_every_stdin_read(tmp_path: Path) -> None:
-    """serve() reads with an explicit size bound (mirroring the embedded
-    client's _read_loop): the old unbounded readline() buffered an entire
-    runaway line into memory BEFORE the 4 MiB check, so the cap could not
-    prevent memory exhaustion."""
+    """serve() reads with an explicit size bound (mirroring the embedded client's _read_loop).
+
+    The old unbounded readline() buffered an entire runaway line into memory BEFORE the 4 MiB check,
+    so the cap could not prevent memory exhaustion.
+    """
     from agent6.ui import mcp_server as mod
 
     sizes: list[int | None] = []
@@ -675,8 +689,10 @@ def test_serve_bounds_every_stdin_read(tmp_path: Path) -> None:
 def test_serve_drains_oversized_line_and_recovers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An over-limit line is discarded in bounded chunks up to its newline; the
-    next request on the stream is served normally."""
+    """An over-limit line is drained in bounded chunks to its newline; the next request is served.
+
+    The stream recovers.
+    """
     from agent6.ui import mcp_server as mod
 
     monkeypatch.setattr(mod, "_MAX_LINE_BYTES", 128)
@@ -692,9 +708,10 @@ def test_serve_drains_oversized_line_and_recovers(
 
 
 def test_list_sessions_skips_husks_like_every_other_listing(tmp_path: Path) -> None:
-    """A husk is a dir a crash orphaned before any manifest or log. Every other
-    listing hides it -- `viewmodel.listing` and `sessions list` both filter on
-    `is_session_husk` -- because "(no logs)" forever is noise, not a session.
+    """A husk is a dir a crash orphaned before any manifest or log.
+
+    Every other listing hides it, `viewmodel.listing` and `sessions list` both filter on
+    `is_session_husk`, because "(no logs)" forever is noise, not a session.
 
     MCP enumerated every directory, so an editor driving agent6 saw sessions the
     CLI and the web hub denied existed.
@@ -726,10 +743,11 @@ def test_list_sessions_skips_husks_like_every_other_listing(tmp_path: Path) -> N
 def test_run_server_lets_a_config_fault_reach_the_cli_sorting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`run_server` caught every exception around the config load and printed
-    its own "failed to load config" at exit 2, pre-empting `cli_main`'s
-    sorting: a `ConfigError` is already an operator error printed at exit 2,
-    and a bug belongs on the crash path (exit 1, traceback saved)."""
+    """`run_server` lets a config fault reach the CLI's sorting.
+
+    A `ConfigError` is already an operator error printed at exit 2, and a bug belongs on the crash
+    path (exit 1, traceback saved); catching every exception around the config load pre-empts both.
+    """
     from agent6.config.model import ConfigError
     from agent6.ui import mcp_server
     from agent6.ui.cli import cli_main

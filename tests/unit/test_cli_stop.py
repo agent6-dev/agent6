@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 stop`: the one stop verb, at the top level with the other verbs that
-act on a live run."""
+"""`agent6 stop`: the one stop verb, beside the other verbs that act on a live run."""
 
 from __future__ import annotations
 
@@ -33,8 +32,10 @@ with (d / "logs.jsonl").open("a") as fh:
 
 
 def _wait_for_file(path: Path, timeout_s: float = 20.0) -> None:
-    """Block until *path* exists. A spawned helper interpreter takes seconds to
-    import agent6 on a loaded machine, and every wait after it is a real one."""
+    """Block until the path exists.
+
+    A helper interpreter takes seconds to import agent6 under load.
+    """
     deadline = time.monotonic() + timeout_s
     while not path.exists():
         assert time.monotonic() < deadline, f"{path.name} never appeared"
@@ -58,8 +59,10 @@ def _run(repo: Path, name: str, *, finished: bool = False) -> Path:
 
 
 def test_stop_is_a_top_level_verb_and_sessions_stop_is_gone() -> None:
-    """The verbs that act on a live run sit at the top level (attach, steer,
-    answer, exec, forward); stop hid under the record verbs."""
+    """`stop` is a top-level verb beside attach, steer, answer, exec and forward.
+
+    `sessions stop` is gone.
+    """
     parser = build_parser()
     args = parser.parse_args(["stop", "some-run", "--after-step", "--all"])
     assert (args.command, args.session_id, args.after_step, args.all) == (
@@ -216,15 +219,14 @@ def _fanout(tmp_path: Path, fan: str, lane: str) -> tuple[Path, Path]:
 def test_a_fanouts_lanes_end_before_its_coordinator_drains(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A coordinator ends only after its lanes: it drains them, imports what
-    they landed and ranks it. Stopped first, with a run's wait, it was killed
-    mid-drain and nothing was imported."""
+    """A fan-out's lanes end before its coordinator drains.
+
+    It imports what they landed and ranks it.
+    """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(stop_mod, "FANOUT_WAIT_S", 3.0)
     fan, lane = _fanout(tmp_path, "drain-run-AAAAAA", "drain-run-AAAAAA-l1")
-    # The lane is live before the coordinator that polls it starts: a
-    # coordinator whose first poll finds no lane pid drains and ends at once,
-    # leaving nothing to stop.
+    # The lane is live before the coordinator starts, or its first poll drains and ends at once.
     worker = subprocess.Popen(
         [sys.executable, "-c", _ANSWERING_WORKER, str(lane)], start_new_session=True
     )
@@ -280,8 +282,7 @@ def _session_dir(repo: Path, session_id: str) -> Path:
 def test_a_marker_that_cannot_be_written_is_an_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The write error was swallowed and the command announced a stop over a
-    marker that never landed."""
+    """A stop marker that cannot be written is an error, not an announced stop."""
     from agent6.sessions.ipc import stop_request_pending
 
     monkeypatch.chdir(tmp_path)
@@ -301,9 +302,10 @@ def test_a_marker_that_cannot_be_written_is_an_error(
 def test_a_finished_run_with_a_lingering_pid_is_already_over(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """session.end lands before teardown clears worker.pid; in that window the
-    loop has exited, so a promised stop would be one nobody keeps. The gate is
-    the liveness owner, not the pid."""
+    """A finished run with a lingering pid is already over: the gate owns liveness, not the pid.
+
+    session.end lands before teardown clears worker.pid.
+    """
     from agent6.sessions.ipc import stop_request_pending
 
     monkeypatch.chdir(tmp_path)
@@ -354,8 +356,7 @@ def test_a_dead_run_is_not_running(
 def test_a_fan_out_gets_no_resume_hint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fan-out coordinator has no loop to resume: the stop reaches it (and
-    its live lanes) and the message promises no resume."""
+    """A fan-out coordinator has no loop to resume, so its stop message promises no resume."""
     from agent6.sessions.ipc import stop_request_pending
 
     monkeypatch.chdir(tmp_path)

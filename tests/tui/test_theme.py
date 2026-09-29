@@ -61,8 +61,7 @@ def test_unknown_saved_theme_falls_back(cfg: Path) -> None:
 
 
 def test_extra_builtin_themes_register_and_apply(cfg: Path) -> None:
-    """The four extra built-ins (alice/snow light, rose/grimm dark) are
-    registered by setup_theme and each applies cleanly (colors parse)."""
+    """The four extra built-in themes are registered by setup_theme and each applies cleanly."""
 
     async def scenario() -> None:
         app = _Host()
@@ -173,9 +172,10 @@ def test_picker_backdrop_click_closes(cfg: Path) -> None:
 
 
 def test_horizontal_scrollbar_thumb_is_half_height() -> None:
-    """The horizontal thumb renders as a lower half-block band (▄ body with
-    quadrant end caps), so a 1-cell horizontal bar carries the same visual
-    weight as the 1-cell-wide vertical bar; the track stays blank cells."""
+    """The horizontal thumb renders as a lower half-block band with quadrant end caps.
+
+    A 1-cell horizontal bar then carries the vertical bar's visual weight; the track stays blank.
+    """
     from rich.color import Color
 
     from agent6.ui.tui.theme import ThinScrollBarRender
@@ -192,8 +192,7 @@ def test_horizontal_scrollbar_thumb_is_half_height() -> None:
     )
     row = "".join(s.text for s in seg.segments if s.text != "\n")
     assert "▄" in row  # the half-height thumb body
-    # No full-height cells anywhere: neither reverse-video blanks nor the
-    # default renderer's full-height partial-width caps.
+    # No full-height cells: neither reverse-video blanks nor the default renderer's caps.
     assert not any(s.style and s.style.reverse for s in seg.segments)
     assert not any(ch in row for ch in "▉▊▋▌▍▎▏█")
     # Vertical bars keep textual's default full-cell rendering (reverse blanks).

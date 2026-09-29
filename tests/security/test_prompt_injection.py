@@ -127,8 +127,7 @@ def test_apply_edit_rejects_absolute(tmp_path: Path, abs_path: str) -> None:
 
 
 def test_read_file_follows_symlink_but_rejects_escape(tmp_path: Path) -> None:
-    """Even if the LLM creates a symlink in-tree that points outside, the
-    resolved-path check must reject the read."""
+    """A symlink the LLM creates in-tree pointing outside is rejected by the resolved-path check."""
     outside = tmp_path.parent / "agent6_secret_outside.txt"
     outside.write_text("SECRET", encoding="utf-8")
     try:
@@ -142,18 +141,14 @@ def test_read_file_follows_symlink_but_rejects_escape(tmp_path: Path) -> None:
 
 
 def test_a_path_swapped_after_the_check_cannot_be_written_through(tmp_path: Path) -> None:
-    """The containment check and the open were two separate path lookups.
+    """The containment check and the open are one path lookup, not two.
 
-    `resolve_in_root` cleared the path, then every caller re-opened it BY NAME
-    -- and these tools run IN-PROCESS, outside the jail, as the operator. A
-    jailed background command's loop can swap the leaf for a symlink in that window
-    (the workspace is writable and a symlink needs no access to its target).
-    Raced against the unguarded write, model-controlled content landed outside
-    the workspace on the 7th attempt; 3000 attempts after the fix left the
-    outside file untouched.
-
-    Simulated deterministically here: the swap has already happened, so the
-    checked path IS a symlink by the time the write opens it.
+    These tools run in-process, outside the jail, as the operator, and a jailed background
+    command's loop can swap a checked leaf for a symlink in the window before a by-name
+    reopen (the workspace is writable and a symlink needs no access to its target). Raced
+    against an unguarded write, model-controlled content lands outside the workspace within
+    a few attempts. Simulated deterministically here: the swap has already happened, so the
+    checked path is a symlink by the time the write opens it.
     """
     from agent6.tools._path_safety import contain, read_contained, write_contained
 
@@ -174,8 +169,10 @@ def test_a_path_swapped_after_the_check_cannot_be_written_through(tmp_path: Path
 
 
 def _swap_parent_for_a_link_out(root: Path, outside: Path) -> None:
-    """What a jailed background command can do to the workspace: rename a
-    directory away and plant a symlink out of the workspace at its name."""
+    """What a jailed background command can do to the workspace.
+
+    Rename a directory away and plant a symlink out of the workspace at its name.
+    """
     if not (root / "sub").is_symlink():
         (root / "sub").rename(root / "sub-moved")
         (root / "sub").symlink_to(outside, target_is_directory=True)
@@ -184,12 +181,11 @@ def _swap_parent_for_a_link_out(root: Path, outside: Path) -> None:
 def test_a_parent_swapped_after_the_check_creates_nothing_outside(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`O_NOFOLLOW` covers the LEAF only, so a swapped PARENT directory passed
-    it: `mkdir(parents=True)` built host directories and `O_CREAT` put a
-    model-named file among them, all before the containment check ran.
+    """A parent directory swapped for a symlink does not put a model-named file on the host.
 
-    The swap is injected into the window it needs: between the containment
-    check and the write.
+    `O_NOFOLLOW` covers the leaf only; `mkdir(parents=True)` and `O_CREAT` would build host
+    directories and a file among them before the containment check ran. The swap is injected
+    into the window it needs: between the containment check and the write.
     """
     from agent6.tools import _fs_tools
     from agent6.tools._path_safety import SafePath
@@ -229,12 +225,12 @@ def test_a_parent_swapped_after_the_check_creates_nothing_outside(
 def test_a_parent_swapped_before_the_write_truncates_no_host_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The write opens `O_WRONLY|O_CREAT|O_TRUNC`, so a swapped parent means the
-    host file is already at 0 bytes by the time a check can reject it. The tool
-    then reports the escape, which reads like the write never happened.
+    """A parent swapped before the write-back does not truncate the host file.
 
-    The swap is injected into the window it needs: after the edit tools read the
-    current text, before they write it back.
+    The write opens `O_WRONLY|O_CREAT|O_TRUNC`, so a swapped parent would leave the host file
+    at 0 bytes by the time a check could reject it, and the escape report would read as if
+    the write never happened. The swap is injected into the window it needs: after the edit
+    tools read the current text, before they write it back.
     """
     from agent6.tools import _fs_tools
 
@@ -267,8 +263,10 @@ def test_a_parent_swapped_before_the_write_truncates_no_host_file(
 
 
 def _swap_after_resolve(root: Path, outside: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Put the swap in the window `list_dir` leaves open: right after the
-    containment check returns, before the tool looks the path up again."""
+    """Put the swap in the window `list_dir` leaves open.
+
+    Right after the containment check returns, before the tool looks the path up again.
+    """
     from agent6.tools._path_safety import SafePath, Workspace
 
     real_resolve = Workspace.resolve_read
@@ -284,15 +282,13 @@ def _swap_after_resolve(root: Path, outside: Path, monkeypatch: pytest.MonkeyPat
 def test_a_directory_swapped_after_the_check_is_not_listed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`list_dir` kept the check-then-reopen shape: `resolve_in_root` cleared the
-    path, then `iterdir()` looked it up again by full path. A component swapped
-    in that window listed a host directory straight back to the model
-    (`{'entries': ['host-only.txt']}`, measured).
+    """A component swapped after `list_dir`'s containment check does not list a host directory.
 
-    The walk refuses a swapped component: with ``O_DIRECTORY``, ``O_NOFOLLOW``
-    on a symlink is ``ENOTDIR`` (not ``ELOOP``), and the ENOTDIR path probes
-    the component so the refusal names the swap rather than a bland "not a
-    directory".
+    The check-then-reopen shape (`resolve_in_root`, then `iterdir()` by full path) would
+    hand `{'entries': ['host-only.txt']}` to the model. The walk refuses a swapped component:
+    with ``O_DIRECTORY``, ``O_NOFOLLOW`` on a symlink is ``ENOTDIR`` (not ``ELOOP``), and
+    the ENOTDIR path probes the component so the refusal names the swap rather than a bland
+    "not a directory".
     """
     root = tmp_path / "ws"
     (root / "sub").mkdir(parents=True)
@@ -310,14 +306,12 @@ def test_a_directory_swapped_after_the_check_is_not_listed(
 def test_a_file_swapped_after_the_check_is_not_parsed_into_the_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`SymbolIndex._reparse` checked the path, then `read_bytes()` opened it
-    again by full path. A leaf swapped in that window put a host file's symbol
-    names into the index under an in-repo path, and `find_definition` reported
-    them to the model as the workspace's own (`{'name': 'host_only_symbol',
-    'path': 'mod.py', ...}`, measured).
+    """A leaf swapped after `SymbolIndex._reparse`'s check does not index a host file.
 
-    The swap is injected into the window it needs: between the containment check
-    and the read.
+    Checking the path and then `read_bytes()` by full path would put a host file's symbol
+    names into the index under an in-repo path, and `find_definition` would report them as
+    the workspace's own (`{'name': 'host_only_symbol', 'path': 'mod.py', ...}`). The swap is
+    injected into the window it needs: between the containment check and the read.
     """
     from agent6.tools.index import SymbolIndex
 
@@ -346,9 +340,10 @@ def test_a_file_swapped_after_the_check_is_not_parsed_into_the_index(
 
 
 def test_an_in_repo_symlinked_directory_is_listed_but_never_descended(tmp_path: Path) -> None:
-    """`list_dir` marks a symlink to a directory with a trailing "/" but is
-    non-recursive, so it never descends one -- a self-referential link would
-    walk forever."""
+    """`list_dir` marks a symlink to a directory with a trailing "/" and never descends it.
+
+    A self-referential link would walk forever.
+    """
     (tmp_path / "pkg").mkdir()
     (tmp_path / "pkg" / "a.txt").write_text("NEEDLE\n", encoding="utf-8")
     (tmp_path / "alias").symlink_to(tmp_path / "pkg", target_is_directory=True)
@@ -359,9 +354,11 @@ def test_an_in_repo_symlinked_directory_is_listed_but_never_descended(tmp_path: 
 
 
 def test_an_ordinary_in_repo_file_still_reads_and_writes(tmp_path: Path) -> None:
-    """The converse of the guard above: a resolved path has no symlink leaf, so
-    O_NOFOLLOW must not disturb ordinary work -- including a write THROUGH an
-    in-repo symlink, which resolves to its real target before the open."""
+    """O_NOFOLLOW does not disturb ordinary work, a write through an in-repo symlink included.
+
+    The converse of the guard above: a resolved path has no symlink leaf, and the write
+    resolves to its real target before the open.
+    """
     from agent6.tools._path_safety import read_contained, resolve_in_root, write_contained
 
     real = tmp_path / "real.txt"
@@ -433,7 +430,7 @@ def test_apply_edit_rejects_unknown_kind(tmp_path: Path) -> None:
 
 
 def test_apply_edit_rejects_extra_fields(tmp_path: Path) -> None:
-    """pydantic at trust boundary: a hijacked LLM cannot smuggle hidden args."""
+    """Pydantic at trust boundary: a hijacked LLM cannot smuggle hidden args."""
     d = _dispatcher(tmp_path)
     with pytest.raises(ToolError):
         d.dispatch(
@@ -473,11 +470,12 @@ def test_injection_in_file_body_is_returned_inert(tmp_path: Path, body: str) -> 
 
 
 def test_a_swapped_parent_is_named_as_a_symlink_not_a_missing_directory(tmp_path: Path) -> None:
-    """O_NOFOLLOW|O_DIRECTORY on a symlinked component fails ENOTDIR on Linux
-    (not ELOOP), so the parent swap this walk exists to contain read as the
-    bland "Path component is not a directory" -- hiding the one fact an
-    operator acts on. One lstat, on the error path only, names it; an honest
-    non-directory component keeps the plain message."""
+    """The refusal for a swapped parent names the swap, not a bland "not a directory".
+
+    O_NOFOLLOW|O_DIRECTORY on a symlinked component fails ENOTDIR on Linux (not ELOOP), which
+    would hide the one fact an operator acts on. One lstat, on the error path only, names it;
+    an honest non-directory component keeps the plain message.
+    """
     from agent6.tools._path_safety import contain, read_contained
 
     root = tmp_path / "ws"

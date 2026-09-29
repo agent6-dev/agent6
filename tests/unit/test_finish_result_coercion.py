@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""finish_session result coercion: a stringified JSON object still lands as the
-structured finish payload (weak models routinely stringify it; a machine
-agent state's whole cycle used to fail on shape)."""
+"""finish_session result coercion: a stringified JSON object lands as the structured payload."""
 
 from __future__ import annotations
 

@@ -41,17 +41,17 @@ def _msg(req_id: int, method: str, **params: Any) -> bytes:
 
 
 def test_a_new_session_needs_an_absolute_cwd() -> None:
-    """The spec makes every path absolute; a relative one would resolve
-    against whatever directory the editor happened to launch us in."""
+    """A relative cwd is refused; the spec makes every path absolute."""
     sessions = _sessions(_ends)
     (reply,) = _drive(_msg(1, "session/new", cwd="relative/path") + b"\n", sessions)
     assert "absolute" in reply["error"]["message"]
 
 
 def test_a_new_session_refuses_editor_supplied_mcp_servers(tmp_path: Path) -> None:
-    """agent6's MCP servers are operator config; a nonempty editor list was
-    read for nothing and silently succeeded, so the editor showed servers
-    connected that never existed. The refusal names where they belong."""
+    """Editor-supplied MCP servers are refused, naming where operator config holds them.
+
+    A nonempty list read for nothing showed servers connected that never existed.
+    """
     import subprocess
 
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
@@ -67,8 +67,7 @@ def test_a_new_session_refuses_editor_supplied_mcp_servers(tmp_path: Path) -> No
 
 
 def test_a_new_session_refuses_unsupported_additional_directories(tmp_path: Path) -> None:
-    """Ignoring an additional workspace root made the editor say it was in
-    scope while the sandbox and tools could not reach it."""
+    """An additional workspace root the sandbox cannot reach is refused, not silently ignored."""
     import subprocess
 
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
@@ -103,9 +102,10 @@ def test_a_new_session_names_non_list_optional_fields(tmp_path: Path) -> None:
 
 
 def test_a_resource_link_rides_as_its_uri() -> None:
-    """`resource_link` is ACP's baseline attach-a-file shape; it was dropped,
-    so a link-only prompt refused as empty. The uri rides verbatim as text --
-    the workspace boundary still decides what the path reaches."""
+    """A `resource_link` block is a prompt, its uri riding verbatim as text.
+
+    The workspace boundary still decides what the path reaches.
+    """
     blocks = [
         {"type": "text", "text": "fix this"},
         {"type": "resource_link", "uri": "file:///w/x.py", "name": "x.py"},
@@ -137,9 +137,7 @@ def test_a_prompt_runs_and_answers_with_its_stop_reason() -> None:
     session = Session(acp_id="s1", cwd=Path("/repo"))
     sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
     payload = _msg(2, "session/prompt", sessionId="s1", prompt=[{"type": "text", "text": "fix it"}])
-    # Parse the output only after the turn thread joined: the reply is written
-    # by the turn, so reading at serve() return raced it (and a server that
-    # never replied could pass as "no reply yet").
+    # The reply is written by the turn thread, so reading before its join raced it.
     out = io.BytesIO()
     ACPServer(stdin=io.BytesIO(payload + b"\n"), stdout=out, sessions=sessions).serve()
     if session.thread is not None:
@@ -150,9 +148,11 @@ def test_a_prompt_runs_and_answers_with_its_stop_reason() -> None:
 
 
 def test_the_read_loop_stays_free_while_a_turn_runs() -> None:
-    """THE property. Answering a prompt inline would block reading for the
-    whole run, so the cancel an editor sends would arrive only after the thing
-    it meant to stop had already finished."""
+    """THE property.
+
+    Answering a prompt inline would block reading for the whole run, so the cancel an editor sends
+    would arrive only after the thing it meant to stop had already finished.
+    """
     started = threading.Event()
     release = threading.Event()
     cancelled_during: list[bool] = []
@@ -217,8 +217,10 @@ def test_a_turn_cancelled_while_it_runs_reports_itself_as_cancelled() -> None:
 
 
 def test_a_stale_cancel_does_not_kill_the_next_turn() -> None:
-    """The flag belongs to the turn it cancelled. Carrying it forward would
-    make the following prompt end before it began."""
+    """The flag belongs to the turn it cancelled.
+
+    Carrying it forward would make the following prompt end before it began.
+    """
     sessions = _sessions(_ends)
     session = Session(acp_id="s1", cwd=Path("/repo"), cancelled=True)
     seen: list[str] = []
@@ -229,8 +231,7 @@ def test_a_stale_cancel_does_not_kill_the_next_turn() -> None:
 
 
 def test_a_cancel_while_the_run_starts_reaches_its_first_boundary(tmp_path: Path) -> None:
-    """A turn is live before its worker pid exists, so cancellation must leave
-    the marker that the lifecycle preserves through startup."""
+    """A turn is live before its worker pid exists, so a cancel leaves the marker startup keeps."""
     from agent6.sessions.ipc import stop_request_pending
 
     sessions = _sessions(_ends)
@@ -244,8 +245,7 @@ def test_a_cancel_while_the_run_starts_reaches_its_first_boundary(tmp_path: Path
 def test_a_cancel_while_idle_does_not_poison_the_next_turn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An idle cancel wrote a stop marker after the prior execution ended, so the
-    next resume inherited it and stopped without doing the requested work."""
+    """An idle cancel leaves no stop marker for the next resume to inherit."""
     stopped: list[Path] = []
 
     def _stop(path: Path, *, after_step: bool = False) -> StopOutcome:
@@ -323,9 +323,10 @@ def _pipe() -> tuple[Any, Any]:
 
 
 def test_the_next_prompt_is_not_refused_by_the_reply_it_just_read() -> None:
-    """`thread.is_alive()` is still true while `finish` runs -- and `finish` IS
-    the reply -- so a conforming editor that writes its next prompt the instant
-    it reads the answer was refused at random."""
+    """A prompt written the instant the editor reads the previous answer is accepted.
+
+    `thread.is_alive()` is still true while `finish` runs, and `finish` is the reply.
+    """
     sessions = _sessions(_ends)
     session = Session(acp_id="s1", cwd=Path("/repo"))
     seen: list[bool] = []
@@ -340,8 +341,10 @@ def test_the_next_prompt_is_not_refused_by_the_reply_it_just_read() -> None:
 
 
 def test_eof_lets_a_live_turn_reach_a_boundary() -> None:
-    """Closing the editor is the ordinary way EOF arrives. A daemon worker torn
-    down mid-git holds the repo and worker locks and the run-dir pid."""
+    """Closing the editor is the ordinary way EOF arrives.
+
+    A daemon worker torn down mid-git holds the repo and worker locks and the run-dir pid.
+    """
     started = threading.Event()
     finished = threading.Event()
 
@@ -371,8 +374,7 @@ def test_eof_lets_a_live_turn_reach_a_boundary() -> None:
 
 
 def test_a_prompt_sent_as_a_notification_is_refused() -> None:
-    """A turn's whole point is the stopReason it answers with; replying with a
-    null id is not valid JSON-RPC."""
+    """A turn's reply carries its stopReason under the request's id, never a null id."""
     sessions = _sessions(_ends)
     sessions._by_id["s1"] = Session(acp_id="s1", cwd=Path("/repo"))  # pyright: ignore[reportPrivateUsage]
     payload = json.dumps(
@@ -386,8 +388,7 @@ def test_a_prompt_sent_as_a_notification_is_refused() -> None:
 
 
 def test_a_cancel_for_an_unknown_session_says_so() -> None:
-    """It is a notification, so an error reply is dropped with zero bytes
-    written -- the stop button does nothing and reports nothing."""
+    """A cancel is a notification: an error reply is dropped with zero bytes written."""
     sessions = _sessions(_ends)
     replies = _drive(_msg(0, "session/cancel", sessionId="typo") + b"\n", sessions)
     assert replies, "the editor was told nothing at all"
@@ -395,9 +396,10 @@ def test_a_cancel_for_an_unknown_session_says_so() -> None:
 
 
 def test_eof_grace_is_one_deadline_across_sessions() -> None:
-    """wait_for_turns joined each live thread with the FULL timeout, so N
-    sessions waited N times the documented bound; one shared deadline caps
-    the whole shutdown."""
+    """One shared deadline caps the whole shutdown.
+
+    Joining each live thread with the full timeout made N sessions wait N times the bound.
+    """
     sessions = _sessions(_ends)
     release = threading.Event()
 

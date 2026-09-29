@@ -1,18 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A CONFINED MCP server, end to end: spawn, handshake, call a tool, close.
+"""A confined MCP server, end to end: spawn, handshake, call a tool, close.
 
-The seam nothing else covers. `test_mcp_client.py` handshakes an unconfined
-server; `test_mcp_network.py` asserts the argv the confinement builds without
-running it; `tests/security/test_mcp_network_confinement.py` runs the shim
-alone and inspects its namespaces. Whether a server actually WORKS through
-confinement -- reads what it was granted, is denied what it was not, and keeps
-its JSON-RPC pipe alive across the confinement boundary -- was untested.
-
-Pinned here because the confinement mechanism is being reworked: these
-assertions are about the contract (a granted path is readable, an ungranted
-one is not, tools still answer), never the mechanism, so they hold across the
-change and fail loudly if it breaks the pipe.
+The seam nothing else covers: `test_mcp_client.py` handshakes an unconfined server,
+`test_mcp_network.py` asserts the argv the confinement builds without running it, and
+`tests/security/test_mcp_network_confinement.py` inspects the namespaces alone. These
+assertions are about the contract (a granted path is readable, an ungranted one is not,
+tools still answer), never the mechanism, so they hold across a rework of it.
 """
 
 from __future__ import annotations
@@ -41,9 +35,11 @@ def _landlock_available() -> bool:
 
 
 def _reader_server_argv() -> tuple[str, ...]:
-    """A minimal MCP server exposing one tool: read the file it is asked for,
-    and report what happened. Enough to prove the pipe survives confinement
-    AND to observe the filesystem boundary from inside the server."""
+    """A minimal MCP server with one tool: read the file it is asked for and report what happened.
+
+    Enough to prove the pipe survives confinement and to observe the filesystem boundary
+    from inside the server.
+    """
     script = textwrap.dedent(
         """
         import json, sys
@@ -75,10 +71,7 @@ def _reader_server_argv() -> tuple[str, ...]:
                 reply(mid, {})
         """
     )
-    # The SYSTEM python, not sys.executable: a jailed command's binary has to
-    # exist inside the assembled root, and a venv interpreter in some other
-    # checkout does not. Real servers are `npx`/`node`/`python3` for the same
-    # reason -- found on the jail's PATH, or granted explicitly.
+    # The system python, not sys.executable: a binary has to exist inside the assembled root.
     return ("/usr/bin/python3", "-c", script)
 
 
@@ -89,9 +82,11 @@ def _call_cat(mgr: MCPManager, path: Path) -> str:
 def _policy(
     argv: tuple[str, ...], cwd: Path, *, read: tuple[Path, ...] = (), net: NetworkMode = "none"
 ) -> JailPolicy:
-    """A server policy exactly as production builds it: the same sandbox a
-    jailed command gets, plus this server's additive grants. Nothing here
-    names an interpreter -- that is the point of the shared base."""
+    """A server policy exactly as production builds it.
+
+    The same sandbox a jailed command gets, plus this server's additive grants; nothing here
+    names an interpreter, which is the point of the shared base.
+    """
     return jail_policy(
         cwd,
         Config(),
@@ -111,7 +106,8 @@ def granted(tmp_path: Path) -> tuple[Path, Path, Path]:
     but only because the workspace was remapped to /workspace back then, so
     the host path did not resolve. The file was reachable the whole time, at
     a different spelling. A boundary test must not be able to pass because of
-    a path alias."""
+    a path alias.
+    """
     ws = tmp_path / "ws"
     ws.mkdir()
     ok = tmp_path / "granted"
@@ -126,14 +122,15 @@ def granted(tmp_path: Path) -> tuple[Path, Path, Path]:
 def test_a_confined_server_handshakes_serves_and_respects_its_grants(
     granted: tuple[Path, Path, Path],
 ) -> None:
-    """The contract, whatever applies it: the JSON-RPC pipe survives the
-    confinement boundary (initialize + tools/list + tools/call all answer),
-    a granted path reads, and an ungranted one does not."""
+    """The contract, whatever applies it.
+
+    The JSON-RPC pipe survives the confinement boundary (initialize, tools/list and tools/call
+    all answer), a granted path reads, and an ungranted one does not.
+    """
     if not _landlock_available():
         pytest.skip("no Landlock on this kernel")
     ws, visible, hidden = granted
-    # The interpreter and its stdlib have to be readable or the server cannot
-    # start at all -- the reason read_paths is required for a filesystem block.
+    # The interpreter and its stdlib have to be readable, or the server cannot start at all.
     mgr = MCPManager.start(
         [
             MCPServerSpec(
@@ -156,9 +153,10 @@ def test_a_confined_server_handshakes_serves_and_respects_its_grants(
 def test_closing_the_manager_leaves_no_confined_server_running(
     granted: tuple[Path, Path, Path],
 ) -> None:
-    """A confinement wrapper adds a process between agent6 and the server, so
-    the teardown has to reach through it: a leaked server holds the pipe and
-    outlives the run."""
+    """Teardown reaches through the confinement wrapper's extra process.
+
+    A leaked server holds the pipe and outlives the run.
+    """
     if not _landlock_available():
         pytest.skip("no Landlock on this kernel")
     ws, _visible, _hidden = granted

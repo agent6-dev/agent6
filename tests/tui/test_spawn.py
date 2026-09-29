@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the shared spawn+locate helper behind the hub's "start a run" and the
-machines page's "create" -- both spawn the CLI detached, then watch the new log dir."""
+"""The shared spawn-and-locate helper behind the hub's start and the machines page's create."""
 
 from __future__ import annotations
 
@@ -23,8 +22,7 @@ def test_spawn_and_locate_finds_new_log_dir(
 
     class _Proc:
         pid = 424242
-        # A detached child is registered with the escapee sweep by pid, so a
-        # stub without one no longer models a real spawn.
+        # A detached child is registered with the escapee sweep by pid, so the stub needs one.
         pid = 424242
 
         def __init__(self) -> None:
@@ -97,8 +95,7 @@ def test_spawn_and_locate_surfaces_spawn_failure(
 
 
 def test_spawn_and_confirm_surfaces_refusal_stderr(tmp_path: Path) -> None:
-    # A child that prints a refusal and exits nonzero before taking ownership
-    # (lock held, network refusal) must surface its stderr, not "" (started).
+    # A child that prints a refusal and exits nonzero before taking ownership surfaces its stderr.
     argv = [sys.executable, "-c", "import sys; sys.stderr.write('lock held'); sys.exit(2)"]
     err = spawn.spawn_and_confirm(argv, tmp_path, started=lambda _pid: False, timeout_s=10.0)
     assert err == "lock held"  # the child's own words, no plumbing prefix
@@ -125,8 +122,7 @@ def test_spawn_and_confirm_returns_clean_once_started(tmp_path: Path) -> None:
 
 
 def test_spawn_and_confirm_clean_fast_exit_is_ok(tmp_path: Path) -> None:
-    # Exit 0 without the signal is a clean fast completion (an already-ended
-    # machine re-run), not an error.
+    # Exit 0 without the signal is a clean fast completion, not an error.
     err = spawn.spawn_and_confirm(
         [sys.executable, "-c", "raise SystemExit(0)"], tmp_path, started=lambda _pid: False
     )
@@ -152,9 +148,10 @@ def _fake_agent6(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) -
 def test_spawn_detached_resume_reports_the_childs_early_exit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A resume child that refuses at once (a preflight refusal, a crash) was
-    spawned with its stderr on /dev/null and reported as "" (resuming): the web
-    composer and the TUI said "resuming" over a run nothing was resuming."""
+    """A resume child that refuses at once reports its refusal, not "resuming".
+
+    Spawned with stderr on /dev/null, the refusal was lost and the surfaces said "resuming".
+    """
     _run_dir(tmp_path, "tidy-owl-9Z3AAA")
     _fake_agent6(tmp_path, monkeypatch, "echo 'REFUSING: the checkout is busy' >&2\nexit 2\n")
     err = spawn.spawn_detached_resume(tmp_path, "tidy-owl-9Z3AAA")
@@ -164,9 +161,11 @@ def test_spawn_detached_resume_reports_the_childs_early_exit(
 def test_spawn_detached_resume_argv_env_and_owning_signal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ "" once the child owns the run: its pid is the run's worker.pid. The
-    child runs detached with the bridge environment (deltas streamed to the log
-    for a later attach, asks and approvals waiting for a front-end)."""
+    """The answer is "" once the child owns the run: its pid is the run's worker.pid.
+
+    The child runs detached with the bridge environment (deltas streamed to the log for a later
+    attach, asks and approvals waiting for a front-end).
+    """
     run = _run_dir(tmp_path, "tidy-owl-9Z3AAA")
     seen = tmp_path / "seen"
     _fake_agent6(
@@ -185,8 +184,7 @@ def test_spawn_detached_resume_argv_env_and_owning_signal(
 
 
 def test_spawn_detached_resume_names_an_unknown_session(tmp_path: Path) -> None:
-    """Resolved before the spawn, in the CLI's own words: the child would refuse
-    the same way on a stdio nobody reads."""
+    """A refusal resolved before the spawn is worded as the CLI words it."""
     err = spawn.spawn_detached_resume(tmp_path, "no-such-run-AAAAAA")
     assert "no session matches 'no-such-run-AAAAAA'" in err
 
@@ -219,8 +217,7 @@ def test_subcommand_label_names_the_full_subcommand() -> None:
 def test_run_cli_capture_strips_console_prefixes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The CLI brands its own console lines "[agent6] " to stand apart from
-    # pass-through git output; in a front-end toast that prefix is noise.
+    # The CLI brands its console lines "[agent6] "; in a front-end toast that prefix is noise.
     class _Done:
         returncode = 0
         stdout = "[agent6] merged a into b\n\n[agent6] deleted branch a\n"
@@ -236,8 +233,7 @@ def test_run_cli_capture_strips_console_prefixes(
 
 
 def test_capture_message_drops_the_error_prefix_a_failure_field_already_states() -> None:
-    """`ERROR: ` is the console's failure marker; an API `error` field or a red
-    toast carried it verbatim (`"error": "ERROR: unknown config key ..."`)."""
+    """`ERROR: ` is the console's failure marker and is stripped from an API field or a toast."""
     assert (
         spawn.capture_message("", "ERROR: unknown config key 'x.y'") == "unknown config key 'x.y'"
     )
@@ -249,8 +245,7 @@ def test_capture_message_drops_the_error_prefix_a_failure_field_already_states()
 def test_agent6_exe_finds_the_binary_beside_the_interpreter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A view started as `python -m agent6.ui.tui` has a module path in
-    argv[0]; the binary of the same install sits beside its interpreter."""
+    """A view started as `python -m agent6.ui.tui` finds the binary beside its interpreter."""
     binary = tmp_path / "bin" / "agent6"
     binary.parent.mkdir()
     binary.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -271,9 +266,10 @@ def test_stderr_tail_starts_at_a_line(tmp_path: Path) -> None:
 def test_run_cli_output_hands_back_stdout_alone_on_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A review's markdown is the deliverable; the console notes on stderr
-    (`[agent6] reviewing run: …`, the cost summary) are not part of it. A
-    failure still carries the captured message."""
+    """A review's markdown is the deliverable; the console notes on stderr are not part of it.
+
+    A failure still carries the captured message.
+    """
 
     class _Done:
         returncode = 0

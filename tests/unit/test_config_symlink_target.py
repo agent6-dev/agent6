@@ -17,9 +17,7 @@ from agent6.paths import global_config_path
 def test_a_symlinked_config_stays_a_symlink(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """atomic_write publishes by rename, which replaces the NAME: a
-    dotfiles-managed config silently became a regular file and the repo it
-    was linked from stopped being what agent6 reads."""
+    """A symlinked config stays a symlink; atomic_write's rename would replace the name."""
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
@@ -38,8 +36,7 @@ def test_a_symlinked_config_stays_a_symlink(
 def test_a_symlink_to_another_owner_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Under sudo, following the operator's symlink would write as root
-    wherever it points. Only a target the real operator owns is followed."""
+    """Under sudo only a symlink target the real operator owns is followed."""
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
@@ -53,9 +50,7 @@ def test_a_symlink_to_another_owner_refuses(
         st_uid = 0
 
     real_stat = Path.stat
-    # Resolve ONCE, before the patch: on Python 3.12 Path.resolve() calls
-    # Path.stat internally, so resolving inside fake_stat re-enters the patched
-    # method and recurses forever (3.14's resolve() does not, which hid this).
+    # Resolve once before the patch: 3.12's Path.resolve() calls Path.stat and would recurse.
     foreign_resolved = foreign.resolve()
 
     def fake_stat(self: Path, **kw: object) -> object:
@@ -71,12 +66,7 @@ def test_a_symlink_to_another_owner_refuses(
 def test_every_writer_keeps_the_link_not_just_config_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`config set` was taught to resolve the link and the other writers were
-    not, so `add`, `remove`, `fill` and `fix` each replaced it: the dotfiles
-    file silently stopped being what agent6 reads, while the command reported
-    success against a path that was no longer the operator's. One resolver
-    owns this for every writer.
-    """
+    """Every writer keeps the link, through one resolver, not just `config set`."""
     from agent6.ui.cli import main
 
     gdir = tmp_path / "g"
@@ -103,12 +93,7 @@ def test_every_writer_keeps_the_link_not_just_config_set(
 def test_a_symlink_whose_target_does_not_exist_yet_is_created(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Linking the config into a dotfiles repo BEFORE writing the file is the
-    ordinary order (`ln -s ~/dotfiles/agent6.toml ~/.config/agent6/config.toml`,
-    then configure). Resolving the link stat()ed the target and raised, so
-    every write refused -- `agent6 init`, `connect` and `config set` alike --
-    over a link that was perfectly valid, just not filled in yet.
-    """
+    """A symlink whose target does not exist yet is created through, the ordinary dotfiles order."""
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))

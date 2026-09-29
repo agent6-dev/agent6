@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Machine tool egress: per-state network, bundle validation, and the
-running machine's files made read-only in run jails (immutability)."""
+"""Machine tool egress: per-state network, bundle validation, the bundle read-only in run jails."""
 
 from __future__ import annotations
 
@@ -158,10 +157,7 @@ def test_engine_passes_per_state_network(tmp_path: Path) -> None:
     assert world.net_calls == [(("scripts/fetch.sh",), "host"), (("store",), "none")]
 
 
-# --- LiveWorld (supervisor) honors the per-state network flag --------
-# The engine is the host-netns supervisor; whether an opt-in is permitted at
-# all is gated at machine-run startup (sandbox.network), so LiveWorld just
-# passes the per-state flag straight through to the jail.
+# LiveWorld passes the per-state network flag straight through; the opt-in is gated at startup.
 
 
 @dataclass
@@ -191,8 +187,7 @@ def _world(
     protect_paths: tuple[Path, ...] = (),
     data_dir: Path | None = None,
 ) -> LiveWorld:
-    """A LiveWorld wired exactly as run_machine wires it: through the shared
-    policy builder, so these pins hold the REAL machine confinement."""
+    """A LiveWorld wired exactly as run_machine wires it, through the shared policy builder."""
     factory = machine_tool_policy_factory(
         cfg or Config(),
         tmp_path,
@@ -211,11 +206,10 @@ def _world(
 def test_machine_tool_jail_carries_operator_grants_and_protect_git(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The machine tool jail is built by the same policy builder as run
-    commands, so an operator's extra read/write grants, hide_paths, and
-    protect_git reach it. The hand-built policy carried none of them: a
-    configured grant failed only in machines, and a strict machine tool could
-    write .git while ordinary runs protected it."""
+    """The machine tool jail is built by the same policy builder as run commands.
+
+    An operator's extra read and write grants, hide_paths and protect_git reach it.
+    """
     seen = _patch_jail(monkeypatch)
     (tmp_path / ".git").mkdir()
     cfg = Config.model_validate(
@@ -249,18 +243,14 @@ def test_liveworld_non_network_tool_is_isolated(
 def test_liveworld_grants_data_dir_rw_and_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A machine's data dir is RW in every tool jail + exported as
-    # $AGENT6_MACHINE_DATA_DIR, so a tool script can persist on hardened too.
+    # The data dir is RW in every tool jail and exported as $AGENT6_MACHINE_DATA_DIR.
     seen = _patch_jail(monkeypatch)
     data = tmp_path / "i" / "data"
     world = _world(tmp_path, "hardened", data_dir=data)
     world.run_tool(("true",), 5.0, network="none")
     policy = seen[-1]
     assert data in policy.extra_rw_paths
-    # Exported to match where the jail mounts the dir: the real host abspath on
-    # hardened (real filesystem). The data dir lives OUTSIDE cwd by design, so a
-    # relative-to-cwd path can never reach it. (strict maps it to /rw<abspath>;
-    # see test_data_dir_env_matches_jail_mount.)
+    # Exported as the real host abspath on hardened; strict maps it to /rw<abspath>.
     assert ("AGENT6_MACHINE_DATA_DIR", str(data)) in policy.env
 
 
@@ -313,8 +303,7 @@ def test_protect_paths_skip_missing_scripts(tmp_path: Path) -> None:
 
 
 def test_protect_paths_exclude_machine_outside_cwd(tmp_path: Path) -> None:
-    # A machine file outside the jail-mounted cwd isn't in the child's view, so
-    # it isn't (and can't be) protected.
+    # A machine file outside the mounted cwd is not in the child's view, so cannot be protected.
     outside = tmp_path.parent / "outside.asm.toml"
     outside.write_text(NET_MACHINE, encoding="utf-8")
     sub = tmp_path / "repo"
@@ -362,8 +351,7 @@ def test_bundle_flags_symlink_escape(tmp_path: Path) -> None:
 
 
 def test_bundle_reports_circular_symlink_in_scripts(tmp_path: Path) -> None:
-    # A circular symlink makes Path.resolve() raise RuntimeError; the validator
-    # must report it as a problem, not crash.
+    # A circular symlink makes Path.resolve() raise; the validator reports it as a problem.
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "loop").symlink_to(tmp_path / "scripts" / "loop")
@@ -406,9 +394,7 @@ def test_machine_check_passes_with_valid_bundle(
 def test_machine_run_refuses_escaping_bundle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Security: `machine run` must re-validate the bundle, not only `check`. On a
-    # isolation that can't RO-bind the bundle, a `scripts/` symlink escaping it
-    # would otherwise be executed; run must refuse before touching the world.
+    # `machine run` re-validates the bundle: a `scripts/` symlink escaping it must refuse first.
     from agent6.ui.cli import main
 
     f = _write(tmp_path, NET_MACHINE)
@@ -424,10 +410,7 @@ def test_machine_run_refuses_escaping_bundle(
 def test_machine_run_validates_config_overlay_for_pure_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # B10: a pure wait/terminal machine has no agent/tool state, but its [config]
-    # overlay must still be validated (and [machine] snapshot_keep honored). A
-    # bogus overlay key fails the run with a config refusal instead of being
-    # silently ignored.
+    # A pure wait/terminal machine still validates its [config] overlay.
     from agent6.ui.cli import main
 
     pure = (
@@ -476,8 +459,7 @@ def test_resolve_network_refusal_unfixable_points_to_simulate(
     assert "machine test" in capsys.readouterr().err
 
 
-# NET_MACHINE with the second tool pinned offline: one `host` tool beside one
-# `none` tool, the mix `only_explicit_states` exists for.
+# NET_MACHINE with the second tool pinned offline: the mix `only_explicit_states` exists for.
 MIXED_MACHINE = """
 machine = "netmix"
 version = 1
@@ -518,9 +500,7 @@ def _mixed_tools(tmp_path: Path) -> list[ToolState]:
 
 
 def test_suggested_network_fix_strict_mixes_block_with_allow(tmp_path: Path) -> None:
-    """A `network = "none"` tool is already isolated on strict (its own netns,
-    whatever sandbox.network says), so it must not swallow the fix the
-    networked tool beside it needs: the fix read "unfixable" for the pair."""
+    """A `network = "none"` tool does not swallow the fix its networked sibling needs."""
     tools = _mixed_tools(tmp_path)
     r = machine_network_refusal(Config.model_validate({}), "strict", tools)
     assert r is not None and r.fix == (("sandbox.network", "only_explicit_states"),)

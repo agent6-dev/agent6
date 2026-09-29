@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Unit tests for the Harness loop: provider retry, operator steering, the
-tool-error ladder, finish gates, and the other drive-loop mechanics, driven
-directly with scripted providers and dispatchers. Termination-reason
-distinctions are exercised end-to-end in the integration suite."""
+"""Unit tests for the Harness loop.
+
+Provider retry, operator steering, the tool-error ladder, finish gates and the other drive-loop
+mechanics, driven with scripted providers and dispatchers. Termination reasons are exercised
+end-to-end in the integration suite.
+"""
 
 from __future__ import annotations
 
@@ -47,9 +49,7 @@ from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from tests.unit.turn_context import turn_context
 
-# The `[git]` surface the loop reads: the checkpoint message and the commit
-# identity (`commit_identity`), which the real Config carries as empty
-# strings when the operator sets neither.
+# The `[git]` surface the loop reads, empty as a real Config carries it unset.
 _GIT_STUB = SimpleNamespace(
     control="agent6",
     commit_per_step=True,
@@ -62,11 +62,8 @@ _GIT_STUB = SimpleNamespace(
 class _StubDispatcher:
     """The dispatcher surface the loop reads besides `dispatch`.
 
-    The loop rebuilds its tool list every turn (a gate adopted mid-run, or a
-    policy denied mid-run, changes what the worker has), so a stub that answers
-    only `dispatch` no longer models the real thing. The defaults here keep the
-    behaviour these tests were written against: no filtered tools -- the
-    provider stubs ignore the list -- and a policy that withholds nothing.
+    The loop rebuilds its tool list every turn, so a stub must answer more than `dispatch`; the
+    defaults filter no tools and withhold nothing.
     """
 
     dag_available = True
@@ -88,12 +85,11 @@ class _StubDispatcher:
         return "ask"
 
     def tool_is_withheld(self, name: str) -> bool:
-        """ "ask" withholds nothing: the operator is asked at call time."""
+        """The "ask" policy withholds nothing: the operator is asked at call time."""
         return False
 
     def settle_background(self) -> None:
-        """The turn boundary observes background commands; these tests start
-        none, so there is nothing to write down."""
+        """The turn boundary observes background commands; these tests start none."""
 
 
 def _silent(_msg: str) -> None:
@@ -117,11 +113,7 @@ def _wf(
     base_sha: str = "",
     **kw: Any,
 ) -> Harness:
-    """Construct a Harness with mocks for everything not under test.
-
-    Caller-supplied kwargs win over the defaults so a test can pass its
-    own provider / steer callables without colliding on the keyword.
-    """
+    """Construct a Harness with mocks for everything not under test; caller kwargs win."""
     if root is not None and fallback_parent is None:
         # Mirror run.py's wiring: the chain's first parent is HEAD at start.
         fallback_parent = (
@@ -133,8 +125,7 @@ def _wf(
             ).stdout.strip()
             or None
         )
-    # A live chain by default, so the auto-commit paths run; tests patch
-    # `_chain.chain_commit`.
+    # A live chain by default, so the auto-commit paths run; tests patch `_chain.chain_commit`.
     defaults: dict[str, Any] = {
         "chain": RunChain(
             root or Path("/tmp"),
@@ -180,9 +171,11 @@ _T0 = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 def _tn(node_id: str, **fields: Any) -> Any:
-    """A TaskNode test fixture from a partial dict of node fields. Uses
-    model_construct so short readable ids ("a", "b") survive (id-sort =
-    creation order, which first_ready_subtask relies on)."""
+    """A TaskNode fixture from a partial dict of node fields.
+
+    model_construct keeps short readable ids ("a", "b"), whose sort order first_ready_subtask relies
+    on.
+    """
     from agent6.graph.models import TaskNode
 
     base: dict[str, Any] = {
@@ -206,14 +199,12 @@ def _tn(node_id: str, **fields: Any) -> Any:
 
 
 def _typed(nodes: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """Convert the readable dict-of-dicts node literals the tests author into the
-    typed dict[str, TaskNode] the curator now hands consumers."""
+    """Convert the tests' dict-of-dicts node literals into the curator's typed nodes."""
     return {nid: _tn(nid, **d) for nid, d in nodes.items()}
 
 
 def test_ask_silent_finish_ends_as_answered_not_silent_finish() -> None:
-    # In ask mode a prose answer with no tool call is the normal success: it must
-    # end as "answered", not the failure-sounding "silent_finish".
+    # In ask mode a prose answer ends as "answered", not "silent_finish".
     wf = _wf(mode="ask")
     result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
         "The answer is 42.", Conversation(), _state(), _turn(iteration=2), _ctx(wf, _state())
@@ -225,8 +216,7 @@ def test_ask_silent_finish_ends_as_answered_not_silent_finish() -> None:
 
 
 def test_run_silent_finish_stays_silent_finish() -> None:
-    # In run mode (engaged: edited + verified), a no-tool prose turn is still an
-    # implicit silent_finish, not "answered".
+    # In run mode (edited + verified) a no-tool prose turn is still an implicit silent_finish.
     wf = _wf(mode="run")
     result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
         "Done.",
@@ -264,9 +254,7 @@ def _cfg_with_verify() -> Any:
 
 
 def test_run_silent_finish_over_red_verify_is_not_passed() -> None:
-    """A run-mode silent finish (prose, no tool_use) over a RED or stale verify
-    must emit session.end all_passed=False — the same honest-finish rule as the
-    explicit finish_session path, so no surface renders the failed run as 'passed'."""
+    """A silent finish over a red or stale verify ends all_passed=False, like finish_session."""
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev)
     result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
@@ -300,9 +288,7 @@ def test_run_silent_finish_over_green_verify_stays_passed() -> None:
 
 
 def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
-    """A GATELESS run's silent finish emitted all_passed=True and every surface
-    read "passed" for a tree nothing verified. The end carries the ungated
-    tri-state (all_passed None), which words as "finished"."""
+    """A gateless run's silent finish ends with all_passed=None, which words as "finished"."""
     from agent6.viewmodel.listing import status_word
 
     ev = _EventCapture()
@@ -347,15 +333,13 @@ def _plateau_stop() -> Stop:
 
 
 def _settle(wf: Harness, state: Any, turn: Any) -> Any:
-    """The settled advisor's answer, applied through the loop (a stop runs
-    the end gates at once)."""
+    """The settled advisor's answer, applied through the loop; a stop runs the end gates at once."""
     ctx = _ctx(wf, state, turn.iteration)
     return wf._take(state, turn, ctx, verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
 def test_finish_planning_salvages_a_title_only_plan(tmp_path: Path) -> None:
-    # Weak models leave plan_markdown a bare title and put the plan in `summary`;
-    # the fold must produce a plan.md with real content, not a title-only stub.
+    # Weak models put the plan in `summary`; the fold must produce a plan.md with real content.
     plan_path = tmp_path / "plan.md"
     wf = _wf(mode="plan", plan_output_path=plan_path)
     wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
@@ -487,8 +471,7 @@ def test_caller_never_retries_an_abort() -> None:
 
 
 def test_caller_never_retries_a_steer_interrupt() -> None:
-    """ProviderInterrupted (a steer mid-stream) bubbles immediately: the loop
-    shows the steer menu, and a retry would re-hit the interrupt."""
+    """ProviderInterrupted (a steer mid-stream) bubbles immediately; a retry would re-hit it."""
     from agent6.providers import ProviderInterrupted
 
     provider = MagicMock()
@@ -500,8 +483,7 @@ def test_caller_never_retries_a_steer_interrupt() -> None:
 
 
 def test_caller_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A 429 carrying retry_after_s waits at least that long, not the shorter
-    self-computed backoff."""
+    """A 429 carrying retry_after_s waits at least that long, not the shorter computed backoff."""
     slept: list[float] = []
     monkeypatch.setattr("agent6.harness._provider_call.time.sleep", slept.append)
     provider = MagicMock()
@@ -527,8 +509,7 @@ def test_caller_clamps_retry_after_to_ceiling(monkeypatch: pytest.MonkeyPatch) -
 
 
 def _empty_tool_call_resp() -> ProviderResponse:
-    """A self-contradictory response: stop_reason=tool_calls but no tool_use/text
-    (the GLM-via-OpenRouter post-restart flake)."""
+    """A self-contradictory response: stop_reason=tool_calls with no tool_use and no text."""
     return ProviderResponse(
         text="",
         tool_uses=(),
@@ -541,8 +522,7 @@ def _empty_tool_call_resp() -> ProviderResponse:
 
 
 def test_caller_retries_empty_tool_call_response() -> None:
-    """An empty finish=tool_calls response (no tool_use, no text) is retried; the
-    recovered real response is returned."""
+    """An empty finish=tool_calls response is retried and the recovered response returned."""
     provider = MagicMock()
     provider.call.side_effect = [_empty_tool_call_resp(), _tool_resp("read_file", {"path": "x"})]
     out = _call(_caller(provider, retry_count=4, retry_delay_s=0.001))
@@ -551,8 +531,7 @@ def test_caller_retries_empty_tool_call_response() -> None:
 
 
 def test_caller_returns_last_empty_after_exhausting() -> None:
-    """When every attempt is empty the last empty response is returned (the
-    loop's went_quiet handler takes over), never a raise."""
+    """When every attempt is empty the last empty response is returned; went_quiet takes over."""
     provider = MagicMock()
     provider.call.return_value = _empty_tool_call_resp()
     out = _call(_caller(provider, retry_count=2, retry_delay_s=0.001))
@@ -561,8 +540,7 @@ def test_caller_returns_last_empty_after_exhausting() -> None:
 
 
 def test_reasoning_starvation_counts_only_a_cap_cut_turn() -> None:
-    """The count is the thinking a cap-cut, billed turn spent; a turn the cap
-    did not cut, one billed nothing, or one without a thinking block is 0."""
+    """The count is the thinking a cap-cut, billed turn spent; any other turn counts 0."""
     starved = ProviderResponse(
         text="",
         tool_uses=(),
@@ -597,9 +575,7 @@ def test_is_empty_tool_call_response_discriminates() -> None:
 
 
 def test_call_with_retry_default_rides_out_multiple_flaps() -> None:
-    """The default retry budget survives more than one consecutive transient
-    disconnect. Regression: a single retry (the old default) aborted long,
-    expensive runs on a multi-second Anthropic 'Server disconnected' flap."""
+    """The default retry budget survives more than one consecutive transient disconnect."""
     provider = MagicMock()
     disconnect = ProviderError("Server disconnected without sending a response")
     provider.call.side_effect = [disconnect, disconnect, disconnect, _resp("recovered")]
@@ -630,9 +606,7 @@ def test_call_with_retry_does_not_swallow_non_provider_errors() -> None:
 
 
 def test_call_with_retry_skips_retry_on_permanent_status() -> None:
-    """A permanent client error (402 insufficient credits) re-raises on the
-    first failure without consuming a retry. Observed live: a 402 was
-    otherwise retried on every remaining turn, burning wall-time."""
+    """A permanent client error (402) re-raises on the first failure without consuming a retry."""
     provider = MagicMock()
     provider.call.side_effect = [
         ProviderError("OpenAI API error 402: Insufficient credits", status_code=402),
@@ -645,9 +619,7 @@ def test_call_with_retry_skips_retry_on_permanent_status() -> None:
 
 
 def test_call_with_retry_never_retries_a_fatal_error() -> None:
-    """A ProviderError flagged fatal (no HTTP status: a missing binary, a
-    signed-out login) re-raises on the first failure without consuming a
-    retry; without the flag a status-less error is retried like a flap."""
+    """A fatal ProviderError re-raises at once; without the flag a status-less error retries."""
     provider = MagicMock()
     provider.call.side_effect = [
         ProviderError("claude not signed in", fatal=True),
@@ -664,8 +636,7 @@ def test_call_with_retry_never_retries_a_fatal_error() -> None:
     [307, 400, 401, 402, 403, 404, 405, 413, 415, 422, 426, 431, 451],
 )
 def test_call_with_retry_skips_retry_on_all_permanent_statuses(status: int) -> None:
-    """Every status in _NON_RETRYABLE_HTTP_STATUSES re-raises on the first
-    failure without consuming a retry (not just the 402 observed live)."""
+    """Every status in _NON_RETRYABLE_HTTP_STATUSES re-raises on the first failure."""
     provider = MagicMock()
     provider.call.side_effect = [
         ProviderError(f"provider error {status}", status_code=status),
@@ -679,8 +650,7 @@ def test_call_with_retry_skips_retry_on_all_permanent_statuses(status: int) -> N
 
 @pytest.mark.parametrize("status", [408, 409, 425, 429])
 def test_call_with_retry_keeps_anthropic_transient_client_statuses(status: int) -> None:
-    """A timeout, a conflict, too-early and a rate limit are the 4xx a blind
-    retry can outlive."""
+    """A timeout, a conflict, too-early and a rate limit are the 4xx a blind retry can outlive."""
     provider = MagicMock()
     provider.call.side_effect = [
         ProviderError(f"provider error {status}", status_code=status),
@@ -692,8 +662,7 @@ def test_call_with_retry_keeps_anthropic_transient_client_statuses(status: int) 
 
 
 def test_call_with_retry_still_retries_transient_5xx() -> None:
-    """A 503 carries a status_code but is NOT in the permanent set, so the
-    normal single-retry path still applies."""
+    """A 503 carries a status but is not in the permanent set, so the retry path applies."""
     provider = MagicMock()
     provider.call.side_effect = [
         ProviderError("OpenAI API error 503: upstream", status_code=503),
@@ -709,8 +678,7 @@ def test_call_with_retry_still_retries_transient_5xx() -> None:
 
 
 def test_call_with_retry_exponential_backoff() -> None:
-    """Retry delays grow exponentially: attempt N sleeps
-    provider_retry_delay_s * 2 ** (attempt - 1), scaled by the jitter factor."""
+    """Attempt N sleeps provider_retry_delay_s * 2 ** (attempt - 1), scaled by the jitter factor."""
     provider = MagicMock()
     provider.call.side_effect = [
         ProviderError("flake 1"),
@@ -764,8 +732,7 @@ def test_call_with_retry_backoff_capped_at_max_delay() -> None:
 
 
 def test_call_with_retry_backoff_skips_sleep_on_permanent_status() -> None:
-    """A permanent status re-raises immediately with no sleep at all,
-    even though provider_retry_count would otherwise allow retries."""
+    """A permanent status re-raises at once with no sleep, whatever provider_retry_count allows."""
     provider = MagicMock()
     provider.call.side_effect = [
         ProviderError("Insufficient credits", status_code=402),
@@ -785,10 +752,11 @@ def test_call_with_retry_backoff_skips_sleep_on_permanent_status() -> None:
 
 
 def test_call_with_retry_pins_default_temperature_to_zero() -> None:
-    """Default Harness.temperature is 0.0; every provider.call must
-    receive it. agent6 used to pass temperature=None
-    so OpenRouter routed to the model's (often high) provider default,
-    which produced observable degeneration on Kimi K2.6."""
+    """Default Harness.temperature is 0.0 and every provider.call receives it.
+
+    A None temperature lets a router pick the model's often high default, with observable
+    degeneration.
+    """
     provider = MagicMock()
     provider.call.return_value = _resp("ok")
     wf = _wf(provider=provider)
@@ -797,8 +765,7 @@ def test_call_with_retry_pins_default_temperature_to_zero() -> None:
 
 
 def test_call_with_retry_honours_overridden_temperature() -> None:
-    """Operators who set `[models.worker].temperature = 0.7` get it
-    threaded through verbatim."""
+    """Operators who set `[models.worker].temperature = 0.7` get it threaded through verbatim."""
     provider = MagicMock()
     provider.call.return_value = _resp("ok")
     wf = _wf(provider=provider, call=CallSettings(temperature=0.7, retry_delay_s=0.01))
@@ -807,8 +774,7 @@ def test_call_with_retry_honours_overridden_temperature() -> None:
 
 
 def test_call_with_retry_passes_through_none_temperature() -> None:
-    """Explicit `temperature = None` reverts to the previous behaviour
-    (let the provider pick), for operators who specifically want it."""
+    """An explicit `temperature = None` lets the provider pick."""
     provider = MagicMock()
     provider.call.return_value = _resp("ok")
     wf = _wf(provider=provider, call=CallSettings(temperature=None, retry_delay_s=0.01))
@@ -820,9 +786,10 @@ def test_call_with_retry_passes_through_none_temperature() -> None:
 
 
 def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: Path) -> None:
-    """With nothing committing between steps the worktree stays dirty for the
-    rest of the run, so sampling on dirt alone re-ran the operator's benchmark
-    every turn -- read-only ones included, and a benchmark is not free."""
+    """The metric is not sampled on dirt alone: an uncommitting run stays dirty throughout.
+
+    A benchmark re-run every turn, read-only ones included, is not free.
+    """
     import subprocess as sp
 
     from agent6.tools.results import MetricResult
@@ -887,10 +854,7 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: Path) -> Non
 def test_drive_loop_auto_runs_metric_after_verify_pass(
     tmp_path: Path, commit_per_step: bool
 ) -> None:
-    """Metric-configured runs should not rely on the worker remembering to
-    call run_metric_command. After a green verify, the harness runs it and
-    injects a compact history block into the next worker turn.
-    """
+    """After a green verify the harness runs the metric itself and injects a history block."""
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -909,8 +873,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
                 and "first parsed metric sample" in rendered
             )
             if len(self.calls) == 2:
-                # A read-only turn after the verify: the tree is unchanged, so
-                # the metric must not be sampled again.
+                # A read-only turn after the verify: the tree is unchanged, so no second sample.
                 return _tool_resp("read_file", {"path": "x"}, tool_id="tool-read")
             return _tool_resp("finish_session", {"summary": "done"}, tool_id="tool-2")
 
@@ -963,8 +926,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
         provider=provider,
         dispatcher=dispatcher,
         max_iterations=4,
-        # `[git].commit_per_step` governs the COMMIT; the measurement the
-        # prompt promises after every verified edit is not the commit's.
+        # `[git].commit_per_step` governs the commit, not the measurement the prompt promises.
         per_step=commit_per_step,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
@@ -982,9 +944,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
     assert result.completed is True
     assert result.reason == "finish_session"
     assert provider.saw_metric_feedback is True
-    # Exactly one reading: with nothing committing between steps the tree stays
-    # dirty for the rest of the run, and sampling on dirt alone re-ran the
-    # operator's benchmark every turn, read-only ones included.
+    # Exactly one reading: sampling on dirt alone re-ran the benchmark every turn.
     assert dispatcher.calls == [
         "run_verify_command",
         "run_metric_command",
@@ -994,11 +954,11 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
 
 
 def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
-    """The loop records the absolute iteration it is driving on the Harness, so
-    the app-level KeyboardInterrupt fallbacks in run/resume can emit a session.end
-    carrying a truthful iteration count (matching the loop's own session.end shape).
-    Uses a resumed start_iteration to prove it is the absolute number, not a
-    zero-based counter."""
+    """The loop records the absolute iteration it is driving on the Harness.
+
+    The app-level KeyboardInterrupt fallbacks then emit a session.end with a truthful count; a
+    resumed start_iteration proves it is not a zero-based counter.
+    """
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -1074,8 +1034,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
 def test_abnormal_end_keeps_an_observed_red_verdict(
     tmp_path: Path, ending: str, expected_reason: str
 ) -> None:
-    """A terminal fault is separate from gate state: after observing red, the
-    result exported to hooks must not revert verification to not_applicable."""
+    """A terminal fault after an observed red does not revert verification to not_applicable."""
     from agent6.budget import BudgetExceededError
 
     class ProviderStub:
@@ -1127,9 +1086,10 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
 
 
 def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: Path) -> None:
-    """A permanent provider error's raw upstream body (which can carry a noisy
-    account user_id) belongs in the ONE diagnostic log line, not echoed again in
-    the end-block summary. The summary stays concise (failure + HTTP status)."""
+    """A permanent provider error's raw body lands in one diagnostic log line, not the end block.
+
+    The body can carry a noisy account user_id; the summary keeps the failure and HTTP status.
+    """
     raw_body = 'OpenRouter API error 400: {"error":"bad model","user_id":"user_SECRET"}'
 
     class ProviderStub:
@@ -1178,10 +1138,10 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: Path) -> N
 
 
 def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: Path) -> None:
-    """A fatal ProviderError (agent6's own remedy text, no HTTP status) ends
-    the run after one call, and the summary carries that text: with no
-    status there is no hint, and hiding the reason would leave the operator
-    with a bare "provider error"."""
+    """A fatal ProviderError (agent6's own remedy text, no status) ends the run after one call.
+
+    The summary carries that text: with no status there is no hint.
+    """
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -1266,10 +1226,7 @@ def test_exhausted_provider_retries_keep_the_attempt_count_and_reason(tmp_path: 
 def test_a_call_the_providers_front_end_refused_is_an_error_result_not_a_dispatch(
     tmp_path: Path,
 ) -> None:
-    """The claude_code CLI checks a call's input before forwarding it and
-    answers the model with its own error; the loop ran the call anyway,
-    the provider then erred on the undeliverable result, and the retry
-    replayed the whole history. The refusal is the call's error result."""
+    """A call the claude_code CLI rejected is not run; the refusal is the call's error result."""
     from dataclasses import replace as _replace
 
     from agent6.harness._conversation import ToolResultItem
@@ -1347,11 +1304,10 @@ def _resume_snapshot(**kw: Any) -> Any:
 
 
 def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
-    """`resume --steer` on an already-FINISHED run: the seeded follow-up is
-    injected BEFORE the first provider call and drives at least one more
-    iteration. Without the fix the resumed conversation silent-finishes on
-    iteration 1 (before the end-of-iteration steer poll), dropping the follow-up
-    and reporting the original task as done."""
+    """`resume --steer` on a finished run injects the follow-up before the first provider call.
+
+    Otherwise the resumed conversation silent-finishes on iteration 1, before the steer poll.
+    """
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -1361,8 +1317,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
             rendered = str(kwargs["messages"])
             self.calls.append(rendered)
             if "median" not in rendered:
-                # The buggy path: the follow-up never reached the model, so it
-                # re-confirms the finished task in prose (a silent finish).
+                # The buggy path: the follow-up never reached the model, which re-confirmed.
                 return _resp("The mean() function is already done.")
             # The follow-up is present: act on it, then finish.
             if len(self.calls) == 1:
@@ -1425,8 +1380,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
 
 
 def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
-    """The up-front resume steer check is inert when no steer is seeded: a resume
-    with no `--steer` puts no phantom OPERATOR STEERING block on the wire."""
+    """A resume with no `--steer` puts no phantom OPERATOR STEERING block on the wire."""
     captured: list[str] = []
 
     class ProviderStub:
@@ -1450,8 +1404,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
             verify_timeout_s=60.0,
         ),
     )
-    # No steer callables: the Harness's default steer_requested() is False, so the
-    # up-front resume check is a no-op -- exactly a resume with no `--steer`.
+    # No steer callables: steer_requested() is False, so the up-front check is a no-op.
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -1480,16 +1433,15 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
 
 
 def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -> None:
-    """An unexecutable metric command must abort the run the SAME graceful way
-    whether the model called run_metric_command or the auto-after-verify path
-    did. Pins the crash where the auto path's `except ToolError` could not catch
-    OperatorCommandUnexecutableError (a sibling of ToolError, not a subclass), so the
-    misconfiguration escaped as an uncaught traceback out of the whole run."""
+    """An unexecutable metric command aborts the run the same way on both paths.
+
+    OperatorCommandUnexecutableError is a sibling of ToolError, not a subclass, so the auto path's
+    `except ToolError` did not catch it.
+    """
     from agent6.tools.dispatch import OperatorCommandUnexecutableError
 
     class ProviderStub:
-        # Always pass verify; never call run_metric_command itself, so the AUTO
-        # path is what triggers the unexecutable metric command.
+        # Always pass verify and never call run_metric_command, so the auto path triggers it.
         def call(self, **kwargs: Any) -> ProviderResponse:
             del kwargs
             return _tool_resp("run_verify_command")
@@ -1549,9 +1501,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
 
 
 def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: Path) -> None:
-    """The operator's no to the automatic metric (run_commands=ask) holds for
-    the run, as a denied harness verify does: later green verifies do not ask
-    again, and the reading that was denied says so."""
+    """The operator's no to the automatic metric holds for the run, like a denied verify."""
     from agent6.tools.dispatch import ToolDeniedError
 
     class ProviderStub:
@@ -1623,10 +1573,10 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: Path
 
 
 def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path: Path) -> None:
-    """A turn that runs verify (green) and THEN edits must not auto-commit the
-    edited tree labeled 'verify passed': the edit changed the tree the verify
-    validated. Pins the verify_just_passed latch where an unverified edit was
-    committed as green. (edit-then-verify, the normal order, still commits.)"""
+    """A turn that edits after a green verify does not auto-commit as verified.
+
+    The edit changed the tree the verify validated; edit-then-verify still commits.
+    """
 
     def _multi(*names: str) -> ProviderResponse:
         tus = tuple({"id": f"t{i}", "name": n, "input": {}} for i, n in enumerate(names))
@@ -1715,10 +1665,10 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
 
 
 def test_worker_max_tokens_starvation_backoff() -> None:
-    """A metric run uses the lifted ceiling until the worker has gone quiet on 2
-    CONSECUTIVE turns, then backs off to per_call_max_tokens to break a
-    reasoning-binge spiral. A one-off quiet keeps the full recovery room;
-    non-metric runs are unaffected."""
+    """A metric run backs off the lifted ceiling after two consecutive quiet turns.
+
+    A one-off quiet keeps the full recovery room; non-metric runs are unaffected.
+    """
     metric_cfg = SimpleNamespace(
         harness=SimpleNamespace(
             standing_patience=-1,
@@ -1774,14 +1724,11 @@ def test_worker_max_tokens_starvation_backoff() -> None:
 
 
 def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None:
-    """End-to-end: a model that goes quiet at the full metric ceiling but ACTS
-    once the cap is tightened recovers via the starvation backoff instead of
-    dying on went_quiet. The stub's behaviour is keyed on the cap it receives, so
-    this proves the backoff changes the loop's OUTCOME, not just the number:
-    turns 1-2 see the lifted ceiling and go quiet; turn 3 (>= 2 consecutive
-    quiets) gets per_call_max_tokens and the stub finishes. Without the backoff
-    the cap would stay lifted, the stub would keep going quiet, and the run would
-    die on went_quiet -- exactly GLM 5.2's observed spiral."""
+    """A model quiet at the full ceiling but active under a tighter cap recovers via the backoff.
+
+    The stub's behaviour is keyed on the cap it receives, so the backoff changes the run's outcome,
+    not just a number.
+    """
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -1866,10 +1813,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
     class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.calls: list[str] = []
-            # Improves to 50, then ties it. The plateau detector fires once
-            # >=5 parsed samples exist, but the loop now answers the first
-            # _METRIC_PLATEAU_PATIENCE (3) plateaus with a pivot nudge and
-            # only stops on the 4th, so we need four tied samples at the end.
+            # Improves to 50, then ties: three plateaus draw a pivot nudge, the fourth stops.
             self.scores = iter([100.0, 80.0, 60.0, 50.0, 50.0, 50.0, 50.0, 50.0])
 
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
@@ -1939,9 +1883,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
 
 
 def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
-    """The first plateau should not stop the run: the loop injects a pivot
-    nudge and keeps going, so a worker that changes strategy can recover the
-    remaining budget instead of quitting at a local optimum."""
+    """The first plateau injects a pivot nudge and keeps the run going."""
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2021,18 +1963,16 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
             original_task="t",
         )
 
-    # The plateau at the 5th sample injected a pivot nudge instead of
-    # stopping; the worker saw it and finished on its own terms.
+    # The plateau at the 5th sample injected a pivot nudge; the worker finished on its own terms.
     assert provider.saw_plateau_nudge is True
     assert result.reason == "finish_session"
 
 
 def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Path) -> None:
-    """On a REAL-budget run, ties while budget is high must not exhaust the
-    plateau patience: the plateau nudge has to still fire once the budget
-    enters the final slice. Pins the bug where `plateau_nudges_used` accrued
-    on high-budget ties, so the run stopped the instant the budget crossed the
-    threshold and the final-slice nudge never showed."""
+    """Ties while budget is high do not exhaust the plateau patience.
+
+    The final-slice nudge still fires once the budget crosses the threshold.
+    """
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2043,10 +1983,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
             self.calls += 1
             if "[harness plateau]" in str(kwargs["messages"][-1]):
                 self.saw_final_nudge = True
-            # Vary the call signature each turn so the repeat-loop-guard (which
-            # kills at 10 identical back-to-back calls) does not fire; a real
-            # worker varies its edits between verifies. This isolates the plateau
-            # logic under test from the orthogonal loop-guard.
+            # Vary the call each turn so the repeat guard (10 identical calls) stays out of the way.
             return _tool_resp(
                 "run_verify_command", {"n": self.calls}, tool_id=f"verify-{self.calls}"
             )
@@ -2055,10 +1992,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
         def __init__(self) -> None:
             self.calls: list[str] = []
             self.metric_count = 0
-            # Improve to 50, then tie it for many rounds. Plateau fires from the
-            # 5th sample; ties 5-8 land while budget is high (runway), 9+ land in
-            # the final slice. With the fix, runway ties do not consume patience,
-            # so the FINAL nudge fires on samples 9/10/11 and the run stops on 12.
+            # Ties 5-8 land in runway and consume no patience; 9-11 draw the final nudge, 12 stops.
             self.scores = iter([100.0, 80.0, 60.0, 50.0] + [50.0] * 8)
 
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
@@ -2106,9 +2040,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
         dispatcher=dispatcher,
         max_iterations=20,
     )
-    # Drive the budget fraction off the dispatcher's measurement count (robust to
-    # _budget_fraction_remaining being read more than once per iteration): samples
-    # 5-8 see 80% left (runway), 9+ see 10% left (final slice, FINAL nudge tier).
+    # The budget fraction follows the measurement count: samples 5-8 see 80% left, 9+ see 10%.
     wf._budget_fraction_remaining = lambda: 0.8 if dispatcher.metric_count <= 8 else 0.1  # type: ignore[method-assign]  # pyright: ignore[reportPrivateUsage]
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
@@ -2128,16 +2060,15 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
     # The FINAL nudge must have fired in the final slice before the run stopped.
     assert provider.saw_final_nudge is True
     assert result.reason == "metric_plateau"
-    # Runway ties (samples 5-8) did not consume patience, so the run kept going
-    # well past the point the old code stopped (sample 9): >=12 metric samples.
+    # Runway ties did not consume patience, so the run went well past sample 9.
     assert dispatcher.metric_count >= 12
 
 
 def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> None:
-    """A verbose planner that never calls finish_planning gets a single harness
-    'finish now' nudge once it hits the plan turn cap -- not before, not again.
-    This is the lever that makes Kimi K2.6 actually land a plan; pins the
-    off-by-one (iteration - start + 1 >= cap) and the one-shot latch."""
+    """A planner that never calls finish_planning gets one finish nudge at the plan turn cap.
+
+    Pins the off-by-one (iteration - start + 1 >= cap) and the one-shot latch.
+    """
     from agent6.harness._nudges import (
         PLAN_BUDGET_NUDGE,
         PLAN_NUDGE_AFTER_ITERS,
@@ -2177,16 +2108,14 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> 
         root_task_id=None,
         original_task="t",
     )
-    # Injected exactly once, on the turn-cap iteration (mode stays "plan" on
-    # every later turn, so the latch is what keeps it to one).
+    # Injected exactly once, on the turn-cap iteration; the latch keeps it to one.
     assert provider.nudged_on == [PLAN_NUDGE_AFTER_ITERS]
 
 
 def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The nudge also fires early when the token budget runs low (not only on
-    the turn cap) -- e.g. a planner reading large files burns budget fast."""
+    """The finish nudge also fires early when the token budget runs low."""
     from agent6.harness import loop as loopmod
     from agent6.harness._nudges import PLAN_BUDGET_NUDGE
 
@@ -2234,9 +2163,7 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
 def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A non-metric `run` gets a one-shot wrap-up nudge when budget runs low.
-    Observed live: the worker solves the task but never re-verifies or calls
-    finish_session, so the budget dies on read-only commands."""
+    """A non-metric `run` gets a one-shot wrap-up nudge when budget runs low."""
     from agent6.harness import loop as loopmod
     from agent6.harness._nudges import RUN_BUDGET_NUDGE
 
@@ -2282,10 +2209,7 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
 
 
 def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
-    """A run-mode worker that keeps spinning after verify already passed (no new
-    commit, no edit) gets one finish nudge, then the loop stops it with
-    reason='verify_settled' — the positive completion signal a non-metric run
-    otherwise lacks (Kimi K2.6 observed running 128 iters when done at ~45)."""
+    """A worker spinning after a green verify is nudged once, then stopped as verify_settled."""
     from agent6.harness._nudges import VERIFY_SETTLED_NUDGE
 
     class ProviderStub:
@@ -2349,10 +2273,10 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
 
 
 def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path) -> None:
-    """A green verify followed by edits that never re-verify must not settle as
-    'verify passed': the settle end grounds on the same tree probe as
-    finish_session, so it downgrades to reason='settled' with the stale-green
-    summary (all_passed=False)."""
+    """A green verify followed by unverified edits settles as 'settled', stale-green summary.
+
+    The settle end grounds on the same tree probe as finish_session.
+    """
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2424,8 +2348,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path
 
 
 def test_settle_after_a_failed_reverify_reports_the_red_gate() -> None:
-    """A settled tree whose latest verify ran and failed was re-verified; its
-    summary must report that red instead of claiming no reverify happened."""
+    """A settled tree whose latest verify failed reports that red, not "no reverify"."""
     wf = _wf(mode="run", config=_cfg_with_verify())
     state = _state(verify=VerifyVerdict(ever_passed=True, last_ok=False))
 
@@ -2438,9 +2361,7 @@ def test_settle_after_a_failed_reverify_reports_the_red_gate() -> None:
 
 
 def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: Path) -> None:
-    """The settled detector must stay dormant until verify has passed at least
-    once — a worker still reading toward its first green build must not be
-    stopped early."""
+    """The settled detector stays dormant until verify has passed once."""
     from agent6.harness._nudges import VERIFY_SETTLED_NUDGE
 
     class ProviderStub:
@@ -2497,9 +2418,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
 
 
 def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
-    """Re-running verify on an already-green tree (which the prompt encourages
-    between reads) is active work, not idle — it must NOT accrue toward the
-    verify-settled hard-stop, or a legit run gets truncated."""
+    """Re-running verify on a green tree is active work; it does not count toward the settle."""
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2554,9 +2473,10 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
 
 
 def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> None:
-    """On a metric run, post-verify measure/analyse/read iterations legitimately
-    make no commit; completion is owned by the metric early-finish + plateau
-    logic, so the verify-settled detector must NOT hard-stop them."""
+    """On a metric run, post-verify measure and read iterations do not trip the settled stop.
+
+    Completion is owned by the metric early-finish and plateau logic.
+    """
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2624,8 +2544,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
 
 
 def test_metric_plateau_nudge_states_the_remaining_budget() -> None:
-    """The plateau notice is one fact with the run's remaining budget; three
-    coaching tiers keyed on budget pressure were what it replaced."""
+    """The plateau notice is one fact with the run's remaining budget."""
     from agent6.harness._metric import metric_plateau_nudge as _metric_plateau_nudge
 
     assert "the remaining budget is unknown" in _metric_plateau_nudge(None)
@@ -2634,9 +2553,7 @@ def test_metric_plateau_nudge_states_the_remaining_budget() -> None:
 
 
 def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> None:
-    """With most of the budget unspent, a metric plateau must NOT terminate
-    the run even after the fixed nudge patience is exhausted — the loop keeps
-    pivoting until the budget enters its final slice."""
+    """A metric plateau does not end the run while most of the budget is unspent."""
     from agent6.budget import BudgetTracker
 
     class ProviderStub:
@@ -2694,8 +2611,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
             verify_infer=True,
         ),
     )
-    # Fresh budget with huge ceilings -> fraction_remaining stays ~1.0, well
-    # above the final-slice threshold, so the plateau never becomes terminal.
+    # Huge ceilings keep fraction_remaining ~1.0, so the plateau never becomes terminal.
     budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     max_iters = 12
     wf = _wf(
@@ -2722,15 +2638,13 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
             original_task="t",
         )
 
-    # Ran out the iteration cap rather than stopping on the plateau, and
-    # kept nudging past the fixed patience of 3.
+    # Ran out the iteration cap instead of stopping, nudging past the patience of 3.
     assert result.reason == "max_iterations"
     assert provider.plateau_nudges_seen > 3
 
 
 def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> None:
-    """A finish_session on a metric run with most of the budget unspent is rejected
-    and nudged a few times before the loop honours it."""
+    """An early finish_session on a metric run is rejected a few times before it is honoured."""
     from agent6.budget import BudgetTracker
 
     class ProviderStub:
@@ -2801,8 +2715,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
 
 
 def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
-    """With no budget tracker wired in, an early finish_session is honoured at once
-    so the guard can never deadlock a run that lacks a budget signal."""
+    """With no budget tracker an early finish_session is honoured at once; no deadlock."""
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2864,9 +2777,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
 
 
 def test_tool_calls_after_finish_session_are_not_executed(tmp_path: Path) -> None:
-    """The finish tools say "tool calls after it are not executed": a
-    run_command emitted after finish_session in the same message is answered
-    with an error result and never dispatched."""
+    """A tool call after finish_session in the same message gets an error, never a dispatch."""
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2961,8 +2872,7 @@ def test_metric_at_fraction_ceiling_scans_only_the_score_line() -> None:
         metric_at_fraction_ceiling as _metric_at_fraction_ceiling,
     )
 
-    # tqdm progress in stderr prints an incidental 100/100 equal to the score;
-    # the real score line has no denominator, so the ceiling must NOT latch.
+    # A tqdm 100/100 in stderr equals the score; the real score line has no denominator.
     text = "SCORE: 100\n100%|##########| 100/100 [00:03<00:00, 33.1it/s]\n"
     assert _metric_at_fraction_ceiling(text, 100.0, pattern=r"SCORE: (\d+)") is False
     # A genuine maxed fraction ON the score-pattern line still trips it.
@@ -2972,11 +2882,7 @@ def test_metric_at_fraction_ceiling_scans_only_the_score_line() -> None:
 
 
 def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
-    """A finish_session on a maximize metric that is already at its provable
-    ceiling (SCORE: N/N) is honoured immediately — even with most of the
-    budget unspent — instead of being rejected and nudged. This is the guard
-    against weak models burning their whole budget re-deriving a solved task.
-    """
+    """A finish_session at a maximize metric's provable ceiling (SCORE: N/N) is honoured at once."""
     from agent6.budget import BudgetTracker
 
     class ProviderStub:
@@ -2989,8 +2895,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
             rendered = str(kwargs["messages"][-1])
             if "[harness budget]" in rendered:
                 self.finish_nudges_seen += 1
-            # First turn: pass verify (auto-metric will report the ceiling).
-            # Subsequent turns: try to finish.
+            # First turn: pass verify (the auto-metric reports the ceiling). Then try to finish.
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id=f"verify-{self.calls}")
             return _tool_resp(
@@ -3034,8 +2939,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
             verify_infer=True,
         ),
     )
-    # Huge ceilings keep fraction_remaining ~1.0: without the ceiling guard
-    # the early-finish guard would reject the finish here.
+    # Huge ceilings keep fraction_remaining ~1.0: without the ceiling guard the finish is rejected.
     budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     wf = _wf(
         root=tmp_path,
@@ -3071,10 +2975,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
 
 
 def test_extract_metric_targets_ignores_arrow_output() -> None:
-    """Grader progress arrows ('epoch 2 -> 27.0') are not thresholds: the bare
-    '>' alternative also matched the second char of '->', fabricating an
-    unmeetable 'drive the metric above <current>' directive from the grader's
-    own echo of the score."""
+    """Grader progress arrows ('epoch 2 -> 27.0') are not thresholds."""
     from agent6.harness._metric import (
         extract_metric_targets as _extract_metric_targets,
     )
@@ -3115,8 +3016,7 @@ def test_next_metric_target_minimize_returns_nearest_unmet() -> None:
     from agent6.harness._metric import next_metric_target as _next_metric_target
 
     targets = (147734.0, 18532.0, 1579.0, 1487.0)
-    # At 8256 we've cleared 18532/147734; nearest unmet is the largest
-    # threshold still below the current score.
+    # At 8256 the nearest unmet threshold is the largest one still below the score.
     assert _next_metric_target(targets, 8256.0, "minimize") == 1579.0
     # Once under everything, no target remains.
     assert _next_metric_target(targets, 1000.0, "minimize") is None
@@ -3131,9 +3031,7 @@ def test_next_metric_target_maximize_returns_nearest_unmet() -> None:
 
 
 def test_next_metric_target_equality_is_unmet() -> None:
-    # Thresholds are harvested from strict comparisons (`assert x < N`), which
-    # still FAIL at x == N; a score sitting exactly on the threshold has not
-    # met it and must keep it as the next target.
+    # Thresholds come from strict comparisons, so a score exactly on one has not met it.
     from agent6.harness._metric import next_metric_target as _next_metric_target
 
     assert _next_metric_target((1487.0,), 1487.0, "minimize") == 1487.0
@@ -3250,8 +3148,7 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
 
 
 def _long_history(n_pairs: int) -> list[dict[str, Any]]:
-    """An original task message followed by ``n_pairs`` assistant tool_use /
-    user tool_result turns with bulky payloads."""
+    """Return a task message followed by bulky tool_use and tool_result pairs."""
     msgs: list[dict[str, Any]] = [
         {"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize the kernel"}]}
     ]
@@ -3351,8 +3248,7 @@ def test_tier1_gist_event_carries_paths() -> None:
 
 
 def test_summarise_done_event_carries_summary_text() -> None:
-    """The full summary rides the event so surfaces can show what the model now
-    works from; summary_chars alone hid the post-restart worldview."""
+    """The full summary rides the event so surfaces can show what the model works from."""
     ev = _EventCapture()
     summariser = MagicMock()
     summariser.call.return_value = _resp("done: tried A; best=42 at sha9")
@@ -3363,8 +3259,7 @@ def test_summarise_done_event_carries_summary_text() -> None:
 
 
 def test_forced_compact_threads_focus_to_summariser() -> None:
-    """/compact <focus>: the marker's text reaches the summariser prompt and the
-    loop.compact.requested event, so the operator steers WHAT the summary keeps."""
+    """`/compact <focus>` reaches the summariser prompt and the loop.compact.requested event."""
     ev = _EventCapture()
     summariser = MagicMock()
     summariser.call.return_value = _resp("s")
@@ -3389,10 +3284,7 @@ def test_forced_compact_threads_focus_to_summariser() -> None:
 
 
 def test_forced_compact_below_the_floor_says_it_was_refused() -> None:
-    """The history floor is deliberate -- a restart below it loses more than it
-    saves -- but the request was consumed and cleared with no second event: the
-    front-end had already said "applies before the next model call", so the
-    operator saw a success toast, lost the focus text, and had to guess."""
+    """A `/compact` refused by the history floor emits its own event, so surfaces can say so."""
     ev = _EventCapture()
     summariser = MagicMock()
     cleared: list[bool] = []
@@ -3415,8 +3307,7 @@ def test_forced_compact_below_the_floor_says_it_was_refused() -> None:
 
 
 def test_forced_compact_plain_keeps_prompt_unfocused() -> None:
-    """A plain /compact ("" focus) forces tier-2 with the byte-identical
-    summariser prompt of an automatic tier-2 (no focus clause)."""
+    """A plain `/compact` forces tier-2 with the automatic tier-2 prompt, byte-identical."""
     summariser = MagicMock()
     summariser.call.return_value = _resp("s")
     wf = _wf(
@@ -3430,8 +3321,7 @@ def test_forced_compact_plain_keeps_prompt_unfocused() -> None:
 
 
 def test_summarise_and_restart_reinjects_pins_verbatim() -> None:
-    """Pins are re-shown verbatim in the restart message (before the summary
-    label, as standing orders), and the summariser is told not to restate them."""
+    """Pins are re-shown verbatim in the restart message; the summariser does not restate them."""
     summariser = MagicMock()
     summariser.call.return_value = _resp("progress summary text")
     wf = _wf(compaction=CompactionSettings(summariser=summariser))
@@ -3466,9 +3356,11 @@ def test_summarise_and_restart_replaces_history() -> None:
 
 
 def test_summarise_and_restart_applies_dag_checkoff() -> None:
-    """At tier-2 compaction agent6 asks the summariser which tasks finished and
-    applies it to the curator (passes completed, queues discovered), strips the
-    bookkeeping block from the restart, and ignores hallucinated task ids."""
+    """Tier-2 compaction applies the summariser's task bookkeeping to the curator.
+
+    Completed tasks pass, discovered ones queue, the block is stripped from the restart, and
+    hallucinated ids are ignored.
+    """
 
     class _FakeClient:
         def __init__(self) -> None:
@@ -3510,8 +3402,7 @@ def test_summarise_and_restart_applies_dag_checkoff() -> None:
 
     assert fake.passed == ["01DONE"]  # valid completed id passed; hallucinated id ignored
     assert fake.added == [("01ROOT", "fix the budget rounding bug")]  # queued under the root
-    # The log reports what LANDED: the cap on new tasks and a refused status
-    # both make the summariser's request bigger than the change.
+    # The log reports what landed: the cap and a refused status both shrink the request.
     assert any("check-off -- passed 1, queued 1" in line for line in logged), logged
     restart_text = messages[1]["content"][0]["text"]
     assert "providers audit" in restart_text
@@ -3533,9 +3424,7 @@ class _FakeGraph:
 
 
 def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
-    """The gate refuses while a subtask is open, naming only the tasks that
-    block it, and lets the end through after TASK_FINISH_PATIENCE refusals
-    (the receipt then names the open tasks)."""
+    """The gate refuses while a subtask is open, naming the blockers, then yields after patience."""
     from agent6.harness._nudges import TASK_FINISH_PATIENCE
 
     nodes = {
@@ -3555,8 +3444,7 @@ def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
 
 
 def test_a_plans_tasks_neither_gate_nor_decorate_its_finish() -> None:
-    """A plan's task DAG is its deliverable, open by design: plan mode has no
-    open-task gate and its finish receipt is not decorated with them."""
+    """A plan's task DAG is its deliverable, open by design: no gate, no decorated receipt."""
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "plan"},
         "sub1": {"parent_id": "root", "status": "pending", "title": "step one"},
@@ -3577,10 +3465,7 @@ def test_a_plans_tasks_neither_gate_nor_decorate_its_finish() -> None:
 
 
 def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> None:
-    """With the gate's cap spent, the settled stop goes through: a green tree
-    settles as verify_settled (the status word carries the verify truth and
-    nothing else) and the receipt names the open subtasks. An uncapped gate
-    bounced a worker for its whole budget."""
+    """With the gate's cap spent, the settled stop goes through, naming the open subtasks."""
     from agent6.harness._nudges import TASK_FINISH_PATIENCE, VERIFY_SETTLED_STOP_AFTER
 
     nodes = {
@@ -3605,8 +3490,7 @@ def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> N
 
 
 def test_a_settled_end_from_the_scoped_gate_reads_scoped() -> None:
-    """A verify_settled end carries `scoped` like the grounded ends do, so a
-    green from the scoped gate reads "passed · scoped gate", never a bare pass."""
+    """A verify_settled end carries `scoped` like the grounded ends do."""
     from agent6.harness._nudges import VERIFY_SETTLED_STOP_AFTER
 
     ev = _EventCapture()
@@ -3625,16 +3509,14 @@ def test_a_settled_end_from_the_scoped_gate_reads_scoped() -> None:
 
 
 def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
-    """Only SUBTASKS gate. The always-pending auto-root alone must NOT block a
-    finish (else every run deadlocks); no curator -> no gate either."""
+    """Only subtasks gate: the always-pending root never blocks a finish; no curator, no gate."""
     root_only = _FakeGraph({"root": {"parent_id": None, "status": "pending", "title": "t"}})
     assert task_finish_nudge(_wf(curator=root_only)._open_subtasks(), _state().gates) is None  # pyright: ignore[reportPrivateUsage]
     assert task_finish_nudge(_wf(curator=None)._open_subtasks(), _state().gates) is None  # pyright: ignore[reportPrivateUsage]
 
 
 def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:
-    """The automatic settled ending passes the same task gate as finish_session,
-    so a green gate cannot make the run read passed while work remains open."""
+    """The automatic settled ending passes the same task gate as finish_session."""
     from agent6.harness._nudges import VERIFY_SETTLED_STOP_AFTER
 
     nodes = {
@@ -3660,8 +3542,7 @@ def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:
 
 
 def test_metric_plateau_end_is_refused_while_a_subtask_is_open() -> None:
-    """A metric ceiling cannot end passed while a task remains open; the task
-    refusal reaches the next model turn instead."""
+    """A metric ceiling cannot end passed while a task is open; the refusal reaches the model."""
     from agent6.harness._metric import MetricSample
 
     nodes = {
@@ -3693,8 +3574,7 @@ def test_metric_plateau_end_is_refused_while_a_subtask_is_open() -> None:
 
 
 def test_current_task_id_prefers_open_cursor() -> None:
-    """The cursor wins when it still points at an open subtask, even if an
-    earlier subtask is also open (the worker's explicit focus choice is kept)."""
+    """The cursor wins when it still points at an open subtask, even if an earlier one is open."""
     from agent6.harness.loop import current_task_id  # pyright: ignore[reportPrivateUsage]
 
     nodes = {
@@ -3712,8 +3592,7 @@ def test_current_task_id_prefers_open_cursor() -> None:
 
 
 def test_first_ready_subtask_respects_deps_and_order() -> None:
-    """The frontier skips a subtask whose dependency is not yet done, and a
-    passed/obsolete dependency unblocks it; roots and done tasks never surface."""
+    """The frontier skips a subtask whose dependency is open; roots and done tasks never show."""
     from agent6.harness._dag_focus import first_ready_subtask as _first_ready_subtask
 
     nodes = {
@@ -3733,9 +3612,7 @@ def test_first_ready_subtask_respects_deps_and_order() -> None:
 
 
 def test_first_ready_subtask_prefers_leaf_over_decomposed_parent() -> None:
-    """A subtask with open children is a container -- the frontier surfaces its
-    first ready leaf, not the parent, so a decompose moves focus forward. A cursor
-    still pointing at the parent falls through to the leaf too."""
+    """A subtask with open children is a container: the frontier surfaces its first ready leaf."""
     from agent6.harness._dag_focus import (
         current_task_id as _current_task_id,
     )
@@ -3759,10 +3636,7 @@ def test_first_ready_subtask_prefers_leaf_over_decomposed_parent() -> None:
 
 
 def test_first_ready_subtask_surfaces_a_parent_over_a_failed_child() -> None:
-    """A failed child is not open: the parent is the unit of work again (the
-    curator still refuses to pass it, naming the child to retry or retire),
-    so the frontier surfaces the parent, not nothing and not the child the
-    model gave up on."""
+    """A failed child is not open, so the frontier surfaces the parent again."""
     from agent6.harness._dag_focus import first_ready_subtask as _first_ready_subtask
 
     nodes = {
@@ -3787,8 +3661,7 @@ def test_current_task_banner_carries_title_acceptance_paths() -> None:
     # Absent acceptance/paths are simply omitted, not rendered empty.
     bare = current_task_banner("01X", _tn("01X", title="t"))
     assert "Acceptance:" not in bare and "Relevant paths:" not in bare
-    # Decompose invites a finer plan for a large childless task (recursion);
-    # off by default, and never once the task already has children.
+    # Decompose invites a finer plan for a large childless task; off by default.
     assert "child subtasks" not in bare
     rec = current_task_banner("01X", _tn("01X", title="t"), decompose=True)
     assert "child subtasks under it (parent_id=01X)" in rec
@@ -3797,14 +3670,12 @@ def test_current_task_banner_carries_title_acceptance_paths() -> None:
 
 
 def test_graph_update_snapshot_payload_is_wire_stable(tmp_path: Path) -> None:
-    """FROZEN wire surface: the graph.update event the loop emits (consumed by
-    the viewmodel fold, web and TUI, and on-disk in old run dirs) projects each
-    node to exactly {title, status, parent_id, children, created_by, standing}
-    plus a top-level cursor, with children a JSON list. A run dir written
-    before a field existed simply lacks it, and every reader defaults it.
-    Interface-independent: drives a real
-    curator + real Harness, so it pins the emitted bytes regardless of how the
-    curator hands state to the loop internally."""
+    """The `graph.update` event's node projection is a frozen wire surface.
+
+    Each node is exactly {title, status, parent_id, children, created_by, standing} plus a top-level
+    cursor; a run dir written before a field existed lacks it and every reader defaults it. Driven
+    with a real curator and Harness, so the emitted bytes are pinned.
+    """
     from agent6.graph.curator import GraphCurator
     from agent6.graph.models import (
         AddSubtaskIntent,
@@ -3857,8 +3728,7 @@ def test_graph_update_snapshot_payload_is_wire_stable(tmp_path: Path) -> None:
         },
         "cursor": child.id,
     }
-    # children must serialize as a JSON list (model_dump(mode="json") shape), not
-    # a tuple -- the frozen on-disk/wire contract old run dirs already hold.
+    # children serialize as a JSON list, the on-disk contract old run dirs hold.
     assert isinstance(fields["nodes"][root.id]["children"], list)
 
 
@@ -3904,9 +3774,7 @@ def _surface(wf: Harness, st: Any, messages: list[dict[str, Any]]) -> None:
 
 
 def test_surface_current_task_surfaces_advances_then_quiets() -> None:
-    """First call surfaces the focus banner, advances the cursor onto the task,
-    and marks it in_progress; a repeat call with the same focus stays quiet (the
-    banner survives tier-1 elision); marking it passed advances to the next."""
+    """The first call surfaces the focus banner and marks the task in_progress; a repeat is mute."""
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "review repo"},
         "a": {"parent_id": "root", "status": "pending", "title": "audit providers"},
@@ -3941,9 +3809,7 @@ def test_surface_current_task_surfaces_advances_then_quiets() -> None:
 
 
 def test_surface_current_task_skips_status_write_when_already_in_progress() -> None:
-    """The in_progress-only guard: a current task already in_progress is surfaced
-    WITHOUT a redundant update_status write (only pending -> in_progress writes).
-    Pins the negative branch of the sole conditional curator write."""
+    """A task already in_progress is surfaced without a redundant update_status write."""
     cur = _FakeCurator(
         {
             "root": {"parent_id": None, "status": "in_progress", "title": "r"},
@@ -3960,8 +3826,7 @@ def test_surface_current_task_skips_status_write_when_already_in_progress() -> N
 
 
 def test_surface_current_task_resurfaces_after_compaction_reset() -> None:
-    """A tier-2 restart resets surfaced_task_id to None; the next surface call
-    re-injects the focus banner into the fresh context."""
+    """A tier-2 restart resets surfaced_task_id, so the next call re-injects the focus banner."""
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
         "a": {"parent_id": "root", "status": "pending", "title": "audit providers"},
@@ -3977,8 +3842,7 @@ def test_surface_current_task_resurfaces_after_compaction_reset() -> None:
 
 
 def test_surface_current_task_noop_cases() -> None:
-    """No-op without open subtasks (root only), without a curator, or outside run
-    mode -- nothing is appended and no cursor/status write happens."""
+    """The stuck-task nudge is a no-op without open subtasks, a curator, or run mode."""
     root_only = _FakeCurator({"root": {"parent_id": None, "status": "pending", "title": "t"}})
     msgs: list[dict[str, Any]] = []
     _surface(_wf(curator=root_only), _state(), msgs)
@@ -4002,9 +3866,7 @@ def _stuck_count(messages: list[dict[str, Any]]) -> int:
 
 
 def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None:
-    """The split/pass/skip nudge re-fires every _STUCK_ON_TASK_AFTER turns on the
-    same stuck task (a weak model ignored a single nudge live), but caps at
-    _STUCK_NUDGE_MAX so it cannot nag forever."""
+    """The split/pass/skip nudge re-fires on the same stuck task and caps at _STUCK_NUDGE_MAX."""
     from agent6.harness._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER
 
     cur = _FakeCurator(
@@ -4030,8 +3892,7 @@ def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None
 
 
 def test_surface_current_task_stuck_nudge_resets_on_progress() -> None:
-    """Forward motion (a task marked passed -> focus advances) resets the grind
-    counter, so the stuck nudge does not fire."""
+    """Forward motion (a task marked passed, focus advances) resets the grind counter."""
     from agent6.harness._dag_focus import STUCK_ON_TASK_AFTER
 
     nodes = {
@@ -4053,8 +3914,7 @@ def test_surface_current_task_stuck_nudge_resets_on_progress() -> None:
 
 
 def test_surface_current_task_stuck_counter_survives_compaction() -> None:
-    """A tier-2 restart resets the banner (surfaced_task_id) but NOT the grind
-    counter -- compaction is not progress on the task."""
+    """A tier-2 restart resets the banner but not the grind counter: compaction is not progress."""
     wf = _wf(
         curator=_FakeCurator(
             {
@@ -4075,9 +3935,7 @@ def test_surface_current_task_stuck_counter_survives_compaction() -> None:
 
 
 def test_surface_decompose_resets_grind_counter() -> None:
-    """Obeying the nudge -- decomposing the focus task with add_task -- moves focus
-    to the first new leaf and resets the grind counter (the fix for the
-    self-defeating-nudge bug)."""
+    """Decomposing the focus task moves focus to the first new leaf and resets the grind counter."""
     nodes: dict[str, dict[str, Any]] = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r", "children": ["a"]},
         "a": {"parent_id": "root", "status": "pending", "title": "a", "children": []},
@@ -4098,8 +3956,7 @@ def test_surface_decompose_resets_grind_counter() -> None:
 
 
 def test_maybe_compact_returns_restart_signal() -> None:
-    """compact returns True only when a tier-2 restart actually replaced
-    the history (the loop's cue to re-surface the focus banner)."""
+    """Compact returns True only when a tier-2 restart replaced the history."""
     summariser = MagicMock()
     summariser.call.return_value = _resp("progress summary")
     wf = _wf(compaction=CompactionSettings(summariser=summariser, summarise_at_chars=500_000))
@@ -4114,8 +3971,7 @@ def test_maybe_compact_returns_restart_signal() -> None:
 
 
 def test_tier2_summariser_is_told_the_task() -> None:
-    """The summary's goal line comes from the task itself, never guessed from a
-    transcript that starts mid-work."""
+    """The summary's goal line comes from the task, never from a transcript that starts mid-work."""
     summariser = MagicMock()
     summariser.call.return_value = _resp("progress summary")
     wf = _wf(compaction=CompactionSettings(summariser=summariser, summarise_at_chars=500_000))
@@ -4128,16 +3984,14 @@ def test_tier2_summariser_is_told_the_task() -> None:
 
 
 def test_a_restart_does_not_re_fire_on_the_next_iteration() -> None:
-    """The growth floor keeps a restart that lands near the threshold from
-    summarising every other iteration. Measured on the conversation alone while
-    the TRIGGER also counts the request prefix, the floor sat below the total
-    the moment the restart finished: tier 2 re-fired with no new turns, paid a
-    second summariser call, and paraphrased away the tail it had just kept."""
+    """The growth floor counts the request prefix, as the trigger does.
+
+    Measured on the conversation alone, the floor sat below the total the moment a restart landed
+    near the threshold, so tier 2 re-fired with no new turns.
+    """
     summariser = MagicMock()
     summariser.call.return_value = _resp("progress summary")
-    # A small-window model against a big AGENTS.md: the prefix alone clears the
-    # threshold, so every iteration is "over" and the floor is the only thing
-    # between the run and a summariser call per turn.
+    # The prefix alone clears the threshold, so the floor is all that spaces the summariser calls.
     wf = _wf(compaction=CompactionSettings(summariser=summariser, summarise_at_chars=60_000))
     msgs = _big_text_history("TASK: x", blocks=8, block_chars=20_000)
     st = _state()
@@ -4153,9 +4007,7 @@ def test_a_restart_does_not_re_fire_on_the_next_iteration() -> None:
 
 
 def test_compact_request_forces_a_tier2_restart() -> None:
-    """An operator compact.request (the TUI's "Compact now") forces the tier-2
-    summarise-and-restart at the next boundary even far below the size
-    thresholds, and consumes the marker: one request, one compaction."""
+    """An operator compact.request forces one tier-2 restart at the next boundary, then clears."""
     summariser = MagicMock()
     summariser.call.return_value = _resp("progress summary")
     pending = {"req": True}
@@ -4175,9 +4027,7 @@ def test_compact_request_forces_a_tier2_restart() -> None:
 
 
 def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
-    """A front-end's stop.request ("stop after this step") ends the run at the
-    completed-iteration boundary -- after the step's tool results land -- with
-    the resumable steer_abort shape, and consumes the marker."""
+    """A stop.request ends the run at the iteration boundary in the resumable steer_abort shape."""
     from agent6.events import EventSink
 
     class ProviderStub:
@@ -4258,12 +4108,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
 
 
 def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> None:
-    """Integration: a tier-2 restart mid-run wipes the focus banner, and the loop's
-    `if self.compactor.compact(messages): state.focus.surfaced_task_id = None` edge makes the
-    next nudge pass RE-SURFACE the current task into the fresh context. Pins that
-    edge -- dropping the reset (or inverting the compact bool) leaves no
-    loop.task.surfaced after the restart, which is exactly the regression the
-    surface/check-off/finish-gate trio exists to prevent."""
+    """A tier-2 restart mid-run wipes the focus banner, so the next nudge pass re-surfaces it."""
     import json
 
     from agent6.events import EventSink
@@ -4531,8 +4376,10 @@ def test_steer_pin_records_and_injects_marked_notice() -> None:
 
 
 def test_steer_pin_over_cap_delivers_as_ordinary_steer() -> None:
-    """A pin past the total cap still reaches the model NOW as a plain steer;
-    only the survives-compaction durability is refused, loudly."""
+    """A pin past the total cap still reaches the model now as a plain steer.
+
+    Only the survives-compaction durability is refused, loudly.
+    """
     from agent6.harness._operator import PINS_MAX_CHARS
 
     ev = _EventCapture()
@@ -4667,8 +4514,7 @@ def test_save_and_load_run_snapshot_round_trip(tmp_path: Path) -> None:
 
 
 def test_save_resume_snapshot_atomic_no_partial_tmp(tmp_path: Path) -> None:
-    """After save, no .tmp file remains: the final snapshot + its per-turn
-    checkpoint are the only artifacts (both written atomically)."""
+    """After save, no .tmp file remains: the snapshot and its checkpoint are written atomically."""
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
@@ -4759,8 +4605,7 @@ def test_resume_raises_on_missing_snapshot(tmp_path: Path) -> None:
 def test_resume_drives_loop_from_snapshot(tmp_path: Path) -> None:
     """resume() loads snapshot, calls provider once, finishes via silent_finish."""
     snap_path = tmp_path / "loop_state.json"
-    # Pre-seed the snapshot as if a prior run had just completed iter 4
-    # and was about to start iter 5.
+    # The snapshot as a prior run left it: iter 4 done, iter 5 about to start.
     snap_path.write_text(
         f'{{"version": {SNAPSHOT_VERSION}, "system": "S", "messages": [{{"role": "user", '
         '"content": [{"type": "text", "text": "go"}]}], "tool_calls": 2, '
@@ -4809,14 +4654,10 @@ def test_resume_restores_root_task_id_on_dispatcher(tmp_path: Path) -> None:
 
 
 def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> None:
-    """Simulate a provider crash mid-loop: snapshot must allow a clean resume.
+    """A snapshot is written before each LLM call, so a crash mid-loop resumes at that turn.
 
-    The v2 contract is: a snapshot is written BEFORE each LLM call, so a
-    crash at any point (network, OOM, SIGKILL) leaves the run resumable
-    from exactly that iteration with the prior turn's messages intact.
-    Here we use a fake provider that raises on the first call to simulate
-    the crash, then a fresh provider on resume that drives the loop to a
-    clean finish.
+    A fake provider raises on the first call; a fresh one on resume drives the loop to a clean
+    finish.
     """
     import subprocess as _sp
 
@@ -4844,9 +4685,7 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> No
         resume_state_path=snap_path,
         call=CallSettings(retry_count=0, retry_delay_s=0.01),  # don't mask the crash with a retry
     )
-    # The first .run() ends with provider_error (v2's clean-shutdown path
-    # for provider crashes). The snapshot was written BEFORE the call, so
-    # the run is resumable from exactly that iteration.
+    # The first run ends with provider_error; the pre-call snapshot makes that iteration resumable.
     result1 = wf1.run("do a thing")
     assert result1.completed is False
     assert result1.reason == "provider_error"
@@ -4880,10 +4719,7 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> No
     assert result.reason == "silent_finish"
 
 
-# --- tier-2 summarise-and-restart compaction -------------------------------
-# Synthetic exercise driving context past compact_summarise_at_chars to confirm
-# tier-2 actually summarises-and-restarts (the path that was unreachable before
-# it measured the whole context via _context_chars).
+# Tier-2 summarise-and-restart, driven past compact_summarise_at_chars.
 
 
 def _ctx_chars(messages: list[dict[str, Any]]) -> int:
@@ -4893,8 +4729,7 @@ def _ctx_chars(messages: list[dict[str, Any]]) -> int:
 
 
 def _big_text_history(task: str, *, blocks: int, block_chars: int) -> list[dict[str, Any]]:
-    # Assistant TEXT accumulates across a long run and tier-1 never elides it
-    # (it only drops tool_results), so this is exactly what tier-2 must catch.
+    # Assistant text accumulates and tier-1 never elides it, so it is what tier-2 must catch.
     big = "x" * block_chars
     msgs: list[dict[str, Any]] = [{"role": "user", "content": [{"type": "text", "text": task}]}]
     for _ in range(blocks):
@@ -4926,8 +4761,7 @@ def test_tier2_summarise_fires_and_restarts_past_threshold(tmp_path: Path) -> No
     _compact_via_wire(wf, messages)
 
     assert summ.calls == 1  # tier-2 summariser ran
-    # Restarted to [original task, restart+summary, verbatim recent tail]:
-    # the trailing small turn fits keep_recent_chars and survives verbatim.
+    # Restarted to [task, restart+summary, recent tail]: the trailing small turn survives verbatim.
     assert len(messages) == 3
     assert messages[0]["content"][0]["text"] == "TASK: optimize the kernel"
     assert "PROGRESS SUMMARY" in messages[1]["content"][0]["text"]
@@ -5056,9 +4890,10 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
 
 
 def test_pass_pending_root_tasks_passes_only_pending_roots() -> None:
-    """_pass_pending_root_tasks marks pending/in-progress ROOT tasks passed and
-    leaves everything else (already-terminal roots, non-root subtasks) alone --
-    so a finish_session-only ask/run reads N/N, not 0/1."""
+    """`_pass_pending_root_tasks` passes pending root tasks and leaves everything else alone.
+
+    A finish_session-only ask or run then reads N/N, not 0/1.
+    """
 
     class _FakeClient:
         def __init__(self, nodes: dict[str, dict[str, Any]]) -> None:
@@ -5095,12 +4930,10 @@ def test_pass_pending_root_tasks_noop_without_curator() -> None:
 
 
 def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
-    """A GATELESS run (no verify_command) has no green verify to seed the
-    idle-stop net. Once an edit is committed it must still settle: spinning on
-    read-only commands after the commit stops the run, so a gateless run can't
-    burn budget to exhaustion when the worker is done. The reason is 'settled'
-    (never 'verify_settled': nothing was verified, and the old label put
-    'passed / verify passed' on every surface)."""
+    """A gateless run settles as 'settled' once an edit is committed and the worker goes idle.
+
+    Never 'verify_settled': nothing was verified.
+    """
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5161,9 +4994,11 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
 
 
 def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
-    """The snapshot stores the run's resolved verify_command so resume reuses it
-    rather than re-inferring (which could diverge from the frozen prompt). A
-    gateless run stores [] and loads back as ()."""
+    """The snapshot stores the run's resolved verify_command so resume reuses it.
+
+    Re-inferring could diverge from the frozen prompt; a gateless run stores [] and loads back as
+    ().
+    """
     from agent6.harness._snapshot import load_session_snapshot
 
     snap = tmp_path / "loop_state.json"
@@ -5213,9 +5048,7 @@ def test_provider_error_hint_for_auth_and_quota() -> None:
 
 
 def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -> None:
-    # A full disk / read-only state dir disables resume/fork but must not abort
-    # the run. Simulate by pointing the snapshot under a path whose parent is a
-    # regular file, so mkdir raises OSError.
+    # A read-only state dir disables resume but must not abort the run: mkdir raises OSError.
     blocker = tmp_path / "blocker"
     blocker.write_text("x", encoding="utf-8")
     snap = blocker / "loop_state.json"  # parent "blocker" is a file -> mkdir fails
@@ -5248,10 +5081,7 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -
 
 
 def test_run_result_docstring_enumerates_every_loop_reason() -> None:
-    # SessionResult.reason is a free-form str whose docstring is the enumeration
-    # operators grep against; it silently drifted to omit five reasons. Pin it
-    # to the literal reasons the loop and its advisors construct: an `End`'s
-    # first argument or `reason=`, and the `reason=` of the direct results.
+    # The reason glossary drifted to omit five reasons; pinned to the literals the loop constructs.
     import ast
     import inspect
 
@@ -5270,8 +5100,7 @@ def test_run_result_docstring_enumerates_every_loop_reason() -> None:
         for value in literal:
             if isinstance(value, ast.Constant) and isinstance(value.value, str):
                 reasons.add(value.value)
-    # `reason=finish.kind` is the one non-literal construction; its Literal type
-    # covers exactly these two.
+    # `reason=finish.kind` is the one non-literal construction; its Literal covers these two.
     reasons |= {"finish_session", "finish_planning"}
     assert reasons >= {
         "loop_guard_killed",
@@ -5286,9 +5115,7 @@ def test_run_result_docstring_enumerates_every_loop_reason() -> None:
 
 
 def test_question_nudge_then_accept(tmp_path: Path) -> None:
-    """A run-mode turn that ends by asking a prose question with no tool call is
-    nudged ONCE to call ask_user; if the model then acts it recovers, and if it
-    keeps asking the run accepts silent_finish (bounded, no loop)."""
+    """A prose question with no tool call is nudged once toward ask_user, then silently finished."""
     from agent6.harness._nudges import QUESTION_NUDGE
 
     class ProviderStub:
@@ -5349,8 +5176,7 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
         root_task_id=None,
         original_task="t",
     )
-    # Turn 1 asked a question -> nudged -> turn 2 called ask_user -> turn 3 asked
-    # again, but the one-shot nudge is spent, so it silently finished.
+    # Turn 3 asked again, but the one-shot nudge is spent, so it silently finished.
     assert provider.saw_nudge
     assert result.reason == "silent_finish"
 
@@ -5361,8 +5187,7 @@ def test_ends_with_question_detection() -> None:
     assert ends_with_question("I found two options.\nWhich do you prefer?")
     assert not ends_with_question("Done. All tests pass.")
     assert not ends_with_question("")
-    # A ruling the recorder must not miss: decoration after the '?', and the
-    # question-then-options close. A question buried above prose stays a no.
+    # A ruling the recorder must not miss: decoration after the '?' and the options close.
     assert ends_with_question("Should I proceed? (y/n)")
     assert ends_with_question("**Which one?**")
     assert ends_with_question("Which shape do you want?\n1. the modal\n2) the inline row")
@@ -5373,10 +5198,10 @@ def test_ends_with_question_detection() -> None:
 
 
 def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> None:
-    """A worker whose edits keep producing the SAME verify failure (observed:
-    mistral-small repeating one failure nine times) gets a root-cause nudge at
-    the 4th identical consecutive failure and one escalation at the 7th; the
-    signature ignores cosmetic drift like line numbers."""
+    """Identical verify failures draw a root-cause nudge at the 4th and an escalation at the 7th.
+
+    The signature ignores cosmetic drift like line numbers.
+    """
     from agent6.harness._nudges import (
         NO_PROGRESS_ESCALATION,
         NO_PROGRESS_NUDGE,
@@ -5464,8 +5289,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
 
 
 def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> None:
-    """Distinct failures mean real progress through the error list; the guard
-    must stay quiet."""
+    """Distinct failures mean real progress through the error list; the guard must stay quiet."""
     from agent6.harness._nudges import NO_PROGRESS_NUDGE
 
     class ProviderStub:
@@ -5549,9 +5373,7 @@ def test_verify_failure_signature_normalizes_cosmetics() -> None:
 
 
 def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Path) -> None:
-    """Ten consecutive identical failures with both nudges delivered ends the
-    run honestly (reason=no_progress) instead of burning to the iteration cap
-    (measured: nudged mistral runs ran to 77 iters at score 0 without this)."""
+    """Ten identical failures with both nudges delivered end the run as no_progress."""
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5622,10 +5444,10 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
 
 
 def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) -> None:
-    """A prose-only turn before ANY edit or green verify is a stall, not an
-    implicit finish (observed: kimi answering a SWE-bench problem statement
-    in prose at iteration 2, ending the run patchless). Two nudges steer back
-    to the tools; a third prose turn is then honored as silent_finish."""
+    """A prose-only turn before any edit or green verify is a stall, not an implicit finish.
+
+    Two nudges steer back to the tools; a third prose turn is honoured as silent_finish.
+    """
     from agent6.harness._nudges import SILENT_NO_WORK_NUDGE
 
     class ProviderStub:
@@ -5680,8 +5502,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
 
 
 def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> None:
-    """Once an edit has landed, a prose wrap-up is the normal implicit finish
-    and must not be bounced by the no-work gate."""
+    """A prose wrap-up after an edit is the normal implicit finish; the no-work gate lets it by."""
     from agent6.harness._nudges import SILENT_NO_WORK_NUDGE
 
     class ProviderStub:
@@ -5745,10 +5566,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
 
 
 def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
-    """On a metric-optimization run, repeated identical verify failures during
-    search are expected, and the metric plateau/early-finish machinery owns
-    when the run stops. The no-progress guard must NOT fire (it would truncate
-    the budgeted search and end the run completed=false)."""
+    """On a metric run repeated identical verify failures are search; no no-progress stop."""
     from agent6.harness._nudges import NO_PROGRESS_NUDGE
 
     class ProviderStub:
@@ -5825,11 +5643,10 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
 
 
 def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) -> None:
-    """A back-to-back identical (name,args) call whose result bytes are
-    identical to the previous one is served a short stub instead of the full
-    payload (observed: kimi re-serving a 60KB read_file result 10-12x, growing
-    context to 125K tokens). The call still dispatches; a CHANGED result is
-    served in full."""
+    """A repeated identical call with an identical result is served a short stub.
+
+    The call still dispatches; a changed result is served in full.
+    """
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5901,10 +5718,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
 
 
 def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
-    """A run that keeps issuing a call failing with the SAME error (a runaway
-    grep tripping 'not valid JSON' repeatedly) is nudged, escalated, then
-    stopped as reason=tool_error_stuck instead of looping to the cap
-    (observed: kimi re-issuing malformed grep until timeout)."""
+    """A call failing with the same error is nudged, escalated, then stopped as tool_error_stuck."""
     from agent6.harness._nudges import (
         TOOL_ERROR_ESCALATION,
         TOOL_ERROR_NUDGE,
@@ -5923,8 +5737,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
                 self.nudges += 1
             if TOOL_ERROR_ESCALATION[:26] in last:
                 self.escs += 1
-            # keep issuing the same tool with a slightly different (runaway) arg
-            # each time — same ERROR signature, different args
+            # The same tool with a runaway arg each time: same error signature, different args.
             return _tool_resp("read_file", {"path": "x/" * self.calls}, tool_id=f"g{self.calls}")
 
     from agent6.tools.errors import ToolError as _ToolError
@@ -5976,10 +5789,10 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
 
 
 def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path) -> None:
-    """A streak of policy refusals (ToolDeniedError) is nudged as 'refused, stop
-    retrying', never 'your call is malformed', and the stale binary a REAL
-    exec failure recorded first (git at streak 1; the note fires at 2) must
-    not be resurfaced by what is pure policy."""
+    """A streak of policy refusals is nudged as refused, never as malformed.
+
+    A stale binary a real exec failure recorded first is not resurfaced by what is pure policy.
+    """
     from agent6.harness._nudges import (
         TOOL_DENIED_NUDGE,
         TOOL_ERROR_NUDGE,
@@ -6015,9 +5828,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             self.calls += 1
             if self.calls == 1:
-                # A real exec failure (the jail's 127 shape) records
-                # argv[0]="git" in the reachability tracker; a raised ToolError
-                # would record nothing (denials/errors never entered the jail).
+                # A real exec failure records argv[0]="git"; a ToolError never entered the jail.
                 return ExecResult(
                     returncode=127,
                     stdout="",
@@ -6069,8 +5880,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
 
 
 def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
-    """A successful tool call between errors clears the streak, so intermittent
-    errors never trip the ladder."""
+    """A successful tool call between errors clears the streak; intermittent errors never trip."""
     from agent6.harness._nudges import TOOL_ERROR_NUDGE
     from agent6.tools.errors import ToolError as _ToolError
 
@@ -6137,10 +5947,10 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
 
 
 def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
-    """A failing verify that exited instantly because the runner is absent is
-    flagged once with the verify-broken nudge (observed: sympy `python -m
-    pytest` with pytest missing, exit 1 in 0.0s); a legitimate slow test
-    failure is not flagged."""
+    """A verify that failed instantly for a missing runner draws the verify-broken nudge once.
+
+    A legitimate slow test failure is not flagged.
+    """
     from agent6.harness._nudges import VERIFY_BROKEN_NUDGE
 
     wf = _wf(root=tmp_path, config=MagicMock(), provider=MagicMock(), dispatcher=MagicMock())
@@ -6204,10 +6014,10 @@ def test_note_verify_result_does_not_flag_real_failure(tmp_path: Path) -> None:
 
 
 def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> None:
-    """A run_command ToolError spiral climbs the nudge ladder and stops, but
-    never gets the sandbox-reachability note even for a host-present binary: a
-    ToolError never entered the jail, so it says nothing about reachability
-    (only repeated exec_failed results do; see the reachability tests)."""
+    """A run_command ToolError spiral climbs the ladder and stops, with no reachability note.
+
+    A ToolError never entered the jail, so it says nothing about reachability.
+    """
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -6270,10 +6080,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> 
 
 
 def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -> None:
-    """A gateless run (no verify command configured or inferable) that commits
-    work and goes idle settles as reason='settled' with all_passed=False and an
-    honest summary. It ended 'passed / verify passed' before, with zero verify
-    executions in the whole run (observed live on an empty-repo build)."""
+    """A gateless run that commits and goes idle settles with all_passed=False, said plainly."""
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -6347,9 +6154,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
 
 
 def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
-    """The REPL hook's "stop" ends the run deliberately, not as verified
-    success: reason='interactive_stop' with all_passed=False on the session.end
-    event (it used to route through the passed emitter with zero verifies)."""
+    """The REPL hook's "stop" ends the run `interactive_stop` with all_passed=False."""
 
     class ProviderStub:
         def call(self, **kwargs: Any) -> ProviderResponse:
@@ -6418,8 +6223,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
 
 
 def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: Path) -> None:
-    """`/exit` from the REPL ends the run `steer_exit` (stop AND leave): the
-    listing reads stopped, all_passed=False, and the follow-up prompt skips it."""
+    """`/exit` from the REPL ends the run `steer_exit`: stopped, all_passed=False, no "next:"."""
 
     class ProviderStub:
         def call(self, **kwargs: Any) -> ProviderResponse:
@@ -6488,9 +6292,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: Path) -> None:
 
 
 def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
-    """The REPL hook's "undo" is the loop's own /undo (fork back before the
-    last message): the run ends `undone` naming the fork, exactly as a steer
-    /undo does, and never touches git itself."""
+    """The REPL hook's "undo" is the loop's own /undo: the run ends `undone` naming the fork."""
 
     class ProviderStub:
         def call(self, **kwargs: Any) -> ProviderResponse:
@@ -6557,9 +6359,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
     assert "forked-child-ID" in result.summary
     undone = [e for e in events if e["type"] == "session.undone"]
     assert undone and undone[-1]["new_session_id"] == "forked-child-ID"
-    # An undo is the operator's own end: it journals a session.end (reason
-    # undone -> the listings' "stopped"), or the run read "stale" (dead worker,
-    # no end) the moment the fork was cut.
+    # An undo journals a session.end (undone -> "stopped"); the run read "stale" before.
     ends = [e for e in events if e["type"] == "session.end"]
     assert ends and ends[-1]["reason"] == "undone" and ends[-1]["all_passed"] is False
 
@@ -6567,11 +6367,10 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
 def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
     tmp_path: Path,
 ) -> None:
-    """Preflight inference on an empty repo finds nothing; the run then creates
-    a recognizable project. At the next gateless auto-commit the deterministic
-    tiers re-run and the verify is ADOPTED: config and dispatcher pick it up
-    and the model is told, so the rest of the run is gated instead of
-    finishing a whole build unverified."""
+    """A verify inferred at a later auto-commit is adopted by config, dispatcher and model.
+
+    Preflight on an empty repo finds nothing; the run then creates a recognizable project.
+    """
     from agent6.config import Config
 
     # What the run "just created" before its first commit.
@@ -6637,9 +6436,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
     assert dispatcher.adopted is not None  # the dispatcher gates run_verify now
     assert provider.adoption_notices >= 1  # the gate flip was said to the model
     assert result.completed is True
-    # The worker then idled without ever running the adopted verify; the
-    # settled end runs it (the harness certifies the tree it ends on), so the
-    # run ends verified instead of "adopted verify never passed".
+    # The settled end runs the adopted verify the worker never ran, so the run ends verified.
     assert dispatcher.gate_runs == 1
     assert result.reason == "verify_settled"
     assert result.verified == "passed"
@@ -6648,9 +6445,10 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
 def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
     tmp_path: Path,
 ) -> None:
-    """When the dispatcher refuses the inferred command (its binary is not on
-    the jail PATH), the run stays gateless: adopting a gate the sandbox cannot
-    execute would turn the honest settle into an unexecutable-verify abort."""
+    """An inferred command the dispatcher refuses leaves the run gateless.
+
+    Adopting a gate the sandbox cannot execute would turn the honest settle into an abort.
+    """
     from agent6.config import Config
 
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n', encoding="utf-8")
@@ -6707,8 +6505,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
 
 
 def _run_command_provider(calls_before_idle: int) -> Any:
-    """A provider that issues `calls_before_idle` run_command calls, then goes
-    read-only, counting reachability NOTEs it is served along the way."""
+    """Return a provider that runs commands then goes read-only, counting reachability notes."""
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -6729,9 +6526,7 @@ def _run_command_provider(calls_before_idle: int) -> Any:
 
 
 def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: Path) -> None:
-    """Two consecutive jail exec failures (exec_failed, not a nonzero exit) of
-    the same host-present binary emit loop.sandbox_tool_unreachable ONCE and
-    tell the model once; finalize's operator warning reads that event."""
+    """Two exec failures of a host-present binary emit the unreachable event once."""
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
@@ -6794,11 +6589,7 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: Path) -
 
 
 def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> None:
-    """A run_command rejected at input validation never entered the jail;
-    it must not seed the reachability diagnosis (observed live: an `env`
-    extra-input rejection produced a finalize warning blaming the sandbox
-    for a binary that later ran fine)."""
-
+    """A run_command rejected at input validation never entered the jail and seeds no diagnosis."""
     from agent6.tools.errors import ToolError as _ToolError
 
     class DispatcherStub(_StubDispatcher):
@@ -6855,11 +6646,7 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> 
 
 
 def test_load_repo_summary_tolerates_a_broken_agents_md(tmp_path: Path) -> None:
-    """A non-UTF-8 (Windows-1252 curly quote) or unreadable AGENTS.md degrades
-    to a replaced/empty read; unguarded, it raised AFTER session.start with no
-    session.end -- a dead run listed "running" then "stale". The tolerant pattern
-    already existed for the loop's own reads; the startup summary was the
-    outlier."""
+    """A non-UTF-8 or unreadable AGENTS.md degrades instead of raising after session.start."""
     from agent6.harness._context import load_repo_summary
 
     (tmp_path / "AGENTS.md").write_bytes(b"Style: use \x93smart quotes\x94\n")
@@ -6868,12 +6655,7 @@ def test_load_repo_summary_tolerates_a_broken_agents_md(tmp_path: Path) -> None:
 
 
 def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
-    """A finish tool the dispatcher REFUSED (ToolError -- e.g. a hallucinated
-    finish_planning in run mode, which the mode backstop blocks) must not be
-    captured as a finish signal: the refusal is an error tool_result the model
-    reads and recovers from. Capturing it anyway ended the run completed=True
-    -- for finish_planning even all_passed=True -- bypassing every finish
-    gate."""
+    """A finish tool the dispatcher refused is not captured as a finish signal."""
     from agent6.harness._conversation import ToolUse
     from agent6.harness.loop import TurnState
     from agent6.tools.dispatch import ToolError
@@ -6901,10 +6683,7 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
 
 
 def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
-    """A dispatched finish_session must not advance ok_tool_calls: a standing
-    goal's revoked finish would otherwise reset the fruitless streak every
-    round, and standing_patience could never engage (the run span a
-    3-second finish->revoke->finish loop until killed)."""
+    """A dispatched finish_session does not advance ok_tool_calls, so standing_patience engages."""
     from agent6.harness._conversation import ToolUse
     from agent6.harness.loop import TurnState
     from agent6.tools.results import FinishSessionResult
@@ -6937,11 +6716,7 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
 
 
 def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
-    """ "Stop after this step" is honored at the end of EVERY completed
-    iteration, including one with no tool_use: the boundary poll only ran on
-    the tool path, so a model answering in prose kept the run calling the
-    provider with the stop marker pending forever."""
-
+    """A stop after this step is honoured at the end of every completed iteration, prose too."""
     calls = {"n": 0}
 
     class ProviderStub:
@@ -7003,10 +6778,7 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
 
 
 def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
-    """The plateau stop grounds on the tree like its sibling clean ends
-    (finish_session, verify_settled): a same-turn edit AFTER the green verify
-    means nothing verified the FINAL tree, so the end must not claim
-    all_passed=True."""
+    """The plateau stop grounds all_passed on the final tree, like its sibling clean ends."""
     from agent6.harness._conversation import ToolUse
     from agent6.harness.loop import TurnState
 
@@ -7060,10 +6832,7 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
 
 
 def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
-    """A deliberate end over a red verify passed its roots on the settled path
-    and not on the finish_session/metric_plateau path, so the same epistemic state
-    (completed, not verify-green) left one of them reading `tasks 0/1` forever.
-    The DAG tracks work items; the run-level word carries the verify truth."""
+    """Every deliberate end passes its root tasks the same way, whatever the verify truth."""
 
     class _FakeClient:
         def __init__(self) -> None:
@@ -7118,10 +6887,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
 
 
 def test_an_operator_stop_names_the_worktree_it_leaves_dirty(tmp_path: Path) -> None:
-    """An operator stop deliberately does NOT checkpoint -- committing over
-    someone taking over would remove their choice to discard -- but it said
-    nothing, so uncommitted work was invisible to `sessions diff` and `sessions merge`
-    with no hint it existed. A clean tree adds nothing."""
+    """An operator stop names the uncommitted work it leaves; a clean tree adds nothing."""
     import subprocess
 
     subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
@@ -7142,13 +6908,7 @@ def test_an_operator_stop_names_the_worktree_it_leaves_dirty(tmp_path: Path) -> 
 
 
 def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: Path) -> None:
-    """The counter names each group's lanes (<run-id>-p<seq>-l<i>), but it was
-    bumped inside the operator boundary -- which runs AFTER the iteration's
-    snapshot -- so it stayed in RAM for the whole time the group blocked. A
-    crash there resumed with the old value and the next /parallel re-used p1:
-    either the lane clones already existed and every lane failed, or (once the
-    first group's clones were cleaned up) the lanes ran and BILLED before
-    import_run refused their already-existing branches."""
+    """The parallel group counter is bumped before the snapshot; a crash never reuses p1."""
     import json
 
     from agent6.directive import Segment
@@ -7188,10 +6948,7 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: Pat
 
 
 def test_steer_abort_names_the_dirty_worktree_like_its_siblings(tmp_path: Path) -> None:
-    """The pause-menu / front-end Stop consumed at the boundary is the fourth
-    operator end, and the only one that said nothing about the worktree it
-    leaves uncommitted. The same Stop delivered mid-stream did say so, so one
-    operator action reported two different truths depending on timing."""
+    """A boundary Stop names the uncommitted worktree, as a mid-stream Stop does."""
     import subprocess
 
     subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
@@ -7210,11 +6967,7 @@ def test_steer_abort_names_the_dirty_worktree_like_its_siblings(tmp_path: Path) 
 
 
 def test_a_second_restart_carries_the_first_summary_forward() -> None:
-    """The prior restart's summary rides at the HEAD of the post-restart history
-    and the summariser's transcript is tail-clipped, so it was the first thing
-    dropped: the second summary began at the first restart while the preamble
-    told the worker everything it had done was captured below. It must reach the
-    summariser out-of-band, like pins."""
+    """The prior restart's summary reaches the summariser out-of-band, surviving the tail clip."""
     from agent6.prompts.revision import context_restart_notice
 
     summariser = MagicMock()
@@ -7225,15 +6978,13 @@ def test_a_second_restart_carries_the_first_summary_forward() -> None:
         ),
         bridge=OperatorBridge(compact_requested=lambda: ""),
     )
-    # A conversation that already carries one restart, then plenty of new work
-    # so the tail clip has something to prefer over the notice.
+    # One restart already, then enough new work for the tail clip to prefer over the notice.
     restart = context_restart_notice("run") + "SUMMARY-1: found the parser bug in a.md"
     history: list[dict[str, Any]] = [
         {"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]},
         {"role": "user", "content": [{"type": "text", "text": restart}]},
     ]
-    # Enough work since that restart to overflow the summariser's 60k tail
-    # clip -- which is exactly when the notice at the head gets dropped.
+    # Enough work to overflow the summariser's 60k tail clip, which drops the notice at the head.
     history += _long_history(120)[1:]
 
     assert _compact_via_wire(wf, history) is True
@@ -7242,10 +6993,7 @@ def test_a_second_restart_carries_the_first_summary_forward() -> None:
 
 
 def test_the_frontier_executes_the_order_the_children_list_shows() -> None:
-    """`list_tasks` and every task tree render a parent's children in its
-    `children` order, but the frontier walked node ids (creation order), so a
-    reordered or positionally-inserted child was shown in one order and
-    executed in another."""
+    """`list_tasks` and every task tree render a parent's children in its `children` order."""
     from agent6.harness._dag_focus import (
         first_ready_subtask,  # pyright: ignore[reportPrivateUsage]
     )
@@ -7261,8 +7009,7 @@ def test_the_frontier_executes_the_order_the_children_list_shows() -> None:
 
 
 def test_the_frontier_walks_depth_first_through_children() -> None:
-    """A decomposed child's own leaves come before its later siblings, the
-    order the tree shows top to bottom."""
+    """A decomposed child's own leaves come before its later siblings, as the tree shows them."""
     from agent6.harness._dag_focus import (
         first_ready_subtask,  # pyright: ignore[reportPrivateUsage]
     )
@@ -7297,7 +7044,7 @@ def test_steer_undo_signal() -> None:
 
 
 def _standing_nodes() -> Any:
-    """root -> one standing child, ready (the queue is empty)."""
+    """Root -> one standing child, ready (the queue is empty)."""
     return _typed(
         {
             "a": {"children": ("b",)},
@@ -7307,10 +7054,11 @@ def _standing_nodes() -> Any:
 
 
 def test_standing_default_never_self_quits_and_escalates() -> None:
-    """At the default standing_patience -1, a fruitless quiet round never
-    ends the run by itself: every re-entry lands, and fruitless ones carry
-    the escalating dig-deeper nudge (the run ends on budget/cap/operator).
-    A refused tool call is not work; an executed one resets the streak."""
+    """At standing_patience -1 a fruitless quiet round never ends the run by itself.
+
+    Fruitless re-entries carry the escalating dig-deeper nudge; a refused tool call is not work, an
+    executed one resets the streak.
+    """
     curator = MagicMock()
     curator.nodes.return_value = _standing_nodes()
     wf = _wf(mode="run", curator=curator, budget=None)
@@ -7337,8 +7085,7 @@ def test_standing_default_never_self_quits_and_escalates() -> None:
 
 
 def test_standing_patience_bounds_fruitless_reentries() -> None:
-    """standing_patience = N absorbs N fruitless rounds, then honours the
-    end; 0 restores give-up-on-first-fruitless."""
+    """standing_patience = N absorbs N fruitless rounds then honours the end; 0 gives up first."""
     curator = MagicMock()
     curator.nodes.return_value = _standing_nodes()
     wf = _wf(mode="run", curator=curator, budget=None)
@@ -7393,8 +7140,7 @@ def test_standing_absorb_refuses_without_a_ready_standing_task() -> None:
 
 
 def test_standing_goal_seeds_a_standing_child_under_the_root() -> None:
-    """`run --standing` reaches the graph: one standing child under the root,
-    created as steering (the operator's word, not the worker's)."""
+    """`run --standing` reaches the graph as one standing child under the root, as steering."""
     curator = MagicMock()
     root = _tn("a")
     curator.add_subtask.side_effect = [root, _tn("b", parent_id="a", standing=True)]
@@ -7417,9 +7163,10 @@ def test_standing_goal_seeds_a_standing_child_under_the_root() -> None:
 
 
 def test_session_start_carries_the_operators_words_under_a_seed() -> None:
-    """`run --from` composes a `<prior-run>` digest ahead of the operator's
-    task; the session.start event (every headline's source) carries the
-    operator's words, not the digest's opening tag."""
+    """`run --from` composes a `<prior-run>` digest ahead of the operator's task.
+
+    The session.start event carries the operator's words, not the digest's opening tag.
+    """
     events: list[dict[str, Any]] = []
 
     class _Events:
@@ -7442,9 +7189,10 @@ def test_session_start_carries_the_operators_words_under_a_seed() -> None:
 
 
 def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -> None:
-    """G: interactively, going quiet is a TURN BOUNDARY. The run parks (same
-    in-memory conversation) and the operator's steer continues it -- no
-    resume execution; an "abort" steer ends it as steer_abort."""
+    """Interactively, going quiet is a turn boundary: the run parks and a steer continues it.
+
+    An "abort" steer ends it as steer_abort.
+    """
     steers = iter(["keep going: also cover sub()"])
     wf = _wf(
         mode="run",
@@ -7485,8 +7233,7 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
         _ctx(wf, _state()),
     )  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
-    # A standing goal outranks the park: autonomy first, the absorb nudge (not
-    # a park) continues the run.
+    # A standing goal outranks the park: the absorb nudge continues the run.
     curator = MagicMock()
     curator.nodes.return_value = _standing_nodes()
     wf2 = _wf(mode="run", interactive=True, curator=curator, budget=None)
@@ -7503,9 +7250,10 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
 
 
 def test_tier2_growth_floor_prevents_zero_growth_refire(tmp_path: Path) -> None:
-    """A restart that lands ABOVE the threshold (tiny explicit thresholds, a
-    large summary) must not re-summarise every iteration: tier-2 re-fires only
-    after the context grew 25% past the last restart's size."""
+    """A restart that lands above the threshold does not re-summarise every iteration.
+
+    Tier-2 re-fires only after the context grew 25% past the last restart's size.
+    """
 
     class SummariserStub:
         def __init__(self) -> None:
@@ -7527,8 +7275,7 @@ def test_tier2_growth_floor_prevents_zero_growth_refire(tmp_path: Path) -> None:
     messages = _big_text_history("TASK: t", blocks=4, block_chars=1_000)
     assert _compact_via_wire(wf, messages, state=state) is True
     assert summ.calls == 1
-    # The restarted context already exceeds the threshold (the 4k summary),
-    # but with zero growth the next pass must NOT re-summarise.
+    # The context exceeds the threshold, but with zero growth the next pass must not re-summarise.
     assert _compact_via_wire(wf, messages, state=state) is False
     assert summ.calls == 1
     # Real growth past the floor re-arms tier-2.
@@ -7540,10 +7287,7 @@ def test_tier2_growth_floor_prevents_zero_growth_refire(tmp_path: Path) -> None:
 
 
 def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: Path) -> None:
-    """A green verify with no new edits makes chain_commit return "" (nothing
-    changed since the tip); an event or log line for it would claim a commit
-    that never happened (a live run printed `auto-commit: ` with a blank
-    sha)."""
+    """A green verify with no new edits emits no commit event: chain_commit returns ""."""
     events: list[dict[str, Any]] = []
     wf = _wf(root=tmp_path, mode="run", per_step=True)
 
@@ -7562,11 +7306,7 @@ def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: Path) -> None
 
 
 def test_auto_commit_failure_surface_tells_the_truth(tmp_path: Path) -> None:
-    """The failure reporter's two directions: a benign nothing-changed variant
-    stays silent (no failure event for a non-failure), and a real GitError
-    emits loop.auto_commit.failed carrying the error and the subject. A
-    regression in the benign filter would spam failure events on every clean
-    green, or hide real failures."""
+    """The failure reporter is silent on the benign nothing-changed case and reports a GitError."""
     from agent6.git_ops import GitError
 
     events: list[dict[str, Any]] = []
@@ -7592,10 +7332,7 @@ def test_auto_commit_failure_surface_tells_the_truth(tmp_path: Path) -> None:
 
 
 def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: Path) -> None:
-    """The mid-turn-crash marker is on disk WHILE tools dispatch (a crash in
-    the dispatch->snapshot window leaves it at the re-run iteration for resume
-    to ask about) and gone once the after-tools snapshot advanced (a clean
-    turn leaves nothing; a later resume never falsely prompts)."""
+    """The mid-turn-crash marker is on disk while tools dispatch and gone after the snapshot."""
     from agent6.harness._snapshot import TURN_IN_FLIGHT_NAME, read_turn_marker
 
     marker = tmp_path / TURN_IN_FLIGHT_NAME
@@ -7661,10 +7398,7 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: Pat
 
 
 def test_the_old_crash_marker_survives_the_replayed_provider_call(tmp_path: Path) -> None:
-    """The replayed turn's own marker write or its snapshot supersedes the old
-    marker; nothing clears it earlier. Cleared before the provider call, a crash
-    inside that call made the next resume replay the turn silently, and the
-    original turn's tool effects may already stand."""
+    """The replayed turn's own marker write or snapshot supersedes the old marker, nothing else."""
     from agent6.harness._snapshot import (
         TURN_IN_FLIGHT_NAME,
         SessionSnapshot,
@@ -7704,11 +7438,11 @@ def test_the_old_crash_marker_survives_the_replayed_provider_call(tmp_path: Path
 
 
 def test_turn_replay_allowed_marker_semantics(tmp_path: Path) -> None:
-    """No marker proceeds; a stale one proceeds and clears silently; a matching
-    one asks, and the marker survives EITHER answer: the replayed turn's own
-    marker write or snapshot supersedes it. Cleared on approval, a resume that then hit any
-    preflight refusal replayed the turn on the next attempt with no warning,
-    and its tools' side effects happened twice."""
+    """No marker proceeds; a stale one clears silently; a matching one asks and stays put.
+
+    Cleared on approval, a later preflight refusal replayed the turn on the next attempt and its
+    tools' side effects happened twice.
+    """
     from agent6.app.resume import turn_replay_allowed
     from agent6.harness._snapshot import TURN_IN_FLIGHT_NAME, write_turn_marker
 
@@ -7737,9 +7471,7 @@ def test_turn_replay_allowed_marker_semantics(tmp_path: Path) -> None:
 
 
 def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
-    """The pause menu's /exit stops the run with its own end reason: the
-    listing reads "stopped" and `follow_up_on_offer` skips the "next:"
-    prompt (stop-then-type-/exit was the only way to leave before)."""
+    """The pause menu's /exit stops the run with its own end reason, skipping the "next:" prompt."""
     import json
 
     from agent6.ui.cli._session_prompt import follow_up_on_offer
@@ -7784,10 +7516,11 @@ def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
 
 
 def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
-    """Shape (b) of the adoption probe: the first adopted-verify run whose
-    failure is an unrunnable signature (exit 127, or the adopted `-m` module
-    missing) drops the gate again, tells the model, re-pins the manifest
-    gateless, and never re-adopts that argv; a configured gate stays red."""
+    """An adopted verify whose first failure is an unrunnable signature is dropped again.
+
+    Exit 127, or the adopted `-m` module missing: the model is told, the manifest re-pins gateless,
+    and that argv is never re-adopted; a configured gate stays red.
+    """
     from agent6.config import Config
     from agent6.harness._nudges import VERIFY_UNADOPTED_NOTICE
 
@@ -7825,16 +7558,14 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
     texts = [it.text for it in turn.tool_results if isinstance(it, Notice)]
     assert any(t.startswith(VERIFY_UNADOPTED_NOTICE[:30]) for t in texts)
     assert not st.verify.broken_warned
-    # No verdict was produced: the turn is not "verify failed" (an
-    # on_verify_fail panel and the checkpoint logic key on the flag).
+    # No verdict: the turn is not "verify failed" (the panel and checkpoint logic key on the flag).
     assert turn.verify_just_failed is False
     assert any(
         e.get("command") == [] and e.get("source") == "unadopted" and e.get("adopted_at") == 4
         for e in events
     )
 
-    # A configured (not adopted) gate with the same failure stays a red
-    # verify: the broken nudge fires, nothing is un-adopted.
+    # A configured gate with the same failure stays a red verify; nothing is un-adopted.
     wf2 = _wf(
         root=tmp_path,
         config=Config().with_verify_command(argv),
@@ -7858,10 +7589,11 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
 
 
 def test_operator_answers_become_recorded_rulings(tmp_path: Path) -> None:
-    """The decisions file is written by the harness, not the model: an
-    ask_user answer lands as a ruling with its question, a steer that answers
-    the model's trailing question lands with that question, an ordinary steer
-    does not, and the finish-time check finds them all in the file."""
+    """The decisions file is written by the harness, not the model.
+
+    An ask_user answer lands as a ruling with its question, a steer answering the model's trailing
+    question lands with it, an ordinary steer does not.
+    """
     from agent6.harness._conversation import Conversation
     from agent6.memory import decisions_path
     from agent6.tools.results import AnswersResult
@@ -7903,8 +7635,7 @@ def test_operator_answers_become_recorded_rulings(tmp_path: Path) -> None:
     assert "Q: Drop the modal or keep it?\n  A: Use the inline item.\n" in text
     assert "unrelated instruction" not in text
     assert len(st.decisions_recorded) == 3
-    # The check reads the file, not the capped injection view: an execution whose
-    # rulings outgrow the cap still finds every one of them on disk.
+    # The check reads the file, not the capped injection view.
     with decisions_path(state_dir).open("a", encoding="utf-8") as fh:
         fh.write("- 2026-08-23T00:00:00Z [other] Q: pad\n  A: " + "x" * 5000 + "\n")
     wf._check_decisions_recorded(st)  # pyright: ignore[reportPrivateUsage]
@@ -7916,10 +7647,10 @@ def test_operator_answers_become_recorded_rulings(tmp_path: Path) -> None:
 
 
 def test_a_skill_command_steer_expands_in_the_loop(tmp_path: Path) -> None:
-    """`/<skill> [args]` from any composer: the loop injects the skill's full
-    text as the instruction (the CLI menu passes the line through), so every
-    surface means the same thing; a slash word that is no skill stays an
-    ordinary steer."""
+    """`/<skill> [args]` from any composer injects the skill's full text as the instruction.
+
+    A slash word that is no skill stays an ordinary steer.
+    """
     from agent6.skills import ResolvedSkills, Skill
 
     skill = Skill(name="caveman", description="Use when grunting.", dir=tmp_path, text="GRUNT")
@@ -7944,8 +7675,7 @@ def test_a_skill_command_steer_expands_in_the_loop(tmp_path: Path) -> None:
     st = _state()
     conv = MagicMock()
     assert wf.steering.handle(conv, 1, st) is None
-    # The steer reads the cached resolution: the prompt-assembly step's
-    # warnings are not re-emitted on every slash steer.
+    # The steer reads the cached resolution: the assembly warnings are not re-emitted per steer.
     assert not [c for c in events.emit.call_args_list if c.args[:1] == ("loop.skills.warning",)]
     injected = conv.notice.call_args.args[0]
     assert "Apply the operator-installed skill 'caveman'" in injected
@@ -8021,11 +7751,11 @@ def _edited_turn(iteration: int) -> TurnState:
 
 
 def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: Path) -> None:
-    """The auto path skipped its sample only when the manual call landed on a
-    verify-pass turn, so on a gateless run the operator's benchmark ran twice
-    per turn over one tree, and the duplicate read as "not a new best". With
-    nothing committing between steps the tree reads changed on every turn,
-    so the worker's reading must stamp the tree it covers."""
+    """The worker's manual metric reading stamps the tree it covers, so the auto path skips it.
+
+    Otherwise the operator's benchmark ran twice per turn over one tree, and the duplicate read as
+    "not a new best".
+    """
     repo = tmp_path / "repo"
     base = _metric_repo(repo)
     dispatched: list[str] = []
@@ -8057,8 +7787,7 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: Path
 
 
 def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: Path) -> None:
-    """The duplicated samples tied each score with itself, and three strictly
-    better readings stopped the run as a plateau."""
+    """Three strictly better readings are not a plateau: a sample never ties with itself."""
     repo = tmp_path / "repo"
     base = _metric_repo(repo)
     score = {"v": 41.0}
@@ -8085,8 +7814,7 @@ def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: Path) -> Non
 
 
 def _settles_at(wf: Harness, repo: Path, state: LoopState, *, gated: bool) -> int | None:
-    """The iteration the verify-settled stop fires at, or None within a
-    generous window: one editing turn, then read-only turns."""
+    """The iteration the verify-settled stop fires at, or None within a generous window."""
     from agent6.harness._nudges import VERIFY_SETTLED_STOP_AFTER
 
     (repo / "x.txt").write_text("the worker's finished work\n", encoding="utf-8")
@@ -8109,11 +7837,10 @@ def _settles_at(wf: Harness, repo: Path, state: LoopState, *, gated: bool) -> in
 
 @pytest.mark.parametrize("gated", [True, False])
 def test_the_settled_stop_still_fires_without_per_step_commits(tmp_path: Path, gated: bool) -> None:
-    """With `[git].commit_per_step = false` the chain never advances, so the
-    worktree read dirty for the rest of the run and every turn counted as
-    progress; a gateless run also never seeded the detector, whose seed sat
-    after the commit early return. The run spun on read-only calls to its
-    iteration cap. Progress is a changed tree, and an editing step seeds."""
+    """With `[git].commit_per_step = false` progress is a changed tree; an edit step seeds.
+
+    The chain never advances, so a dirty worktree is not progress and a gateless run still settles.
+    """
 
     def wf_for(repo: Path, base: str, *, commit_per_step: bool) -> Harness:
         return Harness(
@@ -8145,8 +7872,7 @@ def test_the_settled_stop_still_fires_without_per_step_commits(tmp_path: Path, g
 
 
 def _ruling_wf(tmp_path: Path) -> Harness:
-    """A run with a state dir (so a ruling lands in DECISIONS.md) whose steer
-    bridge always carries the answer "keep squash"."""
+    """Return a run with a state dir whose steer bridge always answers "keep squash"."""
 
     def steer_prompt() -> str | None:
         return "keep squash"
@@ -8166,10 +7892,10 @@ def _ruling_wf(tmp_path: Path) -> Harness:
 
 
 def test_a_flat_ask_user_call_records_its_ruling(tmp_path: Path) -> None:
-    """`AskUserInput` accepts one question flat (`{question, options}`) and
-    folds it into `questions`; the result carries what was asked, so the
-    ruling is recorded from it and never from a second parse of the raw dict
-    (which once recorded nothing for the shape the tool had accepted)."""
+    """`AskUserInput` accepts one flat question and records the ruling from its result.
+
+    The result carries what was asked, so nothing parses the raw dict a second time.
+    """
     from agent6.memory import decisions_path
     from agent6.tools.results import AnswersResult
 
@@ -8190,10 +7916,7 @@ def test_a_flat_ask_user_call_records_its_ruling(tmp_path: Path) -> None:
 
 
 def test_ask_user_args_the_dispatcher_coerced_still_record_their_ruling(tmp_path: Path) -> None:
-    """A model sent `questions` as a JSON string: the dispatcher coerced it and
-    the operator answered, then the bookkeeping parsed the RAW input again and
-    the ValidationError escaped the loop, so the execution died after the answer was
-    given. The result carries what was asked; nothing parses the input twice."""
+    """A `questions` sent as a JSON string is coerced once; nothing re-parses the input."""
     import json
 
     from agent6.memory import decisions_path
@@ -8220,9 +7943,7 @@ def test_ask_user_args_the_dispatcher_coerced_still_record_their_ruling(tmp_path
 
 
 def test_a_steer_answering_a_prose_question_records_after_the_nudge(tmp_path: Path) -> None:
-    """Run mode nudges once when the model ends on a prose question, so the
-    conversation's last turn is the harness's notice, not the prose; the
-    pairing read "" there and the operator's answer was never recorded."""
+    """The nudge for a prose question pairs the operator's answer with the prose, not the notice."""
     from agent6.harness._nudges import QUESTION_NUDGE
     from agent6.memory import decisions_path
 
@@ -8267,11 +7988,10 @@ def test_a_steer_answering_an_optioned_question_records_the_question(tmp_path: P
 def test_the_root_passes_with_an_open_child(
     tmp_path: Path, label: str, standing: bool, created_by: str
 ) -> None:
-    """A completed run marks its root passed; the curator's container rule
-    (no `passed` over an open child) refused it for a `--standing` goal, which
-    never passes by design, and for a finish honoured with a subtask left
-    open, so both read 0 tasks done. The root is the whole job, not a unit of
-    work, and the rule exempts it."""
+    """A completed run marks its root passed; the container rule exempts the root.
+
+    A `--standing` goal never passes by design, and a finish can leave a subtask open.
+    """
     from agent6.graph.curator import GraphCurator
     from agent6.graph.models import AddSubtaskIntent, NodeActor, TaskNodeDraft
     from agent6.sessions.layout import SessionLayout
@@ -8306,10 +8026,7 @@ def test_the_root_passes_with_an_open_child(
 
 
 def test_the_focus_surface_fits_a_standing_task(tmp_path: Path) -> None:
-    """When nothing ordinary is ready the focus falls back to the standing
-    goal, and the banner told the worker to mark it passed while the stuck
-    nudge offered passed, skipped and obsolete: every one refused on the
-    operator's standing goal, three tool errors feeding the error ladder."""
+    """With nothing ordinary ready the focus falls back to the standing goal, unpassable."""
     from agent6.graph.curator import GraphCurator
     from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
     from agent6.harness._conversation import UserTurn
@@ -8362,11 +8079,7 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: Path) -> None:
 
 
 def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
-    """A metric run whose worker finishes on the turn the plateau detector
-    fires: the panel sat for the finish, the early-finish gate revoked it, and
-    the panel sat again for the plateau stop over the same tree. One turn's
-    end is reviewed once; a finish that survives its gates ends the turn
-    without the plateau's end gates running too."""
+    """One turn's end is reviewed once: a surviving finish skips the plateau's end gates."""
     from unittest.mock import patch
 
     from agent6.harness._reviewer import CritiqueResult
@@ -8493,10 +8206,10 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
 
 
 def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: Path) -> None:
-    """`run_commands = "no"` withholds the verify gate from the harness and the
-    model alike, and the prompt says the run is gateless; the commit decision
-    alone still read the configured command as a gate, so under `verify_when =
-    "step"` no editing turn ever committed. Gate presence has one owner."""
+    """`run_commands = "no"` withholds the verify gate from the harness and the model alike.
+
+    Gate presence has one owner, so under `verify_when = "step"` editing turns still commit.
+    """
     from unittest.mock import patch
 
     from agent6.tools.results import FinishSessionResult
@@ -8564,10 +8277,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: Pat
 
 
 def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: Path) -> None:
-    """A configured gate the operator denied makes the run gateless for its
-    commits; the adoption that fills an ABSENT command then fired at every
-    checkpoint, overwrote the operator's command in the run config and told
-    the model a new gate ruled the run while nobody could run one."""
+    """A configured gate the operator denied makes the run gateless for its commits, unadopted."""
     from unittest.mock import patch
 
     from agent6.events import EventSink

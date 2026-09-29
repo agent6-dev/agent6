@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The shared transcript renderer (item_lines): structure, the #1 neutral-detail fix,
-and the collapsed/expanded/hidden detail levels."""
+"""The shared transcript renderer: structure, the neutral detail fix, and the detail levels."""
 
 from __future__ import annotations
 
@@ -105,10 +104,10 @@ def test_tool_head_is_one_call_span_plus_arg() -> None:
 
 
 def test_every_line_is_a_single_line() -> None:
-    """item_lines' contract is one entry per rendered LINE; a span embedding
-    newlines desyncs every consumer that counts entries (the TUI scroll-anchor
-    math splits the content on newlines and pairs it with per-entry counters).
-    Expanded thinking and a multi-line finish summary were the violators."""
+    """item_lines yields one entry per rendered line; an embedded newline desyncs every consumer.
+
+    Expanded thinking and a multi-line finish summary were the violators.
+    """
     multi = "first thought\nsecond thought\nthird"
     for item in (
         TranscriptItem("thinking", body=multi),
@@ -131,9 +130,11 @@ def test_expanded_thinking_renders_every_body_line() -> None:
 
 
 def test_hidden_omits_tool_items_and_cycling_back_restores_them() -> None:
-    """The least-noise level reads as pure dialogue: hidden omits tool items
-    exactly like thinking. The item itself survives (rendering is a pure
-    function of the fold), so cycling back restores it -- nothing is lost."""
+    """The least-noise level reads as pure dialogue: hidden omits tool items exactly like thinking.
+
+    The item itself survives (rendering is a pure function of the fold), so cycling back restores
+    it; nothing is lost.
+    """
     tool = TranscriptItem("tool", name="read_file", arg="a.py", ok=True, detail="12 bytes")
     assert item_lines(tool, detail="hidden") == []
     assert item_lines(tool, detail="collapsed")
@@ -144,8 +145,7 @@ def test_hidden_omits_tool_items_and_cycling_back_restores_them() -> None:
 
 
 def test_verify_head_has_its_own_style() -> None:
-    """The gate reads differently from ordinary tools: run_verify_command's
-    call head styles as "verify", everything else as "call"."""
+    """run_verify_command's call head styles as "verify", everything else as "call"."""
     verify = TranscriptItem("tool", name="run_verify_command", ok=True, detail="✓ pass · 0.2s")
     assert item_lines(verify, detail="collapsed")[0][0][1] == "verify"
     other = TranscriptItem("tool", name="read_file", arg="a.py", ok=True, detail="ok")
@@ -153,8 +153,7 @@ def test_verify_head_has_its_own_style() -> None:
 
 
 def test_an_in_flight_tool_is_one_running_line() -> None:
-    """A call with no result yet renders as its head marked running, at every
-    detail level that shows tools; never the fail glyph over an empty result."""
+    """A call with no result yet renders as its head marked running, never the fail glyph."""
     item = TranscriptItem("tool", name="run_command", arg="sleep 60", ok=None, call_id="7")
     (line,) = item_lines(item, detail="collapsed")
     assert "".join(text for text, _style in line) == "→ run_command  sleep 60  · running"
@@ -166,10 +165,11 @@ def test_an_in_flight_tool_is_one_running_line() -> None:
 
 
 def test_the_done_badge_keeps_the_gates_tri_state() -> None:
-    """`all_passed` is null for a run no gate judged and for the operator's own
-    stop or undo. Flattening it to a bool painted those in the failure colour
-    and rendered a gateless finish byte-identically to a finish over a RED gate
-    (which exits 4)."""
+    """`all_passed` is null for a run no gate judged and for the operator's own stop or undo.
+
+    Flattening it to a bool painted those in the failure colour and rendered a gateless finish
+    byte-identically to a finish over a RED gate (which exits 4).
+    """
     from agent6.viewmodel.transcript import TranscriptItem
     from agent6.viewmodel.transcript_style import item_lines
 

@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Config-side budget guards: the `budget_preflight` refusals/notice and the
-override path.
+"""Config-side budget guards: the `budget_preflight` refusals and notice, and the override path.
 
-USD is a single runtime bound (`BudgetTracker.max_usd`), never a load-time
-token conversion. Pricing has no static table: it comes from the
-provider-fetched models cache (agent6.models.pricing reads
-$XDG_CACHE_HOME/models/*.json). Tests inject prices by writing a real cache
-file, exercising the same path production uses.
+USD is a single runtime bound (`BudgetTracker.max_usd`), never a load-time token conversion.
+Pricing comes from the provider-fetched models cache; tests inject prices by writing a real
+cache file, the path production uses.
 """
 
 from __future__ import annotations
@@ -55,8 +52,7 @@ def _cfg(worker: str, budget: dict[str, Any] | None = None, reviewer: str | None
 
 
 def test_budget_overrides_write_the_fields_they_name(price_cache: Path) -> None:
-    """--max-usd / --max-tokens-fallback override exactly their config fields;
-    nothing is derived or ratcheted from one into the other."""
+    """--max-usd and --max-tokens-fallback override exactly their config fields, nothing derived."""
     cfg = _cfg(PRICED_MODEL, budget={"max_usd": 5.0, "max_tokens_fallback": 999_999_999})
     out = cfg.with_budget_overrides(max_usd=50.0)
     assert out.budget.max_usd == 50.0
@@ -95,8 +91,7 @@ def test_usd_zero_refuses_a_priced_model(price_cache: Path) -> None:
 def test_unpriced_model_gets_the_fallback_notice(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An unpriced role model is not an error: its spend is bounded by the
-    fallback ledger, and startup says so once, naming the model."""
+    """An unpriced role model is bounded by the fallback ledger, and startup says so once."""
     from agent6.app.preflight import budget_preflight
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "empty-cache"))
@@ -123,7 +118,8 @@ def test_a_bad_budget_flag_refuses_naming_the_flag(flag: str, value: float) -> N
     `ValidationError` escaped to the last-resort handler: "unexpected
     ValidationError", a crash log in /tmp, an invitation to file a bug, and exit
     1 -- while `config set budget.max_usd -5` refuses cleanly at exit 2. The
-    message named `budget.max_usd`, a key the operator never typed."""
+    message named `budget.max_usd`, a key the operator never typed.
+    """
     from agent6.app._setup import BudgetOverrides  # pyright: ignore[reportPrivateUsage]
     from agent6.config import Config, ConfigError
 

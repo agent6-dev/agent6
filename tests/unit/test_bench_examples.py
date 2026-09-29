@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The shipped bench content stays loadable: every bench/machines example but
-no bench
-config literal carries a field the schema has deleted (configs load under
-extra="forbid", so one stale name refuses the whole file). Guards the class of
-miss where a schema change sweeps src/tests/docs but not bench."""
+"""The shipped bench content stays loadable.
+
+No bench/machines example or bench config literal carries a field the schema has deleted; configs
+load under extra="forbid", so one stale name refuses the whole file.
+"""
 
 from __future__ import annotations
 
@@ -35,10 +35,7 @@ def test_shipped_machine_examples_validate(toml: Path) -> None:
         load_machine(toml)
 
 
-# Deleted by the budget redesign and the git.allow_* removal. Historical
-# records are exempt: FINDINGS.md narrates superseded runs (with a
-# superseded-by pointer), and _create-bench's per-model dirs are the recorded
-# outputs of past create-bench runs, not shipped config.
+# Fields the budget redesign and the git.allow_* removal deleted; recorded outputs are exempt.
 _DELETED_FIELDS = (
     "best_effort_usd_limit",
     "max_input_tokens",

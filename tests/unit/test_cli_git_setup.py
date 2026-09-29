@@ -22,8 +22,10 @@ from agent6.ui.cli.init_cmds import _offer_git_setup  # pyright: ignore[reportPr
 
 
 def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Duplicate coverage of the refusal, from the CLI's angle: the same helper
-    both lifecycles call before starting anything."""
+    """The headless approval refusal, from the CLI's angle.
+
+    The helper both lifecycles call first.
+    """
     ask = cast(Config, SimpleNamespace(sandbox=SimpleNamespace(run_commands="ask")))
     assert headless_approval_refusal(ask, tui_enabled=False, away="", can_ask=False) is not None
     # Answerable: a TUI, a front-end that can ask, an away-mode, or nothing to approve.
@@ -37,8 +39,7 @@ def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_run_surfaces_git_wall_before_provider_wall(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Non-git scratch dir with no provider configured (conftest isolates config):
-    # the not-a-git-repo error surfaces first, not after the provider/key walls.
+    # Non-git scratch dir with no provider: the not-a-git-repo error surfaces first.
     monkeypatch.chdir(tmp_path)
     rc = main(["run", "do a thing"])
     assert rc == 2
@@ -120,9 +121,7 @@ def test_offer_git_setup_interactive_inits_and_commits(
         monkeypatch.setenv(k, "t@t.t")
     (tmp_path / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
     (tmp_path / "AGENTS.md").write_text("# AGENTS\n", encoding="utf-8")
-    # The per-repo config lives OUT of the workspace. Passing such a path must
-    # not crash _offer_git_setup (it filters to paths under the repo) and it is
-    # never committed.
+    # The per-repo config lives outside the workspace; such a path is filtered and never committed.
     out_of_repo_cfg = tmp_path.parent / "a6-state" / "config.toml"
     out_of_repo_cfg.parent.mkdir(parents=True, exist_ok=True)
     out_of_repo_cfg.write_text("# cfg\n", encoding="utf-8")
@@ -166,9 +165,7 @@ def _porcelain(tmp_path: Path) -> str:
 def test_offer_git_setup_existing_repo_commits_scaffold_noninteractive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # In an already-git repo, init used to leave the scaffold uncommitted, so
-    # the advertised `agent6 run "<task>"` refused on a dirty tree.
-    # Non-interactive means --yes (non-TTY without --yes is refused earlier).
+    # Non-interactive means --yes; the scaffold is committed so `agent6 run` finds a clean tree.
     _existing_repo(tmp_path, monkeypatch)
     (tmp_path / "AGENTS.md").write_text("# AGENTS\n", encoding="utf-8")
     (tmp_path / ".gitignore").write_text(".env\n", encoding="utf-8")
@@ -195,10 +192,7 @@ def test_offer_git_setup_existing_repo_declined_prints_exact_command(
 def test_offer_git_setup_scaffold_committed_but_tree_dirty_elsewhere(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Re-running init in a repo where the scaffold is ALREADY committed but the
-    # worktree is dirty for an unrelated reason must not attempt a path-limited
-    # commit of the (unchanged) scaffold paths -- that fails "nothing to commit"
-    # and used to print a false "commit failed" and a remediation that also fails.
+    # The scaffold is committed and the tree dirty for another reason: no path-limited commit.
     _existing_repo(tmp_path, monkeypatch)
     scaffold = (tmp_path / "AGENTS.md", tmp_path / ".gitignore")
     scaffold[0].write_text("# AGENTS\n", encoding="utf-8")
@@ -224,7 +218,7 @@ def test_offer_git_setup_existing_clean_repo_is_silent(
 def test_init_refuses_without_tty_or_yes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `echo n | agent6 init` used to take every default and write files.
+    # `echo n | agent6 init` declines and writes nothing.
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     rc = main(["init"])
@@ -275,15 +269,11 @@ def test_failed_init_hands_new_scaffold_back_to_the_sudo_user(
 def test_an_unanswerable_run_creates_no_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A refused start must leave nothing behind, or it poisons its own id.
+    """A refused start leaves no session behind, so its id stays usable.
 
-    The refusal names the fix (`--auto-approve`); applying it to the same
-    `--session-id` then answered "already exists, use resume", and resume found
-    no snapshot -- the id was unusable. The dir also sat in `agent6 sessions`
-    forever as a run that never ran. Refusing before anything is created is the
-    whole fix, so the pin is on the absence.
+    A dir created before the refusal answers "already exists, use resume" to the retried
+    `--session-id` while resume finds no snapshot, and sits in `agent6 sessions` forever.
     """
-
     init_repo(tmp_path)
     for key, value in (("user.email", "t@example.com"), ("user.name", "t")):
         subprocess.run(["git", "-C", str(tmp_path), "config", key, value], check=True)
@@ -302,8 +292,7 @@ def test_an_unanswerable_run_creates_no_session(
         ),
         encoding="utf-8",
     )
-    # Committed, so the dirty-tree refusal (which fires FIRST in the old order)
-    # cannot stand in for the one under test.
+    # Committed, so the dirty-tree refusal cannot stand in for the one under test.
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "seed"], check=True)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
@@ -329,9 +318,10 @@ def test_an_unanswerable_run_creates_no_session(
 def test_init_never_commits_the_operators_own_edits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 init` committed AGENTS.md by path, so an edit the operator had
-    in flight landed inside "chore: scaffold agent6 config" -- and the summary
-    line named AGENTS.md even when init had left it untouched."""
+    """Init never commits the operator's own in-flight edit to AGENTS.md.
+
+    Its summary says so.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     init_repo(repo)
@@ -395,9 +385,7 @@ def test_init_never_commits_a_gitignore_with_existing_edits(
 def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The non-repo path runs `git init` and commits the scaffold, where every
-    file is untracked and therefore looks like agent6's. An AGENTS.md the
-    operator wrote before ever running agent6 is not."""
+    """Init in a fresh repo leaves out an AGENTS.md the operator wrote, untracked though it is."""
     repo = tmp_path / "fresh"
     repo.mkdir()
     # Carries a verify section already, so init leaves the file untouched.
@@ -456,8 +444,7 @@ def test_init_leaves_a_modified_preexisting_file_out_of_a_fresh_repo_commit(
 def test_init_does_not_call_a_committed_scaffold_uncommitted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AGENTS.md committed before init and untouched since: init leaves it
-    alone, and said "left uncommitted (already edited)" over a clean file."""
+    """Init leaves a committed, untouched AGENTS.md alone and does not call it uncommitted."""
     repo = tmp_path / "repo"
     repo.mkdir()
     init_repo(repo)

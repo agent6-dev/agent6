@@ -49,7 +49,6 @@ def test_it_says_the_skills_could_not_be_read(
 def test_completion_still_degrades_to_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """argcomplete has no way to show an error and must never raise into the
-    shell: an empty list is the right answer there."""
+    """Argcomplete gets an empty list on a loader failure; it must never raise into the shell."""
     _break_discovery(monkeypatch)
     assert skills_cmds.resolved_skill_names_for_completion(tmp_path) == []

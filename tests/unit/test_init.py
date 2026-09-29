@@ -41,18 +41,11 @@ def test_init_empty_dir_creates_scaffold(tmp_path: Path) -> None:
 def test_cmd_init_reports_invalid_config_cleanly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A pre-existing INVALID (but TOML-parseable) config makes `agent6 init` exit
-    2 with a clean ERROR plus init's own repair pointer, not a crash through the
-    generic "unexpected ..." crash handler. init loads the effective
-    config to infer a verify command; it is the user's setup to fix, and init is
-    the repair command."""
+    """An invalid but parseable config makes `agent6 init` exit 2 with a repair pointer."""
     from agent6.ui.cli import cli_main
 
     repo = _repo(tmp_path)
-    # Valid global with a configured provider, so the cross-field validator has a
-    # non-empty "known providers" set to reject the typo against. XDG_CONFIG_HOME
-    # (set by the isolated_state fixture) points at the agent6 dir itself, so the
-    # global config is <cfg>/config.toml.
+    # A valid global with a provider, so the validator has a known-providers set to reject the typo.
     global_cfg = tmp_path / "cfg" / "agent6" / "config.toml"
     global_cfg.parent.mkdir(parents=True, exist_ok=True)
     global_cfg.write_text(
@@ -99,8 +92,7 @@ def test_init_infers_verify_for_python_repo(tmp_path: Path) -> None:
     (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     init_workspace(repo)
     cfg = load_effective(repo).config
-    # No .venv in this fresh repo -> python3 on PATH (the .venv/bin/python default
-    # is only used when that interpreter actually exists; see verify_infer).
+    # No .venv in this fresh repo, so python3 on PATH (see verify_infer).
     assert cfg.harness.verify_command == ("python3", "-m", "pytest", "-q")
 
 
@@ -163,8 +155,7 @@ def test_init_gitignore_preserves_existing(tmp_path: Path) -> None:
 
 
 def test_init_never_rewrites_an_agents_md_it_cannot_decode(tmp_path: Path) -> None:
-    """The append read the file with errors="replace" and wrote that back, so
-    every non-ASCII byte in a non-UTF-8 AGENTS.md became U+FFFD, silently."""
+    """The AGENTS.md append keeps non-UTF-8 bytes instead of writing U+FFFD back."""
     from agent6.init import _setup_agents_md  # pyright: ignore[reportPrivateUsage]
 
     p = tmp_path / "AGENTS.md"
@@ -189,8 +180,7 @@ def test_init_still_appends_to_a_utf8_agents_md(tmp_path: Path) -> None:
 def test_init_asks_about_the_entries_it_would_add(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The .gitignore question names the entries (secrets alone without a
-    detected ecosystem); a repo already carrying them is told so, unasked."""
+    """The .gitignore question names the entries; a repo already carrying them is told, unasked."""
     from agent6 import init as init_mod
 
     asked: list[str] = []
@@ -216,9 +206,7 @@ def test_init_asks_about_the_entries_it_would_add(
 def test_init_next_steps_name_only_what_is_still_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The "Next:" block after init lists connect and model only while the
-    effective config lacks a provider or a worker model, and marks the run
-    line "verify is inferred" only when no gate was set."""
+    """The "Next:" block lists only what the effective config still lacks."""
     from agent6.ui.cli import main
 
     repo = _repo(tmp_path)

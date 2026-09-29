@@ -20,10 +20,12 @@ def _ask_cfg() -> Config:
 def test_a_run_that_cannot_be_asked_refuses_instead_of_hanging(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`ask` needs someone to answer. With no terminal, no TUI and no away-mode
-    the first command waits forever -- and since the verify gate is a command
-    too, that is essentially every run, every /parallel lane included. It used
-    to print a note and hang anyway."""
+    """`ask` needs someone to answer.
+
+    With no terminal, no TUI and no away-mode the first command waits forever, and since the
+    verify gate is a command too, that is essentially every run, every /parallel lane included. A
+    note alone does not stop the hang; the run is refused.
+    """
     refusal = headless_approval_refusal(_ask_cfg(), tui_enabled=False, away="", can_ask=False)
     assert refusal is not None
     assert "would wait forever" in refusal
@@ -31,8 +33,10 @@ def test_a_run_that_cannot_be_asked_refuses_instead_of_hanging(
 
 
 def test_a_clamped_session_kind_names_the_flag_not_the_config_value() -> None:
-    """plan and ask clamp a standing run_commands = "yes" to ask: the remedy
-    names --auto-approve and the clamp, never the value that is already set."""
+    """Plan and ask clamp a standing run_commands = "yes" to ask.
+
+    The remedy names --auto-approve and the clamp, never the value that is already set.
+    """
     refusal = headless_approval_refusal(
         _ask_cfg(), tui_enabled=False, away="", can_ask=False, clamped=True
     )
@@ -62,10 +66,12 @@ def test_answerable_runs_are_not_refused(
 def test_the_lifecycle_sets_the_repos_hook_policy_itself(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`ui/cli` set it and resume set it, but `run_task` did not -- so a
-    front-end that calls the lifecycle directly (`agent6 acp`) left a repo that
-    opted into its own hooks with them silently off. It fails SAFE, which is
-    how a knob `config show` reports went ignored on one surface unnoticed."""
+    """The lifecycle sets the repo's hook policy itself.
+
+    A front-end that calls the lifecycle directly (`agent6 acp`) must not leave a repo that opted
+    into its own hooks with them silently off; the setting fails safe, which is how a knob `config
+    show` reports can go ignored on one surface unnoticed.
+    """
     from agent6.app import preflight as preflight_mod
     from agent6.app import run as lifecycle
     from agent6.app.frontend import FrontendCapabilities
@@ -101,8 +107,11 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
 
 
 def test_a_misspelled_away_mode_refuses_instead_of_reading_as_intent() -> None:
-    """Any non-empty AGENT6_DETACHED_AWAY used to lift the refusal, so a typo
-    started the run and the first approval then waited forever."""
+    """A misspelled away mode refuses instead of reading as intent.
+
+    Any non-empty AGENT6_DETACHED_AWAY lifting the refusal lets a typo start the run, and the first
+    approval then waits forever.
+    """
     refusal = headless_approval_refusal(_ask_cfg(), tui_enabled=False, away="denied", can_ask=False)
     assert refusal is not None
     assert "'denied' is not an away-mode" in refusal
@@ -110,8 +119,10 @@ def test_a_misspelled_away_mode_refuses_instead_of_reading_as_intent() -> None:
 
 
 def test_a_misspelled_away_mode_refuses_even_where_a_person_could_answer() -> None:
-    """A setting the run cannot honor is an error on every surface: refuse
-    naming the accepted set rather than prompting as if it were unset."""
+    """A setting the run cannot honor is an error on every surface.
+
+    Refuse naming the accepted set rather than prompting as if it were unset.
+    """
     assert (
         headless_approval_refusal(_ask_cfg(), tui_enabled=True, away="Deny", can_ask=True)
         is not None
@@ -120,8 +131,11 @@ def test_a_misspelled_away_mode_refuses_even_where_a_person_could_answer() -> No
 
 @pytest.mark.parametrize("commands", ["yes", "no"])
 def test_a_misspelled_away_mode_refuses_when_commands_are_settled(commands: str) -> None:
-    """Away-mode also decides fetch, MCP and question prompts, so settling
-    run_command does not make an invalid launcher value harmless."""
+    """A misspelled away mode refuses when commands are settled.
+
+    Away mode also decides fetch, MCP and question prompts, so settling run_command does not make an
+    invalid launcher value harmless.
+    """
     cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
     refusal = headless_approval_refusal(cfg, tui_enabled=False, away="denied", can_ask=False)
     assert refusal is not None
@@ -137,9 +151,10 @@ def test_an_away_mode_that_is_honored_starts_the_run() -> None:
 
 
 def test_the_preflight_notices_go_through_the_injected_reporter() -> None:
-    """`agent6 acp` injects a Reporter so what the lifecycle says reaches the
-    editor; these notices called `print` directly, so an editor's operator
-    never learned the run had started gateless or that its spend was unmetered.
+    """The preflight notices go through the injected reporter.
+
+    `agent6 acp` injects a Reporter so what the lifecycle says reaches the editor; a notice printed
+    directly never tells an editor's operator the run started gateless or its spend is unmetered.
     """
     import inspect
 
@@ -151,11 +166,13 @@ def test_the_preflight_notices_go_through_the_injected_reporter() -> None:
 
 
 def test_a_headless_run_with_settled_commands_is_told_what_still_parks_it() -> None:
-    """`--auto-approve` settles commands, so the refusal lets the run start;
-    a fetch outside `sandbox.fetch_hosts` or an MCP call still asks, and with
-    nobody to answer it the run parks until a front-end attaches. The start
-    says so and names the away-mode that auto-denies; a run that can be asked,
-    or one with an away-mode, gets no note."""
+    """A headless run with settled commands is told what still parks.
+
+    `--auto-approve` settles commands, so the refusal lets the run start; a fetch outside
+    `sandbox.fetch_hosts` or an MCP call still asks, and with nobody to answer it the run parks
+    until a front-end attaches. The start says so and names the away mode that auto-denies; a run
+    that can be asked, or one with an away mode, gets no note.
+    """
     yes = Config.model_validate({"sandbox": {"run_commands": "yes"}})
     note = headless_parking_note(yes, tui_enabled=False, away="", can_ask=False)
     assert note is not None
@@ -169,10 +186,12 @@ def test_a_headless_run_with_settled_commands_is_told_what_still_parks_it() -> N
 def test_the_route_preflight_precedes_isolation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`select_isolation` runs `budget_preflight`, which prices the configured
-    model from the cache the route preflight's key check refreshes: with the
-    key check after it, a cold cache made a first run refuse (max_tokens_fallback
-    0) or print a price notice a second run never sees."""
+    """The route preflight precedes isolation.
+
+    `select_isolation` runs `budget_preflight`, which prices the configured model from the cache the
+    route preflight's key check refreshes; with the key check after it, a cold cache makes a first
+    run refuse (max_tokens_fallback 0) or print a price notice a second run never sees.
+    """
     from agent6.app import run as lifecycle
     from agent6.app.frontend import FrontendCapabilities
     from agent6.app.reporter import Reporter

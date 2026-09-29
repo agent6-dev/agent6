@@ -29,8 +29,11 @@ pytestmark = pytest.mark.needs_namespaces
 
 
 def _probe(script: str, cwd: Path, *, network: NetworkMode = "none") -> str:
-    """Run one probe as a SERVER would run: spawned through the jail with a
-    server policy, stdio inherited, output collected off its stdout pipe."""
+    """Run one probe as a server would run.
+
+    Spawned through the jail with a server policy, stdio inherited, output collected off its
+    stdout pipe.
+    """
     argv = ("/usr/bin/python3", "-c", script)
     policy = jail_policy(cwd, Config(), "strict", argv, network=network)
     proc = spawn_in_jail(
@@ -44,15 +47,13 @@ def _probe(script: str, cwd: Path, *, network: NetworkMode = "none") -> str:
 
 
 def test_a_confined_server_gains_no_capabilities(tmp_path: Path) -> None:
-    """Confinement must never be a privilege trade: the launcher holds a full
-    capability set between `unshare` and `execve`, and any of it reaching the
-    server would be handing third-party code MORE power in exchange for taking
-    its network away.
+    """Confinement is never a privilege trade: the server's capability sets are empty.
 
-    The uid INSIDE is namespace-local root -- that is how the jail mounts its
-    own root -- so the identity question is answered outside: a file the
-    server creates belongs to the operator, and its capability sets, bounding
-    set included, are empty.
+    The launcher holds a full capability set between `unshare` and `execve`, and any of it
+    reaching the server would hand third-party code more power in exchange for taking its
+    network away. The uid inside is namespace-local root (how the jail mounts its own root),
+    so the identity question is answered outside: a file the server creates belongs to the
+    operator, and its capability sets, bounding set included, are empty.
     """
     script = (
         "import os, re\n"
@@ -70,10 +71,12 @@ def test_a_confined_server_gains_no_capabilities(tmp_path: Path) -> None:
 
 
 def test_the_server_lands_in_a_namespace_it_cannot_leave(tmp_path: Path) -> None:
-    """Rejoining the host network needs a handle on its namespace and
-    CAP_SYS_ADMIN there. The server gets neither: a process in the parent user
-    namespace fails the ptrace check, so `/proc/<ppid>/ns/net` will not even
-    open -- and setns would refuse a capability-less process anyway."""
+    """A server cannot rejoin the host network.
+
+    That needs a handle on its namespace and CAP_SYS_ADMIN there; a process in the parent
+    user namespace fails the ptrace check, so `/proc/<ppid>/ns/net` does not even open, and
+    setns refuses a capability-less process anyway.
+    """
     script = (
         "import os\n"
         "print('NETNS', os.readlink('/proc/self/ns/net'))\n"
@@ -89,9 +92,11 @@ def test_the_server_lands_in_a_namespace_it_cannot_leave(tmp_path: Path) -> None
 
 
 def test_a_confined_server_cannot_reach_a_live_listener(tmp_path: Path) -> None:
-    """The positive control matters: a DNS probe fails inside any jail and on
-    any offline host either way, proving nothing. Connect to a REAL listener
-    on this machine -- denied without the network, allowed with it."""
+    """A connect to a real listener on this machine is denied without the network, allowed with it.
+
+    The positive control matters: a DNS probe fails inside any jail and on any offline host
+    either way, proving nothing.
+    """
     import socket
 
     with socket.socket() as listener:
@@ -111,10 +116,11 @@ def test_a_confined_server_cannot_reach_a_live_listener(tmp_path: Path) -> None:
 
 
 def test_the_jail_binary_is_what_confines_a_server(tmp_path: Path) -> None:
-    """One implementation, asserted: a server is confined by the same launcher
-    a jailed command uses, so there is no second code path to keep in step.
-    (The Python Landlock shim MCP used to carry is gone; if it comes back,
-    this fails.)"""
+    """A server is confined by the same launcher a jailed command uses.
+
+    One implementation, so there is no second code path to keep in step; a Python Landlock
+    shim for MCP would fail this.
+    """
     assert not (Path(__file__).parents[2] / "src/agent6/sandbox/exec_confined.py").exists()
     # A confined server is PID 2 in its OWN pid namespace (the launcher is PID
     # 1). An unconfined spawn keeps a host pid, so this fails if confinement is

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The hub's header counts what the hub is showing.
 
-It lists every session -- runs, plans and asks -- under a fixed "N runs"
+It lists every session (runs, plans and asks) under a fixed "N runs"
 label, so a hub of one run, one plan and one ask announced "3 runs".
 """
 
@@ -59,9 +59,7 @@ def test_one_session_is_singular(tmp_path: Path) -> None:
 
 
 def test_an_empty_hub_says_what_to_do_next(tmp_path: Path) -> None:
-    """A blank table is not an answer: the CLI, the web and the machines screen
-    next door all name the next step, and the hub left the operator looking at
-    an empty grid."""
+    """An empty hub names the next step, as the CLI, the web and the machines screen do."""
     state, repo = tmp_path / "state", tmp_path / "repo"
     repo.mkdir()
 
@@ -71,8 +69,7 @@ def test_an_empty_hub_says_what_to_do_next(tmp_path: Path) -> None:
 
 
 def test_the_hub_names_the_repository_by_its_directory(tmp_path: Path) -> None:
-    """The header carried the repository's full path, which pushed the session
-    count off the right edge of an 80-column terminal."""
+    """The header carries the repository's name, not its full path, so the count fits 80 columns."""
     state, repo = tmp_path / "state", tmp_path / "some-repo"
     repo.mkdir()
     _session(state, "runs", "runny-one-AAAAAA", "run")

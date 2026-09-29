@@ -65,9 +65,7 @@ def _mk_node(
     ],
 )
 def test_frontmatter_round_trips_adversarial_scalars(evil: str) -> None:
-    """An LLM-chosen task title with line-separator chars must not break the
-    frontmatter round-trip (it used to crash _parse_frontmatter on resume --
-    a denial-of-resume from the untrusted worker)."""
+    """A task title with line-separator chars survives the frontmatter round-trip."""
     node = _mk_node("0" * 25 + "A", title=evil, rationale=evil)
     node = node.model_copy(update={"acceptance": evil})
     rt = _parse_frontmatter(_dump_frontmatter(node))  # must not raise
@@ -145,11 +143,10 @@ def test_list_checkpoint_turns(tmp_path: Path) -> None:
 
 
 def test_load_graph_skips_a_path_traversing_node_id(tmp_path: Path, capsys: object) -> None:
-    """A node .md whose 26-char id carries path separators ('../zzz...') must
-    be SKIPPED like every other corrupt file -- unvalidated, it survived load
-    and the next write_node resolved OUTSIDE graph_dir (an atomic write landed
-    above the run's graph tree). The Crockford charset validator at the reload
-    boundary turns it into the standard skip-with-warning."""
+    """A node file whose id carries path separators is skipped like every other corrupt file.
+
+    Unvalidated, the next write_node resolved outside graph_dir.
+    """
     from agent6.graph.storage import load_graph
     from agent6.sessions.layout import SessionLayout
 
@@ -168,8 +165,7 @@ def test_load_graph_skips_a_path_traversing_node_id(tmp_path: Path, capsys: obje
 
 
 def test_graph_version_round_trips_and_old_files_default_zero(tmp_path: Path) -> None:
-    """The node file carries the mutation stamp; a file written before stamps
-    existed loads as 0 (never a parse failure)."""
+    """The node file carries the mutation stamp; a file written before stamps existed loads as 0."""
     layout = SessionLayout(state_dir=tmp_path, session_id="s")
     layout.ensure()
     node = _mk_node("0" * 26).model_copy(update={"graph_version": 7})
@@ -192,9 +188,7 @@ def test_graph_version_round_trips_and_old_files_default_zero(tmp_path: Path) ->
 def test_a_malformed_cursor_reads_as_none_and_says_so(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A torn or hand-edited cursor.json crashed fork and /undo (a bare
-    AttributeError for a list, a JSONDecodeError for a fragment) and left a
-    half-built run dir; its sibling readers degrade, and so does this one."""
+    """A torn or hand-edited cursor.json reads as no cursor, so fork and `/undo` degrade."""
     layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     layout.ensure()
     for bad in ("[]", '{"node_id"', '{"node_id": 5}', '"n9"', "{}"):

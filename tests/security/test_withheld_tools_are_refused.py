@@ -3,14 +3,11 @@
 
 """A tool withheld from the model's list is refused when called anyway.
 
-Withdrawal is not refusal. The list is rebuilt per turn, but the model still
-carries the previous turn's list in its context, and a hallucinated name costs
-nothing to emit -- so every reason `available_tool_names` drops a tool has to
-be mirrored at the call gate. One reason (an MCP server the operator denied for
-the session) was mirrored only in the listing, and calling its tool ran it.
-
-This pins the property rather than the list: a new withholding reason that
-forgets its call-gate guard fails here.
+Withdrawal is not refusal: the list is rebuilt per turn, but the model still carries the
+previous turn's list in its context, and a hallucinated name costs nothing to emit, so
+every reason `available_tool_names` drops a tool is mirrored at the call gate. This pins
+the property rather than the list: a new withholding reason that forgets its call-gate
+guard fails here.
 """
 
 from __future__ import annotations
@@ -43,9 +40,10 @@ def _always_approve(_request: ApprovalRequest, /) -> ApprovalAnswer:
 
 
 def _assert_withheld_are_refused(d: ToolDispatcher, expected: set[str], mode: Mode = "run") -> None:
-    """*expected* must be absent from the list the MODEL is handed
-    (`tool_definitions`, the mode's surface filtered by the dispatcher), and
-    calling each anyway must hit a gate."""
+    """The expected tools are absent from the list the model is handed, and calling one hits a gate.
+
+    `tool_definitions` is the mode's surface filtered by the dispatcher.
+    """
     offered = {t.name for t in tool_definitions(d, mode=mode)}
     withheld = {cls.TOOL_NAME for cls in ALL_TOOLS} - offered
     assert expected <= withheld, f"expected these withheld: {expected - withheld}"
@@ -87,9 +85,10 @@ def test_tools_withheld_by_a_bench_switch_are_refused(
 
 
 def test_tools_withheld_by_the_mode_are_refused(tmp_path: Path) -> None:
-    """`agent6 ask` edits nothing, and that has to be true of the dispatcher,
-    not only of the list it advertises. (It keeps `run_command`: read-only,
-    approval-gated investigation is the mode's whole job.)"""
+    """`agent6 ask` edits nothing: true of the dispatcher, not only of the list it advertises.
+
+    It keeps `run_command`: read-only, approval-gated investigation is the mode's whole job.
+    """
     d = ToolDispatcher(root=tmp_path, config=Config(), isolation="none", mode="ask")
     _assert_withheld_are_refused(d, {"apply_edit", "apply_patch", "stop_background"}, mode="ask")
 

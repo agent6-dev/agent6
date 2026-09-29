@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A `TurnContext` for advisor pins: a plain run with no gate, no budget and
-no tasks unless a test says otherwise."""
+"""A `TurnContext` for advisor pins: no gate, no budget and no tasks unless a test says so."""
 
 from __future__ import annotations
 

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Run/resume lifecycle regressions: a parked start's task survives a failed
-first start, an execution discards a stop it never honored, a resumed plan makes no
-commit notes, and an ask out of budget exits by the shared code map."""
+"""Run/resume lifecycle regressions.
+
+A parked start's task survives a failed first start, an execution discards a stop it never honored,
+a resumed plan makes no commit notes, and an ask out of budget exits by the shared code map.
+"""
 
 from __future__ import annotations
 
@@ -59,8 +61,10 @@ trigger = "off"
 
 
 class _Scripted:
-    """One canned ProviderResponse per call; the last repeats. A per-call hook
-    fires before the response, for a side effect (write a marker, raise)."""
+    """One canned ProviderResponse per call; the last repeats.
+
+    A per-call hook fires before the response, for a side effect (write a marker, raise).
+    """
 
     def __init__(
         self,
@@ -152,10 +156,12 @@ def _setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_a_failed_first_start_keeps_the_parked_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """run_task's manifest rewrite once un-parked the run before the execution ran, so
-    a crash during the first start left it with no parked_task and no snapshot:
-    the operator's saved words were unreachable. The park now survives until the
-    execution has actually started."""
+    """A failed first start keeps the parked task.
+
+    The park survives until the execution has started; a manifest rewrite that un-parks the run
+    first leaves a crash during the first start with no parked_task and no snapshot, so the
+    operator's saved words are unreachable.
+    """
     repo = _setup(tmp_path, monkeypatch)
     sd = state_dir(repo) / "sessions" / "runs" / "pin-PARK01"
     sd.mkdir(parents=True)
@@ -197,10 +203,12 @@ def test_a_failed_first_start_keeps_the_parked_task(
 def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Starting a parked run bypassed run_task's own provider-key preflight
-    (that check lives in the CLI wrapper, which the parked branch skips), so a
-    missing key crashed with a traceback instead of the `agent6 connect`
-    refusal a fresh run gives."""
+    """A parked resume with no provider key refuses cleanly.
+
+    Starting a parked run goes through run_task's own provider-key preflight; a check that lives
+    only in the CLI wrapper, which the parked branch skips, lets a missing key crash with a
+    traceback instead of the `agent6 connect` refusal a fresh run gives.
+    """
     repo = _setup(tmp_path, monkeypatch)
     # An Anthropic route with no resolvable key: the case that refuses (an
     # OpenAI-compat endpoint legitimately runs keyless, so it would not).
@@ -236,9 +244,11 @@ def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
 def test_a_execution_discards_a_stop_it_never_honored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A stop that lands after the last boundary poll (here, during the finish
-    turn) is never honored by the ending execution; its teardown discards it, so it
-    cannot leak into and abort the next execution."""
+    """An execution discards a stop it never honoured.
+
+    A stop that lands after the last boundary poll (here, during the finish turn) is never honoured
+    by the ending execution; its teardown discards it, so it cannot leak into and abort the next.
+    """
     from agent6.sessions.ipc import request_stop, stop_request_pending
 
     repo = _setup(tmp_path, monkeypatch)
@@ -258,10 +268,12 @@ def test_a_execution_discards_a_stop_it_never_honored(
 def test_a_resumed_plan_execution_makes_no_commit_notes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A plan execution commits nothing (its chain ref is None), so the run-only
-    between-executions notes ("left out of this run's commits", "the tree holds
-    changes no commit has") are false there, and untracked-at-start must not be
-    written into a plan dir nothing reads."""
+    """A resumed plan execution makes no commit notes.
+
+    A plan execution commits nothing (its chain ref is None), so the run-only between-executions
+    notes ("left out of this run's commits", "the tree holds changes no commit has") are false
+    there, and untracked-at-start is not written into a plan dir nothing reads.
+    """
     from agent6.git_ops import chain_ref_for, chain_tip
 
     repo = _setup(tmp_path, monkeypatch)
@@ -286,9 +298,11 @@ def test_a_resumed_plan_execution_makes_no_commit_notes(
 def test_an_ask_out_of_budget_exits_three(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The ask execution mapped its own exit code (`0 if completed else 1`), so a
-    budget-exhausted ask exited 1 where `run`/`resume` and the docs promise 3.
-    It now returns through the one code map every mode shares."""
+    """An ask out of budget exits 3.
+
+    The ask execution returns through the one code map every mode shares; its own `0 if completed
+    else 1` exits 1 where `run`, `resume` and the docs promise 3.
+    """
     _setup(tmp_path, monkeypatch)
 
     def _raise(_i: int) -> None:

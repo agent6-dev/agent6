@@ -15,10 +15,11 @@ from agent6.ui import spawn as spawn_mod
 def test_hub_machine_spawn_carries_the_wait_away_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`spawn_and_confirm` is the hub surfaces' machine launcher (web + TUI)
-    and the detached resume's; without the away marker every prompt raced the
-    viewer's registration and the headless default answered instead of the
-    operator. A caller's additions ride on top of it."""
+    """`spawn_and_confirm` sets the away marker under a caller's additions.
+
+    It is the hub surfaces' and the detached resume's launcher; without the marker every prompt
+    raced the viewer's registration and the headless default answered.
+    """
     captured: dict[str, Any] = {}
 
     class _Proc:

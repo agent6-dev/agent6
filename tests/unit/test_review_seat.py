@@ -106,10 +106,12 @@ def test_structured_review_provider_error_abstains() -> None:
 
 
 def test_structured_review_starved_output_names_the_cap() -> None:
-    """A reasoning model can spend the whole output cap before emitting any
-    content (kimi-k3: finish_reason=length, 0 content chars, ~5.8k reasoning
-    chars, every seat abstained). "unparseable reviewer output" blamed the
-    parser for the provider's truncation and hid the one actionable fact."""
+    """A reasoning model can spend the whole output cap before emitting any content (kimi-k3.
+
+    Finish_reason=length, 0 content chars, ~5.8k reasoning chars, every seat abstained).
+    "unparseable reviewer output" blamed the parser for the provider's truncation and hid the one
+    actionable fact.
+    """
     starved = _FakeProvider("")
     starved_resp = _Resp("", stop_reason="length", output_tokens=4500)
     starved.call = lambda **_kw: starved_resp  # type: ignore[method-assign]
@@ -129,10 +131,12 @@ def test_structured_review_starved_output_names_the_cap() -> None:
 
 
 def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
-    """Observed live: the upstream answered finish_reason=error with a null
-    body after the model spent 16,801 tokens in the reasoning channel. There
-    was nothing to parse, and "unparseable reviewer output" blamed the parser
-    for it."""
+    """An empty reviewer response says it returned nothing.
+
+    Observed live: the upstream answered finish_reason=error with a null body after the model spent
+    16,801 tokens in the reasoning channel. There was nothing to parse, and "unparseable reviewer
+    output" blames the parser for it.
+    """
     empty = _FakeProvider("")
     empty_resp = _Resp("", stop_reason="error", output_tokens=16801)
     empty.call = lambda **_kw: empty_resp  # type: ignore[method-assign]
@@ -246,15 +250,19 @@ def _cfg_with_seats(seats: tuple[str, ...]) -> Any:
 
 
 def _stub_seat_provider(*_a: Any, **_k: Any) -> Provider:
-    """Stand-in for `_provider_from_entry` / `_build_role_provider` so seat
-    construction needs no API key or network; the test asserts on the seat label."""
+    """Stand in for `_provider_from_entry` and `_build_role_provider` so a seat needs no key.
+
+    The test asserts on the seat label.
+    """
     return _prov("{}")
 
 
 def test_a_routed_reviewer_leaves_pinned_seats_alone(monkeypatch: Any) -> None:
-    """`review --model X` re-routes the reviewer role; a seat pinned to a
-    provider and model in [review].seats is the operator's own choice and
-    keeps it."""
+    """A routed reviewer leaves pinned seats alone.
+
+    `review --model X` re-routes the reviewer role; a seat pinned to a provider and model in
+    `[review].seats` is the operator's own choice and keeps it.
+    """
     from agent6.app import providers as prov_mod
 
     monkeypatch.setattr(prov_mod, "_provider_from_entry", _stub_seat_provider)
@@ -286,8 +294,7 @@ def test_build_review_seats_no_override_keeps_pinned_models(monkeypatch: Any) ->
 
 
 def test_a_bare_persona_seat_follows_the_routed_reviewer(monkeypatch: Any) -> None:
-    """A bare-persona seat routes via the reviewer role, so `review --model`
-    reaches it."""
+    """A bare-persona seat routes via the reviewer role, so `review --model` reaches it."""
     from agent6.app import providers as prov_mod
 
     monkeypatch.setattr(prov_mod, "build_role_provider", _stub_seat_provider)
@@ -483,10 +490,12 @@ def test_explore_review_honors_verdict_alongside_tool_use_on_last_iter() -> None
 
 
 def test_run_panel_concurrent_seats_run_on_daemon_threads() -> None:
-    """The seat pool must not block process exit: an in-flight seat call is a
-    non-streaming POST with no abort hook, and ThreadPoolExecutor workers are
-    joined at interpreter exit -- Ctrl-C on `agent6 review` hung until every
-    seat finished. Daemon threads die with the process."""
+    """The seat pool must not block process exit.
+
+    An in-flight seat call is a non-streaming POST with no abort hook, and ThreadPoolExecutor
+    workers are joined at interpreter exit, Ctrl-C on `agent6 review` hung until every seat
+    finished. Daemon threads die with the process.
+    """
     import threading
 
     daemons: list[bool] = []
@@ -506,8 +515,10 @@ def test_run_panel_concurrent_seats_run_on_daemon_threads() -> None:
 
 
 def test_run_panel_concurrent_seat_crash_propagates() -> None:
-    """An unexpected seat-thread exception (not the ProviderError abstain path)
-    surfaces from run_panel, matching the old pool.map semantics."""
+    """An unexpected seat-thread exception surfaces from run_panel.
+
+    Not the ProviderError abstain path; the same semantics as `pool.map`.
+    """
 
     class _BoomProvider:
         def call(self, **kw: Any) -> Any:
@@ -551,11 +562,13 @@ def test_run_panel_concurrency_limit_is_honored() -> None:
 
 
 def test_seats_are_instrumented_when_the_run_passes_its_event_sink(monkeypatch: Any) -> None:
-    """Only InstrumentedProvider emits budget.update, so bare seat providers
-    spent real money no surface ever showed: the tracker enforced, but the log
-    never heard, and the run's cost was under-reported permanently. With the
-    run's sink each seat is wrapped; `agent6 review` has no
-    session log, passes no sink, and stays bare."""
+    """Seats are instrumented when the run passes its event sink.
+
+    Only InstrumentedProvider emits budget.update, so a bare seat provider spends real money no
+    surface shows: the tracker enforces, the log never hears, and the run's cost is under-reported.
+    With the run's sink each seat is wrapped; `agent6 review` has no session log, passes no sink,
+    and stays bare.
+    """
     from agent6.app import providers as prov_mod
     from agent6.app.providers import InstrumentedProvider
 
@@ -579,10 +592,12 @@ def test_seats_are_instrumented_when_the_run_passes_its_event_sink(monkeypatch: 
 
 
 def test_a_persona_flag_pins_a_model_like_a_configured_seat(monkeypatch: Any) -> None:
-    """`--personas security@chatgpt/gpt-5-codex` on the CLI cycled a persona
-    NAMED that onto the reviewer model, so the seat line claimed a spec the
-    panel never honoured. The roster grammar is one, whichever surface names
-    the seat."""
+    """A persona flag pins a model like a configured seat.
+
+    The roster grammar is one, whichever surface names the seat; cycling `--personas
+    security@chatgpt/gpt-5-codex` as a persona named that onto the reviewer model makes the seat
+    line claim a spec the panel never honours.
+    """
     from agent6.app import providers as prov_mod
 
     monkeypatch.setattr(prov_mod, "_provider_from_entry", _stub_seat_provider)
@@ -601,9 +616,11 @@ def test_a_persona_flag_pins_a_model_like_a_configured_seat(monkeypatch: Any) ->
 
 
 def test_a_persona_flag_with_a_half_spec_refuses_like_the_config_does(monkeypatch: Any) -> None:
-    """`--personas security@openrouter` (no model) routed to the reviewer
-    model in silence, the very degrade the config validator refuses for the
-    same string; the grammar has one owner and both surfaces refuse."""
+    """A persona flag with a half spec refuses like the config does.
+
+    `--personas security@openrouter` (no model) must not route to the reviewer model in silence, the
+    degrade the config validator refuses for the same string; the grammar has one owner.
+    """
     from agent6.app import providers as prov_mod
 
     monkeypatch.setattr(prov_mod, "build_role_provider", _stub_seat_provider)
@@ -620,9 +637,11 @@ def test_a_persona_flag_with_a_half_spec_refuses_like_the_config_does(monkeypatc
 def test_a_half_spec_on_the_cli_is_an_operator_error_not_a_crash_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 review --personas security@openrouter` let the seat refusal out
-    of the panel runner into the last-resort handler: a crash log and "report
-    it" for a typo. The runner reports it the way the single review does."""
+    """A half spec on the CLI is an operator error, not a crash report.
+
+    `agent6 review --personas security@openrouter` is reported by the panel runner the way the
+    single review reports it, never as a crash log and "report it" for a typo.
+    """
     import subprocess
 
     from agent6.ui.cli import main

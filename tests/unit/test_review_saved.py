@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 review` saves its rendered review under `<state-dir>/reviews/`,
-beside the provider transcripts, so a later session working on a module can
-read its review there (the self-review habit in CLAUDE.md had no writer)."""
+"""`agent6 review` saves its rendered review under `<state-dir>/reviews/`.
+
+Beside the provider transcripts, so a later session working on a module can read its review there.
+"""
 
 from __future__ import annotations
 
@@ -122,10 +123,12 @@ def test_the_panel_verdict_is_saved_too(
 
 
 def test_two_reviews_in_one_second_keep_both(tmp_path: Path) -> None:
-    """Two reviews of one repo in the same second (a CLI review beside a
-    TUI one) chose the same name by check-then-write; the name is claimed
-    with an exclusive create, so a file that appears between the check and
-    the write is never replaced."""
+    """Two reviews in one second keep both.
+
+    Two reviews of one repo in the same second (a CLI review beside a TUI one) choose the same name;
+    the name is claimed with an exclusive create, so a file that appears between the check and the
+    write is never replaced.
+    """
     first = review_cmds.save_review(tmp_path, label="a", body="one")
     second = review_cmds.save_review(tmp_path, label="b", body="two")
     assert first != second

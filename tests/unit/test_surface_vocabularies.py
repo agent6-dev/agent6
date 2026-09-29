@@ -28,15 +28,13 @@ UNSTYLED = frozenset(name for name, style in _STYLE_RICH.items() if not style)
 
 
 def test_the_terminals_cover_the_vocabulary_exactly() -> None:
-    """Both maps are `[]`-indexed while rendering, so a missing name is a
-    KeyError mid-transcript and an extra one is a name nobody emits."""
+    """Both maps are indexed while rendering, so a missing name is a KeyError mid-transcript."""
     assert frozenset(_STYLE_RICH) == NAMES
     assert frozenset(_STYLE_ANSI) == NAMES
 
 
 def test_the_web_styles_every_name_the_terminals_colour() -> None:
-    """The client builds the class name (`'s-' + style`), so a missing rule is
-    silent plain text rather than an error."""
+    """The client builds the class name from the style, so a missing rule is silent plain text."""
     css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
     styled = frozenset(re.findall(r"\.s-([a-z-]+)", css))
 
@@ -49,9 +47,10 @@ def test_the_unstyled_names_are_the_same_two_everywhere() -> None:
 
 
 def test_every_status_level_reaches_every_surface() -> None:
-    """The second vocabulary with three spellings: `status_level` picks a level,
-    the CLI paints it with SGR, the TUI with a Rich style, the web with a pill
-    class. `neutral` is plain by design, so it carries no pill."""
+    """The status level has three spellings: SGR, a Rich style and a pill class.
+
+    `neutral` is plain by design, so it carries no pill.
+    """
     from agent6.ui.cli._common import _LEVEL_SGR  # pyright: ignore[reportPrivateUsage]
     from agent6.ui.tui.theme import STATUS_LEVEL_STYLE
     from agent6.viewmodel.format import STATUS_LEVEL, StatusLevel
@@ -66,9 +65,7 @@ def test_every_status_level_reaches_every_surface() -> None:
 
 
 def test_a_tool_description_quotes_the_cap_it_enforces() -> None:
-    """The numbers the model reads and the numbers the handlers enforce are one
-    value: the descriptions interpolate them, so a changed cap cannot leave a
-    stale promise in every request's schema."""
+    """The descriptions interpolate the caps the handlers enforce, so a cap cannot go stale."""
     from agent6.tools.schema import LIST_DIR_CAP, ROSTER_MAX, ListDirInput, ReadSessionInput
 
     assert f"{LIST_DIR_CAP:,}" in ListDirInput.TOOL_DESCRIPTION

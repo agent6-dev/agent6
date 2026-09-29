@@ -2,9 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Rebuilding a layout must not lose the bucket it came from.
 
-`SessionLayout(state_dir=..., session_id=...)` defaults to `runs`, so any site
-that rebuilds one from an id -- or from a directory it already had -- silently
-retargets a plan or an ask at a directory that does not exist.
+`SessionLayout(state_dir=..., session_id=...)` defaults to `runs`, so a rebuild from an id retargets
+a plan or an ask at a directory that does not exist.
 """
 
 from __future__ import annotations
@@ -31,9 +30,7 @@ def test_a_layout_round_trips_through_its_own_directory() -> None:
 def test_the_end_of_run_task_tree_renders_for_a_plan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """It rebuilt the layout from the dir NAME, so a plan's graph was read from
-    runs/, and the whole block sat under `suppress(Exception)`, so it failed
-    by printing nothing at all."""
+    """The task tree reads a plan's graph from its own bucket, and a failure is reported."""
     from agent6.ui.cli.sessions_show import _print_task_tree  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
@@ -42,8 +39,7 @@ def test_the_end_of_run_task_tree_renders_for_a_plan(
         state_dir=tmp_path / "state", session_id="brave-oak-AAAAAA", subdir="plans"
     )
     layout.ensure()
-    # Written by the real writer: a hand-rolled node file would test the
-    # fixture's idea of the format, not the graph's.
+    # Written by the real writer, so the test reads the graph's format, not the fixture's.
     nodes: dict[str, TaskNode] = {}
     for node_id, title, parent in (
         ("01AAAAAAAAAAAAAAAAAAAAAAAA", "root task", None),
@@ -61,25 +57,20 @@ def test_the_end_of_run_task_tree_renders_for_a_plan(
         write_node(layout, nodes, node)
 
     _print_task_tree(session)
-    # The subject is that the PLAN's graph is read at all: before, the layout
-    # pointed at runs/, load_graph found nothing, and the block printed nothing.
+    # The subject is that the plan's graph is read at all; the layout pointed at runs/ before.
     out = capsys.readouterr().out
     assert "plan:" in out and "root task" in out
 
 
 def test_no_new_site_builds_a_layout_without_naming_its_bucket() -> None:
-    """`subdir` defaults to runs/, so an unnamed bucket is a silent assumption.
-    Every one found so far was wrong for a plan or an ask: the task tree, the
-    prune manifest read, the branch chain walk, and three ACP sites."""
+    """Every rebuilt layout names its bucket; `subdir`'s runs/ default is a silent assumption."""
     src = Path(__file__).resolve().parents[2] / "src" / "agent6"
     # Where defaulting is the point, with the reason.
     allowed = {
-        # `sessions diff|merge|commits` with no id means the most recent RUN:
-        # these verbs are about a run's branch, which no other mode has.
+        # `sessions diff|merge|commits` with no id means the most recent run.
         "ui/cli/sessions_cmds.py",
         "ui/cli/sessions_merge.py",
-        # The owner of "this directory's layout" -- it passes the bucket it read
-        # off the path, and a literal `subdir=` here would be circular.
+        # The owner of this directory's layout passes the bucket it read off the path.
         "sessions/layout.py",
     }
     offenders: list[str] = []
@@ -96,10 +87,7 @@ def test_no_new_site_builds_a_layout_without_naming_its_bucket() -> None:
 def test_a_task_tree_render_failure_is_not_an_empty_section(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The whole block sat under `suppress(Exception)`: a failure while
-    rendering printed nothing, said nothing on stderr and exited 0, while
-    `sessions graph` over the same graph reported it. A failure reaches the
-    CLI's reporter."""
+    """A failure while rendering the tree reaches the CLI's reporter, never a silent exit 0."""
     from agent6.ui.cli.sessions_show import _print_task_tree  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)

@@ -69,8 +69,11 @@ def test_a_full_id_retires_at_the_next_turn(tmp_path: Path) -> None:
 
 
 def test_the_id_is_the_runs_own_count(tmp_path: Path) -> None:
-    """A task is `1`, `2`, `3` within its run, which is what an operator reads
-    off `/tasks` and types back."""
+    """The id is the run's own count.
+
+    A task is `1`, `2`, `3` within its run, which is what an operator reads off `/tasks` and types
+    back.
+    """
     _curator, session_dir, root, kids, _wf = _graph(tmp_path)
     assert [root, *kids] == ["0001", "0002", "0003"]
     assert [short_task_id(nid) for nid in kids] == ["2", "3"]
@@ -110,8 +113,10 @@ def test_a_bare_directive_retires_nothing(tmp_path: Path) -> None:
 
 
 def test_the_loop_retires_what_the_operator_named(tmp_path: Path) -> None:
-    """Including a task the operator queued, which `update_task` refuses to the
-    model: the curator is the operator's own route."""
+    """Including a task the operator queued, which `update_task` refuses to the model.
+
+    The curator is the operator's own route.
+    """
     curator, session_dir, root, kids, wf = _graph(tmp_path)
     for task_id in kids:
         act_on_directive(session_dir, f"/retire {task_id}")

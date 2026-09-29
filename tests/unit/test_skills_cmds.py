@@ -64,9 +64,11 @@ class TestInstall:
         assert "Use when testing tidy." in out
 
     def test_traversing_frontmatter_name_refused(self, env: Path) -> None:
-        """The install target is `<skills>/<name>` (and, under --force, an rmtree
-        target). A SKILL.md `name` with `..` or an absolute path from an untrusted
-        source must be refused, not used verbatim to write/delete outside the dir."""
+        """The install target is `<skills>/<name>` (and, under --force, an rmtree target).
+
+        A SKILL.md `name` with `..` or an absolute path from an untrusted source must be refused,
+        not used verbatim to write/delete outside the dir.
+        """
         outside = env / "precious"
         outside.mkdir()
         (outside / "keep.txt").write_text("do not delete", encoding="utf-8")
@@ -107,12 +109,13 @@ class TestInstall:
         assert "source_sha" in origin
 
     def test_a_symlinked_skill_file_is_not_installed_as_its_target(self, env: Path) -> None:
-        """`copytree` defaults to `symlinks=False`, which copies the CONTENT a
-        link points at. A skill shipping `reference.md -> secrets.toml` then
-        installs as a real file holding the operator's provider keys, and
-        `use_skill` serves it to the model: the containment check that refuses
-        a link has nothing left to catch once install dereferenced it. A
-        directory link is the same hole one level up."""
+        """`copytree` defaults to `symlinks=False`, which copies the CONTENT a link points at.
+
+        A skill shipping `reference.md -> secrets.toml` then installs as a real file holding the
+        operator's provider keys, and `use_skill` serves it to the model: the containment check that
+        refuses a link has nothing left to catch once install dereferenced it. A directory link is
+        the same hole one level up.
+        """
         secrets = env / "config" / "agent6" / "secrets.toml"
         secrets.parent.mkdir(parents=True)
         secrets.write_text('api_key = "sk-OPERATOR-SECRET"\n', encoding="utf-8")
@@ -149,10 +152,10 @@ class TestInstall:
     def test_unreadable_source_refuses_in_the_shared_voice(
         self, env: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """`skills install` kept its own except arm and `SKILLS ERROR:` voice
-        after the one-error-boundary commit deleted that shape everywhere else.
-        An unreadable operator source refuses through the boundary: `ERROR:` at
-        exit 2, one voice, no crash report."""
+        """`skills install` refuses an unreadable source through the one error boundary.
+
+        `ERROR:` at exit 2, one voice, no crash report; it had kept its own `SKILLS ERROR:` arm.
+        """
         from agent6.ui.cli import cli_main
 
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
@@ -224,10 +227,11 @@ class TestUpdate:
     def test_update_finds_a_skill_installed_under_its_frontmatter_name(
         self, env: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """A repo skill installs under the name its SKILL.md declares, and the
-        refetch looked the source up by directory name, so a skill whose
-        directory and frontmatter names differ read "gone from origin" for
-        good while its source sat unmoved."""
+        """The refetch looks a repo skill up by the name its SKILL.md declares.
+
+        Looked up by directory name, a skill whose directory and frontmatter names differ read
+        "gone from origin" for good while its source sat unmoved.
+        """
         repo = env / "pack"
         _write_skill_file(repo / "skills" / "aa" / "SKILL.md", "aa")
         _write_skill_file(repo / "skills" / "beta" / "SKILL.md", "renamed-beta")
@@ -268,9 +272,7 @@ class TestStateCommands:
             _cmd_skills_enable("ghost", always=False, repo=False)
 
     def test_disable_over_a_headerless_state_table_errors_not_crashes(self, env: Path) -> None:
-        """A hand-written inline `state` table under [skills] can't take a single
-        leaf; the surgery refuses with an operator error the boundary presents,
-        not a 'please report this' traceback."""
+        """A hand-written inline `state` table refuses with an operator error, not a traceback."""
         self._install_tidy(env)
         cfg = env / "config" / "agent6" / "config.toml"
         cfg.parent.mkdir(parents=True, exist_ok=True)
@@ -292,8 +294,7 @@ class TestRemoveListComplete:
             _cmd_skills_remove("tidy")
 
     def test_remove_refuses_a_traversal_name(self, env: Path) -> None:
-        """The name becomes an rmtree target; a `../` name must be refused before
-        any path op, not delete a sibling outside the managed skills dir."""
+        """A `../` skill name is refused before any path op; the name becomes an rmtree target."""
         (env / "data" / "agent6" / "skills").mkdir(parents=True, exist_ok=True)
         victim = env / "data" / "victim"
         victim.mkdir()
@@ -339,10 +340,11 @@ class TestSkillsTaskPrefix:
     def test_the_master_switch_covers_the_skill_flag_and_the_listing(
         self, env: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """`[skills].enabled` is the master switch: off means no skills
-        anywhere. `--skill` resolved discovery for itself and injected the text
-        regardless, and `skills list` printed the installed set with nothing
-        saying no run would load any of it."""
+        """`[skills].enabled` is the master switch: off means no skills anywhere.
+
+        `--skill` resolved discovery for itself and injected the text regardless, and `skills list`
+        printed the installed set with nothing saying no run would load any of it.
+        """
         from agent6.config.layer import load_effective
         from agent6.ui.cli.run import _skills_task_prefix  # pyright: ignore[reportPrivateUsage]
 
@@ -383,10 +385,10 @@ class TestAtomicMultiInstall:
 
 
 def test_force_reinstall_survives_a_copy_fault(env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """--force removed the old install BEFORE copying, so a copy fault
-    destroyed the good skill and left nothing (or a partial dir) behind. The
-    replacement is staged beside the target and swapped in only when fully
-    built; a fault leaves the old install untouched and no staging litter."""
+    """`--force` stages the replacement beside the target and swaps it in only when fully built.
+
+    Removing the old install before copying left nothing behind on a copy fault.
+    """
     import shutil as _shutil
 
     from agent6.ui.cli import skills_cmds
@@ -412,8 +414,7 @@ def test_force_reinstall_survives_a_copy_fault(env: Path, monkeypatch: pytest.Mo
 
 
 def test_origin_toml_round_trips_a_quoted_source(env: Path) -> None:
-    """The origin was hand-built without escaping, so a quote in a source
-    path produced unparseable TOML and update lost its origin."""
+    """A quote in a source path is escaped in the recorded origin."""
     from agent6.ui.cli.skills_cmds import (
         _read_origin,  # pyright: ignore[reportPrivateUsage]
         _write_origin,  # pyright: ignore[reportPrivateUsage]
@@ -432,9 +433,10 @@ def test_repo_skill_state_honors_the_custom_state_base(
     env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """--repo skill state must write the config the effective loader READS.
-    The raw path helper ignored an XDG_STATE_HOME relocation, so a
-    custom-state setup wrote the default tree, printed success, and the skill
-    stayed enabled."""
+
+    The raw path helper ignored an XDG_STATE_HOME relocation, so a custom-state setup wrote the
+    default tree, printed success, and the skill stayed enabled.
+    """
     from agent6.ui.cli.skills_cmds import (
         _state_target,  # pyright: ignore[reportPrivateUsage]
     )
@@ -446,9 +448,7 @@ def test_repo_skill_state_honors_the_custom_state_base(
 
 
 def test_update_follows_an_upstream_rename(env: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """A skillmd origin whose frontmatter now declares a new name is a rename:
-    the skill reinstalls under the new name, the old directory goes (never two
-    live copies), and the row says what happened."""
+    """A skillmd origin declaring a new name reinstalls under it, never as two copies."""
     src = _write_skill_file(env / "src" / "SKILL.md", "old-name")
     assert _cmd_skills_install(str(src), force=False) == 0
     _write_skill_file(src, "new-name")
@@ -463,8 +463,7 @@ def test_update_follows_an_upstream_rename(env: Path, capsys: pytest.CaptureFixt
 def test_install_names_a_surviving_disabled_state(
     env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`skills.state.<name> = "disabled"` outlives remove; a reinstall under
-    that name must not claim "Enabled and active now"."""
+    """A reinstall under a name whose state is "disabled" never claims "Enabled and active now"."""
     src = _write_skill_file(env / "src" / "SKILL.md", "sleeper")
     assert _cmd_skills_install(str(src), force=False) == 0
     _cmd_skills_disable("sleeper", repo=False)
@@ -480,8 +479,7 @@ def test_install_names_a_surviving_disabled_state(
 def test_enable_clears_a_state_leaf_whose_skill_is_gone(
     env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """remove deletes the install, never the operator's config -- so the CLI
-    that wrote the leaf must still be able to clear it afterwards."""
+    """Remove deletes the install, never the operator's config leaf the CLI can still clear."""
     src = _write_skill_file(env / "src" / "SKILL.md", "ghost")
     assert _cmd_skills_install(str(src), force=False) == 0
     _cmd_skills_disable("ghost", repo=False)
@@ -518,10 +516,10 @@ def _serve_bytes(body: bytes) -> tuple[str, dict[str, str], ThreadingHTTPServer]
 
 
 def test_a_remote_skill_is_capped_while_it_arrives_not_after() -> None:
-    """`httpx2.get` buffered the whole body before the 1 MiB check ran, so a
-    hostile SKILL.md host had `skills install` (and the unattended `skills
-    update`) allocate the response first: a 1 MiB gzip on the wire reached
-    2 GiB of RSS before the refusal."""
+    """The 1 MiB check runs on the wire, before the body is buffered.
+
+    A 1 MiB gzip reached 2 GiB of RSS before the refusal.
+    """
     import tracemalloc
 
     from agent6.ui.cli.skills_cmds import _fetch_url  # pyright: ignore[reportPrivateUsage]
@@ -542,9 +540,10 @@ def test_a_remote_skill_is_capped_while_it_arrives_not_after() -> None:
 
 
 def test_the_skill_fetch_clock_starts_with_the_body(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The total deadline was set before the connection opened, so DNS, TLS
-    and a redirect chain spent the body's budget and the refusal blamed a
-    body still arriving; the clock starts with the body's first byte."""
+    """The body deadline starts with the body's first byte, not before the connection opens.
+
+    DNS, TLS and a redirect chain spent the budget and the refusal blamed a body still arriving.
+    """
     import time
     from collections.abc import Generator, Iterator
     from typing import ClassVar
@@ -575,10 +574,11 @@ def test_the_skill_fetch_clock_starts_with_the_body(monkeypatch: pytest.MonkeyPa
 def test_a_config_defect_reaches_the_crash_path_and_an_unreadable_config_degrades(
     env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Both config reads caught every exception: a defect inside the config
-    subsystem read as "config unreadable" (or as nothing at all, and `skills
-    install` closed with "Enabled and active now"). Only a ConfigError is the
-    unreadable case; anything else is a bug for the crash reporter."""
+    """Only a ConfigError reads as "config unreadable"; anything else reaches the crash reporter.
+
+    A config read that catches every exception makes a defect inside the config subsystem read as
+    nothing at all, and `skills install` closes with "Enabled and active now".
+    """
     from agent6.config import ConfigError
     from agent6.ui.cli.skills_cmds import _state_map  # pyright: ignore[reportPrivateUsage]
 

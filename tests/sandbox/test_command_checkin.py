@@ -61,9 +61,10 @@ def test_a_command_that_finishes_is_an_ordinary_result(tmp_path: Path) -> None:
 
 
 def test_a_command_outliving_the_checkin_comes_back_as_a_background_job(tmp_path: Path) -> None:
-    """One ExecResult shape either way: `returncode` is null and a
-    `background_id` names where the command went, so nothing has to branch on
-    "a result OR a handle"."""
+    """One ExecResult shape either way: `returncode` null and a `background_id` naming the command.
+
+    Nothing has to branch on "a result or a handle".
+    """
     d = _dispatcher(tmp_path, checkin=0.5)
     try:
         started = time.monotonic()
@@ -88,8 +89,11 @@ def test_a_command_outliving_the_checkin_comes_back_as_a_background_job(tmp_path
 
 
 def test_a_zero_checkin_waits_for_the_command(tmp_path: Path) -> None:
-    """`0` disables the hand-back: correct when a human is watching and can
-    interrupt, and the path a run with no background roster falls back to."""
+    """`0` disables the hand-back.
+
+    Correct when a human is watching and can interrupt, and the path a run with no background
+    roster falls back to.
+    """
     d = _dispatcher(tmp_path, checkin=0.0)
     try:
         out = _run(d, "sleep 1; echo waited")
@@ -101,8 +105,7 @@ def test_a_zero_checkin_waits_for_the_command(tmp_path: Path) -> None:
 
 
 def test_the_verify_gate_is_never_handed_back(tmp_path: Path) -> None:
-    """The operator's gate must return a verdict; a handle would leave the loop
-    with nothing to decide on."""
+    """The operator's gate returns a verdict; a handle would leave the loop nothing to decide on."""
     root = tmp_path / "repo"
     root.mkdir(exist_ok=True)
     session_dir = tmp_path / "session"
@@ -133,8 +136,7 @@ def test_the_verify_gate_is_never_handed_back(tmp_path: Path) -> None:
 def test_nothing_a_handed_back_command_started_outlives_the_run(
     tmp_path: Path, checkin: float
 ) -> None:
-    """Teardown stops the roster, so a command that was handed back dies with
-    the run exactly like one the model backgrounded itself."""
+    """Teardown stops the roster, so a handed-back command dies with the run like any other."""
     d = _dispatcher(tmp_path, checkin=checkin)
     marker = tmp_path / "pid"
     try:
@@ -154,8 +156,7 @@ def test_nothing_a_handed_back_command_started_outlives_the_run(
 
 
 def test_background_true_returns_the_same_shape_immediately(tmp_path: Path) -> None:
-    """`background: true` is a check-in of zero, so it is one parameter rather
-    than a second tool with a second return shape."""
+    """`background: true` is a check-in of zero: one parameter, not a second tool and shape."""
     d = _dispatcher(tmp_path, checkin=900.0)
     try:
         out = d.dispatch(
@@ -192,9 +193,11 @@ def test_the_background_flag_replaced_the_second_tool(tmp_path: Path) -> None:
 
 
 def test_a_read_only_mode_cannot_background(tmp_path: Path) -> None:
-    """Only a session that edits owns a background command's lifetime; every
-    other mode is a short read-only pass and would kill it at the end. Derived
-    from the same tool set that withholds read_background there."""
+    """Only a session that edits owns a background command's lifetime.
+
+    Every other mode is a short read-only pass and would kill it at the end; derived from the
+    same tool set that withholds read_background there.
+    """
     root = tmp_path / "repo"
     root.mkdir(exist_ok=True)
     session_dir = tmp_path / "session"
@@ -216,11 +219,12 @@ def test_a_read_only_mode_cannot_background(tmp_path: Path) -> None:
 
 
 def test_an_operator_stop_cuts_a_wait_short(tmp_path: Path) -> None:
-    """Stop is a marker file polled at a STEP boundary, and a tool call in
-    flight reaches no boundary -- so a Stop pressed during a wait sat unread for
-    the whole wait (measured: the full 10s of a 10s wait, and the default wait
-    is 900). The wait was already a poll loop; it just needed a second reason
-    to end."""
+    """A Stop pressed during a check-in wait ends the wait.
+
+    Stop is a marker file polled at a step boundary, and a tool call in flight reaches no
+    boundary; unread, a Stop sits for the whole wait (measured: the full 10s of a 10s wait,
+    and the default wait is 900).
+    """
     from agent6.sessions.ipc import request_stop
 
     d = _dispatcher(tmp_path, checkin=900.0)
@@ -238,8 +242,7 @@ def test_an_operator_stop_cuts_a_wait_short(tmp_path: Path) -> None:
 
 
 def test_a_wait_still_waits_when_nobody_asked_to_stop(tmp_path: Path) -> None:
-    """The negative control: without a stop marker the wait runs to the
-    command's end, or the early return above would be meaningless."""
+    """The negative control: without a stop marker the wait runs to the command's end."""
     d = _dispatcher(tmp_path, checkin=900.0)
     try:
         d.dispatch("run_command", {"argv": ["/bin/sh", "-c", "sleep 2"], "background": True})
@@ -252,16 +255,14 @@ def test_a_wait_still_waits_when_nobody_asked_to_stop(tmp_path: Path) -> None:
 
 
 def test_an_operator_stop_hands_a_running_command_back_at_once(tmp_path: Path) -> None:
-    """The sibling of the wait above, and the harder half.
+    """A Stop during a synchronous `run_command` hands the command back as `bg<N>`.
 
-    `read_background`'s wait is a poll loop this side owns. A SYNCHRONOUS
-    `run_command` is not: the dispatcher blocks reading the launcher's answer
-    pipe, so a Stop sat unread until the check-in elapsed -- measured at 18s of
-    a 20s command, and the default check-in is 900. The launcher now takes a
-    second reason to hand back, on its own pipe, because the request channel is
-    in lockstep and this side is blocked on the answer to the very request
-    being interrupted. The command is not killed: it becomes `bg<N>` exactly as
-    the check-in would have made it.
+    The sibling of the wait above, and the harder half: the dispatcher blocks reading the
+    launcher's answer pipe, so a Stop would sit unread until the check-in elapsed (measured:
+    18s of a 20s command, and the default check-in is 900). The launcher takes a second reason
+    to hand back, on its own pipe, because the request channel is in lockstep and this side
+    is blocked on the answer to the very request being interrupted. The command is not
+    killed.
     """
     from agent6.sessions.ipc import request_stop
 
@@ -281,8 +282,7 @@ def test_an_operator_stop_hands_a_running_command_back_at_once(tmp_path: Path) -
 
 
 def test_a_command_runs_to_the_end_when_nobody_asked_to_stop(tmp_path: Path) -> None:
-    """The negative control: no marker, so the same command returns its own
-    result and no handle, or the early hand-back above would prove nothing."""
+    """The negative control: no marker, so the same command returns its own result and no handle."""
     d = _dispatcher(tmp_path, checkin=900.0)
     try:
         started = time.monotonic()
@@ -298,10 +298,11 @@ def test_a_command_runs_to_the_end_when_nobody_asked_to_stop(tmp_path: Path) -> 
 
 
 def test_a_plan_or_ask_command_runs_bounded_instead_of_handing_back(tmp_path: Path) -> None:
-    """plan and ask permit `run_command` but withhold `read_background` and
-    `stop_background`, so a check-in hand-back there left the model holding a
-    handle it could neither poll nor stop, with the command running until
-    teardown. Where the hand-back is unusable the command runs bounded."""
+    """Where the hand-back is unusable the command runs bounded.
+
+    Plan and ask permit `run_command` but withhold `read_background` and `stop_background`,
+    so a hand-back there would leave the model a handle it could neither poll nor stop.
+    """
     root = tmp_path / "repo"
     root.mkdir(exist_ok=True)
     session_dir = tmp_path / "session"

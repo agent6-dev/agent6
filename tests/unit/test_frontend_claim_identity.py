@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A front-end claim names a process; only a start time proves it is the SAME one.
+"""A front-end claim names a process; only a start time proves it is the same one.
 
-`worker_is_alive` already refuses a recycled pid by comparing the recorded
-start time. A front-end claim carried no such record, so any live process of
-ours satisfied it: a front-end that died and had its pid reused read as live
-forever, and `_await_answer` then waited out its whole timeout instead of the
-dead-grace -- exactly the stall away-mode exists to avoid on an unattended run.
+Without it a front-end that died and had its pid reused reads as live forever, and `_await_answer`
+waits out its whole timeout instead of the dead-grace.
 """
 
 from __future__ import annotations
@@ -95,8 +92,7 @@ def test_a_recycled_pid_does_not_read_as_a_front_end(tmp_path: Path) -> None:
 
 
 def test_an_answer_wait_gives_up_on_a_recycled_front_end(tmp_path: Path) -> None:
-    """The consequence being fixed: without the identity check this waited the
-    whole timeout for an answer nobody would give."""
+    """Without the identity check the wait lasts the whole timeout for an answer nobody gives."""
     session = _session(tmp_path)
     victim = subprocess.Popen(["sleep", "60"])
     try:
@@ -118,18 +114,14 @@ def test_an_answer_wait_gives_up_on_a_recycled_front_end(tmp_path: Path) -> None
 
 
 def test_a_claim_with_no_recorded_start_is_trusted(tmp_path: Path) -> None:
-    """Same tolerance the worker record has: no start time recorded means the
-    liveness check alone decides, rather than refusing every claim."""
+    """No start time recorded means the liveness check alone decides, as for the worker record."""
     session = _session(tmp_path)
     (session / FRONTENDS_DIR / str(os.getpid())).write_text("", encoding="utf-8")
     assert frontend_is_live(session) is True
 
 
 def test_a_recycled_netns_holder_is_not_joinable(tmp_path: Path) -> None:
-    """Same class, worse consequence: `agent6 exec` / `agent6 forward` open
-    /proc/<pid>/ns/{user,net} on this number, so a pid the kernel handed to
-    someone else put the operator's command inside an unrelated process's
-    namespaces while reporting it as the run's."""
+    """`exec` and `forward` open /proc/<pid>/ns on the claim, so a recycled pid must be refused."""
     from agent6.sessions.ipc import (
         NETNS_PID_FILE,
         read_session_netns_pid,

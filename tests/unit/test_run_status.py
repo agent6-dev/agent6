@@ -79,9 +79,11 @@ def test_status_json_is_machine_readable(
 def test_status_elapsed_of_a_fork_execution_runs_from_its_first_event(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fork's log opens with loop.resume.start and never carries a
-    session.start, so its finished execution read `elapsed: -`. With no
-    session.start the scan's start is the first event's timestamp."""
+    """A fork execution's elapsed time runs from its first event.
+
+    A fork's log opens with `loop.resume.start` and never carries a `session.start`; without one the
+    scan's start is the first event's timestamp, not `elapsed: -`.
+    """
     _make_run(
         tmp_path,
         monkeypatch,
@@ -133,10 +135,11 @@ def test_a_finished_runs_elapsed_time_stops_at_its_receipt(
 def test_status_waiting_when_blocked_on_an_operator_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A live run blocked on an unanswered approval/question must read
-    "waiting (needs answer)" -- the same first-class status `agent6 sessions`
-    gives it -- not "running (long step, likely a provider call)", which sent
-    the operator off to wait on a provider while the run sat blocked on THEM."""
+    """A live run blocked on an unanswered prompt reads "waiting (needs answer)".
+
+    The same first-class status `agent6 sessions` gives it, never "running (long step, likely a
+    provider call)", which sends the operator off to wait on a provider while the run waits on them.
+    """
     d = _make_run(
         tmp_path,
         monkeypatch,
@@ -158,10 +161,11 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
 def test_status_crashed_when_pid_dead_and_no_run_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A dead worker without a session.end leads with the hub's word ("stale") plus
-    this surface's diagnostic detail. The old lead word was "stopped" -- the
-    hub's word for an OPERATOR stop (steer_abort), so the same run read as
-    deliberately stopped in one surface and crashed in the other."""
+    """A dead worker without a session.end leads with the hub's word "stale".
+
+    This surface adds its diagnostic detail after it. "stopped" is the hub's word for an operator
+    stop, so leading with it reads a crash as deliberate.
+    """
     d = _make_run(
         tmp_path,
         monkeypatch,
@@ -181,10 +185,11 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
 def test_status_words_lead_with_the_listing_word_in_every_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions show --json` "status" is exactly the word the hub row shows
-    for the SAME dir, for every non-session.end state: "created" (was "unknown"),
-    "starting" (was a bare "running" while the hub said starting), "waiting",
-    "stale". One decision -- status_for_session_dir -- so the two can't drift."""
+    """The `sessions show --json` status is exactly the hub row's word for the same dir.
+
+    For every state without a session.end: "created", "starting", "waiting", "stale". One decision,
+    `status_for_session_dir`, so the two cannot drift.
+    """
     from agent6.viewmodel.listing import summarize_session_dir
 
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
@@ -268,8 +273,10 @@ def test_status_leads_with_the_listing_word_then_the_raw_reason(
 def test_status_of_a_scoped_green_names_the_scoped_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A pass certified by a scoped gate reads `passed · scoped gate` here as on
-    every listing (the label is `status_label`'s); the raw reason stays in parens."""
+    """A pass certified by a scoped gate reads `passed · scoped gate`, as on every listing.
+
+    The label is `status_label`'s; the raw reason stays in parentheses.
+    """
     _make_run(
         tmp_path,
         monkeypatch,
@@ -330,8 +337,10 @@ def test_status_error_reason_reads_failed(
 def test_status_shows_fan_out_compare_outcome(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions show` prints where a lane placed in its fan-out (+ the judge's
-    rationale), and the JSON carries the raw compare block."""
+    """`sessions show` prints where a lane placed in its fan-out, with the judge's rationale.
+
+    The JSON carries the raw compare block.
+    """
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
     manifest = json.loads((d / "manifest.json").read_text("utf-8"))
     manifest["compare"] = {
@@ -414,9 +423,10 @@ def test_status_shows_usage_from_budget_update_event(
 def test_status_names_the_pins_in_force(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run's pinned instructions (--pin, /pin) bind for the whole run; the
-    show page names them, one per line, and the JSON carries the list. The
-    execution-start announcement replaces the list, /pin appends (the fold's rule)."""
+    """The show page names a run's pinned instructions, one per line; the JSON carries the list.
+
+    The execution-start announcement replaces the list and `/pin` appends, the fold's rule.
+    """
     _make_run(
         tmp_path,
         monkeypatch,
@@ -538,10 +548,12 @@ def test_status_text_labels_execution_scoped_figures_on_a_resumed_run(
 def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A worker is always spawned by the probing user, so PermissionError on
-    the recorded pid means the worker died and the kernel reused the number
-    for another user's process. Reading it as alive rendered a crashed run
-    "running" forever and hung the /parallel lane await permanently."""
+    """A recorded pid owned by another user reads as dead.
+
+    A worker is always spawned by the probing user, so PermissionError means the worker died and the
+    kernel reused the number. Reading it as alive renders a crashed run "running" forever and hangs
+    the `/parallel` lane await.
+    """
     if os.geteuid() == 0:
         pytest.skip("root can signal any pid; the foreign-owner probe needs a non-root euid")
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -554,10 +566,11 @@ def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(
 
 
 def test_concurrent_answer_writers_do_not_race_on_the_temp(tmp_path: Path) -> None:
-    """Two concurrently-live front-ends (attach + web) answering the same
-    prompt both wrote the SAME sibling .tmp: the loser hit FileNotFoundError
-    after the winner's rename -- a 500 on an answer that actually landed. The
-    durable write now uses a unique mkstemp temp per call."""
+    """Two front-ends answering the same prompt at once do not race on one temp file.
+
+    A shared sibling `.tmp` made the loser hit FileNotFoundError after the winner's rename, a 500 on
+    an answer that landed; the durable write uses a unique mkstemp temp per call.
+    """
     import threading
 
     from agent6.sessions.ipc import write_answer
@@ -587,10 +600,11 @@ def test_concurrent_answer_writers_do_not_race_on_the_temp(tmp_path: Path) -> No
 def test_status_ambiguous_prefix_names_the_candidates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An ambiguous id prefix must say so and name the matches, as `attach` and
-    `stop` do. `sessions show` swallowed the resolver's error and printed
-    "no session matches 't'" -- telling the operator no such run exists while two
-    did."""
+    """An ambiguous id prefix must say so and name the matches, as `attach` and `stop` do.
+
+    `sessions show` swallowed the resolver's error and printed "no session matches 't'", telling
+    the operator no such run exists while two did.
+    """
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
     sibling = d.parent / "winsome-dusk-AAAAAA"
     sibling.mkdir()
@@ -606,11 +620,12 @@ def test_status_ambiguous_prefix_names_the_candidates(
 
 
 def test_a_nonpositive_recorded_pid_never_reads_alive(tmp_path: Path) -> None:
-    """`os.kill(0, 0)` signals the process group and `os.kill(-1, 0)` every
-    process, so both succeed: a worker.pid holding 0 or -1 read ALIVE forever,
-    refusing resume and hanging the /parallel lane await -- the exact symptom
-    the identity record exists to kill. The front-end probe guards this; the
-    worker probe did not."""
+    """A worker.pid holding 0 or -1 never reads alive.
+
+    `os.kill(0, 0)` signals the process group and `os.kill(-1, 0)` every process, so both succeed;
+    read as alive, such a pid refuses resume and hangs the `/parallel` lane await forever. The
+    worker probe guards it like the front-end probe.
+    """
     for junk in ("0", "-1"):
         (tmp_path / "worker.pid").write_text(junk, encoding="utf-8")
         assert worker_is_alive(tmp_path) is False, junk
@@ -650,11 +665,11 @@ def test_a_zombie_worker_is_not_alive(tmp_path: Path) -> None:
 def test_a_zombie_is_not_alive_without_proc_either(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """On a host with no `/proc` (macOS), liveness falls back to `ps`, which
-    must catch a zombie the same way the `/proc`-based check does: a zombie
-    still answers kill-0, so a `_HAS_PROC=False` host that skips the state
-    check read it alive forever, the same stale-`running` symptom the
-    `/proc` branch exists to kill."""
+    """Without `/proc`, the `ps` fallback catches a zombie too.
+
+    A zombie still answers kill-0, so a host that skips the state check reads it alive forever, the
+    stale-`running` symptom the `/proc` branch exists to kill.
+    """
     from agent6.sessions import ipc
 
     monkeypatch.setattr(ipc, "_HAS_PROC", False)
@@ -674,11 +689,12 @@ def test_a_zombie_is_not_alive_without_proc_either(
 
 
 def test_worker_pid_is_published_atomically(tmp_path: Path) -> None:
-    """The last polled state file written with plain write_text: it truncates,
-    then writes, so a reader in that window sees a PREFIX of the pid with the
-    start-time identity stripped -- and a prefix that happens to name a live
-    process you own reads alive with nothing left to refute it, which is the
-    recycled-pid lie the identity was added to kill."""
+    """The last polled state file written with plain write_text.
+
+    It truncates, then writes, so a reader in that window sees a PREFIX of the pid with the start-
+    time identity stripped, and a prefix that happens to name a live process you own reads alive
+    with nothing left to refute it, which is the recycled-pid lie the identity was added to kill.
+    """
     from agent6.sessions import ipc
 
     seen: list[str] = []
@@ -701,14 +717,13 @@ def test_worker_pid_is_published_atomically(tmp_path: Path) -> None:
 def test_a_started_session_with_no_pid_file_is_not_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A worker writes its pid BEFORE session.start, so a started session with
-    no pid file cleared it on the way out: it is gone, whatever the log says.
+    """A started session with no pid file is not running.
 
-    Reachable by an ordinary `agent6 run ... | head`: SIGPIPE unwinds through
-    the finally, which clears the pid but writes no session.end. Treating the
-    absence as weaker evidence than a dead pid inverted the two -- `kill -9`
-    leaves the pid file and read "stale" at once, while the tidier death read
-    "running" for the whole 600s silence window.
+    A worker writes its pid before session.start, so a missing pid file means the worker cleared it
+    on the way out, whatever the log says. Reachable by `agent6 run ... | head`: SIGPIPE unwinds
+    through the finally, which clears the pid but writes no session.end. Treating the absence as
+    weaker evidence than a dead pid inverts the two: `kill -9` leaves the pid file and reads "stale"
+    at once, while the tidier death reads "running" for the whole 600s silence window.
     """
     d = _make_run(
         tmp_path,
@@ -729,11 +744,13 @@ def test_a_started_session_with_no_pid_file_is_not_running(
 def test_a_start_event_is_never_readable_before_the_pid_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The invariant `_running_is_stale` rests on: no pid file under a started
-    session means the worker cleared it, not that it has not written it yet.
-    Emitting session.start first opened a window where a live session read as
-    dead on every surface. The start emitter owns the order now, so no entry
-    point (the loop's two starts, machine create's header) can invert it."""
+    """The invariant `_running_is_stale` rests on.
+
+    No pid file under a started session means the worker cleared it, not that it has not written it
+    yet. Emitting session.start first opens a window where a live session reads as dead on every
+    surface. The start emitter owns the order, so no entry point (the loop's two starts, machine
+    create's header) can invert it.
+    """
     from agent6.events import EventSink
     from agent6.sessions.ipc import emit_session_start
 
@@ -760,10 +777,12 @@ def _stamp_manifest(d: Path, **fields: Any) -> None:
 def test_status_says_where_the_changes_are(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions show` carries the run's branch fact the web header shows and
-    the end-of-run footer said: on the run branch awaiting its merge (with
-    the command), merged into the base, or a branch no commit reached. The
-    JSON carries run_branch / base_branch / merged_into."""
+    """`sessions show` says where the run's changes are.
+
+    The branch fact the web header shows and the end-of-run footer said: on the run branch awaiting
+    its merge (with the command), merged into the base, or a branch no commit reached. The JSON
+    carries run_branch, base_branch and merged_into.
+    """
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=Path.cwd(), check=True)
     subprocess.run(
@@ -826,9 +845,11 @@ def test_status_says_where_the_changes_are(
 def test_status_of_an_undone_run_does_not_offer_a_merge(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The changes line of an undone run agrees with the listing: the branch
-    was taken back by /undo, so no merge is offered. It read the end reason
-    not at all and offered `merge with: agent6 sessions merge <id>`."""
+    """The changes line of an undone run agrees with the listing.
+
+    The branch was taken back by /undo, so no merge is offered. It read the end reason not at all
+    and offered `merge with: agent6 sessions merge <id>`.
+    """
     d = _make_run(
         tmp_path,
         monkeypatch,
@@ -868,8 +889,7 @@ def test_status_of_an_undone_run_does_not_offer_a_merge(
 def test_status_of_an_ask_does_not_repeat_its_word(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An ask ends with reason "answered", the listing word too: one word, no
-    "answered (answered)"."""
+    """An ask ends with reason "answered", the listing word too: never "answered (answered)"."""
     _make_run(
         tmp_path,
         monkeypatch,
@@ -885,9 +905,11 @@ def test_status_of_an_ask_does_not_repeat_its_word(
 def test_show_json_label_matches_the_listing_cell(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """One vocabulary across the two surfaces: `show --json`'s label was the
-    bare word while the listing folds the mode in, so a script could not match
-    a run's row to its detail view."""
+    """One vocabulary across the two surfaces.
+
+    `show --json`'s label was the bare word while the listing folds the mode in, so a script could
+    not match a run's row to its detail view.
+    """
     from agent6.viewmodel.format import listing_status_label
     from agent6.viewmodel.listing import summarize_session_dir
 
@@ -906,10 +928,11 @@ def test_show_json_label_matches_the_listing_cell(
 def test_status_prints_the_task_and_names_a_plans_page(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The listing shows the task and the drill-down dropped it, on the text
-    render and in --json; a plan's show ended without the plan or the way to
-    it. The text render prints the headline every listing shows (a TASK.md's
-    heading marks dropped); the JSON keeps the whole task."""
+    """The show page prints the task, and a plan's show names its plans page.
+
+    The text render prints the headline every listing shows (a TASK.md's heading marks dropped); the
+    JSON keeps the whole task.
+    """
     d = _make_run(
         tmp_path,
         monkeypatch,

@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Claiming a task: the worker picks what it works next by marking it
-in_progress, and the harness honours that while the task stays workable.
+"""Claiming a task: the worker marks it in_progress and the harness honours that while workable.
 
-The frontier's own order is unchanged when nothing claims, so this costs a run
-that ignores it nothing. The anti-grind counter still bites a worker that
-claims its way around the graph without finishing anything.
+The frontier's own order is unchanged when nothing claims; the anti-grind counter still
+bites a worker that claims its way around the graph without finishing anything.
 """
 
 from __future__ import annotations
@@ -50,8 +48,7 @@ def test_marking_a_task_in_progress_claims_it(tmp_path: Path) -> None:
 
 
 def test_a_claim_the_frontier_cannot_honour_says_so(tmp_path: Path) -> None:
-    """An unworkable claim leaves the frontier's own pick standing, and the
-    tool result says which happened rather than looking like it took."""
+    """An unworkable claim leaves the frontier's pick standing, and the tool result says so."""
     c, _root, kids = _graph(tmp_path)
     c.add_subtask(
         AddSubtaskIntent(parent_id=kids[1], draft=TaskNodeDraft(title="leaf", created_by="worker"))
@@ -80,8 +77,7 @@ def test_an_ordinary_status_carries_no_note(tmp_path: Path) -> None:
 
 
 def test_claiming_around_the_graph_still_trips_the_anti_grind_nudge() -> None:
-    """The counter used to reset on every focus change, so a worker claiming a
-    different task each turn was never nudged. It resets on progress only."""
+    """The anti-grind counter resets on progress only, not on every focus change."""
     guard = FocusGuard()
     fired = [
         guard.note(f"task-{i % 3}", standing=False, progressed=False)

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Streamable-HTTP session ids: captured from initialize, echoed thereafter,
-dropped on the 404 that means the server expired the session; a stateless
-server never grows the header."""
+"""Streamable-HTTP session ids.
+
+Captured from initialize, echoed thereafter, dropped on the 404 that means the server expired the
+session; a stateless server never grows the header.
+"""
 
 from __future__ import annotations
 
@@ -102,9 +104,11 @@ def test_a_bare_404_with_no_session_is_an_ordinary_error(server: _Server) -> Non
 
 
 def test_a_malformed_session_id_is_dropped_not_echoed(server: _Server) -> None:
-    """A server-assigned id with a control or non-ASCII byte is untrusted: it
-    is dropped (treated as stateless), never echoed into a header, so it cannot
-    crash a later send or smuggle a header. Mirrors the token guard in _auth."""
+    """A server-assigned id with a control or non-ASCII byte is untrusted.
+
+    It is dropped (treated as stateless), never echoed into a header, so it cannot crash a later
+    send or smuggle a header. Mirrors the token guard in _auth.
+    """
     server.issue_session = "abc\x9f\r\nX-Evil: 1"  # non-ASCII + a CRLF payload
     t = _transport(server)
     t.send({"jsonrpc": "2.0", "id": 1, "method": "initialize"}, timeout_s=5)

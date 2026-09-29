@@ -78,14 +78,11 @@ def test_read_file_ok(tmp_path: Path) -> None:
 
 
 def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
-    """A verify_command that the jail could not execute (rc 127, exec_failed)
-    must raise OperatorCommandUnexecutableError, not return a silent verify-failure.
+    """A verify_command the jail cannot execute raises OperatorCommandUnexecutableError.
 
-    Regression: on a no-userns host the jail PATH is /usr/bin:/bin; a uv-based
-    verify (uv lives under /usr/local/bin or ~/.local/bin) exited 127 and was
-    reported as an ordinary verify failure (ok=True, exit=127), so the run
-    reported all_passed and committed unverified work. The model cannot fix
-    operator config, so this must fail loudly instead.
+    On a no-userns host the jail PATH is /usr/bin:/bin; a uv-based verify exited 127, read as
+    an ordinary verify failure, and the run committed unverified work. The model cannot fix
+    operator config, so this fails loudly.
     """
     from agent6.kinds import CommandResult
     from agent6.tools.dispatch import OperatorCommandUnexecutableError
@@ -230,9 +227,10 @@ def test_ask_user_refused_outside_run_mode(tmp_path: Path) -> None:
 def test_run_metric_refused_outside_run_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
-    """run_metric_command executes the operator's metric command with no
-    approval gate; it is run-only (LOOP_EXTRA_TOOLS) and the dispatcher must
-    backstop it in every other mode even with [harness.metric] configured."""
+    """run_metric_command is run-only, and the dispatcher backstops it in every other mode.
+
+    It executes the operator's metric command with no approval gate.
+    """
     body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
         "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
@@ -257,12 +255,12 @@ def test_run_metric_refused_outside_run_mode(
 
 
 def test_mode_backstop_is_the_mode_tool_surface(tmp_path: Path) -> None:
-    """The backstop derives from the same per-mode surface tool_definitions
-    exposes, so a control tool outside a mode's surface is refused without
-    needing its own hand-list entry (finish_planning in run and run_metric
-    outside run were the gaps the hand-lists missed). agent6_docs is the one
-    exemption: exposed only in ask, but a read-only doc fetch the review seat
-    dispatches in every mode, so it stays permitted everywhere."""
+    """The backstop derives from the per-mode surface tool_definitions exposes.
+
+    finish_planning in run and run_metric outside run were the gaps a hand-list missed.
+    agent6_docs is the one exemption: exposed only in ask, but the review seat's read-only doc
+    fetch dispatches it in every mode.
+    """
     cfg = _config(tmp_path)
     run = ToolDispatcher(root=tmp_path, config=cfg)
     with pytest.raises(ToolError, match="not available in run mode"):
@@ -343,11 +341,11 @@ def test_apply_edit_refuses_git_via_symlink(tmp_path: Path) -> None:
 
 
 def test_apply_edit_allows_nested_git_dir(tmp_path: Path) -> None:
-    """Allowed by the operator's ruling, not by oversight: `protect_git` covers
-    the project's own repository, the one agent6 commits to each turn. A nested
-    `.git` (vendored repo, submodule gitlink) is content like any other file --
-    tracked by the root repo or untracked, either way no guarantee is offered
-    over it. Holds raw and symlink-resolved."""
+    """`protect_git` covers the project's own repository; a nested `.git` is content like any file.
+
+    Tracked by the root repo or untracked, no guarantee is offered over it. Holds raw and
+    symlink-resolved.
+    """
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
@@ -572,8 +570,7 @@ def test_apply_edit_create_and_replace(tmp_path: Path) -> None:
 
 
 def test_apply_edit_creates_missing_parent_dirs(tmp_path: Path) -> None:
-    """Both edit tools create a file whose directories do not exist yet; the
-    containment walk creates them, so an ordinary new package still lands."""
+    """Both edit tools create the missing directories of a new file's path."""
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
@@ -745,10 +742,7 @@ def test_apply_edit_replace_rejects_empty_old_string(tmp_path: Path) -> None:
 
 
 def test_invalid_arguments_read_as_one_line(tmp_path: Path) -> None:
-    """A schema miss is the model's most common recoverable error; it gets one
-    line naming the field and the rule, not pydantic's dump (two errors, docs
-    URLs, and a cascade "Tuple should have at least 1 item" for the container
-    whose only item was invalid)."""
+    """A schema miss gets one line naming the field and the rule, not pydantic's dump."""
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("x = 1\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -784,8 +778,7 @@ def test_apply_edit_create_rejects_nonempty_old_string(tmp_path: Path) -> None:
 
 
 def test_apply_edit_overwrite_replaces_an_existing_file_whole(tmp_path: Path) -> None:
-    """A rewrite from a stub: `create` refuses the existing file (and names
-    the kind that does the job); `overwrite` writes it whole and reports so."""
+    """`create` refuses an existing file, naming the kind that fits; `overwrite` writes it."""
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("def f():\n    raise NotImplementedError\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -819,8 +812,7 @@ def test_apply_edit_overwrite_replaces_an_existing_file_whole(tmp_path: Path) ->
 
 @pytest.mark.parametrize("kind", ["create", "overwrite"])
 def test_apply_edit_whole_file_kinds_share_the_create_contracts(tmp_path: Path, kind: str) -> None:
-    """Both whole-file kinds refuse a non-empty old_string and refuse to be
-    combined with other edits (the file stays untouched either way)."""
+    """Both whole-file kinds refuse a non-empty old_string and refuse to combine with edits."""
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("keep me\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -1066,9 +1058,10 @@ def test_list_dir(tmp_path: Path) -> None:
 
 
 def test_parse_metric_score_optional_group_is_no_score() -> None:
-    """A pattern whose numeric capture group did not participate in the match
-    (an alternation/optional group) yields group(1) == None; float(None) raises
-    TypeError, which must be caught as "no score this turn", not propagate."""
+    """A numeric capture group that did not participate reads as "no score this turn".
+
+    group(1) is None and float(None) raises TypeError.
+    """
     from agent6.tools._result_format import parse_metric_score
 
     # Group 1 is in the first alternative; the matched text hits the second, so
@@ -1150,9 +1143,7 @@ def test_outline_returns_symbols(tmp_path: Path) -> None:
 
 
 def test_nav_tools_report_one_based_lines(tmp_path: Path) -> None:
-    """outline/find_definition/find_references share the LSP twins' 1-based
-    line/col convention: `class Bar` on source line 3 is line 3 on every
-    surface, not tree-sitter's 0-based start_point."""
+    """outline, find_definition and find_references share the LSP twins' 1-based line and col."""
     cfg = _config(tmp_path)
     src = "def foo():\n    pass\nclass Bar:\n    pass\nfoo()\n"
     (tmp_path / "a.py").write_text(src, encoding="utf-8")
@@ -1267,10 +1258,11 @@ def test_run_metric_command_no_config(tmp_path: Path) -> None:
 
 
 def test_run_metric_command_is_withheld_when_commands_are(tmp_path: Path) -> None:
-    """It runs the operator's argv in the same jail, as often as the model
-    asks, so `run_commands = "no"` withholds it with the other command tools:
-    it was exposed and dispatched under "no", and prompted under "ask" only
-    because the harness calls it itself."""
+    """`run_commands = "no"` withholds the verify tool with the other command tools.
+
+    It runs the operator's argv in the same jail as often as the model asks; it was exposed
+    under "no" and prompted under "ask" only because the harness calls it itself.
+    """
     body = _VALID_TOML + (
         "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
@@ -1328,9 +1320,10 @@ def test_run_metric_command_invokes_jail(tmp_path: Path, monkeypatch: pytest.Mon
 def test_run_metric_command_honors_verify_timeout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """verify_timeout_s bounds the metric command like the verify command
-    (its documented scope); the metric path silently ran on the jail's fixed
-    600s default, so a bench config's fast-failure timeout never applied."""
+    """verify_timeout_s bounds the metric command like the verify command.
+
+    The metric path ran on the jail's fixed 600s default.
+    """
     body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
         '\n[harness.metric]\ncommand = ["/usr/bin/true"]\npattern = "(\\\\d+)"\ngoal = "minimize"\n'
     )
@@ -1360,8 +1353,7 @@ def test_run_metric_command_honors_verify_timeout(
 def test_run_metric_command_score_null_on_no_match(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Pattern compiles fine but doesn't match the output -> score is null,
-    rest of the result is unchanged."""
+    """A pattern that compiles but does not match yields a null score and an unchanged result."""
     body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
         "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"no number here\\")"]\n'
@@ -1473,9 +1465,7 @@ def test_agent6_docs_tool_lists_and_reads(tmp_path: Path) -> None:
 def test_agent6_docs_over_the_cap_names_the_size_it_was_cut_from(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A doc over the 60k cap comes back truncated with no way to tell how
-    much was cut; the model reading a capped CONFIG or STATE-MACHINES sees a
-    silently amputated page and no signal of its real size."""
+    """A doc over the 60k cap comes back with a signal of how much was cut."""
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
     long_doc = "x" * 70_000
@@ -1494,8 +1484,10 @@ def test_agent6_docs_over_the_cap_names_the_size_it_was_cut_from(
 
 
 def test_apply_edit_kind_defaults_to_replace(tmp_path: Path) -> None:
-    """Small models routinely omit the `kind` discriminator. A bare
-    {old_string, new_string} edit must apply as a replace, not 400."""
+    """Small models routinely omit the `kind` discriminator.
+
+    A bare {old_string, new_string} edit must apply as a replace, not 400.
+    """
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("x = 1\ny = 2\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -1508,8 +1500,7 @@ def test_apply_edit_kind_defaults_to_replace(tmp_path: Path) -> None:
 
 
 def test_apply_edit_create_still_explicit(tmp_path: Path) -> None:
-    """`create` is unaffected by the replace default and still needs an empty
-    old_string."""
+    """`create` is unaffected by the replace default and still needs an empty old_string."""
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
@@ -1520,8 +1511,7 @@ def test_apply_edit_create_still_explicit(tmp_path: Path) -> None:
 
 
 def test_apply_edit_mismatch_hands_back_exact_region(tmp_path: Path) -> None:
-    """A whitespace-only mismatch returns the verbatim on-disk text and tells
-    the model to retry without re-reading."""
+    """A whitespace-only mismatch returns the on-disk text and says to retry without re-reading."""
     cfg = _config(tmp_path)
     body = (
         "class C:\n"
@@ -1547,8 +1537,7 @@ def test_apply_edit_mismatch_hands_back_exact_region(tmp_path: Path) -> None:
 
 
 def test_apply_edit_mismatch_unrelated_falls_back_to_shape(tmp_path: Path) -> None:
-    """An old_string with no similar region gets file shape (no copyable body
-    to plagiarise) and is told to re-read."""
+    """An old_string with no similar region gets the file's shape and is told to re-read."""
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("alpha\nbeta\ngamma\ndelta\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -1566,8 +1555,7 @@ def test_apply_edit_mismatch_unrelated_falls_back_to_shape(tmp_path: Path) -> No
 
 
 def test_apply_patch_v4a_update_without_path_arg(tmp_path: Path) -> None:
-    """GPT-family models emit the V4A format and omit `path` (it is in the
-    patch). agent6 must parse it, derive the path, and apply the hunk."""
+    """A V4A patch with `path` omitted is parsed, its path derived, and its hunk applied."""
     cfg = _config(tmp_path)
     (tmp_path / "m.py").write_text("def f():\n    x = 1\n    return x\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -1596,8 +1584,7 @@ def test_apply_patch_v4a_add_file(tmp_path: Path) -> None:
 
 
 def test_apply_patch_v4a_path_into_git_still_refused(tmp_path: Path) -> None:
-    """Deriving the path from the patch never bypasses the protected-path guard:
-    a V4A patch targeting .git is refused like any other write."""
+    """A derived path never bypasses the protected-path guard."""
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
     patch = "*** Begin Patch\n*** Add File: .git/hooks/pre-commit\n+#!/bin/sh\n+id\n*** End Patch"
@@ -1606,8 +1593,7 @@ def test_apply_patch_v4a_path_into_git_still_refused(tmp_path: Path) -> None:
 
 
 def test_apply_patch_unified_still_works_and_path_optional(tmp_path: Path) -> None:
-    """The unified-diff path is unchanged and also accepts an omitted `path`
-    (derived from the `+++` header)."""
+    """The unified-diff path also accepts an omitted `path`, derived from the `+++` header."""
     cfg = _config(tmp_path)
     (tmp_path / "x.py").write_text("a\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -1619,10 +1605,10 @@ def test_apply_patch_unified_still_works_and_path_optional(tmp_path: Path) -> No
 
 
 def test_rejected_tool_emits_call_and_result_pair(tmp_path: Path) -> None:
-    """A guard-rejected tool (unknown name / disabled / wrong-mode) still emits a
-    tool.call + tool.result(ok=false) pair with a trusted, deterministic reason --
-    so a reader never sees a loop.tool.call with no matching result, and the
-    ok=false signal is dispatcher-owned (a prompt injection can't fake success)."""
+    """A guard-rejected tool still emits a tool.call and tool.result(ok=false) pair.
+
+    The reason is dispatcher-owned, so a prompt injection cannot fake success.
+    """
     import json
 
     from agent6.events import EventSink
@@ -1652,9 +1638,7 @@ def test_rejected_tool_emits_call_and_result_pair(tmp_path: Path) -> None:
 def test_run_command_result_carries_output_tails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Execution tools' tool.result events carry capped stdout/stderr tails (like
-    verify.end), so logs.jsonl shows command output -- not just an exit code --
-    while non-execution tools stay summary-only (full output is in transcripts)."""
+    """Execution tools' tool.result events carry capped output tails; others stay summary-only."""
     import json
 
     from agent6.events import EventSink
@@ -1771,9 +1755,10 @@ def test_stringified_edits_array_is_coerced(tmp_path: Path) -> None:
 
 
 def test_a_stringified_argument_with_a_regex_backslash_is_coerced(tmp_path: Path) -> None:
-    """A model writing a grep alternation inside a JSON-string argument types
-    `\\|`, an escape JSON does not define; the parse failed and the call was
-    refused ten times running in one session."""
+    r"""A `\|` inside a JSON-string argument, an escape JSON does not define, is repaired.
+
+    The call was refused ten times running in one session.
+    """
     cfg = _config(tmp_path)
     (tmp_path / "a.txt").write_text("a\\|b\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -1795,8 +1780,7 @@ def test_stringified_coercion_surfaces_original_error_when_wrong(tmp_path: Path)
 
 
 def test_non_json_string_still_fails_validation(tmp_path: Path) -> None:
-    """pydantic's "Input should be a valid tuple" names no JSON form; a model
-    that read it sent the same string again."""
+    """The tuple error names a JSON form; a model that read pydantic's resent the same string."""
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
     with pytest.raises(ToolError, match="edits: expected an array"):
@@ -1878,7 +1862,8 @@ def test_git_reaches_the_jail_as_a_protect_path_only_under_strict(
     directory is recursive and stacked rulesets only intersect, so denying
     `.git` means not granting the workspace root either -- which denied every
     `touch`/`mkdir` at the root. Hardened warns instead, and an explicitly-set
-    `protect_git = true` refuses to run there."""
+    `protect_git = true` refuses to run there.
+    """
     (tmp_path / ".git").mkdir()
     captured: list[object] = []
 
@@ -1898,10 +1883,10 @@ def test_git_reaches_the_jail_as_a_protect_path_only_under_strict(
 
 
 def test_every_jail_tool_answers_to_run_commands(tmp_path: Path) -> None:
-    """run_verify_command runs model-influenced argv in the same jail with the
-    same reach as run_command -- its argv is INFERRED from a file the model can
-    edit whenever it is not configured -- so it answers to the same knob rather
-    than running while `run_commands = "no"` disables everything else."""
+    """run_verify_command answers to the same knob as run_command.
+
+    Its argv is inferred from a file the model can edit whenever it is not configured.
+    """
     gated = {"run_command", "run_verify_command", "stop_background"}
     denied = ToolDispatcher(root=tmp_path, config=_config_with_run_commands(tmp_path, "no"))
     assert gated.isdisjoint(denied.available_tool_names())
@@ -1913,8 +1898,7 @@ def test_every_jail_tool_answers_to_run_commands(tmp_path: Path) -> None:
 
 
 def test_ask_prompts_before_the_verify_gate_runs(tmp_path: Path) -> None:
-    """Under `ask` the operator approves the verify command like any other, and
-    a refusal denies the call instead of running it."""
+    """Under `ask` the operator approves the verify command like any other; a refusal denies it."""
     from agent6.tools.errors import ToolDeniedError
 
     asked: list[str] = []
@@ -1978,9 +1962,11 @@ def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
 def test_a_tool_mount_never_contains_a_private_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The test above pins mounts INSIDE a private dir; containment fails the
-    other way round too. A symlink out to `<dir>/x.sh` mounts `<dir>` whole --
-    and a `<dir>` holding the config dir grants secrets.toml from above."""
+    """The test above pins mounts INSIDE a private dir; containment fails the other way round too.
+
+    A symlink out to `<dir>/x.sh` mounts `<dir>` whole, and a `<dir>` holding the config dir
+    grants secrets.toml from above.
+    """
     from agent6.sandbox.tool_paths import operator_tool_paths
 
     home = tmp_path / "home"
@@ -2006,9 +1992,10 @@ def test_a_tool_mount_never_contains_a_private_dir(
 def test_home_and_its_ancestors_are_never_tool_mounts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Even with every agent6 dir elsewhere, $HOME holds ~/.ssh and every
-    credential the operator owns. A plain `~/.local/bin/x -> ~/x.sh` makes
-    `real.parent` the whole home dir; an ancestor contains home in turn."""
+    """A symlink whose parent is $HOME or an ancestor of it is refused.
+
+    $HOME holds ~/.ssh and every credential the operator owns.
+    """
     from agent6.sandbox.tool_paths import operator_tool_paths
 
     home = tmp_path / "home"
@@ -2033,9 +2020,7 @@ def test_home_and_its_ancestors_are_never_tool_mounts(
 
 
 def test_edit_tools_name_a_directory_like_their_siblings_do(tmp_path: Path) -> None:
-    """`read_file` on a directory says "Not a file: x". apply_edit/apply_patch
-    leaked the raw errno instead ("[Errno 21] Is a directory: /abs/path"), which
-    also puts an absolute host path in the model's transcript."""
+    """The edit tools on a directory say "Not a file", never an errno with a host path."""
     cfg = _config(tmp_path)
     (tmp_path / "adir").mkdir()
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -2051,10 +2036,10 @@ def test_edit_tools_name_a_directory_like_their_siblings_do(tmp_path: Path) -> N
 
 
 def test_read_file_refuses_a_binary_file_as_its_description_promises(tmp_path: Path) -> None:
-    """The tool description says read_file "fails when the file is binary", but
-    it only caught UnicodeDecodeError -- so a file with NUL bytes that happens
-    to decode as UTF-8 was returned verbatim into the transcript. A NUL byte is
-    the definition of binary; make the promise true rather than soften it."""
+    """read_file refuses a file with a NUL byte, keeping the description's binary promise.
+
+    Only UnicodeDecodeError was caught, so a NUL-bearing file that decoded went into the transcript.
+    """
     cfg = _config(tmp_path)
     (tmp_path / "b.bin").write_bytes(b"text\x00\x01more\n")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -2068,9 +2053,10 @@ def test_read_file_refuses_a_binary_file_as_its_description_promises(tmp_path: P
 
 
 def test_apply_patch_multi_file_v4a(tmp_path: Path) -> None:
-    """A multi-file V4A patch (what GPT-family models emit natively) applies
-    every file all-or-nothing. One-file-per-call was a pre-1.0 placeholder;
-    SWE-bench transcripts showed models looping on the rejection."""
+    """A multi-file V4A patch applies every file all-or-nothing.
+
+    SWE-bench transcripts showed models looping on the one-file-per-call rejection.
+    """
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
     (tmp_path / "b.py").write_text("p\n", encoding="utf-8")
@@ -2133,8 +2119,7 @@ def test_apply_patch_multi_file_is_all_or_nothing(tmp_path: Path) -> None:
 
 
 def test_apply_patch_multi_file_protected_second_file_writes_nothing(tmp_path: Path) -> None:
-    """The protected-path guard runs per file BEFORE any write: a .git target
-    anywhere in a multi-file patch refuses the whole call."""
+    """The protected-path guard runs per file before any write; a .git target refuses the call."""
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
     (tmp_path / ".git").mkdir()
@@ -2170,9 +2155,7 @@ def test_apply_patch_multi_file_path_arg_rejected(tmp_path: Path) -> None:
 
 
 def test_apply_patch_deletes_a_file(tmp_path: Path) -> None:
-    """Deletion via patch (unified `+++ /dev/null` asserts the full content;
-    V4A `*** Delete File:` deletes by name). One-file-per-op with a
-    run_command rm fallback was the pre-1.0 placeholder."""
+    """A patch deletes a file: unified `+++ /dev/null` asserts the content, V4A deletes by name."""
     cfg = _config(tmp_path)
     (tmp_path / "gone.py").write_text("a\nb\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -2252,8 +2235,7 @@ def test_apply_patch_delete_protected_path_refused(tmp_path: Path) -> None:
 
 
 def test_apply_patch_multi_file_preview_concatenates(tmp_path: Path) -> None:
-    """preview=true over a multi-file patch returns every file's diff and
-    writes nothing (it refused before)."""
+    """preview=true over a multi-file patch returns every file's diff and writes nothing."""
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
     (tmp_path / "b.py").write_text("p\n", encoding="utf-8")
@@ -2297,8 +2279,7 @@ def test_apply_patch_multi_file_preview_reports_every_heal(tmp_path: Path) -> No
 
 
 def test_apply_patch_reports_heals_on_the_wire(tmp_path: Path) -> None:
-    """A healed hunk applied, but not verbatim: the wire says so, so the
-    model knows its context was off instead of trusting a silent success."""
+    """A healed hunk says so on the wire, so the model knows its context was off."""
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def f():\n    a = 1\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -2311,10 +2292,11 @@ def test_apply_patch_reports_heals_on_the_wire(tmp_path: Path) -> None:
 
 
 def test_an_omitted_edit_kind_follows_the_pair_it_was_sent_with(tmp_path: Path) -> None:
-    """Small models send a bare {old_string, new_string}. An empty old_string
-    can only mean "write this whole file", and defaulting it to `replace`
-    refused the natural write-a-new-file call forever: a live `machine create`
-    spent three attempts on it and stopped on the tool-error streak.
+    """Small models send a bare {old_string, new_string}.
+
+    An empty old_string can only mean "write this whole file", and defaulting it to `replace`
+    refused the natural write-a-new-file call forever: a live `machine create` spent three attempts
+    on it and stopped on the tool-error streak.
 
     It resolves to `create`, never `overwrite`, so a model that thinks a file
     is new still cannot clobber one that exists.
@@ -2338,10 +2320,11 @@ def test_an_omitted_edit_kind_follows_the_pair_it_was_sent_with(tmp_path: Path) 
 
 
 def test_two_patch_sections_over_one_file_are_refused(tmp_path: Path) -> None:
-    """Each section is staged against the file as it is ON DISK, so two
-    sections over one file both start from the original and the last write
-    wins: the earlier edit vanished while the result reported it applied, and
-    double-counted its bytes."""
+    """Two sections over one file apply in sequence, each against the previous result.
+
+    Staged against the on-disk file, the earlier edit vanished while the result reported it
+    applied and double-counted its bytes.
+    """
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     (tmp_path / "m.py").write_text("A = 1\nB = 2\nC = 3\nD = 4\nE = 5\n", encoding="utf-8")
     patch = (
@@ -2379,9 +2362,11 @@ def test_two_patch_sections_over_one_file_are_refused(tmp_path: Path) -> None:
 
 
 def test_a_patch_write_that_fails_part_way_names_what_changed(tmp_path: Path) -> None:
-    """Staging is all-or-nothing; the writes were not, and a second file the
-    process could not write reported a failure over a first file it had
-    already rewritten, with nothing telling the model so."""
+    """The writes are all-or-nothing, like the staging.
+
+    A second file the process could not write reported a failure over a first file already
+    rewritten.
+    """
     import os
 
     if os.geteuid() == 0:
@@ -2403,10 +2388,11 @@ def test_a_patch_write_that_fails_part_way_names_what_changed(tmp_path: Path) ->
 
 
 def test_the_edit_tools_refuse_a_file_past_the_read_cap(tmp_path: Path) -> None:
-    """read_file caps at MAX_READ_CHARS; the edit tools read the same file
-    whole and uncapped, so one `apply_edit` over a file a jailed command had
-    made OOM-crashed the unsandboxed agent. Refused, never truncated: a
-    partial read must not become a whole-file write."""
+    """The edit tools refuse a file over MAX_READ_CHARS, never truncate it.
+
+    Read whole, one `apply_edit` over a file a jailed command had made OOM-crashed the agent; a
+    partial read must not become a whole-file write.
+    """
     from agent6.tools._fs_tools import MAX_READ_CHARS
 
     cfg = _config(tmp_path)
@@ -2419,8 +2405,7 @@ def test_the_edit_tools_refuse_a_file_past_the_read_cap(tmp_path: Path) -> None:
 
 
 def test_list_dir_caps_a_huge_listing_and_says_so(tmp_path: Path) -> None:
-    """Every sibling result caps and marks; a listing of a vendored directory
-    went whole into the context and the transcript."""
+    """A directory listing caps and marks like every sibling result."""
     from agent6.tools._fs_tools import LIST_DIR_CAP
 
     cfg = _config(tmp_path)
@@ -2435,8 +2420,7 @@ def test_list_dir_caps_a_huge_listing_and_says_so(tmp_path: Path) -> None:
 
 
 def test_sizes_on_the_wire_are_bytes(tmp_path: Path) -> None:
-    """`size`, `bytes_written` and the "N bytes" summary counted characters:
-    ten `é` read as 11 bytes where the file holds 21."""
+    """`size`, `bytes_written` and the "N bytes" summary count bytes, not characters."""
     cfg = _config(tmp_path)
     (tmp_path / "u.txt").write_text("é" * 10 + "\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -2450,9 +2434,10 @@ def test_sizes_on_the_wire_are_bytes(tmp_path: Path) -> None:
 
 
 def test_the_argument_preview_clips_at_every_depth() -> None:
-    """The `tool.call` preview clipped top-level strings only, so an
-    apply_edit's `edits[0].new_string` wrote a whole file into the durable
-    event log per call while the sibling apply_patch clipped to 200 chars."""
+    """The `tool.call` preview clips nested strings, not just top-level ones.
+
+    An apply_edit's `new_string` wrote a whole file into the durable event log per call.
+    """
     from agent6.tools._result_format import truncate_args
 
     out = truncate_args({"path": "a.py", "edits": [{"old_string": "x", "new_string": "y" * 5000}]})
@@ -2462,10 +2447,7 @@ def test_the_argument_preview_clips_at_every_depth() -> None:
 
 
 def test_a_patch_refused_by_path_safety_part_way_names_what_changed(tmp_path: Path) -> None:
-    """The write loop reported what it had already changed for an OSError
-    alone; a path-safety refusal (`open_contained`'s ToolError: a file where
-    a directory must be) walked past the report, and the model re-planned
-    over a tree it did not know had changed."""
+    """A path-safety refusal mid-write reports what was already changed, like an OSError."""
     cfg = _config(tmp_path)
     (tmp_path / "a.txt").write_text("original a\n", encoding="utf-8")
     (tmp_path / "blocker.txt").write_text("a file, not a dir\n", encoding="utf-8")
@@ -2483,8 +2465,7 @@ def test_a_patch_refused_by_path_safety_part_way_names_what_changed(tmp_path: Pa
 
 
 def test_a_patch_over_a_crlf_file_reports_the_bytes_on_disk(tmp_path: Path) -> None:
-    """bytes_written measured the LF text while the write put CRLF on disk,
-    so the model's one size signal was short by a byte per line."""
+    """bytes_written measures the CRLF text the write put on disk."""
     cfg = _config(tmp_path)
     (tmp_path / "w.txt").write_bytes(b"one\r\ntwo\r\n")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -2497,9 +2478,7 @@ def test_a_patch_over_a_crlf_file_reports_the_bytes_on_disk(tmp_path: Path) -> N
 
 
 def test_a_preview_over_a_crlf_file_counts_the_bytes_the_apply_writes(tmp_path: Path) -> None:
-    """preview's byte counts measured the LF text while the write put CRLF on
-    disk (as a patch's bytes_written says), so the preview promised one size
-    and the apply produced another."""
+    """Preview's byte counts measure the CRLF text the write would put on disk."""
     cfg = _config(tmp_path)
     (tmp_path / "w.txt").write_bytes(b"one\r\ntwo\r\n")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -2511,9 +2490,11 @@ def test_a_preview_over_a_crlf_file_counts_the_bytes_the_apply_writes(tmp_path: 
 
 
 def test_an_edit_or_patch_result_names_the_paths_it_wrote(tmp_path: Path) -> None:
-    """The journal's tool.call carries a clipped args preview (a patch's text
-    cut at 200 chars), so nothing named the files a run wrote; a resume needs
-    them to tell the run's own untracked files from the operator's."""
+    """The journal's tool.call names the files a patch wrote.
+
+    The clipped args preview named none; a resume needs them to tell the run's own untracked
+    files from the operator's.
+    """
     import json
 
     from agent6.events import EventSink
@@ -2537,8 +2518,7 @@ def test_an_edit_or_patch_result_names_the_paths_it_wrote(tmp_path: Path) -> Non
 
 
 def test_a_too_long_array_is_named_in_json_words() -> None:
-    """pydantic says "Tuple should have at most 8 items"; the model wrote a
-    JSON array and has never heard of a tuple."""
+    """The size error names a JSON array, not pydantic's tuple."""
     from agent6.tools.dispatch import invalid_arguments
     from agent6.tools.schema import AskUserInput
 
@@ -2552,10 +2532,11 @@ def test_a_too_long_array_is_named_in_json_words() -> None:
 def test_apply_edit_takes_one_edit_flat_the_way_the_claude_code_edit_tool_does(
     tmp_path: Path,
 ) -> None:
-    """Sonnet on the Claude Code backend sent `edits` as a JSON string three
-    times in one run, its own Edit tool being flat: the flat pair is one edit
-    (an omitted old_string creates), `edits` carries several, and both at once
-    or neither is refused naming the two forms. Only `path` stays required."""
+    """The flat pair is one edit, `edits` carries several, and both or neither is refused.
+
+    Sonnet on the Claude Code backend sent `edits` as a JSON string three times in one run, its
+    own Edit tool being flat; an omitted old_string creates and only `path` stays required.
+    """
     from agent6.tools.schema import ApplyEditInput, wire_schema
 
     cfg = _config(tmp_path)

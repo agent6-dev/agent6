@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.machine.spec — `.asm.toml` parse + semantic validation."""
+"""Tests for agent6.machine.spec, `.asm.toml` parse + semantic validation."""
 
 from __future__ import annotations
 
@@ -11,8 +11,7 @@ import pytest
 from agent6.machine._semantics import load_machine
 from agent6.machine.spec import AgentState, MachineError
 
-# The worked example from STATE_MACHINES.md §10. The canonical
-# happy path; error-case tests mutate a copy of this.
+# The worked example from the state-machines page; error-case tests mutate a copy.
 VALID_MACHINE = """
 machine = "item-classifier"
 version = 1
@@ -118,9 +117,7 @@ def test_valid_machine_loads(tmp_path: Path) -> None:
 
 
 def test_agent_state_model_defaults_to_inherit(tmp_path: Path) -> None:
-    # Omitting `model` on an agent state is valid and defaults to "inherit"
-    # (the operator's worker model) — so an LLM-authored machine need not
-    # hardcode a model the operator may not have configured.
+    # Omitting `model` defaults to "inherit", so a machine need not hardcode one.
     body = VALID_MACHINE.replace('\nmodel = "claude-sonnet-4-5"', "")
     spec = load_machine(_write(tmp_path, body))
     classify = spec.states["classify"]
@@ -150,16 +147,13 @@ def test_bad_toml(tmp_path: Path) -> None:
 def test_native_toml_scalar_types_are_not_coerced(
     tmp_path: Path, old: str, new: str, field: str, rule: str
 ) -> None:
-    """TOML already supplies native scalar types, so a quoted number or bool is
-    malformed input, not an alternate spelling the machine parser may coerce."""
+    """A quoted number or bool is malformed input, not a spelling the parser may coerce."""
     problems = _problems(tmp_path, VALID_MACHINE.replace(old, new, 1))
     assert any(field in problem and rule in problem for problem in problems)
 
 
 def test_non_utf8_file_raises_machine_error(tmp_path: Path) -> None:
-    # A non-UTF-8 .asm.toml must surface as a MachineError (which the CLI catches
-    # and prints cleanly), not an unhandled UnicodeDecodeError that crashes
-    # through the generic handler.
+    # A non-UTF-8 machine file surfaces as a MachineError, not an unhandled decode error.
     path = tmp_path / "m.asm.toml"
     path.write_bytes(b"machine = \xff\xfe not utf-8")
     with pytest.raises(MachineError) as excinfo:
@@ -167,7 +161,7 @@ def test_non_utf8_file_raises_machine_error(tmp_path: Path) -> None:
     assert any("UTF-8" in p for p in excinfo.value.problems)
 
 
-# -- naming rules ----------------------------------------------------------
+# , naming rules,,,,,,,,,,,,,,,
 
 
 def test_duplicate_name_across_owners(tmp_path: Path) -> None:
@@ -197,8 +191,7 @@ def test_reserved_name(tmp_path: Path) -> None:
 
 
 def test_cron_wait_is_an_unknown_key(tmp_path: Path) -> None:
-    # `wait` timings are every_secs and until; a `cron` key refuses at load
-    # like any other unknown key (extra = "forbid"), named in the problem.
+    # `wait` timings are every_secs and until; a `cron` key refuses like any unknown key.
     body = VALID_MACHINE.replace('every_secs = "{{ poll_secs }}"', 'cron = "0 * * * *"')
     problems = _problems(tmp_path, body)
     assert any("cron" in p for p in problems)
@@ -224,7 +217,7 @@ def test_identifier_rejects_a_trailing_newline(tmp_path: Path) -> None:
     assert any("not a valid identifier" in p and "hidden" in p for p in problems)
 
 
-# -- ownership wall --------------------------------------------------------
+# , ownership wall,,,,,,,,,,,,,,
 
 
 def test_tool_cannot_write_agent_var(tmp_path: Path) -> None:
@@ -237,11 +230,7 @@ def test_tool_cannot_write_agent_var(tmp_path: Path) -> None:
 
 
 def test_undeclared_capture_target_names_where_to_declare_it(tmp_path: Path) -> None:
-    """The diagnostic states the accepted form, not just the miss.
-
-    A create attempt burned on 'is not a declared variable' left the model
-    guessing where a declaration goes; the message now names [vars.<owner>].
-    """
+    """The diagnostic states the accepted form, naming [vars.<owner>], not just the miss."""
     body = VALID_MACHINE.replace(
         'capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }',
         'capture = { set = { nonesuch = "{{ result.pending }}" } }',
@@ -292,7 +281,7 @@ def test_capture_cannot_write_operator_var(tmp_path: Path) -> None:
     assert any("owned by `[vars.operator]`" in p for p in problems)
 
 
-# -- branches --------------------------------------------------------------
+# , branches,,,,,,,,,,,,,,,,
 
 
 def test_branch_not_total(tmp_path: Path) -> None:
@@ -328,16 +317,14 @@ def test_predicate_unknown_variable(tmp_path: Path) -> None:
 
 
 def test_predicate_toml_boolean_literal_hints_python_form(tmp_path: Path) -> None:
-    # `flag == true` reads `true` as an undeclared name; the error should point at
-    # the Python literal rather than a bare "unknown variable".
+    # `flag == true` reads `true` as an undeclared name; the error points at the Python literal.
     body = VALID_MACHINE.replace("len(pending) == 0", "len(pending) == 0 and pending == true")
     problems = _problems(tmp_path, body)
     assert any("True/False/None" in p for p in problems)
 
 
 def test_predicate_len_of_int_rejected_at_load(tmp_path: Path) -> None:
-    # `len(poll_secs)` (poll_secs is int) is a guaranteed runtime PredicateError;
-    # it must be caught at load, mirroring the template `| len` filter check.
+    # `len(poll_secs)` on an int is a guaranteed PredicateError; caught at load.
     body = VALID_MACHINE.replace("len(pending) == 0", "len(poll_secs) == 0")
     problems = _problems(tmp_path, body)
     assert any("`len()` does not apply to int" in p and "poll_secs" in p for p in problems)
@@ -427,7 +414,7 @@ def test_wait_until_unverifiable_composite_template_allowed_at_load(tmp_path: Pa
     load_machine(_write(tmp_path, body))
 
 
-# -- type checks -----------------------------------------------------------
+# , type checks,,,,,,,,,,,,,,, -
 
 
 def test_default_type_mismatch(tmp_path: Path) -> None:
@@ -492,7 +479,7 @@ def test_schema_cycle(tmp_path: Path) -> None:
     assert any("cycle" in p for p in problems)
 
 
-# -- list splicing / templates --------------------------------------------
+# , list splicing / templates,,,,,,,,,,,
 
 
 def test_bare_list_outside_argv_is_error(tmp_path: Path) -> None:
@@ -508,7 +495,7 @@ def test_list_spliced_inside_larger_string_is_error(tmp_path: Path) -> None:
     assert any("bare reference to list" in p for p in problems)
 
 
-# -- wait timing -----------------------------------------------------------
+# , wait timing,,,,,,,,,,,,,,, -
 
 
 def test_wait_rejects_two_timings(tmp_path: Path) -> None:
@@ -549,7 +536,7 @@ def test_wait_forever_requires_signal_edge(tmp_path: Path) -> None:
     assert any("missing outcome 'signal'" in p for p in problems)
 
 
-# -- notify ----------------------------------------------------------------
+# , notify,,,,,,,,,,,,,,,,
 
 
 def test_notify_string_and_table_forms_load(tmp_path: Path) -> None:
@@ -580,35 +567,28 @@ def test_machine_overlay_cannot_set_notify_hook(tmp_path: Path) -> None:
 
 
 def test_machine_overlay_cannot_enable_mcp(tmp_path: Path) -> None:
-    # [mcp] servers spawn an operator argv on the host outside the jail with the
-    # full env; an untrusted machine file must not wire one in.
+    # [mcp] servers spawn an operator argv outside the jail; a machine file must not wire one in.
     body = VALID_MACHINE + "\n[config.mcp]\nenabled = true\n"
     problems = _problems(tmp_path, body)
     assert any("mcp" in p for p in problems)
 
 
 def test_machine_overlay_cannot_set_the_completion_hook(tmp_path: Path) -> None:
-    # [notify].on_complete runs an operator argv on the host outside the jail;
-    # a benign [notify] knob (timeout_s) stays allowed (surgical to on_complete).
+    # [notify].on_complete runs outside the jail; the benign timeout_s knob stays allowed.
     body = VALID_MACHINE + '\n[config.notify]\non_complete = ["curl", "evil"]\n'
     problems = _problems(tmp_path, body)
     assert any("notify.on_complete" in p for p in problems)
 
 
 def test_machine_overlay_cannot_name_a_system_prompt_file(tmp_path: Path) -> None:
-    # The file is read on the HOST, outside the jail, and its contents are sent
-    # to the provider as the system prompt: an untrusted machine file naming a
-    # path is a host-file read the sandbox does not bound.
+    # The file is read on the host and sent as the system prompt: an unbounded host-file read.
     body = VALID_MACHINE + '\n[config.prompt]\nsystem_prompt_file = "/etc/shadow"\n'
     problems = _problems(tmp_path, body)
     assert any("prompt.system_prompt_file" in p for p in problems)
 
 
 def test_machine_overlay_cannot_define_a_preset(tmp_path: Path) -> None:
-    # A `[config.presets.<name>]` table would splice operator-only sandbox /
-    # providers / machine.notify policy into the effective config (the selected
-    # preset is resolved from every layer, including this overlay), so it must
-    # be rejected at load, not just the top-level [sandbox]/[providers] tables.
+    # A `[config.presets.<name>]` table would splice operator-only policy into the effective config.
     body = VALID_MACHINE + (
         '\n[config.presets.hardened.sandbox]\nprotect_git = false\nrun_commands = "yes"\n'
     )
@@ -617,32 +597,27 @@ def test_machine_overlay_cannot_define_a_preset(tmp_path: Path) -> None:
 
 
 def test_machine_overlay_cannot_enable_repo_hooks(tmp_path: Path) -> None:
-    # git.run_repo_hooks honors the repo's .git/hooks (host code, outside the
-    # jail) during a mode="run" state's auto-commit -- a host-RCE knob a machine
-    # file must not be able to flip on.
+    # git.run_repo_hooks runs host code on auto-commit: a knob a machine file must not flip.
     body = VALID_MACHINE + "\n[config.git]\nrun_repo_hooks = true\n"
     problems = _problems(tmp_path, body)
     assert any("run_repo_hooks" in p for p in problems)
 
 
 def test_machine_overlay_cannot_enable_repo_filters(tmp_path: Path) -> None:
-    # git.run_repo_filters honors the repo's own content drivers (filter.*,
-    # merge.*.driver) -- host code on a mode="run" auto-commit/merge, the same
-    # RCE class as run_repo_hooks. A machine file must not be able to flip it on.
+    # git.run_repo_filters is the same RCE class as run_repo_hooks.
     body = VALID_MACHINE + "\n[config.git]\nrun_repo_filters = true\n"
     problems = _problems(tmp_path, body)
     assert any("run_repo_filters" in p for p in problems)
 
 
 def test_machine_overlay_allows_benign_git_commit_identity(tmp_path: Path) -> None:
-    # A [config.git.commit] override is a harmless overlay knob and stays allowed
-    # (the forbid is surgical to git.run_repo_hooks, not the whole [git] table).
+    # A [config.git.commit] override is harmless; the forbid is surgical to run_repo_hooks.
     body = VALID_MACHINE + '\n[config.git.commit]\nname = "ci-bot"\nemail = "ci@example.com"\n'
     spec = load_machine(_write(tmp_path, body))
     assert spec.machine == "item-classifier"
 
 
-# -- on-table completeness -------------------------------------------------
+# , on-table completeness,,,,,,,,,,,, -
 
 
 def test_tool_missing_outcome_label(tmp_path: Path) -> None:
@@ -663,7 +638,7 @@ def test_unknown_outcome_label(tmp_path: Path) -> None:
     assert any("unknown outcome 'boom'" in p for p in problems)
 
 
-# -- graph -----------------------------------------------------------------
+# , graph,,,,,,,,,,,,,,,, -
 
 
 def test_unknown_transition_target(tmp_path: Path) -> None:
@@ -686,7 +661,7 @@ def test_initial_must_exist(tmp_path: Path) -> None:
     assert any("initial state 'ghost'" in p for p in problems)
 
 
-# -- per-agent-state knobs + machine [config] overlay ----------------------
+# , per-agent-state knobs + machine [config] overlay,,,,,,
 
 
 def test_agent_state_per_state_knobs_parse(tmp_path: Path) -> None:
@@ -760,8 +735,7 @@ api_format = "anthropic"
 
 
 def test_machine_config_overlay_rejects_sandbox(tmp_path: Path) -> None:
-    # Sandbox policy (jail network/run_commands/protection) is operator-only;
-    # a machine file must not weaken it via its [config] overlay.
+    # Sandbox policy is operator-only; a machine file must not weaken it via its overlay.
     body = (
         VALID_MACHINE
         + """
@@ -781,8 +755,7 @@ def test_budget_max_usd_is_optional(tmp_path: Path) -> None:
 
 
 def test_budget_max_usd_rejects_non_finite(tmp_path: Path) -> None:
-    # TOML inf passes gt=0.0 and then can never bind, silently disabling the
-    # machine's spend cap; refuse it at load (nan already fails the gt).
+    # TOML inf passes gt=0.0 and never binds, disabling the cap; refused at load.
     body = VALID_MACHINE.replace("max_usd         = 25.0", "max_usd         = inf")
     problems = _problems(tmp_path, body)
     assert any("finite" in p for p in problems)
@@ -795,8 +768,7 @@ def test_agent_state_max_usd_rejects_non_finite(tmp_path: Path) -> None:
 
 
 def test_budget_best_effort_usd_limit_is_gone(tmp_path: Path) -> None:
-    # The hard/soft pair collapsed to one metered cap; the old soft field must
-    # fail the grammar loudly, never load as an ignored knob.
+    # The old soft field must fail the grammar loudly, never load as an ignored knob.
     body = VALID_MACHINE.replace("max_usd         = 25.0", "best_effort_usd_limit = 25.0")
     with pytest.raises(MachineError, match="best_effort_usd_limit"):
         load_machine(_write(tmp_path, body))
@@ -813,10 +785,7 @@ def test_agent_state_best_effort_field_is_gone(tmp_path: Path) -> None:
 
 
 def test_wait_every_secs_accepts_a_bare_integer() -> None:
-    """`every_secs = 30` (the natural TOML spelling) coerces to the string the
-    template-capable field carries; refusing it with "Input should be a valid
-    string" tripped machine authors (caught by a live machine-create run).
-    Floats stay refused: truncating a sub-second wait would lie."""
+    """`every_secs = 30` coerces to the string the template field carries; floats stay refused."""
     from pydantic import ValidationError
 
     from agent6.machine.spec import WaitState
@@ -832,9 +801,7 @@ def test_wait_every_secs_accepts_a_bare_integer() -> None:
 
 
 def test_a_schema_named_after_a_builtin_type_is_refused(tmp_path: Path) -> None:
-    """`parse_type` resolves `str`/`int`/`float`/`bool`/`json` before it looks
-    at the declared schemas, so `[schemas.str]` loaded clean and could never be
-    named by a var or an `output_schema`."""
+    """`[schemas.str]` cannot shadow a builtin type name."""
     src = (
         'machine = "m1"\nversion = 1\ninitial = "done"\n\n'
         "[budget]\nmax_transitions = 5\n\n"

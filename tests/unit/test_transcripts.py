@@ -113,9 +113,7 @@ def test_transcript_redacts_api_key_on_network_error(
 def test_a_response_body_echoing_the_credential_is_scrubbed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Some gateways echo the received key in a 401 body; the echo rode
-    verbatim into the transcript body and the ProviderError text, which header
-    redaction never touches. Both must carry the marker, not the value."""
+    """A 401 body echoing the key carries the marker, in the transcript and the error text."""
     sink = TranscriptSink(tmp_path / "transcripts")
     api_key = "sk-ant-echoed-back-by-a-gateway"
     provider = AnthropicProvider(
@@ -136,9 +134,7 @@ def test_a_response_body_echoing_the_credential_is_scrubbed(
 
 
 def test_record_scrubs_credential_values_from_the_bodies(tmp_path: Path) -> None:
-    """The sink-level scrub: a body string equal to a credential riding in the
-    request's auth headers (the bare token behind `Bearer ` included) is
-    replaced at the one serialization point."""
+    """A body string equal to a credential in the auth headers is scrubbed at serialization."""
     sink = TranscriptSink(tmp_path / "t")
     path = sink.record(
         request_headers={"authorization": "Bearer sk-tok-123456789"},
@@ -167,11 +163,11 @@ def test_redact_headers_unit() -> None:
 
 
 def test_seq_continues_across_resume_executions(tmp_path: Path) -> None:
-    """seq is per-RUN, not per-sink: a resume builds a fresh TranscriptSink over
-    the same <run>/transcripts/ dir, and restarting at 1 produced duplicate seqs
-    whose seq-primary sort interleaved the executions -- `sessions transcript` rendered a
-    scrambled conversation with a false 'context summarised' marker and ended on
-    stale execution-1 content. A new sink must continue from the highest seq present."""
+    """Seq is per run: a new sink continues from the highest seq present.
+
+    Restarting at 1 produced duplicate seqs that interleaved the executions, a scrambled
+    conversation with a false 'context summarised' marker.
+    """
     d = tmp_path / "transcripts"
     leg1 = TranscriptSink(d)
     for _ in range(2):
@@ -187,10 +183,10 @@ def test_seq_continues_across_resume_executions(tmp_path: Path) -> None:
 def test_transcript_record_publishes_via_atomic_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The writer used a predictable `<name>.json.tmp` + write_text that would
-    follow a planted symlink; it now publishes through atomic_write (mkstemp,
-    unpredictable name, O_EXCL). Spying the primitive is the regression: the old
-    write_text path never called it. The record still lands, headers redacted."""
+    """The writer publishes through atomic_write, never a predictable temp name a symlink can plant.
+
+    Spying the primitive is the regression: the old write_text path never called it.
+    """
     import agent6.providers.types as types_mod
 
     calls: list[Path] = []

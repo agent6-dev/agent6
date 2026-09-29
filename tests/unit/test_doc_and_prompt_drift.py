@@ -2,9 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """Drift pins: prose that names code must track the code.
 
-Each pin failed (or nearly failed) in the wild before it existed: a tool
-renamed out from under a prompt mention, a bench config key that did not
-match the Config field, a dependency count written as a word."""
+Each pin failed in the wild before it existed: a tool renamed out from under a prompt mention, a
+bench config key that did not match the Config field, a dependency count written as a word.
+"""
 
 from __future__ import annotations
 
@@ -41,8 +41,7 @@ _PROMPT_CONSTANTS = (
     prompts.CREATE_HINT_PATCH_ONLY,
 )
 
-# Backticked identifiers in the prompts that are deliberately NOT tool names:
-# tool parameters, task statuses, file formats, code symbols.
+# Backticked identifiers in the prompts that are deliberately not tool names.
 _NON_TOOL_SPANS = {
     "acceptance",
     "agent",
@@ -75,8 +74,7 @@ def _registered_tool_names() -> set[str]:
 
 
 def test_apply_edit_prompt_contract_mentions_its_indent_heal() -> None:
-    """apply_edit can accept a unique uniform-indent mismatch, so the system
-    prompt must not claim byte-exact matching is the only accepted shape."""
+    """The system prompt does not claim byte-exact matching is apply_edit's only accepted shape."""
     assert "indent" in prompts.SYSTEM_PROMPT_BASE
     assert "heal" in prompts.SYSTEM_PROMPT_BASE
 
@@ -130,16 +128,13 @@ def test_readme_quoted_security_defaults_match_config() -> None:
 
 
 def test_bench_container_config_template_validates() -> None:
-    """Render in_container.sh's config heredoc with stub values and validate it
-    through Config: a key that does not match a field refuses every bench run
-    (verify_timeout vs verify_timeout_s was caught by hand once)."""
+    """in_container.sh's config heredoc validates through Config, so a stray key is caught."""
     from agent6.config import Config
 
     script = (REPO / "bench" / "swebench" / "in_container.sh").read_text()
     m = re.search(r"cat > /root/agent6\.toml <<EOF\n(.*?)\nEOF\n", script, re.S)
     assert m is not None, "config heredoc not found in in_container.sh"
-    # The two blocks the script computes in shell run ahead of the heredoc,
-    # under its own options: a stub for either validates the stub.
+    # The two shell-computed blocks run ahead of the heredoc; a stub validates the stub.
     review = re.search(r'^REVIEW_LINES=""\n.*?^fi\n', script, re.S | re.M)
     verify = re.search(
         r'^if \[ "\$\{AGENT6_SB_VERIFY:-\}" = "none" \].*?^  VERIFY_TOML="verify_command.*?\nfi\n',
@@ -160,10 +155,7 @@ def test_bench_container_config_template_validates() -> None:
     }
 
     def _render(env: dict[str, str]) -> str:
-        # bash renders the heredoc, as the container does: a hand-rolled
-        # `${VAR:+...}` reimplementation rendered the conditional lines an A/B
-        # arm flips differently from the shell, and a key typo in one stayed
-        # green while a real arm was refused.
+        # bash renders the heredoc as the container does; a hand-rolled `${VAR:+...}` drifted.
         script = "set -uo pipefail\n" + review.group(0) + verify.group(0)
         script += "cat <<EOF\n" + m.group(1) + "\nEOF\n"
         return subprocess.run(

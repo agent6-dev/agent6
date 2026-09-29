@@ -73,8 +73,7 @@ def test_steer_reports_a_failed_marker_write(
 def test_steer_refuses_a_session_that_is_not_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A dead session's steer would silently park; the refusal names the
-    queue-for-next-execution remedy that already exists (`resume --steer`)."""
+    """A dead session's steer is refused with the `resume --steer` remedy, never parked silently."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-BBBB22")
@@ -153,8 +152,7 @@ def test_steer_btw_opens_a_side_ask_instead_of_queuing_the_directive(
 def test_steer_stop_is_the_one_stop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 steer ID /stop` is `agent6 stop ID`, not a steer text the loop
-    would hand to the model."""
+    """`agent6 steer ID /stop` is `agent6 stop ID`, not a steer text for the model."""
     from agent6.app.stop import StopOutcome
     from agent6.ui.cli import steer_cmd
 
@@ -186,8 +184,7 @@ def test_steer_reports_an_unknown_id(
 def test_steer_notes_an_unanswered_prompt_park(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run parked on an approval has no boundaries and no interrupt can
-    break the wait; the verb says so honestly instead of implying delivery."""
+    """A steer to a run parked on an approval says so instead of implying delivery."""
     import json
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
@@ -214,9 +211,11 @@ def test_steer_notes_an_unanswered_prompt_park(
 def test_steer_names_the_answer_verb_for_a_question(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 answer` takes a question, whichever seat the run waits in: its
-    terminal prompt reads the answer file too. Naming it for an approval sent
-    the operator straight to a refusal."""
+    """`agent6 answer` takes a question in whichever seat the run waits.
+
+    Its terminal prompt reads the answer file too; naming it for an approval sent the operator
+    straight to a refusal.
+    """
     import json
 
     from agent6.sessions.ipc import set_away_mode
@@ -252,8 +251,7 @@ def test_steer_names_the_answer_verb_for_a_question(
 def test_steer_refuses_a_view_only_word(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 steer ID /shells` sent the word to the model as text; a view
-    acts on it, and a steer from a script has no view."""
+    """`agent6 steer ID /shells` is refused: a view acts on it, and a script has no view."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-AAAA11")

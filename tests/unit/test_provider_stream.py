@@ -62,9 +62,10 @@ def _drain(resp: httpx2.Response, clock: StreamClock) -> None:
 
 
 class _ParkedResponse:
-    """A 200 stream that emits ``lead_lines`` then parks until the watchdog
-    calls ``close()``, at which point it raises like httpx2 does when the
-    socket is closed mid-read."""
+    """A 200 stream that emits `lead_lines` then parks until the watchdog calls `close()`.
+
+    At that point it raises like httpx2 does when the socket is closed mid-read.
+    """
 
     def __init__(self, lead_lines: list[str] | None = None) -> None:
         self.status_code = 200
@@ -233,8 +234,11 @@ def test_interrupt_classifies_as_provider_interrupted(monkeypatch: pytest.Monkey
 def test_operator_stop_classifies_when_close_ends_iteration_cleanly(
     monkeypatch: pytest.MonkeyPatch, poll_name: str, error_type: type[Exception]
 ) -> None:
-    """httpx may surface a cross-thread response close as EOF rather than an
-    HTTPError; the operator's request still owns the teardown classification."""
+    """An operator stop classifies when close ends the iteration cleanly.
+
+    httpx may surface a cross-thread response close as EOF rather than an HTTPError; the operator's
+    request still owns the teardown classification.
+    """
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
     call = (
         _call(should_abort=lambda: True)
@@ -339,10 +343,12 @@ class _LinesResponse:
 def test_a_malformed_frame_normalizes_to_a_provider_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A shape error the consume loop did not tolerate (a flaky gateway's
-    null/renamed field) is a retryable ProviderError at the one seam both
-    providers stream through -- never a raw traceback that bypasses the
-    loop's retry wrapper."""
+    """A malformed frame normalizes to a ProviderError.
+
+    A shape error the consume loop does not tolerate (a flaky gateway's null or renamed field) is a
+    retryable ProviderError at the one seam both providers stream through, never a raw traceback
+    that bypasses the loop's retry wrapper.
+    """
     call = _call()
     monkeypatch.setattr(
         stream_mod.httpx2, "stream", _serve(_LinesResponse(['data: {"choices": "boom"}']))
@@ -359,9 +365,11 @@ def test_a_malformed_frame_normalizes_to_a_provider_error(
 
 
 def test_an_endless_frame_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
-    """One line with no newline buffers unbounded inside iter_lines: the
-    bounded reader refuses past the per-line ceiling as a retryable error
-    (the non-streaming path already caps its whole body)."""
+    """One line with no newline buffers unbounded inside iter_lines.
+
+    The bounded reader refuses past the per-line ceiling as a retryable error (the non-streaming
+    path already caps its whole body).
+    """
     from agent6.providers._stream import bounded_lines
 
     call = _call()
@@ -377,9 +385,11 @@ def test_an_endless_frame_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_an_endless_event_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A server that never sends the blank line ending an event would have
-    the reader gather data lines until the watchdog; the event ceiling refuses
-    past it as the per-line one does."""
+    """An endless event is bounded.
+
+    A server that never sends the blank line ending an event would have the reader gather data lines
+    until the watchdog; the event ceiling refuses past it as the per-line one does.
+    """
     from agent6.providers._stream import sse_events
 
     call = _call()
@@ -395,8 +405,11 @@ def test_an_endless_event_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_a_malformed_2xx_body_normalizes_at_the_transport_seam() -> None:
-    """The non-streaming twin: a parse that trips on a malformed 2xx body
-    surfaces as a retryable ProviderError from the one transport seam."""
+    """The non-streaming twin.
+
+    A parse that trips on a malformed 2xx body surfaces as a retryable ProviderError from the one
+    transport seam.
+    """
     from agent6.providers._transport import ProviderCall
 
     def _bad_parse(_data: dict[str, Any]) -> Any:
@@ -433,9 +446,11 @@ def test_a_malformed_2xx_body_normalizes_at_the_transport_seam() -> None:
 
 
 def test_a_raising_abort_poll_leaves_the_watchdog_alive(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A should_abort that raises reads False in the watchdog: an exception
-    there would end the thread and with it the idle-hang detection, so the
-    prefill kill still fires."""
+    """A should_abort that raises reads False in the watchdog.
+
+    An exception there would end the thread and with it the idle-hang detection, so the prefill kill
+    still fires.
+    """
     monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 0.05)
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
 

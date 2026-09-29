@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 config show` never prints secret material: not the api_key from
-secrets.toml, not the value of an `api_key_env` variable. Structurally the
-secrets file never enters `Config`; this pins that a future show/render change
-cannot start leaking it."""
+"""`agent6 config show` never prints secret material.
+
+Not the api_key from secrets.toml, not the value of an `api_key_env` variable; the
+secrets file never enters `Config`, and this pins that a show or render change cannot
+start leaking it.
+"""
 
 from __future__ import annotations
 

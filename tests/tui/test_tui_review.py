@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Run > Review this run…: the TUI shells out to `agent6 sessions review` off
-the UI thread and opens the markdown in a modal; a live run is refused before
-any call, as the CLI refuses it."""
+"""Run > Review this run… shells out to `sessions review` off the UI thread into a modal.
+
+A live run is refused before any call, as the CLI refuses it.
+"""
 
 from __future__ import annotations
 
@@ -104,8 +105,7 @@ def test_a_refused_review_is_a_notice_not_a_modal(tmp_path: Path, monkeypatch: A
 def test_a_second_pick_while_a_review_runs_starts_no_second_call(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """Run > Review this run… picked twice during the minutes a call takes ran
-    two reviewer calls and stacked two modals."""
+    """Run > Review this run… picked twice during a call runs one reviewer and opens one modal."""
     import threading
 
     gate = threading.Event()

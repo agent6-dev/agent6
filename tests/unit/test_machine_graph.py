@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.machine.graph — mermaid + dot rendering."""
+"""Tests for agent6.machine.graph, mermaid + dot rendering."""
 
 from __future__ import annotations
 
@@ -44,10 +44,7 @@ _DOC = Path(__file__).resolve().parents[2] / "docs" / "state-machines.md"
 
 
 def test_documented_graph_is_the_rendered_one(tmp_path: Path) -> None:
-    """docs/state-machines.md's mermaid block is `machine graph`'s own output
-    over the worked example above it. Hand-drawn, it drifted: `nonzero` and
-    `timeout` merged into one edge, `urgent and confident` stood in for the
-    branch predicate, and `signal` was absent."""
+    """The state-machines page's mermaid block is `machine graph`'s own output."""
     text = _DOC.read_text(encoding="utf-8")
     diagram = re.search(r"```mermaid\n(.*?)```", text, re.S)
     assert diagram, "no mermaid block on the page"

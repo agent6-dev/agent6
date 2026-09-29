@@ -48,13 +48,7 @@ def _node(
 
 
 def _seed_tree(tmp_path: Path, session_id: str) -> None:
-    """Build a small tree:
-    root
-      step1 (passed, commit aaaaaaa...)
-        sub1a
-        sub1b
-      step2 (failed)
-    """
+    """Build a small tree: root step1 (passed, commit aaaaaaa...) sub1a sub1b step2 (failed)."""
     layout = SessionLayout(state_dir=state_dir(tmp_path), session_id=session_id)
     layout.ensure()
     (layout.session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
@@ -85,9 +79,7 @@ def test_history_graph_renders_dfs_order(
     out = capsys.readouterr().out
     assert rc == 0
     lines = [line for line in out.splitlines() if line and not line.startswith("Session id:")]
-    # Strict DFS: root, then step1, then deep-left sub1a, then sub1b, then step2.
-    # Status is a glyph, shared with the TUI tree / web task graph / runs show,
-    # and each line leads with the id `/retire` names a task by.
+    # Strict DFS order; the status glyph is every surface's, each line leading with the id.
     assert lines == [
         "  1  · root task",
         "  2    ✓ step 1  (abcdef1)",
@@ -100,11 +92,11 @@ def test_history_graph_renders_dfs_order(
 def test_a_half_linked_task_is_still_shown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`add_subtask` writes the child before its parent's `children` list, and
-    says so: a crash between them leaves a node with a valid parent_id that no
-    parent names. The frontier, `list_tasks` and the TUI all show it; the CLI
-    walked children only, so the operator's view omitted the very task the run
-    was working on."""
+    """A half-linked task is still shown by the CLI, as the frontier and the TUI show it.
+
+    `add_subtask` writes the child before its parent's `children` list; a crash between them leaves
+    a node with a valid parent_id that no parent names.
+    """
     monkeypatch.chdir(tmp_path)
     layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="half-run-AAAA11")
     layout.ensure()

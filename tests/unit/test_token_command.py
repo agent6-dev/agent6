@@ -13,7 +13,7 @@ from agent6.providers.token_command import CommandToken
 
 
 def _counter_argv(tmp_path: Path) -> list[str]:
-    """argv that prints ``tok1``, ``tok2``, ... on successive runs."""
+    """Argv that prints ``tok1``, ``tok2``, ... on successive runs."""
     counter = tmp_path / "counter"
     script = (
         f'n=$(cat "{counter}" 2>/dev/null || echo 0); '

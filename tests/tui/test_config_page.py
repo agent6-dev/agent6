@@ -159,8 +159,7 @@ def test_config_page_adaptive_value_shown(repo: Path) -> None:
             screen = app.screen
             assert isinstance(screen, ConfigScreen)
             ctx = screen.query_one("#tbl-context", DataTable)
-            # adaptive compaction (worker=claude-sonnet-4-5 -> 200k window) shows
-            # its resolved number tagged "(adaptive)", not "(unset)".
+            # Adaptive compaction shows its resolved number tagged "(adaptive)".
             cells = [str(ctx.get_row_at(r)[1]) for r in range(ctx.row_count)]
             assert any("(adaptive)" in c for c in cells)
 
@@ -168,8 +167,7 @@ def test_config_page_adaptive_value_shown(repo: Path) -> None:
 
 
 def test_config_page_edit_persists(repo: Path) -> None:
-    """Select a row -> Edit -> [x]/[ ] chooser -> arrow to a new value -> Save
-    writes through the shared edit path. The whole edit ask, end to end."""
+    """Select a row, Edit, the chooser, a new value, Save: the whole edit ask end to end."""
 
     async def scenario() -> None:
         from agent6.ui.tui.config_page import ChoiceField
@@ -195,7 +193,7 @@ def test_config_page_edit_persists(repo: Path) -> None:
             assert field.value == "yes"
             await pilot.press("down")  # highlight "no" (selection unchanged)
             await pilot.pause()
-            assert field.value == "yes"  # arrows only highlight now
+            assert field.value == "yes"  # arrows only highlight
             await pilot.press("space")  # select "no"
             await pilot.pause()
             assert field.value == "no"
@@ -208,8 +206,10 @@ def test_config_page_edit_persists(repo: Path) -> None:
 
 
 def test_edit_defaults_to_the_setting_source_layer(repo: Path) -> None:
-    """Editing a repo-sourced value must target the repo config by default;
-    otherwise the repo layer masks the global write and Save appears to do nothing."""
+    """Editing a repo-sourced value targets the repo config by default.
+
+    Otherwise the repo layer masks the global write and Save appears to do nothing.
+    """
     from agent6.config.write import set_config_value
 
     assert set_config_value(repo, "sandbox.run_commands", "no", to_repo=True) is None
@@ -243,8 +243,7 @@ def test_edit_defaults_to_the_setting_source_layer(repo: Path) -> None:
 
 
 def test_edit_unset_reverts_to_default(repo: Path) -> None:
-    """The edit modal's "Unset → default" returns a setting to its default by
-    removing the override (not by writing the default value back)."""
+    """The edit modal's "Unset → default" removes the override rather than writing the default."""
 
     async def scenario() -> None:
         from agent6.config.layer import effective_leaf
@@ -280,9 +279,7 @@ def test_edit_unset_reverts_to_default(repo: Path) -> None:
 
 
 def test_edit_custom_value_inline(repo: Path) -> None:
-    """A choice setting's last chooser row is an inline custom field: arrow down
-    onto it and type the value right there (no separate box), and that text is
-    the value -- no jump to a popped-up box below."""
+    """A choice setting's last chooser row is an inline custom field, typed right there."""
 
     async def scenario() -> None:
         from agent6.ui.tui.config_page import ChoiceField
@@ -304,8 +301,7 @@ def test_edit_custom_value_inline(repo: Path) -> None:
             modal = app.screen
             assert isinstance(modal, EditModal)
             field = modal.query_one("#edit-value", ChoiceField)
-            # Highlight down to the custom row (yes -> no -> ask -> custom), then
-            # type in place -- typing the custom row selects it.
+            # Highlight down to the custom row, then type in place: typing selects it.
             for _ in range(3):
                 await pilot.press("down")
                 await pilot.pause()
@@ -319,8 +315,7 @@ def test_edit_custom_value_inline(repo: Path) -> None:
 
 
 def test_edit_action_arrows_navigate(repo: Path) -> None:
-    """When a flat action (Save / Unset / Cancel) is focused, Left/Right move
-    between them (wrapping) -- arrow nav that depends on what's in focus."""
+    """Left and Right move between the focused flat actions (Save, Unset, Cancel), wrapping."""
 
     async def scenario() -> None:
         from agent6.ui.tui.config_page import ActionItem
@@ -356,8 +351,7 @@ def test_edit_action_arrows_navigate(repo: Path) -> None:
 
 
 def test_provider_field_is_a_picker_of_configured_providers(repo: Path) -> None:
-    """Editing models.<role>.provider shows a chooser of the configured provider
-    names (a picker, not a blank text box)."""
+    """Editing models.<role>.provider shows a chooser of the configured provider names."""
 
     async def scenario() -> None:
         from agent6.ui.tui.config_page import ChoiceField
@@ -380,8 +374,7 @@ def test_provider_field_is_a_picker_of_configured_providers(repo: Path) -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, EditModal)
-            # A ChoiceField (not a plain Input) => the configured providers were
-            # injected as choices. The fixture configures "anthropic".
+            # A ChoiceField, not a plain Input: the configured providers were injected as choices.
             field = modal.query_one("#edit-value", ChoiceField)
             assert field.value == "anthropic"
 
@@ -389,8 +382,7 @@ def test_provider_field_is_a_picker_of_configured_providers(repo: Path) -> None:
 
 
 def test_model_field_is_a_typeahead_picker(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Editing models.<role>.model opens a type-to-narrow picker over the
-    provider's models (cached + a live refresh), not a blank box."""
+    """Editing models.<role>.model opens a type-to-narrow picker over the provider's models."""
     import agent6.ui.tui.config_page as cp
 
     models = ["claude-opus-4-8", "claude-sonnet-4-6", "claude-sonnet-4-5", "claude-haiku-4-5"]
@@ -462,11 +454,11 @@ def test_empty_preset_prefill_saves_back_unchanged(repo: Path) -> None:
 def test_list_setting_prefill_saves_back_unchanged(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A list-valued setting must prefill the edit box in a form that SAVES:
-    the display formatter rendered [uv, run, pytest] (unquoted, not TOML), so
-    an untouched Save failed revalidation ("Input should be a valid tuple") --
-    there was no format in which the shown value saved. The box now prefills
-    the exact inverse of parse_cli_value."""
+    """A list-valued setting prefills the edit box as the exact inverse of parse_cli_value.
+
+    The display formatter's `[uv, run, pytest]` is not TOML, so an untouched Save failed
+    revalidation: there was no form in which the shown value saved.
+    """
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
@@ -510,8 +502,10 @@ def test_list_setting_prefill_saves_back_unchanged(
 
 
 def test_string_setting_saves_toml_like_text_as_a_string(repo: Path) -> None:
-    """A free-text field's schema, not TOML-looking text, determines its type;
-    otherwise entering ``true`` parses as a bool and the rejected save disappears."""
+    """A free-text field's schema, not TOML-looking text, determines its type.
+
+    Otherwise entering `true` parses as a bool and the rejected save disappears.
+    """
     from agent6.config.write import set_config_value
 
     assert set_config_value(repo, "git.commit.name", "Agent Six") is None
@@ -546,11 +540,11 @@ def test_string_setting_saves_toml_like_text_as_a_string(repo: Path) -> None:
 def test_editing_a_model_survives_a_broken_secrets_file(
     repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """secrets.toml with unsafe perms (0644, e.g. restored from a backup) must
-    not crash the WHOLE TUI when the edit modal's background model-list fetch
-    runs: the thread worker's SecretsError hit textual's default exit_on_error
-    and tore the app down. The fetch (`models.choices`) degrades to a keyless
-    attempt instead (the sanctioned models/validate.py pattern)."""
+    """secrets.toml with unsafe perms does not crash the TUI from the edit modal's model fetch.
+
+    The thread worker's SecretsError hit textual's default exit_on_error; the fetch degrades to
+    a keyless attempt instead, as models/validate.py does.
+    """
     import agent6.ui.tui.config_page as cp
     from agent6.models import choices
 
@@ -592,8 +586,7 @@ def test_editing_a_model_survives_a_broken_secrets_file(
 
 
 def test_edit_modal_up_at_top_is_a_hard_stop(repo: Path) -> None:
-    """↑ at the top of the first chooser must STAY there, not escape to the
-    focusable scroll container (which stranded the arrows). Regression guard."""
+    """Up at the top of the first chooser stays there, not escaping to the scroll container."""
 
     async def scenario() -> None:
         from agent6.ui.tui.config_page import ChoiceField
@@ -627,9 +620,10 @@ def test_edit_modal_up_at_top_is_a_hard_stop(repo: Path) -> None:
 
 
 def test_q_backs_out_from_config_but_types_in_search(repo: Path) -> None:
-    """Option 3: q backs out of the Config screen (only the root hub quits on q),
-    yet still types normally in the search box — the focused Input eats it first.
-    The menu's Quit (^Q -> action_quit) still exits the app."""
+    """Q backs out of the Config screen, yet types normally in the focused search box.
+
+    Only the root hub quits on q; the menu's Quit (^Q) still exits the app.
+    """
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -685,8 +679,7 @@ def test_view_menu_opens_theme_picker(repo: Path) -> None:
 
 
 def test_menu_bar_opens_and_dispatches(repo: Path) -> None:
-    """Open a menu (mouse/Alt/F-key all route here), see its items, and picking
-    one runs the same action_<id> as the key binding and command palette."""
+    """Opening a menu by mouse, Alt or F-key shows its items, and a pick runs the bound action."""
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -696,16 +689,14 @@ def test_menu_bar_opens_and_dispatches(repo: Path) -> None:
             assert isinstance(screen, ConfigScreen)
             mb = screen.query_one(MenuBar)
 
-            # Open the View menu; its items carry their action ids. The dropdown
-            # mounts on the screen (not the 1-row bar, which would clip it).
+            # The View menu's items carry their action ids; the dropdown mounts on the screen.
             mb.open("v")
             await pilot.pause()
             dd = next(iter(screen.query(OptionList)))
             ids = [dd.get_option_at_index(i).id for i in range(dd.option_count)]
             assert "search" in ids and "toggle_modified" in ids
 
-            # Pick "Modified only" -> OptionSelected -> MenuBar.Selected ->
-            # screen action_toggle_modified. The whole dispatch chain.
+            # Pick "Modified only" and follow the whole dispatch chain to action_toggle_modified.
             assert screen._modified_only is False  # pyright: ignore[reportPrivateUsage]
             idx = next(
                 i
@@ -721,8 +712,7 @@ def test_menu_bar_opens_and_dispatches(repo: Path) -> None:
 
 
 def test_menu_reopen_no_duplicate(repo: Path) -> None:
-    """Switching/re-opening menus must not raise DuplicateIds (the dropdown no
-    longer reuses a fixed id) and converges to exactly one open menu."""
+    """Switching and re-opening menus raises no DuplicateIds and converges to one open menu."""
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -731,7 +721,7 @@ def test_menu_reopen_no_duplicate(repo: Path) -> None:
             screen = app.screen
             assert isinstance(screen, ConfigScreen)
             mb = screen.query_one(MenuBar)
-            for m in ("v", "e", "v", "v", "c"):  # used to crash with DuplicateIds
+            for m in ("v", "e", "v", "v", "c"):  # a DuplicateIds regression
                 mb.open(m)
                 await pilot.pause()
             assert len(list(screen.query(OptionList))) == 1  # exactly one menu open
@@ -743,9 +733,10 @@ def test_menu_reopen_no_duplicate(repo: Path) -> None:
 
 
 def test_menu_opens_on_mouse_click(repo: Path) -> None:
-    """A mouse click on a title opens its menu and the dropdown is visible (not
-    clipped by the 1-row bar). events.Click carries no .widget, so each title
-    handles its own click."""
+    """A mouse click on a title opens its menu, visible and not clipped by the 1-row bar.
+
+    events.Click carries no .widget, so each title handles its own click.
+    """
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -758,8 +749,7 @@ def test_menu_opens_on_mouse_click(repo: Path) -> None:
             dds = list(screen.query(OptionList))
             assert len(dds) == 1
             dd = dds[0]
-            # Floated on the screen (overlay:screen + absolute_offset), so it
-            # shows below the bar at full height rather than clipped to one row.
+            # Floated on the screen, so it shows below the bar at full height, not clipped.
             assert dd.region.height > 1
             assert dd.region.y >= 1
 
@@ -767,9 +757,7 @@ def test_menu_opens_on_mouse_click(repo: Path) -> None:
 
 
 def test_menu_toggle_switch_and_click_away(repo: Path) -> None:
-    """Mouse: a title opens its menu, clicking it again toggles it shut (the
-    on_blur/open re-open race is fixed), clicking another switches, and clicking
-    the body closes."""
+    """A title click toggles its menu, another title switches, and a body click closes."""
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -794,10 +782,7 @@ def test_menu_toggle_switch_and_click_away(repo: Path) -> None:
             await pilot.pause()
             assert n() == 1
             assert screen.query_one("#menu-v").has_class("-open")
-            # Click away: a click elsewhere moves focus off the dropdown, which
-            # closes it (via on_blur). Drive that focus change directly -- a real
-            # click's pixel target depends on layout; the close mechanism is the
-            # focus loss, exercised here and confirmed under tmux.
+            # A click elsewhere closes the dropdown through focus loss, driven directly here.
             screen.query_one("#tbl-sandbox", DataTable).focus()
             await pilot.pause()
             assert n() == 0
@@ -829,8 +814,7 @@ def test_menu_left_right_switches_open_menu(repo: Path) -> None:
 
 
 def test_open_menu_title_stays_highlighted(repo: Path) -> None:
-    """The open menu's title carries the -open class (so it reads as active) and
-    drops it on close."""
+    """The open menu's title carries the -open class, reading as active, and drops it on close."""
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -850,9 +834,7 @@ def test_open_menu_title_stays_highlighted(repo: Path) -> None:
 
 
 def test_config_actions_in_command_palette(repo: Path) -> None:
-    """Every Config action is searchable in the Ctrl+P palette -- discovery by
-    typing, no memorizing. Labels are the descriptive MENUS form (matching the menu
-    bar + the home/run palettes), not the footer's terse CONFIG_ACTIONS labels."""
+    """Every Config action is searchable in the Ctrl+P palette under its descriptive menu label."""
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -877,9 +859,11 @@ def test_config_actions_in_command_palette(repo: Path) -> None:
 
 
 def test_enter_on_setting_row_opens_editor(repo: Path) -> None:
-    """Enter (or double-click) on a setting row opens the edit modal. The
-    DataTable consumes Enter for its own RowSelected, so it's wired via that
-    event, not the screen's `enter` binding."""
+    """Enter (or double-click) on a setting row opens the edit modal.
+
+    The DataTable consumes Enter for its own RowSelected, so it's wired via that event, not the
+    screen's `enter` binding.
+    """
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -898,8 +882,7 @@ def test_enter_on_setting_row_opens_editor(repo: Path) -> None:
 
 
 def test_esc_clears_filter_before_closing(repo: Path) -> None:
-    """Esc backs out of an active filter first (clears it + drops back to the
-    settings, stays on the page); a later Esc closes the page."""
+    """Esc backs out of an active filter first; a later Esc closes the page."""
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -924,8 +907,7 @@ def test_esc_clears_filter_before_closing(repo: Path) -> None:
 
 
 def test_filter_arrow_in_and_out(repo: Path) -> None:
-    """Down/Enter step out of the filter into the settings (keeping the filter);
-    Up from the topmost header returns to the filter box."""
+    """Down and Enter step out of the filter into the settings; Up from the top header returns."""
 
     async def scenario() -> None:
         from agent6.ui.tui.config_page import _NavTable
@@ -952,8 +934,10 @@ def test_filter_arrow_in_and_out(repo: Path) -> None:
 
 
 def test_modified_filter_moves_focus_out_of_a_hidden_section(repo: Path) -> None:
-    """Turning on the modified-only filter must move focus when it hides the
-    selected section; otherwise arrows and Edit remain trapped in an invisible table."""
+    """Turning on the modified-only filter moves focus when it hides the selected section.
+
+    Otherwise arrows and Edit stay trapped in an invisible table.
+    """
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -972,8 +956,7 @@ def test_modified_filter_moves_focus_out_of_a_hidden_section(repo: Path) -> None
 
 
 def test_empty_modified_filter_keeps_focus_on_the_filter(repo: Path) -> None:
-    """When no settings are modified, the modified-only view must focus its one
-    remaining control instead of dropping keyboard focus with every section hidden."""
+    """With nothing modified, the modified-only view focuses its one remaining control."""
     global_config_dir().joinpath("config.toml").write_text("", encoding="utf-8")
 
     async def scenario() -> None:
@@ -990,8 +973,7 @@ def test_empty_modified_filter_keeps_focus_on_the_filter(repo: Path) -> None:
 
 
 def test_filter_down_stops_on_a_collapsed_first_section(repo: Path) -> None:
-    """Down from the filter must land on a visible header when the first section
-    is collapsed, not focus that section's hidden table."""
+    """Down from the filter lands on a visible header when the first section is collapsed."""
     from textual.widgets import Collapsible
 
     async def scenario() -> None:
@@ -1013,9 +995,10 @@ def test_filter_down_stops_on_a_collapsed_first_section(repo: Path) -> None:
 
 
 def test_arrows_flow_through_section_headers(repo: Path) -> None:
-    """Arrows flow as one list THROUGH the section headers: Down at a section's
-    last row lands on the next header, Down again enters its rows; Up retraces.
-    Enter on a header collapses/expands it."""
+    """Arrows flow as one list through the section headers; Enter on a header collapses it.
+
+    Down at a section's last row lands on the next header, Down again enters its rows.
+    """
 
     async def scenario() -> None:
         from textual.widgets import Collapsible
@@ -1056,9 +1039,7 @@ def test_arrows_flow_through_section_headers(repo: Path) -> None:
 
 
 def test_add_provider_via_form_persists(repo: Path) -> None:
-    """The Add-provider form writes a validated [providers.<name>] block --
-    dropdowns for api_format/deployment, inputs for name/base_url/api_key_env --
-    and the page reflects it. No hand-editing a TOML dict."""
+    """The Add-provider form writes a validated [providers.<name>] block the page reflects."""
 
     async def scenario() -> None:
         from agent6.ui.tui.config_page import ChoiceField, ProviderModal
@@ -1074,9 +1055,7 @@ def test_add_provider_via_form_persists(repo: Path) -> None:
             assert isinstance(modal, ProviderModal)
             modal.query_one("#prov-name", Input).value = "openrouter"
             fmt = modal.query_one("#prov-format", ChoiceField)
-            # Typing the known preset name prefilled openai; exercise the
-            # chooser with a round trip (up to anthropic, back down, Space)
-            # so the assertion holds however many formats the union grows.
+            # A chooser round trip (up, down, Space), so the check holds however the union grows.
             fmt.focus()
             await pilot.pause()
             await pilot.press("up")
@@ -1099,8 +1078,7 @@ def test_add_provider_via_form_persists(repo: Path) -> None:
 
 
 def test_add_provider_preserves_existing_provider_fields(repo: Path) -> None:
-    """Submitting an existing provider name must not replace its whole table and
-    erase advanced fields or comments that the short form does not expose."""
+    """Submitting an existing provider name keeps the fields the short form does not expose."""
     config_path = global_config_dir() / "config.toml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace(
@@ -1135,11 +1113,11 @@ def test_add_provider_preserves_existing_provider_fields(repo: Path) -> None:
 
 
 def test_add_provider_prefills_known_preset_base_url(repo: Path) -> None:
-    """Regression: typing a known provider name (openrouter) in the Add-provider
-    form prefills its api_format + base_url from PROVIDER_DEFAULTS, so submitting
-    WITHOUT hand-typing a URL lands on openrouter.ai -- not the api.openai.com
-    fallback in config._default_base_url. The form used to ignore the presets
-    that `agent6 connect` applies, silently pointing openrouter at OpenAI."""
+    """Typing a known provider name in the Add-provider form prefills its preset URL.
+
+    Submitting openrouter without a hand-typed URL lands on openrouter.ai, as `agent6 connect`
+    does, not on the api.openai.com fallback.
+    """
 
     async def scenario() -> None:
         from agent6.ui.tui.config_page import ChoiceField, ProviderModal
@@ -1171,8 +1149,7 @@ def test_add_provider_prefills_known_preset_base_url(repo: Path) -> None:
 
 
 def test_add_provider_prefill_keeps_user_typed_base_url(repo: Path) -> None:
-    """The name-based prefill never overwrites a base_url the user typed: set a
-    custom URL first, then type a known name -- the custom URL stays."""
+    """The name-based prefill never overwrites a base_url the user typed."""
 
     async def scenario() -> None:
         from agent6.ui.tui.config_page import ProviderModal
@@ -1197,8 +1174,7 @@ def test_add_provider_prefill_keeps_user_typed_base_url(repo: Path) -> None:
 
 
 def test_add_provider_clears_a_stale_preset_base_url(repo: Path) -> None:
-    """Changing a preset provider name to a custom one must clear the URL that
-    name autofilled, or the custom provider silently points at the old provider."""
+    """Changing a preset provider name to a custom one clears the URL that name autofilled."""
     from agent6.ui.tui.config_page import ProviderModal
 
     async def scenario() -> None:
@@ -1224,11 +1200,10 @@ def test_add_provider_clears_a_stale_preset_base_url(repo: Path) -> None:
 
 
 def test_edit_base_url_prefills_preset_for_known_provider(repo: Path) -> None:
-    """UX parity with the Add form + `agent6 connect`: when a known provider's
-    base_url is still the generic default (api.openai.com, filled for any unset
-    openai-format provider), opening its base_url editor offers the name's preset
-    URL prefilled -- so re-setting an unset openrouter is one Save, no need to
-    know the host."""
+    """The base_url editor of a known provider still on the generic default offers its preset URL.
+
+    Re-setting an unset openrouter is one Save, as in the Add form and `agent6 connect`.
+    """
 
     async def scenario() -> None:
         from agent6.config.write import set_config_table
@@ -1269,10 +1244,10 @@ def test_edit_base_url_prefills_preset_for_known_provider(repo: Path) -> None:
 
 
 def test_up_off_first_setting_reveals_top_header_then_filter(repo: Path) -> None:
-    """Regression: in a short window, Up off the first setting must focus AND reveal
-    the first section's header (the smooth-scroll left the very top row a line
-    off-screen, so it looked like Up skipped the header straight to the filter),
-    then Up again reaches the #search filter."""
+    """In a short window, Up off the first setting focuses and reveals the first section's header.
+
+    The smooth scroll left the top row a line off-screen, so Up looked like it skipped it.
+    """
     from textual.containers import VerticalScroll
     from textual.widgets._collapsible import CollapsibleTitle
 
@@ -1307,8 +1282,7 @@ def test_up_off_first_setting_reveals_top_header_then_filter(repo: Path) -> None
 
 
 def test_unset_names_the_layer_instead_of_claiming_the_default(repo: Path) -> None:
-    """Unsetting a repo override can reveal a global override rather than the
-    built-in default, so its success notice must describe the actual operation."""
+    """Unsetting a repo override that reveals a global override says so in its notice."""
     from agent6.config.write import set_config_value
 
     assert set_config_value(repo, "sandbox.run_commands", "no", to_repo=True) is None
@@ -1336,9 +1310,10 @@ def test_unset_names_the_layer_instead_of_claiming_the_default(repo: Path) -> No
 
 
 def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: Path) -> None:
-    """A [presets.<name>] leaf renders modified with source "preset", and no
-    config-file unset can revert it; Reset must say the preset owns it, not
-    lie "already at its default"."""
+    """A [presets.<name>] leaf renders modified with source "preset"; Reset says the preset owns it.
+
+    No config-file unset can revert it.
+    """
     gdir = global_config_dir()
     (gdir / "config.toml").write_text(
         'preset = "fast"\n' + _GLOBAL + '\n[presets.fast.review]\ntrigger = "off"\n',
@@ -1369,8 +1344,7 @@ def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: Path) -> None:
 
 
 def test_reset_on_a_flag_sourced_setting_names_the_flag_layer(repo: Path, tmp_path: Path) -> None:
-    """A leaf a `--config FILE` layer set is not a preset leaf: Reset names the
-    layer it came from, so the operator edits the file they passed."""
+    """A leaf a `--config FILE` layer set is not a preset leaf: Reset names the layer."""
     overlay = tmp_path / "overlay.toml"
     overlay.write_text('[review]\ntrigger = "off"\n', encoding="utf-8")
 
@@ -1398,10 +1372,10 @@ def test_reset_on_a_flag_sourced_setting_names_the_flag_layer(repo: Path, tmp_pa
 
 
 def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: Path) -> None:
-    """Hand-editing the config invalid in another terminal then pressing r must
-    notify with the `agent6 config fix` pointer and keep the last-good table,
-    not crash the whole TUI out of the action handler (the hub's open guard
-    already documents that intent)."""
+    """A config made invalid in another terminal notifies on r and keeps the last-good table.
+
+    The notice carries the `agent6 config fix` pointer; the action handler does not crash the TUI.
+    """
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -1422,8 +1396,7 @@ def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: Path
             notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
             assert any("config fix" in m for m in notes), notes
             assert "Config reloaded." not in notes
-            # Model suggestions use the last-good effective config too; their worker
-            # must not re-read the invalid file and tear down the app.
+            # Model suggestions use the last-good config too, never re-reading the invalid file.
             table = screen.query_one("#tbl-models", DataTable)
             table.focus()
             row = next(
@@ -1442,9 +1415,7 @@ def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: Path
 
 
 def test_setting_description_lives_in_the_edit_modal_only(repo: Path) -> None:
-    """The edit modal explains the highlighted leaf; the page itself carries
-    no detail pane (a pane under the table resized with every highlight and
-    made scrolling janky, so the operator removed it)."""
+    """The edit modal explains the highlighted leaf; the page carries no detail pane."""
     from textual.widgets import Static
 
     async def scenario() -> None:
@@ -1474,8 +1445,10 @@ def test_setting_description_lives_in_the_edit_modal_only(repo: Path) -> None:
 
 
 def test_the_setting_column_fits_the_longest_key(repo: Path) -> None:
-    """A fixed 26-cell column cut `token_command_ttl_s` and its siblings short
-    while the source column sat on spare width."""
+    """The setting column takes the width the source column does not need.
+
+    A fixed 26-cell column cut `token_command_ttl_s` and its siblings short.
+    """
 
     async def scenario() -> None:
         app = _Host(repo)

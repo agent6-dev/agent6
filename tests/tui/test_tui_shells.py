@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`/shells` on the TUI composer: the roster every surface reads off disk, as a
-read-only text view (the CLI pause menu prints the same lines)."""
+"""`/shells` on the TUI composer shows the roster every surface reads off disk."""
 
 from __future__ import annotations
 

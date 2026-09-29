@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Interactive `agent6 attach` attaches as a CLI front-end: an unanswered
-run_command approval / ask_user question in the streamed log is prompted on the
-terminal and the answer is written back over the file bridge. Historical and
-already-answered prompts are not re-asked on the replay."""
+"""Interactive `agent6 attach` prompts unanswered approvals and questions on the terminal.
+
+The answer goes back over the file bridge; historical and answered prompts are not re-asked.
+"""
 
 from __future__ import annotations
 
@@ -106,10 +106,10 @@ def test_react_answers_a_new_live_question(tmp_path: Path, monkeypatch: Any) -> 
 
 
 def test_attach_replay_does_not_reask_an_answered_prompt(tmp_path: Path, monkeypatch: Any) -> None:
-    """The follow loop replays the WHOLE log through react() after the pre-scan,
-    and every real log opens with session.start. Clearing the answered ids at that
-    boundary threw away the pre-scan's knowledge, so attaching to any run that
-    had ever answered a prompt re-asked it and blocked on stdin."""
+    """The pre-scan's answered ids survive the follow loop's replay of session.start.
+
+    Cleared there, attaching to any run that had answered a prompt re-asked it and blocked.
+    """
     asked: list[str] = []
 
     def _yes(prompt: str, *, standing: bool = True) -> str:
@@ -136,11 +136,10 @@ def test_attach_replay_does_not_reask_an_answered_prompt(tmp_path: Path, monkeyp
 def test_resumed_execution_reuses_prompt_ids_and_is_still_answered(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """Prompt ids are per-execution counters, so a resumed execution re-emits approval-1 /
-    question-1. The answered-set must clear at the session boundary: it did not,
-    so an attached CLI silently dropped the new execution's first prompt and the run
-    hung forever on a front-end that would never answer (the TUI already resets
-    its seen-set on SESSION_START_EVENTS)."""
+    """The answered set clears at the session boundary, since prompt ids restart per execution.
+
+    An attached CLI dropped the new execution's first prompt and the run hung forever.
+    """
     asked: list[str] = []
 
     def _yes(prompt: str, *, standing: bool = True) -> str:
@@ -185,8 +184,7 @@ def test_resumed_execution_reuses_prompt_ids_and_is_still_answered(
 def test_an_answer_that_lost_to_another_surface_is_reported(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """The prompt was answered elsewhere while this terminal asked: the typed
-    answer reaches nothing, the first answer stands, and the terminal says so."""
+    """A prompt answered elsewhere while this terminal asked keeps the first answer, and says so."""
 
     def _yes(_prompt: str, *, standing: bool = True) -> str:
         return "yes"
@@ -201,10 +199,10 @@ def test_an_answer_that_lost_to_another_surface_is_reported(
 
 
 def test_an_unscoped_approval_offers_no_session_choice(tmp_path: Path, monkeypatch: Any) -> None:
-    """A gate with no scope to grant (`fetch`) journals `standing: false`, and
-    the foreground prompt then offers no "allow all" answer, since
-    `record_answer` drops a session grant it cannot scope. The attached
-    front-end asked with the default and offered one anyway."""
+    """A gate with no scope to grant offers no "allow all" answer on the foreground prompt.
+
+    `fetch` journals `standing: false` and `record_answer` drops a grant it cannot scope.
+    """
     seen: list[bool] = []
 
     def _approver(_prompt: str, *, standing: bool = True) -> str:

@@ -25,9 +25,10 @@ class _Response:
 
 
 def test_the_read_refuses_compression_a_cap_and_a_dribble() -> None:
-    """Three callers each spelled this loop and one drifted (no total
-    deadline), so a server dribbling a byte at a time held `skills install`
-    for as long as it liked. One reader, three refusals, each named."""
+    """One body reader with a total deadline serves every caller; three refusals, each named.
+
+    A server dribbling a byte at a time cannot hold `skills install` open.
+    """
     later = time.monotonic() + 5
     assert read_capped(_Response([b"ab", b"c"]), cap=3, deadline=later, timeout_s=5) == b"abc"
     with pytest.raises(BodyRefusedError, match="content-encoding 'gzip'"):

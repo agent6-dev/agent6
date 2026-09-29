@@ -27,10 +27,11 @@ def _git(repo: Path, *args: str) -> str:
 def _setup_run_on_branch(
     tmp_path: Path, session_id: str, *, commits: list[tuple[str, str, str]], run_branch: str | None
 ) -> str:
-    """Init a repo and put *commits* on agent6/<session_id> without moving the
-    checkout off main (the end-of-run state: the chain advances refs only).
-    Writes the manifest with *run_branch* recorded (None to simulate
-    branch_per_run off). Returns base sha."""
+    """Init a repo with commits on agent6/<session_id> and the checkout still on main.
+
+    The end-of-run state: the chain advances refs only. The manifest records the run branch (None
+    simulates branch_per_run off). Returns the base sha.
+    """
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "config", "user.email", "t@t")
     _git(tmp_path, "config", "user.name", "t")
@@ -100,9 +101,11 @@ def test_auto_merge_squashes_and_lands_on_base(
 def test_auto_merge_refuses_a_manifest_with_no_base_sha(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The squash message reads the run's commits from base_sha; without it
-    `git log ..<branch>` counts from HEAD and lands a wrong list with a clean
-    exit. execute_merge refuses first, so the guard covers auto_merge too."""
+    """Auto merge refuses a manifest with no base sha.
+
+    The squash message reads the run's commits from base_sha; execute_merge refuses first, so the
+    guard covers auto_merge too.
+    """
     monkeypatch.chdir(tmp_path)
     base = _setup_run_on_branch(
         tmp_path,
@@ -125,8 +128,7 @@ def test_auto_merge_refuses_a_manifest_with_no_base_sha(
 def test_auto_merge_lands_the_hidden_chain_ref(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """branch_per_run off records no branch; auto_merge merges the run's
-    refs/agent6/<id> chain ref into the base instead."""
+    """With branch_per_run off, auto_merge merges the run's refs/agent6/<id> chain ref."""
     monkeypatch.chdir(tmp_path)
     base = _setup_run_on_branch(
         tmp_path,
@@ -201,8 +203,7 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     assert "conflict" in err.lower()
     assert _git(tmp_path, "status", "--porcelain") == ""  # nothing touched, no partial merge
     assert _git(tmp_path, "rev-parse", "--abbrev-ref", "HEAD") == "main"  # never switched
-    # the run branch still has its commit, and the conflicted merge advanced
-    # main by nothing (a clean tree alone would also pass with a LANDED merge)
+    # The run branch keeps its commit, and the conflicted merge advanced main by nothing.
     assert "agent6 iter 1: edit" in _git(tmp_path, "log", "--oneline", "agent6/run-AM3333")
     assert _git(tmp_path, "rev-parse", "main") == diverged
 
@@ -262,9 +263,7 @@ def test_auto_prune_deletes_reachable_merge_branch(
 def test_auto_prune_follows_a_recorded_noop_merge(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A recorded merge takes the same post-merge path whatever it added:
-    auto_prune ran only after a moved target, so the branch of a run whose
-    first merge added nothing (main already contained it) stayed behind."""
+    """Auto prune follows a recorded merge whatever it added, a no-op merge included."""
     monkeypatch.chdir(tmp_path)
     _setup_run_on_branch(
         tmp_path,

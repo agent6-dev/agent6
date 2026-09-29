@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The settled advisor: a plain run that reached a good state and then made
-no progress draws one nudge, then a soft stop the end gates judge; the stop's
-end is a pass only when a green verify covers the tree as it stands."""
+"""The settled advisor: one nudge, then a soft stop the end gates judge.
+
+A plain run that reached a good state and made no progress; the stop's end is a pass only
+when a green verify covers the tree as it stands.
+"""
 
 from __future__ import annotations
 

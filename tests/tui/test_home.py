@@ -46,16 +46,16 @@ def test_list_runs_spans_runs_and_asks(tmp_path: Path) -> None:
 
 
 def test_run_mtime_is_log_activity_not_dir_mtime(tmp_path: Path) -> None:
-    """A run's listed/sorted time is its logs.jsonl mtime (last run activity), not
-    the run-dir mtime. Opening a run writes a front-end claim into the dir, bumping the dir
-    mtime; that must NOT move the run's 'when' or its sort position."""
+    """A run's listed time is its logs.jsonl mtime, so a front-end claim never moves it.
+
+    Opening a run writes the claim into the dir, bumping the dir mtime.
+    """
     import os
 
     a6 = tmp_path / ".agent6"
     rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run"}])
     os.utime(rd / "logs.jsonl", (1000, 1000))  # last real activity
-    # Simulate opening the dashboard: it writes a front-end claim, bumping the dir
-    # mtime well past the log's. Pre-fix this became the displayed/sort time.
+    # Opening the dashboard writes a front-end claim, bumping the dir mtime well past the log's.
     register_frontend(rd, 123)
     os.utime(rd, (5000, 5000))
     assert session_mtime(rd) == 1000.0  # pyright: ignore[reportPrivateUsage]
@@ -71,23 +71,20 @@ def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: Path) -> None:
 
 
 def test_question_bridge_round_trip(tmp_path: Path) -> None:
-    # No front-end claim: consumption is claim-free (the answer's existence is
-    # the proof); liveness only paces the wait for one that has yet to land.
+    # No front-end claim: consumption is claim-free; liveness only paces the wait for an answer.
     write_question_answers(tmp_path, "q1", ["use B"])
     assert read_question_answers(tmp_path, "q1", timeout_s=1.0) == ("use B",)
 
 
 def test_read_question_answer_returns_none_when_no_tui(tmp_path: Path) -> None:
-    # With no front-end claim the read gives up after dead_grace_s, NOT the
-    # full timeout: a headless run must not sit out the whole answer window.
+    # With no front-end claim the read gives up after dead_grace_s, not the full timeout.
     start = time.monotonic()
     assert read_question_answers(tmp_path, "q1", timeout_s=10.0, dead_grace_s=0.05) is None
     assert time.monotonic() - start < 5.0, "the dead-front-end grace never broke the wait"
 
 
 def test_read_question_answer_consumes_the_file(tmp_path: Path) -> None:
-    # The answer file is unlinked after reading, so a later prompt with the same
-    # id (counters reset on resume) can't re-read a stale answer.
+    # The answer file is unlinked after reading, so a later prompt with the same id cannot re-read.
     write_question_answers(tmp_path, "q1", ["first"])
     assert read_question_answers(tmp_path, "q1", timeout_s=1.0) == ("first",)
     assert not (questions_dir(tmp_path) / "q1.answer").exists()
@@ -103,10 +100,10 @@ def test_clear_pending_answers_wipes_stale_state(tmp_path: Path) -> None:
 
 
 def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(tmp_path: Path) -> None:
-    """A run dir that disappears between the listing and its stat() must be dropped
-    from BOTH the table and self._runs. Otherwise the two desync and every
-    cursor_row-indexed action (open/logs/merge) maps to the wrong run for rows
-    past the gap."""
+    """A run dir that vanishes between the listing and its stat() leaves both the table and `_runs`.
+
+    Desynced, every cursor_row-indexed action maps to the wrong run past the gap.
+    """
     import asyncio
     import shutil
 
@@ -172,9 +169,7 @@ def test_home_app_lists_runs_and_opens_the_new_task_view(tmp_path: Path) -> None
 
 
 def test_new_task_view_esc_closes_an_open_list_before_the_view(tmp_path: Path) -> None:
-    """Esc with a picker's list or a menu open closes just that, keeping the
-    view and the typed task (the view's Esc binding has priority, so it left
-    the view and dropped the task)."""
+    """Esc with a picker's list or a menu open closes just that, keeping the view and the task."""
     import asyncio
 
     from textual.widgets import Select
@@ -218,9 +213,10 @@ def test_new_task_view_esc_closes_an_open_list_before_the_view(tmp_path: Path) -
 def test_new_task_view_starts_the_chosen_mode_and_preset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Enter in the draft composer starts `<mode>` under the picked preset (the
-    same spawn every hub makes); a located session dir is the hub's return
-    value. Ctrl-J is a newline, so a task can span lines."""
+    """Enter in the draft composer starts `<mode>` under the picked preset; Ctrl-J is a newline.
+
+    A located session dir is the hub's return value.
+    """
     import asyncio
 
     from textual.widgets import Select
@@ -274,10 +270,10 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
 def test_a_start_whose_screen_was_left_still_opens_the_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The worker read `self.app` from its thread, where the screen it belongs
-    to may already be popped: the located session then died in the thread and
-    the hub never opened it. The worker reaches the app it was handed on the
-    UI thread."""
+    """The start worker reaches the app it was handed on the UI thread.
+
+    Reading `self.app` from the thread died once the screen was popped, so the hub never opened it.
+    """
     import asyncio
     import threading
 
@@ -332,9 +328,7 @@ def test_a_start_whose_screen_was_left_still_opens_the_session(
 def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The refusal branch wrote into the composer's notice widget, which a
-    popped screen no longer has: the query raised inside the cancelled worker
-    and the refusal reached nobody. Without a composer it toasts."""
+    """A refusal reaching a popped screen toasts instead of writing into a widget it lost."""
     import asyncio
     import threading
 
@@ -389,8 +383,7 @@ def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
 def test_new_task_view_keeps_the_text_on_a_refusal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A start the child refuses renders its reason where the transcript will
-    be and hands the typed text back to the composer to fix and resend."""
+    """A refused start renders its reason and hands the typed text back to the composer."""
     import asyncio
 
     from textual.widgets import Static
@@ -438,8 +431,7 @@ def test_new_task_view_keeps_the_text_on_a_refusal(
 
 
 def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch: object) -> None:
-    """The hub's merge helper shells out to `agent6 sessions merge <id>` and reports the
-    captured output as (ok, message) -- it never touches git_ops itself."""
+    """The hub's merge helper shells out to `agent6 sessions merge <id>` and reports its output."""
     import subprocess
 
     from agent6.ui.tui import home
@@ -465,8 +457,7 @@ def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch
 
 
 def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: object) -> None:
-    """Pressing `m` opens a confirm modal; confirming runs `agent6 sessions merge` for the
-    selected run (stubbed here so no real CLI is spawned)."""
+    """`m` opens a confirm modal; confirming runs `agent6 sessions merge` for the selected run."""
     import asyncio
     import subprocess as sp
 
@@ -478,8 +469,7 @@ def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: obje
 
     a6 = tmp_path / ".agent6"
     rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
-    # Merge is offered only for a run whose branch holds commits its base does
-    # not: the key is dimmed otherwise, as the CLI refuses those.
+    # Merge is offered only for a run whose branch holds commits its base does not.
     repo = tmp_path
     sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
     sp.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
@@ -536,8 +526,7 @@ def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: obje
 
 
 def test_home_open_run_returns_its_dir(tmp_path: Path) -> None:
-    """Selecting a run on the hub (Enter on the row) opens it: the app exits
-    returning that run directory for the dashboard to watch."""
+    """Enter on a hub row opens the run: the app exits returning that run directory."""
     import asyncio
 
     from textual.widgets import DataTable
@@ -607,9 +596,7 @@ def test_hub_status_label_matches_the_cli_and_web_for_the_same_dir(
 def test_hub_repaints_a_dying_run_without_a_keypress(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The hub was the one TUI screen with no poll: a run that died while
-    listed kept its last-computed word (bold-cyan "running") until a keypress
-    or a screen change."""
+    """The hub polls, so a run that dies while listed does not keep its last word."""
     from textual.widgets import DataTable
 
     import agent6.ui.tui.home as home_mod
@@ -641,8 +628,7 @@ def test_hub_repaints_a_dying_run_without_a_keypress(
 def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The poll rebuilds the table; the operator's selection must follow the
-    run it was on (by id), not snap back to whatever lands in that row index."""
+    """The poll rebuilds the table, and the selection follows the run it was on by id."""
     from textual.widgets import DataTable
 
     import agent6.ui.tui.home as home_mod
@@ -712,9 +698,10 @@ def test_hub_cost_cell_uses_plan_points_for_a_plan_metered_run(tmp_path: Path) -
 
 
 def test_cost_cell_marks_partial_and_keeps_zero_clean() -> None:
-    """The listing rows (hub and `sessions`) render the same '~' lower-bound
-    marker as `sessions show`; an all-unpriced run's ~$0.0000 is information,
-    a clean $0 stays blank."""
+    """The listing rows render the `~` lower-bound marker as `sessions show` does.
+
+    An all-unpriced run's ~$0.0000 is information; a clean $0 stays blank.
+    """
     from agent6.viewmodel.format import format_cost_cell
 
     assert format_cost_cell(0.0123, partial=True) == "~$0.01"
@@ -726,14 +713,14 @@ def test_cost_cell_marks_partial_and_keeps_zero_clean() -> None:
 def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """`agent6 tui` hands `run_home` the STATE dir, the base every bucket lookup
-    is relative to.
+    """`agent6 tui` hands `run_home` the STATE dir, the base every bucket lookup is relative to.
 
     Handing it `<state>/sessions` made `bucket_dir` append `sessions/` a second
     time, so the hub listed nothing while the CLI and the web listed every
     session, and the TUI's machine watch read the authoring bucket instead of
     the instance dir. Every other test calls `session_dirs` directly, so
-    nothing covered the argument."""
+    nothing covered the argument.
+    """
     from agent6.ui.cli import plan_watch
     from agent6.ui.tui import home
 
@@ -749,10 +736,10 @@ def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
 
 
 def test_merge_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
-    """`sessions merge` always refuses a live run, so the hub greys the key
-    instead of confirming a modal to be told no. None greys it; False would
-    hide it, and a key missing from the footer reads as a capability the hub
-    does not have."""
+    """The hub greys Merge on a live run, since `sessions merge` always refuses one.
+
+    None greys it; False would hide it, and a missing key reads as a missing capability.
+    """
     import asyncio
     import os
 
@@ -776,11 +763,10 @@ def test_merge_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
 
 
 def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: Path) -> None:
-    """A folded fan-out's row time is the group's latest activity, matching
-    `sessions list` and the web hub: the coordinator's own journal is quiet
-    while its lanes run, so showing its own mtime buried a fan-out whose lanes
-    are working right now under any solo run touched since the coordinator
-    wrote its one line."""
+    """A folded fan-out's row time is the group's latest activity, as `sessions list` shows it.
+
+    The coordinator's own journal is quiet while its lanes run.
+    """
     import asyncio
 
     from textual.widgets import DataTable
@@ -827,8 +813,7 @@ def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: Path) -> 
 
 
 def test_the_hub_table_names_its_columns_like_the_cli(tmp_path: Path) -> None:
-    """The time column had three names across the hubs: `updated` (CLI),
-    `when` (TUI) and a locale string (web)."""
+    """The time column has one name across the CLI, TUI and web hubs."""
     import asyncio
 
     from textual.widgets import DataTable
@@ -852,10 +837,7 @@ def test_the_hub_table_names_its_columns_like_the_cli(tmp_path: Path) -> None:
 
 
 def test_delete_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: object) -> None:
-    """Merge had a hub key and delete lived only in the run view's menu, so the
-    two verbs over one row were reached from opposite ends of the app.
-    Pressing `d` opens a confirm modal; confirming runs `agent6 sessions rm`
-    for the selected run (stubbed here so no real CLI is spawned)."""
+    """`d` opens a confirm modal; confirming runs `agent6 sessions rm` for the selected run."""
     import asyncio
 
     from textual.widgets import DataTable
@@ -913,9 +895,7 @@ def test_delete_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
 
 
 def test_delete_is_on_the_hubs_file_menu_like_its_sibling_verbs() -> None:
-    """`d` deleted the selected run from the footer only; the File menu
-    offered New, Open, Merge, Refresh and Quit, so the one destructive verb
-    was the one a menu reader could not find."""
+    """The File menu offers Delete, so the one destructive verb is not footer-only."""
     from agent6.ui.tui.home import HomeScreen
 
     file_menu = HomeScreen.MENUS[0]
@@ -926,9 +906,10 @@ def test_delete_is_on_the_hubs_file_menu_like_its_sibling_verbs() -> None:
 def test_prune_and_clear_asks_are_hub_actions_that_shell_the_cli(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The web hub prunes (with the squash-merged opt-in) and clears saved
-    asks; the TUI hub reached neither. Each is a File menu action that
-    confirms, then shells the same fixed argv the CLI takes."""
+    """The TUI hub prunes and clears saved asks from the File menu, as the web hub does.
+
+    Each confirms, then shells the same fixed argv the CLI takes.
+    """
     import asyncio
 
     from agent6.ui.tui import home
@@ -972,9 +953,7 @@ def test_prune_and_clear_asks_are_hub_actions_that_shell_the_cli(
 
 
 def test_the_hub_folds_a_fan_outs_lanes_and_space_expands_them(tmp_path: Path) -> None:
-    """A fan-out is one row carrying its lane count; Space on it lists the
-    lanes under it (the row list stays 1:1 with the table), Space again folds
-    them."""
+    """A fan-out is one row with its lane count; Space lists its lanes, Space again folds."""
     import asyncio
 
     from textual.widgets import DataTable
@@ -1022,11 +1001,11 @@ def test_the_hub_folds_a_fan_outs_lanes_and_space_expands_them(tmp_path: Path) -
 def test_new_task_view_model_box_follows_the_mode_and_preset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The preset and model pickers open on the config default, named with
-    what it is (a bare "(config default)" said nothing); the model's is
-    re-resolved on a mode or preset change (a plan's planner, a preset's
-    model) and resets the pick. The default adds no flag; a pick rides to the
-    spawn as `--model`."""
+    """The preset and model pickers open on the config default, named for what it is.
+
+    The model's is re-resolved on a mode or preset change and resets the pick; the default adds
+    no flag, and a pick rides to the spawn as `--model`.
+    """
     import asyncio
 
     from textual.widgets import Select
@@ -1103,10 +1082,10 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
 def test_new_task_view_model_box_says_none_when_no_route_resolves(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No route (a preset that fails validation, a role naming no provider)
-    names the model default `none` and spawns without `--model`: never a
-    crash on an empty list, never the first route of the list passed off as
-    the choice."""
+    """No route names the model default `none` and spawns without `--model`.
+
+    Never a crash on an empty list, never the first route passed off as the choice.
+    """
     import asyncio
 
     from textual.widgets import Select
@@ -1186,9 +1165,7 @@ def test_new_task_view_model_box_says_none_when_no_route_resolves(
 
 
 def test_new_task_view_tab_reaches_the_mode_picker_first(tmp_path: Path) -> None:
-    """Tab from the composer lands on the mode picker, then the preset, then
-    the model (what the intro promises): the empty transcript pane is not a
-    tab stop."""
+    """Tab from the composer walks the mode, preset and model pickers, never the pane."""
     import asyncio
 
     from agent6.ui.tui.home import Agent6HomeApp
@@ -1218,9 +1195,10 @@ def test_new_task_view_tab_reaches_the_mode_picker_first(tmp_path: Path) -> None
 
 
 def test_the_task_column_fits_the_terminal_instead_of_scrolling(tmp_path: Path) -> None:
-    """A fixed 60-character snippet overflowed the table at 100 columns: a
-    horizontal scrollbar under the rows and a task cut mid-word at the edge.
-    The column takes what the width leaves, as `sessions list` sizes it."""
+    """The task column takes what the width leaves, as `sessions list` sizes it.
+
+    A fixed 60-character snippet overflowed the table at 100 columns.
+    """
     from textual.widgets import DataTable
 
     from agent6.ui.tui.home import Agent6HomeApp
@@ -1247,9 +1225,11 @@ def test_the_task_column_fits_the_terminal_instead_of_scrolling(tmp_path: Path) 
 
 
 def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: Path) -> None:
-    """At 80 columns the task column got 7 characters and a horizontal
-    scrollbar. A narrow hub shortens `updated` to a time or date and drops a
-    status's reason; below 80 columns, cost hides."""
+    """At 80 columns the task column got 7 characters and a horizontal scrollbar.
+
+    A narrow hub shortens `updated` to a time or date and drops a status's reason; below 80 columns,
+    cost hides.
+    """
     from textual.widgets import DataTable
 
     from agent6.ui.tui.home import Agent6HomeApp

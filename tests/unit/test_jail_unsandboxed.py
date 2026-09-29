@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the `none` (unsandboxed) jail isolation used on non-Linux hosts.
-
-These run on any platform and need no namespaces: the `none` isolation runs the
-command as a plain subprocess instead of invoking the Rust launcher.
-"""
+"""The `none` isolation runs the command as a plain subprocess on any platform."""
 
 from __future__ import annotations
 
@@ -71,9 +67,7 @@ def test_none_profile_overlays_policy_env(tmp_path: Path) -> None:
 
 
 def test_none_profile_preserves_non_utf8_output_lossily(tmp_path: Path) -> None:
-    # Child output is not guaranteed UTF-8 (grep over a binary, cat of a
-    # latin-1 file). The contract is a returned CommandResult with a lossy
-    # decode, never a UnicodeDecodeError escaping communicate().
+    # Child output is not guaranteed UTF-8; the contract is a lossy decode, never a raised error.
     res = run_in_jail(
         JailPolicy(
             cwd=tmp_path,
@@ -94,8 +88,7 @@ def test_none_profile_preserves_non_utf8_output_lossily(tmp_path: Path) -> None:
 
 
 def test_none_profile_timeout_returns_124_not_exception(tmp_path: Path) -> None:
-    # The jailed isolation levels surface a timeout as rc=124; the `none` path used to
-    # leak subprocess.TimeoutExpired instead. It must match the contract.
+    # The jailed levels surface a timeout as rc=124; the `none` path must match.
     res = run_in_jail(
         JailPolicy(
             cwd=tmp_path,
@@ -108,11 +101,10 @@ def test_none_profile_timeout_returns_124_not_exception(tmp_path: Path) -> None:
 
 
 def test_closing_one_unconfined_server_spares_a_later_sibling(tmp_path: Path) -> None:
-    """`spawn_in_jail(isolation="none")` must register its pid like the jailed
-    path does: without that, closing server A escapee-sweeps sibling B spawned
-    after it (B is not in A's before-snapshot, sits in its own session, and is
-    in no protection set), SIGKILLing a live server instead of leaving its own
-    `close` to shut it down."""
+    """`spawn_in_jail(isolation="none")` registers its pid like the jailed path does.
+
+    Unregistered, closing server A escapee-sweeps a sibling spawned after it.
+    """
     import subprocess
 
     from agent6.sandbox.jail import JailedProcess, spawn_in_jail
@@ -143,19 +135,14 @@ def test_closing_one_unconfined_server_spares_a_later_sibling(tmp_path: Path) ->
 def test_child_exec_failure_is_command_error_not_jail_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A bad argv path (model guessed /usr/local/go/bin/go) means the JAIL
-    worked and the COMMAND failed. Reporting it as 'jail unavailable' tells
-    the model the sandbox is broken; report a shell-style 127 instead."""
+    """A bad argv path is a shell-style 127, not "jail unavailable": the jail worked."""
     import subprocess
 
     from agent6.sandbox import jail as jail_mod
 
     monkeypatch.setattr(jail_mod, "locate_jail_binary", lambda: Path("/fake/agent6-jail"))
 
-    # run_in_jail now uses Popen (it needs the pid to group-kill on timeout), so
-    # fake the launcher there: a clean exec failure -> launcher rc=2 + the child
-    # failure on stderr, which must map to a command error (127), not a raised
-    # JailUnavailableError.
+    # A clean exec failure (launcher rc=2) maps to a command error 127, not JailUnavailableError.
     class FakePopen:
         def __init__(self, *a: object, **k: object) -> None:
             self.pid = 424242

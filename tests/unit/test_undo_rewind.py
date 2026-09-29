@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`/undo` puts the checkout back: the fork it cuts keeps the undone session's
-checkout, so the tree has to be the checkpoint's again for every path the
-run changed after it, with the operator's own files left alone and the later
-chain commits kept on the undone session's ref."""
+"""`/undo` puts the checkout back to the checkpoint's tree for every path the run changed.
+
+The operator's own files stay, and the later chain commits stay on the undone session's ref.
+"""
 
 from __future__ import annotations
 
@@ -31,10 +31,10 @@ def _git(repo: Path, *args: str) -> str:
 def _checkpoint(
     layout: SessionLayout, turn: int, *, head_sha: str, ops: int, at: int | None = None
 ) -> None:
-    """A checkpoint at *turn* whose conversation holds *ops* operator messages
-    (the task, then steers) and records *head_sha* as the workspace head.
-    *at* is the file it sits in when that is not *turn* (a fork's seed: file 0
-    holding its source's turn)."""
+    """A checkpoint at *turn* holding *ops* operator messages and *head_sha* as the workspace head.
+
+    *at* is the file it sits in when that is not *turn* (a fork's seed in file 0).
+    """
     messages: list[dict[str, object]] = [{"role": "user", "content": "do the thing"}]
     for i in range(1, ops):
         messages.append(
@@ -59,10 +59,11 @@ def _checkpoint(
 
 
 def _run_that_moved_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, str, str]:
-    """A repo and a run whose turn-1 checkpoint sits at commit c1; after it the
-    run's chain committed c2 (a.txt edited, gen.txt created), then edited
-    a.txt again and created more.txt without committing, and the operator's
-    untracked notes.md was there from the start. Returns (repo, c1, c2)."""
+    """A repo and a run whose turn-1 checkpoint sits at c1, with edits committed and in flight.
+
+    The chain committed c2 (a.txt edited, gen.txt created), then a.txt and more.txt changed
+    uncommitted; the operator's untracked notes.md was there from the start.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
@@ -115,10 +116,12 @@ def _run_that_moved_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple
 def test_undo_of_a_model_controlled_run_refuses_before_committing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A `git.control = "model"` run has no agent6 chain. The refusal sat in
-    the fork step, after the undo commit, so a chain ref holding the tree was
-    left behind: `auto_merge` landed it on the base, and the next run's
-    dirty-tree question named a merge that refuses."""
+    """A `git.control = "model"` run has no agent6 chain.
+
+    The refusal sat in the fork step, after the undo commit, so a chain ref holding the tree was
+    left behind: `auto_merge` landed it on the base, and the next run's dirty-tree question named a
+    merge that refuses.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
@@ -159,14 +162,11 @@ def test_undo_of_a_model_controlled_run_refuses_before_committing(
 def test_undo_puts_the_checkout_back_and_keeps_the_tree_as_it_stood(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The tree as it stands goes onto the run's ref first (the in-flight
-    edit, the file that appeared mid-run), then every tracked path that
-    differs from turn 1's tree is put back: the committed edit, the committed
-    new file, the in-flight edit and file. The operator's untracked-at-start
-    file and a file the run never touched stay; HEAD and the index stay; the
-    later commit stays on the run's ref and branch; the fork's chain starts at
-    turn 1's sha. Rewinding straight from the worktree deleted the in-flight
-    work with no commit holding it."""
+    """The tree as it stands goes onto the run's ref first, then every differing path is put back.
+
+    The operator's untracked file, HEAD, the index and the later commit stay; rewinding straight
+    from the worktree deleted the in-flight work with no commit holding it.
+    """
     repo, c1, c2 = _run_that_moved_on(tmp_path, monkeypatch)
     said: list[str] = []
 
@@ -197,8 +197,7 @@ def test_undo_puts_the_checkout_back_and_keeps_the_tree_as_it_stood(
 def test_undo_leaves_a_staged_copy_in_the_index_and_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The index is the operator's: a staged copy of a rewound file stays
-    staged (git shows `MM`), and the notice says the index is untouched."""
+    """The index is the operator's: a staged copy of a rewound file stays staged, and it is said."""
     repo, _c1, _c2 = _run_that_moved_on(tmp_path, monkeypatch)
     _git(repo, "add", "a.txt")
     said: list[str] = []
@@ -213,10 +212,10 @@ def test_undo_leaves_a_staged_copy_in_the_index_and_says_so(
 def test_undo_refuses_while_another_live_run_drives_the_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A rewind under a live worker pulls the tree out from under its next
-    commit: refused, naming the run, with nothing committed, forked, or
-    moved. The same holds for a worker of the undone session itself running in
-    another process: only the process holding the checkout is exempt."""
+    """A rewind under a live worker is refused, naming the run, before anything is committed.
+
+    Only the process holding the checkout is exempt.
+    """
     repo, _c1, c2 = _run_that_moved_on(tmp_path, monkeypatch)
     state = state_dir(repo)
     for holder in ("other-LIVE11", "run-AAAA11"):
@@ -238,12 +237,7 @@ def test_undo_refuses_while_another_live_run_drives_the_checkout(
 def test_undo_of_a_live_plan_session_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A plan/ask worker never takes the checkout writer lock (it makes no
-    chain commits of its own), so the repo-writer check that catches a live
-    run session leaves a live PLAN session unguarded: /undo would commit the
-    checkout's current tree onto its chain ref and rewind the checkout out
-    from under the live worker. Refused, naming the session, before anything
-    is committed."""
+    """A live plan or ask session refuses /undo too, though it takes no checkout writer lock."""
     import subprocess as sp2
 
     from agent6.sessions.ipc import write_worker_pid
@@ -295,8 +289,7 @@ def test_undo_of_a_live_plan_session_refuses(
 def test_undo_from_the_live_session_itself_is_allowed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The loop's /undo runs inside the worker that holds the checkout (its
-    worker.pid is this process): its own lock is no obstacle."""
+    """The loop's own /undo runs inside the worker holding the checkout; its lock is no obstacle."""
     import os
 
     from agent6.sessions.ipc import write_worker_pid
@@ -319,9 +312,7 @@ def test_undo_from_the_live_session_itself_is_allowed(
 def test_undo_of_a_fork_whose_worktree_is_gone_refuses_before_creating_anything(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A recorded worktree that no longer exists is named, with the recovery,
-    before any child exists: git run in the missing directory raised after
-    the child had been created."""
+    """A recorded worktree that is gone is named, with the recovery, before any child."""
     repo, _c1, _c2 = _run_that_moved_on(tmp_path, monkeypatch)
     state = state_dir(repo)
     layout = SessionLayout(state_dir=state, session_id="run-AAAA11")
@@ -356,11 +347,7 @@ def test_undo_of_a_fork_whose_worktree_is_gone_refuses_before_creating_anything(
 def test_undo_names_the_turn_every_other_surface_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A fork's seed checkpoint sits in file 0 but holds its source's turn
-    (`next_iteration`), the number the fork notice, `sessions show` and the
-    child's manifest print. An /undo resolved at it said "turn 0" while the
-    fork it cut read "@turn 3"; the notice and the commit that keeps the tree
-    as it stood name the checkpoint's turn."""
+    """An /undo resolved at a fork's seed checkpoint names the source's turn, not "turn 0"."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
@@ -411,11 +398,10 @@ def test_undo_names_the_turn_every_other_surface_names(
 def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A fork resumed without a steer carries only its seed checkpoint, so
-    its /undo resolves in the parent it was cut from. The child still works
-    where the undone fork worked (its worktree, the checkout that was put
-    back), never the parent's or the operator's: recording the parent's
-    checkout handed the child's model a writable checkout it was never given."""
+    """A fork's /undo resolves in its parent, and the child keeps the undone fork's checkout.
+
+    Recording the parent's checkout handed the child's model a writable checkout it was never given.
+    """
     from agent6.app.manifest import write_session_manifest
     from agent6.config import Config
     from agent6.git_ops import add_worktree
@@ -484,10 +470,7 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
 def test_an_undo_fork_keeps_the_source_run_untracked_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An /undo fork continues in the source's checkout, where the run's own
-    files still read untracked: chain commits never touch the index. Observing
-    there made the child exclude the very work it continues, so every commit it
-    made silently dropped those paths."""
+    """An /undo fork continuing in the source's checkout keeps the run's untracked files."""
     from agent6.sessions.layout import read_untracked_at_start
 
     repo, _c1, _c2 = _run_that_moved_on(tmp_path, monkeypatch)

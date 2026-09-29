@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Regression tests for clear_pending_answers (cli/ui bridge bugs #7, #22).
+"""Regression tests for clear_pending_answers.
 
-#7: a leftover `steer.request` marker from a prior session must be dropped at
-    run/resume START, else the resumed run stalls on a phantom steer prompt.
-#22: `frontend.pid` must only be cleared when NO live TUI owns it, so a concurrently
-    live `agent6 attach` watcher keeps bridging approval/question modals.
+A leftover `steer.request` from a prior session is dropped at start, and `frontend.pid` is
+cleared only when no live front-end owns it.
 """
 
 from __future__ import annotations
@@ -53,17 +51,16 @@ def test_dead_frontend_claims_are_pruned_by_the_liveness_probe(tmp_path: Path) -
     session_dir.mkdir()
     dead_pid = _find_dead_pid()
     register_frontend(session_dir, dead_pid)
-    # A hard-killed front-end's claim reads not-live and is pruned in passing,
-    # so the answer-poll never blocks on it and the dir stays tidy.
+    # A hard-killed front-end's claim reads not-live and is pruned, so the poll never blocks on it.
     assert not frontend_is_live(session_dir)
     assert not (session_dir / "frontends" / str(dead_pid)).exists()
 
 
 def test_concurrent_frontends_do_not_deregister_each_other(tmp_path: Path) -> None:
-    """The single-slot frontend.pid let one front-end's exit strand another
-    (attach claims -> web clobbers -> web releases -> attach deregistered, its
-    answers never read). One claim file per front-end kills the class: any
-    number watch concurrently and each removes only its own claim."""
+    """Concurrent front-ends do not deregister each other.
+
+    One claim file per front-end: each removes only its own.
+    """
     session_dir = tmp_path / "run"
     session_dir.mkdir()
     attach_pid = os.getpid()
@@ -93,9 +90,10 @@ def _find_dead_pid() -> int:
 def test_clear_pending_keeps_a_file_written_within_the_tick_of_the_executions_start(
     tmp_path: Path,
 ) -> None:
-    """File timestamps run up to a scheduler tick behind `time.time()`, so a
-    cancel written right after the execution's start can carry a timestamp before
-    it; the sweep keeps what falls within that slack and drops what is older."""
+    """The sweep keeps a file written within a scheduler tick of the execution's start.
+
+    File timestamps run up to a tick behind `time.time()`.
+    """
     from agent6.sessions.ipc import request_stop, stop_request_pending, write_answer
 
     session_dir = tmp_path / "run"

@@ -104,17 +104,12 @@ def test_translate_user_tool_result_becomes_role_tool_message() -> None:
 
 
 def test_translate_user_text_plus_tool_result_emits_both() -> None:
-    """Mixed content: tool_result MUST come first (OpenAI requires
-    role=tool to immediately follow the assistant's tool_calls), then
-    the user text as a follow-up turn.
+    """Mixed content emits the tool_result first, then the user text as a follow-up turn.
 
-    Emitted text first then tool_result, which both
-    violated the OpenAI ordering rule AND caused harness-injected
-    notices ([loop-guard], [harness], [review]) to arrive BEFORE the
-    tool result they were commenting on. Weak models lost the causal
-    link and ignored the notice entirely - observed live with Kimi K2.6
-    looping on `read_file` 10x in a row despite three loop-guard
-    notices being injected.
+    OpenAI requires role=tool to follow the assistant's tool_calls at once. Text first violates that
+    rule and lands harness notices ([loop-guard], [harness], [review]) before the tool result they
+    comment on; a weak model then loses the causal link and ignores the notice (observed live: Kimi
+    K2.6 looping on `read_file` ten times through three loop-guard notices).
     """
     msgs = [
         {
@@ -132,12 +127,11 @@ def test_translate_user_text_plus_tool_result_emits_both() -> None:
 
 
 def test_translate_loop_guard_notice_lands_after_tool_results() -> None:
-    """regression: when the harness injects a [loop-guard] /
-    [harness] / [review] notice into a user turn that also carries
-    tool_results, the notice must land in a SEPARATE user message
-    AFTER all the role=tool messages so weak models see it as a fresh
-    instruction rather than something the tool said. Tests with
-    multiple tool_results to confirm ordering."""
+    """A harness notice in a turn with tool_results lands in its own user message after them.
+
+    A [loop-guard], [harness] or [review] notice after every role=tool message reads as a fresh
+    instruction rather than something the tool said; several tool_results confirm the ordering.
+    """
     msgs = [
         {
             "role": "assistant",
@@ -166,10 +160,11 @@ def test_translate_loop_guard_notice_lands_after_tool_results() -> None:
 
 
 def test_translate_multiple_user_notices_stay_separated() -> None:
-    """A turn can carry more than one harness notice (e.g. a broken-verify
-    notice AND a no-progress escalation land in the same turn); each is a
-    separate Anthropic text block and must not be glued into one run-on
-    string with no boundary between them."""
+    """Several harness notices in one turn stay separated.
+
+    A broken-verify notice and a no-progress escalation in the same turn are separate text blocks,
+    never glued into one run-on string.
+    """
     msgs = [
         {
             "role": "user",
@@ -186,9 +181,11 @@ def test_translate_multiple_user_notices_stay_separated() -> None:
 
 
 def test_translate_two_assistant_text_blocks_stay_separated() -> None:
-    """The ChatGPT wire mints one text block per output item and Anthropic
-    emits several around thinking; replayed as one Chat Completions string
-    they ran together with no boundary."""
+    """Two assistant text blocks stay separated.
+
+    The ChatGPT wire mints one text block per output item and Anthropic emits several around
+    thinking; replayed as one Chat Completions string they run together with no boundary.
+    """
     msgs = [
         {
             "role": "assistant",
@@ -264,9 +261,10 @@ def test_tools_to_openai_translation() -> None:
 def test_call_with_tools_translates_request_and_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """End-to-end: caller passes Anthropic-shape inputs, gets Anthropic-shape
-    response back. Tools go out as OpenAI function-tools and come back as
-    tool_uses tuple."""
+    """End-to-end: caller passes Anthropic-shape inputs, gets Anthropic-shape response back.
+
+    Tools go out as OpenAI function-tools and come back as tool_uses tuple.
+    """
     captured: dict[str, Any] = {}
 
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
@@ -328,9 +326,7 @@ def test_call_with_tools_translates_request_and_response(
 def test_response_with_malformed_tool_arguments_doesnt_crash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When the model returns invalid JSON in tool arguments, surface as
-    `_raw_arguments` so debugging is possible but don't blow up the
-    parser."""
+    """Malformed JSON in tool arguments surfaces as `_raw_arguments` without crashing the parser."""
 
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(
@@ -363,12 +359,12 @@ def test_response_with_malformed_tool_arguments_doesnt_crash(
 def test_huge_malformed_tool_arguments_are_capped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Finding C: a degenerate model (Kimi K2.6 was observed live)
-    can emit a 30+ KB tool-arg payload of repeating escape sequences that
-    exhausts the completion-token cap mid-string. Surfacing the entire
-    raw blob in `_raw_arguments` lets that toxic content survive into the
-    next tool-error round-trip and primes the same degeneration on the
-    next turn. Cap the diagnostic at 500 chars + an origin marker."""
+    """Huge malformed tool arguments are capped at 500 characters plus an origin marker.
+
+    A degenerate model (observed live with Kimi K2.6) can emit a 30+ KB payload of repeating escape
+    sequences that exhausts the completion-token cap mid-string; the whole blob in `_raw_arguments`
+    survives into the next tool-error round trip and primes the same degeneration.
+    """
     huge = '{"edits": [{"kind":"replace","old_string":"' + ("\\n" * 15000)
 
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
@@ -407,8 +403,10 @@ def test_huge_malformed_tool_arguments_are_capped(
 
 
 def test_extended_thinking_silently_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Anthropic-shape extended_thinking param doesn't translate to OpenAI;
-    silently drop so cross-provider harness code doesn't have to branch."""
+    """The Anthropic-shape extended_thinking parameter is dropped silently.
+
+    It does not translate to OpenAI, and cross-provider harness code must not have to branch.
+    """
     captured: dict[str, Any] = {}
 
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
@@ -449,10 +447,11 @@ def test_no_tools_path_still_works(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_full_loop_message_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Simulates one turn of a worker_loop-style conversation: assistant
-    emits a tool_use (which we get back as Anthropic shape), then the
-    harness appends a tool_result in user content, and the NEXT call's
-    OpenAI request has the right role=tool message."""
+    """Simulates one turn of a worker_loop-style conversation.
+
+    Assistant emits a tool_use (which we get back as Anthropic shape), then the harness appends a
+    tool_result in user content, and the NEXT call's OpenAI request has the right role=tool message.
+    """
     captured_bodies: list[dict[str, Any]] = []
 
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
@@ -618,8 +617,10 @@ def test_fenced_json_tool_call_is_recovered(
 def test_native_tool_calls_take_precedence_over_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When native tool_calls ARE present, the text fallback never fires —
-    even if the content also contains tool-call-shaped JSON."""
+    """Native tool_calls take precedence: the text fallback never fires beside them.
+
+    Even when the content also holds tool-call-shaped JSON.
+    """
 
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(
@@ -657,8 +658,7 @@ def test_native_tool_calls_take_precedence_over_text(
 def test_plain_json_answer_is_not_misread_as_tool_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A model legitimately answering with a JSON object whose `name`
-    is NOT an offered tool must stay plain text — no false coercion."""
+    """A plain JSON answer whose `name` is not an offered tool stays plain text."""
     content = '{"name": "Alice", "arguments": {"age": 30}}'
     resp = _call_with_text_content(monkeypatch, content)
     assert resp.tool_uses == ()
@@ -698,8 +698,10 @@ _APPLY_EDIT_TOOL = ToolDefinition(
 def test_qwen_function_xml_tool_call_is_recovered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The exact qwen3-coder leakage: `<function=NAME><parameter=KEY>` plus a
-    stray unmatched `</tool_call>`, with prose before it."""
+    """The exact qwen3-coder leakage.
+
+    `<function=NAME><parameter=KEY>` plus a stray unmatched `</tool_call>`, with prose before it.
+    """
     content = (
         "I'll start by reading the file.\n\n"
         "<function=read_file>\n<parameter=path>\ninterp.py\n</parameter>\n</function>\n</tool_call>"
@@ -751,10 +753,12 @@ def test_qwen_function_xml_does_not_turn_an_invalid_boolean_false() -> None:
 def test_qwen_function_xml_unclosed_params_keep_all(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Regression: with `</parameter>` closers MISSING (truncation), each param's
-    body must stop at the NEXT `<parameter=` via a lookahead, not consume it --
-    else the following param is silently dropped (here `edits`), making apply_edit
-    fail pydantic validation and wasting a turn. Open-weight models emit this."""
+    """Qwen function XML with missing `</parameter>` closers keeps every parameter.
+
+    Each parameter's body stops at the next `<parameter=` by lookahead; consuming it drops the
+    following parameter (here `edits`), fails apply_edit's validation and wastes a turn. Open-weight
+    models emit this truncation.
+    """
     edits = '[{"kind": "replace", "old_string": "a", "new_string": "b"}]'
     content = (  # no </parameter> closers at all
         f"<function=apply_edit>\n<parameter=path>\nf.py\n<parameter=edits>\n{edits}\n</function>"
@@ -770,8 +774,10 @@ def test_qwen_function_xml_unclosed_params_keep_all(
 def test_qwen_function_xml_string_param_not_mangled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A string-typed code param whose value happens to be JSON-shaped stays a
-    byte-exact string (schema type wins over JSON-parsing)."""
+    """A string-typed parameter whose value is JSON-shaped stays a byte-exact string.
+
+    The schema type wins over JSON parsing.
+    """
     edits = json.dumps([{"kind": "create", "old_string": "", "new_string": '{"a": 1}'}])
     content = (
         "<function=apply_edit>\n<parameter=path>\nf.py\n</parameter>\n"
@@ -797,9 +803,11 @@ def test_qwen_function_xml_prose_mentioning_tool_is_not_a_call(
 def test_gemma_tool_code_block_is_recovered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The exact gemma-3 leakage: a ```tool_code fence holding a Python list of
-    calls in `content`, with empty native tool_calls. Without recovery the loop
-    sees no tool_use and silent-finishes."""
+    """The exact gemma-3 leakage.
+
+    A ```tool_code fence holding a Python list of calls in `content`, with empty native tool_calls.
+    Without recovery the loop sees no tool_use and silent-finishes.
+    """
     content = "Okay, I'll read the spec.\n```tool_code\n[read_file(path='spec.md')]\n```"
     resp = _call_with_text_content(monkeypatch, content)
     assert len(resp.tool_uses) == 1
@@ -811,8 +819,10 @@ def test_gemma_tool_code_block_is_recovered(
 def test_gemma_tool_code_typed_kwargs_and_print_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A print()-wrapped call with int kwargs: ast.literal_eval keeps the types,
-    and the inner tool call is mined out of the wrapper."""
+    """A print()-wrapped call with int kwargs.
+
+    Ast.literal_eval keeps the types, and the inner tool call is mined out of the wrapper.
+    """
     content = "```tool_code\nprint(read_file(path='shapes.py', offset=10, limit=50))\n```"
     resp = _call_with_text_content(monkeypatch, content)
     assert resp.tool_uses[0]["input"] == {"path": "shapes.py", "offset": 10, "limit": 50}
@@ -829,9 +839,11 @@ def test_gemma_tool_code_prose_mentioning_tool_is_not_a_call(
 def test_gemma_tool_code_preserves_source_order_mixed_depth(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A list mixing a print-wrapped call and a bare call must keep SOURCE order
-    (ast.walk's breadth-first order would put the shallower bare call first and
-    invert read-before-edit intent)."""
+    """Gemma tool code keeps source order across a print-wrapped call and a bare call.
+
+    `ast.walk`'s breadth-first order would put the shallower bare call first and invert a read-
+    before-edit intent.
+    """
     content = "```tool_code\n[print(read_file(path='FIRST')), apply_edit(path='SECOND')]\n```"
     resp = _call_with_text_content(monkeypatch, content, tools=[_READ_FILE_TOOL, _APPLY_EDIT_TOOL])
     assert [c["name"] for c in resp.tool_uses] == ["read_file", "apply_edit"]
@@ -854,8 +866,10 @@ def test_gemma_tool_code_keeps_an_unrecovered_sibling_fence_visible() -> None:
 def test_blank_name_native_tool_call_is_dropped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A native tool_call with an empty `function.name` (observed live with
-    qwen3-coder-30b) is dropped; valid calls in the same turn survive."""
+    """A native tool_call with an empty `function.name` is dropped; valid calls in the turn survive.
+
+    Observed live with qwen3-coder-30b.
+    """
 
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(
@@ -900,9 +914,11 @@ def test_blank_name_native_tool_call_is_dropped(
 
 
 def test_blank_name_tool_use_and_orphan_result_dropped_in_translation() -> None:
-    """Serialization defense: a blank-name assistant tool_use already in
-    history (e.g. a resumed snapshot) and its orphaned tool_result are both
-    dropped so the request stays well-formed for strict backends."""
+    """Serialization defense.
+
+    A blank-name assistant tool_use already in history (e.g. a resumed snapshot) and its orphaned
+    tool_result are both dropped so the request stays well-formed for strict backends.
+    """
     from agent6.providers._openai_messages import anthropic_to_openai_messages
 
     history = [
@@ -1034,9 +1050,10 @@ def test_fence_recovery_preserves_other_json_fences() -> None:
 
 
 def test_two_json_fenced_tool_calls_are_both_recovered_in_order() -> None:
-    """Regression: two separate ```json fences each holding a valid tool call
-    must both be recovered, in source order -- not just the first, which
-    silently dropped the second call while the model believed it ran."""
+    """Two json-fenced tool calls are both recovered, in source order.
+
+    Recovering only the first drops the second while the model believes it ran.
+    """
     text = (
         '```json\n{"name": "read_file", "arguments": {"path": "a.py"}}\n```\n'
         "then\n"
@@ -1150,11 +1167,11 @@ def test_streaming_indexless_parallel_tool_calls_get_separate_slots(
 
 
 def test_qwen_function_xml_keeps_unmatched_call_visible() -> None:
-    """Same rule as the <tool_call> branch (which pins it in
-    test_tool_call_tag_recovery_keeps_malformed_tag_visible): remove ONLY the
-    calls that were recovered. Branch 0's blanket scrub deleted EVERY
-    <function=...> block, so a hallucinated/misspelled second call vanished
-    without a trace and the model assumed it happened."""
+    """Qwen function XML removes only the calls that were recovered.
+
+    The same rule as the `<tool_call>` branch; a blanket scrub of every `<function=...>` block makes
+    a hallucinated or misspelled second call vanish without a trace, and the model assumes it ran.
+    """
     text = (
         "<function=read_file><parameter=path>a.py</parameter></function>\n"
         "<function=write_notes><parameter=text>x</parameter></function>"

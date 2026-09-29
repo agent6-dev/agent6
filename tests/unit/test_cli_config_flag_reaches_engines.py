@@ -2,10 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The top-level --config reaches every command's config load.
 
-`agent6 --config F sessions merge <id>` loaded the two standard layers and
-silently ignored F: the squash style stayed default and the model drafter
-never fired (caught live). The planner, compare, exec, and machine create now
-thread the explicit path into load_effective.
+The planner, compare, exec, sessions merge and machine create thread the explicit path into
+load_effective.
 """
 
 from __future__ import annotations
@@ -31,8 +29,7 @@ def test_merge_planner_passes_the_explicit_config_path(
 
     monkeypatch.setattr(sessions_merge, "load_effective", fake_load)
 
-    # A resolvable path must flow through unchanged when the planner DOES
-    # reach the load; drive it far enough by stubbing resolution to succeed.
+    # A resolvable path flows through unchanged when the planner reaches the load.
     class _Layout:
         session_dir = tmp_path / "sess"
 
@@ -68,9 +65,10 @@ def test_merge_planner_passes_the_explicit_config_path(
 def test_acp_run_bridge_passes_the_explicit_config_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """`agent6 --config F acp` ran every prompt on the standard layers: the
-    dispatch lambda dropped args.config and the bridge loaded (cwd) alone, so
-    F's model, budget, and run_commands never applied (caught live)."""
+    """The ACP run bridge loads the explicit config path, so its model.
+
+    Budget and run_commands apply.
+    """
     from agent6.config import ConfigError as _ConfigError
     from agent6.ui.acp import runner as acp_runner
     from agent6.ui.acp.session import Session
@@ -102,9 +100,7 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
 def test_hub_spawns_stamp_the_explicit_config_into_argv(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A hub started with --config F propagates F into everything it spawns
-    (the one new-work spawn every hub makes), so spawned work runs under the
-    config the operator gave the hub."""
+    """A hub started with --config F stamps F into the argv of everything it spawns."""
     from agent6.ui import spawn
 
     argvs: list[list[str]] = []

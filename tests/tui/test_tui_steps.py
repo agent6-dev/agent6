@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The dashboard's step selector time-travels the details: the task tree and
-the cost line show the state as of the selected commit."""
+"""The dashboard's step selector time-travels the task tree and the cost line."""
 
 from __future__ import annotations
 
@@ -59,8 +58,7 @@ def test_a_selected_step_relabels_the_details_as_of_that_iteration(
 def test_the_top_line_counts_tasks_as_of_the_selected_step(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With a step selected, `tasks:` follows that step like `cost:` does, and
-    the as-of marker sits after both; only `ctx:` is live."""
+    """With a step selected, `tasks:` and `cost:` follow it and only `ctx:` is live."""
     d = tmp_path / "s2"
     d.mkdir(parents=True)
     events = [
@@ -107,8 +105,7 @@ def test_the_top_line_counts_tasks_as_of_the_selected_step(
 def test_the_diff_pane_keeps_saying_the_model_owns_git(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Under `[git].control = "model"` the diff pane's title survives every
-    paint, a selected task included."""
+    """Under `[git].control = "model"` the diff pane's title survives every paint."""
     d = tmp_path / "s3"
     _mk(d)
     monkeypatch.setattr(DiffPane, "_step_patch", _no_patch)
@@ -135,9 +132,7 @@ def test_the_diff_pane_keeps_saying_the_model_owns_git(
 
 
 def test_a_clipped_diff_pane_marks_the_cut() -> None:
-    """The diff pane sliced patches at a byte cap with no ellipsis, so a
-    truncated patch read as the whole one. `append_colored_diff` marks the
-    cut, per the repo's clip_cell rule."""
+    """A patch cut at the byte cap is marked, per the clip_cell rule."""
     from rich.text import Text
 
     from agent6.ui.tui._diff_pane import append_colored_diff

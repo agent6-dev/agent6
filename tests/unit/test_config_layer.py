@@ -77,10 +77,10 @@ def test_layering_merges_global_and_repo(repo: Path) -> None:
 
 
 def test_an_unknown_key_points_at_config_fix(repo: Path) -> None:
-    """`agent6 config set` refuses a key `Config` has no field for, so pointing
-    an extra_forbidden leaf at it sends the operator to a second error. The
-    remedy that works is `agent6 config fix`, which drops the key. A bad VALUE
-    on a real key still points at `config set`."""
+    """An unknown key points at `config fix`, which drops it.
+
+    A bad value still points at `config set`.
+    """
     gcfg = Path(repo).parent / "g" / "agent6" / "config.toml"
     gcfg.write_text('[sandbox]\nnonexistent_key = 1\nisolation = "srtict"\n', encoding="utf-8")
     with pytest.raises(ConfigError) as exc:
@@ -135,10 +135,7 @@ def test_build_config_view_provenance_type_choices(repo: Path) -> None:
 
 
 def test_build_config_view_unset_nested_section_is_typed_table(repo: Path) -> None:
-    """An unset optional nested section (models.reviewer, no [models.reviewer]
-    anywhere) must read as py_type \"table\", not leak the pydantic model's own
-    class name (RoleModel) into a surface that promises str/int/bool/float/
-    choice/list/table."""
+    """An unset optional nested section reads as py_type "table", never the pydantic class name."""
     s = _by_key(build_config_view(load_effective(repo)))["models.reviewer"]
     assert s.value is None and s.source == "default"
     assert s.py_type == "table"
@@ -182,11 +179,11 @@ def test_render_show_text_marks_adaptive(repo: Path) -> None:
 def test_config_write_keeps_the_edit_when_another_layer_was_already_invalid(
     repo: Path, tmp_path: Path
 ) -> None:
-    """An edit is rolled back only when IT broke a valid config. Rolling back on
-    any error meant a stale value in an unedited layer refused every write --
-    and `agent6 connect` saves the API key before writing the provider block, so
-    it exited having stored a key with no provider stanza to use it, and nothing
-    said `agent6 config fix`."""
+    """An edit is rolled back only when it broke a valid config.
+
+    `agent6 connect` saves the API key before writing the provider block, so a rollback on a stale
+    value in another layer would strand the key.
+    """
     # A pre-existing, unrelated error in the GLOBAL layer.
     (tmp_path / "g" / "agent6" / "config.toml").write_text('[cli]\ninput = "x"\n', encoding="utf-8")
 
@@ -228,8 +225,7 @@ def test_set_then_unset_config_value(repo: Path) -> None:
 
 
 def test_unset_reports_whether_anything_was_removed(repo: Path) -> None:
-    """`config unset` says "nothing to unset" only when nothing was removed; a
-    bare None return conflated that with a successful removal."""
+    """`config unset` says "nothing to unset" only when nothing was removed."""
     res = unset_config_value(repo, "sandbox.run_commands", to_repo=True)
     assert res.removed and res.error is None
     again = unset_config_value(repo, "sandbox.run_commands", to_repo=True)
@@ -237,9 +233,7 @@ def test_unset_reports_whether_anything_was_removed(repo: Path) -> None:
 
 
 def test_unset_refuses_a_shape_the_surgery_cannot_carve(repo: Path) -> None:
-    """A dotted top-level key has no [table] header to match: the refusal is an
-    OperatorError for the one boundary, never a returned string a caller would
-    print as a revalidation failure."""
+    """Unset refuses a dotted top-level key as an OperatorError, never a returned string."""
     rcfg = repo_config_path(repo)
     before = 'sandbox.run_commands = "yes"\n'
     rcfg.write_text(before, encoding="utf-8")
@@ -256,12 +250,11 @@ def test_set_config_value_invalid_rolls_back(repo: Path) -> None:
 
 
 def test_set_config_value_rejects_a_value_masked_by_a_higher_layer(repo: Path) -> None:
-    """An engine writer (set_config_*) must reject a value that is invalid on its
-    own even when a HIGHER layer masks it in the merge -- else it lands the bad
-    value and the config explodes once the mask is gone. The repo layer sets
-    sandbox.run_commands="yes", so a GLOBAL write of a bad enum merges valid; only
-    the standalone written-value check catches it. Shares the CLI's guard now, so
-    the TUI/web/init/connect writers validate identically (the promised contract)."""
+    """An engine writer rejects a value invalid on its own even when a higher layer masks it.
+
+    The repo layer sets sandbox.run_commands="yes", so a bad global enum merges valid; only the
+    standalone written-value check catches it, shared with the CLI's guard.
+    """
     gpath = repo.parent / "g" / "agent6" / "config.toml"
     before = gpath.read_text(encoding="utf-8")
 
@@ -273,10 +266,11 @@ def test_set_config_value_rejects_a_value_masked_by_a_higher_layer(repo: Path) -
 
 
 def test_set_config_value_rejects_a_masked_invalid_provider_base_url(repo: Path) -> None:
-    """A provider leaf rejected by a @field_validator (base_url's http(s) check),
-    not a Field constraint, must still be caught on a masked write. The check
-    validates the leaf against the provider MODEL, which runs the validator; a
-    bare TypeAdapter of the annotation dropped it and let the bad value land."""
+    """A provider leaf a @field_validator rejects is caught on a masked write.
+
+    The check validates the leaf against the provider model; a bare TypeAdapter of the annotation
+    drops the validator.
+    """
     repo_config_path(repo).write_text(
         '[providers.x]\napi_format = "openai"\nbase_url = "https://good.example/v1"\n',
         encoding="utf-8",
@@ -291,10 +285,7 @@ def test_set_config_value_rejects_a_masked_invalid_provider_base_url(repo: Path)
 
 
 def test_written_value_error_catches_an_invalid_container_element(tmp_path: Path) -> None:
-    """A container's per-element error sits UNDER the key
-    (`sandbox.fetch_hosts.0`), not at it: an error anywhere inside the written
-    value is the written value's own, else a masked bad list lands and explodes
-    only once the mask is gone."""
+    """An error under the written key (`sandbox.fetch_hosts.0`) is the written value's own."""
     from agent6.config.write import written_value_error
 
     assert written_value_error("sandbox.fetch_hosts", [5], repo_root=tmp_path) is not None
@@ -304,9 +295,7 @@ def test_written_value_error_catches_an_invalid_container_element(tmp_path: Path
 
 
 def test_a_scalar_written_to_a_list_leaf_names_both_ways_to_write_one(tmp_path: Path) -> None:
-    """`config set harness.verify_command "python -m pytest"` answered with
-    pydantic's "Input should be a valid tuple", which names neither the array
-    form nor `config add`."""
+    """A scalar written to a list leaf names the array form and `config add`."""
     from agent6.config.write import written_value_error
 
     err = written_value_error("harness.verify_command", "python -m pytest", repo_root=tmp_path)
@@ -318,9 +307,7 @@ def test_a_scalar_written_to_a_list_leaf_names_both_ways_to_write_one(tmp_path: 
 def test_setting_a_section_keeps_its_other_leaves_and_comments(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """`config set context '{ ... }'` is the form a sibling-rule refusal
-    recommends. Written as one key it replaced the whole `[context]` table,
-    silently taking every other leaf and comment with it."""
+    """`config set context '{ ... }'` keeps the table's other leaves and comments."""
     from agent6.config.write import set_config_value
 
     gdir = tmp_path / "g"
@@ -342,17 +329,14 @@ def test_setting_a_section_keeps_its_other_leaves_and_comments(
     assert "# my tuning" in text
     assert "keep_recent_chars = 50000" in text
     assert "summary_max_tokens = 4096" in text
-    # Both halves of the pair land under one revalidation, so the rule spanning
-    # them sees its sibling instead of refusing each leaf on its own.
+    # Both halves land under one revalidation, so the spanning rule sees its sibling.
     assert "drop_at_chars = 200000" in text and "summarise_at_chars = 400000" in text
 
 
 def test_a_dict_typed_leaf_is_replaced_whole(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """`providers.<name>.extra_body` is one VALUE, not a table: writing it leaf
-    by leaf merged into the old value where it landed at all, and elsewhere
-    refused with "set it as a whole" -- the command the operator had run."""
+    """`providers.<name>.extra_body` is one value, replaced whole."""
     from agent6.config.write import set_config_value
 
     gdir = tmp_path / "g"
@@ -380,9 +364,7 @@ def test_a_dict_typed_leaf_is_replaced_whole(
 def test_a_write_that_breaks_the_toml_is_rolled_back(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The revalidation reads the file it just wrote; when that read raises,
-    the rollback it exists for must still run, or the operator is left with a
-    config no command can read."""
+    """A write that breaks the TOML is rolled back even though the revalidation read raises."""
     from agent6.config.write import set_config_value
 
     gdir = tmp_path / "g"
@@ -400,15 +382,10 @@ def test_a_write_that_breaks_the_toml_is_rolled_back(
 
 
 def test_written_value_error_catches_a_section_wide_rule(tmp_path: Path) -> None:
-    """A rule spanning two keys is a model_validator, and pydantic reports it at
-    the SECTION -- a PARENT of the written key. Accepting a parent loc only for
-    extra_forbidden let every such rule through: `config set
-    context.drop_at_chars` from a repo whose layer set both halves wrote a
-    half-set [context] to the GLOBAL file, exit 0, and every other repo on the
-    machine then failed to load any config at all.
+    """A section-wide rule reported at the parent of the written key is the write's own error.
 
-    The standalone dict holds only the written key, so a complaint about the
-    section it sits in can only be about this write.
+    The standalone dict holds only the written key, so a complaint about its section can only be
+    about this write.
     """
     from agent6.config.write import written_value_error
 
@@ -428,14 +405,10 @@ def test_written_value_error_catches_a_section_wide_rule(tmp_path: Path) -> None
 
 
 def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
-    """set_config_table writes a whole [table]; it must validate each LEAF, not the
-    table dict as one. written_value_error only flags an error at loc == key, so a
-    whole (key, dict) dropped every LEAF-level error and a masked-invalid leaf
-    still landed (the TUI provider editor and `agent6 model` write through this)."""
+    """set_config_table validates each leaf, not the table dict as one."""
     from agent6.config.write import set_config_table
 
-    # The repo layer masks models.worker.effort with a valid value, so only the
-    # standalone per-leaf check catches a bad `thinking` written to global.
+    # The repo layer masks models.worker.effort, so only the per-leaf check catches the bad value.
     repo_config_path(repo).write_text(
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude"\nthinking = "off"\n',
         encoding="utf-8",
@@ -485,9 +458,10 @@ def test_empty_overlay_matches_load_effective(repo: Path) -> None:
 
 
 def test_a_bad_leaf_from_a_machine_overlay_names_its_layer(repo: Path) -> None:
-    """A validator error names the layer that holds the bad value, even one
-    with no file path attached (the machine overlay `load_effective_with_overlay`
-    validates), not just the leaf and message."""
+    """A validator error names the layer holding the bad value.
+
+    A machine overlay with no file path is named too.
+    """
     from agent6.config.layer import load_effective_with_overlay
 
     with pytest.raises(ConfigError) as exc:
@@ -498,8 +472,7 @@ def test_a_bad_leaf_from_a_machine_overlay_names_its_layer(repo: Path) -> None:
 
 
 def test_deep_merge_replaces_provider_when_kind_changes() -> None:
-    # A lower layer's kind-specific keys must not survive a kind change, or they
-    # surface as a confusing extra_forbidden error under the new kind.
+    # A lower layer's kind-specific keys do not survive a kind change.
     from agent6.config.layer import _deep_merge  # pyright: ignore[reportPrivateUsage]
 
     base = {"providers": {"p": {"api_format": "anthropic", "api_key_env": "X"}}}
@@ -571,10 +544,10 @@ def test_materialize_roundtrips(repo: Path, tmp_path: Path) -> None:
 
 
 def test_materialize_roundtrips_nested_objects_in_arrays(repo: Path, tmp_path: Path) -> None:
-    """Dict-valued fields inside array items were dropped by the emitters, and
-    a dict inside a plain list printed as Python repr -- so `config fill` (and
-    a --parallel lane's snapshot) silently changed a valid provider request.
-    Every JSON-shaped extra_body value must survive materialize -> parse."""
+    """Every JSON-shaped extra_body value survives materialize then parse.
+
+    Dicts inside arrays included.
+    """
     gpath = repo.parent / "g" / "agent6" / "config.toml"
     gpath.write_text(
         gpath.read_text(encoding="utf-8")
@@ -606,12 +579,11 @@ def test_missing_flag_file_errors(repo: Path, tmp_path: Path) -> None:
 
 
 def test_provenance_survives_a_format_changing_provider_replace(repo: Path) -> None:
-    """_deep_merge wholesale-REPLACES a provider entry when api_format flips
-    between layers; the old separate provenance pass kept the discarded lower
-    layer's stale source entries, so `config show` attributed refilled model
-    DEFAULTS (base_url, timeouts) to a file holding different values -- with
-    the operator-set marker. Provenance is now stamped in the same walk as
-    the merge."""
+    """Provenance is stamped in the same walk as the merge.
+
+    _deep_merge replaces a provider entry whole when api_format flips between layers, so a separate
+    pass would keep the discarded layer's stale source entries.
+    """
     gpath = repo.parent / "g" / "agent6" / "config.toml"
     gpath.write_text(
         gpath.read_text(encoding="utf-8")
@@ -637,12 +609,10 @@ def test_provenance_survives_a_format_changing_provider_replace(repo: Path) -> N
 
 
 def test_profile_key_is_rejected_in_flag_and_machine_layers(repo: Path, tmp_path: Path) -> None:
-    """Only global/repo config (and --preset) can SELECT a preset; the key
-    still merged from a --config FILE or machine overlay, so config show
-    displayed preset=<name> as effective while the preset silently never
-    applied -- and resume then replayed the stamped name as a real selection,
-    making the resumed run behave differently from the original. Reject the
-    key loudly in the layers that cannot select it."""
+    """The `preset` key is rejected in a --config file and a machine overlay.
+
+    Neither layer can select a preset.
+    """
     from agent6.config.layer import load_effective_with_overlay
 
     explicit = tmp_path / "ci.toml"
@@ -654,11 +624,7 @@ def test_profile_key_is_rejected_in_flag_and_machine_layers(repo: Path, tmp_path
 
 
 def test_materialize_quotes_non_bare_keys(repo: Path, tmp_path: Path) -> None:
-    """A provider hand-named with a space or dot is valid input, so the
-    serializer must quote it: raw interpolation emitted an unparseable
-    `[providers.my provider]` header (or a silently re-nested dotted one),
-    and `config fill --force` then replaced the operator's working config
-    with the broken output."""
+    """Materialize quotes a provider name with a space or dot, so the header parses."""
     from agent6.config import Config, load_config
     from agent6.config.layer import materialize
 
@@ -680,9 +646,7 @@ def test_materialize_quotes_non_bare_keys(repo: Path, tmp_path: Path) -> None:
 
 
 def test_materialize_escapes_control_chars_in_values(repo: Path, tmp_path: Path) -> None:
-    """A control char in a config string value must serialize to valid TOML.
-    The old escape (backslash + quote only) emitted the raw char, so the file
-    failed to parse on the next read while `config fill` reported success."""
+    """A control char in a config string value serializes to valid TOML."""
     from agent6.config import Config, load_config
     from agent6.config.layer import materialize
 
@@ -696,12 +660,10 @@ def test_materialize_escapes_control_chars_in_values(repo: Path, tmp_path: Path)
 def test_concurrent_rollback_does_not_erase_a_valid_write(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Writer A publishes an invalid value and rolls back after revalidation;
-    writer B lands a valid value in between. A's rollback republished its
-    pre-B snapshot: B's update was silently erased (and B's own revalidate,
-    seeing A's junk still in the file, spuriously rejected B's write). The
-    whole write+revalidate+rollback cycle now holds locked_file, so B queues
-    until A has rolled back and then lands cleanly on the restored base."""
+    """The whole write, revalidate and rollback cycle holds locked_file.
+
+    A concurrent valid write survives.
+    """
     import threading
     import time
 
@@ -747,15 +709,15 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
 def test_prepare_write_target_hands_back_the_created_state_base(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A sudo config write on a fresh machine creates the whole state base;
-    chowning only the deepest dir left `<base>` root-owned, and the next
-    repo's non-root write then died creating its sibling dir there."""
+    """A sudo config write on a fresh machine hands back the whole created state base.
+
+    Chowning only the deepest dir would leave the base root-owned.
+    """
     import os
 
     from agent6.config import write as write_mod
 
-    # Through sudo the XDG vars are root's and ignored: the base is the real
-    # user's `~/.local/state/agent6`, two levels of which do not exist yet.
+    # Through sudo the XDG vars are root's: the base is the real user's, two levels not yet there.
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(
@@ -788,10 +750,10 @@ def test_prepare_write_target_hands_back_the_created_state_base(
 def test_config_write_hands_the_dir_over_before_writing(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Under `sudo` the config dir is created as root. Handing it back only
-    after a SUCCESSFUL write stranded it root-owned whenever the write failed
-    or the writer was killed inside the lock, and every later non-root write
-    then died PermissionError creating its atomic-write temp file there."""
+    """Under sudo the config dir is handed over before the write.
+
+    Whether or not the write succeeds.
+    """
     from agent6.config import write as write_mod
 
     handed: list[Path] = []
@@ -809,9 +771,7 @@ def test_config_write_hands_the_dir_over_before_writing(
 def test_config_write_hands_the_file_over_after_a_rejected_edit(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A rejected edit rolls back through atomic_write, i.e. republishes the
-    file as a NEW inode owned by root under `sudo`, so the handover cannot be
-    conditional on the edit being valid."""
+    """The file is handed over after a rejected edit too: its rollback republishes a new inode."""
     from agent6.config import write as write_mod
 
     handed: list[Path] = []
@@ -823,10 +783,10 @@ def test_config_write_hands_the_file_over_after_a_rejected_edit(
 def test_engine_writers_refuse_a_write_into_an_unparseable_target(
     repo: Path, tmp_path: Path
 ) -> None:
-    """Line surgery on a file that does not parse only appends to the damage
-    (a malformed header is invisible to the lookups, so the write lands as a
-    duplicate table): every writer refuses up front with the parse error, the
-    same refusal the CLI always gave."""
+    """Engine writers refuse a write into an unparseable target with the parse error.
+
+    The CLI gives the same refusal.
+    """
     gcfg = tmp_path / "g" / "agent6" / "config.toml"
     gcfg.write_text("[sandbox\nprotect_git = true\n", encoding="utf-8")  # missing ]
     before = gcfg.read_text(encoding="utf-8")
@@ -840,11 +800,10 @@ def test_engine_writers_refuse_a_write_into_an_unparseable_target(
 def test_no_lock_rollback_keeps_the_write_and_says_so(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """When the config lock fails open (a stale root-owned .lock a killed sudo
-    writer left), _revalidate's whole-file restore could erase a concurrent
-    writer's just-validated update -- the snapshot predates it. Without the
-    lock the write is KEPT and the error says so, narrowing the exposure back
-    to the unlocked RMW the fail-open always tolerated."""
+    """Without the lock, a failed revalidation keeps the write and says so.
+
+    A whole-file restore could erase a concurrent writer's just-validated update.
+    """
     import agent6.portable as portable_mod
 
     def _no_lock(_p: Path) -> int | None:
@@ -860,10 +819,7 @@ def test_no_lock_rollback_keeps_the_write_and_says_so(
 
 
 def test_an_optional_section_is_written_leaf_by_leaf(repo: Path) -> None:
-    """`models.worker` and `harness.metric` are `[table]`s whose type is
-    optional; read as leaves they were written inline under a `[models]` header
-    of their own, which declares the same key the existing `[models.worker]`
-    block does -- refused as "invalid TOML", blaming a file that parses."""
+    """An optional `[table]` section (`models.worker`, `harness.metric`) is written leaf by leaf."""
     rcfg = repo_config_path(repo)
     rcfg.write_text(
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-5"\n', encoding="utf-8"
@@ -878,9 +834,7 @@ def test_an_optional_section_is_written_leaf_by_leaf(repo: Path) -> None:
 
 
 def test_a_name_keyed_table_is_written_entry_by_entry(repo: Path) -> None:
-    """`providers` and `mcp.servers` are tables of entries, not one value:
-    written whole, a `config set providers '{...}'` replaced every provider the
-    operator had, with their keys and their comments, at exit 0."""
+    """`providers` and `mcp.servers` are written entry by entry, never replaced whole."""
     rcfg = repo_config_path(repo)
     rcfg.write_text(
         '[providers.anthropic]\napi_format = "anthropic"\napi_key_env = "A"\n', encoding="utf-8"
@@ -902,9 +856,7 @@ def test_a_name_keyed_table_is_written_entry_by_entry(repo: Path) -> None:
 
 
 def test_a_table_valued_leaf_replaces_the_block_it_already_has(repo: Path) -> None:
-    """A dict-typed leaf is one value, written whole -- and the other shape it
-    can already have on disk is its own `[table.leaf]` block, which the inline
-    write must replace rather than declare twice."""
+    """A dict-typed leaf written inline replaces its own `[table.leaf]` block."""
     rcfg = repo_config_path(repo)
     rcfg.write_text('[skills.state]\nalpha = "enabled"\n', encoding="utf-8")
 
@@ -916,10 +868,7 @@ def test_a_table_valued_leaf_replaces_the_block_it_already_has(repo: Path) -> No
 
 
 def test_an_invalid_value_is_refused_even_where_its_section_was_broken(repo: Path) -> None:
-    """A section rule that a SIBLING breaks is not this edit's fault, and the
-    write stands. This edit's own value being invalid is, whatever else in the
-    section was already wrong -- it landed with a warning that blamed a value
-    "in another layer" and exit 0."""
+    """An invalid value is refused even where a sibling had already broken its section."""
     rcfg = repo_config_path(repo)
     before = '[web]\nhost = "0.0.0.0"\n'  # already invalid: non-loopback, not opted in
     rcfg.write_text(before, encoding="utf-8")
@@ -933,10 +882,10 @@ def test_an_invalid_value_is_refused_even_where_its_section_was_broken(repo: Pat
 def test_set_config_leaves_refuses_a_headerless_ancestor(
     repo: Path,
 ) -> None:
-    """`agent6 connect` / init / the TUI write providers through set_config_leaves.
-    A leaf whose ancestor is a header-less (inline) table cannot be set on its own;
-    the surgery's refusal is an OperatorError -- a printable message at the one
-    boundary, never a traceback -- and the file is untouched."""
+    """set_config_leaves refuses a leaf under a header-less ancestor as an OperatorError.
+
+    The file is untouched.
+    """
     from agent6.config.write import set_config_leaves
 
     rcfg = repo_config_path(repo)
@@ -952,9 +901,10 @@ def test_set_config_leaves_refuses_a_headerless_ancestor(
 def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One revalidate+rollback wraps ALL the leaf writes: when a later leaf raises,
-    the earlier leaves that already landed roll back to the prior file rather than
-    leaving a half-applied provider block."""
+    """One revalidate and rollback wraps all the leaf writes.
+
+    A later leaf's error rolls back the earlier ones.
+    """
     from agent6.config import write as write_mod
     from agent6.config.write import set_config_leaves
 
@@ -987,9 +937,7 @@ def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
 def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """When the lock failed open, restoring the prior file could erase a
-    concurrent writer's update, so a partial multi-leaf write is KEPT and the
-    refusal says so -- the same keep-and-warn every writer applies."""
+    """A partial multi-leaf write without the lock is kept, and the refusal says so."""
     import agent6.portable as portable_mod
     from agent6.config import write as write_mod
     from agent6.config.write import set_config_leaves
@@ -1024,8 +972,7 @@ def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
 
 
 def test_load_config_wraps_an_unreadable_file(tmp_path: Path) -> None:
-    """The single-file loader caught the TOML parse error but not the OSError
-    its layered sibling wraps: chmod-000 escaped as a raw PermissionError."""
+    """The single-file loader wraps an unreadable file's OSError as its layered sibling does."""
     p = tmp_path / "c.toml"
     p.write_text("[review]\nperiod = 7\n", encoding="utf-8")
     p.chmod(0o000)
@@ -1037,8 +984,7 @@ def test_load_config_wraps_an_unreadable_file(tmp_path: Path) -> None:
 
 
 def test_provider_members_are_derived_from_the_union() -> None:
-    """A hand-listed member tuple drifts silently: a new provider entry type
-    would be validated by nothing, so a bad leaf on it would land."""
+    """The provider member tuple is derived from the union, so a new entry type is validated."""
     from typing import get_args
 
     from agent6.config import ProviderEntry
@@ -1052,9 +998,7 @@ def test_provider_members_are_derived_from_the_union() -> None:
 def test_the_unknown_key_hint_reads_the_repo_root_not_the_cwd(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The did-you-mean pool comes from the root the write chain holds, not
-    the process cwd: a TUI or web write names a repo the cwd knows nothing
-    about."""
+    """The unknown-key hint reads the repo root the write chain holds, not the process cwd."""
     from agent6.config.write import unknown_key_error
 
     repo, elsewhere = tmp_path / "repo", tmp_path / "elsewhere"

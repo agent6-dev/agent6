@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The footer on a narrow terminal: its key hints clip at the right edge, the
-menus keep the rest; the app-wide 1-cell scrollbar rule used to give the
-1-row footer a horizontal scrollbar that replaced every hint at 80 columns."""
+"""The footer on a narrow terminal clips its key hints at the right edge; the menus keep the rest.
+
+The app-wide 1-cell scrollbar rule gave the 1-row footer a horizontal scrollbar at 80 columns.
+"""
 
 from __future__ import annotations
 
@@ -62,9 +63,7 @@ def _hub_with_a_fan_out(a6: Path) -> None:
 def test_the_hub_footer_shows_lanes_only_on_a_fan_out_and_keeps_logs_and_refresh_off_it(
     tmp_path: Path,
 ) -> None:
-    """Lanes sat dimmed in the footer of a hub with nothing to fold, and View
-    logs and Refresh took the room the row actions need at 100 columns; both
-    stay in the menus."""
+    """Lanes, View logs and Refresh stay in the menus, so the row actions fit at 100 columns."""
     a6 = tmp_path / ".agent6"
     _hub_with_a_fan_out(a6)
 

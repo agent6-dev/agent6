@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A run whose jail came up degraded says so once, at session open.
+"""A run whose jail came up degraded says so once, at session open, not per command.
 
-`JailSession.open()` reads the launcher's setup stderr at its ready handshake
-(a refused /proc mount under rootless podman, a skipped grant) and stores it.
-The dispatcher surfaces that ONCE when it opens the run's single session --
-not per command, where it would repeat -- so a jail that still runs but is
-weaker than asked does not surface only as a puzzling command failure later.
+`JailSession.open()` stores the launcher's setup stderr at its ready handshake (a refused /proc
+mount under rootless podman, a skipped grant).
 """
 
 from __future__ import annotations
@@ -47,8 +44,7 @@ def _events(path: Path, kind: str) -> list[dict[str, object]]:
 
 
 def _dispatcher(tmp_path: Path, events: EventSink, stub: _StubSession) -> ToolDispatcher:
-    # network = "host" so the policy needs no real session netns for this unit
-    # test; isolation must be strict for a session to open at all.
+    # network = "host" needs no session netns; isolation must be strict for a session to open.
     (tmp_path / "s").mkdir(exist_ok=True)
     return ToolDispatcher(
         root=tmp_path,
@@ -93,15 +89,10 @@ def test_a_clean_session_emits_nothing(tmp_path: Path, monkeypatch: pytest.Monke
 def test_concurrent_callers_open_exactly_one_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The lazy open is a check-then-set, so two threads reaching it together
-    each started a launcher and one was dropped on the floor.
+    """The lazy session open is locked: two threads reaching it together open one launcher.
 
-    A dropped `JailSession` leaks its launcher process, its namespaces and
-    (under `network = "session"`) its network holder, with nothing left holding
-    a handle to close them. Nothing calls a command tool concurrently on one
-    dispatcher TODAY -- review seats are read-only -- but that was an invariant
-    written in a comment, not enforced. The sleep widens the window the race
-    needs; without the lock this opens two.
+    A dropped `JailSession` leaks its launcher, its namespaces and its network holder; the sleep
+    widens the window the race needs.
     """
     import threading
     import time

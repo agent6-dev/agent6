@@ -30,9 +30,11 @@ def _read(root: Path, **args: object) -> dict[str, object]:
 def test_read_file_passes_a_bounded_limit_to_read_contained(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The memory bound is `limit_chars` handed to read_contained, not the
-    post-read slice: a spy pins it so an unbounded read (limit_chars=None)
-    fails here even though the output cap would still look right."""
+    """The memory bound is `limit_chars` handed to read_contained, not the post-read slice.
+
+    A spy pins it so an unbounded read (limit_chars=None) fails here even though the output cap
+    would still look right.
+    """
     from agent6.tools import _fs_tools
     from agent6.tools._path_safety import SafePath
 

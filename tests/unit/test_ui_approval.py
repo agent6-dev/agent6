@@ -70,8 +70,7 @@ def test_write_answer_no_round_trips(tmp_path: Path) -> None:
 
 
 def test_the_first_answer_stands(tmp_path: Path) -> None:
-    """Two surfaces answering one prompt: the second write is refused and the
-    first answer is what the worker reads, on approvals and questions alike."""
+    """The second of two surfaces answering one prompt is refused; the worker reads the first."""
     register_frontend(tmp_path, os.getpid())
     assert write_answer(tmp_path, "approval-1", "yes") is True
     assert write_answer(tmp_path, "approval-1", "no") is False
@@ -85,9 +84,7 @@ def test_the_first_answer_stands(tmp_path: Path) -> None:
 def test_a_failed_answer_write_leaves_no_staging_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A write that fails before the link (a full disk) raises, and the
-    staging file goes with it: nothing sweeps a stray dotfile from the
-    approvals directory."""
+    """A write that fails before the link raises and takes its staging file with it."""
     import os
 
     def full(fd: int) -> None:
@@ -212,9 +209,7 @@ def test_answer_writes_leave_no_tmp_and_are_never_torn(tmp_path: Path) -> None:
 def test_answer_landing_during_dead_verdict_is_consumed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An answer written between the round's read and the frontend-dead verdict
-    was ignored: read_answer returned None (deny) while the completed answer
-    file stayed on disk. The final consume honors it."""
+    """The final consume honors an answer written between the last read and the dead verdict."""
     from agent6.sessions import ipc
 
     def write_then_dead(_live: Path) -> bool:
@@ -229,8 +224,7 @@ def test_answer_landing_during_dead_verdict_is_consumed(
 def test_answer_landing_at_deadline_is_consumed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Same race on the timeout exit: the answer lands during the final sleep,
-    after the last read; the deadline then expires. Honored, not dropped."""
+    """An answer landing during the final sleep before the deadline is honored, not dropped."""
     from agent6.sessions import ipc
 
     register_frontend(tmp_path, os.getpid())
@@ -253,10 +247,10 @@ def test_answer_landing_at_deadline_is_consumed(
 
 @pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc (Linux)")
 def test_worker_pid_recycled_pid_reads_dead(tmp_path: Path) -> None:
-    """worker.pid proves identity, not just 'some same-user process owns this
-    number': after a SIGKILL'd worker left the file behind, a recycled pid made
-    the dead run read running forever -- blocking resume and hanging the
-    /parallel lane await. The recorded kernel start time disambiguates."""
+    """worker.pid proves identity through the recorded kernel start time, not the number alone.
+
+    A recycled pid made a SIGKILL'd run read running forever, blocking resume.
+    """
     from agent6.sessions import ipc
 
     ipc.write_worker_pid(tmp_path, os.getpid())
@@ -270,8 +264,7 @@ def test_worker_pid_recycled_pid_reads_dead(tmp_path: Path) -> None:
 
 
 def test_worker_pid_without_start_time_probes_pid_only(tmp_path: Path) -> None:
-    """A record with no start time (written on a host without /proc) degrades
-    to the plain pid probe."""
+    """A record with no start time degrades to the plain pid probe."""
     from agent6.sessions import ipc
 
     (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -290,10 +283,7 @@ def test_ps_start_time_reports_self_and_rejects_dead() -> None:
 def test_worker_pid_identity_via_ps_where_proc_is_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """macOS has no /proc, so the first fix degraded to the plain kill-0 probe
-    there and pid reuse still misread a dead run as running. `ps -o lstart=`
-    supplies the identity; its value contains spaces, so the record splits
-    once only."""
+    """Without /proc, `ps -o lstart=` supplies the identity; its spaces split the record once."""
     from agent6.sessions import ipc
 
     monkeypatch.setattr(ipc, "_HAS_PROC", False)

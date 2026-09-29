@@ -18,9 +18,10 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def test_an_ask_over_a_noop_merged_run_diffs_its_tip(tmp_path: Path) -> None:
-    """A merge that added nothing stamps the all-zero sentinel; the digest
-    read it as a merge commit and asked git for the range 000...^..000...,
-    which names no commit at all."""
+    """An ask over a no-op merged run diffs its tip.
+
+    The all-zero sentinel is not a merge commit to range over.
+    """
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "config", "user.email", "t@t")
     _git(tmp_path, "config", "user.name", "t")
@@ -48,8 +49,10 @@ def test_an_ask_over_a_noop_merged_run_diffs_its_tip(tmp_path: Path) -> None:
 
 
 def test_a_noop_stamp_with_no_tip_names_nothing_to_diff(tmp_path: Path) -> None:
-    """An older record carries the sentinel and no tip: an empty range end
-    would have git diff the base against its own HEAD under a "merged" label."""
+    """A no-op stamp with no tip names nothing to diff.
+
+    An empty range end would diff the base against HEAD under a "merged" label.
+    """
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "config", "user.email", "t@t")
     _git(tmp_path, "config", "user.name", "t")

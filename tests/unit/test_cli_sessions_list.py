@@ -55,8 +55,10 @@ def test_runs_list_marks_the_fan_out_winner(
 def test_runs_list_json_carries_the_row_facts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions list --json` is the table's rows as data: one object per
-    session with the listing facts, the winner as a boolean, no styling."""
+    """`sessions list --json` is the table's rows as data: the listing facts.
+
+    The winner is a boolean; no styling.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -103,9 +105,10 @@ def test_runs_list_json_carries_the_row_facts(
 def test_sessions_dir_names_a_sessions_own_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions dir <id>` prints that session's directory (an unambiguous
-    prefix resolves like everywhere else); an unknown id is an error, not the
-    repo root."""
+    """`sessions dir <id>` prints the session's directory; an unknown id is an error.
+
+    An unknown id never resolves to the repo root.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -150,8 +153,10 @@ def test_runs_list_uses_plan_points_for_a_plan_metered_run(
 def test_runs_list_marks_a_partial_cost(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A cost the scanner knows is a lower bound (unpriced model in some execution)
-    renders with the '~' marker in the listing, matching `sessions show`."""
+    """A cost the scanner knows is a lower bound renders with the '~' marker.
+
+    `sessions show` renders it the same way.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -174,9 +179,10 @@ def test_runs_list_marks_a_partial_cost(
 
 
 def test_styled_status_colors_stale_red_and_parked_yellow() -> None:
-    """The CLI status colors mirror the TUI/web: a lost worker (stale) is red and
-    a parked submission (needs a resume) is yellow, not the old dim/uncolored that
-    let a dead or unstarted run read as neutral in `agent6 sessions`."""
+    """The CLI status colors mirror the TUI and web: a lost worker is red.
+
+    A parked submission is yellow.
+    """
     stale, _ = styled_status("stale", "", color=True)
     assert "\x1b[1;31m" in stale  # the error level, like failed: the run header + web pill agree
     parked, _ = styled_status("parked", "resume to start", color=True)
@@ -186,9 +192,10 @@ def test_styled_status_colors_stale_red_and_parked_yellow() -> None:
 def test_runs_list_columns_stay_aligned_with_a_machine_draft(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A `machine create` draft lists with mode `machine`, wider than the
-    fixed four-column mode cell; every row's cost column must still start
-    where the header's does."""
+    """Every row's cost column starts where the header's does.
+
+    A `machine create` draft's mode cell is wider than the fixed four-column cell.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -212,8 +219,10 @@ def test_runs_list_columns_stay_aligned_with_a_machine_draft(
 
 
 def test_listing_status_label_folds_mode_reason_and_unmerged() -> None:
-    """One cell for the three surfaces: the mode when the word does not imply
-    it, the reason, the unmerged mark on ended runs only."""
+    """One status cell folds the mode, the reason and the unmerged mark.
+
+    The mode shows when the word does not imply it; the unmerged mark on ended runs only.
+    """
     from agent6.viewmodel.format import listing_status_label
 
     assert listing_status_label("run", "passed") == "passed"
@@ -233,9 +242,12 @@ def test_listing_status_label_folds_mode_reason_and_unmerged() -> None:
 def test_runs_list_marks_an_unmerged_run_and_drops_the_mark_after_merge(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The listing answers "does anything still need merging": a finished run
-    whose branch holds commits reads `passed · unmerged`; merging (stamp tip ==
-    branch tip) or a zero-commit branch (tip == base) drops the mark."""
+    """A finished run whose branch holds commits reads `unmerged`.
+
+    A merge or a zero-commit branch drops it.
+
+    Merged means stamp tip == branch tip; zero commits means tip == base.
+    """
     import subprocess
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -303,8 +315,7 @@ def test_runs_list_marks_an_unmerged_run_and_drops_the_mark_after_merge(
 def test_runs_list_marks_a_branchless_chain_unmerged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A branch_per_run-off run's hidden chain is still work to merge, so its
-    listing carries the same unmerged mark as a visible run branch."""
+    """A branch_per_run-off run's hidden chain carries the unmerged mark like a visible branch."""
     import subprocess
 
     from agent6.git_ops import chain_commit, chain_ref_for
@@ -357,9 +368,10 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
 def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The operator's own commit on the run branch moves the branch and not the
-    chain, and a merge then stamps the branch tip; a listing reading the chain
-    tip alone marked the run unmerged forever on every surface."""
+    """A merge stamped on a diverged branch reads merged everywhere.
+
+    The operator's own commit on the run branch moves the branch and not the chain.
+    """
     import subprocess
 
     from agent6.git_ops import chain_commit, chain_ref_for, run_ref_tips
@@ -419,8 +431,10 @@ def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
 
 
 def test_model_controlled_run_refuses_the_git_surfaces() -> None:
-    """A git_control = "model" manifest turns sessions diff/merge/commits and
-    fork away with one message: the record is the model's own commits."""
+    """A git_control = "model" manifest turns the git surfaces away with one message.
+
+    sessions diff, merge, commits and fork: the record is the model's own commits.
+    """
     from agent6.sessions.manifest import SessionManifest, model_git_refusal
 
     agent6_run = SessionManifest(mode="run", session_id="x1")
@@ -433,8 +447,7 @@ def test_model_controlled_run_refuses_the_git_surfaces() -> None:
 def test_the_json_row_carries_the_whole_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The table clips for width; `--json` is the surface a script reads, and a
-    one-line snippet there is indistinguishable from a one-line task."""
+    """The `--json` row carries the whole task; only the table clips for width."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -458,8 +471,7 @@ def test_the_json_row_carries_the_whole_task(
 
 
 def _fan_out(runs: Path) -> None:
-    """A `run --parallel` fan-out as it lands: the coordinator's record and two
-    lanes whose manifests name it."""
+    """A `run --parallel` fan-out as it lands: the coordinator's record and two lanes naming it."""
     _run(runs, "fan")
     (runs / "fan" / "manifest.json").write_text(
         json.dumps({"mode": "run", "fanout": {"lanes": 2, "spec": "2"}}), encoding="utf-8"
@@ -485,8 +497,10 @@ def _fan_out(runs: Path) -> None:
 def test_runs_list_folds_a_fan_outs_lanes_under_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The fan-out is one row with its lane count; `--lanes` lists the lanes
-    under it, indented, in lane order; the JSON row nests them always."""
+    """A fan-out is one row with its lane count; `--lanes` indents the lanes under it.
+
+    The JSON row nests them always.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -512,8 +526,10 @@ def test_runs_list_folds_a_fan_outs_lanes_under_it(
 def test_a_folded_fan_out_shows_its_groups_latest_activity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The row sorts by the group's latest activity and shows that time: the
-    coordinator's own journal is quiet for the whole fan-out."""
+    """A folded fan-out sorts by and shows its group's latest activity.
+
+    The coordinator's own journal is quiet for the whole fan-out.
+    """
     import os
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

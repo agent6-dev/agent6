@@ -2,10 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The wheel bundles every doc the agent6_docs tool advertises.
 
-The tool description promised machines/CLI/budget answers while the bundle
-held only five reference docs; live reads of GETTING-STARTED and
-STATE-MACHINES returned missing. The force-include list is the one source of
-what ships, so it is held to the advertised surface here."""
+The force-include list is the one source of what ships, so it is held to the advertised surface.
+"""
 
 from __future__ import annotations
 
@@ -30,9 +28,7 @@ def test_every_bundled_doc_source_exists() -> None:
 
 
 def test_the_advertised_docs_are_bundled() -> None:
-    """Every doc name the tool description offers as an example must ship;
-    the usage promise (machines, the CLI, budgets) rides on USAGE and
-    STATE-MACHINES being present."""
+    """Every doc name the tool description offers as an example ships."""
     names = {Path(dest).stem for dest in _bundled().values()}
     import re
 
@@ -44,11 +40,7 @@ def test_the_advertised_docs_are_bundled() -> None:
 
 
 def test_the_reader_serves_every_bundled_doc() -> None:
-    """The reader's name list covers the bundle.
-
-    The wheel shipped ten docs while `AGENT6_DOC_FILES` held five, so a model
-    asking for the STATE-MACHINES or INSTALLATION the description offers got
-    "missing" for a file sitting right there in the wheel."""
+    """The reader's name list covers every bundled doc."""
     from agent6.tools._agent6_docs import AGENT6_DOC_FILES
 
     bundled = {Path(dest).name for dest in _bundled().values()}
@@ -59,13 +51,11 @@ def test_the_reader_serves_every_bundled_doc() -> None:
 
 
 def test_every_operator_facing_nav_page_is_servable() -> None:
-    """docs/mkdocs.yml's nav is the site's own index. A page it names must be
-    a name the reader serves, or a model asking by the name the site gives it
-    (e.g. TERMINAL for the Terminal UI page) gets "unknown agent6 doc" for a
-    page that plainly exists. index.md (the marketing home page, not a
-    reference doc) and data-contracts.md (a generated internal wire-schema
-    reference, outside the tool's "how to use agent6" scope) are not names
-    the reader is expected to carry."""
+    """Every page in docs/mkdocs.yml's nav is a name the reader serves.
+
+    index.md (the home page) and data-contracts.md (a generated wire-schema reference) are not
+    names the reader carries.
+    """
     from agent6.tools._agent6_docs import read_agent6_doc
 
     mkdocs = (_ROOT / "docs" / "mkdocs.yml").read_text(encoding="utf-8")

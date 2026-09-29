@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`--config FILE` parses in both positions for run/plan/resume/check.
+"""`--config FILE` parses in both positions for run, plan, resume and check.
 
-The documented `agent6 run --config FILE` (config after the subcommand) used to
-error; and a subparser `default=None` would clobber the top-level
-`agent6 --config FILE run` form back to None. Both must now set `args.config`.
+A subparser `default=None` would clobber the top-level form back to None.
 """
 
 from __future__ import annotations
@@ -25,8 +23,7 @@ from agent6.ui.cli.parser import (
     [
         ["run", "--config", "c.toml", "task"],
         ["--config", "c.toml", "run", "task"],
-        # `plan` carries --config/task on its implicit `run` verb (see
-        # _inject_default_verb), which `main` applies before parsing.
+        # `plan` carries --config and the task on its implicit `run` verb, applied before parsing.
         ["plan", "--config", "c.toml", "task"],
         ["--config", "c.toml", "plan", "task"],
         ["resume", "rid", "--config", "c.toml"],
@@ -53,16 +50,13 @@ def test_run_decompose_flag_defaults_off_and_parses() -> None:
 
 
 def test_history_bare_query_defaults_to_search() -> None:
-    # `history "divide"` == `history search "divide"` (search is history's one
-    # obvious action), like `runs`->list and bare `ask`.
+    # `history "divide"` == `history search "divide"`, like `runs` -> list and bare `ask`.
     args = build_parser().parse_args(_inject_default_verb(["history", "divide"]))
     assert args.history_command == "search" and args.query == "divide"
 
 
 def test_a_bare_sessions_is_list_with_its_flags() -> None:
-    """`sessions` sat outside `_DEFAULT_VERBS` as a second implementation of the
-    shorthand (`required=False` plus a None branch), so `agent6 sessions --json`
-    was refused while `agent6 sessions list --json` worked."""
+    """A bare `sessions` is `list` with its flags, through `_DEFAULT_VERBS` like every shorthand."""
     args = build_parser().parse_args(_inject_default_verb(["sessions"]))
     assert args.sessions_command == "list"
     args = build_parser().parse_args(_inject_default_verb(["sessions", "--json"]))
@@ -79,13 +73,12 @@ def test_ask_has_one_verb() -> None:
 
 
 def test_a_bare_history_names_the_query_it_needs(capsys: pytest.CaptureFixture[str]) -> None:
-    """The bare form reported against `agent6 history search`, a command form
-    the operator did not type; it now answers like a bare `plan` or `ask`."""
+    """A bare `history` names the query it needs, like a bare `plan` or `ask`."""
     from agent6.ui.cli import main
 
     try:
         rc = main(["history"])
-    except SystemExit as exc:  # argparse's own refusal, before the fix
+    except SystemExit as exc:  # argparse's own refusal
         rc = int(exc.code or 0)
     assert rc == 2
     assert "'history' needs a query" in capsys.readouterr().err
@@ -102,13 +95,10 @@ def test_history_explicit_search_still_works() -> None:
 def test_config_get_does_not_offer_keys_it_rejects(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A completer must offer what the command accepts, and nothing else.
+    """`config get` completion offers no preset key, since get rejects them.
 
-    `[presets.*]` tables are stripped before validation, so they are not
-    effective-config leaves: `config get presets.mine.sandbox.network`
-    errors with "is not a config leaf". The shared completer offered exactly
-    those keys, so TAB proposed an input the command refuses. They stay on the
-    write verbs, where they ARE accepted.
+    `[presets.*]` tables are stripped before validation, so they are not effective-config leaves;
+    they stay on the write verbs, where they are accepted.
     """
     from agent6.ui.cli.completers import (
         _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
@@ -129,14 +119,10 @@ def test_config_get_does_not_offer_keys_it_rejects(
 
 
 def test_fork_carries_the_same_sandbox_flags_as_its_siblings() -> None:
-    """`_add_sandbox_flags` says "every paid command carries both:
-    run/plan/ask/resume and machine run". A fork without `--no-run` CONTINUES a
-    run, so it is one -- but it registered only the budget flags, and
-    `agent6 fork --auto-approve <id>` died on "unrecognized arguments".
+    """Fork carries the same sandbox flags as its siblings.
 
-    Loud, not silent, which is why this is a consistency gap rather than a lie.
-    But an operator who forks a run they had auto-approved should not have to
-    fork with --no-run and then resume just to say so again.
+    A fork without `--no-run` continues a run, so it is a paid command and takes `--auto-approve`
+    like the rest.
     """
     from agent6.app._setup import SandboxOverrides
     from agent6.ui.cli.parser import build_parser
@@ -152,12 +138,10 @@ def test_fork_carries_the_same_sandbox_flags_as_its_siblings() -> None:
 def test_get_completion_offers_no_key_get_rejects(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The contract this file already states: a completer offers what the
-    command accepts, and nothing else.
+    """Get completion offers no enum key `config get` rejects.
 
     The enum keys exist so `config set` can reach a leaf no layer has set yet.
-    `config get` reads EFFECTIVE leaves and rejects those, so offering them made
-    TAB suggest three keys it answers "is not a config leaf" to."""
+    """
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)
     from agent6.ui.cli import main
@@ -177,9 +161,10 @@ def _subcommands(parser: argparse.ArgumentParser) -> dict[str, argparse.Argument
 
 
 def test_default_verb_sets_are_the_parsers_real_subcommands() -> None:
-    """Each default-verb group lists its verbs by hand (argv is rewritten
-    before parsing); a verb added to a parser and not here would be
-    swallowed as the default verb's first argument."""
+    """Each default-verb group lists exactly the parser's real subcommands.
+
+    A verb added to a parser and not here would be swallowed as the default verb's first argument.
+    """
     from agent6.ui.cli.parser import _DEFAULT_VERBS  # pyright: ignore[reportPrivateUsage]
 
     groups = _subcommands(build_parser())
@@ -190,9 +175,7 @@ def test_default_verb_sets_are_the_parsers_real_subcommands() -> None:
 
 
 def test_bare_default_groups_are_those_whose_default_verb_takes_no_positional() -> None:
-    """The set is derived from the parser: a group is in it exactly when its
-    default verb accepts no positional, so a bare word after the group can
-    only be a mistyped verb."""
+    """A group is bare exactly when its default verb takes no positional."""
     from agent6.ui.cli.parser import (
         _BARE_DEFAULT_GROUPS,  # pyright: ignore[reportPrivateUsage]
         _DEFAULT_VERBS,  # pyright: ignore[reportPrivateUsage]
@@ -213,8 +196,7 @@ def test_bare_default_groups_are_those_whose_default_verb_takes_no_positional() 
 def test_a_mistyped_verb_after_a_bare_group_names_the_choices(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`agent6 skills show`: no verb `show`, and `skills list` takes nothing,
-    so argparse names the verbs (it read "unrecognized arguments: show")."""
+    """A mistyped verb after a bare group names the choices, not "unrecognized arguments"."""
     with pytest.raises(SystemExit) as exc:
         build_parser().parse_args(_inject_default_verb(["skills", "show"]))
     assert exc.value.code == 2
@@ -235,7 +217,6 @@ def test_a_mistyped_verb_after_a_bare_group_names_the_choices(
     ],
 )
 def test_a_bare_group_runs_its_listing(argv: list[str], dest: str, verb: str) -> None:
-    """`agent6 skills` lists like `agent6 sessions` does; `agent6 config` shows;
-    a key after `config` is a `show` of that key."""
+    """A bare group runs its listing; a key after `config` is a `show` of that key."""
     args = build_parser().parse_args(_inject_default_verb(argv))
     assert getattr(args, dest) == verb

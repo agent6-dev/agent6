@@ -115,8 +115,7 @@ status = "ok"
 reason = "signalled"
 """
 
-# A mutable wait interval can become invalid at runtime; the engine must fail
-# cleanly instead of busy-looping.
+# A mutable wait interval can become invalid at runtime; the engine fails cleanly.
 WAITER_DYNAMIC_ZERO = """
 machine = "waiter_dynamic_zero"
 version = 1
@@ -174,8 +173,7 @@ status = "ok"
 reason = "signalled"
 """
 
-# A wait with no timer: park until a signal poke, then a tool consumes the
-# poke payload it materialized.
+# A wait with no timer: park until a poke, then a tool consumes the poke payload.
 FOREVER = """
 machine = "forever"
 version = 1
@@ -211,8 +209,7 @@ reason = "fail"
 """
 
 
-# A terminal whose `notify` template fails to render at runtime (references an
-# optional field that is absent) -- validates at load, raises at render.
+# A terminal's `notify` template that references an absent optional field raises at render.
 NOTIFY_FAIL = """
 machine = "notify_fail"
 version = 1
@@ -453,18 +450,14 @@ def test_branch_routes_to_ok_when_empty(tmp_path: Path) -> None:
 
 
 def test_tool_stdout_violating_output_schema_halts(tmp_path: Path) -> None:
-    """A tool whose parsed stdout does not match its declared output_schema must
-    halt the machine loudly (a clean failed MachineResult), not silently capture
-    a mistyped value that corrupts the blackboard and misroutes downstream
-    branches. scan_result.items is list[str]; emit a bare string instead."""
+    """A tool output that fails its declared schema halts the machine with a clean failed result."""
     journal, f = _load(tmp_path, COUNTER)
     spec = load_machine(f)
     world = FakeWorld({"scan": _ok('{"items": "notalist"}')})
     result = drive(spec, journal, world, live=True)
     assert result.status == "failed"
     assert "output_schema" in result.reason
-    # The capture never ran, so the poison value is not journaled and no
-    # snapshot carries a corrupted `items`.
+    # The capture never ran, so no snapshot carries a corrupted `items`.
     snap = journal.latest_snapshot()
     assert snap is None or snap.blackboard.get("items") == []
 
@@ -479,8 +472,7 @@ def test_tool_nonzero_routes_to_failure(tmp_path: Path) -> None:
 
 
 def test_tool_stderr_is_journaled_on_the_fact(tmp_path: Path) -> None:
-    # A failing tool's stderr flows ToolExecResult -> ToolFact -> journal, so the
-    # failure is debuggable from the journal. Routing still keys off exit_code.
+    # A failing tool's stderr flows into the journal; routing still keys off exit_code.
     journal, f = _load(tmp_path, COUNTER)
     spec = load_machine(f)
     world = FakeWorld(
@@ -505,8 +497,7 @@ def test_tool_timeout_routes_to_failure(tmp_path: Path) -> None:
 
 
 def test_empty_tool_stdout_is_not_json_for_an_opaque_capture(tmp_path: Path) -> None:
-    """`stdout_json` means parse one JSON value; an empty successful stdout is
-    malformed output, not an implicit JSON null that may overwrite the var."""
+    """`stdout_json` means parse one JSON value; an empty stdout is malformed, not a null."""
     journal, f = _load(tmp_path, FOREVER)
     spec = load_machine(f)
     world = FakeWorld({"record": _ok("")}, wakes=[WaitWake("signal")])
@@ -520,9 +511,7 @@ def test_empty_tool_stdout_is_not_json_for_an_opaque_capture(tmp_path: Path) -> 
 
 
 def test_tool_bad_stdout_fails_clean_without_poisoning_journal(tmp_path: Path) -> None:
-    # A tool that exits 0 but prints non-JSON stdout cannot be captured. The
-    # machine must halt FAILED cleanly, and -- critically -- never journal the
-    # poison fact, so a later replay/status re-reduces without re-crashing.
+    # Non-JSON stdout halts FAILED cleanly and never journals the poison fact.
     journal, f = _load(tmp_path, COUNTER)
     spec = load_machine(f)
     world = FakeWorld({"scan": _ok("not json at all")})
@@ -539,8 +528,7 @@ def test_tool_bad_stdout_fails_clean_without_poisoning_journal(tmp_path: Path) -
 
 
 def test_recovery_rejects_a_tool_route_that_disagrees_with_its_fact(tmp_path: Path) -> None:
-    """A successful tool fact determines `ok`; a journal cannot relabel it as
-    `nonzero` and take another declared edge during crash recovery."""
+    """A successful tool fact determines `ok`; a journal cannot relabel it during crash recovery."""
     journal, f = _load(tmp_path, COUNTER)
     spec = load_machine(f)
     journal.ensure_dirs()
@@ -566,8 +554,7 @@ def test_recovery_rejects_a_tool_route_that_disagrees_with_its_fact(tmp_path: Pa
 def test_recovery_rejects_a_branch_choice_that_the_blackboard_did_not_take(
     tmp_path: Path,
 ) -> None:
-    """A branch is pure, so replay recomputes its winning clause instead of
-    trusting a fabricated clause index, label, and destination."""
+    """A branch is pure, so replay recomputes its winning clause and trusts no journaled index."""
     journal, f = _load(tmp_path, COUNTER)
     spec = load_machine(f)
     journal.ensure_dirs()
@@ -617,8 +604,7 @@ def test_recovery_rejects_a_journal_without_its_begin_event(tmp_path: Path) -> N
 
 
 def test_recovery_rejects_a_goto_the_state_never_declared(tmp_path: Path) -> None:
-    # A fabricated or corrupted destination must fail loudly at its own event,
-    # not fold a position the machine never reached.
+    # A fabricated destination fails loudly at its own event.
     journal, f = _load(tmp_path, COUNTER)
     spec = load_machine(f)
     journal.ensure_dirs()
@@ -638,8 +624,7 @@ def test_recovery_rejects_a_goto_the_state_never_declared(tmp_path: Path) -> Non
 
 
 def test_recovery_rejects_a_state_the_edited_file_dropped(tmp_path: Path) -> None:
-    # A legitimately recorded journal against a machine file later edited to
-    # drop the destination state must fail loudly, not raise a bare KeyError.
+    # A journal against a machine file edited to drop the destination fails loudly, not KeyError.
     journal, _f = _load(tmp_path, COUNTER)
     journal.ensure_dirs()
     journal.begin(machine="counter", version=1)
@@ -681,8 +666,7 @@ on = { ok = "stop_ok", nonzero = "stop_fail", timeout = "stop_fail" }
 
 
 def test_recovery_rejects_machine_id_mismatch_after_the_journal_ended(tmp_path: Path) -> None:
-    """A terminal journal still belongs to its recorded machine; the finished
-    fast path must not return its result to a different spec reusing the dir."""
+    """A terminal journal still belongs to its recorded machine, not a spec reusing the dir."""
     journal, f = _load(tmp_path, COUNTER)
     spec = load_machine(f)
     drive(spec, journal, FakeWorld({"scan": _ok('{"items": []}')}), live=True)
@@ -747,9 +731,7 @@ def test_replay_of_incomplete_journal(tmp_path: Path) -> None:
 def test_crash_recovery_continues_without_redoing_step(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
     spec = load_machine(f)
-    # Simulate a crash right after `scan` completed: journal has begin + the
-    # scan step, but no terminal. Recovery must rebuild `items` from the
-    # recorded fact and continue from `check` without re-running `scan`.
+    # A crash after `scan`: recovery rebuilds `items` from the fact and continues from `check`.
     journal.ensure_dirs()
     journal.begin(machine="counter", version=1)
     journal.append(
@@ -809,9 +791,7 @@ def test_wait_zero_dynamic_interval_fails_cleanly(tmp_path: Path) -> None:
 
 
 def test_run_tool_uses_the_injected_jail_runner(tmp_path: Path) -> None:
-    """The tool step executes through LiveWorld.jail_runner, the seam the CLI
-    overrides so a run-machine's tools run in the machine's own tree; the
-    default stays the plain jail."""
+    """The tool step executes through LiveWorld.jail_runner, the seam a run-machine overrides."""
     from agent6.kinds import CommandResult, JailPolicy
 
     seen: list[JailPolicy] = []
@@ -832,8 +812,7 @@ def test_run_tool_uses_the_injected_jail_runner(tmp_path: Path) -> None:
 
 
 def test_exit_on_wait_zero_dynamic_interval_fails_cleanly(tmp_path: Path) -> None:
-    # The --exit-on-wait path must halt FAILED with a journaled MachineEnd too,
-    # not leave the instance "incomplete" with the error escaping as a CLI error.
+    # The --exit-on-wait path halts FAILED with a journaled MachineEnd too.
     journal, f = _load(tmp_path, WAITER_DYNAMIC_ZERO)
     spec = load_machine(f)
     result = drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True)
@@ -851,11 +830,10 @@ def test_wait_signal_path(tmp_path: Path) -> None:
 
 
 def test_a_foreground_wait_persists_its_deadline_before_sleeping(tmp_path: Path) -> None:
-    """Only --exit-on-wait persisted the wake instant; a supervisor death
-    mid-foreground-sleep lost it, so restart recomputed from a fresh now() and
-    the full interval ran again. The foreground path writes the same durable
-    PendingWait before blocking, hands the sleep that instant, and resumes a
-    pre-existing pending for the state instead of recomputing."""
+    """The foreground wait persists the same durable PendingWait as --exit-on-wait does.
+
+    A restart resumes the pre-existing pending for the state instead of recomputing from now().
+    """
 
     class _ClockedWorld:
         def __init__(self, journal: MachineJournal) -> None:
@@ -905,9 +883,7 @@ def test_a_foreground_wait_persists_its_deadline_before_sleeping(tmp_path: Path)
 
 
 def test_a_signal_wake_acks_its_poke_after_the_step(tmp_path: Path) -> None:
-    """The poke's claim file outlives take_signal (a death before the wake's
-    StepEvent re-delivers it on restart) and is dropped by the driver once the
-    step is durable -- without that ack every poke would re-deliver forever."""
+    """A poke's claim file outlives take_signal and is dropped once the step is durable."""
     journal, f = _load(tmp_path, WAITER)
     spec = load_machine(f)
     journal.poke("p")
@@ -920,11 +896,7 @@ def test_a_signal_wake_acks_its_poke_after_the_step(tmp_path: Path) -> None:
 
 
 def test_a_wake_record_outlives_the_step_that_consumes_it(tmp_path: Path) -> None:
-    """The record goes the way the poke's claim goes: dropped only once the
-    transition it produced is in the journal. Cleared before the append, a
-    death in that window re-armed the wait from the state and started a
-    24-hour sleep again from zero."""
-
+    """The wait record is dropped only once the transition it produced is in the journal."""
     journal, f = _load(tmp_path, WAITER)
     spec = load_machine(f)
     armed: list[PendingWait | None] = []
@@ -941,8 +913,7 @@ def test_a_wake_record_outlives_the_step_that_consumes_it(tmp_path: Path) -> Non
         drive(spec, journal, FakeWorld({}, wakes=[WaitWake("tick")]), live=True)
     journal.append = appended  # type: ignore[method-assign]
 
-    # The record the crashed run armed is still there for the restart, so the
-    # wait resumes on the SAME instant instead of arming a fresh one.
+    # The armed record survives for the restart, so the wait resumes on the same instant.
     assert armed and armed[0] is not None
     assert journal.read_pending_wait() == armed[0]
 
@@ -967,12 +938,7 @@ def test_notify_journals_event_and_fires_hook(tmp_path: Path) -> None:
 def test_terminal_notify_render_failure_keeps_status_but_is_never_silent(
     tmp_path: Path,
 ) -> None:
-    """`notify` is presentation only: a render failure on a terminal must NOT
-    flip the terminal's real ok/failed status. It must not vanish either --
-    the swallow left no journal entry and no hook fire, so a broken template
-    meant notifications silently stopped. The failure is journaled as an
-    error-level machine.notify and the hook is told."""
-
+    """`notify` is presentation only: a render failure is journaled, never a status flip."""
     journal, f = _load(tmp_path, NOTIFY_FAIL)
     spec = load_machine(f)
     world = FakeWorld({})
@@ -1005,9 +971,7 @@ def test_live_world_materializes_poke_atomically(tmp_path: Path) -> None:
 
 
 def test_data_dir_env_matches_jail_mount(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # The data dir lives OUTSIDE cwd by design; the jail mounts extra_rw_paths
-    # at their real locations in every isolation, so `$AGENT6_MACHINE_DATA_DIR`
-    # is always the host abspath (strict used to need a /rw prefix rewrite).
+    # The data dir lives outside cwd; the jail mounts it at its real path in every isolation.
     from agent6.kinds import CommandResult, IsolationLevel, JailPolicy
     from agent6.machine import engine
     from agent6.machine.engine import LiveWorld
@@ -1040,9 +1004,7 @@ def test_data_dir_env_matches_jail_mount(tmp_path: Path, monkeypatch: pytest.Mon
 def test_tool_jails_carry_the_operator_hide_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A machine's tool jails are jailed commands like any other, so
-    [sandbox].hide_paths reaches them (agent6's own private dirs are unioned
-    in by the launcher and need no wiring)."""
+    """A machine's tool jails are jailed commands like any other; hide_paths reaches them."""
     from agent6.kinds import CommandResult, JailPolicy
     from agent6.machine import engine
     from agent6.machine.engine import LiveWorld
@@ -1070,11 +1032,7 @@ def test_tool_jails_carry_the_operator_hide_paths(
 def test_live_world_run_tool_maps_rc124_to_timed_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """run_in_jail's contract is 'a timeout is returncode 124, never a raised
-    TimeoutExpired'. LiveWorld.run_tool must derive timed_out from that so a
-    tool state's on.timeout transition is reachable; the old `except
-    TimeoutExpired` was dead code and every real timeout returned
-    timed_out=False (routing to on.nonzero and journaling not-timed-out)."""
+    """LiveWorld.run_tool derives timed_out from rc 124, so on.timeout is reachable."""
     from agent6.kinds import CommandResult, JailPolicy
     from agent6.machine import engine
     from agent6.machine.engine import LiveWorld
@@ -1187,9 +1145,7 @@ def test_exit_on_wait_arms_and_yields_waiting(tmp_path: Path) -> None:
     assert pending.state == "poll"
     assert pending.wake_epoch == 1060.0
     assert not any(isinstance(e, StepEvent) for e in journal.read())
-    # Both surfaces that show an operator when this wakes read one owner, so
-    # the run banner cannot print a raw epoch while `machine status` prints a
-    # timestamp for the same instant.
+    # Both surfaces read one owner, so the banner and `machine status` agree on the wake time.
     assert pending.wake_at == "1970-01-01T00:17:40+00:00"
     assert pending.wake_at in result.reason
 
@@ -1220,10 +1176,7 @@ def test_exit_on_wait_fires_signal_before_due(tmp_path: Path) -> None:
 
 
 def test_blocking_wait_clears_persisted_wait(tmp_path: Path) -> None:
-    # An --exit-on-wait invocation arms wait.json; a later BLOCKING run consumes
-    # the wake via sleep_until. The stale record must be cleared with it: left
-    # behind it suppresses the state's notify (already_parked), feeds a stale
-    # wake_epoch to a later --exit-on-wait run, and pins machine_is_parked.
+    # A blocking run that consumes the wake clears the stale wait.json with it.
     journal, f = _load(tmp_path, WAITER_DELAYED)
     spec = load_machine(f)
     drive(spec, journal, FakeWorld({}, clock=1000.0), live=True, exit_on_wait=True)
@@ -1255,9 +1208,7 @@ def test_journal_begins_once(tmp_path: Path) -> None:
     assert sum(isinstance(e, MachineEnd) for e in events) == 1
 
 
-# --------------------------------------------------------------------------
-# agent state (Phase 3)
-# --------------------------------------------------------------------------
+# Agent state.
 
 
 def _agent(reason: str, payload: dict[str, Any] | None) -> AgentExecResult:
@@ -1297,8 +1248,7 @@ def test_agent_per_state_knobs_threaded_to_request(tmp_path: Path) -> None:
     assert req.provider == "anthropic"
     assert req.effort == "high"
     assert req.temperature == 0.3
-    # min(2.5 state cap, 1.0 machine budget): a state can never be handed
-    # more than the machine has.
+    # min(2.5 state cap, 1.0 machine budget): a state never gets more than the machine has.
     assert req.max_usd == 1.0
     assert req.max_tokens_fallback == 90000
 
@@ -1392,8 +1342,7 @@ reason = "fail"
 
 
 def test_machine_stops_when_cumulative_max_usd_exceeded(tmp_path: Path) -> None:
-    # Each agent step costs $0.10 > the $0.05 machine budget and loops on ok.
-    # The engine must stop on the budget guard, not run unbounded.
+    # Each step costs $0.10 against a $0.05 budget, so the budget guard must stop the loop.
     journal, f = _load(tmp_path, _SPENDER)
     spec = load_machine(f)
     world = FakeWorld(
@@ -1408,10 +1357,7 @@ def test_machine_stops_when_cumulative_max_usd_exceeded(tmp_path: Path) -> None:
 def test_the_agent_request_cap_is_clamped_to_the_remaining_machine_budget(
     tmp_path: Path,
 ) -> None:
-    """The aggregate guard only stops the NEXT state; the request itself
-    carried only the state's own override, so a $0.10 state cap against a
-    $0.05 machine budget handed the child more than the machine had. The
-    request's cap is min(state cap, remaining machine budget)."""
+    """A child agent's cap is min(state cap, remaining machine budget)."""
     body = _SPENDER.replace('prompt = "do"', 'prompt = "do"\nmax_usd = 0.10')
     journal, f = _load(tmp_path, body)
     spec = load_machine(f)
@@ -1472,8 +1418,7 @@ def test_agent_replay_reproduces_path_without_world(tmp_path: Path) -> None:
 
 
 def test_agent_recovery_revalidates_the_journaled_payload(tmp_path: Path) -> None:
-    """Pydantic validates the journal envelope, but the machine's record schema
-    must also reject a fabricated `ok` payload before it reaches the board."""
+    """The machine's record schema rejects a fabricated `ok` payload before it reaches the board."""
     journal, f = _load(tmp_path, REVIEWER)
     spec = load_machine(f)
     journal.ensure_dirs()
@@ -1500,9 +1445,7 @@ def test_agent_recovery_revalidates_the_journaled_payload(tmp_path: Path) -> Non
 def test_agent_crash_recovery_does_not_rerun(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
     spec = load_machine(f)
-    # Crash right after the agent ran: journal has begin + the agent step, no
-    # terminal. Recovery must rebuild `verdict` and continue from `route`
-    # without calling the runner again (empty agent_results would IndexError).
+    # A crash after the agent ran: recovery rebuilds `verdict` without calling the runner again.
     journal.ensure_dirs()
     journal.begin(machine="reviewer", version=1)
     journal.append(
@@ -1537,9 +1480,7 @@ def test_agent_without_runner_raises(tmp_path: Path) -> None:
 
 
 def test_per_state_agent_log_path_and_prune(tmp_path: Path) -> None:
-    """Each agent-state execution gets its own watchable logs.jsonl at
-    <state_log_root>/<seq>-<state>/, and the dirs are pruned to the most recent
-    state_log_keep so a long-running machine's logs stay bounded."""
+    """Each agent state gets its own logs.jsonl, pruned to the most recent state_log_keep."""
     from agent6.machine.engine import LiveWorld
 
     journal = MachineJournal(tmp_path / "inst")
@@ -1571,9 +1512,7 @@ def test_per_state_agent_log_path_and_prune(tmp_path: Path) -> None:
 
 
 def test_state_log_keep_zero_disables_pruning(tmp_path: Path) -> None:
-    """`[machine].state_log_keep = 0` keeps every per-state log dir, like
-    `snapshot_keep`; retention is an audited config value, not a hidden
-    hardcoded deletion."""
+    """`[machine].state_log_keep = 0` keeps every per-state log dir, like `snapshot_keep`."""
     from agent6.machine.engine import LiveWorld
 
     journal = MachineJournal(tmp_path / "inst")
@@ -1598,8 +1537,7 @@ def test_state_log_keep_zero_disables_pruning(tmp_path: Path) -> None:
 
 
 def test_per_state_log_disabled_without_root(tmp_path: Path) -> None:
-    """No state_log_root -> no per-state log (the create authoring agent and any
-    runner that doesn't want logs get None)."""
+    """Without a state_log_root there is no per-state log."""
     from agent6.machine.engine import LiveWorld
 
     seen: list[Path | None] = []
@@ -1616,9 +1554,7 @@ def test_per_state_log_disabled_without_root(tmp_path: Path) -> None:
 
 
 def test_best_effort_usd_limit_no_longer_validates(tmp_path: Path) -> None:
-    # The hard/soft pair collapsed to one max_usd (unmetered spend is bounded
-    # by [budget].max_tokens_fallback in the effective config); the old field
-    # must fail the grammar loudly, never load as an ignored knob.
+    # The old soft field must fail the grammar loudly, never load as an ignored knob.
     from agent6.machine import MachineError
 
     body = _SPENDER.replace("max_usd = 0.05", "best_effort_usd_limit = 0.05")
@@ -1661,10 +1597,7 @@ reason = "finished"
 
 
 def test_parked_wait_notify_fires_once_across_scheduler_ticks(tmp_path: Path) -> None:
-    # Re-driving a parked --exit-on-wait machine (a cron/systemd tick) must not
-    # re-fire the wait's notify (or the operator hook: a page, an email) once
-    # per poll; the notify belongs to state ENTRY, and an armed PendingWait
-    # means the state was already entered.
+    # Re-driving a parked machine must not re-fire the wait's notify: it belongs to state entry.
 
     journal, f = _load(tmp_path, NOTIFY_WAIT)
     spec = load_machine(f)
@@ -1684,9 +1617,7 @@ def test_parked_wait_notify_fires_once_across_scheduler_ticks(tmp_path: Path) ->
 
 
 def test_poke_atomic_write_leaves_no_temp_and_keeps_payload(tmp_path: Path) -> None:
-    # poke() must publish the signal file atomically (temp + rename): the
-    # engine's take_signal polls from another process, and a plain write let
-    # it consume an empty/partial file and drop the payload.
+    # poke() publishes atomically; a plain write let take_signal consume a partial file.
     journal, _ = _load(tmp_path, FOREVER)
     journal.poke({"cmd": "deploy", "target": "prod"})
     assert not any(p.name.endswith(".tmp") for p in journal.root.iterdir())
@@ -1710,11 +1641,7 @@ def test_machine_is_parked_reflects_pending_wait(tmp_path: Path) -> None:
 def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A tool-state jail resolves operator tools EXACTLY like run_command's jail
-    # and the machine-check probe: the computed PATH string plus the RO+exec
-    # mounts that make it true (sandbox.tool_paths.operator_tool_paths). Copying the
-    # host PATH named dirs the jail never mounts, so a tool `machine check`
-    # proved reachable still died 127 on the machine's first real transition.
+    # A tool-state jail resolves operator tools exactly as run_command's jail does.
     from agent6.kinds import CommandResult, JailPolicy
     from agent6.machine import engine as engine_mod
     from agent6.machine.engine import LiveWorld
@@ -1750,12 +1677,7 @@ def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
 
 
 def test_a_captured_lone_surrogate_never_reaches_the_blackboard(tmp_path: Path) -> None:
-    """The journal writers survive a lone surrogate, but the value stayed raw on
-    the blackboard, so the poison just moved one step downstream: the next agent
-    state serializes the blackboard into its request payload and
-    model_dump_json raises PydanticSerializationError -- a ValueError, caught by
-    neither the engine's _STATE_RUNTIME_ERRORS nor run_machine's handler. Same
-    traceback with no MachineEnd the sanitizing commit set out to remove."""
+    """A lone surrogate is scrubbed on the blackboard, so the next request payload serializes."""
     from pydantic import BaseModel
 
     from agent6.machine.engine import _apply_capture  # pyright: ignore[reportPrivateUsage]
@@ -1778,10 +1700,7 @@ def test_a_captured_lone_surrogate_never_reaches_the_blackboard(tmp_path: Path) 
 
 
 def test_replay_rejects_a_diverged_state_seq_or_fact_kind(tmp_path: Path) -> None:
-    """The fold trusted every recorded field: a step whose state or seq
-    disagreed with the replayed position folded silently, and a fact kind the
-    state cannot produce no-op'd through reduce -- a fabricated journal
-    rebuilt a position and blackboard the machine never reached."""
+    """The fold verifies each step's state, seq and fact kind against the replayed position."""
     base = [
         dict(ts="t", seq=0, state="scan", label="ok", goto="check"),
     ]
@@ -1815,9 +1734,11 @@ def test_replay_rejects_a_diverged_state_seq_or_fact_kind(tmp_path: Path) -> Non
 
 
 def test_stop_request_parks_at_the_transition_boundary(tmp_path: Path) -> None:
-    """A stop marker written mid-state parks the machine at the next boundary:
-    the finished state's fact is journaled, no MachineEnd is written, the
-    marker is consumed, and a later drive continues to the terminal."""
+    """A stop marker written mid-state parks the machine at the next boundary.
+
+    The finished state's fact is journaled, no MachineEnd is written, the marker is consumed, and a
+    later drive continues.
+    """
     from agent6.machine.journal import stop_requested, write_stop_request
 
     journal, f = _load(tmp_path, COUNTER)
@@ -1848,8 +1769,7 @@ def test_stop_request_parks_at_the_transition_boundary(tmp_path: Path) -> None:
 
 
 def test_stop_interrupts_a_foreground_wait_and_keeps_it_armed(tmp_path: Path) -> None:
-    """A stop that lands mid-sleep parks without consuming the wait: the
-    PendingWait survives, so a later run resumes the same wake instant."""
+    """A stop that lands mid-sleep parks without consuming the wait; a later run resumes it."""
     journal, f = _load(tmp_path, WAITER)
     spec = load_machine(f)
     world = FakeWorld({}, wakes=[WaitWake("stop")])
@@ -1860,8 +1780,7 @@ def test_stop_interrupts_a_foreground_wait_and_keeps_it_armed(tmp_path: Path) ->
 
 
 def test_live_world_sleep_wakes_on_a_stop_request(tmp_path: Path) -> None:
-    """The stop marker interrupts a real sleep (a machine parked in an
-    hour-long or forever wait must not sleep through its own stop)."""
+    """The stop marker interrupts a real sleep."""
     import time as _time
 
     from agent6.machine.engine import LiveWorld
@@ -1902,10 +1821,10 @@ reason = "ticked"
 
 
 def test_a_wait_never_inherits_the_previous_waits_record(tmp_path: Path) -> None:
-    """The driver clears the record only after the StepEvent is durable, so a
-    death in that window resumes at the goto state holding the previous wait's
-    record. Arming keys on the state name: `second` computes its own instant
-    instead of firing on `first`'s."""
+    """The driver clears the wait record only after the StepEvent is durable.
+
+    Arming keys on the state name: `second` computes its own instant instead of firing on `first`'s.
+    """
     journal, f = _load(tmp_path, WAITER_CHAIN)
     spec = load_machine(f)
     appended = journal.append
@@ -1965,13 +1884,7 @@ reason = "looped"
 
 
 def test_a_revisited_wait_state_arms_its_own_fresh_instant(tmp_path: Path) -> None:
-    """`poll` is reached twice on a loop back through `route`/`bump`. A death
-    between the first visit's wake StepEvent and the pending-wait clear (the
-    same window `test_a_wait_never_inherits_the_previous_waits_record` covers
-    for two DIFFERENT state names) leaves a stale record also named `poll`.
-    Keying the reuse on state name alone cannot tell that stale first-visit
-    record from a fresh second visit: the second `poll` must arm its own
-    instant off the current clock, not fire on the first visit's stale one."""
+    """A state reached twice arms its own instant on the second visit, never a stale record."""
     journal, f = _load(tmp_path, LOOP_WAIT)
     spec = load_machine(f)
     appended = journal.append
@@ -1992,16 +1905,12 @@ def test_a_revisited_wait_state_arms_its_own_fresh_instant(tmp_path: Path) -> No
     second = FakeWorld({"bump": _ok("1")})
     second.clock = 5000.0
     assert drive(spec, journal, second, live=True).status == "ok"
-    # The second `poll` must arm 5060.0 (fresh off the new clock), never reuse
-    # the first visit's stale 1060.0.
+    # The second `poll` arms 5060.0 off the new clock, never the first visit's 1060.0.
     assert second.sleep_deadlines == [5060.0]
 
 
 def test_a_corrupt_wait_record_refuses_before_the_notify_re_fires(tmp_path: Path) -> None:
-    """The parked-entry guard read wait.json under a suppressed JournalError and
-    fell open to "a fresh entry", so every scheduler tick over a corrupt record
-    paged the operator and journaled a MachineNotify before the arm refused
-    the same record. The guard refuses where the arm refuses."""
+    """A corrupt wait record refuses the parked entry instead of paging on every tick."""
     from agent6.machine.journal import JournalError, MachineNotify
 
     journal, f = _load(tmp_path, NOTIFY_WAIT)

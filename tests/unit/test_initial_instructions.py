@@ -1,13 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The first user message's operational header matches the mode's REAL tool
-surface.
+"""The first user message's operational header matches the mode's real tool surface.
 
-Ask used to fall into run's else-branch, telling the model to edit, run
-verify, and call `finish_session` -- none of which ask exposes -- and a
-`run_commands = "no"` run was told to run a verify gate that withholding
-commands removed. A paid live ask reproduced the confusion: the model spent a
-call trying to comply with instructions for tools it lacked."""
+A model told to edit, verify and call `finish_session` in ask mode spends a call trying to comply.
+"""
 
 from __future__ import annotations
 
@@ -27,8 +23,7 @@ def test_ask_gets_direct_answer_instructions() -> None:
 
 
 def test_a_no_commands_run_is_not_told_to_run_verify() -> None:
-    """`run_commands = "no"` withholds the command tools and the verify gate
-    with them (the config field's own contract)."""
+    """`run_commands = "no"` withholds the command tools and the verify gate with them."""
     assert "run_verify_command" not in initial_instructions("run", "no", has_gate=True)
     assert "finish_session" in initial_instructions("run", "no", has_gate=True)
     assert "run_verify_command" in initial_instructions("run", "ask", has_gate=True)
@@ -36,18 +31,14 @@ def test_a_no_commands_run_is_not_told_to_run_verify() -> None:
 
 
 def test_a_gateless_run_is_not_told_to_run_verify() -> None:
-    """A gateless run has no verify gate however commands are configured;
-    its header said "run_verify_command" anyway and the no-verify block had to
-    disarm it. The header keys on the gate."""
+    """A gateless run's header names no verify gate, however commands are configured."""
     assert "run_verify_command" not in initial_instructions("run", "yes", has_gate=False)
     assert "finish_session" in initial_instructions("run", "yes", has_gate=False)
 
 
 @pytest.mark.parametrize("mode", ["run", "plan", "ask", "agent"])
 def test_no_instruction_names_a_tool_outside_the_mode_surface(mode: str) -> None:
-    """The drift guard: every backticked tool name in a mode's header must be
-    one that mode actually exposes, so the ladder and tools/schema.py cannot
-    disagree again."""
+    """Every backticked tool name in a mode's header is one that mode exposes."""
     all_tools = set().union(
         *(mode_tools(m).permitted for m in ("run", "plan", "ask", "machine", "agent"))
     )

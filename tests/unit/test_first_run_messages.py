@@ -2,10 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """What a fresh install says when there is nothing yet.
 
-This is the first thing a new operator sees, and the difference between "you
-have no sessions, here is how to start one" and "ERROR: no runs directory at
-/home/.../sessions/runs" is the difference between an empty state and a broken
-install.
+The difference between "you have no sessions, here is how to start one" and an error naming a
+missing directory is the difference between an empty state and a broken install.
 """
 
 from __future__ import annotations
@@ -69,8 +67,7 @@ def test_it_says_how_to_make_one(
 def test_a_run_verb_over_a_plan_alone_says_no_runs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions commits` (and diff, merge) act on a run's branch: with a plan
-    recorded and no run, they said "no sessions yet" over a real session."""
+    """`sessions commits`, diff and merge act on a run's branch; a lone plan is a real session."""
     from agent6.sessions.layout import bucket_dir
 
     monkeypatch.chdir(tmp_path)

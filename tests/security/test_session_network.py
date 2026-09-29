@@ -34,16 +34,17 @@ _PORT = 27901
 
 
 def _reach_line(ok: str) -> str:
-    """The probe line that prints *ok* only for a peer other than the socket
-    itself: a client whose source port equals its destination completes a TCP
-    simultaneous open with itself, which a bare connect() cannot tell from a
-    listener. A self-connect prints `REFUSED self-connect`."""
+    """The probe line that prints ok only for a peer other than the socket itself.
+
+    A client whose source port equals its destination completes a TCP simultaneous open with
+    itself, which a bare connect() cannot tell from a listener; a self-connect prints
+    `REFUSED self-connect`.
+    """
     return f"print({ok!r} if s.getsockname() != s.getpeername() else 'REFUSED self-connect')\n"
 
 
 def _connect_probe(port: int, ok: str) -> str:
-    """A probe script: connect to 127.0.0.1:*port* and print *ok* for a real
-    peer, else `REFUSED <reason>`."""
+    """A probe script: connect to 127.0.0.1:port; print ok for a real peer, else the refusal."""
     return (
         "import socket\n"
         "try:\n"
@@ -56,8 +57,7 @@ def _connect_probe(port: int, ok: str) -> str:
 
 
 def test_a_self_connect_reads_as_refused() -> None:
-    """A client bound to its own destination port connects to itself; the
-    probe must not call that a reach."""
+    """A client bound to its own destination port self-connects; the probe calls it no reach."""
     port = _PORT + 9
     forced = (
         "import socket\n"
@@ -90,8 +90,7 @@ def _net_of(cwd: Path, network: NetworkMode, session_net: SessionNetwork | None)
 
 
 def test_private_children_share_one_network_and_none_children_do_not(tmp_path: Path) -> None:
-    """The whole mechanism in one assertion: `private` means the SAME namespace
-    for every child that asks, and `none` means a fresh one each time."""
+    """`private` is one namespace for every child that asks; `none` is a fresh one each time."""
     net = SessionNetwork.open()
     try:
         first = _net_of(tmp_path, "session", net)
@@ -109,8 +108,7 @@ def test_private_children_share_one_network_and_none_children_do_not(tmp_path: P
 
 
 def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: Path) -> None:
-    """The dev-server case, at the jail level: one child listens, another
-    connects, and neither can leave the box."""
+    """The dev-server case in the jail: one child listens, one connects, neither leaves the box."""
     net = SessionNetwork.open()
     listener = None
     try:
@@ -162,8 +160,10 @@ def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: Path
 
 
 def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: Path) -> None:
-    """`none` is not a weaker `private`: a server left on the default must not
-    see the dev server the tools are sharing."""
+    """`none` is not a weaker `private`.
+
+    A server left on the default does not see the dev server the tools are sharing.
+    """
     net = SessionNetwork.open()
     listener = None
     try:
@@ -203,8 +203,11 @@ def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: Path) -> N
 
 
 def test_a_private_child_cannot_re_enter_a_network_after_the_run_drops_it(tmp_path: Path) -> None:
-    """The descriptors are the run's, not the child's: nothing is inherited, and
-    seccomp blocks setns anyway, so a child cannot rejoin or reach sideways."""
+    """The descriptors are the run's, not the child's.
+
+    Nothing is inherited, and seccomp blocks setns anyway, so a child cannot rejoin or reach
+    sideways.
+    """
     net = SessionNetwork.open()
     try:
         probe = (
@@ -235,8 +238,7 @@ def test_a_private_child_cannot_re_enter_a_network_after_the_run_drops_it(tmp_pa
 
 
 def test_the_network_is_the_runs_and_dies_with_it() -> None:
-    """Closing the run's descriptors is what releases the namespace; nothing
-    outlives the run holding it open."""
+    """Closing the run's descriptors releases the namespace; nothing else holds it open."""
     net = SessionNetwork.open()
     userns, netns = net.fds()
     assert Path(f"/proc/self/fd/{userns}").exists()
@@ -248,8 +250,10 @@ def test_the_network_is_the_runs_and_dies_with_it() -> None:
 def test_a_private_policy_without_a_network_refuses_rather_than_running_alone(
     tmp_path: Path,
 ) -> None:
-    """The failure that would be invisible: a child that asked for the shared
-    network and silently got its own would look confined and be isolated."""
+    """A child that asked for the shared network never silently gets its own.
+
+    That failure would be invisible: the child would look confined and be isolated.
+    """
     from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 
     policy = jail_policy(tmp_path, Config(), "strict", ("/usr/bin/true",), network="session")
@@ -258,8 +262,7 @@ def test_a_private_policy_without_a_network_refuses_rather_than_running_alone(
 
 
 def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: Path) -> None:
-    """No speculative holder: a run whose commands and servers all take the
-    host network never creates one."""
+    """A run whose commands and servers all take the host network creates no holder."""
     from agent6.app._setup import wants_session_network
 
     host_only = Config.model_validate({"sandbox": {"network": "host"}})
@@ -280,8 +283,10 @@ def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: Path
 
 
 def test_the_dev_server_case_end_to_end(tmp_path: Path) -> None:
-    """What the feature is for, through the dispatcher a run uses: a background
-    dev server answers the next command, and the run still has no egress."""
+    """A background dev server answers the next command, and the run still has no egress.
+
+    What the feature is for, through the dispatcher a run uses.
+    """
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
     sess = Path(tempfile.mkdtemp(prefix="privnet-", dir=tmp_path))
     d = ToolDispatcher(
@@ -327,11 +332,12 @@ def test_the_dev_server_case_end_to_end(tmp_path: Path) -> None:
 def test_a_launcher_that_never_reports_ready_is_refused_not_waited_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A launcher too old to know `--hold-netns` reads a policy from stdin
-    instead, so the handshake would block the run at startup with nothing to
-    explain it. Bounded, and the refusal names the likely cause. (Reading its
-    stderr to EOF hangs the same way when it left a child on the pipe, so that
-    read is bounded too -- this fake keeps one alive to prove it.)"""
+    """A launcher too old to know `--hold-netns` is refused within a bound, naming the likely cause.
+
+    It reads a policy from stdin instead, so the handshake would block the run at startup
+    with nothing to explain it. Reading its stderr to EOF hangs the same way when it left a
+    child on the pipe, so that read is bounded too; this fake keeps one alive to prove it.
+    """
     from agent6.sandbox.jail import JailUnavailableError
 
     fake = tmp_path / "stale-jail"
@@ -349,9 +355,11 @@ def test_a_launcher_that_never_reports_ready_is_refused_not_waited_on(
 def test_a_private_server_gets_one_even_when_the_commands_are_on_the_host(
     tmp_path: Path,
 ) -> None:
-    """`private` means the same thing however many children ask for it, so
-    there is no cross-key refusal to write: `sandbox.network = "host"` with one
-    private server is simply a session network with one member."""
+    """`sandbox.network = "host"` with one private server is a session network with one member.
+
+    `private` means the same thing however many children ask for it, so there is no
+    cross-key refusal to write.
+    """
     from agent6.app._setup import mcp_server_policy, wants_session_network
 
     cfg = Config.model_validate(
@@ -406,11 +414,12 @@ for line in sys.stdin:
 def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
     tmp_path: Path, server_network: str, sees_dev_server: bool, sees_host: bool
 ) -> None:
-    """The case this feature exists for, and its boundaries, against two real
-    listeners: one INSIDE the run's network (a backgrounded dev server) and
-    one on the machine's (this test process). A server sees exactly one of
-    them, and `auto` sees neither -- which is also the proof that the two
-    networks are distinct in both directions, without needing the internet."""
+    """A server sees exactly one of two real listeners, and `auto` sees neither.
+
+    One listener inside the run's network (a backgrounded dev server), one on the machine's
+    (this test process): the proof that the two networks are distinct in both directions,
+    without the internet.
+    """
     import http.server
     import socketserver
     import threading
@@ -490,10 +499,11 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
 
 
 def test_members_of_the_private_network_cannot_see_or_signal_each_other(tmp_path: Path) -> None:
-    """Sharing a network means sharing a user namespace (entering one needs
-    capabilities in its owner), so the question is what ELSE that shares. Each
-    member still unshares its own PID namespace, so it cannot even name a
-    sibling, let alone signal it."""
+    """Members of a shared network still cannot name or signal a sibling.
+
+    Sharing a network means sharing a user namespace (entering one needs capabilities in its
+    owner); each member still unshares its own PID namespace.
+    """
     net = SessionNetwork.open()
     victim = None
     try:
@@ -541,9 +551,11 @@ def test_members_of_the_private_network_cannot_see_or_signal_each_other(tmp_path
 
 
 def test_two_runs_can_each_hold_the_same_port(tmp_path: Path) -> None:
-    """A property that falls out of per-run networks and that people will lean
-    on: two runs (or two `--parallel` lanes) each start a dev server on the
-    conventional port, and neither collides with the other or with the host."""
+    """Two runs each start a dev server on the conventional port without colliding.
+
+    A property of per-run networks people lean on; neither collides with the other or with
+    the host.
+    """
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
     port = _PORT + 4
     serve = (
@@ -583,9 +595,10 @@ def test_two_runs_can_each_hold_the_same_port(tmp_path: Path) -> None:
 
 
 def test_a_member_cannot_retune_the_network_everyone_shares(tmp_path: Path) -> None:
-    """Sharing a network namespace shares its sysctls. Tampering used to hurt
-    only yourself; it would now hurt every sibling, so pin that the jail's
-    read-only /proc still refuses it."""
+    """The jail's read-only /proc refuses a sysctl write.
+
+    Sharing a network namespace shares its sysctls, so tampering would hurt every sibling.
+    """
     net = SessionNetwork.open()
     try:
         probe = (
@@ -616,10 +629,12 @@ def test_a_member_cannot_retune_the_network_everyone_shares(tmp_path: Path) -> N
 
 
 def test_joining_a_network_costs_no_other_layer(tmp_path: Path) -> None:
-    """A joined child enters someone else's user namespace instead of making
-    its own, which is the one thing that could quietly weaken the rest. It does
-    not: the private dirs are still masked, the host is still read-only, and it
-    is still PID 2 in a namespace of its own."""
+    """A joined child is as confined as an unjoined one.
+
+    Entering someone else's user namespace instead of making its own is the one thing that
+    could quietly weaken the rest; the private dirs are still masked, the host is still
+    read-only, and it is still PID 2 in a namespace of its own.
+    """
     from agent6.paths import private_dirs
 
     net = SessionNetwork.open()
@@ -656,11 +671,10 @@ def test_joining_a_network_costs_no_other_layer(tmp_path: Path) -> None:
 def test_closing_a_network_releases_every_descriptor(tmp_path: Path) -> None:
     """A run's network costs nothing once the run ends.
 
-    The holder is a live process with pipes, and `close()` released the two
-    namespace descriptors while leaving its stdout and stderr to garbage
-    collection -- two per run that a long-lived web or hub process would
-    accumulate. Measured against the process's own fd table, so the assertion
-    is the resource, not the code path.
+    The holder is a live process with pipes; `close()` releases the two namespace
+    descriptors and the holder's stdout and stderr, which a long-lived web or hub process
+    would otherwise accumulate two per run. Measured against the process's own fd table, so
+    the assertion is the resource, not the code path.
     """
 
     def open_fds() -> int:
@@ -679,9 +693,9 @@ def test_closing_a_network_releases_every_descriptor(tmp_path: Path) -> None:
 def test_one_runs_network_cannot_reach_another_runs(tmp_path: Path) -> None:
     """Runs are isolated from each other, not just from the machine.
 
-    Two runs on one box -- two `--parallel` lanes, or two terminals -- each get
-    a network of their own, so a server in one cannot reach a dev server in the
-    other even though both are agent6 and both are the same user.
+    Two runs on one box (two `--parallel` lanes, or two terminals) each get a network of
+    their own, so a server in one cannot reach a dev server in the other even though both are
+    agent6 and the same user.
     """
     port = _PORT + 5
     first, second = SessionNetwork.open(), SessionNetwork.open()

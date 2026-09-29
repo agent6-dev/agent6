@@ -19,8 +19,7 @@ from agent6.viewmodel.transcript import TranscriptFold, TranscriptItem
 def updates_for_events(
     events: list[dict[str, Any]], *, acp_session_id: str
 ) -> list[dict[str, Any]]:
-    """One fold instance across the whole sequence, as the runner drives it;
-    fresh folds per event would emit each partial message as if it were whole."""
+    """One fold across the sequence; fresh folds per event emit each partial message as whole."""
     fold = TranscriptFold()
     out: list[dict[str, Any]] = []
     announced: set[str] = set()
@@ -41,8 +40,7 @@ def _kinds(updates: list[dict[str, Any]]) -> list[str]:
 
 
 def test_reasoning_and_answer_are_different_channels() -> None:
-    """An editor renders thinking collapsed; conflating them would present the
-    model's scratch work as its answer."""
+    """Thinking is its own delta; conflated, the model's scratch work reads as its answer."""
     thinking = updates_for(TranscriptItem("thinking", body="let me look"), acp_session_id="s")
     text = updates_for(TranscriptItem("text", body="the answer"), acp_session_id="s")
     assert _kinds(thinking) == ["agent_thought_chunk"]
@@ -50,17 +48,19 @@ def test_reasoning_and_answer_are_different_channels() -> None:
 
 
 def test_the_operators_own_words_echo_back_as_theirs() -> None:
-    """A steer is the human speaking. Attributing it to the agent would make
-    the transcript lie about who said what."""
+    """A steer is the human speaking.
+
+    Attributing it to the agent would make the transcript lie about who said what.
+    """
     updates = updates_for(TranscriptItem("operator", body="also add a flag"), acp_session_id="s")
     assert _kinds(updates) == ["user_message_chunk"]
 
 
 def test_a_tool_is_a_call_and_then_an_outcome() -> None:
-    """ACP models a tool call as a thing with a lifecycle: the call goes out
-    when the fold sees it (in progress), its outcome when the result lands.
-    An editor that only ever saw the finished pair could not show work in
-    progress -- which for a long verify is the whole point."""
+    """A tool call goes out when the fold sees it and its outcome when the result lands.
+
+    An editor that only saw the finished pair could not show a long verify in progress.
+    """
     call = {"type": "tool.call", "name": "run_verify_command", "args": {}, "call_id": 1}
     result = {"type": "tool.result", "name": "run_verify_command", "ok": True, "call_id": 1}
     updates = updates_for_events([call, result], acp_session_id="s")
@@ -85,8 +85,7 @@ def test_known_tools_carry_their_acp_kinds() -> None:
 
 
 def test_journaled_tool_paths_reach_the_editor_as_absolute_locations() -> None:
-    """An edit's tool.result journals the paths it wrote; dropping them from
-    ACP prevents the editor from following the files the run changed."""
+    """An edit's journaled paths reach the editor, so it follows the files the run changed."""
     fold = TranscriptFold()
     fold.feed(
         {
@@ -119,9 +118,7 @@ def test_journaled_tool_paths_reach_the_editor_as_absolute_locations() -> None:
 
 
 def test_an_approval_wait_reads_pending_then_in_progress() -> None:
-    """ACP keeps `pending` for a call awaiting approval: the fold marks the
-    gated call while its prompt is open, and the projection follows it,
-    updating the call it announced rather than announcing it again."""
+    """A call awaiting approval reads `pending`, updating the call already announced."""
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
     prompt = {
         "type": "approval.prompt",
@@ -150,8 +147,7 @@ def test_a_failed_tool_says_so() -> None:
 
 
 def test_a_tool_still_running_is_not_reported_failed() -> None:
-    """`ok=None` is "no outcome yet", which is neither a failure nor a
-    success: the call is announced, in progress, and nothing closes it."""
+    """`ok=None` is no outcome yet: the call is announced, in progress, and nothing closes it."""
     updates = updates_for(TranscriptItem("tool", name="grep", arg="x"), acp_session_id="s")
     assert _kinds(updates) == ["tool_call"]
     assert updates[0]["params"]["update"]["status"] == "in_progress"
@@ -174,8 +170,9 @@ def test_every_notification_is_addressed_and_well_formed() -> None:
 
 def test_deltas_are_folded_once_across_the_whole_run() -> None:
     """The fold is stateful: deltas accumulate and flush at a turn boundary.
-    A fresh fold per event would emit every partial message as if it were
-    whole."""
+
+    A fresh fold per event would emit every partial message as if it were whole.
+    """
     events: list[dict[str, Any]] = [
         {"type": "role.text_delta", "text": "the "},
         {"type": "role.text_delta", "text": "answer"},
@@ -187,8 +184,7 @@ def test_deltas_are_folded_once_across_the_whole_run() -> None:
 
 
 def test_a_headless_run_still_has_something_to_show() -> None:
-    """No streaming means no deltas; the settled text on role.result is what
-    the fold falls back to, and it must reach the editor too."""
+    """Without streaming, the settled text on role.result reaches the editor."""
     events: list[dict[str, Any]] = [
         {"type": "role.result", "role": "worker", "ok": True, "text": "done it"}
     ]
@@ -197,10 +193,11 @@ def test_a_headless_run_still_has_something_to_show() -> None:
 
 
 def test_a_run_that_failed_does_not_render_as_silence() -> None:
-    """The fold sets `body` only for a clean finish, carrying everything else
-    in ok/name/detail. Reading body alone made a provider error, a budget stop
-    and an iteration cap produce ZERO notifications -- an editor watching a run
-    that simply stops."""
+    """The fold sets `body` only for a clean finish, carrying everything else in ok/name/detail.
+
+    Reading body alone made a provider error, a budget stop and an iteration cap produce ZERO
+    notifications: an editor watching a run that simply stops.
+    """
     labels = {
         "provider_error": "failed · provider error",
         "budget_exhausted": "failed · budget exhausted",
@@ -233,8 +230,7 @@ def test_a_red_gate_does_not_look_like_a_green_one() -> None:
 
 
 def test_a_commit_is_not_dropped() -> None:
-    """A commit's sha and line count live in `detail`; `body` is empty, so
-    keying on body alone dropped every auto-commit."""
+    """An auto-commit's sha and line count live in `detail`; keying on `body` dropped it."""
     updates = updates_for(
         TranscriptItem("commit", arg="abc1234", detail="3 lines"), acp_session_id="s"
     )
@@ -243,9 +239,11 @@ def test_a_commit_is_not_dropped() -> None:
 
 
 def test_two_identical_tool_calls_do_not_share_an_id() -> None:
-    """ACP models a tool call as ONE thing with a lifecycle. Sharing an id made
-    an editor overwrite the first call's FAILURE with the second's success --
-    the red run vanished from view."""
+    """ACP models a tool call as ONE thing with a lifecycle.
+
+    Sharing an id made an editor overwrite the first call's failure with the second's success, the
+    red run vanished from view.
+    """
     events: list[dict[str, Any]] = [
         {"type": "tool.call", "name": "run_command", "args": {"argv": ["pytest"]}, "call_id": 1},
         {"type": "tool.result", "name": "run_command", "call_id": 1, "ok": False},
@@ -261,10 +259,10 @@ def test_two_identical_tool_calls_do_not_share_an_id() -> None:
 
 
 def test_a_tool_call_id_is_unique_across_a_sessions_turns() -> None:
-    """A later prompt resumes the same run under a fresh dispatcher, whose
-    stamped call ids restart at "1". Keyed on the run id alone, turn 2's first
-    call overwrote turn 1's in an editor keyed on toolCallId, the reason the
-    field is carried."""
+    """The tool call id carries the turn, since a resumed dispatcher restarts its ids at 1.
+
+    Keyed on the run id alone, turn 2's first call overwrote turn 1's in the editor.
+    """
     from agent6.ui.acp.updates import tool_call_id
     from agent6.viewmodel.transcript import TranscriptItem
 
@@ -283,7 +281,7 @@ def test_a_tools_output_is_wrapped_in_acps_tagged_content() -> None:
     From the published schema: `oneOf` [{type: "content", ...Content}, {type:
     "diff", ...}, {type: "terminal", ...}] with `discriminator.propertyName =
     "type"`. Sending the bare array made a strict client reject the whole
-    notification -- so the `completed`/`failed` it carried never arrived and
+    notification, so the `completed`/`failed` it carried never arrived and
     the call announced one line earlier stayed `pending` for the rest of the
     session.
     """
@@ -297,9 +295,11 @@ def test_a_tools_output_is_wrapped_in_acps_tagged_content() -> None:
 
 
 def test_a_failed_tool_carries_the_output_that_explains_it() -> None:
-    """The fold fills `tail` with the stderr/stdout of a failure for exactly
-    this. Sending only `detail` left an editor showing "failed" and the word
-    "exit 1", with the test log that says WHY nowhere on the wire."""
+    """The fold fills `tail` with the stderr/stdout of a failure for exactly this.
+
+    Sending only `detail` left an editor showing "failed" and the word "exit 1", with the test log
+    that says WHY nowhere on the wire.
+    """
     from agent6.ui.acp.updates import updates_for
     from agent6.viewmodel.transcript import TranscriptItem
 
@@ -312,11 +312,10 @@ def test_a_failed_tool_carries_the_output_that_explains_it() -> None:
 
 
 def test_model_text_cannot_carry_a_terminal_escape_to_the_editor() -> None:
-    """Unlike the CLI, the renderer here is a THIRD PARTY, so agent6 does not
-    get to assume it treats an escape as inert. The fold strips CSI from
-    `detail`/`tail` only -- OSC (the title / clipboard / hyperlink family)
-    survived and `body` was never scrubbed at all. Newlines and tabs are real
-    content and stay."""
+    """OSC and CSI escapes are scrubbed from every text field; newlines and tabs stay.
+
+    The renderer is a third party, so agent6 cannot assume it treats an escape as inert.
+    """
     from agent6.ui.acp.updates import updates_for
     from agent6.viewmodel.transcript import TranscriptItem
 
@@ -328,9 +327,7 @@ def test_model_text_cannot_carry_a_terminal_escape_to_the_editor() -> None:
 
 
 def test_a_tool_call_title_is_scrubbed_like_its_content() -> None:
-    """`title` is `salient_arg` -- the model's own argv, path or pattern -- and
-    it is not a ContentBlock, so it went round the scrub the sibling `content`
-    field on the very next notification already had."""
+    """The `title` is scrubbed like `content`; it is the model's own argv, path or pattern."""
     from agent6.ui.acp.updates import updates_for
     from agent6.viewmodel.transcript import TranscriptItem
 
@@ -343,8 +340,7 @@ def test_a_tool_call_title_is_scrubbed_like_its_content() -> None:
 
 
 def test_a_gateless_finish_never_reads_as_a_failed_check() -> None:
-    """A deliberate finish that verified nothing is "finished" in the shared
-    status vocabulary; "did not pass" implied a check that never existed."""
+    """A deliberate finish that verified nothing is "finished", not "did not pass"."""
     updates = updates_for_events(
         [{"type": "session.end", "reason": "finish_session", "all_passed": False}],
         acp_session_id="s",
@@ -355,8 +351,7 @@ def test_a_gateless_finish_never_reads_as_a_failed_check() -> None:
 
 
 def test_every_built_in_tool_names_its_acp_kind() -> None:
-    """The fixed tool surface maps to an ACP kind, so a new tool names its
-    editor icon here; only an MCP tool reads `other` by default."""
+    """Every fixed tool maps to an ACP kind; only an MCP tool reads `other`."""
     from agent6.tools.schema import (
         ALL_TOOLS,
         ASK_EXTRA_TOOLS,
@@ -378,8 +373,7 @@ def test_every_built_in_tool_names_its_acp_kind() -> None:
 
 
 def test_a_whitespace_delta_reaches_the_editor() -> None:
-    """A provider streams a paragraph break as its own delta; dropped, the
-    editor ran two paragraphs together while every other surface kept them."""
+    """A paragraph-break delta reaches the editor; dropped, two paragraphs ran together."""
     (update,) = updates_for(TranscriptItem("text", body="\n\n"), acp_session_id="s", streamed=True)
     assert update["params"]["update"]["content"]["text"] == "\n\n"
     assert updates_for(TranscriptItem("text", body=""), acp_session_id="s", streamed=True) == []

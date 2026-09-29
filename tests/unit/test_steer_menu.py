@@ -15,10 +15,11 @@ from agent6.ui.cli._steer_menu import pause_line
 def test_both_prompts_answer_a_line_the_same_way(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The plain prompt took bare words (`q`, `exit`, `d`) the rich menu had
-    already dropped, then a slash table of its own that swallowed `/parallel`
-    and sent `/shells` to the model: one dispatcher answers a typed line at
-    both prompts, and the plain one continues where the menu asks again."""
+    """One dispatcher answers a typed line at both prompts.
+
+    The plain prompt took bare words the rich menu had dropped, then its own slash table that
+    swallowed `/parallel` and sent `/shells` to the model; it continues where the menu asks again.
+    """
     assert pause_line("/stop", tmp_path) == "abort"
     assert pause_line(" /EXIT ", tmp_path) == "exit"
     assert pause_line("/detach", tmp_path) == "detach"
@@ -69,8 +70,7 @@ def _feed(lines: list[str]) -> Callable[[str], str]:
 
 
 def test_pause_menu_slash_commands(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """Info commands print and re-prompt; action commands return the canonical
-    steer values; free text passes through as the instruction."""
+    """Info commands re-prompt, action commands return canonical values, text passes through."""
     import json
     import os
 
@@ -126,8 +126,7 @@ def test_pause_menu_slash_commands(tmp_path: Path, capsys: pytest.CaptureFixture
 def test_status_counts_a_retired_task_as_done(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An obsolete task needs no work, like a skipped one; /status counted only
-    passed and skipped tasks as done."""
+    """/status counts an obsolete task as done, like a skipped one."""
     import json
 
     from agent6.ui.cli._steer_menu import pause_menu
@@ -160,9 +159,10 @@ def test_status_counts_a_retired_task_as_done(
 def test_pause_menu_status_clips_the_task_like_every_listing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """/status ends a long task with an ellipsis and skips a seeded run's
-    `<prior-run>` block, the shared snippet rule; a bare 80-char slice cut
-    mid-word and read as the whole task."""
+    """/status ends a long task with an ellipsis and skips a seeded run's `<prior-run>` block.
+
+    A bare 80-char slice cut mid-word and read as the whole task.
+    """
     import json
     import os
 
@@ -182,8 +182,7 @@ def test_pause_menu_status_clips_the_task_like_every_listing(
 
 
 def test_pause_menu_help_names_parallel(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """The mid-run steer help names `/parallel`, the directive the loop dispatches
-    sibling lanes for (see agent6.directive.parse_directive)."""
+    """The mid-run steer help names `/parallel`, the directive the loop dispatches lanes for."""
     from agent6.ui.cli._steer_menu import pause_menu
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -194,9 +193,7 @@ def test_pause_menu_help_names_parallel(tmp_path: Path, capsys: pytest.CaptureFi
 def test_pause_menu_bare_parallel_explains_and_reprompts(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`/parallel` is a menu command like the other directives (listed,
-    completed from a unique prefix); bare, it names the missing task and
-    re-prompts instead of reaching the loop as an empty directive."""
+    """`/parallel` is a menu command; bare, it names the missing task and re-prompts."""
     from agent6.ui.cli._steer_menu import MENU_COMMANDS, pause_menu
 
     assert "/parallel" in MENU_COMMANDS
@@ -206,9 +203,10 @@ def test_pause_menu_bare_parallel_explains_and_reprompts(
 
 
 def test_pause_menu_parallel_directive_passes_through_verbatim(tmp_path: Path) -> None:
-    """`/parallel <task>` has a space, so the pause menu sends it to the run
-    verbatim (the loop's _maybe_handle_steer parses it); it is never swallowed as
-    a menu command. This is why mid-run `/parallel` needs no composer change."""
+    """`/parallel <task>` has a space, so the pause menu sends it to the run verbatim.
+
+    The loop parses it, which is why mid-run `/parallel` needs no composer change.
+    """
     from agent6.ui.cli._steer_menu import pause_menu
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -220,8 +218,7 @@ def test_pause_menu_parallel_directive_passes_through_verbatim(tmp_path: Path) -
 def test_pause_menu_prefixes_and_word_rule(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A unique prefix fires the command, an ambiguous one re-asks, and a line
-    with spaces is always a steering instruction (no quoting needed)."""
+    """A unique prefix fires, an ambiguous one re-asks, and a line with spaces is an instruction."""
     import json
 
     # A run mid-pause has session.start AND a live worker.pid on disk (the menu
@@ -266,9 +263,10 @@ def test_pause_menu_compact_requests_compaction(
 def test_pause_menu_status_tells_the_truth_about_a_dead_worker(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """/status in the pause menu of an ATTACHED run whose worker died prints
-    the hub's word ('stale'), not 'running' -- the fold-only label sent the
-    operator back to waiting on a run nothing was executing."""
+    """/status on an attached run whose worker died prints the hub's word, 'stale'.
+
+    The fold-only label sent the operator back to waiting on a run nothing was executing.
+    """
     import json
 
     from agent6.ui.cli._steer_menu import pause_menu
@@ -287,8 +285,7 @@ def test_pause_menu_status_tells_the_truth_about_a_dead_worker(
 def test_pause_menu_status_shows_ctx_and_profile(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """/status includes the context fill (tokens + % of the model window) and
-    the sandbox profile the run started with."""
+    """/status includes the context fill and the sandbox profile the run started with."""
     import json
 
     from agent6.ui.cli._steer_menu import pause_menu
@@ -323,8 +320,7 @@ def test_pause_menu_status_shows_ctx_and_profile(
 def test_pause_menu_status_shows_compaction_truth(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Once compaction has elided results, /status says how many left the
-    model's context (and how many survive as distilled gists)."""
+    """Once compaction has elided results, /status counts them and the surviving gists."""
     import json
 
     from agent6.ui.cli._steer_menu import pause_menu
@@ -428,8 +424,7 @@ def test_skill_menu_table_lists_enabled(tmp_path: Path, monkeypatch: pytest.Monk
 def test_pause_menu_status_and_bare_pin_list_pins(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """/status counts pins; a bare /pin lists them with usage (the /pin <text>
-    form is a steer directive the loop parses, so it must stay a verbatim steer)."""
+    """/status counts pins and a bare /pin lists them; `/pin <text>` stays a verbatim steer."""
     import json
 
     from agent6.ui.cli._steer_menu import pause_menu
@@ -461,8 +456,7 @@ def test_pause_menu_status_and_bare_pin_list_pins(
 def test_pause_menu_compact_accepts_focus(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`/compact <focus>` routes to the compact request with the focus text;
-    an ambiguous prefix with args stays a verbatim steer."""
+    """`/compact <focus>` routes to the compact request; an ambiguous prefix stays a steer."""
     from agent6.sessions.ipc import read_compact_request
     from agent6.ui.cli._steer_menu import pause_menu
 
@@ -485,10 +479,11 @@ def test_pause_menu_compact_accepts_focus(
 def test_pause_menu_seeds_recall_from_the_journal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The Up/Ctrl-R history is seeded once per session from logs.jsonl (task,
-    then steers, newlines flattened for the one-line reader), so recall spans
-    process exits and other surfaces' steers; lines accepted in this process
-    survive a later pause, and a different session reseeds."""
+    """The Up/Ctrl-R history is seeded once per session from logs.jsonl.
+
+    Recall spans process exits and other surfaces' steers; lines accepted in this process
+    survive a later pause, and a different session reseeds.
+    """
     import json
 
     from agent6.ui.cli import _steer_menu
@@ -534,11 +529,11 @@ def test_pause_menu_seeds_recall_from_the_journal(
 def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Ctrl-C's first stage now carries the facts a CLI operator cannot
-    otherwise see, and Ctrl-Z shows the same line without arming anything --
-    de-escalating an armed pause so checking on a run costs it nothing. It also
-    replaces SIGTSTP's default: suspending a run mid-step would freeze it
-    holding its worker lock and its egress broker."""
+    """Ctrl-C's first stage prints the run's facts; Ctrl-Z prints the same line and disarms.
+
+    Checking on a run costs it nothing; Ctrl-Z also replaces SIGTSTP's default, since a
+    suspended run would freeze holding its worker lock and its egress broker.
+    """
     import signal
 
     from agent6.app.frontend import SessionFacts
@@ -581,10 +576,10 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
 
 
 def test_exit_maps_to_exit_and_stop_stays_abort(tmp_path: Path) -> None:
-    """`/exit` is stop-AND-leave: the menu returns the distinct 'exit' action
-    (the loop ends the run `steer_exit` and the CLI skips the follow-up
-    prompt), while /stop keeps returning 'abort'. Before, an operator had to
-    /stop and then type /exit at the "next:" prompt to actually leave."""
+    """`/exit` returns the distinct 'exit' action; /stop keeps returning 'abort'.
+
+    The loop ends the run `steer_exit` and the CLI skips the follow-up prompt.
+    """
     from agent6.ui.cli._steer_menu import pause_menu
 
     assert pause_line("/exit", tmp_path) == "exit"
@@ -597,11 +592,11 @@ def test_exit_maps_to_exit_and_stop_stays_abort(tmp_path: Path) -> None:
 def test_ctrl_z_does_not_stand_down_the_stage_an_open_pause_menu_needs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Ctrl-Z stands an armed pause down, but not the stage an OPEN pause menu
-    stands on: `prompt_now`'s menu writes its action as the steer answer and
-    the next boundary consumes it only while `requested()` holds. Disarming
-    under it filed the operator's instruction for nobody to read, and the next
-    Ctrl-C deleted it as stale."""
+    """Ctrl-Z stands an armed pause down, but not the stage an open pause menu stands on.
+
+    `prompt_now`'s menu writes its action as the steer answer, consumed only while
+    `requested()` holds; disarming under it filed the instruction for nobody to read.
+    """
     import signal
 
     from agent6.events import EventSink
@@ -636,10 +631,11 @@ def test_ctrl_z_does_not_stand_down_the_stage_an_open_pause_menu_needs(
 def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The action `prompt_now` files rides the steer request marker, not the
-    in-memory stage: a Ctrl-Z between the menu closing and the next boundary
-    stood the stage down, the boundary saw no request, and the next Ctrl-C
-    deleted the operator's typed steer as a stale answer."""
+    """The action `prompt_now` files rides the steer request marker, not the in-memory stage.
+
+    A Ctrl-Z between the menu closing and the next boundary stood the stage down, and the
+    next Ctrl-C deleted the operator's typed steer as stale.
+    """
     import signal
 
     from agent6.events import EventSink
@@ -671,9 +667,7 @@ def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
 
 
 def test_the_menu_help_matches_the_owner_for_every_shared_command() -> None:
-    """`/restate` lost its "(local, no model call)" and `/compact` grew
-    backticks: the menu hand-wrote help for words the composers also offer.
-    `/pin` is the one deliberate difference, because bare `/pin` lists here."""
+    """The pause menu's help words match the composers'; bare `/pin` is the one difference."""
     from agent6.directive import STEER_COMMANDS
     from agent6.ui.cli._steer_menu import (  # pyright: ignore[reportPrivateUsage]
         MENU_COMMANDS,

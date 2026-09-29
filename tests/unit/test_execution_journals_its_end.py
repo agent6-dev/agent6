@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""An execution that dies before the loop starts journals session.end BEFORE the
-tui_session scope closes: that scope's exit is `_live.tui_session`'s
-`proc.wait()`, which blocks on a dashboard that leaves only on a session.end.
+"""An execution that dies before the loop starts journals its end before the TUI scope closes.
+
+That scope's exit is `proc.wait()` on a dashboard that leaves only on a session.end.
 """
 
 from __future__ import annotations
@@ -30,8 +30,7 @@ from agent6.sessions.layout import SessionLayout
 from agent6.ui.acp.frontend import acp_frontend
 from agent6.ui.steer import SteerState
 
-# The snapshot resume.py's preflight accepts (load_session_snapshot passes) and
-# Conversation.from_wire rejects one execution deeper: a tool_result with no tool_use.
+# The preflight accepts this snapshot and Conversation.from_wire rejects it: a result with no call.
 TORN = {
     "version": SNAPSHOT_VERSION,
     "system": "s",
@@ -60,8 +59,10 @@ def _returning(value: object) -> Callable[..., object]:
 def test_provider_setup_failure_journals_session_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A provider setup failure happens before the harness can journal its own end,
-    but the run already has a manifest and worker pid for every surface to read."""
+    """A provider setup failure happens before the harness can journal its own end.
+
+    The run already has a manifest and worker pid for every surface to read.
+    """
     state = tmp_path / "state"
     layout = SessionLayout(state_dir=state, session_id="sess-SETUP1")
     layout.ensure()
@@ -369,10 +370,10 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
 def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A ResumeError left the loop with no session.end, and the outer handlers
-    that journal one for an interrupt or a crash sit past the `tui_session`
-    scope, whose exit waits on a dashboard that leaves only on an end it can
-    see: `resume --tui` on a torn snapshot hung on its own TUI."""
+    """A ResumeError journals a session.end before the TUI scope waits on the dashboard.
+
+    `resume --tui` on a torn snapshot otherwise hangs on its own TUI.
+    """
     state = tmp_path / "state"
     layout = SessionLayout(state_dir=state, session_id="sess-AAAA11")
     layout.session_dir.mkdir(parents=True)
@@ -380,8 +381,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
     snap.write_text(json.dumps(TORN), encoding="utf-8")
     events = EventSink(layout.logs_path)
 
-    # What the co-process TUI could see at the moment `_live.tui_session`'s
-    # finally calls proc.wait().
+    # What the co-process TUI could see when `_live.tui_session`'s finally calls proc.wait().
     seen_at_exit: list[list[str]] = []
 
     class _Recorder(contextlib.AbstractContextManager[None]):
@@ -489,8 +489,7 @@ def _wired_frontend(
     cfg: Config,
     tui_session: Callable[[Path, bool], contextlib.AbstractContextManager[None]] | None = None,
 ) -> Any:
-    """An execution whose providers, tools and merge are recorders: `order` names
-    each teardown step as it runs."""
+    """An execution whose providers, tools and merge are recorders; `order` names the teardown."""
     session = SimpleNamespace(
         budget=MagicMock(),
         rm_role=SimpleNamespace(model="m", provider="p"),
@@ -571,8 +570,7 @@ def _finishing_workflow(iterations: int) -> type:
 def test_the_chown_runs_after_the_auto_merge_writes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Under sudo the merge writes the manifest and the transcripts as root;
-    the chown is the last step of the teardown, after them, whatever raised."""
+    """Under sudo the chown is the last teardown step, after the merge's root writes."""
     state = tmp_path / "state"
     layout = SessionLayout(state_dir=state, session_id="sess-ORDER1")
     layout.ensure()
@@ -612,8 +610,12 @@ def test_the_chown_runs_after_the_auto_merge_writes(
 def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The dashboard scope raising after a finished run is the execution's failure,
-    not the run's: one crash line, and the run's own end stays its last."""
+    """A dashboard scope raising after a finished run is the execution's failure, not the run's.
+
+    One crash line, and the run's own end stays its last.
+
+    One crash line, and the run's own end stays its last.
+    """
     state = tmp_path / "state"
     layout = SessionLayout(state_dir=state, session_id="sess-TUIRAI")
     layout.ensure()
@@ -688,10 +690,11 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
 def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A Ctrl-C during the background settle, one line after the run journaled
-    its own end, journaled a second `session.end` (interrupted, all_passed
-    False) that every fold took as the run's, and printed a resume hint for a
-    run that had finished."""
+    """A Ctrl-C during the background settle journals no second `session.end`.
+
+    A second end (interrupted) would be taken as the run's by every fold, with a resume hint for a
+    run that had finished.
+    """
     state = tmp_path / "state"
     layout = SessionLayout(state_dir=state, session_id="sess-SETTLE")
     layout.ensure()

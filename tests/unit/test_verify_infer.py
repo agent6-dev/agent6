@@ -57,9 +57,10 @@ def test_agents_md_inline_marker() -> None:
 
 
 def test_agents_md_inline_marker_written_as_code() -> None:
-    """A Verify line whose command is written as inline code keeps the backticks
-    out of the argv (kept, `sh -c` ran the tests and then executed their output
-    as a command)."""
+    """A Verify line whose command is inline code keeps the backticks out of the argv.
+
+    Kept, `sh -c` ran the tests and then executed their output as a command.
+    """
     argv = verify_from_agents_md("Verify: `python -m pytest -q`")
     assert argv == ("python", "-m", "pytest", "-q")
     assert verify_from_agents_md("Test: `make check`.") == ("make", "check")
@@ -113,8 +114,7 @@ def test_repo_signal_cargo_and_go(tmp_path: Path) -> None:
 
 
 def test_repo_signal_verify_sh_wins(tmp_path: Path) -> None:
-    """A root verify.sh is the operator's own gate: it beats every manifest,
-    runs directly when executable and through sh when not."""
+    """A root verify.sh beats every manifest, run directly when executable, else through sh."""
     (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     script = tmp_path / "verify.sh"
     script.write_text("#!/bin/sh\npython3 -m pytest -q\n", encoding="utf-8")
@@ -124,8 +124,7 @@ def test_repo_signal_verify_sh_wins(tmp_path: Path) -> None:
 
 
 def test_repo_signal_loose_python_tests_come_last(tmp_path: Path) -> None:
-    """test_*.py at the root or under tests/ means pytest, but only when no
-    manifest says otherwise: a Go repo's tests/ dir stays `go test`."""
+    """test_*.py means pytest only when no manifest says otherwise; a Go tests/ stays `go test`."""
     (tmp_path / "test_calc.py").write_text("def test_x():\n    pass\n", encoding="utf-8")
     assert verify_from_repo_signals(tmp_path) == (("python3", "-m", "pytest", "-q"), "test_*.py")
     (tmp_path / "go.mod").write_text("module x\n", encoding="utf-8")
@@ -174,10 +173,11 @@ def test_infer_falls_back_to_signals_then_llm(tmp_path: Path) -> None:
 
 
 def test_infer_skips_the_llm_when_there_is_nothing_to_read(tmp_path: Path) -> None:
-    """No manifests and no AGENTS.md: the LLM tier's context would be a bare
-    filename listing, whose only non-"none" outcome is an invented gate. The
-    run starts gateless for free; the mid-run adopter owns a project that
-    appears later."""
+    """With no manifests and no AGENTS.md the run starts gateless; the LLM tier is not consulted.
+
+    Its context would be a bare filename listing whose only non-"none" outcome is an invented
+    gate; the mid-run adopter owns a project that appears later.
+    """
     calls: list[str] = []
 
     def fake_llm(ctx: str) -> str:

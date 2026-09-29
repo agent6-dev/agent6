@@ -27,8 +27,7 @@ def test_detects_an_install_root_inside_the_workspace(
 def test_run_entry_warns_once_and_never_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The warning is loud, names the install root and the remedy, and the
-    session still starts (agent6 developing agent6 is exactly this shape)."""
+    """The warning names the install root and the remedy, and the session still starts."""
     ws = tmp_path / "ws"
     pkg = ws / ".venv" / "agent6"
     pkg.mkdir(parents=True)

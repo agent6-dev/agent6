@@ -165,11 +165,13 @@ def test_atomic_write_preserves_existing_mode(tmp_path: Path) -> None:
 
 
 def test_locked_file_is_same_thread_reentrant(tmp_path: Path) -> None:
-    """A transaction (write + revalidate + rollback) holds locked_file around
-    per-write helpers that each take it too; flock on a second fd of the same
-    file self-deadlocks the process, so the nested acquire must be a no-op.
-    Run in a worker thread so a regression fails the join instead of hanging
-    the suite."""
+    """locked_file is reentrant on the same thread.
+
+    A transaction (write, revalidate, rollback) holds locked_file around per-write helpers that each
+    take it too; flock on a second fd of the same file self-deadlocks the process, so the nested
+    acquire must be a no-op. Run in a worker thread so a regression fails the join instead of
+    hanging the suite.
+    """
     import threading
 
     target = tmp_path / "c.toml"
@@ -232,11 +234,12 @@ def test_locked_file_blocks_other_threads_despite_reentrancy(tmp_path: Path) -> 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks + O_NOFOLLOW")
 def test_locked_file_refuses_a_symlinked_lock_and_fails_open(tmp_path: Path) -> None:
-    """A planted symlink at the predictable ``<name>.lock`` path must never be
-    followed: an earlier build chowned that fd as root, turning the lock into
-    an arbitrary-file ownership-transfer primitive under ``sudo``. O_NOFOLLOW
-    refuses it and the body runs unserialized (fail open); the symlink target
-    is neither opened for write, chowned, nor unlinked."""
+    """A planted symlink at the predictable ``<name>.lock`` path must never be followed.
+
+    An earlier build chowned that fd as root, turning the lock into an arbitrary-file ownership-
+    transfer primitive under ``sudo``. O_NOFOLLOW refuses it and the body runs unserialized (fail
+    open); the symlink target is neither opened for write, chowned, nor unlinked.
+    """
     target = tmp_path / "config.toml"
     secret = tmp_path / "root_secret"
     secret.write_text("do-not-touch", encoding="utf-8")
@@ -253,11 +256,13 @@ def test_locked_file_refuses_a_symlinked_lock_and_fails_open(tmp_path: Path) -> 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
 def test_locked_file_reentrant_across_atomic_write_of_symlinked_target(tmp_path: Path) -> None:
-    """Keying reentrancy on target.resolve() self-deadlocked a symlinked config:
-    the first atomic_write replaces the symlink with a regular file, so
-    resolve() (and the key) changed and the second nested acquire blocked on
-    the thread's own outer lock. The parent-resolved key is stable across the
-    write. Run in a worker thread so a regression fails the join, not hangs."""
+    """locked_file stays reentrant across an atomic_write of a symlinked target.
+
+    Keying reentrancy on `target.resolve()` self-deadlocks a symlinked config: the first
+    atomic_write replaces the symlink with a regular file, so the key changes and the nested acquire
+    blocks on the thread's own outer lock. The parent-resolved key is stable across the write. Run
+    in a worker thread so a regression fails the join, not hangs.
+    """
     import threading
 
     real = tmp_path / "real.toml"
@@ -283,9 +288,12 @@ def test_locked_file_reentrant_across_atomic_write_of_symlinked_target(tmp_path:
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
 def test_locked_file_fails_open_on_an_unreopenable_lock(tmp_path: Path) -> None:
-    """A stale lock a killed ``sudo`` writer left root-owned is unreopenable by
-    a later non-root process; rather than wedge every later write, the guard
-    fails open. Simulated portably with a 0000 lock the owner cannot open."""
+    """locked_file fails open on an unreopenable lock.
+
+    A stale lock a killed `sudo` writer left root-owned is unreopenable by a later non-root process;
+    rather than wedge every later write, the guard fails open. Simulated portably with a 0000 lock
+    the owner cannot open.
+    """
     target = tmp_path / "config.toml"
     lock = tmp_path / "config.toml.lock"
     lock.write_text("", encoding="utf-8")
@@ -300,9 +308,12 @@ def test_locked_file_fails_open_on_an_unreopenable_lock(tmp_path: Path) -> None:
 
 
 def test_locked_file_reports_acquisition(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The fail-open contract is unchanged; the yielded bool exists so a
-    transaction that would restore a whole-file snapshot on failure can tell
-    a real serialized cycle from a fictional one (a stale root-owned .lock)."""
+    """locked_file reports whether it acquired the lock.
+
+    The fail-open contract is unchanged; the yielded bool lets a transaction that would restore a
+    whole-file snapshot on failure tell a real serialized cycle from a fictional one (a stale root-
+    owned .lock).
+    """
     import agent6.portable as portable_mod
 
     target = tmp_path / "c.toml"
@@ -322,9 +333,11 @@ def test_locked_file_reports_acquisition(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 def test_a_cut_stderr_tail_says_it_was_cut() -> None:
-    """The claude_code provider's copy cut a diagnostic at 400 chars with no
-    marker, so a partial failure read as a complete one; the MCP client's
-    version marks the cut and starts at a line, and is now the one owner."""
+    """A cut stderr tail says it was cut.
+
+    A diagnostic cut at 400 characters with no marker reads a partial failure as a complete one; the
+    one owner marks the cut and starts at a line.
+    """
     from agent6.portable import stderr_tail
 
     keep = [(f"line {i}: " + "x" * 60 + "\n").encode() for i in range(20)]
@@ -335,9 +348,11 @@ def test_a_cut_stderr_tail_says_it_was_cut() -> None:
 
 
 def test_the_stderr_drain_keeps_what_a_live_child_said() -> None:
-    """Through a buffered pipe, `read(4096)` returned only at 4 KB or EOF: a
-    server that logged its reason and then waited on stdin had that reason in
-    the drain only after it died, so a startup timeout carried none of it."""
+    """Through a buffered pipe, `read(4096)` returned only at 4 KB or EOF.
+
+    A server that logged its reason and then waited on stdin had that reason in the drain only after
+    it died, so a startup timeout carried none of it.
+    """
     import threading
     import time
 
@@ -359,8 +374,11 @@ def test_the_stderr_drain_keeps_what_a_live_child_said() -> None:
 
 
 def test_the_stderr_drain_keeps_a_byte_budget_of_tail() -> None:
-    """Capped at two chunks, a drain reading write by write kept two lines of a
-    chatty child; the cap is STDERR_KEEP_BYTES of tail, whatever the writes."""
+    """The stderr drain keeps a byte budget of tail.
+
+    The cap is STDERR_KEEP_BYTES of tail, whatever the writes; a cap of two chunks keeps two lines
+    of a chatty child that writes line by line.
+    """
     import threading
 
     from agent6.portable import STDERR_KEEP_BYTES, drain_stderr

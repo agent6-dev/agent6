@@ -21,11 +21,10 @@ from agent6.config.io import (
 
 
 def test_leaf_scan_skips_the_interior_of_a_multiline_value(tmp_path: Path) -> None:
-    """The scan matched `^\\s*leaf\\s*=` on every line of the section, so a line
-    INSIDE a triple-quoted string or multi-line array could be taken for the
-    leaf: the surgery rewrote the operator's string, left the real leaf below
-    untouched, and reported success. (The mirror half -- replacing the whole
-    span once matched -- was already fixed.)"""
+    r"""The leaf scan skips lines inside a triple-quoted string or multi-line array.
+
+    It matched `^\s*leaf\s*=` on every line, rewrote the operator's string and reported success.
+    """
     p = tmp_path / "c.toml"
     p.write_text(
         '[harness]\nverify_command = """\nx = 5\n"""\nx = 30\n',
@@ -44,10 +43,11 @@ def test_leaf_scan_skips_the_interior_of_a_multiline_value(tmp_path: Path) -> No
 
 
 def test_table_header_lookup_tolerates_a_trailing_comment(tmp_path: Path) -> None:
-    """`[sandbox]  # the jail` is ordinary TOML, but every header lookup matched
-    the stripped line exactly, so the table was invisible to the surgery: unset
-    reported nothing to unset for a leaf that was set, and set appended a SECOND
-    [sandbox] table, which makes the whole file unparseable."""
+    """A header with a trailing comment is found by the surgery.
+
+    Matched exactly, `[sandbox]  # the jail` was invisible: unset found nothing and set
+    appended a second table, making the file unparseable.
+    """
     p = tmp_path / "c.toml"
     p.write_text("[sandbox]  # the jail\nprotect_git = true\n", encoding="utf-8")
 
@@ -62,9 +62,11 @@ def test_table_header_lookup_tolerates_a_trailing_comment(tmp_path: Path) -> Non
 
 
 def test_remove_toml_leaf_deletes_whole_multiline_array(tmp_path: Path) -> None:
-    """A multi-line array value must be removed whole. Deleting only the opening
-    `leaf = [` line orphaned the continuation lines, leaving unparseable TOML
-    (and `config fix` then reported the file it 'repaired' as invalid)."""
+    """A multi-line array value must be removed whole.
+
+    Deleting only the opening `leaf = [` line orphaned the continuation lines, leaving unparseable
+    TOML (and `config fix` then reported the file it 'repaired' as invalid).
+    """
     path = tmp_path / "c.toml"
     path.write_text(
         '[sandbox]\nallow_urls = [\n  "http://x",\n  "http://y",\n]\ntool_network = "session"\n'
@@ -94,9 +96,7 @@ def test_remove_toml_leaf_multiline_last_leaf_drops_header(tmp_path: Path) -> No
 
 
 def test_upsert_toml_leaf_top_level_key_lands_before_first_table(tmp_path: Path) -> None:
-    """A single-segment key (the top-level `profile`) must be written into the
-    top region, BEFORE the first [table] header; appended after one it would
-    silently become that table's member."""
+    """A single-segment key is written into the top region, before the first table header."""
     path = tmp_path / "c.toml"
     path.write_text('# keep me\n[sandbox]\nrun_commands = "ask"\n')
     upsert_toml_leaf(path, "profile", "ultra")
@@ -137,8 +137,7 @@ def test_remove_toml_leaf_top_level_key_never_touches_a_table_member(tmp_path: P
 
 
 def test_upsert_toml_leaf_refuses_a_leaf_under_an_array_of_tables(tmp_path: Path) -> None:
-    """A leaf under an array-of-tables ([[x]]) can't be set on its own; refuse
-    with the friendly owner message, not the parser's cryptic 'declare twice'."""
+    """A leaf under an array-of-tables refuses with the owner message, not the parser's error."""
     p = tmp_path / "c.toml"
     p.write_text('[svc]\nname = "s"\n[[svc.items]]\nk = 1\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="array-of-tables"):
@@ -146,8 +145,7 @@ def test_upsert_toml_leaf_refuses_a_leaf_under_an_array_of_tables(tmp_path: Path
 
 
 def test_upsert_toml_leaf_preserves_a_trailing_comment(tmp_path: Path) -> None:
-    """Replacing a single-line leaf value keeps its trailing `# comment` -- the
-    surgery is comment-preserving -- and a `#` inside the string is not one."""
+    """Replacing a single-line leaf keeps its trailing comment; a `#` in the string is not one."""
     p = tmp_path / "c.toml"
     p.write_text('[models.worker]\nmodel = "old"  # the good one\n', encoding="utf-8")
     upsert_toml_leaf(p, "models.worker.model", "new")
@@ -161,10 +159,10 @@ def test_upsert_toml_leaf_preserves_a_trailing_comment(tmp_path: Path) -> None:
 
 
 def test_upsert_top_level_key_replaces_conflicting_table(tmp_path: Path) -> None:
-    """Writing the bare `profile` key while a `[profile]` TABLE exists must
-    replace the table: writing both leaves the file unparseable ("Cannot
-    overwrite a value"), which the lenient already-invalid set path then
-    KEPT, wedging every later config read."""
+    """Writing the bare `profile` key replaces an existing `[profile]` table.
+
+    Writing both left the file unparseable, which the lenient set path then kept.
+    """
     path = tmp_path / "c.toml"
     path.write_text('[profile]\nporifle = "x"\n\n[sandbox]\nrun_commands = "ask"\n')
     upsert_toml_leaf(path, "profile", "ultra")
@@ -175,8 +173,7 @@ def test_upsert_top_level_key_replaces_conflicting_table(tmp_path: Path) -> None
 
 
 def test_upsert_table_leaf_replaces_conflicting_top_level_key(tmp_path: Path) -> None:
-    """The inverse: creating a `[profile]` table while the bare `profile` key
-    exists must drop the bare key, never write both (unparseable)."""
+    """Creating a `[profile]` table drops an existing bare `profile` key, never writing both."""
     path = tmp_path / "c.toml"
     path.write_text('profile = "ultra"\n\n[sandbox]\nrun_commands = "ask"\n')
     upsert_toml_leaf(path, "profile.porifle", "x")
@@ -189,10 +186,7 @@ def test_upsert_table_leaf_replaces_conflicting_top_level_key(tmp_path: Path) ->
 def test_upsert_table_leaf_skips_a_key_name_inside_an_earlier_multiline_value(
     tmp_path: Path,
 ) -> None:
-    """Dropping a conflicting bare `profile` scalar (to write `[profile]`) must not
-    match a `profile = ...`-looking line INSIDE an earlier key's triple-quoted
-    value. The unskipped top-region scan cut the wrong lines and corrupted the
-    file (the drop sibling of the leaf-lookup interior bug)."""
+    """Dropping a conflicting bare scalar skips a look-alike line inside a triple-quoted value."""
     path = tmp_path / "c.toml"
     path.write_text(
         'doc = """\nprofile = not a real key\n"""\nprofile = "old"\n\n'
@@ -236,12 +230,11 @@ def test_remove_toml_table_absent_returns_false(tmp_path: Path) -> None:
 def test_header_lookup_skips_a_header_shadowed_by_an_earlier_multiline_value(
     tmp_path: Path,
 ) -> None:
-    """The header-LOCATE scans (upsert/remove/undeclared-ancestor) must skip a
-    `[table]`-looking line inside an EARLIER key's triple-quoted value, or the
-    surgery matches the fake header first: an upsert writes into the wrong table
-    and a remove silently corrupts the operator's string (stays valid TOML, so
-    revalidation never rolls it back). The header-FIND sibling of the value-span
-    bug the region walkers already fixed."""
+    """The header-locate scans skip a `[table]`-looking line inside a triple-quoted value.
+
+    Matched first, an upsert wrote into the wrong table and a remove corrupted the operator's
+    string while staying valid TOML.
+    """
     base = '[b]\ndoc = """\n[a]\nx = 1\n"""\nk = 0\n\n[a]\nreal = "yes"\nkeep = 1\n'
     p = tmp_path / "c.toml"
 
@@ -260,12 +253,11 @@ def test_header_lookup_skips_a_header_shadowed_by_an_earlier_multiline_value(
 
 
 def test_remove_toml_table_survives_a_bracketed_multiline_interior(tmp_path: Path) -> None:
-    """A `[table]` whose multi-line value has an interior line starting with `[`
-    (a triple-quoted help string with a `[options]` line) must be dropped WHOLE.
-    The per-line `[`-scan flipped `dropping` off at that interior line, leaking
-    the value's tail + every sibling below and leaving the file unparseable --
-    the same corruption class the region walker fixed for the LOOKUP path, on the
-    drop sibling. `config fix` calls remove_toml_table, so this bricked recovery."""
+    """A table whose multi-line value has an interior line starting with `[` is dropped whole.
+
+    The per-line scan flipped `dropping` off at that line, leaking the value's tail and every
+    sibling below; `config fix` calls remove_toml_table, so this bricked recovery.
+    """
     path = tmp_path / "c.toml"
     path.write_text(
         '[cli]\nhelp = """\nUsage:\n[options]\n"""\nenabled = true\n[review]\ntrigger = "off"\n',
@@ -319,9 +311,10 @@ def test_config_set_whole_extra_body_value_round_trips(tmp_path: Path) -> None:
 
 
 def test_control_chars_serialize_to_valid_toml(tmp_path: Path) -> None:
-    """TOML basic strings forbid literal control chars; the serializer escaped
-    only backslash and quote, so a newline-bearing value wrote unparseable TOML
-    that `config set` then reported as success (blaming another layer)."""
+    """The serializer escapes control chars, so a newline-bearing value writes parseable TOML.
+
+    `config set` reported success over the unparseable file, blaming another layer.
+    """
     path = tmp_path / "c.toml"
     path.write_text("", encoding="utf-8")
     upsert_toml_leaf(path, "git.name", "a\nb\tc\rd\x1be")  # pyright: ignore[reportPrivateUsage]
@@ -332,10 +325,11 @@ def test_control_chars_serialize_to_valid_toml(tmp_path: Path) -> None:
 
 
 def test_concurrent_leaf_writes_lose_no_update(tmp_path: Path) -> None:
-    """Two writers racing the read-surgery-publish cycle both read the same
-    base text, and the later publish silently dropped the earlier one's key
-    (lost update: a CLI `config set` racing the web/TUI config editor). The
-    writers serialize on portable.locked_file, which is removed on release."""
+    """Two writers serialize on portable.locked_file, so neither publish drops the other's key.
+
+    A CLI `config set` racing the web or TUI editor lost an update; the lock is removed on
+    release.
+    """
     path = tmp_path / "config.toml"
     n_writers, n_keys = 8, 5
     barrier = threading.Barrier(n_writers)
@@ -358,11 +352,12 @@ def test_concurrent_leaf_writes_lose_no_update(tmp_path: Path) -> None:
 
 
 def test_upsert_toml_leaf_replaces_a_whole_multiline_value(tmp_path: Path) -> None:
-    """A multi-line value must be replaced whole. Rewriting only its opening line
-    orphaned the rest, producing unparseable TOML from every config writer
-    (`config set`/`add`/`remove`, `connect`, the TUI and web editors) --
-    multi-line arrays are the hand-written form for allow_urls, personas,
-    verify_command."""
+    """A multi-line value must be replaced whole.
+
+    Rewriting only its opening line orphans the rest, producing unparseable TOML from every config
+    writer (`config set`/`add`/`remove`, `connect`, the TUI and web editors); multi-line arrays are
+    the hand-written form for allow_urls, personas, verify_command.
+    """
     path = tmp_path / "config.toml"
     path.write_text(
         '[sandbox]\nallow_urls = [\n  "https://a.example",\n]\nprofile = "strict"\n',
@@ -383,12 +378,13 @@ def test_upsert_toml_leaf_replaces_a_whole_multiline_string(tmp_path: Path) -> N
 
 
 def test_no_writer_deletes_a_top_level_inline_table(tmp_path: Path) -> None:
-    """`sandbox = { protect_git = false, ... }` is legal TOML. The bare-key drop
-    exists for the SCALAR-vs-[table] conflict (`profile` vs `[profile]`), but its
-    regex matched a table-valued key too, so writing any sandbox.* leaf deleted
-    the whole line -- every sibling setting in it -- and reported success. The
-    refusal lives in the writer so `config add`/`remove` and the engine-level
-    writers behind the TUI, connect and init cannot skip it."""
+    """`sandbox = { protect_git = false, ... }` is legal TOML.
+
+    The bare-key drop exists for the SCALAR-vs-[table] conflict (`profile` vs `[profile]`), but its
+    regex matching a table-valued key too would delete the whole line (every sibling setting in it)
+    on any sandbox.* write and report success. The refusal lives in the writer so `config
+    add`/`remove` and the engine-level writers behind the TUI, connect and init cannot skip it.
+    """
     p = tmp_path / "c.toml"
     body = 'sandbox = { protect_git = false, run_commands = "yes", memory_limit_mb = 8000 }\n'
     p.write_text(body, encoding="utf-8")
@@ -405,11 +401,11 @@ def test_no_writer_deletes_a_top_level_inline_table(tmp_path: Path) -> None:
 
 
 def test_remove_toml_leaf_refuses_an_undeclared_table_ancestor(tmp_path: Path) -> None:
-    """The surgery only knows [table] headers; a leaf inside an inline table /
-    dotted key read as "not found" (False), which callers translate to
-    "nothing to unset" while `config get` shows the leaf set. Refuse like
-    upsert_toml_leaf, so every removal surface (CLI unset, the layer path the
-    TUI uses, skills state) reports it instead of claiming success."""
+    """Removing a leaf inside an inline table or dotted key refuses like upsert_toml_leaf.
+
+    It read as "not found", which every removal surface translated to "nothing to unset" while
+    `config get` showed the leaf set.
+    """
     p = tmp_path / "c.toml"
     p.write_text('sandbox = { protect_git = false, run_commands = "yes" }\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="cannot be unset on its own"):
@@ -423,11 +419,11 @@ def test_remove_toml_leaf_refuses_an_undeclared_table_ancestor(tmp_path: Path) -
 
 
 def test_upsert_end_scan_skips_a_multiline_value_with_a_bracket_line(tmp_path: Path) -> None:
-    """The section-end scan that bounds the leaf search was a raw per-line
-    startswith("["), so a triple-quoted value whose interior line begins with
-    '[' truncated the region: the leaf search stopped early, missed the real
-    leaf, and the insert landed INSIDE the operator's string, destroying a
-    sibling and reporting success."""
+    """The section-end scan skips an interior line starting with `[` inside a triple-quoted value.
+
+    The truncated region made the leaf search stop early and the insert land inside the
+    operator's string, destroying a sibling and reporting success.
+    """
     p = tmp_path / "c.toml"
     p.write_text(
         '[harness.metric]\npattern = """\n[0-9]+ ms\n"""\ngoal = "minimize"\n',
@@ -460,10 +456,11 @@ def test_drop_top_region_key_skips_a_multiline_value_bracket_line(tmp_path: Path
 
 
 def test_remove_toml_table_drops_an_array_of_tables_subtable(tmp_path: Path) -> None:
-    """Removing [cli] must take its [[cli.aliases]] array-of-tables subtable with
-    it. _drop_table_lines switched to _header_name, which reports [[x]] as
-    not-a-table, so the subtable (and everything after) was kept, leaving the
-    config unloadable and config fix stuck."""
+    """Removing [cli] takes its [[cli.aliases]] array-of-tables subtable with it.
+
+    _header_name reported [[x]] as not a table, so the subtable and everything after stayed,
+    leaving the config unloadable and config fix stuck.
+    """
     p = tmp_path / "c.toml"
     p.write_text(
         '[cli]\nx = 1\n\n[[cli.aliases]]\nname = "a"\n\n[sandbox]\nprotect_git = true\n',

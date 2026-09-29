@@ -66,10 +66,12 @@ def test_prompt_show_plan_mode_differs(
 def test_prompt_show_includes_recorded_memories(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`prompt show` claims to print what the worker actually receives, but it
-    never passed the memories (or skills) the run loop injects: an operator
-    checking whether a recorded memory would reach future runs saw '(none
-    recorded yet)' while the real prompt carried it."""
+    """`prompt show` includes the recorded memories.
+
+    It claims to print what the worker receives, so it passes the memories (and skills) the run loop
+    injects; an operator checking whether a recorded memory would reach future runs must not see
+    '(none recorded yet)' while the real prompt carries it.
+    """
     from agent6.memory import add
 
     repo = _git_repo(tmp_path)
@@ -86,12 +88,13 @@ def test_prompt_show_includes_recorded_memories(
 def test_prompt_show_prints_the_tools_and_the_first_message(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The system prompt is half of what the model receives: the tool
-    definitions travel in the API's `tools` field and the task rides a
-    first-message header. `prompt show` printed the system prompt alone, so
-    an operator reading it saw no run_command guidance and judged the model
-    blind. It prints all three now, and `--json` the same as one object,
-    with the tool list this config actually exposes."""
+    """The system prompt is half of what the model receives.
+
+    The tool definitions travel in the API's `tools` field and the task rides a first-message
+    header; the system prompt alone shows no run_command guidance, so an operator reading it judges
+    the model blind. `prompt show` prints all three, and `--json` the same as one object, with the
+    tool list this config actually exposes.
+    """
     import json
 
     repo = _git_repo(tmp_path)
@@ -113,10 +116,12 @@ def test_prompt_show_prints_the_tools_and_the_first_message(
 def test_prompt_show_infers_the_gate_a_run_would_infer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run infers its gate before assembling the prompt, and the gate decides
-    the `<verify-command>` block, the commit rule and whether
-    `run_verify_command` is offered. Skipping it printed "this run has no
-    verify command" for every repo whose gate is inferred."""
+    """`prompt show` infers the gate a run would infer.
+
+    A run infers its gate before assembling the prompt, and the gate decides the `<verify-command>`
+    block, the commit rule and whether `run_verify_command` is offered; skipping it prints "this run
+    has no verify command" for every repo whose gate is inferred.
+    """
     repo = _git_repo(tmp_path)
     (repo / "AGENTS.md").write_text(
         "# agents\n\nbe terse here\n\n## Verify command\n\n```bash\npytest -q\n```\n",
@@ -133,10 +138,12 @@ def test_prompt_show_infers_the_gate_a_run_would_infer(
 
 
 def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: Path) -> None:
-    """`run_commands = "no"` withholds every command tool, and a metric with no
-    `[harness.metric]` can only error. A prompt block describing a tool the
-    model does not have is one it cannot act on, and the metric tool was
-    offered unconditionally while `run_verify_command` was already hidden."""
+    """A withheld tool gets no block and no offer.
+
+    `run_commands = "no"` withholds every command tool, and a metric with no `[harness.metric]` can
+    only error; a prompt block describing a tool the model does not have is one it cannot act on,
+    and the metric tool must not be offered while `run_verify_command` is hidden.
+    """
     import tempfile
 
     from agent6.config import Config
@@ -165,8 +172,11 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: Path) -> None:
 
 
 def test_plan_mode_does_not_name_a_gate_it_says_is_absent(tmp_path: Path) -> None:
-    """One plan prompt carried both "run_verify_command runs the operator's
-    gate" and "`run_verify_command` is not available", forty lines apart."""
+    """Plan mode does not name a gate it says is absent.
+
+    One plan prompt must not carry both "run_verify_command runs the operator's gate" and
+    "`run_verify_command` is not available", forty lines apart.
+    """
     from agent6.config import Config
     from agent6.harness import model_exchange_for
 

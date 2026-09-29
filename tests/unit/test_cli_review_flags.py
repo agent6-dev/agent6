@@ -38,9 +38,10 @@ def test_head_without_base_is_rejected_before_config_load(
 def test_an_empty_range_is_reported_before_provider_preflight(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A valid empty range is a successful no-work review, even when no model
-    is configured; the note names the range and paths, on stderr like every
-    other status line, so a script reading stdout for a verdict sees none."""
+    """A valid empty range is a successful no-work review before any provider preflight.
+
+    The note names the range and paths on stderr, so a script reading stdout sees no verdict.
+    """
     from types import SimpleNamespace
 
     from agent6.config import Config
@@ -98,9 +99,10 @@ def test_an_empty_range_is_reported_before_provider_preflight(
 def test_personas_without_reviewers_is_said_to_be_ignored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`--personas` is read only under `--reviewers N`: alone it ran the single
-    freeform review with the named seats silently dropped. The sibling
-    `model` command prints a note for a flag it cannot use; so does this."""
+    """`--personas` without `--reviewers N` prints a note that it is ignored.
+
+    The sibling `model` command prints the same note for a flag it cannot use.
+    """
     subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
     monkeypatch.chdir(tmp_path)
 
@@ -120,8 +122,7 @@ def test_personas_without_reviewers_is_said_to_be_ignored(
 def test_personas_under_configured_seats_is_said_to_be_ignored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`[review].seats` names the roster outright, as the flag's help says;
-    the flag beside it was dropped in silence."""
+    """`--personas` under a configured `[review].seats` roster is said to be ignored."""
     from types import SimpleNamespace
 
     from agent6.config import Config
@@ -151,8 +152,12 @@ def _panel_config(*, with_reviewer: bool) -> Any:
 
 
 def _two_commits(repo: Path) -> tuple[str, str]:
-    """Commit A defines `f(x)` with a caller `f(1)`; commit B widens the
-    signature and updates the caller. Returns (A, B), checked out at A."""
+    """Commit A defines `f(x)` with a caller `f(1)`.
+
+    Commit B widens the signature and updates the caller.
+
+    Returns (A, B), checked out at A.
+    """
 
     def git(*args: str) -> str:
         return subprocess.run(
@@ -200,8 +205,10 @@ class _FixedReviewProvider:
 def test_an_arbitrary_range_uses_the_selected_heads_log(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The reviewer's recent-history context came from the checkout's HEAD
-    whatever --head named; it is the reviewed head's log."""
+    """The reviewer's recent-history context is the reviewed head's log.
+
+    The checkout's HEAD is not consulted.
+    """
     from types import SimpleNamespace
 
     from agent6.ui.cli import review_cmds
@@ -235,9 +242,7 @@ def test_an_arbitrary_range_uses_the_selected_heads_log(
 def test_an_unknown_pinned_provider_is_named_without_a_reviewer_route(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A seat pinning a provider with no [providers.<name>] block was named
-    only once a reviewer route existed; every seat's provider is checked
-    before any seat is built."""
+    """Every seat's pinned provider is checked before any seat is built, reviewer route or not."""
     from types import SimpleNamespace
 
     from agent6.ui.cli import review_cmds
@@ -272,8 +277,7 @@ def test_an_unknown_pinned_provider_is_named_without_a_reviewer_route(
 def test_a_fully_pinned_panel_needs_no_reviewer_route(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A panel whose every seat pins a model has no use for [models.reviewer],
-    which it used to require."""
+    """A panel whose every seat pins a model needs no [models.reviewer]."""
     from types import SimpleNamespace
 
     from agent6.app import providers as provider_builders
@@ -310,9 +314,11 @@ def test_a_fully_pinned_panel_needs_no_reviewer_route(
 def _explore_review(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, base: str, head: str
 ) -> tuple[int, dict[str, Any]]:
-    """`agent6 review --reviewers 1` under `review.tier = "explore"` with one
-    fake seat whose panel reads `caller.py` the way the explore prompt tells it
-    to; returns the exit code and what the seat read."""
+    """Run `agent6 review --reviewers 1` under `review.tier = "explore"` with one fake seat.
+
+    The seat reads `caller.py` the way the explore prompt tells it to. Returns the exit code and
+    what the seat read.
+    """
     from types import SimpleNamespace
 
     from agent6.config import Config
@@ -370,12 +376,11 @@ def _explore_review(
 def test_explore_tier_gates_on_the_head_being_the_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`review.tier = "explore"` hands a seat read-only tools over the CHECKOUT,
-    so reviewing a `--head` that is not checked out fed it file contents the
-    diff contradicts: the diff said the caller became `f(1, 2)` while
-    `read_file` returned the old `f(1)`, the false break the explore prompt
-    tells a seat to BLOCK on. Both directions: the ordinary `--head HEAD` on
-    the checked-out commit still runs its seat."""
+    """The explore tier runs only when `--head` is the checkout.
+
+    Its read-only tools read the checkout, so another head would feed the seat file contents the
+    diff contradicts, the false break the prompt tells it to block on.
+    """
     base, head = _two_commits(tmp_path)
     rc, seen = _explore_review(tmp_path, monkeypatch, base=base, head=head)
     err = capsys.readouterr().err
@@ -393,9 +398,7 @@ def test_explore_tier_gates_on_the_head_being_the_checkout(
 def test_explore_tier_refuses_a_dirty_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The default `--head HEAD` names the checked-out commit whatever the tree
-    holds, so an uncommitted edit to a file the `base..HEAD` diff describes fed
-    a seat the same false break a wrong `--head` does."""
+    """The explore tier refuses a dirty checkout, whose tree contradicts the `base..HEAD` diff."""
     base, head = _two_commits(tmp_path)
     subprocess.run(["git", "checkout", "-q", head], cwd=tmp_path, check=True)
     (tmp_path / "caller.py").write_text("from lib import f\n\nprint(f(1))\n", encoding="utf-8")
@@ -409,9 +412,10 @@ def test_explore_tier_refuses_a_dirty_checkout(
 def test_a_panel_with_an_unpinned_seat_still_requires_the_reviewer_route(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Moving the route requirement under the single-reviewer path left the
-    panel with none: an unpinned seat fell through to the provider builder's
-    bare "no model configured" where `require_runnable` names the remedy."""
+    """A panel with an unpinned seat still requires the reviewer route.
+
+    The refusal carries `require_runnable`'s remedy.
+    """
     from types import SimpleNamespace
 
     from agent6.config import ConfigError
@@ -437,9 +441,10 @@ def test_a_panel_with_an_unpinned_seat_still_requires_the_reviewer_route(
 def test_the_recent_log_survives_a_head_that_is_also_a_path_or_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], head: str
 ) -> None:
-    """`git log <head>` failed on a ref that is also a path (ambiguous) and
-    on the empty head `--base` alone leaves, so the review ran with no recent
-    history at all; the rev is named as a rev and defaults to HEAD."""
+    """The recent log survives a head that is also a path, or an empty head from `--base` alone.
+
+    The rev is named as a rev and defaults to HEAD.
+    """
     from types import SimpleNamespace
 
     from agent6.ui.cli import review_cmds
@@ -485,9 +490,10 @@ def test_the_recent_log_survives_a_head_that_is_also_a_path_or_empty(
 def test_personas_a_configured_roster_ignores_are_not_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With `[review].seats` naming the roster the command announces
-    `--personas` ignored, then parsed them for the key check: a malformed
-    spec crashed the command and a well-formed one refused the run."""
+    """Personas a configured roster ignores are not parsed.
+
+    A malformed spec cannot fail the run.
+    """
     from types import SimpleNamespace
 
     from agent6.config import Config
@@ -526,8 +532,7 @@ def test_personas_a_configured_roster_ignores_are_not_read(
 def test_a_tracked_file_named_head_does_not_break_the_diff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`git diff HEAD` with no pathspec is ambiguous in a repo tracking a file
-    named HEAD, so the review failed before it read a line."""
+    """A tracked file named HEAD does not make `git diff HEAD` ambiguous for the review."""
     from types import SimpleNamespace
 
     from agent6.ui.cli import review_cmds
@@ -566,8 +571,7 @@ def _other_provider() -> Config:
 def test_review_model_routes_the_reviewer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`review --model provider/model` re-routes the reviewer role for this
-    review, so the single reviewer and every bare panel seat build on it."""
+    """`review --model provider/model` re-routes the reviewer role for this review."""
     from types import SimpleNamespace
 
     from agent6.ui.cli import review_cmds
@@ -596,8 +600,10 @@ def test_review_model_routes_the_reviewer(
 def test_review_model_naming_no_provider_is_refused_before_the_diff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A `--model` whose first segment is no configured provider is refused
-    with the configured names, before any git call."""
+    """A `--model` naming no configured provider is refused with the configured names.
+
+    The refusal comes before any git call.
+    """
     from types import SimpleNamespace
 
     from agent6.ui.cli import review_cmds

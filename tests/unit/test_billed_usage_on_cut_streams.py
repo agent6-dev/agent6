@@ -2,11 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """A stream that dies after the provider reported usage still cost money.
 
-`budget.record` ran only when a stream completed, so every early exit -- a
-retryable mid-stream error, the idle watchdog, an operator steer or stop --
-spent money `max_usd` never saw. Each retry re-sends the whole input and is
-billed again, so a run with any flakiness had no ceiling at all: the operator
-set a number for the task and could pass it without being told.
+Every early exit (a retryable mid-stream error, the idle watchdog, a steer or stop) records the
+usage it saw; each retry re-sends the whole input and is billed again, so an unrecorded exit would
+leave `max_usd` without a ceiling.
 """
 
 from __future__ import annotations
@@ -49,8 +47,7 @@ def _sse(event: str, data: dict[str, Any]) -> list[str]:
 def test_anthropic_records_what_a_cut_stream_already_cost(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The USD assertion needs a table price; the suite isolates the model-price
-    # cache, so seed one (the suite never reads the developer's real cache).
+    # The USD assertion needs a table price; the suite isolates the model-price cache, so seed one.
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
     pricing = {"claude-sonnet-4-5": [3.0, 15.0]}
@@ -163,8 +160,7 @@ def test_openai_records_a_cut_stream_and_keeps_the_cached_split() -> None:
 
 
 def test_a_stream_that_reported_nothing_records_nothing() -> None:
-    """An unknown amount is not a licence to invent one: a stream cut before
-    any usage arrived must leave the ledger untouched."""
+    """A stream that reported nothing records nothing: an unknown amount is not invented."""
     lines = _sse("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}})
 
     budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
@@ -184,8 +180,7 @@ def test_a_stream_that_reported_nothing_records_nothing() -> None:
     snap = budget.snapshot()
     assert snap.input_total == 0
     assert snap.output_total == 0
-    # per_model is where a spurious zero-count record would show: a stream that
-    # reported nothing must not seed a model entry at all.
+    # per_model is where a spurious zero-count record would show.
     assert snap.per_model == {}
 
 
@@ -201,10 +196,11 @@ def _pricing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_anthropic_records_a_completed_stream_its_meter_guard_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A gateway with usage tracking off completes the message with zero input
-    tokens; the guard refused it retryably WITHOUT recording the 800 output
-    tokens it had billed, so every retry re-sent the input and `max_usd`
-    never moved."""
+    """Anthropic records a completed stream its meter guard refuses.
+
+    A gateway with usage tracking off completes with zero input tokens; the billed output tokens are
+    recorded before the retryable refusal.
+    """
     from agent6.providers.types import ProviderError
 
     _pricing(tmp_path, monkeypatch)
@@ -252,8 +248,10 @@ def test_anthropic_records_a_completed_stream_its_meter_guard_refuses(
 def test_openai_records_a_completed_stream_its_meter_guard_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The OpenAI twin: a [DONE] stream whose usage trailer says prompt_tokens
-    0 was refused with its 900 completion tokens unrecorded."""
+    """OpenAI records a completed stream its meter guard refuses.
+
+    A [DONE] stream whose usage trailer says prompt_tokens 0 still books its completion tokens.
+    """
     from agent6.providers.types import ProviderError
 
     _pricing(tmp_path, monkeypatch)
@@ -288,9 +286,10 @@ def test_openai_records_a_completed_stream_its_meter_guard_refuses(
 def test_anthropic_meters_a_completed_stream_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The refusal-path record ran before the guards for every completed
-    message, so an accepted completion was booked twice: once there, once by
-    meter_completion. `max_usd` tripped at half the spend."""
+    """Anthropic meters a completed stream once.
+
+    On the refusal path and by meter_completion.
+    """
     _pricing(tmp_path, monkeypatch)
     lines = _sse(
         "message_start",

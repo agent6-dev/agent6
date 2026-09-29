@@ -132,8 +132,7 @@ def test_machine_status_word_distinguishes_waiting_from_running(tmp_path: Path) 
 
 
 def test_machine_word_for_dir_pairs_the_dir_probes(tmp_path: Path) -> None:
-    """The dir-level owner: the pure word fed the armed-wait and worker-pid
-    probes, so surfaces cannot pair them differently."""
+    """The dir-level owner feeds the pure word the armed-wait and worker-pid probes."""
     spec = _spec(tmp_path)
     live = fold_machine(spec, [])
     d = tmp_path / "inst"
@@ -205,10 +204,11 @@ def test_a_live_machine_without_an_open_agent_wait_refuses_by_name(tmp_path: Pat
 
 
 def test_the_wire_form_reads_the_journal_once(tmp_path: Path) -> None:
-    """The refusals ride on the fold the caller already has. Asking
-    `machine_verb_refusals` for them re-read the journal and re-folded the
-    machine, so every SSE frame did the work twice (50 ms -> 9 ms per frame on
-    a 5,000-event journal)."""
+    """The refusals ride on the fold the caller already has.
+
+    Asking `machine_verb_refusals` for them re-read the journal and re-folded the machine, so every
+    SSE frame did the work twice (50 ms -> 9 ms per frame on a 5,000-event journal).
+    """
     import agent6.viewmodel.machine_state as mod
 
     spec = _spec(tmp_path)
@@ -315,10 +315,12 @@ def test_machine_state_as_dict_is_json_serializable(tmp_path: Path) -> None:
 
 
 def test_machine_verb_refusal_is_one_reading_per_state_and_verb(tmp_path: Path) -> None:
-    """The one gate every surface's stop/poke/steer/answer runs: an unknown
-    machine is named as unknown; an ended one takes nothing; a stopped one
-    takes only a poke when a wait is armed; a live machine takes stop, poke only
-    with an open wait, steer only with an agent state, and answer only with a prompt."""
+    """The one gate every surface's stop, poke, steer and answer runs.
+
+    An unknown machine is named as unknown; an ended one takes nothing; a stopped one takes only
+    a poke with an armed wait; a live one takes stop, poke with an open wait, steer with an
+    agent state, and answer with a prompt.
+    """
     from agent6.viewmodel.machine_state import machine_verb_refusal
 
     verbs = ("stop", "poke", "steer", "answer")
@@ -361,8 +363,7 @@ def test_machine_verb_refusal_is_one_reading_per_state_and_verb(tmp_path: Path) 
 
 
 def test_an_open_prompt_in_the_newest_state_blocks_the_machine(tmp_path: Path) -> None:
-    """The newest state log's unanswered approval names the state the machine
-    waits on; an answered one does not, and a live blocked worker is "waiting"."""
+    """The newest log's unanswered approval names the waited-on state; a blocked worker waits."""
     from agent6.viewmodel.machine_state import machine_status_word, newest_agent_execution
 
     states = tmp_path / "states"
@@ -380,8 +381,7 @@ def test_an_open_prompt_in_the_newest_state_blocks_the_machine(tmp_path: Path) -
 
 
 def test_a_blocked_summary_names_an_answer_whichever_prompt_waits(tmp_path: Path) -> None:
-    """A machine held on an unanswered `ask_user` question read "waiting on
-    an approval": the summary's reason named one prompt kind for both."""
+    """A machine held on an `ask_user` question reads as waiting on a question, not an approval."""
     from agent6.viewmodel.machine_state import summarize_machine_dir
 
     (tmp_path / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -403,10 +403,11 @@ def test_a_blocked_summary_names_an_answer_whichever_prompt_waits(tmp_path: Path
 def test_a_wait_record_of_another_occurrence_is_not_an_open_wait(
     tmp_path: Path, stale: PendingWait
 ) -> None:
-    """A record a death left behind an earlier visit (another state, or this
-    state at another transition) read as an open wait: the machine executing a
-    tool state showed "waiting" and took a poke its next wait would consume as
-    its wake. The engine's own test (state and seq) is the one reading."""
+    """A wait record a death left behind an earlier visit is not an open wait.
+
+    The engine's own test (state and seq) is the one reading; the machine showed "waiting" and
+    took a poke its next wait would consume.
+    """
     from agent6.viewmodel.machine_state import machine_verb_refusal
 
     spec = _spec(tmp_path)
@@ -428,10 +429,7 @@ def test_a_wait_record_of_another_occurrence_is_not_an_open_wait(
 
 
 def test_verb_refusals_fold_no_state_log_unless_a_live_execution_could_read(tmp_path: Path) -> None:
-    """The refusals folded the newest state log for every instance asked, an
-    ended or stopped one included (a TAB over the instance dirs, the machine
-    screen's poll), though only a live, unended machine has an execution to read a
-    steer or an answer."""
+    """The refusals fold the newest state log only for a live, unended machine."""
     import agent6.viewmodel.machine_state as mod
     from agent6.viewmodel.machine_state import machine_verb_refusals
 
@@ -470,8 +468,7 @@ def test_verb_refusals_fold_no_state_log_unless_a_live_execution_could_read(tmp_
 def test_an_unreadable_summary_keeps_its_reason_to_one_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A spec with several problems put every line into the listing's reason
-    cell, and the row ran over the table."""
+    """A spec with several problems keeps the listing's reason cell to one line."""
     import agent6.viewmodel.machine_state as mod
     from agent6.machine import MachineError
     from agent6.viewmodel.machine_state import summarize_machine_dir
@@ -490,8 +487,7 @@ def test_an_unreadable_summary_keeps_its_reason_to_one_line(
 
 
 def test_the_wire_form_carries_the_status_level(tmp_path: Path) -> None:
-    """The hub row stamps a level beside its status word; the machine page's
-    own header had none, so a failed machine read plain on its page."""
+    """The machine page's header stamps a level beside its status word, like the hub row."""
     from agent6.viewmodel.format import status_level
 
     spec = _spec(tmp_path)
@@ -509,10 +505,7 @@ def test_the_wire_form_carries_the_status_level(tmp_path: Path) -> None:
 
 
 def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: Path) -> None:
-    """A poll loop folded the newest state log from scratch on every tick, once
-    for the refusals and once for the prompts or the reasoning; the held fold
-    reads the appended bytes only, follows the machine into a newer agent
-    state, and starts over when a log was rewritten."""
+    """The held fold reads appended bytes only, follows a newer state, restarts on a rewrite."""
     import agent6.viewmodel.machine_state as mod
     from agent6.viewmodel.machine_state import AgentExecution, NewestExecutionFold
     from agent6.viewmodel.tail import tail_events
@@ -552,10 +545,10 @@ def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: Path
 
 
 def test_the_wire_form_names_a_stopped_machine_as_resumable(tmp_path: Path) -> None:
-    """The web stream alone added `worker_lost` to a stopped machine's frame,
-    so the page's first paint (the one-shot snapshot) lacked it and the next
-    frame announced a stop that had happened hours before as news; the wire
-    form carries it wherever it is read."""
+    """The wire form carries `worker_lost` wherever it is read, not only on the web stream.
+
+    The first paint lacked it and the next frame announced an hours-old stop as news.
+    """
     spec = _spec(tmp_path)
     live = fold_machine(spec, [])
     d = tmp_path / "inst"

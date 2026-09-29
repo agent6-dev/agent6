@@ -142,8 +142,7 @@ def test_mechanical_ranking_orders_verify_pass_first_then_cost() -> None:
 
 
 def test_build_user_message_marks_only_truncated_diffs() -> None:
-    """A diff over the cap is shown truncated with a visible marker (the prompt
-    says to read every diff); an under-cap diff is shown whole, no marker."""
+    """A diff over the cap is shown truncated with a visible marker; an under-cap diff is whole."""
     big = "x" * (_DIFF_CAP + 10_000)
     small = "y" * 10
     msg = _build_user_message(
@@ -166,12 +165,10 @@ def test_mechanical_ranking_stable_within_ties() -> None:
 
 
 def test_compare_degrades_on_budget_exhaustion_instead_of_crashing() -> None:
-    """Every provider raises BudgetExceededError from its up-front budget.check(),
-    and the judge's tracker seeds max_usd from the run's own USD limit.
-    Escaping compare() crashed the --parallel compare step AFTER the whole
-    fan-out (no winner stamp, no report); the documented contract is
-    JudgeError on the second failure so rank() falls back to mechanical
-    ranking."""
+    """A BudgetExceededError from the judge's own budget is a JudgeError, so rank() falls back.
+
+    The judge's tracker seeds max_usd from the run's own USD limit.
+    """
     from agent6.budget import BudgetExceededError
 
     class _BrokeProvider:

@@ -65,12 +65,12 @@ def _wait_state(shells: BackgroundShells, shell_id: str, state: str, timeout: fl
 def test_a_command_that_exits_on_its_own_reports_its_code(
     shells: BackgroundShells, tmp_path: Path
 ) -> None:
-    """The core lie: a background command ends and the roster still says
-    "running". State comes from the process, the code from the launcher.
+    """A background command that ended reads as over, not "running".
 
-    The state at start is not pinned here: a command this short can be gone
-    before `start` samples it, and "exited" is then the true answer. A
-    long-lived command carries that half (`sleep 300`, below)."""
+    State comes from the process, the code from the launcher. The state at start is not
+    pinned: a command this short can be gone before `start` samples it, and "exited" is then
+    the true answer; the long-lived command below carries that half.
+    """
     view = shells.start(("/bin/sh", "-c", "echo bye; exit 7"), _policy_for(tmp_path))
     assert _wait_state(shells, view.id, "exited") == "exited"
     after, output = shells.read(view.id, tail_lines=50)
@@ -81,8 +81,7 @@ def test_a_command_that_exits_on_its_own_reports_its_code(
 def test_a_command_killed_from_outside_is_never_reported_running(
     shells: BackgroundShells, tmp_path: Path
 ) -> None:
-    """A crash agent6 did not ask for (an OOM kill, an operator's kill -9)
-    still has to read as over."""
+    """A crash agent6 did not ask for (an OOM kill, an operator's kill -9) reads as over."""
     view = shells.start(("/bin/sh", "-c", "echo up; sleep 300"), _policy_for(tmp_path))
     deadline = time.monotonic() + 15.0
     while "up" not in shells.read(view.id, tail_lines=10)[1]:
@@ -95,8 +94,7 @@ def test_a_command_killed_from_outside_is_never_reported_running(
 
 
 def test_reading_a_live_command_never_blocks(shells: BackgroundShells, tmp_path: Path) -> None:
-    """There is no wait: a read of a command that will run for five minutes
-    returns immediately, so the agent cannot get stuck on it."""
+    """A read of a command that will run for minutes returns immediately."""
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     start = time.monotonic()
     for _ in range(5):
@@ -107,8 +105,7 @@ def test_reading_a_live_command_never_blocks(shells: BackgroundShells, tmp_path:
 
 
 def test_stopped_and_died_are_different_words(shells: BackgroundShells, tmp_path: Path) -> None:
-    """ "I killed it" and "it died on me" must not read the same, or an
-    unexplained disappearance looks like a deliberate stop."""
+    """A stop and a death read differently, so a disappearance never looks deliberate."""
     stopped = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     failed = shells.start(("/bin/sh", "-c", "exit 3"), _policy_for(tmp_path))
     assert shells.stop(stopped.id).state == "stopped"
@@ -118,8 +115,7 @@ def test_stopped_and_died_are_different_words(shells: BackgroundShells, tmp_path
 
 
 def test_the_roster_rides_on_every_answer(shells: BackgroundShells, tmp_path: Path) -> None:
-    """Reading one command reports them all, so a second one dying is seen
-    without having to ask about it."""
+    """Reading one command reports them all, so a second one dying is seen unasked."""
     quiet = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     doomed = shells.start(("/bin/sh", "-c", "exit 1"), _policy_for(tmp_path))
     assert _wait_state(shells, doomed.id, "exited") == "exited"
@@ -155,8 +151,7 @@ def test_an_unknown_id_names_what_exists(shells: BackgroundShells, tmp_path: Pat
 
 
 def test_output_survives_the_command(shells: BackgroundShells, tmp_path: Path) -> None:
-    """The log is a file, so what a command printed is still readable after it
-    is gone -- the point of not streaming through a pipe."""
+    """The log is a file, so a command's output stays readable after it is gone."""
     view = shells.start(("/bin/sh", "-c", "echo first; echo second; exit 0"), _policy_for(tmp_path))
     assert _wait_state(shells, view.id, "exited") == "exited"
     _after, output = shells.read(view.id, tail_lines=50)
@@ -165,8 +160,7 @@ def test_output_survives_the_command(shells: BackgroundShells, tmp_path: Path) -
 
 @pytest.mark.skipif(shutil.which("unshare") is None, reason="needs userns for strict")
 def test_strict_confines_a_background_command_too(shells: BackgroundShells, tmp_path: Path) -> None:
-    """A detached command is the same jail as a foreground one: no weaker
-    isolation just because nobody is waiting on it."""
+    """A detached command runs in the same jail as a foreground one."""
     view = shells.start(
         ("/bin/sh", "-c", "echo escaped > /etc/agent6-bg-escape"), _policy_for(tmp_path, "strict")
     )
@@ -178,10 +172,11 @@ def test_strict_confines_a_background_command_too(shells: BackgroundShells, tmp_
 def test_a_foreground_commands_sweep_spares_a_background_one(
     shells: BackgroundShells, tmp_path: Path
 ) -> None:
-    """The escapee sweep kills whatever a jailed command leaves behind, and a
-    background command is precisely that shape -- a live jail nobody is
-    waiting on. It is a deliberate child, so it must survive every later
-    command."""
+    """A background command survives the escapee sweep of every later command.
+
+    The sweep kills whatever a jailed command leaves behind, and a background command has
+    exactly that shape: a live jail nobody is waiting on. It is a deliberate child.
+    """
     view = shells.start(("/bin/sh", "-c", "echo up; sleep 300"), _policy_for(tmp_path))
     deadline = time.monotonic() + 15.0
     while "up" not in shells.read(view.id, tail_lines=10)[1]:
@@ -199,9 +194,11 @@ def test_a_foreground_commands_sweep_spares_a_background_one(
 def test_a_command_started_mid_sweep_window_is_spared(
     shells: BackgroundShells, tmp_path: Path
 ) -> None:
-    """Started WHILE a foreground command is in flight, a background command is
-    not in that command's before-snapshot, so only its registration as a live
-    launcher keeps the sweep off it."""
+    """A background command started mid-foreground survives that command's sweep.
+
+    It is not in the foreground command's before-snapshot, so only its registration as a
+    live launcher keeps the sweep off it.
+    """
     started: list[str] = []
 
     def start_midway() -> None:
@@ -240,8 +237,7 @@ def _alive(pid: int) -> bool:
 def test_the_roster_is_readable_from_another_process(
     shells: BackgroundShells, tmp_path: Path
 ) -> None:
-    """`/shells` and any dashboard widget run outside the dispatcher, so what
-    each command WAS and how it ended has to be on disk, not just in memory."""
+    """What each command was and how it ended is on disk, for surfaces in other processes."""
     from agent6.tools.background import roster_from_dir
 
     live = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
@@ -266,13 +262,10 @@ def test_an_empty_or_missing_dir_is_not_an_error(tmp_path: Path) -> None:
 def test_a_detached_child_of_a_background_command_dies_with_the_run(
     shells: BackgroundShells, tmp_path: Path, isolation: IsolationLevel
 ) -> None:
-    """The teardown test above only tracked launcher pids, so it passed while a
-    `setsid` child of a background command survived `stop_all` on hardened --
-    the exact "nothing a run started outlives it" claim, broken.
+    """`stop` sweeps the `setsid` child a background command left, on hardened too.
 
-    stop() kills the launcher's group, which by definition misses a child that
-    left it, and run_in_jail's sweep can never catch it either: by then it is
-    not NEW. So stop() sweeps what the command left behind.
+    `stop` kills the launcher's group, which by definition misses a child that left it, and
+    `run_in_jail`'s sweep can never catch it either: by then it is not new.
     """
     beat = tmp_path / "beat"
     loop = f"for i in $(seq 60); do echo x >> {beat}; sleep 0.2; done"
@@ -293,10 +286,11 @@ def test_a_detached_child_of_a_background_command_dies_with_the_run(
 def test_a_command_cannot_forge_its_own_exit_code_or_name(
     shells: BackgroundShells, tmp_path: Path
 ) -> None:
-    """The launcher's result and the command's identity used to live in the
-    same directory the command was granted read-write, so a command that
-    exited 42 could report "exited 0: npm test (all green)". An audit trail the
-    audited party can rewrite is a suggestion box."""
+    """A command cannot rewrite its own result or identity.
+
+    Both live outside the directory the command holds read-write; an audit trail the audited
+    party can rewrite is a suggestion box.
+    """
     forge = (
         'd=$(awk "/agent6/ {print \\$2}" /proc/self/mounts | head -1); '
         'echo "{\\"returncode\\": 0}" > "$d/../result.json" 2>/dev/null; '
@@ -327,9 +321,11 @@ def test_a_command_cannot_forge_its_own_exit_code_or_name(
 
 
 def test_a_sweep_never_signals_a_process_group_it_does_not_own() -> None:
-    """A pgid is a leader's pid and is reusable once that leader is reaped. The
-    sweep looked one up and then signalled it, so under sudo an escapee exiting
-    in that window had root SIGKILL whatever group inherited the number."""
+    """The sweep never signals a pgid it looked up earlier.
+
+    A pgid is a leader's pid, reusable once that leader is reaped; under sudo an escapee
+    exiting in the window would have root SIGKILL whatever group inherited the number.
+    """
     import os
     import signal
     import subprocess
@@ -366,10 +362,11 @@ def test_a_sweep_never_signals_a_process_group_it_does_not_own() -> None:
 
 
 def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: Path) -> None:
-    """The jail holds RW (MakeSym included) on the log dir, and `read` runs
-    OUTSIDE the jail as the operator. Opening the log BY NAME let a command
-    unlink it, symlink it at the operator's secrets, and have the next
-    read_background hand them to the model. Proved under strict and hardened."""
+    """A command that symlinks its log at the operator's secrets gets nothing back.
+
+    The jail holds RW (MakeSym included) on the log dir and `read` runs outside the jail as
+    the operator, so the log is never opened by name. Proved under strict and hardened.
+    """
     import os
 
     from agent6.config import Config
@@ -405,10 +402,11 @@ def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: Path) -> 
 
 
 def test_the_sweep_spares_a_session_the_agent_opened_on_purpose() -> None:
-    """A `/btw` ask and a `/parallel` lane are OUR children in their own
-    session, which is exactly what an escapee looks like. BackgroundJob
-    snapshots its exclusion set at START, so anything spawned later was
-    SIGKILLed at the next teardown -- destroying model work already paid for."""
+    """A `/btw` ask or a `/parallel` lane started later is not swept as an escapee.
+
+    They are agent6's own children in their own session, exactly what an escapee looks like;
+    the exclusion set is not frozen at the background command's start.
+    """
     import subprocess
 
     from agent6.sandbox.jail import (
@@ -432,11 +430,11 @@ def test_the_sweep_spares_a_session_the_agent_opened_on_purpose() -> None:
 
 
 def test_a_planted_symlink_cannot_redirect_the_log_directory(tmp_path: Path) -> None:
-    """Every command in a run holds read-write on the shared log root, so one
-    can plant `<log_root>/bg<N>` as a symlink. `mkdir(exist_ok=True)` and its
-    `is_dir()` check both FOLLOW it, and the agent -- unconfined, outside the
-    jail, as the operator -- then created the log inside whatever directory the
-    command named. O_NOFOLLOW on the leaf does not protect the path above it.
+    """A planted `<log_root>/bg<N>` symlink never places the log where a command says.
+
+    Every command holds read-write on the shared log root; `mkdir(exist_ok=True)` and
+    `is_dir()` both follow a symlink, and the agent creates the log unconfined as the
+    operator. O_NOFOLLOW on the leaf does not protect the path above it.
     """
     shells = BackgroundShells(tmp_path / "shells")
     victim = tmp_path / "victim"
@@ -449,11 +447,10 @@ def test_a_planted_symlink_cannot_redirect_the_log_directory(tmp_path: Path) -> 
 
 
 def test_a_stop_that_did_not_stop_says_so(tmp_path: Path) -> None:
-    """ "stopped" means the command is gone. When the launcher answers that it
-    could not confirm the kill (a process wedged in uninterruptible I/O across
-    the deadline, or a session that died), the reason was captured and then
-    dropped by the view -- so a command still running rendered as a clean stop,
-    the one word an operator acts on.
+    """A stop the launcher could not confirm never renders as "stopped".
+
+    A process wedged in uninterruptible I/O across the deadline, or a dead session, keeps its
+    reason on the surface: "stopped" is the one word an operator acts on.
     """
     from typing import cast
 
@@ -481,11 +478,10 @@ def test_a_stop_that_did_not_stop_says_so(tmp_path: Path) -> None:
 def test_a_command_that_failed_to_start_is_not_listed_as_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """meta.json is what the out-of-process surfaces read (`/shells`, a
-    dashboard widget), and it was written BEFORE the start attempt. A command
-    that never started therefore showed up there as "still running", while the
-    run's own roster did not list it and read_background said no such id --
-    two surfaces contradicting each other about one command.
+    """A command that never started is absent from meta.json.
+
+    meta.json is what the out-of-process surfaces read; written before the start attempt, it
+    listed the command as running while the roster and read_background knew no such id.
     """
     import agent6.tools.background as bg
     from agent6.sandbox.jail import JailUnavailableError
@@ -506,12 +502,10 @@ def test_a_command_that_failed_to_start_is_not_listed_as_running(
 def test_a_platform_without_proc_still_starts_a_background_command(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The escapee sweep is a /proc mechanism, and macOS resolves to
-    `isolation = "none"` -- which agent6 advertises as supported. Reading /proc
-    unconditionally raised FileNotFoundError while taking the descendant
-    snapshot, AFTER the command had been spawned: the model was told it failed
-    to start, the process was never tracked, and stop_all could never reach it,
-    so it outlived the run.
+    """A background command under `isolation = "none"` starts and is tracked without /proc.
+
+    The escapee sweep is a /proc mechanism and macOS resolves to `none`; a /proc read while
+    taking the descendant snapshot must not fail the start of a command already spawned.
     """
     import agent6.sandbox.jail as jail_mod
 
@@ -535,10 +529,11 @@ def test_a_platform_without_proc_still_starts_a_background_command(
 
 
 def test_an_unsandboxed_commands_exit_code_reaches_another_process(tmp_path: Path) -> None:
-    """`none` has no launcher to write the code down, so nothing did: `/shells`
-    from another process reported every such command "still running (or the run
-    that owns it ended)" for the run's life and after it. The owning run knew
-    the code all along."""
+    """Under `none`, the observed exit code is written down for other processes.
+
+    There is no launcher to write it, so the job records the code on the first observed
+    exit; otherwise `/shells` elsewhere reads the command as still running for the run's life.
+    """
     from agent6.tools.background import roster_from_dir
 
     shells = BackgroundShells(tmp_path / "shells")
@@ -554,8 +549,7 @@ def test_an_unsandboxed_commands_exit_code_reaches_another_process(tmp_path: Pat
 
 
 def test_a_stopped_unsandboxed_command_records_its_ending(tmp_path: Path) -> None:
-    """A stop is an ending like any other: another process must not go on
-    reading it as maybe-still-running."""
+    """A stop is an ending: another process must not read it as maybe still running."""
     from agent6.tools.background import roster_from_dir
 
     shells = BackgroundShells(tmp_path / "shells")
@@ -569,12 +563,11 @@ def test_a_stopped_unsandboxed_command_records_its_ending(tmp_path: Path) -> Non
 def test_a_stopped_jailed_command_records_its_ending(
     shells: BackgroundShells, tmp_path: Path
 ) -> None:
-    """A stop SIGKILLs the launcher before it can write the exit code down, so
-    the owning run read "stopped" while every other surface read "still running
-    (or the run that owns it ended)" -- for the rest of the run and after it.
+    """A stop of a jailed command is recorded for other processes, without inventing a code.
 
-    The code is NOT invented: the launcher never reported one, so the record
-    says the command was stopped rather than claiming a number nobody saw."""
+    The stop SIGKILLs the launcher before it can write the exit code, so the record says the
+    command was stopped rather than claiming a number nobody saw.
+    """
     from agent6.tools.background import roster_from_dir
 
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
@@ -588,9 +581,11 @@ def test_a_stopped_jailed_command_records_its_ending(
 def test_stopping_an_already_exited_command_keeps_its_exit_code(
     shells: BackgroundShells, tmp_path: Path
 ) -> None:
-    """`stop_all` stops every shell, exited ones included (one can still have
-    left a detached child behind), so the stop-record runs over a result the
-    launcher already wrote. It must not replace a real code with "stopped"."""
+    """The stop record never replaces a real exit code with "stopped".
+
+    `stop_all` stops exited shells too (one can have left a detached child), so the record
+    runs over a result the launcher already wrote.
+    """
     from agent6.tools.background import roster_from_dir
 
     view = shells.start(("/bin/sh", "-c", "exit 42"), _policy_for(tmp_path))
@@ -603,9 +598,11 @@ def test_stopping_an_already_exited_command_keeps_its_exit_code(
 def test_an_unreadable_result_is_never_clobbered_by_a_stop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The stop-record only overwrites a result it READ as empty. A read that
-    fails says nothing about what is on disk, so writing anyway would replace a
-    real exit code with "stopped" on the strength of a failed read."""
+    """The stop record writes only over a result it read as empty.
+
+    A failed read says nothing about what is on disk, so writing anyway would replace a real
+    exit code with "stopped" on the strength of that failure.
+    """
     import agent6.sandbox.jail as jail_mod
 
     outcome = tmp_path / "bg"
@@ -629,10 +626,11 @@ def test_an_unreadable_result_is_never_clobbered_by_a_stop(
 def test_settle_records_an_ending_nobody_asked_about(
     shells: BackgroundShells, tmp_path: Path
 ) -> None:
-    """A command's ending is written down when someone OBSERVES it, and the
-    model may never look again after starting one. Without a settle at the turn
-    boundary, `/shells` read "still running (or the run that owns it ended)" for
-    the rest of the run over a command that ended in seconds."""
+    """A background command's ending is observed at the turn boundary.
+
+    The ending is written down when someone observes it, and the model may never look again
+    after starting one; without the settle, `/shells` read a finished command as running.
+    """
     from agent6.tools.background import roster_from_dir
 
     done = shells.start(("/bin/sh", "-c", "exit 7"), _policy_for(tmp_path))
@@ -648,11 +646,11 @@ def test_settle_records_an_ending_nobody_asked_about(
 def test_an_unsandboxed_background_command_survives_a_siblings_stop(
     tmp_path: Path,
 ) -> None:
-    """The escapee sweep spares every launcher agent6 deliberately started, and
-    the jailed branch registers its own -- the unsandboxed one did not. So
-    stopping ONE background command swept a sibling as an escapee, and the
-    sibling's next status read poll() over a reaped pid, which CPython reports
-    as returncode 0: agent6 killed a command and then called it a clean exit.
+    """Stopping one unsandboxed background command leaves its sibling running.
+
+    The sweep spares every launcher agent6 deliberately started, the unsandboxed branch's
+    included; an unregistered sibling would be swept, and its next status would read
+    poll() over a reaped pid, which CPython reports as returncode 0.
     """
     shells = BackgroundShells(tmp_path / "shells")
     first = shells.start(("/bin/sh", "-c", "echo one; sleep 300"), _policy_for(tmp_path, "none"))
@@ -667,9 +665,11 @@ def test_an_unsandboxed_background_command_survives_a_siblings_stop(
 
 
 def test_stopping_an_already_exited_command_still_reads_exited(tmp_path: Path) -> None:
-    """The state word says HOW a command ended, so a stop over one that already
-    exited leaves it "exited": `stop_all` guarded on the job's liveness, `stop`
-    did not, and the run's own roster then disagreed with the on-disk one."""
+    """A stop over a command that already exited leaves it "exited".
+
+    The state word says how a command ended; `stop` and `stop_all` agree, so the run's roster
+    and the on-disk one agree.
+    """
     shells = BackgroundShells(tmp_path / "shells")
     view = shells.start(("/bin/sh", "-c", "exit 7"), _policy_for(tmp_path, "none"))
     assert _wait_state(shells, view.id, "exited") == "exited"
@@ -681,9 +681,7 @@ def test_stopping_an_already_exited_command_still_reads_exited(tmp_path: Path) -
 
 
 def test_the_disk_roster_is_in_start_order(tmp_path: Path) -> None:
-    """`/shells`, the TUI modal and the dashboard card read this list, and a
-    run's eleventh background command follows its tenth: sorted as text, bg10
-    and bg11 came ahead of bg2."""
+    """The shell listing sorts by number: bg2 precedes bg10 and bg11."""
     shells = BackgroundShells(tmp_path / "shells")
     try:
         started = [
@@ -714,10 +712,11 @@ class _HostSession:
 
 
 def test_adopt_stops_the_command_whose_log_it_cannot_open(tmp_path: Path) -> None:
-    """A hand-back `adopt` refuses is stopped, not left running: the launcher
-    already started the command and this run owns it, so a registration that
-    raised without stopping it left a live process no roster, read_background
-    or stop_all could reach."""
+    """A hand-back `adopt` refuses is stopped, not left running.
+
+    The launcher already started the command and this run owns it; a registration that
+    raised without stopping it would leave a live process no roster or stop could reach.
+    """
     proc = subprocess.Popen(["sleep", "60"])
     try:
         shells = BackgroundShells(tmp_path / "shells")

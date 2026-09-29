@@ -2,8 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """AGENTS.md is injected whole, with the repo root's file from a subdirectory.
 
-Whole-file injection with an operator warning replaced a silent 16k clip: a
-mid-file cut hid the tail of a large conventions file from the model while the
+A silent clip would hide the tail of a large conventions file from the model while the
 operator saw nothing.
 """
 
@@ -40,8 +39,7 @@ def test_under_the_line_stays_silent(tmp_path: Path) -> None:
 
 
 def test_subdirectory_start_loads_the_repo_roots_file(tmp_path: Path) -> None:
-    """pi and Claude Code collect ancestor context files; a subdir start here
-    must carry the repo's conventions, not silently miss them."""
+    """A subdirectory start loads the repo root's file."""
     _git_repo(tmp_path)
     (tmp_path / "AGENTS.md").write_text("ROOT RULES\n", encoding="utf-8")
     sub = tmp_path / "pkg"
@@ -66,8 +64,7 @@ def test_subdirectory_with_its_own_file_gets_both_labeled(tmp_path: Path) -> Non
 
 
 def test_nested_start_loads_each_ancestor_file_in_order(tmp_path: Path) -> None:
-    """A start below an intermediate package must not skip that package's
-    AGENTS.md while loading the repository root and leaf files."""
+    """A nested start loads each ancestor file in order, the intermediate package's included."""
     _git_repo(tmp_path)
     (tmp_path / "AGENTS.md").write_text("ROOT RULES\n", encoding="utf-8")
     package = tmp_path / "packages"
@@ -86,8 +83,7 @@ def test_nested_start_loads_each_ancestor_file_in_order(tmp_path: Path) -> None:
 
 
 def test_a_start_below_a_root_without_agents_md_labels_the_file(tmp_path: Path) -> None:
-    """With no root file, the outermost file found is a subdirectory's; bare,
-    its rules read as the repository's."""
+    """A start below a root without AGENTS.md labels the file as a subdirectory's."""
     _git_repo(tmp_path)
     sub = tmp_path / "a"
     sub.mkdir()

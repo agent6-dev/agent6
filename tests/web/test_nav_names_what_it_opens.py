@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The nav rail names the thing it opens.
 
-The tab lists every bucket -- runs, plans and asks -- under a card headed
+The tab lists every bucket (runs, plans and asks) under a card headed
 "Sessions", while the rail beside it said "Runs". One of the two was wrong
 about the same list.
 """

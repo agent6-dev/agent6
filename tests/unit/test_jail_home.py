@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The jail's HOME is a directory of agent6's own: `/tmp/agent6-home` inside
-strict's private tmpfs, or the persistent cache dir where there is no private
-/tmp (`hardened`, `none`) or where `[sandbox].home = "cache"` asks for it.
-The policy builder creates the persistent one, so every surface that jails
-gets a HOME that exists; the preflight refuses one that cannot be agent6's
-own."""
+"""The jail's HOME is a directory of agent6's own.
+
+`/tmp/agent6-home` inside strict's private tmpfs, or the persistent cache dir where there is no
+private /tmp or where `[sandbox].home = "cache"` asks for it. The policy builder creates the
+persistent one; the preflight refuses one that cannot be agent6's own.
+"""
 
 from __future__ import annotations
 
@@ -59,10 +59,11 @@ def test_strict_defaults_to_the_private_tmpfs_home(tmp_path: Path) -> None:
 def test_the_builder_creates_and_grants_the_persistent_home(
     tmp_path: Path, isolation: str, cfg: Config
 ) -> None:
-    """Without a private /tmp the HOME persists; strict opts in. The builder
-    alone (no preflight ran) creates it 0700 and rides the extra_rw_paths
-    grant, so `agent6 exec` or an MCP probe gets a HOME that exists: the
-    launcher skips a missing rw path silently."""
+    """Without a private /tmp the HOME persists; the builder creates it 0700 on the rw grant.
+
+    The launcher skips a missing rw path silently, so `agent6 exec` and an MCP probe need it to
+    exist.
+    """
     home = jail_cache_home()
     assert not home.exists()
     policy = jail_policy(tmp_path, cfg, isolation, ("true",))  # pyright: ignore[reportArgumentType]
@@ -73,19 +74,17 @@ def test_the_builder_creates_and_grants_the_persistent_home(
 
 
 def test_the_preflight_check_inspects_without_creating(tmp_path: Path) -> None:
-    """The refusal check itself writes nothing: creation is the builder's.
-    (Under hardened the refusal list also builds the run's policy for the
-    exposure scan, and the builder creates the dir there.)"""
+    """The refusal check itself writes nothing; creation is the builder's."""
     assert check_jail_home(Config(), "hardened", explicitly_set=False) is None
     assert config_refusal(Config(), "strict", tmp_path) is None
     assert not jail_cache_home().exists()
 
 
 def test_a_symlink_at_the_cache_home_refuses(tmp_path: Path) -> None:
-    """A symlink there redirects every jailed write, and the operator's own
-    home is the obvious target. The preflight refuses it as a message; a
-    surface without a preflight (`agent6 exec`) gets the same words from the
-    builder."""
+    """A symlink at the HOME path is refused: it would redirect every jailed write.
+
+    The preflight refuses it as a message; `agent6 exec` gets the same words from the builder.
+    """
     home = jail_cache_home()
     home.parent.mkdir(parents=True, exist_ok=True)
     home.symlink_to(tmp_path)
@@ -99,10 +98,10 @@ def test_a_symlink_at_the_cache_home_refuses(tmp_path: Path) -> None:
 def test_a_dir_owned_by_someone_else_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """On a shared box the path may already be another user's directory: it
-    is never bound, and the message names both uids. The other user is faked
-    by shifting `effective_user` (a real chown needs root); the ownership
-    comparison itself is the real one."""
+    """A HOME path owned by another user is never bound, and the message names both uids.
+
+    The other user is faked by shifting `effective_user`; the ownership comparison is the real one.
+    """
     home = jail_cache_home()
     home.mkdir(parents=True)
     me = effective_user()
@@ -115,10 +114,10 @@ def test_a_dir_owned_by_someone_else_refuses(
 
 
 def test_a_cache_home_open_to_others_refuses(tmp_path: Path) -> None:
-    """A jailed command owns HOME and may chmod it; a mode with any group or
-    other bit lets another local user plant a `~/.gitconfig` or cache content
-    the next jailed run consumes. Checked on every build, never silently
-    restored: the refusal names the mode found and the fix."""
+    """A HOME with any group or other bit is refused, naming the mode found and the fix.
+
+    A jailed command owns HOME and may chmod it; another local user could plant a `~/.gitconfig`.
+    """
     home = jail_cache_home()
     home.mkdir(parents=True, mode=0o700)
     home.chmod(0o777)
@@ -138,9 +137,7 @@ def test_a_cache_home_open_to_others_refuses(tmp_path: Path) -> None:
 def test_a_cache_home_inside_a_private_dir_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`XDG_CACHE_HOME` under the state base would put a writable grant
-    inside the always-hidden tree, re-bound through the strict mask; the
-    config validator refuses the same for `extra_write_paths`."""
+    """`XDG_CACHE_HOME` under the state base is refused: a writable grant inside the hidden tree."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "state" / "agent6" / "cache"))
     msg = config_refusal(Config(), "hardened", tmp_path / "ws")
@@ -153,10 +150,10 @@ def test_a_cache_home_inside_a_private_dir_refuses(
 def test_a_symlinked_ancestor_into_a_private_dir_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The containment check compares resolved paths: an `XDG_CACHE_HOME`
-    reached through a symlink into the state base is refused before anything
-    is created there (the real dir would sit inside the hidden tree), while a
-    symlinked ancestor elsewhere is an ordinary cache location."""
+    """The containment check compares resolved paths; a symlink into the state base is refused.
+
+    A symlinked ancestor elsewhere is an ordinary cache location.
+    """
     state = tmp_path / "state"
     (state / "agent6").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_STATE_HOME", str(state))
@@ -182,9 +179,7 @@ def test_a_symlinked_ancestor_into_a_private_dir_refuses(
 def test_an_explicit_tmp_home_refuses_where_there_is_no_private_tmp(
     tmp_path: Path, isolation: str
 ) -> None:
-    """`home = "tmp"` is a private tmpfs, which only strict has: a value the
-    operator wrote down refuses, naming the resolved level and the fix (the
-    `protect_git` rule); the default degrades (below)."""
+    """`home = "tmp"` needs strict's private tmpfs: written down it refuses, as default degrades."""
     msg = check_jail_home(Config(), isolation, explicitly_set=True)  # pyright: ignore[reportArgumentType]
     assert msg is not None
     assert "requires the strict isolation" in msg
@@ -197,8 +192,7 @@ def test_an_explicit_tmp_home_refuses_where_there_is_no_private_tmp(
 
 
 def test_the_default_degrades_with_a_warning_naming_the_home(tmp_path: Path) -> None:
-    """hardened's start-of-run warning names the persistent HOME and its cost
-    on its own, whatever `protect_git` says."""
+    """Hardened's start-of-run warning names the persistent HOME whatever `protect_git` says."""
     assert check_jail_home(Config(), "hardened", explicitly_set=False) is None
     for cfg in (Config(), Config(sandbox=SandboxConfig(protect_git=False))):
         home = str(jail_cache_home())

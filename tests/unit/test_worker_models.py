@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""worker_models: the code-writing models a journal records, first worker
-first, deduplicated; message-writing roles never join."""
+"""worker_models: the code-writing models a journal records, first worker first, deduplicated."""
 
 from __future__ import annotations
 

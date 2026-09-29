@@ -1,26 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Golden pin of the provider wire + persisted messages for a scripted loop run.
+"""Golden pin of the provider wire and persisted messages for a scripted loop run.
 
-The messages list handed to ``provider.call`` is frozen LLM I/O: same
-conversation history => byte-identical dicts, key order, and rolling
-``cache_control`` placement (the breakpoint roll is measured perf). The same
-list persists verbatim inside ``loop_state.json``. This drives one
-representative run through a scripted provider and pins, per worker call, the
-exact ``json.dumps`` of the messages received AND the raw pre-call
-``loop_state.json`` bytes, plus the summariser side-calls and a resume from a
-mid-run snapshot.
-
-The scenario covers every history-shaping path: tool_use/tool_result pairs, an
-interleaved harness notice inside a results turn (broken-verify), a went-quiet
-assistant turn popped from history, operator steering injection, tier-1
-elision with a distilled gist, a forced tier-2 summarise-and-restart, the
-rolling cache breakpoints across all of it, and resume re-entering the saved
-history.
+The messages list handed to `provider.call` is frozen LLM I/O: byte-identical dicts, key order and
+rolling `cache_control` placement, persisted verbatim in `loop_state.json`. The scenario covers tool
+pairs, an interleaved harness notice, a popped went-quiet turn, steering, tier-1 elision with a
+gist, a forced tier-2 restart and a resume from a mid-run snapshot.
 
 Regenerate only with a deliberate, reviewed wire change:
 
-    uv run python tests/unit/test_loop_wire_golden.py
+uv run python tests/unit/test_loop_wire_golden.py
 """
 
 from __future__ import annotations
@@ -48,11 +37,7 @@ _TASK = "Fix the parser bug in a.md"
 class _StubDispatcher:
     """The dispatcher surface the loop reads besides `dispatch`.
 
-    The loop rebuilds its tool list every turn (a gate adopted mid-run, or a
-    policy denied mid-run, changes what the worker has), so a stub that answers
-    only `dispatch` no longer models the real thing. The defaults here keep the
-    behaviour these tests were written against: no filtered tools -- the
-    provider stubs ignore the list -- and a policy that withholds nothing.
+    The loop rebuilds its tool list every turn; the defaults filter no tools and withhold nothing.
     """
 
     dag_available = True
@@ -74,12 +59,11 @@ class _StubDispatcher:
         return "ask"
 
     def tool_is_withheld(self, name: str) -> bool:
-        """ "ask" withholds nothing: the operator is asked at call time."""
+        """The "ask" policy withholds nothing: the operator is asked at call time."""
         return False
 
     def settle_background(self) -> None:
-        """The turn boundary observes background commands; this scenario starts
-        none, so there is nothing to write down."""
+        """The turn boundary observes background commands; this scenario starts none."""
 
 
 def _resp(
@@ -89,8 +73,7 @@ def _resp(
     tool_uses: tuple[tuple[str, str, dict[str, Any]], ...] = (),
     stop_reason: str = "end_turn",
 ) -> ProviderResponse:
-    """A provider response whose raw content mirrors what real providers build:
-    thinking / text / tool_use blocks, with tool_uses parsed from the same."""
+    """A provider response whose raw content mirrors what real providers build."""
     blocks: list[dict[str, Any]] = []
     if thinking:
         blocks.append({"type": "thinking", "thinking": thinking})
@@ -111,8 +94,7 @@ def _resp(
 
 
 class _WorkerScript:
-    """Scripted worker provider: captures each call's messages (deep-copied:
-    the loop mutates the live history) and the pre-call loop_state bytes."""
+    """Scripted worker provider capturing each call's messages and the pre-call loop_state bytes."""
 
     def __init__(self, responses: list[ProviderResponse], snap_path: Path) -> None:
         self._responses = responses
@@ -130,9 +112,10 @@ class _WorkerScript:
 
 
 class _SummariserScript:
-    """Scripted summariser seat: first call is the gist distiller, second is
-    the tier-2 restart summary. Captures both requests (they embed the
-    transcript-tail renderer's output, pinning that renderer too)."""
+    """Scripted summariser seat: the gist distiller first, then the tier-2 restart summary.
+
+    Both requests embed the transcript-tail renderer's output, pinning that renderer too.
+    """
 
     def __init__(self) -> None:
         self.captured: list[dict[str, str]] = []
@@ -150,8 +133,7 @@ class _SummariserScript:
 
 
 class _Dispatcher(_StubDispatcher):
-    """Scripted tool results. Serving the grep (iteration 4) arms the manual
-    compact request so the next pre-call forces the tier-2 restart."""
+    """Scripted tool results; serving the grep arms the manual compact request."""
 
     def __init__(self, compact_flag: list[bool]) -> None:
         self._compact_flag = compact_flag
@@ -219,8 +201,7 @@ def _config() -> Any:
 
 
 _RESPONSES = [
-    # iter 1: prose + a read and a (broken) verify -- paired results with an
-    # interleaved [harness] notice inside the same user turn.
+    # iter 1: prose, a read and a broken verify, with a [harness] notice inside the same user turn.
     _resp(
         thinking="scan the repo first",
         text="Reading a.md and running verify.",
@@ -230,8 +211,7 @@ _RESPONSES = [
         ),
         stop_reason="tool_use",
     ),
-    # iter 2: went quiet (thinking only) -- the empty assistant turn is popped
-    # from history and a [harness] nudge is appended instead.
+    # iter 2: went quiet; the empty assistant turn is popped and a [harness] nudge appended.
     _resp(thinking="pondering silently"),
     # iter 3: another large read (feeds tier-1 pressure).
     _resp(tool_uses=(("tu-3", "read_file", {"path": "b.md"}),), stop_reason="tool_use"),
@@ -252,10 +232,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
 
     def _compact_requested() -> str | None:
         if compact_flag[0] and not pre_restart_state:
-            # Capture the richest on-disk snapshot (post-tools iteration 4:
-            # gist placeholder + interleaved notice + steer + nudge) before
-            # the forced restart replaces the history; the resume execution re-enters
-            # from these bytes.
+            # The richest on-disk snapshot (post-tools iteration 4), before the forced restart.
             pre_restart_state.append(snap_path.read_text(encoding="utf-8"))
         return "" if compact_flag[0] else None  # a plain /compact carries no focus
 
@@ -295,9 +272,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
     assert len(summariser.captured) == 2
     assert len(pre_restart_state) == 1
 
-    # Resume execution: re-enter from the richest mid-run snapshot. The pre-call
-    # snapshot this resume writes must reproduce the loaded messages exactly
-    # (save -> load -> save stability), which the captured loop_state pins.
+    # Resume from the richest snapshot: save -> load -> save must be stable.
     resume_snap = tmp_dir / "resume" / "loop_state.json"
     resume_snap.parent.mkdir(parents=True, exist_ok=True)
     resume_snap.write_text(pre_restart_state[0], encoding="utf-8")
@@ -344,17 +319,13 @@ def test_loop_wire_matches_golden(tmp_path: Path) -> None:
 
 
 def test_scenario_exercises_the_shaping_paths(tmp_path: Path) -> None:
-    """Guard the scenario itself: the pin is only as strong as what the run
-    actually walked through."""
+    """Guard the scenario itself: the pin is only as strong as what the run walked through."""
     got = _run_scenario(tmp_path)
     calls = [json.loads(c["messages"]) for c in got["worker_calls"]]
-    # In-turn notice: the broken-verify text rides the results turn AFTER the
-    # results (a text block ahead of a tool_result 400s the anthropic wire).
+    # The broken-verify text rides after the results: a text block ahead of a tool_result 400s.
     results_turn = calls[1][2]["content"]
     assert [b["type"] for b in results_turn] == ["tool_result", "tool_result", "text"]
-    # Steering injected; the went-quiet turn is thinking-only, so a pop
-    # regression would leak a NON-empty assistant turn: assert the popped
-    # content is gone and every surviving assistant turn is substantive.
+    # The went-quiet turn is thinking-only, so every surviving assistant turn must be substantive.
     assert "focus on the parser first" in json.dumps(calls[2])
     assert "pondering silently" not in json.dumps(calls[2])
     assert all(

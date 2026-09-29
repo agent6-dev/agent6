@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""run_command approver bridge + TUI auto-spawn gating.
+"""The run_command approver bridge and the TUI auto-spawn gating.
 
-The textual TUI was fully built (modal, writes `approvals/<id>.answer`) but the
-harness side never read those answers and never auto-spawned the dashboard.
-These cover the wiring that fixes that.
+The harness reads the `approvals/<id>.answer` files the TUI writes and spawns the dashboard.
 """
 
 from __future__ import annotations
@@ -38,8 +36,10 @@ def _events_of(log: Path, type_: str) -> list[dict[str, Any]]:
 def _prompts(
     session_dir: Path, events: EventSink, steer_cell: list[SteerState | None] | None = None
 ) -> OperatorPrompts:
-    """The gate over the CLI's own approver and questioner: the pairing a
-    run wires, journaling into *events*."""
+    """The gate over the CLI's own approver and questioner, the pairing a run wires.
+
+    Journaling into events.
+    """
     return OperatorPrompts(
         approver=interactmod.build_approver(session_dir, None, steer_cell),
         questioner=interactmod.build_questioner(session_dir),
@@ -99,11 +99,7 @@ def test_approver_uses_tui_answer_when_live(
 def test_approver_does_not_consume_an_answer_written_before_the_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A premature /api/session/<id>/approve (ids are predictable counters) pre-writes
-    # approvals/approval-1.answer before the run reaches its first approval. The
-    # gate must clear that stale slot before journaling the prompt, so it is
-    # not silently consumed as an auto-approval. Uses the REAL read_answer (short
-    # timeout) so this exercises the actual file-bridge ordering.
+    # A premature approve pre-writes approval-1.answer; the gate clears the stale slot first.
     import functools
 
     from agent6.sessions.ipc import read_answer, write_answer
@@ -118,8 +114,7 @@ def test_approver_does_not_consume_an_answer_written_before_the_prompt(
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
     write_answer(tmp_path, "approval-1", "yes")  # the premature POST
     approve = _prompts(tmp_path, events).approve
-    # The premature "yes" is cleared before the prompt; read_answer finds nothing
-    # and times out, so it falls back to stdin (which denies) -- NOT auto-approved.
+    # The premature "yes" is cleared; read_answer times out and falls back to stdin, which denies.
     assert approve("run `curl evil`?", scope=COMMAND_SCOPE) is False
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
 
@@ -127,8 +122,7 @@ def test_approver_does_not_consume_an_answer_written_before_the_prompt(
 def test_approver_consumes_an_answer_written_after_the_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The legitimate path: the front-end writes the answer only after it renders
-    # the emitted prompt. A writer thread does exactly that; the answer is honored.
+    # The legitimate path: the front-end writes the answer after it renders the prompt.
     import functools
     import threading
     import time
@@ -175,12 +169,7 @@ def test_approver_falls_back_to_stdin_without_tui(
 def test_approver_headless_no_frontend_waits_not_denies(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # No terminal, no away-mode, no front-end attached right now: the run
-    # WAITS for a front-end rather than denying (the ruled default: a park
-    # spends nothing and stays answerable late via attach; deny would let the
-    # run burn tokens on a path it may not be able to finish). A context that
-    # can never be attended declares AGENT6_DETACHED_AWAY=deny (the bench
-    # containers do). A writer thread attaches + answers after a beat.
+    # No terminal, no away-mode, nothing attached: the run waits for a front-end, never denies.
     import threading
     import time
 
@@ -188,9 +177,7 @@ def test_approver_headless_no_frontend_waits_not_denies(
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
-    # Use the REAL frontend_is_live: nothing is attached at approve() time (the
-    # writer sleeps first), so the approver reaches the wait path; once the
-    # writer registers its front-end claim, the wait picks up its answer.
+    # The real frontend_is_live: nothing is attached at approve() time, so the wait path runs.
     monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: False)  # headless
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
 
@@ -208,8 +195,7 @@ def test_approver_headless_no_frontend_waits_not_denies(
 def test_approver_session_allows_every_later_command(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # "allow session" (stdin returns "session") approves this command AND every
-    # later one without prompting again -- across the run.
+    # "allow session" approves this command and every later one across the run.
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
     monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
@@ -217,7 +203,7 @@ def test_approver_session_allows_every_later_command(
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_session)
     approve = _prompts(tmp_path, events).approve
     assert approve("first?", scope=COMMAND_SCOPE) is True
-    # A second prompt must NOT reach the stdin approver -- the session marker auto-passes.
+    # A second prompt never reaches the stdin approver: the session marker auto-passes.
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
     assert approve("second?", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[-1]["source"] == "session"
@@ -265,8 +251,7 @@ def test_should_spawn_tui_gating(monkeypatch: pytest.MonkeyPatch) -> None:
     assert should(tui=True, interactive=False, mode="run") is True
     # --tui asked for but can't honour -> warn and stay headless.
     assert should(tui=True, interactive=True, mode="run") is False
-    # A planning run opens the same view (the hub already views plans there);
-    # an ask stays text: its answer is the deliverable.
+    # A planning run opens the same view; an ask stays text, its answer being the deliverable.
     assert should(tui=True, interactive=False, mode="plan") is True
     assert should(tui=True, interactive=False, mode="ask") is False
     # textual not installed.
@@ -300,8 +285,7 @@ def test_stream_modes(monkeypatch: pytest.MonkeyPatch) -> None:
     assert modes(tui_enabled=False) == (True, True)
     monkeypatch.delenv("AGENT6_FORCE_STREAM")
 
-    # AGENT6_STREAM_TO_LOG (hub-watched headless run): emit the delta EVENTS only,
-    # NO console echo -- the dashboard renders them; the stderr temp is discarded.
+    # AGENT6_STREAM_TO_LOG emits the delta events only, no console echo; the dashboard renders them.
     monkeypatch.setenv("AGENT6_STREAM_TO_LOG", "1")
     assert modes(tui_enabled=False) == (True, False)
 
@@ -316,8 +300,7 @@ def test_tui_session_disabled_is_noop(tmp_path: Path) -> None:
 def test_spawned_away_default_sets_wait_from_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A front-end launcher (web/TUI hub) sets AGENT6_DETACHED_AWAY so a spawned,
-    # terminal-less run WAITS for a viewer instead of fabricating empty answers.
+    # A front-end launcher sets AGENT6_DETACHED_AWAY so a terminal-less run waits for a viewer.
     from agent6.app.frontend import apply_spawned_away_default
     from agent6.sessions.ipc import away_mode
 
@@ -329,10 +312,12 @@ def test_spawned_away_default_sets_wait_from_env(
 def test_spawned_away_default_approve_reuses_session_allow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """AGENT6_DETACHED_AWAY=approve maps to the session-allow marker, like the
-    interactive detach prompt. Writing "approve" into away.mode put it outside
-    the file's deny|wait vocabulary, so the reader fell into the wait branch and
-    the spawn BLOCKED on every approval instead of approving."""
+    """AGENT6_DETACHED_AWAY=approve maps to the session-allow marker.
+
+    Like the interactive detach prompt.
+
+    away.mode's vocabulary is deny|wait; "approve" written there falls into the wait branch.
+    """
     from agent6.app.frontend import apply_spawned_away_default
     from agent6.sessions.ipc import COMMAND_SCOPE, away_mode, session_allow_set
 
@@ -343,8 +328,7 @@ def test_spawned_away_default_approve_reuses_session_allow(
 
 
 def test_set_away_mode_rejects_values_outside_its_vocabulary(tmp_path: Path) -> None:
-    # away.mode's contract is deny|wait; anything else must fail loudly at the
-    # writer, never land on disk for readers to misinterpret.
+    # away.mode's contract is deny|wait; anything else fails at the writer.
     from agent6.sessions.ipc import set_away_mode
 
     with pytest.raises(ValueError, match="deny"):
@@ -354,8 +338,7 @@ def test_set_away_mode_rejects_values_outside_its_vocabulary(tmp_path: Path) -> 
 def test_spawned_away_default_is_noop_without_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A pure headless run (no launcher, no env) is untouched, keeping its
-    # non-hanging default so CI never blocks on an unanswerable question.
+    # A pure headless run keeps its non-hanging default, so CI never blocks on a question.
     from agent6.app.frontend import apply_spawned_away_default
     from agent6.sessions.ipc import away_mode
 
@@ -380,9 +363,7 @@ def test_approver_away_deny_auto_denies(tmp_path: Path, monkeypatch: pytest.Monk
 def test_approver_live_front_end_wins_over_away_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A live front-end (a re-attached watch/TUI/web) is always asked, in its own
-    # UI, regardless of the detach away-mode -- away-mode governs only the window
-    # when nothing is attached. Even under away="deny", a live front-end answers.
+    # A live front-end is always asked in its own UI; away-mode governs only the unattended window.
     from agent6.sessions.ipc import set_away_mode
 
     log = tmp_path / "logs.jsonl"
@@ -401,8 +382,7 @@ def test_approver_live_front_end_wins_over_away_mode(
 def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # away="wait" with NOTHING attached: block until a front-end attaches and
-    # answers. A writer thread attaches (a front-end claim) + answers after a beat.
+    # away="wait" with nothing attached blocks until a front-end attaches and answers.
     import threading
     import time
 
@@ -425,10 +405,12 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
 
 
 def test_a_stop_request_ends_an_away_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`stop --after-step` drops the stop marker; a run blocked in an away-wait
-    (a pre-start question, an approval nobody attached to answer) has no step
-    to stop after, so the marker breaks the wait: the questioner returns empty
-    answers and the run parks or denies instead of waiting on forever."""
+    """A stop request breaks an away-wait.
+
+    The questioner returns empty answers and the run parks or denies.
+
+    A run blocked before its start has no step for `stop --after-step` to stop after.
+    """
     import threading
     import time
 
@@ -452,12 +434,10 @@ def test_a_stop_request_ends_an_away_wait(tmp_path: Path, monkeypatch: pytest.Mo
 
 
 def test_spawned_away_default_does_not_overwrite_the_operators_choice(tmp_path: Path) -> None:
-    """On detach the operator picks the while-away policy ('deny' stops
-    run_commands until they reattach), then the background resume is spawned
-    with AGENT6_DETACHED_AWAY=wait. Applying that as a DEFAULT must not clobber
-    the explicit choice -- it silently upgraded 'deny' to 'wait', so the run sat
-    blocked on an approval nobody was there to give instead of denying and
-    carrying on."""
+    """The spawned away default never overwrites the operator's explicit detach choice.
+
+    A `deny` chosen on detach stays `deny` under AGENT6_DETACHED_AWAY=wait.
+    """
     import os
 
     from agent6.app.frontend import apply_spawned_away_default
@@ -486,10 +466,10 @@ def test_spawned_away_default_does_not_overwrite_the_operators_choice(tmp_path: 
 def test_approver_wait_consumes_a_claimless_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The web UI writes answer files without ever registering a front-end
-    claim. The wait loop gated READING on a live claim, so a web-answered
-    approval sat unconsumed while the run waited out its whole window
-    (caught live: a web-spawned run wedged on an "answered" approval)."""
+    """The approver wait consumes an answer written with no front-end claim.
+
+    The web UI writes answers without ever registering a claim.
+    """
     import threading
     import time
 
@@ -505,8 +485,7 @@ def test_approver_wait_consumes_a_claimless_answer(
         write_answer(tmp_path, "approval-1", "yes")  # no register_frontend
 
     def abort_if_wedged() -> None:
-        # Pre-fix the wait loop never reads a claim-less answer; break it so
-        # the test fails fast instead of hanging the suite.
+        # A wait loop that never reads a claim-less answer fails fast instead of hanging the suite.
         time.sleep(15)
         write_steer_answer(tmp_path, "abort")
 
@@ -520,10 +499,10 @@ def test_approver_wait_consumes_a_claimless_answer(
 def test_stdin_approver_renders_the_command_on_its_own_lines(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The approval prompt glued the command to the question on one line; a
-    long argv wrapped into the [y/N/a/d] suffix and the input point drowned.
-    The payload renders indented on its own lines with a blank line before
-    the answer line."""
+    """The stdin approver renders the command indented on its own lines.
+
+    A blank line precedes the answer line.
+    """
     from agent6.ui.cli import _interact as interactmod
 
     seen: list[str] = []
@@ -552,10 +531,11 @@ def test_stdin_approver_renders_the_command_on_its_own_lines(
 def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An operator prompt counts as a Ctrl-C boundary: with a pause armed, the
-    approval prompt says so and the pause menu runs right after the answer
-    (its action seeds the steer the next boundary consumes). Before, the armed
-    pause waited out the rest of the step in silence."""
+    """An approval prompt with a pause armed says so and opens the pause menu after the answer.
+
+    An operator prompt counts as a Ctrl-C boundary; the menu's action seeds the next boundary's
+    steer.
+    """
     from agent6.events import EventSink
     from agent6.ui.cli import _interact as interactmod
     from agent6.ui.steer import SteerState
@@ -607,10 +587,11 @@ def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
 def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The lifecycle builds the gate before the execution attaches the live console
-    view, so the approver and questioner read the view at prompt time: with it
-    captured at build time they paused nothing, and the heartbeat's per-tick
-    line-erase wiped the tty prompt and the operator's keystrokes."""
+    """The approver and questioner read the console view at prompt time, not at build time.
+
+    The lifecycle builds the gate before the execution attaches the view; a view captured at build
+    time pauses nothing, and the heartbeat's line-erase wipes the tty prompt.
+    """
     from agent6.ui.cli._console_view import ConsoleView
     from agent6.ui.cli.run import session_frontend
 
@@ -650,11 +631,11 @@ def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
 def test_a_dashboard_that_dies_before_the_run_ends_is_reported(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The run's console output is redirected to tui_console.log while the
-    dashboard co-process owns the terminal; a dashboard gone before the run
-    ends (a crash, or the operator leaving it) leaves a silent terminal and a
-    run that still runs, so the end names how it went and where the output
-    is. An interrupt takes both down together and says nothing."""
+    """A dashboard gone before the run ends is reported with where the output went.
+
+    The run's console output is redirected to tui_console.log while the dashboard owns the terminal;
+    an interrupt takes both down together and says nothing.
+    """
     import subprocess
     import types
 
@@ -711,9 +692,7 @@ def test_a_dashboard_that_dies_before_the_run_ends_is_reported(
 def test_tui_session_degrades_when_console_log_cannot_open(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An unopenable tui_console.log degrades to a TUI-less run, like a spawn
-    failure; opened after the spawn, its OSError escaped the scope past the
-    wait and teardown, orphaning a co-process that had taken the terminal."""
+    """An unopenable tui_console.log degrades to a TUI-less run, like a spawn failure."""
     import subprocess
     import types
 
@@ -743,8 +722,7 @@ def test_tui_session_degrades_when_console_log_cannot_open(
 def test_ctrl_c_kills_a_dashboard_that_ignores_graceful_shutdown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A TUI that ignored SIGINT and SIGTERM was left alive after Ctrl-C while
-    the parent restored the terminal and returned as if teardown had finished."""
+    """Ctrl-C kills a dashboard that ignores SIGINT and SIGTERM before the parent returns."""
     import subprocess
 
     session_dir = tmp_path / "sess"
@@ -789,9 +767,7 @@ def test_ctrl_c_kills_a_dashboard_that_ignores_graceful_shutdown(
 def test_tui_session_restores_the_console_when_a_second_ctrl_c_lands(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Ctrl-C twice: the first asks the dashboard to go, the second lands in
-    the wait for it. That second one escaped the teardown, leaving this
-    process's stdout pointing at tui_console.log for everything after it."""
+    """A second Ctrl-C, landing in the wait for the dashboard, still restores the console."""
     import subprocess
     import sys
     import types

@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`_execution.detach_to_background`: the one hand-off both lifecycles make after a
-`/detach` (ask about approvals while away, spawn the background resume under
-the invocation's flags, then say so)."""
+"""`_execution.detach_to_background`, the one hand-off both lifecycles make after a `/detach`."""
 
 from __future__ import annotations
 
@@ -67,8 +65,7 @@ def test_ask_policy_is_asked_before_the_spawn_and_the_flags_ride_along(tmp_path:
 
 
 def test_a_failed_spawn_is_reported_and_never_called_a_continuation(tmp_path: Path) -> None:
-    """The reattach line used to print before the spawn; a spawn that failed
-    left "continues in the background" said of a run nothing was driving."""
+    """The reattach line prints after the spawn, so a failed spawn never claims a background run."""
     calls: list[tuple[str, Any]] = []
     said: list[str] = []
     layout = SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
@@ -89,11 +86,11 @@ def test_a_failed_spawn_is_reported_and_never_called_a_continuation(tmp_path: Pa
 def test_a_recorded_away_mode_is_the_runs_away_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A run detached from a terminal (or spawned by the hub) carries the
-    operator's choice in `approvals/away.mode`. The preflight read only the
-    env, so a later resume from cron, CI or a script was refused as
-    unanswerable -- saying the run had no away-mode while its own dir had one.
-    The approver has always read the file."""
+    """The detached run's away mode is read from the run dir, not only the environment.
+
+    A run detached from a terminal carries the operator's choice in `approvals/away.mode`; a later
+    resume from cron or a script reads it there, as the approver does.
+    """
     from agent6.sessions.ipc import effective_away, set_away_mode
 
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
@@ -126,11 +123,12 @@ def test_an_invalid_detached_away_env_is_not_an_away_answer(
 
 
 def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: Path) -> None:
-    """A fresh run asks about the operator's uncommitted changes; a resume
-    swept them into the run's next auto-commit, under the agent's identity and
-    into what `sessions diff` and `merge` present as the run's own work, with
-    nothing said. The crashed execution's own uncommitted tail lands there too, so
-    this names them rather than refusing."""
+    """A fresh run asks about the operator's uncommitted changes rather than sweeping them in.
+
+    Swept in, they land in the run's next auto-commit under the agent's identity and read as the
+    run's own work; the crashed execution's own uncommitted tail lands there too, so the prompt
+    names them.
+    """
     import subprocess as sp
 
     from agent6.git_ops import chain_commit, chain_dirty_paths, chain_ref_for
@@ -160,9 +158,7 @@ def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: Path) 
 
 
 def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: Path) -> None:
-    """`sessions` reads a run with no worker pid as "stale (crashed or killed)".
-    Clearing it before the spawn put every detaching run in that state for the
-    second the background `resume` takes to claim it."""
+    """The worker pid is cleared after the spawn, so a detaching run never reads as stale."""
     calls: list[tuple[str, Any]] = []
     layout = SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
@@ -249,8 +245,7 @@ def _stub_execution_internals(
 def test_a_loop_crash_prints_the_end_that_it_journals(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A loop exception is a crashed session and exit 1, so the visible end
-    must say crashed before the CLI reports the underlying unexpected error."""
+    """A loop exception is a crashed session and exit 1, said before the CLI reports the error."""
     _stub_execution_internals(monkeypatch, RuntimeError("provider stream broke"))
     layout = SessionLayout(state_dir=tmp_path / "state", session_id="crash-one-AAAAAA")
     layout.ensure()
@@ -301,10 +296,11 @@ def test_a_loop_crash_prints_the_end_that_it_journals(
 def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`/detach` at the pause menu is offered in every mode. The ask branch ran
-    before the detach check, so a detached ask printed the loop's bookkeeping
-    line ("operator detached at iter N") as the model's answer, saved it as the
-    transcript, exited 1, and never asked the caller to spawn the continuation."""
+    """`/detach` at the pause menu is offered in every mode, the ask branch included.
+
+    Otherwise a detached ask prints the loop's bookkeeping line as the model's answer and never asks
+    the caller to spawn the continuation.
+    """
     _stub_execution_internals(
         monkeypatch,
         SessionResult(
@@ -368,10 +364,11 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
 def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`/undo` at the pause menu is offered in every mode. The ask branch ran
-    before the undo check, so an undone ask printed the loop's bookkeeping
-    line as the model's answer, saved it as the transcript, and never named
-    the fork to continue from."""
+    """`/undo` at the pause menu is offered in every mode, the ask branch included.
+
+    Otherwise an undone ask prints the loop's bookkeeping line as the model's answer and never names
+    the fork to continue from.
+    """
     _stub_execution_internals(
         monkeypatch,
         SessionResult(
@@ -436,10 +433,7 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
 def test_a_surface_without_the_revise_choice_skips_revision(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The ACP front-end has no terminal to ask the revise_prompt choice on;
-    its selector answered None, which read as the operator's quit and ended
-    the run "stopped" for an act nobody performed. A surface with no selector
-    skips revision, as an execution under the TUI does."""
+    """A surface with no selector skips the revise_prompt choice; None is not a quit."""
     built: dict[str, Any] = {}
     _stub_execution_internals(
         monkeypatch,

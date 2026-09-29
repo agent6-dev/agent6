@@ -46,12 +46,9 @@ def test_window_collapses_json_escaped_newlines() -> None:
 
 
 def test_window_decodes_backslashes_not_bare_backslash_space() -> None:
-    # A double-encoded newline (a transcript embedding a JSON body) is the chars
-    # \\ \\ n; the old naive replace matched the trailing \\n and left the ugly
-    # "\ ". Now \\\\ decodes to one backslash first, so no "\ " artifact.
+    # A double-encoded newline decodes `\\\\` first, so no "\ " artifact is left.
     assert "\\ " not in _window("cmd = tail \\\\nlog NEEDLE", 0)
-    # An escaped backslash renders as ONE backslash, and an escaped quote as a
-    # quote -- not the raw doubled JSON escapes.
+    # An escaped backslash renders as one backslash and an escaped quote as a quote.
     assert (
         _window('path C:\\\\Users and \\"quoted\\" NEEDLE', 0)
         == 'path C:\\Users and "quoted" NEEDLE'
@@ -66,8 +63,7 @@ def test_run_id_from_path_finds_the_run_dir_child() -> None:
         _session_id_from_path(Path("/s/sessions/asks/quiet-fox-CD/transcripts/0003.json"))
         == "quiet-fox-CD"
     )
-    # A state-base ANCESTOR sharing a bucket name must not shadow the real
-    # bucket (XDG_STATE_HOME=/mnt/runs/state mislabelled every hit as "state").
+    # A state-base ancestor sharing a bucket name must not shadow the real bucket.
     assert (
         _session_id_from_path(
             Path("/mnt/runs/state/agent6/repo-x/sessions/runs/deep-poppy-AB/logs.jsonl")
@@ -126,8 +122,7 @@ def test_search_summary_calls_an_ask_a_session(capsys: pytest.CaptureFixture[str
 
 
 def test_transcripts_share_one_label(capsys: pytest.CaptureFixture[str]) -> None:
-    # The same snippet across cumulative transcript snapshots collapses to one
-    # (xN) line, labelled "transcript", not per-file.
+    # The same snippet across cumulative snapshots collapses to one (xN) "transcript" line.
     lines = "\n".join(
         _rg_match(f"/s/sessions/runs/r1/transcripts/000{i}.json", '  "text": "hello NEEDLE",', 12)
         for i in (3, 5, 7)
@@ -143,8 +138,7 @@ def test_transcripts_share_one_label(capsys: pytest.CaptureFixture[str]) -> None
 def test_event_snippet_windows_inside_the_matched_field(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # A match inside an event's string field snippets the FIELD's prose, not a
-    # '"type": "role.thinking_delta", "text": " ...' raw-JSON fragment.
+    # A match inside an event's string field snippets the field's prose, not raw JSON.
     event = json.dumps(
         {
             "ts": "2026-07-12T09:15:30.1Z",
@@ -163,13 +157,7 @@ def test_event_snippet_windows_inside_the_matched_field(
 def test_one_task_in_many_encodings_collapses_to_the_readable_one(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # One task string is stored many ways: the session.start event, manifest.json,
-    # a per-call transcript body. A search for a word in
-    # it must print ONE line per run (the timestamped event) with a count,
-    # not the same content in every storage encoding (raw JSON fragments
-    # included). The whole matched value keys the hit, so the syntax around
-    # it, a transcript's `TASK:` prefix and its trailing comma included, does
-    # not matter.
+    # One task string stored many ways prints one line per run with a count, keyed by the value.
     task = "Improve the wording of the end banner"
     lines: list[str] = []
     event = json.dumps({"ts": "2026-07-12T07:36:51.1Z", "type": "session.start", "user_task": task})
@@ -210,8 +198,7 @@ def _rg_match_bytes(path: str, line: str, needle: str) -> str:
 
 
 def test_byte_offsets_convert_to_characters_on_non_ascii_lines() -> None:
-    # rg reports byte offsets; curly quotes / ellipses earlier in the line made
-    # character slicing land off the match, breaking the snippet and the key.
+    # rg reports byte offsets; curly quotes earlier in the line broke character slicing.
     event = json.dumps(
         {
             "ts": "2026-07-12T09:15:30.1Z",
@@ -226,8 +213,7 @@ def test_byte_offsets_convert_to_characters_on_non_ascii_lines() -> None:
 
 
 def test_ascii_escaped_and_raw_utf8_encodings_share_one_key() -> None:
-    # logs.jsonl is raw UTF-8; manifests/transcripts are ascii-escaped. The
-    # \uXXXX decode in the normal form makes both sides one identity.
+    # logs.jsonl is raw UTF-8, manifests are ascii-escaped; the \uXXXX decode unifies them.
     task = "Improve the résumé wording NEEDLE of the banner"
     raw_event = json.dumps(
         {"ts": "2026-07-12T07:36:51.1Z", "type": "session.start", "user_task": task},
@@ -247,8 +233,7 @@ def test_ascii_escaped_and_raw_utf8_encodings_share_one_key() -> None:
 def test_distinct_sentences_ending_with_the_query_stay_distinct(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # A match at end-of-string has no following context; keying on the bare
-    # word merged DIFFERENT statements into one line with a wrong (xN).
+    # A match at end-of-string has no following context; keying on the bare word merged statements.
     e1 = json.dumps(
         {
             "ts": "2026-07-12T08:00:00.1Z",
@@ -278,8 +263,7 @@ def test_distinct_sentences_ending_with_the_query_stay_distinct(
 def test_distinct_sentences_with_the_same_match_suffix_stay_distinct(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Content dedupe must include the prose before the match, not only the
-    query and its following suffix."""
+    """Content dedupe includes the prose before the match, not only the query and its suffix."""
     lines = []
     for when, text in (
         ("08:00:00", "I deleted the NEEDLE from the parser"),
@@ -302,10 +286,10 @@ def test_deeply_nested_json_line_degrades_instead_of_crashing() -> None:
 
 
 def test_string_walk_survives_nesting_the_parser_accepted() -> None:
-    """json.loads accepts nesting right up to the stack ceiling (where that
-    ceiling sits varies by interpreter and arch), so the walk over its result
-    must be iterative: one CI execution parsed the 100k-deep line the others refused,
-    then blew the recursion limit inside the walker instead."""
+    """The walk over a parsed JSON line is iterative, so deep nesting cannot crash it.
+
+    json.loads accepts nesting up to a stack ceiling that varies by interpreter and arch.
+    """
     deep: dict[str, object] = {"leaf": "NEEDLE"}
     for _ in range(100_000):
         deep = {"a": deep}
@@ -313,9 +297,7 @@ def test_string_walk_survives_nesting_the_parser_accepted() -> None:
 
 
 def test_a_line_that_is_not_utf8_still_parses_from_its_bytes() -> None:
-    """rg --json carries a line that is not UTF-8 as base64 `bytes` in place
-    of `text`; the parser read it as empty, so the hit lost its kind and its
-    snippet. The bytes decode with U+FFFD standing in for what is not UTF-8."""
+    """Rg's base64 `bytes` line decodes with U+FFFD, keeping the hit's kind and snippet."""
     event = (
         b'{"type": "tool.call", "ts": "2026-09-02T09:15:30+00:00", "name": "run_command",'
         b' "args": {"argv": ["grep", "caf\xe9 NEEDLE"]}}'
@@ -338,10 +320,10 @@ def test_a_line_that_is_not_utf8_still_parses_from_its_bytes() -> None:
 
 
 def test_byte_offsets_map_onto_the_decoded_line_past_a_byte_that_is_not_utf8() -> None:
-    """The base64 branch decoded with U+FFFD and re-encoded before mapping,
-    so every byte that is not UTF-8 grew to three and the match window slid
-    two characters early ('\ufffd NEED' for NEEDLE). The mapping counts the
-    characters the byte prefix decodes to."""
+    """The base64 branch's match window counts the characters the byte prefix decodes to.
+
+    Re-encoding U+FFFD grows every non-UTF-8 byte to three and slides the window early.
+    """
     line = b"caf\xe9 NEEDLE and \xe2\x80\x9cmore\xe2\x80\x9d"
     start, end = _char_span(line, line.index(b"NEEDLE"), line.index(b"NEEDLE") + 6)
     assert line.decode("utf-8", "replace")[start:end] == "NEEDLE"
@@ -352,8 +334,7 @@ def test_byte_offsets_map_onto_the_decoded_line_past_a_byte_that_is_not_utf8() -
 def test_a_scoped_search_names_the_session_it_searched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`history search TERM --session ID` searches one session dir, but its
-    empty result named the whole state dir, under which the term did exist."""
+    """`history search TERM --session ID` searches one session dir; an empty result names it."""
     import shutil
 
     from agent6.paths import state_dir
@@ -401,9 +382,7 @@ def test_cross_bucket_inspection_errors_call_an_ask_a_session(
 def test_an_unscoped_no_match_names_the_sessions_root_it_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A bare `history search` reads `<state>/sessions`, so an empty result
-    names that, not the whole state dir, which also holds memory/ the search
-    never reads: it claimed the term was absent from a file that had it."""
+    """A bare `history search` reads `<state>/sessions`, and an empty result names that."""
     import shutil
 
     from agent6 import memory

@@ -432,8 +432,7 @@ def test_cut_stream_is_retryable_not_a_completed_turn(signed_in: ChatGPTCredenti
 def test_401_refreshes_the_credential_once_and_retries(
     signed_in: ChatGPTCredential, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A 401 from the backend invalidates the cached token, refreshes via the
-    token endpoint, and re-sends with the fresh bearer."""
+    """A 401 refreshes the credential once and re-sends with the fresh bearer."""
 
     def fake_refresh(url: str, data: dict[str, str], timeout_s: float) -> Any:
         class R:
@@ -542,9 +541,7 @@ def test_responses_input_flattens_odd_content() -> None:
 
 
 def test_responses_input_keeps_multiple_notices_separated() -> None:
-    """A turn can carry more than one harness notice (a broken-verify notice
-    and a no-progress escalation can both land in the same turn); each is its
-    own Anthropic text block and must not be glued into one run-on string."""
+    """Several harness notices in one turn stay separate text blocks."""
     items = responses_input(
         [
             {
@@ -574,9 +571,7 @@ def test_responses_input_keeps_multiple_notices_separated() -> None:
 
 
 def test_responses_input_drops_blank_name_calls_and_their_results() -> None:
-    """A blank-name tool_use (another provider's malformed call, carried in a
-    resumed history) is skipped together with its paired tool_result, so the
-    replayed conversation never holds an output with no matching call."""
+    """A blank-name tool_use is dropped together with its paired tool_result."""
     items = responses_input(
         [
             {
@@ -593,9 +588,7 @@ def test_responses_input_drops_blank_name_calls_and_their_results() -> None:
 
 
 def test_plan_usage_headers_feed_the_percent_budget(signed_in: ChatGPTCredential) -> None:
-    """The x-codex primary-window headers ride each response into the budget:
-    plan-metered (no fallback drain, $0 authoritative) with the account
-    percent observable in the snapshot."""
+    """The x-codex primary-window headers feed the percent budget as plan-metered spend."""
     provider = _provider(
         signed_in, budget=BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=-1)
     )
@@ -650,9 +643,10 @@ def test_http_error_plan_headers_reach_the_budget(signed_in: ChatGPTCredential) 
 def test_completed_stream_without_message_item_keeps_delta_text(
     signed_in: ChatGPTCredential,
 ) -> None:
-    """A backend that streamed text deltas but closed with no final message
-    item still yields the watched text, not an empty turn, and the turn's
-    other blocks stay in history behind it."""
+    """A completed stream with no final message item still yields the streamed text.
+
+    The turn's other blocks stay in history behind it.
+    """
     lines: list[str] = []
     lines += _evt({"type": "response.output_text.delta", "delta": "half"})
     lines += _evt({"type": "response.output_text.delta", "delta": " answer"})
@@ -706,9 +700,10 @@ def test_terminal_output_supplies_items_missing_from_done_events(
 
 
 def test_tool_calling_completed_turn_reports_tool_use(signed_in: ChatGPTCredential) -> None:
-    """A completed response whose output holds function_call items says
-    stop_reason tool_use (Anthropic-shape semantics; also what arms the
-    loop's empty-tool-call contradiction detector for this wire)."""
+    """A completed response holding function_call items says stop_reason tool_use.
+
+    That is what arms the loop's empty-tool-call contradiction detector for this wire.
+    """
     lines: list[str] = []
     lines += _evt(
         {
@@ -729,8 +724,7 @@ def test_tool_calling_completed_turn_reports_tool_use(signed_in: ChatGPTCredenti
 
 
 def test_plan_usage_parses_the_credits_family() -> None:
-    """The x-codex credits headers ride every response; the parse feeds the
-    paid-credit guard (has/unlimited booleans, balance string)."""
+    """The x-codex credits headers feed the paid-credit guard: has, unlimited and balance."""
     from agent6.providers.chatgpt import _plan_usage_of  # pyright: ignore[reportPrivateUsage]
 
     plan = _plan_usage_of(
@@ -752,11 +746,10 @@ def test_plan_usage_parses_the_credits_family() -> None:
 
 
 def test_reasoning_items_are_captured_and_replayed_in_order() -> None:
-    """With store=false the encrypted reasoning item is the model's own
-    chain-of-thought state: the parse keeps the raw item opaque, in its
-    wire position, inside the thinking block that displays its summary, and
-    the next request replays it verbatim immediately before its
-    function_call."""
+    """Reasoning items are kept opaque in wire position and replayed before their function_call.
+
+    With store=false the encrypted item is the model's own chain-of-thought state.
+    """
     from agent6.providers.chatgpt import parse_output_items
 
     reasoning = {
@@ -790,11 +783,11 @@ def test_reasoning_items_are_captured_and_replayed_in_order() -> None:
 
 
 def test_interleaved_items_persist_and_replay_in_wire_order() -> None:
-    """A turn that reasons, comments, reasons again and calls a tool is
-    persisted as one block per output item in wire order and replayed in
-    that order: the commentary message never hoists ahead of the reasoning
-    that produced it. A display-only thinking block (another provider's,
-    or one whose item was stripped) replays nothing."""
+    """Interleaved items persist as one block per output item and replay in wire order.
+
+    The commentary message never hoists ahead of the reasoning that produced it; a display-only
+    thinking block replays nothing.
+    """
     from agent6.providers.chatgpt import parse_output_items
 
     r1 = {"type": "reasoning", "id": "rs_1", "encrypted_content": "A", "summary": []}
@@ -843,9 +836,10 @@ def test_interleaved_items_persist_and_replay_in_wire_order() -> None:
 
 
 def test_orphaned_reasoning_is_dropped_with_its_call() -> None:
-    """A reasoning item whose paired call is dropped (blank tool name from a
-    cross-provider resume) must not replay alone: an orphan violates the
-    paired-item rules and 400s the whole request."""
+    """A reasoning item whose paired call is dropped is dropped with it.
+
+    An orphan 400s the request.
+    """
     item = {"type": "reasoning", "id": "rs_1"}
     blocks = [
         {"type": "thinking", "thinking": "", "chatgpt_reasoning": item},
@@ -961,9 +955,10 @@ def test_secondary_window_header_rides_into_the_reading() -> None:
 
 
 def test_every_used_percent_header_family_is_a_window() -> None:
-    """A per-model family (the window spark burned) is a window like any
-    other: parsed without being named in code, and binding when it is the
-    tightest. Primary stays first; a family with no primary is no reading."""
+    """Every used-percent header family is a window, parsed unnamed and binding when tightest.
+
+    Primary stays first; a family with no primary is no reading.
+    """
     from agent6.providers.chatgpt import _plan_usage_of  # pyright: ignore[reportPrivateUsage]
 
     plan = _plan_usage_of(
@@ -981,8 +976,7 @@ def test_every_used_percent_header_family_is_a_window() -> None:
     assert [w.name for w in plan.windows] == ["primary", "gpt-5-6-spark"]
     assert plan.binding.name == "gpt-5-6-spark" and plan.used_percent == 97.5
     assert plan.window_minutes == 300 and 0 < plan.resets_at - time.time() <= 600
-    # 500 credits at the backend's 25-per-dollar rate (1,000-credit
-    # packs at $40): the balance header carries a credit count, not dollars.
+    # 500 credits at 25 per dollar (1,000-credit packs at $40): the header carries credits.
     assert plan.credits_usd == 20.0 and not plan.window_exhausted
     assert _plan_usage_of({"x-codex-gpt-5-6-spark-used-percent": "97.5"}) is None
 
@@ -1047,10 +1041,11 @@ def _usage_get(body: dict[str, Any], status: int = 200):
 def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
     signed_in: ChatGPTCredential,
 ) -> None:
-    """A usage reading taken BEFORE the first call: an exhausted window with
-    purchased credits and `allow_paid_credits = false` refuses the run at the
-    first call, with no request sent, and the reading seeds the percent
-    ledger. With the knob on, the call proceeds."""
+    """The preflight refuses a credit-spending run before its first call.
+
+    An exhausted window with purchased credits and `allow_paid_credits = false` refuses with no
+    request sent, and the reading seeds the percent ledger; with the knob on, the call proceeds.
+    """
     body = json.loads(json.dumps(_USAGE_BODY))
     body["rate_limit"]["limit_reached"] = True
     body["credits"] = {"has_credits": True, "unlimited": False, "balance": "$5.00"}
@@ -1086,8 +1081,7 @@ def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
 
 
 def test_preflight_failure_never_blocks(signed_in: ChatGPTCredential) -> None:
-    """The preflight is best effort: a transport error or a non-200 reads as
-    no reading, and the call proceeds on the response headers as before."""
+    """A preflight transport error or non-200 reads as no reading, and the call proceeds."""
     get, _urls = _usage_get({}, status=503)
     provider = _provider(
         signed_in, budget=BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=-1)
@@ -1124,9 +1118,10 @@ class _FlakyCredential(ChatGPTCredential):
 
 
 def test_a_credential_fault_in_the_preflight_is_no_reading(signed_in: ChatGPTCredential) -> None:
-    """The preflight's catch named the transport faults and not the
-    credential's own: a refresh that failed inside the reading aborted the
-    call before its own token path could raise or recover."""
+    """A credential fault in the preflight is no reading.
+
+    The call's own token path still runs.
+    """
     get, _urls = _usage_get({}, status=200)
     provider = _provider(
         _FlakyCredential(),
@@ -1143,10 +1138,10 @@ def test_a_credential_fault_in_the_preflight_is_no_reading(signed_in: ChatGPTCre
 def test_a_completed_round_the_guard_refuses_still_books_its_plan_window(
     signed_in: ChatGPTCredential,
 ) -> None:
-    """A `response.completed` with no `usage` body trips the no-input-tokens
-    refusal with `usage == {}`, and the record before it was a no-op: the
-    plan window the headers reported moved, and the ledger never saw it, so
-    every retry burned another round the cap could not count."""
+    """A completed round the guard refuses still books the plan window its headers reported.
+
+    A `response.completed` with no `usage` body trips the no-input-tokens refusal.
+    """
     from agent6.budget import BudgetTracker
     from agent6.providers.types import ProviderError
 
@@ -1176,8 +1171,7 @@ def test_a_completed_round_the_guard_refuses_still_books_its_plan_window(
 
 
 def test_two_message_items_in_a_response_stay_separated() -> None:
-    """One text block per message item, joined bare into the response's
-    settled text, ran together around a reasoning item."""
+    """Two message items in a response stay separated in the settled text."""
     from agent6.providers.chatgpt import parse_output_items
 
     resp = parse_output_items(

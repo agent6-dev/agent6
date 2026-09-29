@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Every directory a writer creates under the state base is 0700 whatever the
-process umask. The base shields transcripts, memory and run history from
-other local users, and a writer that reached a fresh base through a plain
-`mkdir(parents=True)` (`agent6 init`, the first command on a new machine)
-left it at the umask's 755 for good: `mkdir_for_real_user` never re-chmods
-a directory that exists."""
+"""Every directory a writer creates under the state base is 0700 whatever the process umask.
+
+The base shields transcripts, memory and run history from other local users; a writer
+that reached a fresh base through a plain `mkdir(parents=True)` (`agent6 init`, the first
+command on a new machine) would leave it at the umask's 755 for good, since
+`mkdir_for_real_user` never re-chmods a directory that exists.
+"""
 
 from __future__ import annotations
 

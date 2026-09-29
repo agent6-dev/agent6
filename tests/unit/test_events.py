@@ -38,9 +38,7 @@ def test_emit_creates_parent_dir(tmp_path: Path) -> None:
 
 
 def test_emit_reprs_non_serializable_fields(tmp_path: Path) -> None:
-    """The sink never DROPS a field: _json_default reprs any unknown object
-    (circular refs included), so the event lands whole; without that fallback
-    the encoder would raise and the WHOLE event would be discarded."""
+    """The sink never drops a field: an unknown object, circular refs included, lands as a repr."""
     sink = EventSink(tmp_path / "logs.jsonl")
 
     class Bad:
@@ -60,12 +58,12 @@ def test_emit_reprs_non_serializable_fields(tmp_path: Path) -> None:
 
 
 def test_durable_emit_raises_on_unwritable_journal(tmp_path: Path) -> None:
-    """A durable event that cannot land raises: the journal is the read model
-    every surface trusts, and a run whose session.end was silently lost rendered
-    "running" with live affordances forever. The in-process listener is NOT
-    notified on the failure, so the live view can never show an event the
-    durable record lost; deltas stay best-effort and still render live (the
-    lossless transcripts keep their copy)."""
+    """A durable event that cannot land raises, and the in-process listener is not notified.
+
+    The journal is the read model every surface trusts; a lost session.end renders "running"
+    forever. Deltas stay best-effort and still render live, since the lossless transcripts keep
+    their copy.
+    """
     # Point at a path under a regular file -> mkdir will fail.
     blocker = tmp_path / "blocker"
     blocker.write_text("", encoding="utf-8")
@@ -82,9 +80,11 @@ def test_durable_emit_raises_on_unwritable_journal(tmp_path: Path) -> None:
 def test_delta_events_flush_but_do_not_fsync(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Ephemeral streaming deltas skip fsync (a reasoning model emits tens of
-    thousands; an fsync each throttles the SSE read). Durable events still fsync.
-    They are still written + flushed so tailers see them live."""
+    """Streaming deltas are flushed but not fsynced; durable events still fsync.
+
+    A reasoning model emits tens of thousands of deltas, and an fsync each throttles the SSE read;
+    the flush keeps them live for tailers.
+    """
     synced: list[int] = []
 
     def _fake_fsync(fd: int) -> None:
@@ -108,11 +108,11 @@ def test_delta_events_flush_but_do_not_fsync(
 
 
 def test_emit_survives_lone_surrogate(tmp_path: Path) -> None:
-    """json.dumps(ensure_ascii=False) passes a lone surrogate through; the old
-    text-mode write then raised UnicodeEncodeError (a ValueError the OSError
-    guard never caught), crashing the run from inside "telemetry must never
-    break the run". The event must be recorded (lossily) and the file must
-    stay strictly valid UTF-8 for every reader."""
+    """A lone surrogate is recorded lossily and the file stays strictly valid UTF-8.
+
+    `json.dumps(ensure_ascii=False)` passes it through, and a text-mode write raises
+    UnicodeEncodeError, a ValueError the OSError guard does not catch.
+    """
     import json
 
     sink = EventSink(tmp_path / "logs.jsonl")
@@ -128,9 +128,10 @@ def test_emit_survives_lone_surrogate(tmp_path: Path) -> None:
 
 
 def test_a_value_that_merely_answers_isoformat_encodes_as_its_repr(tmp_path: Path) -> None:
-    """The encoder's date branch keys on the datetime types, not on a
-    `isoformat` attribute: a mock (whose every attribute is another mock)
-    recursed without end and hung the journal write."""
+    """The encoder's date branch keys on the datetime types, not on an `isoformat` attribute.
+
+    A mock, whose every attribute is another mock, recursed without end and hung the journal write.
+    """
     from datetime import UTC, datetime
     from unittest.mock import MagicMock
 
@@ -144,9 +145,10 @@ def test_a_value_that_merely_answers_isoformat_encodes_as_its_repr(tmp_path: Pat
 def test_the_log_dir_is_created_once_not_per_event(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The sink creates its directory through the state tree's one creator,
-    whose handback walks the whole dir under sudo: once when missing, never
-    again on every emit."""
+    """The sink creates its directory through the state tree's one creator, once, not per emit.
+
+    The creator's handback walks the whole dir under sudo.
+    """
     from agent6 import events as events_mod
     from agent6.paths import mkdir_for_real_user
 

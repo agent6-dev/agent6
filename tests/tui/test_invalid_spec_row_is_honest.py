@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A file that does not parse has no machine name, so the row does not invent one
-(the TUI machines page and `machine list` share the row).
+"""A file that does not parse has no machine name, so the row does not invent one.
 
-`path.stem` on `lint-and-test.asm.toml` renders `lint-and-test.asm`: half a
-filename, and neither the machine's declared name nor the file's. The name is
-simply not known until the spec loads, and the `file` column already says which
-file it was.
+`path.stem` on `lint-and-test.asm.toml` is half a filename; the `file` column already says
+which file it was. The TUI machines page and `machine list` share the row.
 """
 
 from __future__ import annotations
@@ -52,9 +49,7 @@ def test_a_valid_file_shows_its_declared_name(tmp_path: Path) -> None:
 
 
 def test_row_validity_covers_the_scripts_bundle(tmp_path: Path) -> None:
-    """The list's "valid" must not contradict `machine check`/`run`: a machine
-    whose `scripts/` reference is missing is exactly what they refuse, so the
-    row flags it instead of calling the file valid."""
+    """A machine whose `scripts/` reference is missing is flagged, as `machine check` refuses it."""
     f = tmp_path / "runner.asm.toml"
     f.write_text(
         """\

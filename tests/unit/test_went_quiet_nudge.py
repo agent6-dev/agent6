@@ -72,8 +72,7 @@ def _resp_text(text: str = "done") -> ProviderResponse:
 
 
 def _starved_resp() -> ProviderResponse:
-    """A reasoning-starvation turn: stop_reason=length, all output spent
-    on a thinking block, no text and no tool_use."""
+    """A reasoning-starvation turn: stop_reason=length, all output on thinking, no text or tool."""
     return ProviderResponse(
         text="",
         tool_uses=(),
@@ -173,11 +172,10 @@ def test_went_quiet_nudges_then_succeeds(tmp_path: Path) -> None:
 
 
 def test_starvation_injects_nudge_without_suppressing_reasoning(tmp_path: Path) -> None:
-    """After a reasoning_starvation turn the harness injects the
-    starvation-specific nudge but does NOT force reasoning_effort='off'.
-    An N=8 K2.6 perf batch showed forcing reasoning off on recovery turns
-    hurt win-rate (its big speedups come from reasoning), so the automatic
-    loop-level suppression was removed; the nudge text remains."""
+    """The starvation nudge is injected without forcing reasoning_effort='off'.
+
+    An N=8 K2.6 perf batch showed forcing reasoning off on recovery turns hurt win-rate.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
 
@@ -204,8 +202,7 @@ def test_starvation_injects_nudge_without_suppressing_reasoning(tmp_path: Path) 
 
 
 def test_went_quiet_drops_empty_assistant_turn(tmp_path: Path) -> None:
-    """The empty assistant turn must be popped before the nudge so
-    Anthropic doesn't reject the next call."""
+    """The empty assistant turn is popped before the nudge, or Anthropic rejects the next call."""
     repo = tmp_path / "repo"
     _init_repo(repo)
 
@@ -261,8 +258,7 @@ def test_went_quiet_disabled_when_max_nudges_zero(tmp_path: Path) -> None:
 
 
 def test_went_quiet_nudges_reset_after_successful_turn(tmp_path: Path) -> None:
-    """After a non-empty turn the nudge counter refills so a later
-    streak of empties also gets the full nudge budget."""
+    """A non-empty turn refills the nudge counter for a later streak of empties."""
     repo = tmp_path / "repo"
     _init_repo(repo)
 
@@ -286,11 +282,12 @@ def test_went_quiet_nudges_reset_after_successful_turn(tmp_path: Path) -> None:
 
 
 def test_went_quiet_budget_refills_on_a_bounced_prose_turn(tmp_path: Path) -> None:
-    """The refill contract is "reset on any NON-EMPTY turn", not only tool_use
-    turns. Interleaving quiet streaks with bounced prose turns (the silent-
-    no-work gate) drained one shared budget and ended the run as went_quiet
-    although no streak reached the cap. Each bounced prose turn must refill
-    the budget for the next streak."""
+    """The refill contract is "reset on any NON-EMPTY turn", not only tool_use turns.
+
+    Interleaving quiet streaks with bounced prose turns (the silent- no-work gate) drained one
+    shared budget and ended the run as went_quiet although no streak reached the cap. Each bounced
+    prose turn must refill the budget for the next streak.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
 
@@ -310,10 +307,10 @@ def test_went_quiet_budget_refills_on_a_bounced_prose_turn(tmp_path: Path) -> No
 
 
 def test_a_billed_empty_turn_says_so(tmp_path: Path) -> None:
-    """An empty turn the provider still charged output tokens for is not a
-    model that chose silence (reasoning that never surfaced, or a tool call
-    the upstream dropped): the log line and the nudge event carry the count,
-    so the transcript file is not the only place the difference shows."""
+    """An empty turn the provider charged output tokens for carries the count in the log and event.
+
+    Reasoning that never surfaced or a dropped tool call is not a model that chose silence.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
     billed = ProviderResponse(
@@ -343,8 +340,7 @@ def test_a_billed_empty_turn_says_so(tmp_path: Path) -> None:
 
 
 def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: Path) -> None:
-    """On a subscription plan the tokens cost $0; the went-quiet line must not
-    claim they were "billed" (a dollar word). Same count, honest verb."""
+    """On a subscription plan the went-quiet line never says the tokens were "billed"."""
     from agent6.budget import BudgetTracker, PlanUsage
 
     repo = tmp_path / "repo"
@@ -382,9 +378,7 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: Path) -> None
 
 
 def test_unrunnable_signature_names_only_the_adopted_runner() -> None:
-    """Exit 127 and the adopted `-m` module missing are the unrunnable
-    signatures; a different missing module or an ordinary red (exit 1 with
-    test output) is not."""
+    """Exit 127 and the adopted `-m` module missing are the unrunnable signatures; a red is not."""
     from agent6.harness._nudges import unrunnable_signature
 
     argv = ("python3", "-m", "pytest", "-q")
@@ -396,9 +390,10 @@ def test_unrunnable_signature_names_only_the_adopted_runner() -> None:
 
 
 def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: Path) -> None:
-    """The empty assistant turn was popped only on the nudge path, so an
-    interactive run that parked instead sent `{"role": "assistant", "content":
-    []}` on every later call, which Anthropic rejects."""
+    """The empty assistant turn is popped on the park path too, not only on the nudge path.
+
+    Sent as `{"role": "assistant", "content": []}` on every later call, Anthropic rejected it.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
 

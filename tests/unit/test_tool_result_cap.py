@@ -38,8 +38,7 @@ def test_payload_at_cap_passes_through_unchanged() -> None:
 
 
 def test_oversized_read_file_payload_yields_valid_truncation_envelope() -> None:
-    """The big regression: cap a read_file result, parse the output,
-    confirm it is valid JSON with explicit truncation signal."""
+    """A capped read_file result is valid JSON with an explicit truncation signal."""
     big = "A" * (_TOOL_RESULT_CAP_BYTES * 2)
     raw = json.dumps({"content": big, "size": len(big), "lines_total": 1})
     capped = _cap_tool_result(raw, tool_name="read_file")
@@ -64,11 +63,11 @@ def test_oversized_run_command_payload_guidance_points_at_narrowing() -> None:
 
 
 def test_cap_total_envelope_size_stays_under_cap() -> None:
-    """The envelope itself must respect the cap so we do not silently
-    grow the tool_result payload past its budget. The head must be sized
-    by ENCODED length: json.dumps re-escapes quotes and backslashes, so a
-    raw-char budget overshoots the cap on escape-heavy content (observed
-    118k chars emitted against the 60k cap)."""
+    """The envelope respects the cap, with the head sized by encoded length.
+
+    json.dumps re-escapes quotes and backslashes, so a raw-char budget overshot the cap on
+    escape-heavy content (118k chars emitted against the 60k cap).
+    """
     for big in (
         "C" * (_TOOL_RESULT_CAP_BYTES * 5),  # no escaping: raw == encoded
         '"\\' * (_TOOL_RESULT_CAP_BYTES * 2),  # every char doubles when encoded
@@ -94,8 +93,7 @@ def test_truncation_envelope_for_unknown_tool_still_well_formed() -> None:
 
 
 def test_the_cap_is_a_parameter() -> None:
-    """A provider that hands the model less than the loop's default gets a
-    tighter bound through the same envelope."""
+    """A provider with a tighter window gets a tighter bound through the same envelope."""
     content = json.dumps({"content": "x" * 3_000})
     assert _cap_tool_result(content, tool_name="read_file") == content
     capped = _cap_tool_result(content, tool_name="read_file", cap=2_000)
@@ -103,9 +101,11 @@ def test_the_cap_is_a_parameter() -> None:
 
 
 def test_the_cap_is_a_byte_budget() -> None:
-    """Measured in characters, a 45,000-character CJK result passed the cap at
-    135,000 bytes and hit Claude Code's 50,000-byte persistence threshold as a
-    fatal provider error that ended the run."""
+    """The cap measures bytes, not characters.
+
+    A 45,000-character CJK result passed at 135,000 bytes and hit Claude Code's 50,000-byte
+    persistence threshold as a fatal provider error.
+    """
     wide = "\u6f22" * 45_000
     capped = _cap_tool_result(wide, tool_name="read_file", cap=49_000)
     assert len(capped.encode()) <= 49_000

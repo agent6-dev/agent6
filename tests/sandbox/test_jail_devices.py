@@ -29,10 +29,12 @@ def _policy(tmp_path: Path, level: str, argv: tuple[str, ...], devices: tuple[st
 
 @pytest.mark.parametrize("level", ["strict", "hardened"])
 def test_a_granted_device_node_is_openable(tmp_path: Path, level: str) -> None:
-    """The grant is dead unless the node is present AND writable: /dev/tty is
-    a char device the strict /dev deliberately omits and hardened's rules do
-    not cover, so a granted probe proves the whole path (bind without the
-    nodev floor on strict; the Landlock read+write rule on both)."""
+    """A device grant proves the whole path: the node is present and writable.
+
+    /dev/tty is a char device the strict /dev omits and hardened's rules do not cover, so a
+    granted probe covers the bind without the nodev floor on strict and the Landlock
+    read+write rule on both.
+    """
     from agent6.sandbox.jail import run_in_jail
 
     if not Path("/dev/tty").exists():
@@ -47,9 +49,10 @@ def test_a_granted_device_node_is_openable(tmp_path: Path, level: str) -> None:
 
 @pytest.mark.parametrize("level", ["strict", "hardened"])
 def test_a_non_device_grant_refuses_loudly(tmp_path: Path, level: str) -> None:
-    """A path under /dev that is absent (or not a char/block device) refuses
-    the launch with the path named -- never a silent skip that would leave the
-    operator's GPU task failing confusingly later."""
+    """A path under /dev that is absent, or not a char or block device, refuses the launch by name.
+
+    Never a silent skip that leaves the operator's GPU task failing later.
+    """
     from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 
     with pytest.raises(JailUnavailableError, match="extra_device path /dev/nonesuch-node"):

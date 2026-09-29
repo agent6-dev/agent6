@@ -2,19 +2,15 @@
 # Copyright 2026 Eric Lesiuta
 """Golden compatibility pin for the logs.jsonl folds.
 
-logs.jsonl is append-only history: every run dir ever written must keep folding
-identically. This reads a frozen fixture of real-shaped event bytes (all 19
-state-folded families + the transcript-only families + loop.* telemetry +
-unknown types + adversarial edge cases, followed by malformed / non-object lines
-the tail layer must silently drop) through the exact production read path
-(`tail_events`), folds it two ways, and asserts the output byte-for-byte against
-committed expectations.
+logs.jsonl is append-only history: every run dir ever written must keep folding identically. A
+frozen fixture of real-shaped event bytes (every state-folded family, the transcript-only families,
+loop telemetry, unknown types, adversarial edge cases, then malformed lines the tail layer drops)
+goes through the production read path and folds two ways, byte-for-byte against committed
+expectations.
 
-The typed event core (viewmodel.events) reshapes how `apply_event` reads these
-bytes; this test is the proof it reshapes nothing an external viewer can see.
 Regenerate the expectations only with a deliberate, reviewed behaviour change:
 
-    uv run python tests/unit/test_fold_golden.py
+uv run python tests/unit/test_fold_golden.py
 """
 
 from __future__ import annotations
@@ -32,8 +28,7 @@ _TRANSCRIPT = _DATA / "golden_transcript.json"
 
 
 def _wire(obj: object) -> object:
-    """The JSON wire form a viewer actually receives (tuples become lists), so the
-    comparison pins what crosses the boundary, not Python container identity."""
+    """The JSON wire form a viewer receives (tuples become lists): the pin is what crosses."""
     return json.loads(json.dumps(obj, ensure_ascii=False))
 
 
@@ -47,9 +42,7 @@ def _folded_transcript() -> object:
 
 
 def test_tail_drops_malformed_lines_but_keeps_every_object() -> None:
-    # 40 JSON objects in the fixture; the 6 trailing malformed / non-object lines
-    # are dropped by the tail layer, so the fold never sees them (it cannot crash
-    # on bytes it is never handed).
+    # 40 JSON objects; the 6 trailing malformed lines are dropped by the tail layer before the fold.
     events = list(tail_events(_FIXTURE, follow=False))
     assert len(events) == 40
     assert all(isinstance(e, dict) for e in events)

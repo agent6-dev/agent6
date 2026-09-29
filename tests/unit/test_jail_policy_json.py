@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Contract test for the policy JSON the Python side sends the launcher.
 
-The Rust launcher serde-defaults a MISSING ``memory_limit_mb`` (so an older
-caller stays bounded), which means a Python-side regression that stops sending
-the field would not fail loudly there. Pin the wire contract here: the field is
-always present and carries the policy value, including the 0 opt-out.
+The launcher serde-defaults a missing `memory_limit_mb`, so a Python side that stops sending it
+would not fail there; the field is always present, the 0 opt-out included.
 """
 
 from __future__ import annotations
@@ -20,10 +18,7 @@ def _fields(policy: JailPolicy) -> dict[str, object]:
 
 
 def test_policy_json_carries_the_uncapped_default_memory_limit(tmp_path: Path) -> None:
-    """0 = off, matching [sandbox].memory_limit_mb: a cap is an operational
-    guardrail the operator opts into, not a boundary (the kernel already
-    handles a memory bomb), and the two sides must agree on the default so a
-    policy that omits the field means the same thing in Rust."""
+    """0 is off, matching [sandbox].memory_limit_mb, so both sides agree on the default."""
     fields = _fields(JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
     assert fields["memory_limit_mb"] == 0
 

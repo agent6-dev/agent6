@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""use_skill serves supplementary files through one walked descriptor: the
-containment check and the read are the same lookup, and no path component may
-be a symlink -- a skill shipping `reference.md -> secrets.toml` serves a
-refusal, not the operator's keys, even when the link's target sits inside the
-skill directory (a check-then-open pair would race)."""
+"""use_skill serves supplementary files through one walked descriptor, with no symlink components.
+
+The containment check and the read are the same lookup, so `reference.md -> secrets.toml`
+serves a refusal even when the target sits inside the skill directory.
+"""
 
 from __future__ import annotations
 

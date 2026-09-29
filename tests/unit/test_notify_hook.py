@@ -49,10 +49,12 @@ def test_notify_failure_does_not_raise(tmp_path: Path, capsys: pytest.CaptureFix
 
 
 def test_both_hooks_run_the_same_way(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """Two runners for one job drifted in both directions: the run hook
-    swallowed a non-zero exit (a hook that fails silently stops notifying with
-    nobody the wiser), and the machine hook let the hook's stdout into the
-    parent's -- under `agent6 acp` that is the JSON-RPC stream."""
+    """Two runners for one job drifted in both directions.
+
+    The run hook swallowed a non-zero exit (a hook that fails silently stops notifying with nobody
+    the wiser), and the machine hook let the hook's stdout into the parent's, under `agent6 acp`
+    that is the JSON-RPC stream.
+    """
     argv = ("sh", "-c", "echo HOOK_STDOUT; exit 3")
     fire_notify_hook(
         NotifyConfig(on_complete=argv, timeout_s=5.0),
@@ -153,9 +155,10 @@ def test_machine_notify_hook_fires_with_env(tmp_path: Path) -> None:
 def test_machine_notify_hook_nonzero_exit_is_reported(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """check=False keeps the hook non-fatal, but a nonzero exit was discarded
-    entirely: notifications silently stopped arriving. The exit is named on
-    stderr."""
+    """check=False keeps the hook non-fatal, but a nonzero exit was discarded entirely.
+
+    Notifications silently stopped arriving. The exit is named on stderr.
+    """
     body = _MACHINE_CFG_BODY.replace('"PLACEHOLDER"', '"raise SystemExit(3)"')
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(body, encoding="utf-8")
@@ -177,7 +180,6 @@ def test_machine_notify_hook_none_when_unconfigured(tmp_path: Path) -> None:
 
 def test_notify_in_config_loads(tmp_path: Path) -> None:
     """[notify] section round-trips through the config loader."""
-
     body = """
 [agent6]
 config_version = 1
@@ -222,10 +224,12 @@ timeout_s = 12.5
 def test_notify_hook_env_carries_no_secrets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The hook child got the operator's WHOLE environment -- provider bearer
-    tokens included via `[providers.*].api_key_env` -- where docs/security.md
-    promises only the AGENT6_* set. The env is now the minimal hook_env base:
-    a hook that logs or forwards its environment cannot carry a key with it."""
+    """The notify hook's environment carries no secrets.
+
+    The env is the minimal hook_env base, the AGENT6_* set docs/security.md promises; the operator's
+    whole environment carries the provider bearer tokens `[providers.*].api_key_env` names, and a
+    hook that logs or forwards its environment would carry a key with it.
+    """
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-super-secret")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secret")
     out = tmp_path / "env.json"
@@ -280,10 +284,12 @@ def test_machine_notify_hook_env_carries_no_secrets(
 
 
 def test_hook_env_separates_deliberate_from_verified(tmp_path: Path) -> None:
-    """AGENT6_SESSION_OK says the agent stopped deliberately; AGENT6_SESSION_VERIFIED
-    says what the gate said. A finish over a red verify is OK=1 VERIFIED=failed
-    -- a hook that wants "green" reads the second, because the first is true
-    for a finish the verify never passed."""
+    """The hook env separates deliberate from verified.
+
+    AGENT6_SESSION_OK says the agent stopped deliberately; AGENT6_SESSION_VERIFIED says what the
+    gate said. A finish over a red verify is OK=1 VERIFIED=failed: a hook that wants "green" reads
+    the second, because the first is true for a finish the verify never passed.
+    """
     script = tmp_path / "hook.sh"
     out = tmp_path / "env.txt"
     script.write_text(
@@ -303,9 +309,11 @@ def test_hook_env_separates_deliberate_from_verified(tmp_path: Path) -> None:
 
 
 def test_the_hook_env_names_the_session_not_the_run(tmp_path: Path) -> None:
-    """`run` is the verb for the agentic coding loop; the SESSION is the thing a
-    hook is told about, and it may be a run, a plan, an ask or a machine. The
-    old `AGENT6_SESSION_*` names said the wrong one three times in four."""
+    """The hook env names the session, not the run.
+
+    `run` is the verb for the agentic coding loop; the session is the thing a hook is told about,
+    and it may be a run, a plan, an ask or a machine.
+    """
     out = tmp_path / "env.json"
     argv = (
         "python3",

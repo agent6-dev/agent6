@@ -42,8 +42,7 @@ def _state_log(root: Path, seq: int, name: str, usd: float) -> None:
 
 
 def test_spend_folds_the_running_state_when_alive(tmp_path: Path) -> None:
-    # One completed (booked) step at seq 0, plus a running state at seq 1 whose
-    # StepEvent is not written yet -- its live spend must be added.
+    # A booked step at seq 0, plus a running state at seq 1 whose live spend must be added.
     events = [_agent_step(0, 0.10)]
     _state_log(tmp_path, 1, "hunt", 0.059)  # in-flight, unbooked
     spend, inflight = machine_spend(events, tmp_path, alive=True)
@@ -61,8 +60,7 @@ def test_spend_ignores_the_state_log_when_not_alive(tmp_path: Path) -> None:
 
 
 def test_spend_does_not_double_count_a_booked_state(tmp_path: Path) -> None:
-    # The newest state log's seq matches a booked StepEvent (state completed):
-    # its cost is already in the AgentFact, so it must NOT be added again.
+    # The newest log's seq matches a booked StepEvent, so its cost must not be added again.
     events = [_agent_step(0, 0.10)]
     _state_log(tmp_path, 0, "s0", 0.10)  # same seq as the booked step
     spend, inflight = machine_spend(events, tmp_path, alive=True)
@@ -70,11 +68,10 @@ def test_spend_does_not_double_count_a_booked_state(tmp_path: Path) -> None:
 
 
 def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: Path) -> None:
-    """machine create shares ONE draft log across attempts; a retry that died
-    before its first budget.update must salvage $0, not the prior attempt's
-    cumulative totals (which double-booked spend and lied on the draft
-    dashboard). from_offset scopes the read to events after the caller's
-    spawn point."""
+    """A retry that died before its first budget.update salvages $0, not a prior attempt's total.
+
+    from_offset scopes the read to events after the caller's spawn point in the shared draft log.
+    """
     import json
 
     from agent6.viewmodel.machine_state import Spend, read_budget_totals
@@ -90,8 +87,7 @@ def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: Path) -> None:
     offset = log.stat().st_size
     # Attempt 2 died before any budget.update: nothing after the offset.
     assert read_budget_totals(log, from_offset=offset) == Spend()
-    # Without the offset the prior attempt's totals still read (machine states
-    # pass 0 on their fresh per-state logs).
+    # Without the offset the prior attempt's totals still read.
     assert read_budget_totals(log).usd == 0.90
     # Attempt 2 then emits its own update: only ITS totals salvage.
     with log.open("a", encoding="utf-8") as fh:
@@ -105,9 +101,7 @@ def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: Path) -> None:
 
 
 def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: Path) -> None:
-    """An unpriced model's spend is a LOWER BOUND: the run surface marks it
-    '~', and machine status must agree instead of rendering '$0.0000' as if
-    exact -- the machine ledger burning real money against a $0 figure."""
+    """An unpriced model's spend is a lower bound, marked '~' on every surface."""
     import json
 
     from agent6.viewmodel.format import format_usd
@@ -135,11 +129,7 @@ def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: Path) -> None:
 
 
 def test_spend_of_a_state_whose_capture_failed_is_still_booked(tmp_path: Path) -> None:
-    """A capture that cannot be reduced halts BEFORE the StepEvent is journaled
-    -- deliberately, since a fact whose capture fails would re-crash every later
-    replay -- which also discarded the agent's real usd and tokens. `machine run`
-    then reported spent $0.0000 for a state that had burned money. The end event
-    carries the unbooked slice so the ledger still sees it."""
+    """A capture that cannot be reduced halts before the StepEvent, but its spend is booked."""
     from agent6.machine.journal import MachineEnd
 
     root = tmp_path / "inst"
@@ -165,10 +155,7 @@ def test_spend_of_a_state_whose_capture_failed_is_still_booked(tmp_path: Path) -
 
 
 def test_an_unpriced_unbooked_slice_keeps_its_tokens_and_its_marker(tmp_path: Path) -> None:
-    """An UNPRICED slice reports usd 0.0 with usd_partial True. Guarding the end
-    event's fold on `event.usd` being truthy skipped it entirely, so the tokens
-    and the sticky lower-bound flag went with it: the ledger claimed an EXACT
-    $0.0000 (in=0 tok) for a state that burned 48k tokens."""
+    """An unpriced slice reports usd 0.0 with usd_partial True, and its tokens still fold."""
     from agent6.machine.journal import MachineEnd
 
     root = tmp_path / "inst"
@@ -191,10 +178,7 @@ def test_an_unpriced_unbooked_slice_keeps_its_tokens_and_its_marker(tmp_path: Pa
 
 
 def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: Path) -> None:
-    """A supervisor crash mid-agent-state leaves real spend only in the
-    per-state log; the resuming supervisor books it as an AttemptSpend and
-    retires the log dir, so status and the budget keep the billed slice and
-    nothing folds twice."""
+    """A supervisor crash mid-agent-state books the per-state log's spend as an AttemptSpend."""
     from agent6.app.machine import book_crashed_attempt
     from agent6.machine import AttemptSpend, MachineJournal
 
@@ -210,9 +194,7 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: Path) -> None:
     assert len(booked) == 1
     assert booked[0].seq == 1 and booked[0].state == "hunt"
     assert abs(booked[0].usd - 0.059) < 1e-9
-    # Retired under a unique name: the seq does not advance across a crashed
-    # attempt, so a fixed `crashed-<seq>-<state>` collided on the second crash
-    # (ENOTEMPTY) after the booking had already been appended twice.
+    # Retired under a unique name: a fixed `crashed-<seq>-<state>` collided on the second crash.
     retired = list((tmp_path / "states").glob("crashed-*-0001-hunt"))
     assert len(retired) == 1 and retired[0].is_dir()
     assert not (tmp_path / "states" / "0001-hunt").exists()
@@ -226,9 +208,7 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: Path) -> None:
     assert abs(spend.usd - 0.159) < 1e-9
     assert spend.input_tokens == 170 and spend.output_tokens == 80
 
-    # A SECOND crash in the same state: the seq has not advanced, so the retired
-    # name must not collide with the first. It used to (ENOTEMPTY), after the
-    # duplicate booking had already landed, and every later resume raised.
+    # A second crash in the same state: the retired name must not collide with the first.
     _state_log(tmp_path, 1, "hunt", 0.02)
     book_crashed_attempt(journal, tmp_path)
 
@@ -239,8 +219,7 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: Path) -> None:
 
 
 def test_booked_attempt_spend_counts_against_max_usd(tmp_path: Path) -> None:
-    """The engine's cumulative budget check folds AttemptSpend: a crashed
-    attempt's billed slice cannot be re-granted on resume."""
+    """The engine's budget check folds AttemptSpend, so a crashed slice is never re-granted."""
     from agent6.machine import AttemptSpend, MachineJournal, load_machine
     from agent6.machine.engine import drive
 
@@ -283,9 +262,7 @@ reason = "routed"
 
 
 def test_transitions_carry_bounded_failure_evidence(tmp_path: Path) -> None:
-    """A failed tool's exit code + last output line and a failed agent's stop
-    reason ride the shared fold's transition view, so every surface can show
-    WHY a machine took its failed edge; success stays one clean line."""
+    """A failed edge carries why on the shared fold's transition view; success stays one line."""
     from agent6.machine import load_machine
     from agent6.machine.journal import ToolFact
     from agent6.viewmodel.machine_state import fold_machine
@@ -372,9 +349,7 @@ reason = "r"
 
 
 def test_the_ledger_carries_the_cached_tokens_and_sums_them(tmp_path: Path) -> None:
-    """`machine status` printed `in=18 tok, out=2194 tok` for a state that had
-    read 65k cached tokens; the ledger reads the cached side from the same
-    event and sums it across states."""
+    """`machine status` counts cached input tokens across states."""
     import json
 
     from agent6.viewmodel.machine_state import Spend, read_budget_totals

@@ -2,9 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The provider-side cache_control strip (prompt_caching = false).
 
-The rolling breakpoint semantics live on Conversation.roll_cache_marks and
-are covered in test_conversation.py; this pins the anthropic provider's
-copy-on-write strip of the marks the conversation stamped into the wire.
+The rolling breakpoint semantics live on Conversation.roll_cache_marks, covered in
+test_conversation.py; this pins the anthropic provider's copy-on-write strip.
 """
 
 from __future__ import annotations

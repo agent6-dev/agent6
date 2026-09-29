@@ -96,9 +96,10 @@ def test_missing_file_errors() -> None:
 
 def test_delete_via_plus_dev_null() -> None:
     """`+++ /dev/null` deletes: new_content None, path from the `---` header.
-    The hunks must remove the ENTIRE on-disk content (the patch asserts what
-    it deletes); surviving content is a hard error, and file-vs-patch
-    mismatch fails the ordinary context check."""
+
+    The hunks must remove the ENTIRE on-disk content (the patch asserts what it deletes); surviving
+    content is a hard error, and file-vs-patch mismatch fails the ordinary context check.
+    """
     assert apply_patch_text("--- a/f.py\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-a\n", "a\n") == (
         "f.py",
         None,
@@ -347,8 +348,10 @@ def test_v4a_multi_file_rejected() -> None:
 
 
 def test_v4a_delete() -> None:
-    """`*** Delete File:` deletes by name (that format asserts no content):
-    bare directive only, and the file must exist."""
+    """`*** Delete File:` deletes by name: a bare directive only, and the file must exist.
+
+    That format asserts no content.
+    """
     assert apply_v4a_text("*** Begin Patch\n*** Delete File: a.py\n*** End Patch", "x\n") == (
         "a.py",
         None,
@@ -361,17 +364,21 @@ def test_v4a_delete() -> None:
 
 
 def test_v4a_partial_line_match_rejected_not_spliced() -> None:
-    """A `-` line that is only a SUBSTRING of a longer on-disk line must not
-    match: substring `.replace` spliced mid-line and silently corrupted the file
-    (`-x = 1` against `x = 10` produced `0`). Matching is line-anchored."""
+    """A `-` line that is only a SUBSTRING of a longer on-disk line must not match.
+
+    Substring `.replace` spliced mid-line and silently corrupted the file (`-x = 1` against `x = 10`
+    produced `0`). Matching is line-anchored.
+    """
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-x = 1\n*** End Patch"
     with pytest.raises(PatchError, match="context not found"):
         apply_v4a_text(patch, "x = 10\n")
 
 
 def test_v4a_straddling_block_rejected() -> None:
-    """A multi-line block whose first line straddles a longer on-disk line
-    (`-value = 1` inside `myvalue = 1`) must not match."""
+    """A multi-line block whose first line straddles a longer on-disk line does not match.
+
+    `-value = 1` inside `myvalue = 1`.
+    """
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-value = 1\n-b\n+c\n*** End Patch"
     with pytest.raises(PatchError, match="context not found"):
         apply_v4a_text(patch, "myvalue = 1\nb\n")
@@ -384,8 +391,10 @@ def test_v4a_full_line_delete_still_applies() -> None:
 
 
 def test_v4a_end_of_file_marker_accepted() -> None:
-    """GPT emits `*** End of File` for a hunk reaching EOF; it is a marker, not a
-    hunk line, so it must be dropped rather than raising 'Unexpected V4A line'."""
+    """`*** End of File` is a marker, not a hunk line.
+
+    GPT emits it for a hunk reaching EOF; it is dropped rather than raising 'Unexpected V4A line'.
+    """
     patch = (
         "*** Begin Patch\n*** Update File: m.py\n@@\n last\n+added\n*** End of File\n*** End Patch"
     )
@@ -393,9 +402,12 @@ def test_v4a_end_of_file_marker_accepted() -> None:
 
 
 def test_v4a_pure_deletion_removes_the_lines_whole() -> None:
-    """A hunk with only `-` lines deleted the text but left the newline that
-    terminated the last removed line, so the file kept a stray blank line where
-    the deletion happened (deleting every line left the file as a lone "\\n")."""
+    r"""A pure deletion removes the lines whole.
+
+    A hunk with only `-` lines must also remove the newline that terminated the last removed line,
+    or the file keeps a stray blank line where the deletion happened (deleting every line leaves a
+    lone "\n").
+    """
     orig = "line1\nline2\nline3\nline4\n"
     patch = "*** Begin Patch\n*** Update File: m.py\n@@\n-line2\n-line3\n*** End Patch"
     _, new, _healed = apply_v4a_text(patch, orig)
@@ -420,10 +432,12 @@ def test_v4a_deletion_with_context_is_unaffected() -> None:
 
 
 def test_unified_hunk_heals_a_uniform_indent_shift() -> None:
-    """A hunk whose lines are right but uniformly mis-indented applies with
-    the replacement re-indented to the file's actual depth, and the heal is
-    reported (`~indent`). One transform must explain every line; a mixed
-    shift stays a context error."""
+    """A unified hunk heals a uniform indent shift.
+
+    A hunk whose lines are right but uniformly mis-indented applies with the replacement re-indented
+    to the file's actual depth, and the heal is reported (`~indent`). One transform must explain
+    every line; a mixed shift stays a context error.
+    """
     original = "def f():\n    if x:\n        a = 1\n        b = 2\n"
     patch = (
         "--- a/f.py\n+++ b/f.py\n@@ -3,2 +3,2 @@\n"
@@ -474,10 +488,12 @@ def test_v4a_hunk_heals_a_uniform_indent_shift() -> None:
 
 
 def test_v4a_one_blank_new_line_replaces_rather_than_deletes_on_every_path() -> None:
-    """A hunk whose new side is one empty line replaces the old line with a
-    blank one. Joined to a string, one empty line and no line are both "",
-    so the exact and indent paths deleted the line while the rstrip heal kept
-    it: a heal moves an edit, it never changes what the edit does."""
+    """A hunk whose new side is one empty line replaces the old line with a blank one.
+
+    Joined to a string, one empty line and no line are both "", so the exact and indent paths
+    deleted the line while the rstrip heal kept it: a heal moves an edit, it never changes what the
+    edit does.
+    """
     patch = "*** Begin Patch\n*** Update File: f.py\n@@\n-foo\n+\n*** End Patch"
     for original, healed_as in (("foo\nbar\n", ()), ("foo \nbar\n", ("f.py ~rstrip",))):
         _, new, healed = apply_v4a_text(patch, original)
@@ -501,10 +517,11 @@ def test_v4a_heal_refuses_a_second_indent_candidate() -> None:
 
 
 def test_moved_heal_tail_state_follows_the_healed_position() -> None:
-    """`touches_tail` was computed from the hunk's stale header numbers, not
-    the healed position: a moved hunk relocated TO the tail kept the old
-    trailing newline, and one relocated AWAY from the tail flipped it.
-    The tail test reads the actual splice location."""
+    """`touches_tail` was computed from the hunk's stale header numbers, not the healed position.
+
+    A moved hunk relocated TO the tail kept the old trailing newline, and one relocated AWAY from
+    the tail flipped it. The tail test reads the actual splice location.
+    """
     # Stale header says lines 2-3; the exact block lives at EOF (lines 4-5).
     original = "x\ny\na\nb"  # no trailing newline
     patch = "--- a/f.py\n+++ b/f.py\n@@ -2,2 +2,2 @@\n a\n-b\n+B\n"
@@ -547,8 +564,11 @@ def test_patch_indent_heal_preserves_nested_relative_indent() -> None:
 
 
 def test_whitespace_heal_stays_at_its_anchor_beside_an_exact_copy() -> None:
-    """An exact copy of the block elsewhere counted as a second whitespace
-    match, so the heal fell through to the moved rule and edited the copy."""
+    """The whitespace heal stays at its anchor beside an exact copy.
+
+    An exact copy of the block elsewhere must not count as a second whitespace match, which sends
+    the heal through to the moved rule and edits the copy.
+    """
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-a\n+A\n"
     _, new, healed = apply_patch_text(patch, "a \nother\na\n")
     assert new == "A\nother\na\n"

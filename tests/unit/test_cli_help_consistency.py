@@ -2,11 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """One sentence per shared argument across the CLI.
 
-Fifteen commands take a session id and nine wordings described it (`unique
-prefix`, `exact or prefix`, `Defaults to the most recent`...), and `sessions
-show` named no prefix rule while accepting one; six write verbs carried five
-wordings of `--repo`. The constants in `ui/cli/_common.py` are the one owner,
-and this walk keeps every site on them.
+The constants in `ui/cli/_common.py` are the one owner of the session-id and `--repo` wordings, and
+this walk keeps every site on them.
 """
 
 from __future__ import annotations

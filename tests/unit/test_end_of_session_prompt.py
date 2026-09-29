@@ -19,9 +19,7 @@ from agent6.ui.cli import _session_prompt as prompt_mod
 def _seed_session(
     repo_root: Path, monkeypatch: pytest.MonkeyPatch, session_id: str = "test-run-AAAAAA"
 ) -> SessionLayout:
-    """A real run dir under repo_root's state home, so resolution reaches the
-    tty guard rather than short-circuiting on SessionIdError."""
-
+    """A real run dir under repo_root's state home, so resolution reaches the tty guard."""
     monkeypatch.setenv("XDG_STATE_HOME", str(repo_root / ".state"))
     layout = SessionLayout(state_dir=state_dir(repo_root), session_id=session_id, subdir="runs")
     layout.session_dir.mkdir(parents=True, exist_ok=True)
@@ -61,9 +59,7 @@ def _seen_resumes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
 def test_follow_up_executions_run_under_the_invocations_flags(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`agent6 run --max-usd 0.10 ...` then a follow-up at "next:": the execution
-    carries the same overrides. Dropping them ran the follow-up under the
-    config's $10 default, silently, after the operator capped the run."""
+    """A follow-up at "next:" carries the run's overrides, such as `--max-usd`."""
     from agent6.ui import cli
 
     layout = _seed_session(tmp_path, monkeypatch)
@@ -87,8 +83,7 @@ def test_follow_up_executions_run_under_the_invocations_flags(
 
 
 def test_free_text_becomes_the_next_execution_then_exit(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Each answer is the next turn's operator instruction -- exactly what
-    --steer carries -- so the session continues without retyping `resume`."""
+    """Each follow-up answer becomes the next turn's operator instruction, as `--steer` does."""
     calls = _seen_resumes(monkeypatch)
     answers = iter(["now add the tests", "  ", "/exit"])
     rc = prompt_mod.end_of_session_prompt(
@@ -101,9 +96,7 @@ def test_free_text_becomes_the_next_execution_then_exit(monkeypatch: pytest.Monk
 def test_a_malformed_directive_re_prompts_instead_of_spending_a_execution(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A bare `/pin` typed here started a resume execution the loop could only
-    decline; the model answered without tools and the passed run read
-    "failed · silent finish". The prompt names the problem and asks again."""
+    """A bare `/pin` at "next:" is refused by name and asked again, never run as an execution."""
     calls = _seen_resumes(monkeypatch)
     answers = iter(["/pin", "/pin keep the API stable", "/exit"])
     rc = prompt_mod.end_of_session_prompt(
@@ -117,8 +110,7 @@ def test_a_malformed_directive_re_prompts_instead_of_spending_a_execution(
 def test_exit_leaves_the_session_resumable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """/exit ends the prompting, never the session: nothing is sealed, so the
-    printed line is the one that picks it back up."""
+    """/exit ends the prompting, never the session; the printed line picks it back up."""
     _seen_resumes(monkeypatch)
     rc = prompt_mod.end_of_session_prompt(
         rc=3, session_id="runny-one-AAAAAA", ask=lambda _p: "/exit"
@@ -139,8 +131,7 @@ def test_eof_ends_like_exit(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_a_failing_execution_stops_the_loop(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A resume that refuses (bad config, dirty tree) returns its own code
-    rather than re-prompting over the failure."""
+    """A resume that refuses (bad config, dirty tree) returns its own code, with no re-prompt."""
 
     def failing(_cfg: Path | None, _session_id: str, **_kw: object) -> int:
         return 2
@@ -159,13 +150,10 @@ def test_a_failing_execution_stops_the_loop(monkeypatch: pytest.MonkeyPatch) -> 
 def test_no_terminal_ends_the_session_as_before(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A headless run (CI, a detached spawn) has nobody to type: it must end,
-    not block on a prompt nothing will answer."""
+    """A headless run has nobody to type, so it ends instead of blocking on the prompt."""
     from agent6.ui.cli import _prompt_for_the_next_input  # pyright: ignore[reportPrivateUsage]
 
-    # A real session dir so the ONLY short-circuit under test is the tty guard;
-    # patch the bindings _prompt_for_the_next_input actually calls (imported
-    # into `cli`, not the source module).
+    # A real session dir, so the tty guard is the only short-circuit; patch what `cli` imports.
     layout = _seed_session(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: False)
@@ -181,8 +169,7 @@ def test_no_terminal_ends_the_session_as_before(
 
 
 def test_ask_sessions_do_not_prompt() -> None:
-    """`agent6 ask` answers a question; a one-shot that becomes a conversation
-    is a different feature: this is scoped to run and plan sessions."""
+    """`agent6 ask` stays a one-shot; the follow-up prompt is scoped to run and plan sessions."""
     import inspect
 
     from agent6.ui.cli import _dispatch_ask  # pyright: ignore[reportPrivateUsage]
@@ -193,11 +180,10 @@ def test_ask_sessions_do_not_prompt() -> None:
 def test_a_backgrounded_run_is_not_stopped_by_the_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`agent6 run ... &` keeps a tty on stdin, so isatty() alone said "someone
-    is there". Reading the terminal from a BACKGROUND process group raises
-    SIGTTIN, which stops the job: the run suspended at the end instead of
-    finishing, and needed `fg`. The same shape blocks forever wherever a tty is
-    allocated with nobody at it (`docker run -t`, some CI runners).
+    """A backgrounded run (`&`) ends without the prompt: a tty on stdin is not someone there.
+
+    Reading the terminal from a background process group raises SIGTTIN and suspends the job; the
+    same shape blocks forever wherever a tty is allocated with nobody at it.
     """
     monkeypatch.setattr(prompt_mod.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(prompt_mod.sys.stdin, "fileno", lambda: 0)
@@ -219,9 +205,7 @@ def test_a_backgrounded_run_is_not_stopped_by_the_prompt(
 def test_a_refused_runs_discarded_id_ends_quietly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A refusal discards its husk, so the minted id matches nothing on disk;
-    the follow-up prompt must end with the refusal's exit code, not crash on
-    the resolver's SessionIdError."""
+    """A refusal discards its husk, and the follow-up prompt ends with the refusal's exit code."""
     from agent6.ui import cli
 
     monkeypatch.chdir(tmp_path)
@@ -233,8 +217,7 @@ def test_a_refused_runs_discarded_id_ends_quietly(
 def test_a_resumed_execution_ends_by_asking_like_a_fresh_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, asks: bool
 ) -> None:
-    """`agent6 resume <id>` ended without the "next:" prompt a run ends with;
-    a resumed run or plan asks the same way (a resumed ask stays a one-shot)."""
+    """A resumed run or plan asks "next:" the way a run does; a resumed ask stays a one-shot."""
     import json
 
     from agent6.ui import cli
@@ -267,8 +250,7 @@ def test_a_resumed_execution_ends_by_asking_like_a_fresh_one(
 def test_resume_prompt_stays_on_the_session_selected_at_dispatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str
 ) -> None:
-    """A concurrent session can become newest or make a prefix ambiguous while
-    a resumed execution runs; the follow-up still belongs to the selected session."""
+    """A follow-up stays with the selected session when a concurrent session becomes newest."""
     from agent6.ui import cli
 
     selected = _seed_session(tmp_path, monkeypatch, session_id="resumed-run-AAAAAA")
@@ -295,8 +277,7 @@ def test_resume_prompt_stays_on_the_session_selected_at_dispatch(
 def test_a_refused_execution_does_not_prompt_on_an_existing_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A refused run can leave its explicit id pointing at an older session;
-    that session is not a completed execution of this invocation to follow up."""
+    """A refused run whose explicit id points at an older session gets no follow-up prompt."""
     from agent6.ui import cli
 
     layout = _seed_session(tmp_path, monkeypatch, session_id="existing-run-AAAAAA")
@@ -340,10 +321,7 @@ def test_a_refused_execution_does_not_prompt_on_an_existing_session(
 def test_a_execution_that_undoes_or_detaches_ends_the_asking(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Inside the prompt loop a follow-up execution can end by /undo (the fork it
-    named is the continuation) or by /detach (the run went on in the
-    background); the loop asked "next:" again for a run that takes no
-    follow-up here, and an answer would have collided or been refused."""
+    """A start that parked never ran; the resume line it printed is the next step, not "next:"."""
     layout = _seed_session(tmp_path, monkeypatch, session_id="undone-run-AAAAAA")
     monkeypatch.chdir(tmp_path)
     asked: list[str] = []
@@ -371,9 +349,7 @@ def test_a_execution_that_undoes_or_detaches_ends_the_asking(
 def test_a_detached_run_is_not_followed_by_the_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`/detach` hands the run to a background resume (its reattach line was
-    printed); the execution here did not end, so there is nothing to follow up on.
-    Asking "next:" offered an execution that would collide with the live one."""
+    """After `/detach` there is nothing to follow up on: the run continues in the background."""
     from agent6.ui import cli
 
     layout = _seed_session(tmp_path, monkeypatch, session_id="detached-run-AAAAAA")
@@ -396,9 +372,7 @@ def test_a_detached_run_is_not_followed_by_the_prompt(
 def test_a_parked_start_is_not_followed_by_the_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A start that parked (busy checkout, uncommitted changes) never ran; the
-    resume line it printed is the next step. Asking "next:" there offered a
-    follow-up to an execution that does not exist and re-parked on the same cause."""
+    """A start that parked never ran; the resume line it printed is the next step."""
     import json
 
     from agent6.ui import cli
@@ -432,9 +406,7 @@ def test_a_parked_start_is_not_followed_by_the_prompt(
 def test_an_undone_run_is_not_followed_by_the_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """/undo forks back and names the fork as the continuation; asking "next:"
-    on the undone run offered a follow-up to the abandoned one (and its /exit
-    printed a resume line for it)."""
+    """/undo names the fork as the continuation; the undone run gets no "next:" prompt."""
     from agent6.ui import cli
 
     layout = _seed_session(tmp_path, monkeypatch, session_id="undone-run-AAAAAA")
@@ -457,11 +429,12 @@ def test_an_undone_run_is_not_followed_by_the_prompt(
 def test_a_lone_slash_word_is_refused_not_sent_as_a_task(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`/shells` typed here spent a model call answering the literal text as a
-    new execution's task; a live-run command re-prompts with steer_problem's pointer,
-    an unknown lone slash word (a typo, a REPL verb) with the prompt's own.
-    Multi-word slash input still rides as the execution's instruction (directives
-    like `/pin <text>` are the loop's to parse)."""
+    """A lone slash word at "next:" re-prompts with a pointer instead of becoming a task.
+
+    A live-run command points at steer, an unknown word (a typo, a REPL verb) at the prompt's own
+    help. Multi-word slash input still rides as the execution's instruction, since directives like
+    `/pin <text>` are the loop's to parse.
+    """
     calls = _seen_resumes(monkeypatch)
     answers = iter(["/shells", "/cost", "now add the tests", "/exit"])
     rc = prompt_mod.end_of_session_prompt(
@@ -477,10 +450,7 @@ def test_a_lone_slash_word_is_refused_not_sent_as_a_task(
 def test_i_with_tui_is_refused_before_a_execution_starts(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`-i` and `--tui` both want the terminal: the pair is refused up front,
-    for `run` and `resume` alike. It was degraded in silence (`resume` spawned
-    the TUI and armed the REPL on the same tty, stalling after its first
-    commit) and the dispatchers gated the follow-up prompt on the raw flag."""
+    """`-i` with `--tui` is refused up front for `run` and `resume`: both want the terminal."""
     import agent6.ui.cli.resume as resume_mod
     import agent6.ui.cli.run as run_mod
     from agent6.ui import cli
@@ -511,8 +481,7 @@ def test_i_with_tui_is_refused_before_a_execution_starts(
 
 
 def _plan_harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """A `plan` whose execution is a fake that writes a finished session; returns
-    the prompts the end-of-session prompt asked."""
+    """A `plan` whose execution is a fake writing a finished session; returns the prompts asked."""
     import agent6.ui.cli.run as run_mod
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
@@ -540,8 +509,7 @@ def _plan_harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
 def test_plan_tui_does_not_hand_the_terminal_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`plan --tui` ends where the TUI ends, as `run --tui` does; the plan
-    dispatcher alone still handed the terminal back to the follow-up prompt."""
+    """`plan --tui` ends where the TUI ends, as `run --tui` does."""
     from agent6.ui.cli import main
 
     asked = _plan_harness(tmp_path, monkeypatch)

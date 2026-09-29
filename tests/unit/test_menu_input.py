@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The fish-style pause-menu line reader: Tab previews and cycles commands,
-typing steers, history recalls; input()'s EOF/interrupt contract holds."""
+"""The fish-style pause-menu line reader.
+
+Tab previews and cycles commands, typing steers, history recalls; input()'s EOF/interrupt contract
+holds.
+"""
 
 from __future__ import annotations
 
@@ -179,8 +182,11 @@ def test_byte_decoded_ctrl_c_cleans_the_terminal_once() -> None:
 
 
 def test_menu_rows_clamp_to_narrow_terminals(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Rows stay one terminal row wide (wrapping breaks the cursor-up math):
-    descriptions truncate, the command labels survive."""
+    """Menu rows clamp to narrow terminals.
+
+    Rows stay one terminal row wide (wrapping breaks the cursor-up math): descriptions truncate, the
+    command labels survive.
+    """
     monkeypatch.setattr("agent6.ui.cli._menu_input._width", lambda: 20)
     _, out = _run(["tab", "enter"])
     assert "/detach" in out  # labels intact
@@ -190,11 +196,12 @@ def test_menu_rows_clamp_to_narrow_terminals(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_input_row_never_exceeds_the_terminal_width(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The 57-col real prompt overflowed narrow terminals (only the typed line
-    was windowed, with an 8-col floor): the wrapped row broke the cursor-up
-    math and every keystroke walked a garbled menu down the screen. The WHOLE
-    row -- prompt clamped first, line windowed into the remainder -- must fit
-    width-1, like the menu rows already do."""
+    """The input row never exceeds the terminal width.
+
+    The whole row, prompt clamped first and the line windowed into the remainder, fits width-1 like
+    the menu rows; a 57-column prompt with only the typed line windowed (an 8-column floor) wraps,
+    breaks the cursor-up math, and every keystroke walks a garbled menu down the screen.
+    """
     from agent6.ui.cli._menu_input import _Reader  # pyright: ignore[reportPrivateUsage]
     from agent6.ui.cli._steer_menu import PROMPT
 
@@ -221,9 +228,11 @@ def test_a_completed_piped_line_wins_when_the_prompt_is_superseded() -> None:
 
 
 def test_a_partial_line_is_dropped_once_the_prompt_is_over() -> None:
-    """Reading through the stream's own buffer blocked on a partial line the
-    moment the descriptor read as ready, so a prompt answered from another
-    surface hung until the operator finished typing."""
+    """A partial line is dropped once the prompt is over.
+
+    Reading through the stream's own buffer blocks on a partial line the moment the descriptor reads
+    as ready, so a prompt answered from another surface hangs until the operator finishes typing.
+    """
     import threading
 
     r, w = os.pipe()
@@ -241,8 +250,11 @@ def test_a_partial_line_is_dropped_once_the_prompt_is_over() -> None:
 
 
 def test_a_pasted_second_line_is_the_next_prompts() -> None:
-    """The stream's buffer swallowed a paste's later lines past the poll, so
-    the next prompt read nothing was typed."""
+    """A pasted second line is the next prompt's.
+
+    The stream's buffer must not swallow a paste's later lines past the poll, or the next prompt
+    reads nothing was typed.
+    """
     r, w = os.pipe()
     try:
         os.write(w, b"one\ntwo\n")
@@ -302,9 +314,10 @@ def test_multibyte_alt_chord_does_not_leak_continuation_bytes() -> None:
 
 
 def test_a_character_split_across_reads_decodes_whole() -> None:
-    """One `os.read` returns what has arrived, not the count asked: a
-    character whose bytes came in two pieces left its tail to be decoded as a
-    key of its own."""
+    """One `os.read` returns what has arrived, not the count asked.
+
+    A character whose bytes came in two pieces left its tail to be decoded as a key of its own.
+    """
     import threading
     import time
 
@@ -327,9 +340,11 @@ def test_a_character_split_across_reads_decodes_whole() -> None:
 def test_the_default_writer_reaches_the_terminal_under_the_guard(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`cli_main` wraps stdout in a scrubber that drops cursor movement, and
-    the composer's menu lost its cursor-up (every render garbled). The
-    composer writes to the stream under the wrapper, its rows scrubbed."""
+    """The default writer reaches the terminal under the guard.
+
+    `cli_main` wraps stdout in a scrubber that drops cursor movement; the composer writes to the
+    stream under the wrapper, or its menu loses its cursor-up and every render garbles.
+    """
     raw = io.StringIO()
     monkeypatch.setattr(sys, "stdout", ScrubbedStream(raw))
     it = iter(["tab", "enter"])

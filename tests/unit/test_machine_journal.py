@@ -36,8 +36,7 @@ def _journal(tmp_path: Path) -> MachineJournal:
 
 
 def _golden_events() -> list[object]:
-    """One event of every journal family (all four Facts), fixed timestamps: the
-    sequence the golden line format is pinned against."""
+    """One event of every journal family (all four Facts) with fixed timestamps."""
     return [
         MachineBegin(ts="2026-07-16T00:00:00.000000+00:00", machine="demo", version=1),
         StepEvent(
@@ -98,10 +97,7 @@ def _golden_events() -> list[object]:
 
 
 def test_journal_line_format_matches_golden(tmp_path: Path) -> None:
-    # Byte pin of the replay-critical line format: appending the fixed event
-    # sequence must reproduce the golden journal exactly (one line per event,
-    # compact JSON, discriminator keys first). A drift here silently breaks
-    # replay of every journal an older instance wrote.
+    # Byte pin of the line format: a drift silently breaks replay of every older journal.
     j = _journal(tmp_path)
     for event in _golden_events():
         j.append(event)  # type: ignore[arg-type]
@@ -110,8 +106,7 @@ def test_journal_line_format_matches_golden(tmp_path: Path) -> None:
 
 
 def test_replay_of_golden_journal_bytes_reproduces_state(tmp_path: Path) -> None:
-    # The other half of the contract: those exact bytes replay back to the same
-    # typed events and values, so an on-disk journal keeps reducing identically.
+    # Those exact bytes replay back to the same typed events.
     j = _journal(tmp_path)
     j.journal_path.write_bytes((_DATA / "golden_journal.jsonl").read_bytes())
     events = j.read()
@@ -144,9 +139,7 @@ def test_replay_of_golden_journal_bytes_reproduces_state(tmp_path: Path) -> None
 
 
 def test_old_tool_fact_without_stderr_still_parses(tmp_path: Path) -> None:
-    # stderr is additive: a journal line written before the field existed (no
-    # `stderr` key) must still replay, with stderr defaulting to "". extra="forbid"
-    # rejects UNKNOWN keys, never a missing defaulted one.
+    # A line without `stderr` still replays with ""; extra="forbid" rejects unknown keys only.
     j = _journal(tmp_path)
     old_line = (
         '{"type":"step","ts":"t","seq":0,"state":"scan","label":"ok","goto":"done",'
@@ -161,9 +154,7 @@ def test_old_tool_fact_without_stderr_still_parses(tmp_path: Path) -> None:
 
 
 def test_read_survives_unicode_line_separators(tmp_path: Path) -> None:
-    # U+2028/U+2029/U+0085 are written literally inside JSON strings; `read` must
-    # not treat them as line breaks (splitlines does), or one captured value with
-    # one would shred a journal line and brick the instance.
+    # U+2028/U+2029/U+0085 inside JSON strings are not line breaks; splitlines would shred the line.
     j = _journal(tmp_path)
     j.begin(machine="demo", version=1)
     poison = "a\u2028b\u2029c\u0085d"  # line/para/next-line separators
@@ -185,9 +176,7 @@ def test_read_survives_unicode_line_separators(tmp_path: Path) -> None:
 
 
 def test_read_tolerates_and_append_heals_torn_final_line(tmp_path: Path) -> None:
-    # A crash mid-append leaves a final line with no trailing newline. `read`
-    # drops it instead of bricking, and the next `append` heals the file so the
-    # new event lands on its own line (not concatenated onto the fragment).
+    # A final line with no newline is dropped by `read` and healed by the next `append`.
     j = _journal(tmp_path)
     j.begin(machine="demo", version=1)
     with j.journal_path.open("a", encoding="utf-8") as fh:
@@ -202,8 +191,7 @@ def test_read_tolerates_and_append_heals_torn_final_line(tmp_path: Path) -> None
 
 
 def test_read_tolerates_torn_final_utf8_sequence(tmp_path: Path) -> None:
-    # A crash can split a multibyte UTF-8 character on the final line. `read`
-    # must drop that byte tail before decoding, then append must heal it.
+    # A split multibyte character on the final line is dropped before decoding, then healed.
     j = _journal(tmp_path)
     j.begin(machine="demo", version=1)
     torn = b'{"type":"machine.end","ts":"t","status":"failed","reason":"caf' + "é".encode()[:1]
@@ -222,8 +210,7 @@ def test_latest_snapshot_falls_back_past_corrupt_newest(tmp_path: Path) -> None:
     j = _journal(tmp_path)
     j.write_snapshot(Snapshot(seq=1, state="a", blackboard={"n": 1}))
     j.write_snapshot(Snapshot(seq=2, state="b", blackboard={"n": 2}))
-    # Invalid UTF-8 is corruption too; it must not escape before the older
-    # retained snapshot gets its chance to restore the inspection readout.
+    # Invalid UTF-8 is corruption too; the older retained snapshot still restores the readout.
     (j.snapshots_dir / "2.json").write_bytes(b"\xff\xfe")
     snap = j.latest_snapshot()
     assert snap is not None
@@ -349,8 +336,7 @@ def test_corrupt_journal_line_raises(tmp_path: Path) -> None:
 
 
 def test_journal_error_is_a_machine_error() -> None:
-    # Surfaces that degrade on a broken machine file (`except MachineError`,
-    # reading exc.problems) must degrade the same way on a broken journal.
+    # Surfaces that degrade on a broken machine file degrade the same way on a broken journal.
     from agent6.machine.spec import MachineError
 
     exc = JournalError("corrupt journal line 3")
@@ -375,9 +361,7 @@ def test_latest_snapshot_none_when_empty(tmp_path: Path) -> None:
 
 
 def test_snapshot_pruning_keeps_configured_tail(tmp_path: Path) -> None:
-    # Only latest_snapshot is ever read; old snapshots get pruned per the
-    # [machine] snapshot_keep config (default 5) so a long-running machine
-    # does not accumulate one file per transition.
+    # Only latest_snapshot is read; old snapshots are pruned to [machine] snapshot_keep.
     j = _journal(tmp_path)
     for seq in range(20):
         j.write_snapshot(Snapshot(seq=seq, state="s", blackboard={"n": seq}))
@@ -414,11 +398,7 @@ def test_poke_writes_signal_consumed_by_take_signal(tmp_path: Path) -> None:
 
 
 def test_a_poke_survives_until_its_step_is_acked(tmp_path: Path) -> None:
-    """take_signal used to unlink the claim as it read, so a death between the
-    take and the wake's fsynced StepEvent lost the poke with no trace (neither
-    signal, claim, nor journal). The claim now outlives the take: a restart
-    re-delivers the same payload until ack_signal, called only after the step
-    is durable."""
+    """The poke's claim outlives take_signal and is re-delivered until the step is acked."""
     j = _journal(tmp_path)
     j.poke({"cmd": "reload"})
     assert j.take_signal() == (True, {"cmd": "reload"})
@@ -432,10 +412,7 @@ def test_a_poke_survives_until_its_step_is_acked(tmp_path: Path) -> None:
 def test_take_signal_preserves_poke_landing_mid_consume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A poke that renames a fresh signal into place while take_signal reads
-    # must survive for the next check. The claim-by-rename makes the window
-    # structural: the racing poke lands at signal_path while the renamed-away
-    # copy is being consumed.
+    # A poke racing take_signal lands at signal_path while the renamed-away copy is consumed.
     j = _journal(tmp_path)
     j.poke("first")
     real_read_text = Path.read_text
@@ -453,9 +430,7 @@ def test_take_signal_preserves_poke_landing_mid_consume(
 
 
 def test_take_signal_recovers_stranded_consuming_file(tmp_path: Path) -> None:
-    """An unacked claim (a crash anywhere before the wake step's ack) is
-    re-delivered first, before any fresh signal; renaming over it would have
-    clobbered its payload."""
+    """An unacked claim is re-delivered before any fresh signal, its payload intact."""
     j = _journal(tmp_path)
     j.signal_path.with_suffix(".consuming").write_text('"stranded"', encoding="utf-8")
     j.poke("fresh")
@@ -519,12 +494,11 @@ def test_read_source_reports_invalid_utf8_as_a_journal_error(tmp_path: Path) -> 
 
 
 def test_append_and_snapshot_survive_a_lone_surrogate(tmp_path: Path) -> None:
-    """json.loads legally produces lone surrogates from \\udXXX escapes, and two
-    trust boundaries feed that straight into the journal (a tool's captured
-    stdout, a `machine poke --data` payload). pydantic's model_dump_json raises
-    on them, and the raw error escaped run_machine: a traceback, no MachineEnd,
-    and every restart re-crashed at the next snapshot write. The event log solved
-    this class already (EventSink encodes with errors='replace')."""
+    r"""A lone surrogate from a \udXXX escape is encoded lossily, never a snapshot crash.
+
+    A tool's captured stdout and a `machine poke --data` payload both feed json.loads into the
+    journal.
+    """
     j = _journal(tmp_path)
     j.begin(machine="demo", version=1)
     poison = "emoji tail \ud83d"  # a split surrogate pair, as json.loads yields it
@@ -549,10 +523,7 @@ def test_append_and_snapshot_survive_a_lone_surrogate(tmp_path: Path) -> None:
 
 
 def test_healing_a_torn_tail_never_empties_the_journal(tmp_path: Path) -> None:
-    """The heal read the whole journal and wrote it back, so a kill in that
-    window (or a concurrent reader, and every status surface reads without a
-    lock) saw an EMPTY journal -- the file a machine's correctness rests on.
-    It truncates in place, which leaves the old length or the new one."""
+    """The torn-tail heal truncates in place, so a reader never sees an empty journal."""
     import json
     import os
 
@@ -571,9 +542,7 @@ def test_healing_a_torn_tail_never_empties_the_journal(tmp_path: Path) -> None:
 
     assert journal.read_text(encoding="utf-8") == committed
     assert len(MachineJournal(inst).read()) == 3
-    # Structural, because the window it closes is a race no unit test observes
-    # deterministically: a whole-file rewrite (`write_bytes`, O_TRUNC) is what
-    # let a kill or a lockless reader see an empty journal.
+    # Structural: a whole-file rewrite let a kill or a lockless reader see an empty journal.
     import inspect
 
     body = inspect.getsource(MachineJournal._heal_torn_tail)  # pyright: ignore[reportPrivateUsage]
@@ -582,10 +551,7 @@ def test_healing_a_torn_tail_never_empties_the_journal(tmp_path: Path) -> None:
 
 
 def test_end_event_reads_a_record_longer_than_its_tail_window(tmp_path: Path) -> None:
-    """The tail window starts mid-line, so a final record longer than the
-    window left only a fragment in it, which read as a corrupt journal and
-    turned every verb into a refusal; a partial first line is skipped, and a
-    window with no whole line falls back to the full read."""
+    """The tail window skips a partial first line and falls back to a full read when none fits."""
     from agent6.machine.journal import _TAIL_WINDOW  # pyright: ignore[reportPrivateUsage]
 
     j = _journal(tmp_path)

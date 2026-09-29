@@ -2,10 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 sessions` lists everything the CLI can open by id.
 
-The TUI and the web hub give `machine create` drafts their own card, so their
-session list leaves them out. The CLI has no such card -- so excluding drafts
-there made a session that `attach` opens happily appear in no listing at all,
-findable only by keeping the id from the create output.
+The TUI and the web hub give `machine create` drafts their own card; the CLI has no such card, so a
+draft `attach` opens appears in this listing.
 """
 
 from __future__ import annotations
@@ -23,8 +21,7 @@ from agent6.ui.cli import main
 def _session(state: Path, bucket: str, session_id: str, mode: str) -> None:
     session = bucket_dir(state, bucket) / session_id
     session.mkdir(parents=True)
-    # The task text is neutral on purpose: `f"a {mode}"` would put the mode
-    # word in the TASK column and satisfy the mode-column assertions vacuously.
+    # The task text is neutral: `f"a {mode}"` would satisfy the mode-column assertions vacuously.
     (session / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": mode, "user_task": "a task"}) + "\n",
         encoding="utf-8",
@@ -48,10 +45,7 @@ def test_a_machine_draft_appears_in_the_listing(
 def test_an_undone_run_lists_as_undone_and_never_unmerged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """/undo's end reason is its own word in the listing and its JSON (it
-    folded into "stopped" while `sessions show` said "stopped (undone)" and
-    the console "undone (forked back)"), and never the unmerged mark,
-    whatever the run branch holds (see SessionSummary.unmerged)."""
+    """An undone run lists as undone in the listing and its JSON, never as unmerged."""
     import subprocess
 
     def git(*args: str) -> str:

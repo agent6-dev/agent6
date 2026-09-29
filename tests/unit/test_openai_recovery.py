@@ -318,9 +318,12 @@ def test_malformed_recovered_call_returns_only_its_error(
 
 
 def test_an_unterminated_fence_hides_no_later_call() -> None:
-    """An opener with no closer was read as a fence reaching the end of the
-    text, so a code sample the model left open, or an argument value that
-    ended mid-fence, quoted every call after it and the run went quiet."""
+    """An unterminated fence hides no later call.
+
+    An opener with no closer read as a fence reaching the end of the text quotes every call after a
+    code sample the model left open, or an argument value that ended mid-fence, and the run goes
+    quiet.
+    """
     tag = '<tool_call>{"name":"read_file","arguments":{"path":"a.py"}}</tool_call>'
     calls, remaining = coerce_text_tool_calls(f"A sample:\n```\nsome code\n\n{tag}", _TOOLS)
     assert [c["name"] for c in calls] == ["read_file"]
@@ -328,15 +331,17 @@ def test_an_unterminated_fence_hides_no_later_call() -> None:
 
 
 def test_a_json_fence_showing_an_object_with_a_name_key_is_not_a_call() -> None:
-    """A ```json fence is how a model shows JSON: a package manifest with a
-    `name` field was dispatched as a tool and cut out of the answer."""
+    """A json fence showing an object with a `name` key is not a call.
+
+    A ```json fence is how a model shows JSON; a package manifest with a `name` field must not be
+    dispatched as a tool and cut out of the answer.
+    """
     text = 'The manifest:\n\n```json\n{"name": "my-pkg", "version": "1.0.0"}\n```\n\nOK?'
     assert coerce_text_tool_calls(text, _TOOLS) == ([], text)
 
 
 def test_the_same_call_in_a_tag_and_a_fence_is_one_call() -> None:
-    """A tag followed by the same object restated in a ```json fence
-    dispatched twice."""
+    """A tag followed by the same object restated in a ```json fence dispatched twice."""
     call = '{"name":"read_file","arguments":{"path":"a.py"}}'
     text = f"<tool_call>{call}</tool_call>\nIn JSON that is:\n```json\n{call}\n```"
     calls, remaining = coerce_text_tool_calls(text, _TOOLS)
@@ -345,18 +350,23 @@ def test_the_same_call_in_a_tag_and_a_fence_is_one_call() -> None:
 
 
 def test_a_call_in_a_four_backtick_fence_is_recovered() -> None:
-    """The fence span began at its opener, one backtick before where the JSON
-    fence match begins, so a call in a longer fence read as quoted inside
-    itself."""
+    """A call in a four-backtick fence is recovered.
+
+    The fence span begins at its opener, one backtick before where the JSON fence match begins;
+    otherwise a call in a longer fence reads as quoted inside itself.
+    """
     text = '````json\n{"name":"read_file","arguments":{"path":"a.py"}}\n````'
     calls, _ = coerce_text_tool_calls(text, _TOOLS)
     assert [c["name"] for c in calls] == ["read_file"]
 
 
 def test_arguments_that_are_not_an_object_are_marked_malformed_as_json() -> None:
-    """A list or null in place of the arguments object rode a second sentinel
-    the dispatcher does not know, so the model read an opaque schema error
-    instead of "not a JSON object"."""
+    """Arguments that are not an object are marked malformed as JSON.
+
+    A list or null in place of the arguments object must not ride a second sentinel the dispatcher
+    does not know, which reads to the model as an opaque schema error instead of "not a JSON
+    object".
+    """
     text = '<tool_call>{"name":"read_file","arguments":["a.py"]}</tool_call>'
     (call,) = coerce_text_tool_calls(text, _TOOLS)[0]
     assert set(call["input"]) == {"_raw_arguments"}
@@ -364,9 +374,11 @@ def test_arguments_that_are_not_an_object_are_marked_malformed_as_json() -> None
 
 
 def test_a_fence_opened_inside_an_argument_quotes_nothing_after_it() -> None:
-    """The fence spans were read off the raw text, so a code fence a
-    parameter value opened paired with the next fenced block and quoted the
-    call between them, which vanished."""
+    """A fence opened inside an argument quotes nothing after it.
+
+    Read off the raw text, a code fence a parameter value opens pairs with the next fenced block and
+    quotes the call between them, which vanishes.
+    """
     xml = "<function=apply_edit><parameter=new_string>\n```python\nx = 1\n</parameter></function>"
     tag = '<tool_call>{"name":"read_file","arguments":{"path":"a"}}</tool_call>'
     text = f"{xml}\n{tag}\nexpected output:\n```\nok\n```"
@@ -376,8 +388,10 @@ def test_a_fence_opened_inside_an_argument_quotes_nothing_after_it() -> None:
 
 
 def test_a_call_restated_in_a_second_fence_is_one_call() -> None:
-    """Two ```json fences holding the same call dispatched it twice; the
-    tag-then-fence case was the only one deduplicated."""
+    """A call restated in a second fence is one call.
+
+    Two ```json fences holding the same call dispatch it once, as the tag-then-fence case does.
+    """
     call = '{"name":"read_file","arguments":{"path":"a.py"}}'
     text = f"first\n```json\n{call}\n```\nsecond\n```json\n{call}\n```"
     calls, remaining = coerce_text_tool_calls(text, _TOOLS)
@@ -393,8 +407,10 @@ def test_a_call_restated_in_a_second_fence_is_one_call() -> None:
     ],
 )
 def test_a_form_wrapped_in_a_tag_leaves_no_marker(inner: str) -> None:
-    """Qwen's template wraps its XML call in `<tool_call>` tags; the call
-    was mined and the tag's markers stayed in the answer."""
+    """A form wrapped in a tag leaves no marker.
+
+    Qwen's template wraps its XML call in `<tool_call>` tags; the tag's markers go with the call.
+    """
     calls, remaining = coerce_text_tool_calls(
         f"ok\n<tool_call>\n{inner}\n</tool_call>\ndone", _TOOLS
     )
@@ -403,9 +419,11 @@ def test_a_form_wrapped_in_a_tag_leaves_no_marker(inner: str) -> None:
 
 
 def test_an_unclosed_function_ends_at_its_last_closed_parameter() -> None:
-    """A `<function=` block missing its closer ran to the end of the text and
-    swallowed the prose after it; a truncated last parameter still runs to
-    the end."""
+    """An unclosed function ends at its last closed parameter.
+
+    A `<function=` block missing its closer must not run to the end of the text and swallow the
+    prose after it; a truncated last parameter still runs to the end.
+    """
     text = "<function=read_file><parameter=path>a.py</parameter>\nAfter that I summarise."
     calls, remaining = coerce_text_tool_calls(text, _TOOLS)
     assert calls == [{"name": "read_file", "input": {"path": "a.py"}}]

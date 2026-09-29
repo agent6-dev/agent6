@@ -14,10 +14,7 @@ from agent6.providers import OpenAIProvider
 
 
 def test_build_role_provider_forwards_extra_body_and_headers() -> None:
-    # The config -> provider pass-through is a one-liner; pin it so dropping
-    # `extra_body=...` (or extra_headers) can't silently stop reaching the wire
-    # — that would make `provider` routing / caching config a no-op with no
-    # failing test.
+    # Dropping `extra_body` or `extra_headers` from the pass-through would make the config a no-op.
     cfg = Config(
         providers={
             "openrouter": OpenAIProviderEntry(
@@ -36,10 +33,10 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
 
 
 def test_reviewer_family_builders_stamp_their_own_seats() -> None:
-    """The prompt reviser, summariser, and a bare-persona review seat are
-    distinct actors sharing the reviewer ROUTE; each stamps its own seat on
-    transcripts. All of them stamping "reviewer" left persisted transcripts
-    unable to tell which actor made a call."""
+    """The reviser, summariser and a bare-persona seat stamp their own seats.
+
+    They share the reviewer route; a transcript still tells which actor made a call.
+    """
     from unittest.mock import call
 
     from agent6.app.providers import (

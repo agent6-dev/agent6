@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Ctrl-R searches this session's past messages into the composer, on both
-run views, and does nothing loud when there is nothing to search."""
+"""Ctrl-R searches the session's past messages into the composer on both run views."""
 
 from __future__ import annotations
 
@@ -32,9 +31,10 @@ def _run_dir(tmp_path: Path) -> Path:
 
 
 def test_ctrl_r_fills_the_conversation_composer(tmp_path: Path) -> None:
-    """Ctrl-R opens the picker (task included, newlines flattened); typing
-    narrows, ↓ highlights, Enter puts the pick in the composer for editing --
-    nothing is sent."""
+    """Ctrl-R opens the picker; typing narrows, ↓ highlights, Enter puts the pick in the composer.
+
+    The task is included, newlines flattened, and nothing is sent.
+    """
 
     async def scenario() -> None:
         app = Agent6TUI(_run_dir(tmp_path))

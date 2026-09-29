@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A fork's execution runs in a linked worktree whose `.git` is a pointer into the
-repository's git dir. The jail grants that dir from what agent6 recorded
-when it added the worktree (the manifest's `worktree_git_dir`), never from
-the pointer file: under hardened the pointer sits in the writable workspace,
-so a jailed command could rewrite it to name any host directory."""
+"""The jail grants a fork's git dir from the manifest, never from the worktree's pointer file.
+
+Under hardened the pointer sits in the writable workspace, so a jailed command could rewrite it to
+name any host directory.
+"""
 
 from __future__ import annotations
 
@@ -32,8 +32,7 @@ def _repo_and_worktree(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _rewrite_pointer(worktree: Path, target: str) -> None:
-    """What a jailed command can do under hardened: point the workspace's
-    own `.git` file at a directory whose `commondir` names any host dir."""
+    """What a jailed command can do under hardened: point `.git` at any host dir via `commondir`."""
     evil = worktree / "evil"
     evil.mkdir()
     (evil / "commondir").write_text(f"{target}\n", encoding="utf-8")
@@ -41,9 +40,10 @@ def _rewrite_pointer(worktree: Path, target: str) -> None:
 
 
 def test_the_recorded_git_dir_is_granted_read_only(tmp_path: Path) -> None:
-    """With the recorded dir matching the worktree's pointer, the policy
-    grants that dir read-only, and the hardened exposure scan lists it under
-    the same name."""
+    """With the recorded dir matching the pointer, the policy grants that dir read-only.
+
+    The hardened exposure scan lists it under the same name.
+    """
     repo, worktree = _repo_and_worktree(tmp_path)
     git_dir = (repo / ".git").resolve()
     policy = jail_policy(worktree, Config(), "strict", ("true",), worktree_git_dir=git_dir)
@@ -53,9 +53,7 @@ def test_the_recorded_git_dir_is_granted_read_only(tmp_path: Path) -> None:
 
 
 def test_a_rewritten_pointer_refuses_instead_of_granting(tmp_path: Path) -> None:
-    """A pointer that no longer resolves to the recorded dir refuses the
-    policy, naming both; the rewritten target is granted nothing. Derived
-    from the pointer, the policy granted whatever host dir it named."""
+    """A pointer that no longer resolves to the recorded dir refuses the policy, naming both."""
     repo, worktree = _repo_and_worktree(tmp_path)
     git_dir = (repo / ".git").resolve()
     _rewrite_pointer(worktree, "/etc")
@@ -67,8 +65,7 @@ def test_a_rewritten_pointer_refuses_instead_of_granting(tmp_path: Path) -> None
 
 
 def test_a_linked_worktree_agent6_did_not_record_gets_no_grant(tmp_path: Path) -> None:
-    """Without a record there is nothing to grant: a foreign linked worktree,
-    honest pointer or rewritten, gets no path beyond the workspace."""
+    """Without a record there is nothing to grant: a foreign worktree gets only the workspace."""
     repo, worktree = _repo_and_worktree(tmp_path)
     assert jail_policy(worktree, Config(), "strict", ("true",)).extra_ro_paths == ()
     _rewrite_pointer(worktree, "/etc")

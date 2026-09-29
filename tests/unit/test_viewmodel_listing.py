@@ -38,10 +38,10 @@ def test_run_mtime_prefers_log_over_dir(tmp_path: Path) -> None:
 
 
 def test_run_mtime_of_a_log_less_session_is_its_manifest(tmp_path: Path) -> None:
-    """A parked run and a `fork --no-run` have no log, and opening either in the
-    TUI or the web writes a `frontends/` claim into the dir: keyed off the dir
-    mtime, merely LOOKING at one floated it to the top of every listing, above
-    live work."""
+    """Opening a parked run or a `fork --no-run` in a viewer never floats it to the top of a list.
+
+    Both have no log, and the `frontends/` claim the viewer writes bumped the dir mtime.
+    """
     d = tmp_path / "run"
     d.mkdir()
     manifest = d / "manifest.json"
@@ -67,10 +67,10 @@ def test_task_snippet_skips_seeded_file_block() -> None:
 
 
 def test_task_snippet_is_the_operators_words_under_a_from_seed_and_skills() -> None:
-    """`run --from` prepends a `<prior-run>` digest and `--skill` a preamble +
-    `<skill>` blocks + `---`; the headline everywhere is what the operator
-    typed. A clipped copy that cuts inside the block (the 200-char event of
-    the older writers) drops the open block instead of showing its opener."""
+    """The headline everywhere is what the operator typed, not the prepended skill or digest block.
+
+    A clipped copy that cuts inside the block drops the open block instead of showing its opener.
+    """
     from agent6.task_text import operator_task_text
 
     seeded = (
@@ -95,8 +95,10 @@ def test_task_snippet_plain_task() -> None:
 
 
 def test_task_snippet_drops_a_markdown_heading_mark() -> None:
-    """A task pasted from a TASK.md opens with `# Title`; every listing and card
-    showed the marks. A `#` with no space after it (`#include`) is not a heading."""
+    """A task pasted from a TASK.md opens with `# Title`; every listing and card showed the marks.
+
+    A `#` with no space after it (`#include`) is not a heading.
+    """
     assert task_snippet("# Implement `parse_url` per RFC 3986\n\nbody") == (
         "Implement `parse_url` per RFC 3986"
     )
@@ -109,8 +111,7 @@ def test_task_snippet_falls_back_to_stripped_text() -> None:
 
 
 def test_task_snippet_of_a_task_that_is_only_a_file_block_is_its_first_line() -> None:
-    """With no words of the operator's, the fallback was the whole stripped block,
-    three lines in a one-line cell; the opener names the file the run got."""
+    """With no words of the operator's, the headline is the block's opener naming the file."""
     task = '<file path="question.md">\nWhy is the broker slow?\n</file>'
     assert task_snippet(task) == '<file path="question.md">'
 
@@ -151,9 +152,10 @@ def test_format_compare_headline_and_rationale() -> None:
 
 
 def test_format_branch_is_the_one_wording_and_manifest_branches_carries_it(tmp_path: Path) -> None:
-    """The run header's branch line (TUI, web, `sessions show`): the run branch
-    merged into its base, else the base a merge lands on; "" without a run
-    branch. `manifest_branches` hands it to every header as `branch_line`."""
+    """`branch_line` is the header's branch line: merged into its base, else the base it lands on.
+
+    "" without a run branch; `manifest_branches` hands it to every header.
+    """
     import json
 
     assert format_branch("agent6/x", "main", "") == "agent6/x → merges into main"
@@ -175,9 +177,7 @@ def test_format_branch_is_the_one_wording_and_manifest_branches_carries_it(tmp_p
 
 
 def test_manifest_header_carries_the_fork_lineage_in_one_wording(tmp_path: Path) -> None:
-    """`forked_from` is the line every header shows for a run `agent6 fork`
-    made (`sessions show`, the TUI dashboard, the web run header):
-    `<parent>@turn <n> (<sha12>)`; absent for a run that is not a fork."""
+    """`forked_from` is `<parent>@turn <n> (<sha12>)` on every header of a fork, else absent."""
     import json
 
     from agent6.viewmodel import manifest_header
@@ -203,9 +203,10 @@ def test_manifest_header_carries_the_fork_lineage_in_one_wording(tmp_path: Path)
 
 
 def test_manifest_branches_claims_merged_only_while_the_stamp_holds(tmp_path: Path) -> None:
-    """A run resumed after its merge commits past the stamp: with the repo at
-    hand the header says the branch awaits a merge again (the web Merge button
-    read the raw stamp and stayed disabled over unmerged commits)."""
+    """A run resumed after its merge reads as awaiting a merge again, with the repo at hand.
+
+    The web Merge button read the raw stamp and stayed disabled over unmerged commits.
+    """
     import json
     import subprocess
 
@@ -241,11 +242,11 @@ def test_manifest_branches_claims_merged_only_while_the_stamp_holds(tmp_path: Pa
 
 
 def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: Path) -> None:
-    """`commits_ref` is the ref a merge or diff reads: the run branch while it
-    exists, else the chain ref while it has a tip, else absent (the run
-    recorded nothing). The web Merge button gated on `run_branch`, so a
-    `branch_per_run = false` run read "no branch to merge" while
-    `sessions merge` landed it."""
+    """`commits_ref` is the ref a merge or diff reads: run branch, else chain ref, else none.
+
+    The web Merge button gated on `run_branch`, so a `branch_per_run = false` run read "no branch
+    to merge" while `sessions merge` landed it.
+    """
     import subprocess
 
     from agent6.git_ops import chain_ref_for
@@ -278,11 +279,12 @@ def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: Path) -> 
 
 
 def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: Path) -> None:
-    """The manifest names the run branch at run start; git creates it at the
-    first commit. A run stopped before one (or parked before starting) had a
-    header reading `agent6/x → merges into main` and an enabled Merge that the
-    CLI then refused with "no branch to merge"; `sessions show --json` already
-    reported `run_branch` null. One rule, `existing_run_branch`, for both."""
+    """The manifest names the run branch at run start; git creates it at the first commit.
+
+    A run stopped before one (or parked before starting) had a header reading `agent6/x → merges
+    into main` and an enabled Merge that the CLI then refused with "no branch to merge"; `sessions
+    show --json` already reported `run_branch` null. One rule, `existing_run_branch`, for both.
+    """
     import json
     import subprocess
 
@@ -321,9 +323,10 @@ def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: Path) ->
 
 
 def _write_run(base: Path, sub: str, session_id: str, events: list[dict[str, object]]) -> Path:
-    """A session dir as one really looks on disk: a started session has a LIVE
-    worker.pid, because the worker writes it before emitting its start event.
-    Tests that model a death overwrite or unlink it."""
+    """A session dir as one looks on disk: a started session has a live worker.pid.
+
+    Tests that model a death overwrite or unlink it.
+    """
     import json
     import os
 
@@ -353,11 +356,11 @@ def test_summary_reads_mode_task_and_passed(tmp_path: Path) -> None:
 
 
 def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: Path) -> None:
-    """The judge's verify tri-state came from the folded status word, and
-    finish_session over a red gate folds to "finished": the compare table and
-    the judge called a RED gate "no verify", so an all-red fan-out crowned a
-    rank 1 and exited 0. The verdict now reads the gate facts: the last
-    verify.end this execution, and the end's all_passed."""
+    """The judge's verify tri-state reads the gate facts, not the folded status word.
+
+    finish_session over a red gate folds to "finished", so an all-red fan-out crowned a rank 1
+    and exited 0.
+    """
     red_finish: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
@@ -400,10 +403,11 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: Path)
 
 
 def test_a_finish_over_a_red_gate_resumes_plainly(tmp_path: Path) -> None:
-    """`finished_needs_new_work` read only the end reason, so a finish_session
-    over an OBSERVED red gate (reason kept, all_passed False) was refused a
-    plain resume on every surface, against its own rule that a red verify is
-    what resume is for."""
+    """A finish_session over an observed red gate takes a plain resume.
+
+    `finished_needs_new_work` read only the end reason, against its own rule that a red verify is
+    what resume is for.
+    """
     red: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
@@ -423,10 +427,10 @@ def test_a_finish_over_a_red_gate_resumes_plainly(tmp_path: Path) -> None:
 
 
 def test_needs_new_work_is_one_predicate_for_every_surface() -> None:
-    """The web composer once re-derived "needs new work" from the end fields
-    and dropped the all_passed clause, so a finish over a red gate told the
-    operator an instruction was required to resume. One predicate decides it;
-    `finished_needs_new_work` (resume's refusal) and the wire both call it."""
+    """One predicate decides "needs new work"; resume's refusal and the wire both call it.
+
+    The web composer re-derived it without the all_passed clause.
+    """
     from agent6.viewmodel.listing import needs_new_work
 
     fin = "finish_session"
@@ -438,9 +442,7 @@ def test_needs_new_work_is_one_predicate_for_every_surface() -> None:
 
 
 def test_a_finish_over_a_red_gate_reads_gate_red(tmp_path: Path) -> None:
-    """A finish_session over an observed red gate read a bare "finished",
-    identical to a gateless deliberate finish; it reads "finished · gate
-    red", the way `settled` reads "finished · unverified"."""
+    """A finish_session over an observed red gate reads "finished · gate red"."""
     red: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
@@ -466,8 +468,7 @@ def test_a_finish_over_a_red_gate_reads_gate_red(tmp_path: Path) -> None:
 def test_implicit_clean_ends_do_not_read_as_failures(
     tmp_path: Path, reason: str, verify_exit: int, detail: str
 ) -> None:
-    """Silent and metric-driven completion are deliberate clean ends like
-    finish_session; a not-green tree qualifies them instead of calling them failures."""
+    """Silent and metric-driven completion are clean ends; a not-green tree qualifies them."""
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": verify_exit},
@@ -494,8 +495,7 @@ def test_summary_ask_reads_answered_not_passed(tmp_path: Path) -> None:
 
 
 def test_summary_failure_carries_its_reason(tmp_path: Path) -> None:
-    """The core truth fix: a provider_error death reads 'failed · provider_error',
-    never a neutral 'done' the operator scrolls past."""
+    """A provider_error death reads 'failed · provider_error', never a neutral 'done'."""
     rd = _write_run(
         tmp_path,
         "runs",
@@ -538,10 +538,7 @@ def test_summary_interrupt_reads_as_stopped(tmp_path: Path) -> None:
 
 
 def test_summary_undone_reads_undone_and_never_unmerged(tmp_path: Path) -> None:
-    """/undo ends a run with reason "undone": its own word on every surface
-    (the listing folded it into "stopped" while the console said "undone
-    (forked back)"), and never the unmerged mark, whatever its branch holds
-    (see SessionSummary.unmerged)."""
+    """/undo ends a run with reason "undone", its own word everywhere, never the unmerged mark."""
     from agent6.viewmodel.format import listing_status_label
 
     rd = _write_run(
@@ -565,10 +562,10 @@ def test_summary_undone_reads_undone_and_never_unmerged(tmp_path: Path) -> None:
 
 
 def test_summary_task_is_the_manifests_operator_words(tmp_path: Path) -> None:
-    """session.start clips user_task to 200 chars; the manifest holds the
-    operator's words (to 4000) and owns the listing's task, so a row (and
-    `sessions list --json`) carries neither the cut copy nor the skill block
-    or prior-run digest `run --skill`/`--from` prepend to the engine's task."""
+    """The manifest owns the listing's task: the operator's words, never a clipped or composed copy.
+
+    session.start clips user_task to 200 chars; `run --skill` and `--from` prepend blocks.
+    """
     from agent6.app.manifest import write_session_manifest
     from agent6.config import Config
     from agent6.sessions.layout import layout_of
@@ -604,8 +601,7 @@ def test_summary_task_is_the_manifests_operator_words(tmp_path: Path) -> None:
 
 
 def test_summary_resume_unfinishes(tmp_path: Path) -> None:
-    """A detached resume appends past the first session.end; the run is running
-    again, not whatever it last ended as."""
+    """A detached resume appending past the first session.end reads running again."""
     rd = _write_run(
         tmp_path,
         "runs",
@@ -620,8 +616,7 @@ def test_summary_resume_unfinishes(tmp_path: Path) -> None:
 
 
 def test_summary_running_and_stale(tmp_path: Path) -> None:
-    """Liveness is the worker, not log silence: the pid file present-and-live
-    is the whole difference between "running" and "stale"."""
+    """Liveness is the worker, not log silence: a live pid file separates running from stale."""
     rd = _write_run(tmp_path, "runs", "r2", [{"type": "session.start", "mode": "plan"}])
     assert summarize_session_dir(rd).status == "running"
     (rd / "worker.pid").unlink()  # the worker's finally cleared it on the way out
@@ -668,8 +663,7 @@ def test_summary_live_worker_with_a_silent_log_stays_running(tmp_path: Path) -> 
 
 
 def test_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
-    """LogScan's sticky usd_partial must reach SessionSummary: listings printed an
-    exact $0.0123 while the run page printed ~$0.0123 for the same run."""
+    """LogScan's sticky usd_partial reaches SessionSummary, so listings print the run page's ~$."""
     rd = _write_run(
         tmp_path,
         "runs",
@@ -695,11 +689,11 @@ def test_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
 
 
 def test_run_is_live_finished_run_with_lingering_pid_is_not_live(tmp_path: Path) -> None:
-    """A finished run whose worker.pid survives into teardown is NOT live: the
-    loop has exited, so a steer/compact/answer marker written now is read by
-    nobody. session_is_live must fold the log facts; fed empty facts it degenerates
-    to worker_is_alive under a new name (the exact question it exists to
-    replace) and called this run "starting"."""
+    """A finished run whose worker.pid survives into teardown is not live.
+
+    session_is_live folds the log facts; fed empty facts it degenerated to worker_is_alive and
+    called this run "starting".
+    """
     rd = _write_run(
         tmp_path,
         "runs",
@@ -769,8 +763,7 @@ def test_summary_ask_task_comes_from_transcript(tmp_path: Path) -> None:
 def test_summary_ask_task_is_the_question_even_when_it_starts_with_a_hash(
     tmp_path: Path,
 ) -> None:
-    """Skipping every line that starts with `#` skipped the question itself,
-    so the row showed the answer."""
+    """Only the leading `#` comment lines are skipped, never the question itself."""
     rd = _write_run(
         tmp_path,
         "asks",
@@ -797,11 +790,11 @@ def test_summary_no_logs(tmp_path: Path) -> None:
 
 
 def test_summary_torn_manifest_reads_unreadable_not_created(tmp_path: Path) -> None:
-    """A dir with no manifest.json yet is a legitimate "created" (`fork
-    --no-run`, or a race before the first write). A dir whose manifest.json
-    EXISTS but fails to parse is damage, not an empty session -- it must not
-    wear the same "created" word, which reads to an operator as "never
-    started" and offers to resume garbage."""
+    """A manifest that exists but fails to parse is damage, never the "created" word.
+
+    "created" reads as "never started" and offers to resume garbage; a dir with no manifest yet
+    is a legitimate created.
+    """
     rd = tmp_path / "sessions" / "runs" / "torn"
     rd.mkdir(parents=True)
     (rd / "manifest.json").write_text("{not json", encoding="utf-8")
@@ -869,11 +862,11 @@ def test_summary_launching_run_reads_starting(tmp_path: Path) -> None:
 
 
 def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: Path) -> None:
-    """A worker killed during preflight leaves its pid file (a clean refusal
-    clears it) and preflight events with real spend. Reading it as "created" --
-    the fork --no-run word -- hid the death; a bare "stale" would overclaim
-    ("was running, crashed"), so the word carries its own reason. A dir with NO
-    pid file ever (fork --no-run) stays "created"."""
+    """A worker killed during preflight reads with its own reason, not "created" or a bare "stale".
+
+    Its pid file survives with preflight events and real spend; a dir with no pid file ever stays
+    "created".
+    """
     rd = _write_run(tmp_path, "runs", "dead", [{"type": "role.call", "role": "verify_inferer"}])
     (rd / "manifest.json").write_text(
         json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
@@ -888,10 +881,11 @@ def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: Path) ->
 
 
 def test_a_forks_single_execution_is_one_execution(tmp_path: Path) -> None:
-    """A fork's log OPENS with loop.resume.start (resume() drives it; no
-    session.start ever lands), and the unconditional execution increment counted its
-    single execution as two: `sessions show` labelled its cost "(all 2 executions)" and its
-    tokens "(latest execution)". The first execution-start of any kind begins execution 1."""
+    """The first execution-start of any kind begins execution 1.
+
+    A fork's log opens with loop.resume.start, and the unconditional increment counted its single
+    execution as two.
+    """
     from agent6.viewmodel.listing import scan_session_log
 
     rd = _write_run(
@@ -926,10 +920,10 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: Path) -> None:
 
 
 def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: Path) -> None:
-    """A fork's log opens with loop.resume.start, which stamps `mode` like
-    session.start does, but only the session.start arm read it: the scan kept
-    mode "?", verify_verdict() refused to answer, and a passed fork listed
-    `verify_ok: null` (ranked below any `true` by `sessions compare`)."""
+    """The scan reads `mode` off loop.resume.start as off session.start.
+
+    A passed fork listed `verify_ok: null`, ranked below any `true` by `sessions compare`.
+    """
     import json
 
     from agent6.viewmodel.listing import scan_session_log, summary_row
@@ -1071,8 +1065,7 @@ def test_summary_gateless_settle_reads_finished_unverified(tmp_path: Path) -> No
 
 
 def test_summary_settle_after_a_red_gate_reads_gate_red(tmp_path: Path) -> None:
-    """Settling after a failed reverify is a deliberate red-gated end, not an
-    unverified end where the gate never covered the final tree."""
+    """Settling after a failed reverify is a deliberate red-gated end, not an unverified one."""
     rd = _write_run(
         tmp_path,
         "runs",
@@ -1088,9 +1081,7 @@ def test_summary_settle_after_a_red_gate_reads_gate_red(tmp_path: Path) -> None:
 
 
 def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:
-    """An ask REPL follow-up re-runs on the same log via a plain session.start; the
-    hub row must read "running" while the follow-up execution streams, not the prior
-    execution's "answered"."""
+    """An ask REPL follow-up on the same log reads "running" while it streams, not "answered"."""
     rd = _write_run(
         tmp_path,
         "asks",
@@ -1106,10 +1097,10 @@ def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:
 
 
 def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> None:
-    """A husk (a dir a crash orphaned before any manifest or log) is hidden by
-    every listing, but the recency query returned it, so a bare `attach` /
-    `sessions show` / `stop` targeted a phantom the operator cannot see -- and
-    could miss a live run whose log was quiet during a long provider call."""
+    """The recency query hides a husk like every listing does.
+
+    A bare `attach`, `sessions show` or `stop` targeted a phantom and could miss a live run.
+    """
     from agent6.viewmodel.listing import newest_session_dir
 
     bucket = tmp_path / "sessions" / "runs"
@@ -1129,10 +1120,10 @@ def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> Non
 
 
 def test_summary_forked_execution_reads_mode_and_task_from_manifest(tmp_path: Path) -> None:
-    """A fork/resumed execution's log holds only loop.resume.start, which sets
-    saw_start=True but records no mode/task (only session.start carries them). Gating
-    the manifest fallback on saw_start therefore blanked the row to "? (no logs)";
-    gate on the missing mode instead so the row shows the run's real work."""
+    """The manifest fallback gates on a missing mode, not on saw_start.
+
+    A resumed execution's log holds only loop.resume.start, so the row blanked to "? (no logs)".
+    """
     rd = _write_run(tmp_path, "runs", "forked-0001", [{"type": "loop.resume.start"}])
     (rd / "manifest.json").write_text(
         json.dumps(
@@ -1145,9 +1136,7 @@ def test_summary_forked_execution_reads_mode_and_task_from_manifest(tmp_path: Pa
 
 
 def test_scan_counts_a_non_string_prompt_id_as_blocking(tmp_path: Path) -> None:
-    """The answer side discards str(id), but the prompt side only registered
-    string ids -- so an int id (events.py coerces ids to str) left a run blocked
-    on the operator reading as plain "running". Coerce on the prompt side too."""
+    """The prompt side coerces ids to str like the answer side, so an int id never reads running."""
     from agent6.viewmodel.listing import scan_session_log
 
     log = tmp_path / "logs.jsonl"
@@ -1168,13 +1157,11 @@ def test_scan_counts_a_non_string_prompt_id_as_blocking(tmp_path: Path) -> None:
 
 
 def test_a_crashed_run_reads_dead_at_once(tmp_path: Path) -> None:
-    """A run whose loop escaped with a fault records session.end reason=crashed, so
-    every surface calls it failed immediately. Without that record the dying
-    process still cleared worker.pid -- the only immediate liveness evidence --
-    and the fold fell back to the silence window, so `sessions list`, `sessions show`,
-    attach, the web hub and the TUI all showed a dead run as "running" for ten
-    minutes. (A SIGKILLed run leaves its pid file, which is why that case
-    always read stale at once.)"""
+    """A loop that escaped with a fault records session.end reason=crashed, so every surface agrees.
+
+    Without it the dying process cleared worker.pid and every surface showed a dead run as
+    "running" for ten minutes; a SIGKILLed run leaves its pid file and reads stale at once.
+    """
     session_dir = tmp_path / "sessions" / "runs" / "gone"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text(
@@ -1192,11 +1179,10 @@ def test_a_crashed_run_reads_dead_at_once(tmp_path: Path) -> None:
 def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
     tmp_path: Path,
 ) -> None:
-    """session.end's all_passed is a tri-state on the wire: an explicit null
-    (ungated: no verify command) words as "finished" whatever the reason -- a
-    gateless silent finish listed as "passed" for a tree nothing verified. An
-    ABSENT key (a pre-tri-state log) still reads False, so old failure ends
-    keep their word."""
+    """session.end's all_passed is a tri-state: an explicit null is "finished", an absent key False.
+
+    A gateless silent finish listed as "passed" for a tree nothing verified.
+    """
     ungated = _write_run(
         tmp_path,
         "runs",
@@ -1240,13 +1226,11 @@ def _summary(session_id: str, *, mtime: float, coordinator: str = "", lane: int 
 
 
 def test_a_lane_nests_under_its_coordinator_and_an_orphan_stays_a_row() -> None:
-    """A lane's manifest names the session that dispatched it: listed beside
-    that session, it nests under it in lane order, and the group sorts by its
-    latest activity (a lane's, while the coordinator's own journal is quiet),
-    which is the time the row shows. A lane whose coordinator is not listed
-    has nothing to nest under. A lane that dispatched a group of its own
-    (resumed, then `/parallel`) carries its lanes one level deeper: every
-    session appears once, at its depth, never dropped."""
+    """A lane nests under the session that dispatched it, and the group sorts by its latest lane.
+
+    A lane whose coordinator is not listed has nothing to nest under; a lane that dispatched
+    its own group carries its lanes one level deeper, every session once.
+    """
     from agent6.viewmodel.listing import nested_rows, row_json
 
     rows = nested_rows(
@@ -1283,15 +1267,15 @@ def test_a_lane_nests_under_its_coordinator_and_an_orphan_stays_a_row() -> None:
 
 
 def test_a_never_started_run_reads_at_the_parked_level() -> None:
-    """A `fork --no-run` dir waits for a resume as a parked submission does;
-    its word rendered plain, fading into the listing while "parked" warned."""
+    """A `fork --no-run` dir's word warns like "parked" does."""
     assert status_level("created") == status_level("parked") == "warn"
 
 
 def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: Path) -> None:
-    """A long run's input is mostly cache reads; a scan that kept only the
-    uncached `in=` made `sessions show` read a 500k-token run as a few
-    dozen tokens. Journals written before the fields existed read as None."""
+    """The scan keeps the cached input side, so a 500k-token run never reads as a few dozen tokens.
+
+    Journals written before the fields existed read as None.
+    """
     from agent6.viewmodel.listing import scan_session_log
 
     logs = tmp_path / "logs.jsonl"
@@ -1343,9 +1327,7 @@ def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: Path) -> No
 
 
 def test_summary_names_the_questions_nobody_answered(tmp_path: Path) -> None:
-    """A run that asked while no operator was attached got empty answers and
-    went on; the row read a bare "passed", so the operator never learned a
-    question was waiting for them in the transcript."""
+    """A row names a question that waited unanswered in the transcript, not a bare "passed"."""
     rd = _write_run(
         tmp_path,
         "runs",

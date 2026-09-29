@@ -20,8 +20,10 @@ from agent6.harness._conversation import Conversation, ToolResultItem, UserTurn
 
 
 def _add_exchange(conv: Conversation, *calls: tuple[str, dict[str, Any], str]) -> None:
-    """One assistant turn of (tool name, input, result content) calls plus its
-    results turn. Ids are unique per conversation position."""
+    """One assistant turn of (tool name, input, result content) calls plus its results turn.
+
+    Ids are unique per conversation position.
+    """
     base = len(conv)
     turn = conv.assistant(
         [
@@ -75,10 +77,7 @@ def test_parse_checkoff_absent_or_malformed() -> None:
 
 
 def test_parse_checkoff_present_but_non_list_field_is_total() -> None:
-    # A present-but-non-list value (null when nothing completed, a number, a
-    # bool) must yield [] -- .get(key, []) returns the value as-is, so the old
-    # `for s in None` raised TypeError and crashed the run (deterministically,
-    # since the summariser runs at temperature 0.0, making resume re-crash).
+    # A present but non-list value (null, a number, a bool) yields [] instead of a TypeError.
     for bad in ("null", "0", "false", '"a string"'):
         assert parse_checkoff(
             f'```checkoff\n{{"completed_ids": {bad}, "new_tasks": {bad}}}\n```'
@@ -95,8 +94,7 @@ def test_strip_checkoff_removes_block() -> None:
 
 
 def test_context_chars_counts_text_tool_use_and_tool_results() -> None:
-    # tier-2's trigger must see content tier-1 does NOT cap (assistant prose,
-    # tool_use inputs), not just tool_result bytes.
+    # The tier-2 trigger sees content tier-1 does not cap: assistant prose and tool_use inputs.
     conv = Conversation()
     conv.notice("abcd")  # 4
     turn = conv.assistant(
@@ -109,42 +107,37 @@ def test_context_chars_counts_text_tool_use_and_tool_results() -> None:
         [ToolResultItem(tool_use_id="t1", content="RESULT", for_call=turn.tool_uses[0])]  # 6
     )
     total = context_chars(conv)
-    # Every value of the tool_use block, not a chosen three: its id and name go
-    # on the wire with the input, so they count too.
+    # Every value of the tool_use block counts: id and name go on the wire with the input.
     assert total == 4 + 5 + 6 + len("t1") + len("grep") + len(str({"q": "x"}))
     assert total > 6
 
 
 def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
-    # Eliding a tool_result already smaller than the placeholder would
-    # GROW cumulative size, not shrink it. Such blocks must be left intact.
+    # Eliding a result smaller than the placeholder would grow the size; such blocks stay intact.
     from agent6.harness._compaction import (
         ELISION_PLACEHOLDER as PLACEHOLDER,
     )
 
     tiny = "x" * 50  # smaller than the placeholder, so eliding it would grow the context
     big = "y" * 5000
-    # Oldest-first; keep_recent=2 keeps the last two, and the final results
-    # turn is exempt, so the eligible blocks are the two in the first turn.
+    # Oldest first; keep_recent=2 and the exempt final turn leave the first turn's blocks eligible.
     conv = Conversation()
     _add_exchange(conv, ("grep", {}, tiny), ("grep", {}, big))
     _add_exchange(conv, ("grep", {}, big), ("grep", {}, big))
     compact_old_tool_results(conv, max_total_bytes=100, keep_recent=2)
     contents = _result_contents(conv)
-    # The oldest (tiny) block is eligible but must be skipped, not ballooned;
-    # its eligible sibling is elided as normal.
+    # The oldest (tiny) block is skipped, not ballooned; its eligible sibling is elided.
     assert contents[0] == tiny
     assert "elided" in contents[1]
     assert len(tiny) < len(PLACEHOLDER)  # the premise the skip guards
 
 
 def test_an_operator_answer_is_never_elided() -> None:
-    """An `ask_user` result is the operator's binding ruling and exists nowhere
-    else in the model's context. Elided, it took the answer with it and told
-    the model to "re-run it with a narrower scope" -- which for this tool means
-    interrupting the operator to re-ask a question they already answered."""
-    # Long enough that eliding it would actually free bytes: a result smaller
-    # than the placeholder is skipped for a different reason.
+    """An `ask_user` result is never elided.
+
+    The operator's ruling exists nowhere else in the context.
+    """
+    # Long enough that eliding it frees bytes.
     answer = '{"answers": ["' + "use the v2 table only. " * 300 + '"]}'
     big = "y" * 5000
     conv = Conversation()
@@ -160,11 +153,7 @@ def test_an_operator_answer_is_never_elided() -> None:
 
 
 def test_an_operator_answer_is_never_deduped_either() -> None:
-    """The same `ask_user` question asked (and answered) twice produces two
-    byte-identical results: the dedup pass runs before elision and, unlike it,
-    carried no `_is_operator_answer` exemption, so it replaced the OLDER copy
-    with a "(duplicate)" pointer marker -- dropping the operator's binding
-    ruling exactly like the elision path was carved out to prevent."""
+    """An `ask_user` result is never deduped either; the dedup pass runs before elision."""
     answer = '{"answers": ["' + "use the v2 table only. " * 30 + '"]}'
     big = "y" * 1000
     conv = Conversation()
@@ -181,10 +170,10 @@ def test_an_operator_answer_is_never_deduped_either() -> None:
 
 
 def test_tier2_measures_the_request_not_just_the_conversation() -> None:
-    """The model's window bounds the WHOLE request. Measured on the
-    conversation alone, the threshold left a band exactly the size of the
-    system prompt and tool definitions where the loop saw room and the
-    provider answered 400 -- and a resumed execution re-issued the same request."""
+    """The tier-2 threshold measures the whole request.
+
+    System prompt and tool definitions included.
+    """
     from agent6.harness._compaction import request_prefix_chars
     from agent6.providers.types import ToolDefinition
 
@@ -226,8 +215,7 @@ def test_compact_elides_oldest_when_over_threshold() -> None:
 
 
 def test_compact_preserves_keep_recent_floor() -> None:
-    """Even when over threshold, the newest `keep_recent` entries
-    are never elided."""
+    """Even when over threshold, the newest `keep_recent` entries are never elided."""
     bodies = [ch * 10_000 for ch in "abcde"]  # distinct: dedup must not fire
     conv = Conversation()
     _reads(conv, *bodies)
@@ -269,11 +257,10 @@ def test_compact_idempotent_on_already_elided() -> None:
 
 
 def test_compact_never_elides_unseen_results_in_final_turn() -> None:
-    """Compaction runs at top-of-iteration, BEFORE the provider call that
-    delivers the final turn's tool_results: the model has never seen them.
-    A turn with 3+ large results must not have its oldest same-turn results
-    replaced by the "re-call the tool" placeholder (which previously sent the
-    model into a paid re-call cycle chasing content it never received)."""
+    """Compaction never elides the final turn's results, which the model has not seen yet.
+
+    It runs at top-of-iteration, before the provider call that delivers them.
+    """
     big = "x" * 10_000
     conv = Conversation()
     conv.notice("task")
@@ -284,8 +271,7 @@ def test_compact_never_elides_unseen_results_in_final_turn() -> None:
 
 
 def test_compact_elides_seen_results_but_protects_final_turn() -> None:
-    # Results the model has already consumed (a later assistant turn exists)
-    # stay eligible; only the undelivered final results turn is exempt.
+    # Results the model has consumed stay eligible; only the undelivered final turn is exempt.
     seen = [(f"s{i}" * 5_000) for i in range(3)]  # distinct: dedup must not fire
     fresh = [(f"f{i}" * 5_000) for i in range(3)]
     conv = Conversation()
@@ -300,12 +286,10 @@ def test_compact_elides_seen_results_but_protects_final_turn() -> None:
 
 
 def test_compact_never_elides_undelivered_results_behind_a_steer_message() -> None:
-    """Undelivered tool_results are not always the final turn: an operator
-    steer (or a pre-call nudge) appends a trailing user turn after them, so
-    they sit at index -2. They are still unseen (the delivering provider call
-    runs after this compaction), so keying on the final index alone let their
-    older same-turn blocks be elided into a paid re-call cycle. The exemption
-    tracks the last tool_result-bearing turn, which still holds here."""
+    """Undelivered results behind a trailing steer turn are exempt too.
+
+    The exemption tracks the last tool_result-bearing turn, not the final index.
+    """
     big = "x" * 10_000
     conv = Conversation()
     conv.notice("task")
@@ -341,24 +325,20 @@ def test_compact_can_elide_the_last_result_batch_after_it_was_consumed() -> None
 
 
 def test_restart_notice_is_dag_aware() -> None:
-    """The tier-2 summarise-and-restart notice must point the worker at its
-    durable task DAG so cross-compaction task state is recovered."""
+    """The tier-2 restart notice points the worker at its durable task DAG."""
     from agent6.prompts.revision import context_restart_notice
 
     for mode in ("run", "plan"):
         notice = context_restart_notice(mode)
-        # The real tool is ``list_tasks`` (no ``dag_`` prefix); the notice must
-        # name it exactly or the post-compaction recovery call 404s.
+        # The real tool is `list_tasks`; a `dag_` prefix in the notice would 404 the recovery call.
         assert "list_tasks" in notice
         assert "dag_list_tasks" not in notice
         assert "DAG" in notice
-        # `list_tasks` returns tasks and a count; the focus banner carries the
-        # cursor, so the notice must not send the worker after it there.
+        # `list_tasks` returns tasks and a count; the focus banner carries the cursor.
         assert "cursor" not in notice
         # Still tells the worker not to start over.
         assert "the task continues from it" in notice
-    # ask/machine/agent have no DAG tools: instructing list_tasks there burns a
-    # turn on an unknown-tool error, so the DAG paragraph must be absent.
+    # ask, machine and agent have no DAG tools, so the DAG paragraph is absent.
     for mode in ("ask", "agent"):
         notice = context_restart_notice(mode)
         assert "list_tasks" not in notice
@@ -370,8 +350,7 @@ def test_restart_notice_is_dag_aware() -> None:
 
 
 def test_restart_notice_omits_dag_recovery_without_a_curator() -> None:
-    """Run mode can be embedded without a curator, in which case list_tasks is
-    absent and the compaction restart must not instruct the worker to call it."""
+    """Without a curator the restart notice does not tell the worker to call list_tasks."""
     from agent6.prompts.revision import context_restart_notice
 
     notice = context_restart_notice("run", dag_available=False)
@@ -435,8 +414,7 @@ def test_compact_elides_protected_reads_last_but_bound_still_holds() -> None:
         _add_exchange(conv, ("list_dir", {"path": "."}, "L" * 1000))
         return conv
 
-    # Budget forces ONE elision: with hot.py protected, the (older) hot read
-    # survives and the cold read goes first.
+    # The budget forces one elision: with hot.py protected, the cold read goes first.
     conv = build()
     n = compact_old_tool_results(
         conv, max_total_bytes=3500, keep_recent=2, protect_paths=frozenset({"hot.py"})
@@ -445,8 +423,7 @@ def test_compact_elides_protected_reads_last_but_bound_still_holds() -> None:
     contents = _result_contents(conv)
     assert contents[0] == "H" * 1000
     assert "cold.py" in contents[1]
-    # Tighter budget: protection is a priority, not an exemption; the hot read
-    # is elided too and the bound holds.
+    # Tighter budget: protection is a priority, not an exemption; the hot read is elided too.
     conv2 = build()
     n2 = compact_old_tool_results(
         conv2, max_total_bytes=2500, keep_recent=2, protect_paths=frozenset({"hot.py"})
@@ -475,9 +452,7 @@ def test_call_label_identities() -> None:
         == "read_file a.py (start_line=10, limit=40)"
     )
     assert call_label("list_dir", {"path": "src"}) == "list_dir src"
-    # Every tool with an identifying argument, not a hand-listed few: a
-    # compacted "run_command" with no command told the model nothing about
-    # whether it had already run the suite, and searching moved there.
+    # Every tool with an identifying argument: a compacted run_command with no command says nothing.
     assert call_label("run_command", {"argv": ["pytest", "-x", "tests/t.py"]}) == (
         "run_command pytest -x tests/t.py"
     )
@@ -503,8 +478,10 @@ def test_call_label_identities() -> None:
 
 
 def test_elision_placeholder_unchanged_by_label_refactor() -> None:
-    """Pins the exact placeholder bytes: the call_label extraction must not
-    drift the prompt copy the idempotency walk and the model both key on."""
+    """The elision placeholder's exact bytes are pinned.
+
+    The idempotency walk and the model key on them.
+    """
     assert elision_placeholder("read_file", {"path": "src/foo.py"}) == (
         "<elided by context compaction: the result of read_file src/foo.py was"
         " replaced with this short marker to keep the loop's cumulative input"
@@ -527,15 +504,10 @@ def test_stats_carry_elided_identities() -> None:
 
 
 def test_context_chars_counts_a_reasoning_model_s_thinking() -> None:
-    """The tier-2 trigger is compared against ~80% of the model's real context
-    window, so it has to measure what actually goes on the wire.
+    """Context chars count a reasoning model's thinking blocks.
 
-    `Conversation.to_wire` sends an assistant turn's raw blocks VERBATIM, and
-    nothing strips thinking, so a reasoning model's `{"type": "thinking",
-    "thinking": ...}` is in every later request. Counting only text/content/
-    tool_use-input scored a turn holding 130,000 chars of thinking as 2, and
-    tier-2 summarisation waited on a number that omitted the largest thing in
-    the context -- on exactly the models that need it most.
+    `Conversation.to_wire` sends an assistant turn's raw blocks verbatim, so the thinking is in
+    every later request; the tier-2 trigger has to measure it.
     """
     conv = Conversation()
     conv.assistant(
@@ -549,8 +521,7 @@ def test_context_chars_counts_a_reasoning_model_s_thinking() -> None:
 
 
 def test_context_chars_counts_an_unknown_block_type() -> None:
-    """Enumerating known keys is what let thinking go uncounted; a block type
-    nobody has met yet must not be free either."""
+    """Context chars count a block type nobody has met yet."""
     conv = Conversation()
     conv.assistant([{"type": "something_new", "payload": "P" * 5_000}])
     assert context_chars(conv) >= 5_000
@@ -570,16 +541,13 @@ def test_recent_tail_start_respects_cap_and_boundaries() -> None:
 
     # Cap covering only the final text turn: the tail starts there.
     assert recent_tail_start(turns, 150) == 3
-    # Cap reaching the results turn but not its call turn: a results-turn
-    # start is unsafe (its call was summarised away), so it advances past it.
+    # A results-turn start is unsafe (its call was summarised away), so the cap advances past it.
     assert recent_tail_start(turns, 210) == 3
     # Cap covering the balanced call+result+text triple keeps all three.
     assert recent_tail_start(turns, 100_000) == 1
     # Cap 0 keeps nothing.
     assert recent_tail_start(turns, 0) == len(turns)
-    # A cap smaller than the newest exchange keeps that exchange anyway (its
-    # results may be undelivered; paraphrasing them away is the one loss the
-    # tail exists to prevent).
+    # A cap smaller than the newest exchange keeps that exchange: its results may be undelivered.
     assert recent_tail_start(turns, 50) == 3
 
 
@@ -600,9 +568,7 @@ def _conv_with_repeated_reads(payload: str) -> Conversation:
 
 
 def test_tier1_dedupes_identical_results_keeping_the_newest() -> None:
-    """The same read re-run with identical bytes: older copies become pointer
-    placeholders, the newest survives whole. Lossless, so no knob (Claude
-    Code dedupes the same way)."""
+    """Tier 1 dedupes identical results, keeping the newest whole; lossless, so no knob."""
     from agent6.harness._compaction import ELISION_PREFIX, compact_old_tool_results
     from agent6.harness._conversation import ToolResultItem, UserTurn
 
@@ -621,9 +587,7 @@ def test_tier1_dedupes_identical_results_keeping_the_newest() -> None:
 
 
 def test_a_duplicate_marker_claims_no_copy_the_same_pass_elides() -> None:
-    """The duplicate marker sent the model to "the newer result", which the
-    elision pass in the same call can replace with a bare marker: a pointer to
-    content nothing holds any more."""
+    """A duplicate marker never points at a copy the same pass elides."""
     from agent6.harness._compaction import ELISION_PREFIX, compact_old_tool_results
     from agent6.harness._conversation import AssistantTurn
 
@@ -637,8 +601,7 @@ def test_a_duplicate_marker_claims_no_copy_the_same_pass_elides() -> None:
         last = conv.turns[-1]
         assert isinstance(last, AssistantTurn)
         conv.results([ToolResultItem(tool_use_id=tid, content=payload, for_call=last.tool_uses[0])])
-    # The duplicated read is older than the kept tail, so its newest copy is a
-    # candidate for elision in the same pass that deduped the older one.
+    # The duplicated read is older than the kept tail, so its newest copy is eligible too.
     compact_old_tool_results(conv, max_total_bytes=9_000, keep_recent=2)
 
     result_turns = [t for t in conv.turns if isinstance(t, UserTurn) and t.items]
@@ -651,9 +614,7 @@ def test_a_duplicate_marker_claims_no_copy_the_same_pass_elides() -> None:
 
 
 def test_a_duplicate_marker_never_grows_the_result_it_replaces() -> None:
-    """The marker carries the call's arguments, so a long path makes it longer
-    than a small result: writing it inflated the conversation while `deduped`
-    reported a saving."""
+    """A duplicate marker never grows the result it replaces."""
     from agent6.harness._compaction import compact_old_tool_results
     from agent6.harness._conversation import AssistantTurn
 
@@ -689,8 +650,7 @@ def test_a_duplicate_marker_never_grows_the_result_it_replaces() -> None:
 
 
 def test_tier1_dedup_alone_can_satisfy_the_budget() -> None:
-    """When freeing duplicates gets the total under the threshold, nothing
-    real is elided."""
+    """When freeing duplicates gets the total under the threshold, nothing real is elided."""
     from agent6.harness._compaction import compact_old_tool_results
 
     payload = "y" * 1_000
@@ -720,9 +680,10 @@ def test_tier1_dedup_skips_small_and_different_results() -> None:
 
 
 def test_strip_old_thinking_clears_all_but_the_newest_turns() -> None:
-    """Claude-side thinking eviction behind the keep_thinking_turns knob: old
-    assistant turns lose their thinking blocks, the newest keep theirs
-    (Anthropic needs the signed block of a pending tool_use)."""
+    """Old assistant turns lose their thinking blocks.
+
+    The newest keep_thinking_turns keep theirs.
+    """
     from agent6.harness._compaction import strip_old_thinking
     from agent6.harness._conversation import AssistantTurn, Conversation
 
@@ -773,8 +734,7 @@ def test_strip_thinking_preserves_tool_use_pairing() -> None:
 
 
 def test_restart_summary_parser_ignores_marker_text_inside_a_pin() -> None:
-    """A verbatim operator pin may contain the restart label; parsing the first
-    occurrence mistakes the tail of that pin for the prior progress summary."""
+    """The restart summary parser ignores the restart label inside a verbatim operator pin."""
     from agent6.prompts.revision import context_restart_notice, progress_summary_from_notice
 
     notice = context_restart_notice("run", pins=("Preserve PROGRESS SUMMARY:\nverbatim",))
@@ -783,8 +743,7 @@ def test_restart_summary_parser_ignores_marker_text_inside_a_pin() -> None:
 
 
 def test_restart_notice_re_shows_the_operator_rulings() -> None:
-    """A compaction restart re-shows DECISIONS.md between the pins and the
-    summary, so a ruling survives the summary that might have dropped it."""
+    """A compaction restart re-shows DECISIONS.md between the pins and the summary."""
     from agent6.prompts.revision import context_restart_notice
 
     notice = context_restart_notice("run", pins=("pin one",), decisions="- Q: modal?\n  A: no")
@@ -795,10 +754,7 @@ def test_restart_notice_re_shows_the_operator_rulings() -> None:
 
 
 def test_a_refused_checkoff_id_does_not_drop_the_rest(tmp_path: Path) -> None:
-    """The summariser named a container (a subtask with an open child), which
-    the curator refuses to pass, before a finished task and a new one. One
-    `try` around the whole check-off dropped every id after the refusal and
-    every newly discovered task with it."""
+    """A refused check-off id does not drop the ids and new tasks after it."""
     from unittest.mock import MagicMock
 
     from agent6.config import Config

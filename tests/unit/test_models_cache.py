@@ -171,9 +171,12 @@ def test_fetch_models_live_bypasses_ttl_and_signals_failure(
 
 
 def test_boolean_context_and_pricing_values_are_rejected(tmp_path: Path) -> None:
-    """bool subclasses int: a provider entry with context_length: true cached a
-    1-token window (collapsing the compaction thresholds every turn), and
-    pricing true would coerce to $1/MTok. Both must read as absent."""
+    """Boolean context and pricing values are rejected.
+
+    Bool subclasses int: a provider entry with `context_length: true` caches a 1-token window
+    (collapsing the compaction thresholds every turn), and `pricing: true` coerces to $1/MTok. Both
+    read as absent.
+    """
     from agent6.models.cache import (
         _parse_context,  # pyright: ignore[reportPrivateUsage]
         _parse_pricing,  # pyright: ignore[reportPrivateUsage]
@@ -204,10 +207,12 @@ def test_boolean_context_and_pricing_values_are_rejected(tmp_path: Path) -> None
 def test_pricing_catalog_refresh_prices_a_bare_claude_id(
     cache_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A config with only [providers.anthropic] never fetched the OpenRouter
-    catalog, so every claude-* run was honestly-but-needlessly unpriced on a
-    cold cache and the $ cap never bound (found live: an unmetered opus run
-    inside a container)."""
+    """The pricing catalog refresh prices a bare claude id.
+
+    A config with only `[providers.anthropic]` must still fetch the OpenRouter catalog, or every
+    claude-* run is unpriced on a cold cache and the $ cap never binds (an unmetered opus run inside
+    a container).
+    """
     from agent6.models import pricing as models_pricing
 
     def _get(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
@@ -237,9 +242,11 @@ def test_pricing_catalog_refresh_prices_a_bare_claude_id(
 def test_chatgpt_listing_fetches_with_the_sign_in(
     cache_home: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The chatgpt listing comes from the backend's own /models with the
-    stored bearer + account header and a ceiling client_version; hidden
-    entries stay out of completion; context windows land in the cache."""
+    """The chatgpt listing fetches with the sign-in.
+
+    It comes from the backend's own /models with the stored bearer, the account header and a ceiling
+    client_version; hidden entries stay out of completion; context windows land in the cache.
+    """
     from agent6.config import ChatGPTProviderEntry
     from agent6.secrets import OAuthTokens, save_oauth_tokens
 

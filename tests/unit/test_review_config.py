@@ -43,9 +43,11 @@ def test_quorum_gt1_needs_distinct_models() -> None:
 
 
 def test_trigger_on_with_no_seats_builds_the_one_seat_roster() -> None:
-    """A bare `trigger != off` config runs the panel in its simple form: the
-    session wiring asks for n=1 and gets one reviewer-model seat with a
-    built-in adversarial persona; no explicit `seats` are required."""
+    """A bare `trigger != off` config runs the panel in its simple form.
+
+    The session wiring asks for n=1 and gets one reviewer-model seat with a built-in adversarial
+    persona; no explicit `seats` are required.
+    """
     cfg = Config.model_validate(
         {
             "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},

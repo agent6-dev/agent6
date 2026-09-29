@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The conversation view copies through the clipboard toolkit, and its chrome
-(title + live pane) is non-selectable so a drag only grabs transcript text."""
+"""The conversation view copies through the clipboard toolkit, and its chrome is non-selectable."""
 
 from __future__ import annotations
 
@@ -36,8 +35,7 @@ def test_copy_prefers_the_current_selection_else_whole_transcript(tmp_path: Path
 
 
 def test_get_selected_text_gathers_body_only(tmp_path: Path) -> None:
-    # get_selected_text is Textual's built-in Ctrl+C copy path; overriding it to the
-    # body-only gather means a drag over a footer key can never reach the clipboard.
+    # get_selected_text is Textual's Ctrl+C path; gathering the body only keeps footer keys out.
     logs = tmp_path / "logs.jsonl"
     logs.write_text("", encoding="utf-8")
     screen = ConversationScreen(logs, title=lambda _ctx: "t")

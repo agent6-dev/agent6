@@ -4,7 +4,8 @@
 
 The index is the recall surface (injected per mode); the files are reached
 with the ordinary in-process tools through a narrow grant that lifts the
-state-dir denial for exactly the memory dir and nothing else."""
+state-dir denial for exactly the memory dir and nothing else.
+"""
 
 from __future__ import annotations
 
@@ -83,10 +84,12 @@ def test_agent_mode_never_sees_memory(tmp_path: Path) -> None:
 
 
 def _dispatcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ToolDispatcher, Path]:
-    """The REAL topology: the state dir sits under the hidden state home, so
-    the memory grant must beat the denial (it silently did not, once -- the
-    resolve-path denial check bypassed the exemption, and a tmp state dir
-    outside the hidden set let this file's tests pass vacuously)."""
+    """The real topology: the state dir sits under the hidden state home.
+
+    The memory grant must beat the denial; a resolve-path denial check that bypasses the exemption
+    is invisible to a tmp state dir outside the hidden set, which lets this file's tests pass
+    vacuously.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "code.py").write_text("x = 1\n")
@@ -100,9 +103,11 @@ def _dispatcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ToolDi
 def test_tools_reach_the_memory_dir_and_nothing_else_in_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The carve-out pin: memory files are readable and editable through the
-    ordinary tools by absolute path, while the rest of the state dir stays
-    refused (denied beats every grant, except this one exempt subtree)."""
+    """The carve-out pin: the tools reach the memory dir and nothing else in the state dir.
+
+    Memory files are readable and editable through the ordinary tools by absolute path, while the
+    rest of the state dir stays refused (denied beats every grant, except this one exempt subtree).
+    """
     d, state = _dispatcher(tmp_path, monkeypatch)
     mem = memory_dir(state)
 
@@ -143,10 +148,12 @@ def test_memory_grant_absent_without_state_dir(tmp_path: Path) -> None:
 def test_the_memory_dir_exists_the_moment_the_grant_does(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The model cannot mkdir outside the jail, so a fresh repo's first
-    organic memory write (apply_edit into <state>/memory/) failed ENOENT
-    until the dispatcher created the dir it grants (caught live). Fresh
-    means NO prior CLI write: the store must not exist beforehand."""
+    """The memory dir exists the moment the grant does.
+
+    The model cannot mkdir outside the jail, so a fresh repo's first organic memory write
+    (apply_edit into <state>/memory/) fails ENOENT unless the dispatcher creates the dir it grants.
+    Fresh means no prior CLI write: the store must not exist beforehand.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "statehome"))
@@ -161,11 +168,13 @@ def test_the_memory_dir_exists_the_moment_the_grant_does(
 def test_a_memory_write_does_not_withdraw_a_green_verify(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """EditResult.path is store-relative, so the old exclusion (which tested
-    result.path for an absolute prefix) never matched: the model's memory
-    write after a green verify counted as a tree edit, and the run ended
-    gate_red_at_base with all_passed=false over the very suite it had just
-    fixed (caught live). The predicate now judges the model's INPUT path."""
+    """A memory write does not withdraw a green verify.
+
+    The predicate judges the model's input path: EditResult.path is store-relative, so an exclusion
+    testing it for an absolute prefix never matches, the memory write after a green verify counts as
+    a tree edit, and the run ends gate_red_at_base with all_passed=false over the suite it just
+    fixed.
+    """
     from unittest.mock import MagicMock
 
     from agent6.harness.loop import (

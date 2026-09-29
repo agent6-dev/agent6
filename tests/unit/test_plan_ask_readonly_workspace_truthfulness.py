@@ -55,8 +55,10 @@ def _prompt(tmp_path: Path, mode: Literal["plan", "ask"]) -> str:
 
 
 def _norm(tmp_path: Path, mode: Literal["plan", "ask"]) -> str:
-    """The prompt lower-cased with runs of whitespace collapsed, so a substring
-    check does not depend on where the prose happens to wrap."""
+    """Return the prompt lower-cased with runs of whitespace collapsed.
+
+    A substring check then does not depend on where the prose happens to wrap.
+    """
     return " ".join(_prompt(tmp_path, mode).lower().split())
 
 
@@ -74,20 +76,24 @@ def test_plan_and_ask_prompts_do_not_promise_a_read_only_workspace(tmp_path: Pat
 
 
 def test_plan_and_ask_prompts_state_that_probe_writes_go_nowhere(tmp_path: Path) -> None:
-    """Withhold the false guarantee and state the consequence: nothing carries
-    a probe's writes forward, so an edit the answer or plan needs is described
-    or recorded, never applied."""
+    """Withhold the false guarantee and state the consequence.
+
+    Nothing carries a probe's writes forward, so an edit the answer or plan needs is described or
+    recorded, never applied.
+    """
     for mode in _INTERACTIVE:
         low = _norm(tmp_path, mode)
         assert "nothing carries them forward" in low, mode
 
 
 def test_plan_clamps_run_commands_like_ask(tmp_path: Path) -> None:
-    """plan runs with the operator present, so a standing
-    run_commands="yes" is clamped to "ask" exactly as in ask -- a write during
-    planning is approved per call, never auto-run. The clamp only tightens (a
-    configured "no" stays "no"), and an allow-all session answer upgrades the
-    clamped "ask" back to "yes"."""
+    """Plan clamps run_commands like ask.
+
+    Plan runs with the operator present, so a standing `run_commands="yes"` is clamped to "ask"
+    exactly as in ask: a write during planning is approved per call, never auto-run. The clamp only
+    tightens (a configured "no" stays "no"), and an allow-all session answer upgrades the clamped
+    "ask" back to "yes".
+    """
     from agent6.app._setup import session_config
     from agent6.sessions.ipc import COMMAND_SCOPE, effective_run_commands, set_session_allow
 

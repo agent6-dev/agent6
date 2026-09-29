@@ -29,9 +29,7 @@ def _draft(title: str = "do thing", deps: tuple[str, ...] = ()) -> TaskNodeDraft
 
 
 def test_curator_startup_tolerates_torn_journal_line(tmp_path: Path) -> None:
-    # Build a real graph, then simulate a crash mid-append by tacking a torn
-    # (invalid JSON) line onto graph.jsonl. Curator startup must NOT crash --
-    # otherwise the run is permanently unresumable.
+    # A torn line on graph.jsonl must not crash curator startup, or the run is unresumable.
     layout = _layout(tmp_path)
     c = GraphCurator(layout)
     c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("root")))
@@ -77,8 +75,7 @@ def test_update_status_passed_then_obsolete_ok_other_rejected(tmp_path: Path) ->
 
 
 def test_a_retired_task_stays_retired(tmp_path: Path) -> None:
-    """`passed -> obsolete -> pending` walked around the passed-node guard, and
-    re-opened work every dependent had been told passed."""
+    """`passed -> obsolete -> pending` is refused: it walks around the passed-node guard."""
     c = GraphCurator(_layout(tmp_path))
     n = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft()))
     c.update_status(UpdateStatusIntent(id=n.id, new_status="passed"))
@@ -105,14 +102,11 @@ def test_add_dependency_detects_cycle(tmp_path: Path) -> None:
 
 
 def test_cycle_check_survives_dangling_depends_on(tmp_path: Path) -> None:
-    # A node carrying a depends_on edge to an id absent from the loaded graph (a
-    # partially-loaded/corrupt graph) must not crash the transitive cycle walk
-    # with a KeyError; the missing target is simply treated as not-a-cycle.
+    # A depends_on edge to an unloaded id is not a cycle, not a KeyError.
     c = GraphCurator(_layout(tmp_path))
     a = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("a")))
     b = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("b")))
-    # Inject a dangling depends_on on b (the public add_dependency would reject an
-    # unknown target, so corrupt the in-memory node directly to model a bad load).
+    # add_dependency rejects an unknown target, so the in-memory node is corrupted directly.
     c._nodes[b.id] = b.model_copy(update={"depends_on": ("ghost-id",)})  # pyright: ignore[reportPrivateUsage]
     # add_dependency(a -> b) walks b's deps (incl. the ghost); must not raise KeyError.
     updated = c.add_dependency(AddDependencyIntent(id=a.id, depends_on=b.id))
@@ -120,11 +114,11 @@ def test_cycle_check_survives_dangling_depends_on(tmp_path: Path) -> None:
 
 
 def test_a_container_with_open_children_cannot_pass(tmp_path: Path) -> None:
-    """A parent with open children is a container: the frontier surfaces its
-    children instead, and every dependency ON it counts as satisfied once it
-    passes -- so passing it skipped the tasks it stood for while the work they
-    named went undone. The tier-2 check-off offers containers to the
-    summariser, which is how a model came to mark one."""
+    """A parent with open children is a container and cannot be passed.
+
+    Every dependency on it counts as satisfied once it passes, while the work its children name goes
+    undone.
+    """
     from agent6.graph.models import UpdateStatusIntent
 
     c = GraphCurator(_layout(tmp_path))
@@ -137,17 +131,14 @@ def test_a_container_with_open_children_cannot_pass(tmp_path: Path) -> None:
 
     c.update_status(UpdateStatusIntent(id=child.id, new_status="passed"))
     assert c.update_status(UpdateStatusIntent(id=parent.id, new_status="passed")).status == "passed"
-    # The root is the whole job, not a unit of work: nothing depends on it, so
-    # a run ending with a subtask left open still passes it.
+    # The root is the whole job: nothing depends on it, so an open subtask still passes it.
     open_child = c.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("later")))
     assert c.update_status(UpdateStatusIntent(id=root.id, new_status="passed")).status == "passed"
     assert c.get(open_child.id).status == "pending"
 
 
 def test_a_container_with_a_failed_child_cannot_pass(tmp_path: Path) -> None:
-    """A failed child is neither open nor done: the work under it is still
-    unresolved, so passing the container over it would satisfy every
-    dependency on the container while the failed work stays outstanding."""
+    """A failed child is neither open nor done, so its container cannot be passed over it."""
     c = GraphCurator(_layout(tmp_path))
     root = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("root")))
     parent = c.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("phase")))
@@ -192,9 +183,7 @@ def test_curator_reload_preserves_state(tmp_path: Path) -> None:
 
 
 def test_journal_entry_shapes_are_pinned(tmp_path: Path) -> None:
-    # The typed JournalEntry union owns the graph.jsonl audit shape; this pins
-    # the per-op key sets/values against the pre-typed writer's format (old
-    # journal dirs and the typed writer serialize identically).
+    # The per-op key sets match the pre-typed writer's format, so old journal dirs read the same.
     import json
 
     layout = _layout(tmp_path)
@@ -246,9 +235,10 @@ def test_journal_entry_shapes_are_pinned(tmp_path: Path) -> None:
 
 
 def test_every_write_in_one_mutation_carries_the_journaled_version(tmp_path: Path) -> None:
-    """add_subtask writes the child and relinks the parent; both node files
-    carry the same graph_version the mutation's journal entry records, so a
-    journal that lost its tail is detectable from the nodes alone."""
+    """add_subtask writes the child and relinks the parent, both stamped with the same version.
+
+    A journal that lost its tail is then detectable from the nodes alone.
+    """
     import json as _json
 
     layout = _layout(tmp_path)
@@ -271,10 +261,11 @@ def test_every_write_in_one_mutation_carries_the_journaled_version(tmp_path: Pat
 def test_a_lost_journal_tail_resyncs_the_version_and_says_so(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A death between a node write and its journal append lost the entry;
-    the reused version number then made two operations share one version,
-    corrupting fork-at-version undo. Boot detects the newer node stamp,
-    resyncs the counter past the lost number, and names the residual."""
+    """Boot resyncs the version counter past a node stamp newer than the journal's tail.
+
+    A death between a node write and its journal append loses the entry; reusing the number would
+    make two operations share one version.
+    """
     layout = _layout(tmp_path)
     c = GraphCurator(layout)
     root = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("root")))

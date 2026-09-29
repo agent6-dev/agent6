@@ -40,8 +40,7 @@ def test_parse_task_takes_the_text_and_leaves_other_lines_alone() -> None:
 
 
 def test_the_directive_is_offered_only_on_a_live_run() -> None:
-    """Nothing drains the queue on a finished run, so the resume composer
-    withholds it, as it does for the other live-run directives."""
+    """The resume composer withholds `/task` on a finished run, where nothing drains the queue."""
     assert "/task" in STEER_COMMANDS
     assert "/task" in LIVE_RUN_COMMANDS
 
@@ -89,9 +88,10 @@ def _feed(lines: list[str]) -> Callable[[str], str]:
 def test_the_pause_menu_queues_and_re_prompts(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Through the real prompt, not the handler behind it: the resolver used to
-    send `/task <text>` to the model as steer text, because `/task` shares a
-    prefix with `/tasks` and the argument branch listed its own commands."""
+    """`/task <text>` through the real prompt reaches the queue, not the model as steer text.
+
+    `/task` shares a prefix with `/tasks` and the argument branch listed its own commands.
+    """
     from agent6.ui.cli._steer_menu import pause_menu
 
     d = _paused(tmp_path)
@@ -116,8 +116,10 @@ def test_the_pause_menu_refuses_a_bare_directive(
 
 
 def test_a_partial_command_never_fires(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """A prefix drives Tab completion, never an action: `/stat` fired
-    `/status` until `/standing` made it ambiguous, which is the drift."""
+    """A prefix drives Tab completion, never an action.
+
+    `/stat` fired `/status` until `/standing` made it ambiguous.
+    """
     from agent6.ui.cli._steer_menu import pause_menu
 
     d = _paused(tmp_path)
@@ -131,8 +133,7 @@ def test_a_partial_command_never_fires(tmp_path: Path, capsys: pytest.CaptureFix
 def test_agent6_steer_acts_on_the_directive_instead_of_sending_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 steer ID "/task ..."` used to send the literal text to the model
-    as an instruction: the CLI parsed `/btw` and `/compact` but not `/task`."""
+    """`agent6 steer ID "/task ..."` queues the task instead of sending the text to the model."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = state_dir(tmp_path) / "sessions" / "runs" / "tiny-run-AAAA11"
@@ -169,9 +170,7 @@ def test_agent6_steer_takes_now_as_the_composers_spell_it(
 def test_now_acts_the_same_wherever_it_is_typed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`/now` was the one composer word each surface still submitted its own
-    way, and the pause menu had none: one submitter now carries the urgency,
-    and `--now` says the same thing as the word."""
+    """One submitter carries `/now`'s urgency on every surface, and `--now` says the same thing."""
     from agent6.sessions.ipc import steer_interrupt_pending, take_steer_answer
     from agent6.ui.directives import submit_composer_line
 
@@ -195,9 +194,7 @@ def test_a_bare_now_refuses_everywhere(tmp_path: Path) -> None:
 
 
 def test_a_directive_typed_mid_line_is_named_in_the_reply(tmp_path: Path) -> None:
-    """A line is a directive only when it starts with one, so a token further
-    in travels to the model as text. Saying which tells a mistyped command
-    from a sentence that mentions one, without changing what was sent."""
+    """A directive is only a leading token; a later one travels as text, and the hint says so."""
     from agent6.sessions.ipc import take_steer_answer
     from agent6.ui.directives import submit_composer_line
 
@@ -210,9 +207,7 @@ def test_a_directive_typed_mid_line_is_named_in_the_reply(tmp_path: Path) -> Non
 
 
 def test_a_directive_behind_leading_space_is_not_called_text(tmp_path: Path) -> None:
-    """Every directive acts through leading whitespace, so the hint reads the
-    text that was sent, not the line as typed: `/now` was honoured, and saying
-    it travelled as text would describe the opposite of what happened."""
+    """Every directive acts through leading whitespace, and the hint reads the text sent."""
     from agent6.sessions.ipc import steer_interrupt_pending, take_steer_answer
     from agent6.ui.directives import submit_composer_line
 
@@ -237,10 +232,10 @@ def test_an_ordinary_line_and_a_real_directive_say_nothing_extra(tmp_path: Path)
 def test_a_composer_command_cannot_be_a_fresh_runs_task(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A run's first prompt is not a composer, so `/task` there would have
-    become the literal task text the model works on. The lifecycle refuses it
-    the way an execution's steer is refused, for `agent6 run` and the ACP bridge
-    alike: both reach run_task."""
+    """A run's first prompt refuses `/task`, for `agent6 run` and the ACP bridge alike.
+
+    It is not a composer, so the text would have become the literal task.
+    """
     import time
     from unittest.mock import MagicMock
 

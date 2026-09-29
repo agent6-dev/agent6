@@ -2,11 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """A mode="run" machine state works a fresh clone at the machine chain's tip.
 
-The lane mechanism, sequential where lanes are parallel: the chain ref
-carries state-to-state continuation, and the visible `agent6/machine-<id>`
-branch tracks the same tip for the operator (the run story: changes arrive
-on a branch). The operator's checkout is never touched; work lands back per
-state, on every outcome.
+The chain ref carries state-to-state continuation and the `agent6/machine-<id>` branch tracks the
+same tip; the operator's checkout is never touched.
 """
 
 from __future__ import annotations
@@ -48,16 +45,14 @@ _REAL_POPEN = subprocess.Popen
 
 
 def _fake_popen(argv: list[str], **kw: Any) -> Any:
-    """Fake only the machine-agent spawn; git's own Popen calls stay real
-    (the monkeypatch lands on the shared stdlib module object)."""
+    """Fake only the machine-agent spawn; git's own Popen calls stay real."""
     if not any("machine_agent" in str(a) for a in argv):
         return _REAL_POPEN(argv, **kw)
     return _FakeChild(argv, **kw)
 
 
 class _FakeChild:
-    """Stands in for the machine-agent subprocess: commits one file in the
-    request's cwd and writes a clean result.json."""
+    """Stand in for the machine-agent subprocess: commit one file in cwd, write result.json."""
 
     captured_env: ClassVar[dict[str, str]] = {}
     workdirs: ClassVar[list[Path]] = []
@@ -67,16 +62,14 @@ class _FakeChild:
     def __init__(self, argv: list[str], **kw: Any) -> None:
         _FakeChild.captured_env = dict(kw.get("env") or {})
         req = json.loads(Path(argv[-2]).read_text(encoding="utf-8"))
-        # `root` is the execution root (a clone for a run state); `cwd` stays
-        # the true checkout, for the subprocess's own config reload.
+        # `root` is the execution root (a clone); `cwd` stays the checkout for the config reload.
         cwd = Path(req["root"])
         _FakeChild.workdirs.append(cwd)
         _FakeChild.seen_cwds.append(Path(req["cwd"]))
         _FakeChild.seen_files.append({e.name for e in cwd.iterdir()})
         seq = req["request"]["step_seq"]
         if req["request"]["mode"] == "run":
-            # Mirror the nested loop: commit the tree, advance the chain ref
-            # (never a branch), leave HEAD where it was.
+            # Mirror the nested loop: commit, advance the chain ref, leave HEAD.
             (cwd / f"work{seq}.txt").write_text(f"state {seq}\n", encoding="utf-8")
             _git(cwd, "add", "-A")
             _git(cwd, "commit", "-q", "-m", f"agent6 iter 1: state {seq}")
@@ -121,8 +114,7 @@ def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
     r2 = runner(_req(1), None)
     assert r2.reason == "finish_session"
 
-    # Sequential continuation: state 1 built on state 0's tree, and the
-    # visible branch tracks the chain's tip.
+    # State 1 built on state 0's tree, and the visible branch tracks the chain's tip.
     files = _git(origin, "ls-tree", "--name-only", BRANCH)
     assert "work0.txt" in files and "work1.txt" in files
     assert chain_tip(origin, CHAIN) == chain_tip(origin, BRANCH)
@@ -137,13 +129,7 @@ def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
 def test_run_state_request_keeps_the_true_checkout_as_cwd_for_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A run state's request set `cwd` to its own clone, so the subprocess's
-    config reload (`load_effective_with_overlay(req.cwd, ...)`) and its
-    cross-run memory dir (`state_dir(req.cwd)`) resolved against a fresh
-    clone path, invisible to the operator's per-repo config and memory --
-    every one of a machine's run states silently lost both. `cwd` now stays
-    the origin; `root` (the clone) is what the subprocess actually works in.
-    """
+    """A run state's request keeps the operator's repo as `cwd`; `root` is the clone it works in."""
     origin = _origin(tmp_path)
     monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
     _FakeChild.workdirs = []
@@ -159,11 +145,10 @@ def test_run_state_request_keeps_the_true_checkout_as_cwd_for_config(
 def test_read_only_states_see_the_machine_tree_and_land_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A read-only judge in a machine with run states ran in the operator's
-    checkout, so it could not see the work it was judging. It now runs in a
-    fresh clone at the chain tip like every state of such a machine; it
-    commits nothing, so the branch does not move and its clone is cleaned up
-    by the landing's no-op path."""
+    """A read-only judge in a machine with run states runs in a fresh clone at the chain tip.
+
+    It commits nothing, so the branch does not move and its clone is cleaned up.
+    """
     origin = _origin(tmp_path)
     monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
     _FakeChild.workdirs = []
@@ -182,8 +167,7 @@ def test_read_only_states_see_the_machine_tree_and_land_nothing(
 def test_without_a_machine_tree_read_only_states_run_in_place(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No machine_id/clone_root (`machine create`, a machine with no run
-    states): a read-only request runs in cwd, as before."""
+    """With no machine_id or clone_root a read-only request runs in cwd."""
     origin = _origin(tmp_path)
     monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
     _FakeChild.workdirs = []
@@ -198,11 +182,10 @@ def test_without_a_machine_tree_read_only_states_run_in_place(
 def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A tool state's jail mounted the operator's checkout, which a run
-    state's commits never reach, so an edit-then-check loop never converged
-    (the shipped code-fixer burned its whole attempt budget this way). The
-    runner clones the chain tip per call, remaps the bundle protect paths to
-    the clone's own copy, and discards the tree after."""
+    """A tool state's jail mounts a clone of the chain tip, so it sees the run states' commits.
+
+    The runner remaps the bundle protect paths to the clone and discards the tree after.
+    """
     from agent6.app.machine import run as machine_run
     from agent6.kinds import CommandResult, JailPolicy
 
@@ -238,8 +221,7 @@ def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
 def test_invalid_utf8_result_routes_failed_instead_of_escaping(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A killed or broken child may leave arbitrary result bytes; the host
-    treats them like a missing result and returns the recoverable failed edge."""
+    """Arbitrary result bytes from a killed child read like a missing result: the failed edge."""
     origin = _origin(tmp_path)
 
     class _BadResultChild:
@@ -284,9 +266,7 @@ def test_spawn_failure_routes_failed_and_discards_the_unused_clone(
 def test_import_failure_keeps_the_clone_and_routes_failed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The state ran and its commits are real, but they did not land: the
-    outcome routes failed with no captured payload, and the clone (the only
-    copy) is kept for the adopt/prune verbs."""
+    """A state whose commits did not land routes failed; the clone is kept for adopt and prune."""
     from agent6.git_ops import GitError
 
     origin = _origin(tmp_path)

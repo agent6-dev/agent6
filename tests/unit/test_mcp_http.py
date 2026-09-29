@@ -63,9 +63,11 @@ def _mcp_reply(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_agent6_connects_instead_of_spawning() -> None:
-    """A server that wants a browser or a device is the operator's to run, in
-    whatever container they chose; agent6 owning its lifetime is the wrong
-    owner. The handshake and a call go over one POST each."""
+    """agent6 connects to a `url` server instead of spawning it.
+
+    A server that wants a browser or a device is the operator's to run, in whatever container they
+    chose. The handshake and a call go over one POST each.
+    """
     url, _seen, httpd = _serve(_mcp_reply)
     logs: list[str] = []
     try:
@@ -97,8 +99,10 @@ def test_agent6_connects_instead_of_spawning() -> None:
 def test_a_failed_initialized_notification_fails_the_handshake(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An HTTP error is not a successful notification: ignoring it registered
-    tools from a server that rejected the required initialized notification."""
+    """An HTTP error is not a successful notification.
+
+    Ignoring it registered tools from a server that rejected the required initialized notification.
+    """
     from agent6.tools.mcp_client import (
         MCPError,
         _MCPServer,  # pyright: ignore[reportPrivateUsage]
@@ -133,8 +137,11 @@ def test_a_failed_initialized_notification_fails_the_handshake(
 
 
 def test_a_transport_error_is_redacted_of_the_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A proxy or server can echo the bearer token in its error; the MCPError
-    every caller journals must not carry it."""
+    """A transport error is redacted of the token.
+
+    A proxy or server can echo the bearer token in its error; the MCPError every caller journals
+    must not carry it.
+    """
     from agent6.tools.mcp_client import (
         MCPError,
         _MCPServer,  # pyright: ignore[reportPrivateUsage]
@@ -168,8 +175,9 @@ def test_a_transport_error_is_redacted_of_the_token(monkeypatch: pytest.MonkeyPa
 
 def test_a_streamed_answer_is_read_like_any_other() -> None:
     """Streamable HTTP lets a server answer one request with an SSE frame.
-    Reading only a bare body made every such server look like it sent
-    garbage."""
+
+    Reading only a bare body made every such server look like it sent garbage.
+    """
     url, _seen, httpd = _serve(_mcp_reply, sse=True)
     try:
         got = HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
@@ -194,9 +202,11 @@ def test_the_token_is_read_from_the_environment_never_the_config(
 
 
 def test_httpx_trust_env_reaches_the_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The per-server httpx_trust_env flag reaches the httpx client verbatim:
-    off by default so a local server's bearer token never routes to an ambient
-    proxy, on when the operator opts a proxied server in."""
+    """The per-server httpx_trust_env flag reaches the httpx client verbatim.
+
+    Off by default so a local server's bearer token never routes to an ambient proxy, on when the
+    operator opts a proxied server in.
+    """
     from agent6.tools import mcp_http
 
     seen: list[Any] = []
@@ -219,9 +229,11 @@ def test_httpx_trust_env_reaches_the_client(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_httpx_trust_env_is_rejected_on_a_spawned_server() -> None:
-    """It only affects the http client dialling a `url` server; a spawned
-    (command) server has no client, so the setting is refused rather than
-    silently dead."""
+    """httpx_trust_env is rejected on a spawned server.
+
+    It only affects the http client dialling a `url` server; a spawned (command) server has no
+    client, so the setting is refused rather than silently dead.
+    """
     Config.model_validate(
         {"mcp": {"servers": {"r": {"url": "https://h/mcp", "httpx_trust_env": True}}}}
     )
@@ -232,8 +244,10 @@ def test_httpx_trust_env_is_rejected_on_a_spawned_server() -> None:
 
 
 def test_an_oversized_body_is_refused_rather_than_buffered() -> None:
-    """The same bound the stdio reader applies: a runaway server must not be
-    able to buffer an unbounded body into the agent."""
+    """The same bound the stdio reader applies.
+
+    A runaway server must not be able to buffer an unbounded body into the agent.
+    """
     url, _seen, httpd = _serve(None, body=b"x" * (MAX_BODY_BYTES + 64))
     try:
         with pytest.raises(MCPHttpError, match="larger than"):
@@ -243,9 +257,11 @@ def test_an_oversized_body_is_refused_rather_than_buffered() -> None:
 
 
 def test_a_compressed_answer_is_refused_not_decoded() -> None:
-    """The identity we ask for binds nothing: the server's `Content-Encoding`
-    picks httpx's decoder, so a compromised server's small body expanded in
-    memory ahead of the byte count. Anything but identity is refused."""
+    """The identity we ask for binds nothing.
+
+    The server's `Content-Encoding` picks httpx's decoder, so a compromised server's small body
+    expanded in memory ahead of the byte count. Anything but identity is refused.
+    """
     import gzip
 
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "result": "ok"}).encode()
@@ -267,10 +283,11 @@ def test_an_http_failure_is_a_clean_tool_error() -> None:
 
 
 def test_a_non_2xx_body_is_kept_in_the_error() -> None:
-    """The status code alone drops whatever the server said was wrong: a rate
-    limiter's retry-after detail, an auth rejection's reason. The body is
-    untrusted but finite, so it rides along in the error rather than being
-    discarded before it is ever read."""
+    """The status code alone drops whatever the server said was wrong.
+
+    A rate limiter's retry-after detail, an auth rejection's reason. The body is untrusted but
+    finite, so it rides along in the error rather than being discarded before it is ever read.
+    """
     url, _seen, httpd = _serve(None, status=429, body=b'{"error": "rate limited, retry after 30s"}')
     try:
         with pytest.raises(MCPHttpError, match="retry after 30s"):
@@ -280,9 +297,12 @@ def test_a_non_2xx_body_is_kept_in_the_error() -> None:
 
 
 def test_a_redirect_is_an_error_not_a_silent_accept() -> None:
-    """A 3xx is not 2xx: treating anything under 400 as fine took a redirect's
-    empty body for an accepted notification, so a misconfigured `url` (or an
-    auth portal in front of it) went unnoticed instead of failing loudly."""
+    """A redirect is an error, not a silent accept.
+
+    A 3xx is not 2xx: treating anything under 400 as fine takes a redirect's empty body for an
+    accepted notification, so a misconfigured `url` (or an auth portal in front of it) goes
+    unnoticed instead of failing loudly.
+    """
 
     class _Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
@@ -322,9 +342,11 @@ def test_a_server_names_one_transport(entry: dict[str, Any], message: str) -> No
 def test_a_token_that_cannot_be_a_header_is_refused_before_it_leaks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A token file with CRLF endings keeps the CR. The HTTP layer then raises
-    with the header VALUE in its message, and that message reaches stderr, the
-    launch log and the model's context."""
+    """A token file with CRLF endings keeps the CR.
+
+    The HTTP layer then raises with the header VALUE in its message, and that message reaches
+    stderr, the launch log and the model's context.
+    """
     monkeypatch.setenv("MCP_TEST_TOKEN", "sk-live-DEADBEEF\r")
     with pytest.raises(MCPHttpError) as caught:
         HttpTransport(name="s", url="https://h/mcp", token_env="MCP_TEST_TOKEN").send(
@@ -337,9 +359,11 @@ def test_a_token_that_cannot_be_a_header_is_refused_before_it_leaks(
 def test_an_unreachable_server_never_quotes_the_exception_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The message is the exception TYPE. Its text can quote a rejected header
-    value straight back at us -- and InvalidURL does not derive from HTTPError,
-    so a narrower catch let an operator typo crash the run."""
+    """The message is the exception TYPE.
+
+    Its text can quote a rejected header value straight back at us, and InvalidURL does not derive
+    from HTTPError, so a narrower catch let an operator typo crash the run.
+    """
     monkeypatch.setenv("MCP_TEST_TOKEN", "s3cr3t")
     with pytest.raises(MCPHttpError) as caught:
         HttpTransport(name="s", url="http://[::1/mcp", token_env="MCP_TEST_TOKEN").send(
@@ -350,9 +374,11 @@ def test_an_unreachable_server_never_quotes_the_exception_text(
 
 
 def test_a_body_is_capped_while_it_arrives_not_after() -> None:
-    """`response.content` materializes first: a 400 MiB body reached 849 MiB of
-    RSS before the check, and a 1 MiB gzip bomb reached 2 GiB -- enough to OOM
-    the process that owns the run and the provider keys."""
+    """`response.content` materializes first.
+
+    A 400 MiB body reached 849 MiB of RSS before the check, and a 1 MiB gzip bomb reached 2 GiB --
+    enough to OOM the process that owns the run and the provider keys.
+    """
     import tracemalloc
 
     url, seen, httpd = _serve(None, body=b"x" * (48 << 20))
@@ -371,9 +397,12 @@ def test_a_body_is_capped_while_it_arrives_not_after() -> None:
 
 
 def test_an_ambient_proxy_does_not_capture_the_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """httpx trusts the environment by default and has no loopback bypass, so
-    an exported HTTP_PROXY sent the bearer token to the proxy in cleartext
-    while the operator own server received nothing."""
+    """An ambient proxy does not capture the token.
+
+    httpx trusts the environment by default and has no loopback bypass, so an exported HTTP_PROXY
+    would send the bearer token to the proxy in cleartext while the operator's own server receives
+    nothing.
+    """
     monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
     monkeypatch.setenv("MCP_TEST_TOKEN", "s3cr3t")
     url, seen, httpd = _serve(_mcp_reply)
@@ -387,9 +416,12 @@ def test_an_ambient_proxy_does_not_capture_the_token(monkeypatch: pytest.MonkeyP
 
 
 def test_another_requests_answer_is_not_taken_as_this_one() -> None:
-    """A keepalive frame, a server-initiated request, or a multiplexing gateway
-    can put SOMEONE ELSE message first. The stdio reader has always checked the
-    id; taking the first frame handed the model another call answer."""
+    """Another request's answer is not taken as this one's.
+
+    A keepalive frame, a server-initiated request or a multiplexing gateway can put someone else's
+    message first; the stdio reader checks the id, and taking the first frame hands the model
+    another call's answer.
+    """
     from agent6.tools.mcp_client import (
         MCPError,
         _MCPServer,  # pyright: ignore[reportPrivateUsage]
@@ -459,9 +491,12 @@ def test_every_spec_legal_sse_framing_is_read(body: bytes) -> None:
 
 
 def test_a_line_separator_inside_a_json_string_does_not_cut_the_message() -> None:
-    """U+2028/U+2029/U+0085 are LEGAL raw characters inside a JSON string, and
-    `str.splitlines()` splits on them -- so a tool result containing one was
-    cut in half every time, and the model could plant one deliberately."""
+    """A line separator inside a JSON string does not cut the message.
+
+    U+2028, U+2029 and U+0085 are legal raw characters inside a JSON string, and `str.splitlines()`
+    splits on them, so a tool result containing one is cut in half every time, and the model could
+    plant one deliberately.
+    """
     sep = "\u2028"
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "result": f"a{sep}bc"})
     url, _seen, httpd = _serve(None, sse=True, body=f"data: {payload}\n\n".encode())

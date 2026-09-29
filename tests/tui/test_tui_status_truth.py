@@ -67,8 +67,7 @@ def _mk_unreadable(d: Path) -> None:
 
 
 def _screen_is(app: Agent6TUI, name: str) -> bool:
-    """`app.screen` raises while the stack is transiently empty (startup,
-    mid-switch); a poll reads that as "not yet", never an error."""
+    """`app.screen` raising on a transiently empty stack reads as "not yet", never an error."""
     try:
         current = app.screen
     except ScreenStackError:
@@ -80,15 +79,13 @@ async def _open_dash(app: Agent6TUI, pilot: Any) -> None:
     await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
     await pilot.press("ctrl+d")
     await wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
-    app._heartbeat_at = 0.0  # age the throttle so the dir-status probe fires now
+    app._heartbeat_at = 0.0  # age the throttle so the dir-status probe fires
     app._tick()
     await pilot.pause()
 
 
 def test_the_dashboard_title_word_is_the_sessions_mode(tmp_path: Path) -> None:
-    """The menu-bar title led with a fixed "run" for every session; a plan read
-    "run · <task> · planned". The word is the manifest's mode, as the web
-    panel heading states it."""
+    """The menu-bar title leads with the manifest's mode, as the web panel heading does."""
     d = tmp_path / "plan1"
     d.mkdir()
     (d / "manifest.json").write_text(
@@ -118,10 +115,7 @@ def test_the_dashboard_title_word_is_the_sessions_mode(tmp_path: Path) -> None:
 
 
 def test_the_task_count_credits_an_obsolete_task_as_done(tmp_path: Path) -> None:
-    """An obsolete task is retired, exactly like a skipped one -- both satisfy a
-    dependent's wait (`graph.order.DONE_STATUSES`) and need no
-    further work -- but the top line's `tasks: N/M` counted only passed/skipped,
-    undercounting a plan with a retired task."""
+    """The top line's `tasks: N/M` counts a retired task as done, like a skipped one."""
     d = tmp_path / "obsolete1"
     d.mkdir()
     evs = [
@@ -153,9 +147,7 @@ def test_the_task_count_credits_an_obsolete_task_as_done(tmp_path: Path) -> None
 
 
 def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: Path) -> None:
-    """A plan's product is plan.md; the CLI prints it at the end and the web
-    shows it in a card, but the dashboard's end story showed only the summary
-    line, sending the operator to `plan show`."""
+    """A plan's end story shows plan.md, as the CLI and the web do."""
     d = tmp_path / "plan2"
     d.mkdir()
     (d / "manifest.json").write_text(
@@ -187,8 +179,10 @@ def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: Path) -> N
 
 def test_a_failed_finish_attempt_is_not_the_runs_end_story(tmp_path: Path) -> None:
     """A rejected finish tool carries a proposed summary, not the run's end.
-    When the execution later fails, the stream pane shows the failure without
-    presenting that abandoned summary as its closing story."""
+
+    When the execution later fails, the stream pane shows the failure without presenting that
+    abandoned summary as its closing story.
+    """
     d = tmp_path / "failed-finish"
     d.mkdir()
     events = [
@@ -224,9 +218,7 @@ def test_a_failed_finish_attempt_is_not_the_runs_end_story(tmp_path: Path) -> No
 
 
 def test_the_header_names_the_pins_in_force(tmp_path: Path) -> None:
-    """The pinned instructions bind for the whole run; the dashboard header
-    lists them (the web header's and `sessions show`'s line), so an operator
-    watching a run sees what --pin or /pin set without reading the log."""
+    """The dashboard header lists the pinned instructions, as the web header does."""
     d = tmp_path / "pinned1"
     d.mkdir()
     evs = [
@@ -247,10 +239,10 @@ def test_the_header_names_the_pins_in_force(tmp_path: Path) -> None:
 
 
 def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: Any) -> None:
-    """A parked run's dashboard leads with the hub's words ("parked · checkout
-    busy"), the stream pane says parked (never the "(waiting for the model…)"
-    lie -- no model is coming), and the composer routes to resume, exactly like
-    a finished run's."""
+    """A parked run's dashboard leads with the hub's words, and the composer routes to resume.
+
+    The stream pane says parked, never "(waiting for the model…)".
+    """
     from agent6.ui.tui import app as app_mod
 
     spawned: list[tuple[str, str]] = []
@@ -294,10 +286,7 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
 
 
 def test_an_unreadable_run_tells_the_truth_on_the_stream_pane(tmp_path: Path) -> None:
-    """A session whose manifest will not parse reads "unreadable" on the header;
-    the stream pane once fell through to the "(waiting for the model…)" lie (no
-    model is coming). dead_run_note now has an arm for it, so the pane agrees
-    with the header."""
+    """A session whose manifest will not parse reads "unreadable" on the header and the pane."""
     _mk_unreadable(tmp_path / "corrupt1")
 
     async def scenario() -> None:
@@ -317,10 +306,10 @@ def test_an_unreadable_run_tells_the_truth_on_the_stream_pane(tmp_path: Path) ->
 def test_a_resume_from_the_composer_carries_the_picked_preset(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """A run that is not live shows the preset and model pickers above its
-    composer (both views); the picks ride the detached resume as `--preset`
-    and `--model`, a bare resume included, and each first entry sends none. A
-    refused spawn says why and leaves the resume composer available."""
+    """A run that is not live shows the preset and model pickers above its composer.
+
+    The picks ride the detached resume as `--preset` and `--model`; a refused spawn says why.
+    """
     from textual.widgets import Select
 
     from agent6.ui.tui import app as app_mod
@@ -413,9 +402,7 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
 def test_the_resume_rows_name_what_a_bare_resume_runs_under(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """Each resume picker's first entry names what a resume without the flag
-    runs under (a bare "(as recorded)" said nothing), in both views; a preset
-    pick relabels the model's entry and keeps the model pick."""
+    """Each resume picker's first entry names what a resume without the flag runs under."""
     from textual.widgets import Select
     from textual.widgets._select import SelectCurrent
 
@@ -470,9 +457,7 @@ def test_the_resume_rows_name_what_a_bare_resume_runs_under(
 
 
 def test_dead_worker_leads_with_the_hub_word_stale(tmp_path: Path) -> None:
-    """The top-line label for a lost worker is "stale" -- the word the hub row
-    shows for the same probe -- with the explanatory sentence kept in the
-    stream pane. Two surfaces, one word."""
+    """The top-line label for a lost worker is "stale", the hub row's word for the same probe."""
     _mk_crashed(tmp_path / "crashed1")
 
     async def scenario() -> None:
@@ -484,7 +469,7 @@ def test_dead_worker_leads_with_the_hub_word_stale(tmp_path: Path) -> None:
             await pilot.pause()
             top = str(app._dash.query_one("#top", Static).render())
             assert "stale" in top
-            assert "worker exited" not in top  # the label is the hub's word now
+            assert "worker exited" not in top  # the label is the hub's word
             body = str(app._dash.query_one("#stream-body", Static).render())
             assert "worker exited without finishing" in body  # the detail stays
 
@@ -523,11 +508,10 @@ def test_dead_worker_stream_pane_drops_stale_partial_text(tmp_path: Path) -> Non
 
 
 def test_crash_then_resume_recovers_liveness(tmp_path: Path) -> None:
-    """The dead-worker state is DERIVED, not latched: after the operator
-    resumes (new execution appends events, live worker.pid), the dashboard label
-    clears, the composers relabel to steer, and submits steer the live execution --
-    the one-way run_ended latch kept "worker exited" painted over the live
-    resumed execution and silently dropped operator input."""
+    """The dead-worker state is derived, not latched: a resume in place clears it.
+
+    A one-way latch kept "worker exited" painted over the live execution and dropped input.
+    """
     d = tmp_path / "revived1"
     _mk_crashed(d)
 
@@ -536,8 +520,7 @@ def test_crash_then_resume_recovers_liveness(tmp_path: Path) -> None:
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
-            # The operator resumes: a new execution appends to the log and records a
-            # live worker pid.
+            # The operator resumes: a new execution appends to the log with a live worker pid.
             with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "loop.resume.start", "iteration": 2}) + "\n")
                 fh.write(json.dumps({"type": "role.call", "role": "worker", "model": "m"}) + "\n")
@@ -549,7 +532,7 @@ def test_crash_then_resume_recovers_liveness(tmp_path: Path) -> None:
             await pilot.pause()
             top = str(app._dash.query_one("#top", Static).render())
             assert "stale" not in top and "worker exited" not in top
-            # BOTH bars agree on the live mode -- the covered conversation too.
+            # Both bars agree on the live mode, the covered conversation's too.
             assert "steer" in (app._dash.query_one("#dash-input", SteerInput).border_title or "")
             assert "steer" in (app._conv.query_one("#conv-input", SteerInput).border_title or "")
 
@@ -557,10 +540,10 @@ def test_crash_then_resume_recovers_liveness(tmp_path: Path) -> None:
 
 
 def test_conversation_bar_tells_the_truth_about_a_dead_worker(tmp_path: Path) -> None:
-    """The PRIMARY conversation view keys its composer on the host's liveness,
-    not its own event tracking: a worker killed without a session.end relabels the
-    bar to resume (its old event-only _live stayed True forever, and typed
-    steers went to a corpse with a success toast)."""
+    """The conversation view keys its composer on the host's liveness, not its own events.
+
+    A worker killed without a session.end relabels the bar to resume.
+    """
     d = tmp_path / "convdead1"
     _mk_crashed(d)
 
@@ -581,9 +564,7 @@ def test_conversation_bar_tells_the_truth_about_a_dead_worker(tmp_path: Path) ->
 
 
 def test_a_dead_workers_open_call_settles_into_the_scrollback(tmp_path: Path) -> None:
-    """A worker killed mid-command leaves the call open with no session.end;
-    the host knows the worker is gone (its pid probe), so the conversation
-    settles the call as one that never returned instead of dropping it."""
+    """A worker killed mid-command settles its open call as one that never returned."""
     d = tmp_path / "convdead2"
     _mk_crashed(d)
     with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
@@ -615,10 +596,10 @@ def test_a_dead_workers_open_call_settles_into_the_scrollback(tmp_path: Path) ->
 
 
 def test_conversation_composer_routes_through_the_host_parser(tmp_path: Path) -> None:
-    """A composer line on the PRIMARY conversation view routes through the
-    host's submit_instruction, so `/compact <focus>` becomes an out-of-band
-    compaction request exactly as on the dashboard -- not a literal steer the
-    model is told to obey (the bar's own title advertises /compact)."""
+    """A composer line on the conversation view routes through the host's submit_instruction.
+
+    `/compact <focus>` becomes a compaction request, not a literal steer.
+    """
     d = tmp_path / "convcompact1"
     d.mkdir()
     (d / "logs.jsonl").write_text(
@@ -665,9 +646,10 @@ def _mk_blocked(d: Path, *, alive: bool) -> None:
 
 
 def test_dead_run_pops_no_approval_modal(tmp_path: Path) -> None:
-    """The fold keeps an unanswered prompt past a worker death (it clears only
-    on an answer event or an execution boundary), so the dashboard popped live-looking
-    Allow/Deny over a corpse and wrote the answer where nobody polls."""
+    """Allow/Deny is not offered over a dead worker's unanswered prompt.
+
+    The fold keeps the prompt past the death, clearing only on an answer or an execution boundary.
+    """
     d = tmp_path / "ghost1"
     _mk_blocked(d, alive=False)
 
@@ -686,9 +668,7 @@ def test_dead_run_pops_no_approval_modal(tmp_path: Path) -> None:
 
 
 def _approval_ready(app: Agent6TUI) -> bool:
-    # The conversation screen renders an approval inline: the item plus its key
-    # row, mounted down to the labels, with the composer keeping focus (a modal
-    # only on the other screens).
+    # The conversation screen renders an approval inline, the composer keeping focus.
     bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
     return (
         _screen_is(app, "_conv")
@@ -698,15 +678,12 @@ def _approval_ready(app: Agent6TUI) -> bool:
 
 
 def test_screen_probe_tolerates_an_empty_stack(tmp_path: Path) -> None:
-    """`app.screen` raises ScreenStackError on an empty stack (a real window
-    during startup and screen switches; CI's Python 3.14.7 scheduling hit it
-    inside a poll lambda). The probe reads it as "not yet"."""
+    """`app.screen` raising ScreenStackError inside a poll reads as "not yet"."""
     app = Agent6TUI(tmp_path)  # never run: the screen stack is empty
     with pytest.raises(ScreenStackError):
         _ = app.screen
     assert _screen_is(app, "_conv") is False
-    # The app's own probe (its tick paths dispatch prompts and retitle
-    # through it) answers None instead of raising.
+    # The app's own probe answers None instead of raising.
     assert app._screen_or_none() is None  # pyright: ignore[reportPrivateUsage]
 
 
@@ -724,9 +701,7 @@ def test_live_run_still_gets_the_inline_approval(tmp_path: Path) -> None:
 
 
 def test_answer_after_death_reports_instead_of_writing(tmp_path: Path) -> None:
-    """The worker dies while the approval row is open: the row is withdrawn
-    (an answer would reach nothing), the prompt stays visible as a fact, and a
-    key press writes no answer file for the next resume to drop."""
+    """The approval row is withdrawn when the worker dies; the prompt stays visible as a fact."""
     d = tmp_path / "dies-mid-modal"
     _mk_blocked(d, alive=True)
 
@@ -751,9 +726,7 @@ def test_answer_after_death_reports_instead_of_writing(tmp_path: Path) -> None:
 
 
 def test_exit_on_end_holds_over_a_ghost_prompt_and_ctrl_q_leaves(tmp_path: Path) -> None:
-    """A dead run's ghost prompt once pinned the auto-spawned dashboard open
-    forever with no explanation. The end now HOLDS deliberately instead: the
-    header names the state and the leave key, and Ctrl+Q closes."""
+    """A dead run's dashboard holds deliberately: the header names the state and the leave key."""
     d = tmp_path / "ghost2"
     _mk_blocked(d, alive=False)
 
@@ -784,10 +757,10 @@ def test_end_hold_header_keeps_the_shared_status_reason(tmp_path: Path) -> None:
 
 
 def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: Path) -> None:
-    """The payoff (green verify, diff, cost) vanished exactly when the user
-    was looking at it: exit_on_end tore the TUI down on session.end and dumped
-    plain text to the shell. The dashboard now holds, the header says how to
-    leave, and the composer still routes a typed follow-up to resume."""
+    """The dashboard holds on session.end, so the payoff stays on screen.
+
+    The header says how to leave, and the composer routes a typed follow-up to resume.
+    """
     d = tmp_path / "done1"
     d.mkdir(parents=True)
     evs = [
@@ -804,8 +777,7 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: Path) 
             # The hold leads with the hub's own status word ("passed" here).
             assert "passed" in app.sub_title and "Ctrl+Q to leave" in app.sub_title
             # A screen stamping its title AFTER the hold began (the mount /
-            # tick order is load-dependent) must not wipe the hold: titles are
-            # computed at stamp time, not frozen at construction.
+            # A title stamped after the hold began must not wipe it: titles compute at stamp time.
             app._conv.on_screen_resume()
             assert "passed" in app.sub_title and "Ctrl+Q to leave" in app.sub_title
             assert "· t ·" in app.sub_title, "the live task name, not the dir fallback"
@@ -820,10 +792,11 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: Path) 
 def test_a_finished_log_is_folded_before_the_first_paint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A finished run opens with its last role and end story. Seeding only the
-    status left the dashboard's first paint on an empty fold, so it called the
-    role idle and promised a model was still coming until the reader replayed
-    the journal."""
+    """A finished run opens with its last role and end story.
+
+    Seeding only the status left the dashboard's first paint on an empty fold, so it called the role
+    idle and promised a model was still coming until the reader replayed the journal.
+    """
     from agent6.ui.tui import app as app_mod
 
     d = tmp_path / "seeded"
@@ -881,9 +854,11 @@ def test_a_finished_log_is_folded_before_the_first_paint(
 def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
     tmp_path: Path,
 ) -> None:
-    """An execution boundary makes the prior call and finish summary historical. Until
-    the resumed execution calls a model, its header falls back to the manifest; if the
-    new execution then stops, its end story does not repeat the prior execution's summary."""
+    """An execution boundary makes the prior call and finish summary historical.
+
+    Until the resumed execution calls a model, its header falls back to the manifest; if the new
+    execution then stops, its end story does not repeat the prior execution's summary.
+    """
     d = tmp_path / "resumed-story"
     d.mkdir()
     logs = d / "logs.jsonl"
@@ -956,10 +931,7 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
 
 
 def test_dead_pane_hints_point_at_controls_that_exist(tmp_path: Path) -> None:
-    """The dead/parked/created hints said "press r to resume", but the r
-    binding was removed (no plain-letter shortcuts) and the composer holds
-    focus, so pressing r typed the letter into the box. Point at the
-    composer's Enter, the action that exists."""
+    """The dead, parked and created hints point at the composer's Enter, not a removed r key."""
     d = tmp_path / "crashed-hint"
     _mk_crashed(d)
 
@@ -980,9 +952,11 @@ def test_dead_pane_hints_point_at_controls_that_exist(tmp_path: Path) -> None:
 def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness(
     tmp_path: Path,
 ) -> None:
-    """A live worker is not proof that a model call is running. Before its
-    first call and after its last result, both views stay still; session.end,
-    not role.result, changes both composers from steer to resume."""
+    """A live worker is not proof that a model call is running.
+
+    Before its first call and after its last result, both views stay still; session.end, not
+    role.result, changes both composers from steer to resume.
+    """
     d = tmp_path / "call-edges"
     d.mkdir()
     logs = d / "logs.jsonl"
@@ -1070,18 +1044,14 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
 
 
 def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
-    """A run blocked on an unanswered prompt read "waiting · needs answer" on
-    the top line while the stream pane ticked a live "worker working…"
-    spinner beside it -- two lines, two claims. The pane now says what the
-    run is doing: waiting on the operator."""
+    """A run blocked on a prompt says it is waiting on the operator in the stream pane too."""
     d = tmp_path / "blocked-pane"
     _mk_blocked(d, alive=True)
 
     async def scenario() -> None:
         app = Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            # Deny the inline approval (d writes only the bridge file;
-            # no answer EVENT lands, so the fold keeps the run "waiting").
+            # Deny writes only the bridge file; no answer event lands, so the run stays waiting.
             await wait_for(pilot, lambda: _approval_ready(app), "the approval row")
             await focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("d")
@@ -1089,8 +1059,7 @@ def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
             await wait_for(pilot, lambda: app.dir_status[0] == "waiting", "the waiting word")
 
             def pane() -> str:
-                # The fold lands in the reader thread, so the pane follows the
-                # status word by a tick or two: wait for it rather than race it.
+                # The fold lands in the reader thread, so the pane follows a tick later.
                 app._tick()  # pyright: ignore[reportPrivateUsage]
                 return str(app._dash.query_one("#stream-body", Static).render())  # pyright: ignore[reportPrivateUsage]
 
@@ -1101,13 +1070,13 @@ def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
 
 
 def test_prompt_and_answer_events_update_the_chip_immediately(tmp_path: Path) -> None:
-    """The header chip flips on the prompt/answer event itself, never a
-    heartbeat later. Filmed on the dashboard: the log pane already showed
-    approval.answer + verify.end while the chip still read "waiting · needs
-    answer" -- the synchronous dir-status refresh covered only session
-    boundaries, so the chip (and both composer bars) lagged the fold by up to
-    ~1s. Asserted with NO awaits between the event and the read, so the
-    heartbeat cannot mask the regression."""
+    """The header chip flips on the prompt/answer event itself, never a heartbeat later.
+
+    Filmed on the dashboard: the log pane already showed approval.answer + verify.end while the chip
+    still read "waiting · needs answer": the synchronous dir-status refresh covered only session
+    boundaries, so the chip (and both composer bars) lagged the fold by up to ~1s. Asserted with NO
+    awaits between the event and the read, so the heartbeat cannot mask the regression.
+    """
     d = tmp_path / "live1"
     d.mkdir(parents=True)
     evs = [
@@ -1122,10 +1091,10 @@ def test_prompt_and_answer_events_update_the_chip_immediately(tmp_path: Path) ->
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             assert app.dir_status[1] != "needs answer"
-            # The prompt arrives: the chip must say so NOW (no pause between).
+            # The prompt arrives: the chip says so at once.
             app._handle_event({"type": "approval.prompt", "id": "approval-1", "prompt": "run x?"})
             assert app.dir_status == ("waiting", "needs answer")
-            # The answer lands: the chip must clear NOW.
+            # The answer lands: the chip clears at once.
             app._handle_event({"type": "approval.answer", "id": "approval-1", "approved": True})
             assert app.dir_status[1] != "needs answer"
 
@@ -1135,10 +1104,7 @@ def test_prompt_and_answer_events_update_the_chip_immediately(tmp_path: Path) ->
 def test_dashboard_header_says_where_the_changes_are(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The header carries the run's branch line (the web header's and
-    `sessions show`'s wording): the run branch, once its first commit created
-    it, and the base a merge lands on; reopened after the merge stamp lands,
-    the branch merged."""
+    """The header carries the run's branch line, as the web header and `sessions show` do."""
     repo = tmp_path / "repo"
     repo.mkdir()
     git = ["git", "-C", str(repo)]
@@ -1175,10 +1141,10 @@ def test_dashboard_header_says_where_the_changes_are(
     ).stdout.strip()
 
     async def held_header() -> tuple[str, str, str]:
-        """The stamp lands while the finished screen is held: the header
-        re-reads it without a reopen (the line was cached for the execution). A
-        resume in place then commits past the stamp: the merge no longer
-        holds, and the header follows."""
+        """The merge stamp lands while the finished screen is held, and the header re-reads it.
+
+        A resume in place then commits past the stamp, and the header follows.
+        """
         app = Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
@@ -1209,9 +1175,7 @@ def test_dashboard_header_says_where_the_changes_are(
 
 
 def test_dashboard_header_says_what_the_run_serves(tmp_path: Path) -> None:
-    """A dev server the agent started is reachable only through `agent6
-    forward`; the header names the port and that command (the web header's
-    and `sessions show`'s line)."""
+    """The header names a forwarded port and the `agent6 forward` command that reaches it."""
     import os
     import socket
 
@@ -1234,17 +1198,13 @@ def test_dashboard_header_says_what_the_run_serves(tmp_path: Path) -> None:
                 return str(app._dash.query_one("#top", Static).render())
 
         top = asyncio.run(header())
-    # This process stands in for the network holder, so the host's own listeners
-    # show too: the test socket is among them, and the forward line names one.
+    # This process stands in for the network holder, so the test socket shows among the listeners.
     serving = next(line for line in top.splitlines() if line.startswith("serving: "))
     assert str(port) in serving and "· agent6 forward serving " in serving
 
 
 def test_a_clipped_table_cell_says_it_was_clipped() -> None:
-    """The dashboard's tools table sliced args and results with no marker, so
-    `background=True` and `preview=True` fell off the end and the row still
-    read ok: the operator could not see that the command was backgrounded or
-    that the edit wrote nothing."""
+    """The tools table marks sliced args, so `background=True` and `preview=True` stay visible."""
     from agent6.viewmodel.format import clip_cell
 
     assert (
@@ -1255,9 +1215,7 @@ def test_a_clipped_table_cell_says_it_was_clipped() -> None:
 
 
 def test_a_parked_sessions_empty_view_names_the_reason() -> None:
-    """The dashboard row said "parked · uncommitted changes" while the opened
-    conversation said only "(no conversation yet)"; the placeholder now
-    carries the parked reason and the way forward."""
+    """The parked placeholder carries the parked reason and the way forward."""
     from agent6.ui.tui.conversation import empty_conversation_note
 
     note = empty_conversation_note("parked", "uncommitted changes", ended=False)
@@ -1265,8 +1223,7 @@ def test_a_parked_sessions_empty_view_names_the_reason() -> None:
     assert empty_conversation_note("parked", "", ended=False).startswith("parked")
     assert empty_conversation_note("", "", ended=True) == "this session made no conversation"
     assert "appears as the session streams" in empty_conversation_note("", "", ended=False)
-    # A crashed run and one that never started are not "made no conversation":
-    # the dashboard names both, and this view is the default screen.
+    # A crashed run and one that never started are named, as on the dashboard.
     assert "crashed or killed" in empty_conversation_note("stale", "", ended=True)
     assert "has not started" in empty_conversation_note("created", "", ended=True)
 
@@ -1281,9 +1238,7 @@ def _mk_created(d: Path) -> None:
 
 @pytest.mark.parametrize("make", [_mk_created, _mk_parked, _mk_crashed])
 def test_both_run_views_word_a_dead_state_the_same(tmp_path: Path, make: Any) -> None:
-    """The dashboard and the conversation each spelled their own sentence for
-    a created, parked or crashed run, so one run read differently on Ctrl-D
-    than on the default screen. One owner words it for every surface."""
+    """One owner words a created, parked or crashed run for the dashboard and the conversation."""
     from agent6.ui.tui.conversation import empty_conversation_note
 
     d = tmp_path / "dead1"
@@ -1306,8 +1261,7 @@ def test_both_run_views_word_a_dead_state_the_same(tmp_path: Path, make: Any) ->
 
 
 def test_a_session_that_never_commits_shows_no_commit_pane(tmp_path: Path) -> None:
-    """An ask (and a plan) never commits, and the dashboard still gave a pane
-    to "(no diffs yet)"; the log pane takes the width instead. A run keeps it."""
+    """An ask or a plan has no diff pane; the log pane takes the width."""
     for mode, name in (("ask", "asks"), ("run", "runs")):
         d = tmp_path / name / f"{mode}-one-AAAAAA"
         d.mkdir(parents=True)

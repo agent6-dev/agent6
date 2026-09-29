@@ -2,9 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 check mcp` starts each server as a run does.
 
-A probe in a throwaway directory failed every server whose script lives in
-the workspace ("can't open file ... No such file or directory", even by
-absolute path under strict), while `mcp connect` and a real run started it.
+A probe in a throwaway directory cannot start a server whose script lives in the workspace.
 """
 
 from __future__ import annotations
@@ -19,8 +17,7 @@ from agent6.sandbox.jail import JailUnavailableError, SessionNetwork
 from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.ui.cli import check_cmds
 
-# The interpreter a jailed probe can reach: the run's sandbox grants /usr,
-# not the venv.
+# The interpreter a jailed probe can reach: the run's sandbox grants /usr, not the venv.
 _JAIL_PYTHON = "/usr/bin/python3"
 
 _SERVER = (
@@ -117,8 +114,10 @@ def test_mcp_check_reports_a_session_network_refusal(
 def test_a_server_script_inside_the_workspace_is_checked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The workspace root of the check is the repository, as a run's is: a
-    relative script path resolves there on every isolation level."""
+    """A server script inside the workspace is checked.
+
+    The check's workspace root is the repository.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "server.py").write_text(_SERVER, encoding="utf-8")

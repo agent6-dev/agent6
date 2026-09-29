@@ -2,9 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """No completer raises into the operator's shell.
 
-argcomplete runs these on Tab, inside the shell, with nowhere to show an error:
-an exception there is a traceback dumped over the command line. Several guarded
-themselves ad hoc and several did not, which is the same gap in as many places.
+argcomplete runs them on Tab with nowhere to show an error; one decorator guards them all.
 """
 
 from __future__ import annotations
@@ -27,10 +25,7 @@ def test_there_are_completers_to_check() -> None:
     assert len(_COMPLETERS) >= 10, [n for n, _ in _COMPLETERS]
 
 
-# The completers that consult the per-repo state dir when called with a bare
-# prefix. The others never reach `state_dir` (they return early or read config
-# only), so parametrizing them here forced nothing; the decorator test below
-# carries their never-raise promise.
+# The completers that consult the state dir on a bare prefix; the decorator test carries the rest.
 _STATE_DIR_CONSUMERS = [
     "_complete_session_ids",
     "_complete_session_ports",
@@ -46,9 +41,9 @@ _STATE_DIR_CONSUMERS = [
 def test_an_unresolvable_state_dir_does_not_reach_the_shell(
     name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The realistic failure: the config does not parse, so resolving the state
-    dir raises. Forced directly -- pointing cwd at a bad config passed without
-    ever reaching the raising path, which proved nothing.
+    """A config that does not parse, so the state dir cannot resolve, reaches no traceback.
+
+    Forced directly: a bad config under cwd never reaches the raising path.
     """
     from agent6.config import ConfigError
     from agent6.ui.cli import _common
@@ -69,9 +64,10 @@ def test_an_unresolvable_state_dir_does_not_reach_the_shell(
 
 
 def test_any_completer_bug_yields_no_suggestions_not_a_traceback() -> None:
-    """The decorator's promise is its name: never an exception, not "never
-    the three exception types someone predicted". A KeyError from a bug is a
-    traceback over the command line all the same."""
+    """Any completer bug yields no suggestions, never a traceback.
+
+    The guard catches every exception.
+    """
     from agent6.ui.cli.completers import _never_raises  # pyright: ignore[reportPrivateUsage]
 
     @_never_raises

@@ -34,9 +34,7 @@ _RECORDED = Path(__file__).parent.parent / "unit" / "data" / "golden_session_log
 
 def _validator(definition: str) -> Draft202012Validator:
     """A validator for one `$defs` entry, resolving refs against the whole doc."""
-    # Only the $defs, never the whole document: its top-level `anyOf` (every
-    # message the protocol defines) applies ALONGSIDE a sibling $ref in Draft
-    # 2020-12, so it would reject every payload.
+    # Only the $defs: the top-level `anyOf` applies alongside a sibling $ref in Draft 2020-12.
     return Draft202012Validator({"$defs": _SCHEMA["$defs"], "$ref": f"#/$defs/{definition}"})
 
 
@@ -129,8 +127,10 @@ def test_the_handshake_answer_is_a_valid_initialize_response() -> None:
 
 
 def test_a_permission_request_is_one_a_client_can_answer() -> None:
-    """The params an editor is asked to render. Sending a shape it rejects
-    means the approval never appears and the run waits out its timeout."""
+    """The params an editor is asked to render.
+
+    Sending a shape it rejects means the approval never appears and the run waits out its timeout.
+    """
     import io
 
     from agent6.ui.acp.runner import Announced, RunBridge
@@ -152,10 +152,7 @@ def test_a_permission_request_is_one_a_client_can_answer() -> None:
     bridge.ask(session, announced, "Theme?", ("dark", "light"), None, None)
     assert len(sent) == 2
     assert sent[0]["toolCall"]["toolCallId"] == "run-x:1:7"
-    # The toolCall is the only text the editor has to render, and the title is
-    # the field a ToolCallUpdate exists to update. Carrying the id alone left
-    # the operator approving the announced title -- `salient_arg` clipped to 60
-    # chars -- so a long argv was approved unseen past its first line.
+    # The title is what the operator approves; carried by id alone, a long argv was approved unseen.
     assert set(sent[0]["toolCall"]) == {"toolCallId", "title", "status"}, sent[0]["toolCall"]
     assert sent[0]["toolCall"]["title"] == "Allow run_command: ls"
     assert sent[1]["toolCall"]["title"] == "Theme?"  # an entity of its own, announced whole

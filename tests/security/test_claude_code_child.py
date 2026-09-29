@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The claude_code child's boundary: argv carries operator config and literals
-only, never a widening flag; the environment carries no credential or Claude
-Code session variable from the operator shell."""
+"""The claude_code child's boundary.
+
+argv carries operator config and literals only, never a widening flag; the environment
+carries no credential or Claude Code session variable from the operator shell.
+"""
 
 from __future__ import annotations
 

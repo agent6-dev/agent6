@@ -1,11 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The end-of-run console headline must agree with `agent6 sessions`.
+"""The end-of-run console headline folds the same session.end `agent6 sessions` reads.
 
-A finish_session over a red/stale verify emits session.end all_passed=false, so the
-listing reads "finished". The console block used to read result.completed
-(true for any finish_session) and print "passed" — the exact disagreement
-status_word exists to prevent. print_session_end now folds the same session.end.
+A finish_session over a red or stale verify is all_passed=false, so both read "finished".
 """
 
 from __future__ import annotations
@@ -117,10 +114,10 @@ def _end_output(
 def test_the_red_gate_errand_is_only_printed_over_a_real_red(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """ "the gate is red, and nothing checked it before this run started" fired
-    on verified="failed", which used to include executions where NO verify ran: the
-    operator was sent to run the full gate at the base commit over a failure
-    nobody observed. An unverified finish now says what is missing instead."""
+    """The "nothing checked it before this run started" line needs a verify that ran and failed.
+
+    An unverified finish says what is missing instead.
+    """
     manifest: dict[str, object] = {
         "version": 3,
         "session_id": "r-red",
@@ -156,9 +153,7 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
 def test_the_stale_gate_proposal_survives_an_unverified_verdict(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A worker may declare the gate stale because it CANNOT RUN AT ALL -- a
-    execution with no verify observation. Keying the proposal print on
-    verified="failed" alone would silently drop it there."""
+    """A gate declared stale with no verify observation still prints the proposal."""
     result = SessionResult(
         completed=True,
         reason="gate_stale",
@@ -175,10 +170,7 @@ def test_the_stale_gate_proposal_survives_an_unverified_verdict(
 def test_the_stale_gate_remedy_is_a_command_that_installs_that_gate(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`harness.verify_command` is argv and takes no shell, so a proposal with
-    a pipeline wraps as `sh -c`. Splitting it word by word printed a command
-    that installs a gate handing `&& ruff check` to pytest as arguments -- and
-    `config set` accepts it silently."""
+    """`harness.verify_command` is argv and takes no shell; a proposed pipeline wraps as `sh -c`."""
     result = SessionResult(
         completed=True,
         reason="gate_stale",
@@ -197,12 +189,11 @@ def test_the_stale_gate_remedy_is_a_command_that_installs_that_gate(
 def test_end_banner_does_not_claim_merged_from_a_prior_executions_stamp(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A resumed run keeps committing on its branch under the FIRST execution's
-    merged stamp (and this execution's auto-merge may have conflicted): the end block
-    read the stamp alone, claimed "changes merged into main" over unmerged
-    commits, and hid the merge command. The claim now holds only while the
-    branch still points at the tip the stamp recorded -- the same comparison
-    `sessions prune` trusts."""
+    """The end block claims a merge only while the branch still points at the stamped tip.
+
+    A resumed run keeps committing under the first execution's merged stamp; the comparison is the
+    one `sessions prune` trusts.
+    """
     import subprocess as sp
 
     repo = tmp_path / "repo"
@@ -261,9 +252,7 @@ def test_end_banner_does_not_claim_merged_from_a_prior_executions_stamp(
 def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """auto_merge already merged (and auto_prune may have deleted) the run
-    branch, so the footer must say it merged, not tell the operator to run
-    `agent6 sessions merge` on a branch that is gone."""
+    """After auto_merge the footer says it merged, never `sessions merge` on a gone branch."""
     layout = _layout(
         tmp_path,
         "r-merged",
@@ -301,11 +290,7 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
 def test_end_banner_does_not_advertise_a_run_branch_that_never_got_a_commit(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """branch_per_run named agent6/<id>, but no commit ever landed on it -- the
-    chain's update-ref failed and the loop swallowed the error. The footer used
-    to print "changes are on agent6/<id>" and tell the operator to
-    `agent6 sessions merge` a branch that does not exist, while the run reported
-    success and the edits sat uncommitted. It must state the truth instead."""
+    """A run branch that never received a commit is reported as such, not as holding changes."""
     import subprocess as sp
 
     repo = tmp_path / "repo"
@@ -397,11 +382,10 @@ def _end_footer(
 def test_end_banner_of_a_branchless_run_names_its_chain_ref(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every footer arm was gated on a run branch, so a `branch_per_run =
-    false` run got no where-are-my-changes footer at all, merged or not,
-    while `sessions merge` and `sessions diff` work on its chain ref. The
-    footer names the chain ref the way it names a branch; a branchless run
-    whose commit never landed gets the same WARNING a branchful one does."""
+    """A `branch_per_run = false` run gets the where-are-my-changes footer, naming its chain ref.
+
+    A branchless run whose commit never landed gets the same WARNING a branchful one does.
+    """
     import subprocess as sp
 
     from agent6.git_ops import chain_ref_for
@@ -430,8 +414,7 @@ def test_end_banner_of_a_branchless_run_names_its_chain_ref(
 def test_end_banner_of_a_merged_branchless_run_says_merged(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The merged arm was gated on a run branch too, so a merged branchless
-    run printed no footer at all."""
+    """A merged branchless run prints the merged footer."""
     import subprocess as sp
 
     from agent6.git_ops import chain_ref_for
@@ -457,9 +440,7 @@ def test_end_banner_of_a_merged_branchless_run_says_merged(
 def test_end_banner_of_a_run_that_never_commits_by_design_is_no_warning(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`commit_per_step = false` leaves every edit in the working tree by
-    design, and the footer read it as a failed commit ("see the run log")
-    over a branch that was never going to exist."""
+    """`commit_per_step = false` leaves every edit in the tree by design, not as a failed commit."""
     repo = _seeded_repo(tmp_path)
     monkeypatch.chdir(repo)
     (repo / "work.txt").write_text("agent work\n", encoding="utf-8")
@@ -477,8 +458,7 @@ def test_end_banner_of_a_run_that_never_commits_by_design_is_no_warning(
 def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The checkout is still on the run branch (the chain never switches
-    back): the footer names the branch and how to leave it."""
+    """The checkout is still on the run branch, so the footer names it and how to leave it."""
     import subprocess as sp
 
     repo = _seeded_repo(tmp_path)
@@ -498,8 +478,7 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
 def test_interrupt_end_prints_cost_resume_and_branch_hints(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A Ctrl-C interrupt used to print only "run interrupted": no spend, no resume
-    # hint, and no note the user was left on the run branch.
+    # A Ctrl-C interrupt printed only "run interrupted": no spend, no resume hint, no branch note.
     layout = _layout(
         tmp_path, "r4", [{"type": "session.start", "session_id": "r4", "user_task": "t"}]
     )
@@ -552,8 +531,7 @@ def test_provider_error_is_headlined_failed(tmp_path: Path, capsys: object) -> N
 def test_end_banner_adds_the_run_total_across_resume_executions(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The tracker's "TOTAL" line is per-execution (each resume starts a fresh budget);
-    # a resumed run's banner must also state the true cumulative spend.
+    # The tracker's TOTAL line is per-execution; a resumed run's banner states the cumulative spend.
     layout = _layout(
         tmp_path,
         "r7",
@@ -610,9 +588,7 @@ def test_end_banner_stays_quiet_on_a_single_execution_run(
 def test_finalize_auto_stash_pops_the_run_stash_not_the_latest(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The finalizer restores THE stash the run pushed (found by its run-id
-    message), not stash@{0}: a stash pushed during the run otherwise got
-    popped as the 'pre-run work' while the real pre-run work stayed hidden."""
+    """The finalizer restores the stash the run pushed, found by its message, not stash@{0}."""
     import subprocess
 
     from agent6.app.finalize import finalize_auto_stash
@@ -658,8 +634,7 @@ def test_finalize_auto_stash_pops_the_run_stash_not_the_latest(
 def test_finalize_auto_stash_reports_a_vanished_stash(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A stash the operator already popped mid-run is reported, not silently
-    'restored' (and no longer pops whatever happens to sit at stash@{0})."""
+    """A stash the operator popped mid-run is reported; nothing pops what sits at stash@{0}."""
     import subprocess
 
     from agent6.app.finalize import finalize_auto_stash
@@ -681,9 +656,7 @@ def test_finalize_auto_stash_reports_a_vanished_stash(
 def test_finalize_auto_stash_prints_a_failed_bystander_putback(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """When the restore raises because a raced drop took a concurrent stash and
-    putting it back failed, finalization prints the recovery command and
-    finishes -- the loss must reach the operator, not crash the finalizer."""
+    """A restore that raises prints the recovery command and finishes."""
     import subprocess
 
     from agent6.app import finalize as finalize_mod
@@ -726,10 +699,10 @@ def test_finalize_auto_stash_prints_a_failed_bystander_putback(
 
 
 def test_stash_recovery_hint_is_identity_stable(tmp_path: Path) -> None:
-    """The hint a DETACHED run prints has the longest window of all -- the
-    operator comes back hours later -- and it still named a positional
-    `git stash pop`, the exact failure `restore_stash` was changed to avoid.
-    One owner builds the sha-based line for every caller."""
+    """A detached run's hint names the stash by its message, never by position.
+
+    The operator comes back hours later; one owner builds the sha-based line for every caller.
+    """
     import subprocess
 
     from agent6.app.finalize import stash_recovery_hint
@@ -792,11 +765,10 @@ def test_stash_recovery_hint_is_identity_stable(tmp_path: Path) -> None:
 def test_a_session_that_ends_holding_work_names_the_next_step(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], mode: str, expected: list[str]
 ) -> None:
-    """Seeding existed but nothing suggested it, so an operator had to know the
-    flag was there. A plan ends holding OPEN QUESTIONS and nothing said that
-    answering them is `plan edit` then `resume --steer`, so the whole loop is
-    printed. An ask ends holding work someone else does. A run has already done
-    its work and needs no handoff."""
+    """A plan ending with open questions prints the `plan edit` then `resume --steer` loop.
+
+    An ask ends holding work someone else does; a run needs no handoff.
+    """
     import json
 
     from agent6.app.finalize import _print_next_session  # pyright: ignore[reportPrivateUsage]
@@ -820,11 +792,7 @@ def test_a_session_that_ends_holding_work_names_the_next_step(
 def test_a_plan_that_crashed_before_finishing_gets_no_execute_hint(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """finish_planning is the only plan.md writer, so a plan that ends via
-    provider_error before ever calling it holds no deliverable. The footer
-    used to print `edit`/`revise`/`execute` regardless of result.completed,
-    telling the operator to `agent6 run --from <id>` a plan that was never
-    drafted."""
+    """A plan that ended before finish_planning holds no deliverable, so no edit hints print."""
     layout = _layout(
         tmp_path,
         "plan-crash",
@@ -856,8 +824,7 @@ def test_a_plan_that_crashed_before_finishing_gets_no_execute_hint(
 def test_a_plan_that_completed_without_finish_planning_gets_no_execute_hint(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`silent_finish` completes a plan run too; with no plan.md on disk the
-    hints named a plan never drafted."""
+    """`silent_finish` completes a plan run too; with no plan.md the hints name nothing."""
     layout = _layout(
         tmp_path,
         "plan-prose",
@@ -885,15 +852,10 @@ def test_a_plan_that_completed_without_finish_planning_gets_no_execute_hint(
 def test_the_end_of_run_block_goes_through_the_reporter(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A front-end that does not own stdout must be able to redirect this.
+    """The end block prints through the front-end's writer, never a bare `print`.
 
-    `agent6 acp` speaks JSON-RPC on stdout, so a bare `print` here is not a
-    cosmetic layering slip: it writes non-JSON lines into the protocol stream,
-    and `result.summary` is the model's own `finish_session` text -- unbounded, and
-    free to contain newlines. A model could close the prose with a newline and
-    emit a forged `session/update` at column 0, which a client that skips
-    unparseable lines honours. The editor owns the filesystem and terminal in
-    ACP, so that is a jail escape.
+    `agent6 acp` speaks JSON-RPC on stdout, and `result.summary` is the model's own text: a newline
+    then a forged `session/update` at column 0 would be a jail escape in the editor.
     """
     layout = _layout(
         tmp_path,
@@ -924,9 +886,7 @@ def test_the_end_of_run_block_goes_through_the_reporter(
 def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A GitError on the dirty-check used to fall through to "no changes were
-    committed" -- an unverified claim on a broken-git host. The banner now
-    says it could not check, and claims nothing either way."""
+    """A GitError on the dirty check makes the banner say it could not check, claiming nothing."""
     import agent6.app.finalize as finalize_mod
     from agent6.git_ops import GitError
 
@@ -968,10 +928,10 @@ def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
 def test_a_failed_run_keeps_its_reason_on_the_console_stream(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The live done line carries the finish summary only for a clean finish,
-    and session.end carries no message, so suppressing `result.summary` under
-    `console_stream` left a foreground operator with "● provider error" and no
-    URL, no errno, no status."""
+    """The live done line carries the finish summary only for a clean finish.
+
+    Session.end carries no message, so a provider error keeps its URL, errno and status.
+    """
     layout = _layout(
         tmp_path,
         "r-fail",
@@ -1031,8 +991,7 @@ def test_a_clean_finish_does_not_repeat_the_summary_the_stream_showed(
 def test_the_sandbox_warning_states_its_remedy_once(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The four remedy bullets were printed per binary: three unreachable tools
-    filled eighteen lines, twelve of them the same boilerplate."""
+    """The remedy bullets print once, not per unreachable binary."""
     layout = _layout(
         tmp_path,
         "r-tools",
@@ -1066,9 +1025,7 @@ def test_the_sandbox_warning_states_its_remedy_once(
 
 
 def test_the_run_total_rides_the_receipt_channel(tmp_path: Path) -> None:
-    """A front-end with a live view routes the cost receipt to its log; the
-    RUN TOTAL line went through `out`, so on a resumed ACP turn it was the one
-    receipt line the editor saw, split from the block it belongs to."""
+    """A front-end with a live view routes the cost receipt to its log, with its block."""
     from agent6.app.reporter import Reporter
 
     layout = _layout(
@@ -1102,9 +1059,10 @@ def test_the_run_total_rides_the_receipt_channel(tmp_path: Path) -> None:
 def test_a_plan_ends_without_the_no_commit_footer(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A plan never commits: its deliverable is the plan, printed above, and
-    "no changes were committed" is noise after it. A run over the same clean
-    tree keeps the footer."""
+    """A plan never commits, so "no changes were committed" is noise after its deliverable.
+
+    A run over the same clean tree keeps the footer.
+    """
     import subprocess as sp
 
     repo = tmp_path / "repo"

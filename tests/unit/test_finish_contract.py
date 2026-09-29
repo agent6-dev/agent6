@@ -2,11 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """A machine agent state's output_schema as an in-execution finish contract.
 
-A run-mode state with `output_schema`/`finish_json` could never satisfy its
-contract: the execution was never told it, finish_session accepted a payload-less
-call, and the engine then failed the execution over correct work. The request now
-carries the schema table, the execution's task states the contract, and the loop
-refuses a non-conforming finish with the problems so the retry happens in-execution.
+The request carries the schema table, the execution's task states the contract, and the loop refuses
+a non-conforming finish with the problems so the retry happens in-execution.
 """
 
 from __future__ import annotations

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions show` on a fan-out coordinator lists its lanes; on a lane
-it names the coordinator."""
+"""`sessions show` lists a coordinator's lanes and names a lane's coordinator."""
 
 from __future__ import annotations
 
@@ -140,8 +139,7 @@ def test_show_on_a_lane_names_its_coordinator(
 def test_show_marks_a_lane_unmerged_like_the_listing(
     fan_out: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The fan-out view is where the operator picks a lane to merge: a lane
-    whose branch holds commits its base lacks reads unmerged there too."""
+    """A lane whose branch holds commits its base lacks reads unmerged in the fan-out view."""
     import subprocess
 
     def git(*args: str) -> str:
@@ -177,9 +175,11 @@ def test_show_marks_a_lane_unmerged_like_the_listing(
 def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The usage line kept only the uncached `in=` (a 500k-token run read as
-    `in=18`) and spelled a clean $0 as `cost $0.0000` where the listing blanks
-    it; the cached side rides along and the cost is the listing's cell."""
+    """The usage line carries the cached input side and the listing's cost cell.
+
+    It kept only the uncached `in=` (a 500k-token run read as `in=18`) and spelled a clean $0
+    as `cost $0.0000` where the listing blanks it.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -213,9 +213,11 @@ def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
 def test_show_usage_and_json_carry_the_plan_points(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run its plan cap ended showed no number for it outside the live views:
-    the usage line and the JSON carry the points this execution consumed against
-    [budget].max_percent; a dollar-metered run shows none."""
+    """A plan-metered run shows the points this execution consumed outside the live views.
+
+    The usage line and the JSON carry them against [budget].max_percent; a dollar-metered run
+    shows none.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -253,8 +255,7 @@ def test_show_usage_and_json_carry_the_plan_points(
 def test_show_names_the_session_that_seeded_a_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run `--from` seeded records its source in the manifest; `sessions
-    show` prints it as `seeded from` and carries it in the JSON."""
+    """`sessions show` prints a `--from` seed as `seeded from` and carries it in the JSON."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -269,9 +270,10 @@ def test_show_names_the_session_that_seeded_a_run(
 def test_show_names_the_questions_nobody_answered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A question asked while no operator was attached got empty answers and
-    the run went on; `sessions show` said nothing, so the operator never knew
-    a question waited in the transcript to be answered with a steer."""
+    """`sessions show` names a question that waited unanswered in the transcript.
+
+    Asked while no operator was attached, it got empty answers and the run went on.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()

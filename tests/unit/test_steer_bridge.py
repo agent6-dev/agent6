@@ -85,8 +85,7 @@ def test_make_steer_state_without_tty_uses_bridge(
 
 
 def test_steer_answer_is_abort_peeks_without_consuming(tmp_path: Path) -> None:
-    """The non-blocking stop peek: True only for abort/stop, and it never consumes
-    the answer (the between-step boundary still handles it)."""
+    """The non-blocking stop peek is True only for abort or stop and never consumes the answer."""
     from agent6.sessions.ipc import steer_answer_is_abort
 
     assert not steer_answer_is_abort(tmp_path)  # no answer file yet
@@ -112,8 +111,7 @@ def _silent_banner(text: str) -> None:
 def test_sigint_escalates_boundary_interrupt_stop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The Ctrl-C stages: 1st pauses at the next between-step boundary (the
-    in-flight call finishes), 2nd interrupts the in-flight call, 3rd stops."""
+    """Ctrl-C's stages: pause at the next boundary, interrupt the in-flight call, stop."""
     import signal
 
     monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
@@ -136,8 +134,10 @@ def test_sigint_escalates_boundary_interrupt_stop(
 
 
 def test_sigint_at_the_pause_prompt_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """At the pause prompt itself a Ctrl-C stops the run outright, whatever the
-    stage: the banner promised it, and there is nothing in flight to interrupt."""
+    """At the pause prompt a Ctrl-C stops the run outright, whatever the stage.
+
+    The banner promised it, and there is nothing in flight to interrupt.
+    """
     import signal
 
     monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
@@ -161,10 +161,11 @@ def test_sigint_at_the_pause_prompt_stops(tmp_path: Path, monkeypatch: pytest.Mo
 def test_a_seeded_steer_is_the_answer_on_the_terminal_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`resume --steer` and the end-of-session follow-up seed the answer file
-    before the loop's first boundary; the terminal steer path consumed only a
-    live front-end's answer and otherwise opened the pause menu, so the text
-    the operator had just typed was asked for again."""
+    """The terminal steer path consumes an answer seeded before the loop's first boundary.
+
+    `resume --steer` and the end-of-session follow-up seed it; the path consumed only a live
+    front-end's answer and asked again for the text the operator had just typed.
+    """
     monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: True)
 
     def no_menu(session_dir: Path, **_kw: object) -> str | None:
@@ -184,8 +185,7 @@ def test_a_seeded_steer_is_the_answer_on_the_terminal_too(
 
 
 def test_prompt_pauses_the_console_spinner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The pause menu runs inside ConsoleView.pause(): the heartbeat spinner's
-    per-tick line-erase otherwise wipes the pause-menu line and its Tab preview."""
+    """The pause menu runs inside ConsoleView.pause(), out of the spinner's line-erase."""
     import contextlib
     from collections.abc import Generator
     from typing import cast
@@ -218,10 +218,11 @@ def test_prompt_pauses_the_console_spinner(tmp_path: Path, monkeypatch: pytest.M
 
 
 def test_revision_selector_pauses_the_console_spinner(monkeypatch: pytest.MonkeyPatch) -> None:
-    """select_revised_prompt blocks on input() for as long as the operator
-    reads the proposal; without ConsoleView.pause() the heartbeat erases the
-    choice prompt (and the typed echo) every 0.5s -- the one foreground-CLI
-    interactive prompt that was never handed the view."""
+    """select_revised_prompt runs inside ConsoleView.pause().
+
+    It blocks on input() while the operator reads the proposal; the heartbeat erased the choice
+    prompt and the typed echo every 0.5s.
+    """
     import contextlib
     from collections.abc import Generator
     from typing import cast
@@ -251,10 +252,11 @@ def test_revision_selector_pauses_the_console_spinner(monkeypatch: pytest.Monkey
 
 
 def test_reset_stage_disarms_without_touching_the_markers(tmp_path: Path) -> None:
-    """A stage armed in one execution must not leak into the next (phantom pause
-    menu; stage 2 aborts the next execution's first call). reset_stage zeroes ONLY
-    the SIGINT stage: the steer marker files stay, because resume --steer
-    seeds the next execution through them."""
+    """reset_stage zeroes only the SIGINT stage; the steer marker files stay.
+
+    A stage armed in one execution leaked into the next (a phantom pause menu, stage 2
+    aborting the first call); resume --steer seeds the next execution through the markers.
+    """
     import signal
 
     from agent6.sessions.ipc import request_steer, steer_request_pending, write_steer_answer
@@ -283,9 +285,10 @@ def test_reset_stage_disarms_without_touching_the_markers(tmp_path: Path) -> Non
 
 
 def test_workflow_run_resets_the_steer_stage_at_execution_entry() -> None:
-    """Each wf.run() execution starts with no armed Ctrl-C (the ask REPL re-enters
-    run() per follow-up under one installed handler): the reset fires at the
-    very top of run(), before any other execution work."""
+    """Each run() starts with no armed Ctrl-C, reset at its very top.
+
+    The ask REPL re-enters run() per follow-up under one installed handler.
+    """
     import contextlib
 
     from agent6.harness.loop import Harness
@@ -310,10 +313,11 @@ def test_workflow_run_resets_the_steer_stage_at_execution_entry() -> None:
 
 
 def test_the_turn_boundary_settles_background_commands(tmp_path: Path) -> None:
-    """A background command's ending reaches disk when someone observes it, and
-    a model that starts one and never asks again left `/shells` -- which reads
-    off disk, at this very boundary -- reporting it maybe-running for the rest
-    of the run. The boundary observes once per turn."""
+    """The between-step boundary observes background commands once per turn.
+
+    An ending reaches disk when someone observes it; a model that never asked again left
+    `/shells`, which reads off disk, reporting maybe-running for the rest of the run.
+    """
     from agent6.harness.loop import Harness
     from agent6.providers import ProviderResponse
 
@@ -357,8 +361,7 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: Path) -> None:
 
 
 def test_compact_request_carries_focus(tmp_path: Path) -> None:
-    """The compact marker body is the operator's optional summary focus:
-    "" = plain compact, None = no request pending."""
+    """The compact marker body is the optional summary focus: "" is plain, None is no request."""
     from agent6.sessions.ipc import clear_compact_request, read_compact_request, request_compact
 
     assert read_compact_request(tmp_path) is None
@@ -371,10 +374,12 @@ def test_compact_request_carries_focus(tmp_path: Path) -> None:
 
 
 def test_compact_request_reports_a_failed_write(tmp_path: Path) -> None:
-    """A marker that could not be written must read as a failure. The write was
-    wrapped in suppress(OSError) while every front-end reported "compaction
-    requested" unconditionally, so a read-only or full state dir looked like
-    success and nothing ever compacted."""
+    """A marker that could not be written must read as a failure.
+
+    The write was wrapped in suppress(OSError) while every front-end reported "compaction requested"
+    unconditionally, so a read-only or full state dir looked like success and nothing ever
+    compacted.
+    """
     from agent6.sessions.ipc import read_compact_request, request_compact
 
     assert request_compact(tmp_path) is True
@@ -408,10 +413,12 @@ def test_an_urgent_steer_request_publishes_atomically(
 def test_compact_request_publishes_atomically(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """request_compact publishes via tmp+rename (portable.atomic_write). The run
-    polls read_compact_request every boundary, so a plain write_text exposed an
-    empty/partial focus the run then consumed -- and clear_compact_request
-    deleted the real one before it was ever read."""
+    """request_compact publishes via tmp+rename (portable.atomic_write).
+
+    The run polls read_compact_request every boundary, so a plain write_text exposes an empty or
+    partial focus the run then consumes, and clear_compact_request deletes the real one before it
+    is ever read.
+    """
     from agent6.sessions import ipc
 
     calls: list[tuple[Path, str]] = []
@@ -430,9 +437,10 @@ def test_compact_request_publishes_atomically(
 def test_the_fallback_pause_prompt_takes_a_steer_written_while_it_waits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The plain prompt (no menu-capable terminal) reads the steer file while
-    it waits, like the menu: a front-end's steer ends the prompt and is the
-    answer, not a line the operator never typed."""
+    """The plain prompt reads the steer file while it waits, like the menu.
+
+    A front-end's steer ends the prompt and is the answer, not a line the operator never typed.
+    """
     monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
     monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: False)
 
@@ -459,9 +467,10 @@ def test_the_fallback_pause_prompt_takes_a_steer_written_while_it_waits(
 def test_edit_survives_an_unparsable_editor(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An $EDITOR with unbalanced quoting is a choose-again, like a missing
-    binary: shlex.split's ValueError escaped every guard up to the execution's
-    `except Exception`, ending the run as crashed."""
+    """An $EDITOR with unbalanced quoting is a choose-again, like a missing binary.
+
+    shlex.split's ValueError escaped every guard and ended the run as crashed.
+    """
     import io
     import sys
 
@@ -476,8 +485,7 @@ def test_edit_survives_an_unparsable_editor(
 def test_edit_survives_a_non_utf8_save(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An editor that writes back non-UTF-8 bytes is a choose-again; the
-    UnicodeDecodeError from reading the file back ended the run."""
+    """An editor that writes back non-UTF-8 bytes is a choose-again, not a crashed run."""
     import io
     import sys
 
@@ -495,12 +503,13 @@ def test_edit_survives_a_non_utf8_save(
 def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One Ctrl-C leaves the revise_prompt choice, as at every other idle CLI
-    prompt. The execution installs the run's escalating steer handler before the
-    loop reaches this prompt, so without `idle_prompt_sigint` the press was
-    absorbed by the retried input(): three presses to leave, a "pausing after
-    this step" line with no step in flight, and an armed stage that opened a
-    pause menu at the run's first boundary."""
+    """One Ctrl-C leaves the revise_prompt choice, as at every other idle CLI prompt.
+
+    The execution installs the run's escalating steer handler before the loop reaches this prompt,
+    so without `idle_prompt_sigint` the press was absorbed by the retried input(): three presses to
+    leave, a "pausing after this step" line with no step in flight, and an armed stage that opened a
+    pause menu at the run's first boundary.
+    """
     import contextlib
     import os
     import signal

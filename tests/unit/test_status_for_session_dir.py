@@ -198,9 +198,11 @@ def test_both_fact_producers_and_the_listing_agree(
 
 
 def test_resume_clears_orphaned_pending_prompts() -> None:
-    """An execution boundary invalidates unanswered prompts: the resumed execution re-asks
-    with restarted ids, so a held-over pending entry would both mislabel the
-    run "waiting" and duplicate when the new execution's same-id prompt arrives."""
+    """An execution boundary invalidates unanswered prompts.
+
+    The resumed execution re-asks with restarted ids, so a held-over pending entry would
+    mislabel the run "waiting" and duplicate when the same-id prompt arrives.
+    """
     events = [
         _START,
         _APPROVAL,
@@ -214,10 +216,11 @@ def test_resume_clears_orphaned_pending_prompts() -> None:
 
 
 def test_waiting_names_the_prompt_kind_and_age_in_both_producers(tmp_path: Path) -> None:
-    """ "waiting · needs answer" said neither WHAT the run waits on nor for how
-    long. With a prompt ts, both fact producers word it "approval 5m" /
-    "question 5m" (oldest unanswered prompt); a ts-less log keeps the generic
-    wording."""
+    """The waiting status names what the run waits on and for how long.
+
+    With a prompt ts, both fact producers word it "approval 5m" / "question 5m" (oldest unanswered
+    prompt); a ts-less log keeps the generic wording.
+    """
     import datetime
     import os
 

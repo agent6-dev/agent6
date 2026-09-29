@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""JailSession.open on a launcher that dies during setup: the failure is a
-JailUnavailableError with the launcher's stderr, the child is reaped, and
-every pipe is closed at the failure site. Abandoning the Popen instead left
-the stdin writer to garbage collection, which retried the flush against the
-dead peer and raised unraisable BrokenPipeError noise into run logs (seen in
-two bench executions), plus a zombie launcher for the rest of the process."""
+"""JailSession.open on a launcher that dies during setup.
+
+The failure is a JailUnavailableError with the launcher's stderr, the child is reaped, and every
+pipe is closed at the failure site; an abandoned Popen leaves BrokenPipeError noise and a zombie.
+"""
 
 from __future__ import annotations
 
@@ -56,9 +55,7 @@ def test_a_launcher_dead_at_setup_is_reaped_with_its_pipes_closed(
 def test_a_spec_write_failure_is_the_same_setup_death(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """EPIPE at the spec write/flush (the launcher died before reading) is
-    JailUnavailableError like the EOF case, never a raw OSError, and the
-    abandoned child is still reaped."""
+    """EPIPE at the spec write is JailUnavailableError like the EOF case; the child is reaped."""
     monkeypatch.setattr(jail, "_require_jail_binary", lambda: _fake_binary(tmp_path, "exit 7"))
     seen = _recording_popen(monkeypatch)
 

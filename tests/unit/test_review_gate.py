@@ -3,11 +3,12 @@
 """The in-loop review gate: how the loop schedules and honours panel verdicts.
 
 The panel itself (grounding, decision modes, dedup) is pinned in
-test_review_panel.py; here the LOOP's plumbing is the unit -- a NEEDS-WORK
+test_review_panel.py; here the LOOP's plumbing is the unit, a NEEDS-WORK
 verdict revokes finish_session and injects the findings, the rejection cap
 disarms the gate, trigger "off" never runs a panel, and the periodic /
 on_verify_fail triggers fire only on their schedule. The panel is stubbed at
-the `Reviewer.critique` seam."""
+the `Reviewer.critique` seam.
+"""
 
 from __future__ import annotations
 
@@ -116,8 +117,10 @@ def _resp_with_tool_use(text: str, tool_use: dict[str, Any]) -> ProviderResponse
 
 
 class _PanelScript:
-    """A scripted `Reviewer.critique` stand-in: pops verdicts in order and
-    counts how often the loop consulted the panel."""
+    """A scripted `Reviewer.critique` stand-in.
+
+    Pops verdicts in order and counts how often the loop consulted the panel.
+    """
 
     def __init__(self, verdicts: list[CritiqueResult | None]) -> None:
         self.verdicts = list(verdicts)
@@ -134,9 +137,11 @@ _MSGS: list[dict[str, Any]] = [
 
 
 def test_before_finish_panel_revokes_finish_and_injects_findings() -> None:
-    """A NEEDS-WORK panel verdict on finish_session suppresses the finish
-    (the tool_result still returns so the call is not half-applied) and the
-    findings ride into the next user turn under [review]."""
+    """A NEEDS-WORK panel verdict on finish_session revokes the finish and injects the findings.
+
+    The tool_result still returns so the call is not half-applied; the findings ride into the next
+    user turn under [review].
+    """
     worker = MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("attempting to finish", _finish_tool_use("tu1", "wrap up")),
@@ -206,9 +211,10 @@ def test_before_finish_panel_satisfied_accepts_finish() -> None:
 
 
 def test_before_finish_rejection_cap_lets_finish_through() -> None:
-    """After ReviewSettings.max_consecutive_rejections back-to-back rejections the
-    finish goes through (findings still injected) so the worker cannot
-    bounce forever."""
+    """After `max_consecutive_rejections` back-to-back rejections the finish goes through.
+
+    The findings are still injected; the worker cannot bounce forever.
+    """
     worker = MagicMock()
     worker.call.return_value = _resp_with_tool_use("finishing", _finish_tool_use("tu1", "done"))
     dispatcher = MagicMock()
@@ -260,8 +266,10 @@ def test_trigger_off_never_runs_a_panel() -> None:
 
 
 def test_silent_finish_panel_revokes_and_continues() -> None:
-    """A prose-only finish is also gated: rejected once, the run continues
-    with the findings visible; a later pass exits."""
+    """A prose-only finish is also gated.
+
+    Rejected once, the run continues with the findings visible; a later pass exits.
+    """
     worker = MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use(
@@ -322,8 +330,10 @@ def _exec(returncode: int, stderr: str = "") -> ExecResult:
 
 
 def test_periodic_panel_fires_every_n_iterations() -> None:
-    """review_trigger=periodic with review_period=2 runs the panel on iters 2
-    and 4 only; the iter-5 finish_session is NOT gated under periodic."""
+    """`review_trigger=periodic` with `review_period=2` runs the panel on iterations 2 and 4 only.
+
+    The iteration-5 finish_session is not gated under periodic.
+    """
     worker = MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("t1", _verify_pass_tool_use("v1")),
@@ -360,8 +370,7 @@ def test_periodic_panel_fires_every_n_iterations() -> None:
 
 
 def test_periodic_panel_injects_text_into_next_user_msg() -> None:
-    """Periodic findings are advisory: injected under [review] even when the
-    verdict is satisfied."""
+    """Periodic findings are advisory: injected under [review] even on a satisfied verdict."""
     worker = MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("t1", _verify_pass_tool_use("v1")),
@@ -392,8 +401,10 @@ def test_periodic_panel_injects_text_into_next_user_msg() -> None:
 
 
 def test_on_verify_fail_panel_fires_only_on_nonzero_exit() -> None:
-    """review_trigger=on_verify_fail runs the panel only on iterations where
-    run_verify_command exited non-zero; passing verifies never fire it."""
+    """`review_trigger=on_verify_fail` runs the panel only where run_verify_command exited non-zero.
+
+    Passing verifies never fire it.
+    """
     worker = MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("t1", _verify_pass_tool_use("v1")),  # passes
@@ -433,8 +444,10 @@ def test_on_verify_fail_panel_fires_only_on_nonzero_exit() -> None:
 
 
 def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
-    """An iteration with no run_verify_command call has no failure signal, so
-    on_verify_fail never consults the panel."""
+    """An iteration with no run_verify_command call never consults the panel under on_verify_fail.
+
+    There is no failure signal.
+    """
     edit_tool = {"type": "tool_use", "id": "e1", "name": "list_dir", "input": {"path": "."}}
     worker = MagicMock()
     worker.call.side_effect = [
@@ -481,8 +494,7 @@ def _idle_turn() -> Any:
 
 
 def _settle(wf: Harness, state: Any, turn: Any) -> Any:
-    """The settled advisor's answer, applied through the loop (a stop runs
-    the end gates at once)."""
+    """The settled advisor's answer, applied through the loop (a stop runs the end gates)."""
     from agent6.harness._guards import verify_settled
 
     ctx = wf._turn_context(state, iteration=turn.iteration, execution_start=1)  # pyright: ignore[reportPrivateUsage]
@@ -490,10 +502,12 @@ def _settle(wf: Harness, state: Any, turn: Any) -> Any:
 
 
 def test_a_settled_end_is_reviewed_like_a_finish() -> None:
-    """A gateless run that commits and goes idle ends "settled" without ever
-    calling finish_session; the before-finish panel judges that end too: a
-    rejection hands the findings to the model and restarts the idle count, an
-    approval lets the end stand."""
+    """A settled end is reviewed like a finish.
+
+    A gateless run that commits and goes idle ends "settled" without calling finish_session; the
+    before-finish panel judges that end too: a rejection hands the findings to the model and
+    restarts the idle count, an approval lets the end stand.
+    """
     wf = _wf(review=ReviewSettings(trigger="before_finish", seats=[MagicMock()]))
     wf.mode = "run"
     wf.config.harness.metric = None
@@ -524,9 +538,11 @@ def test_a_settled_end_is_reviewed_like_a_finish() -> None:
 
 
 def test_a_periodic_finding_on_a_settling_turn_is_delivered_once() -> None:
-    """The turn's notices deliver a periodic panel's text, and the settled
-    gate then delivers whatever the turn still holds: the same finding went
-    out twice on a turn that reviewed and settled."""
+    """A periodic finding on a settling turn is delivered once.
+
+    The turn's notices deliver a periodic panel's text, and the settled gate delivers whatever the
+    turn still holds; the same finding must not go out twice.
+    """
     wf = _wf(review=ReviewSettings(trigger="periodic", period=1, seats=[MagicMock()]))
     wf.mode = "run"
     wf.config.harness.metric = None
@@ -546,8 +562,10 @@ def test_a_periodic_finding_on_a_settling_turn_is_delivered_once() -> None:
 
 
 def test_a_rejected_plateau_end_is_named_as_one() -> None:
-    """The panel's rejection tells the worker which ending it rejected: the
-    metric plateau's wording names the plateau, not a settled end."""
+    """The panel's rejection tells the worker which ending it rejected.
+
+    The metric plateau's wording names the plateau, not a settled end.
+    """
     wf = _wf(review=ReviewSettings(trigger="before_finish", seats=[MagicMock()]))
     wf.mode = "run"
     panel = _PanelScript([CritiqueResult(text="* the gain is unmeasured", satisfied=False)])
@@ -560,9 +578,12 @@ def test_a_rejected_plateau_end_is_named_as_one() -> None:
 
 
 def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
-    """Under `verify_when = "finish"` a settled end over an unverified tree
-    runs the gate like a finish would: red returns to the model with the
-    output (bounded by verify_retries), green lets the end stand."""
+    """A settled end is certified by the harness gate.
+
+    Under `verify_when = "finish"` a settled end over an unverified tree runs the gate like a
+    finish: red returns to the model with the output (bounded by verify_retries), green lets the end
+    stand.
+    """
     from agent6.config import Config
 
     cfg = Config.model_validate(
@@ -600,10 +621,12 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
 
 
 def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
-    """A prose turn with no tool call is an end too: under `verify_when =
-    "finish"` the harness runs the gate first (red returns the worker to work
-    with the output, in the conversation since there are no tool results),
-    then the before-finish panel judges it."""
+    """A prose turn with no tool call is an end too.
+
+    Under `verify_when = "finish"` the harness runs the gate first (red returns the worker to work
+    with the output, in the conversation since there are no tool results), then the before-finish
+    panel judges it.
+    """
     from agent6.config import Config
     from agent6.harness.loop import LoopState, TurnState
 

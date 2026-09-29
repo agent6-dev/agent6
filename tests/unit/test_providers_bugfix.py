@@ -88,12 +88,12 @@ def test_anthropic_redirect_status_is_preserved() -> None:
 
 
 def test_openai_2xx_envelope_permanent_status_is_not_retried() -> None:
-    """A 402 (insufficient credits) / 400 / 401 / 404 in a 2xx error envelope
-    carries a PERMANENT upstream status in error.code. My first envelope fix
-    always left status_code=None (retryable), re-creating the exact
-    402-retried-every-turn regression `ProviderCaller` documents. The upstream
-    code now becomes the status, so NON_RETRYABLE classifies it permanent, and
-    the hint (HTTP 402) survives."""
+    """A permanent upstream status in a 2xx error envelope is not retried.
+
+    A 402 (insufficient credits), 400, 401 or 404 in `error.code` becomes the status, so
+    NON_RETRYABLE classifies it permanent and the hint (HTTP 402) survives; a status left at None
+    re-creates the 402-retried-every-turn regression `ProviderCaller` documents.
+    """
     from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
 
     budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
@@ -133,9 +133,11 @@ def test_openai_2xx_envelope_transient_status_stays_retryable() -> None:
 
 
 def test_envelope_status_classifies_string_codes() -> None:
-    """String error codes/types (OpenAI `code`, Anthropic `type`) that are
-    permanent map to their terminal HTTP status so a budgeted run fails fast;
-    transient statuses remain retryable while retaining the provider's fact."""
+    """Permanent string error codes map to their terminal HTTP status.
+
+    OpenAI `code` and Anthropic `type` values that are permanent fail a budgeted run fast; transient
+    statuses stay retryable while keeping the provider's fact.
+    """
     from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
     from agent6.providers._transport import envelope_status
 
@@ -167,9 +169,11 @@ def test_envelope_status_classifies_string_codes() -> None:
 
 
 def test_openai_2xx_string_error_and_placeholder_choices_are_envelopes() -> None:
-    """A string `error`, or an error object beside a null-content placeholder
-    `choices` entry, must be the envelope -- not fall through to the misleading
-    metering 422. The guard tested key presence and required error to be a dict."""
+    """A string `error`, or an error beside a null-content placeholder choice, is an envelope.
+
+    Neither falls through to the misleading metering 422; a guard that requires `error` to be a dict
+    misses both.
+    """
     budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
     for body in (
         {"error": "model not found"},
@@ -209,13 +213,14 @@ def test_openai_error_key_beside_real_content_still_parses() -> None:
 
 
 def test_openai_2xx_error_envelope_is_the_upstreams_failure() -> None:
-    """OpenRouter/LiteLLM deliver an upstream 5xx/429 as HTTP 200 with a
-    top-level `error` object. The body has no `usage`, so the metering gate
-    blamed agent6's own accounting ("no usage input tokens", 422 = permanent)
-    and a transient upstream failure killed the run -- and every compaction
-    side-call -- with no retry. The streaming paths already surface the
-    envelope; the non-streaming path must match: upstream code/message, and a
-    502/429 stays retryable (not in NON_RETRYABLE_HTTP_STATUSES)."""
+    """OpenRouter/LiteLLM deliver an upstream 5xx/429 as HTTP 200 with a top-level `error` object.
+
+    The body has no `usage`, so the metering gate blamed agent6's own accounting ("no usage input
+    tokens", 422 = permanent) and a transient upstream failure killed the run, and every
+    compaction side-call, with no retry. The streaming paths already surface the envelope; the
+    non-streaming path must match: upstream code/message, and a 502/429 stays retryable (not in
+    NON_RETRYABLE_HTTP_STATUSES).
+    """
     from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
 
     budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
@@ -679,9 +684,10 @@ def test_anthropic_connection_error_names_url_and_format() -> None:
 
 
 def test_non_object_json_200_is_retryable_provider_error() -> None:
-    """Valid JSON that is not an object (an array from a glitching gateway)
-    would AttributeError past the ProviderError-only retry; it must convert
-    to a retryable ProviderError like the non-JSON case."""
+    """A 200 whose JSON is not an object is a retryable ProviderError.
+
+    An array from a glitching gateway must not AttributeError past the ProviderError-only retry.
+    """
     provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini")
     resp = _FakeJSONResponse(status_code=200, text='["not", "an", "object"]')
     with (
@@ -694,8 +700,10 @@ def test_non_object_json_200_is_retryable_provider_error() -> None:
 
 
 def test_openai_malformed_choices_entry_is_provider_error() -> None:
-    """choices[0] null/string (a flaky local endpoint) must raise a retryable
-    ProviderError, not an AttributeError that kills the run."""
+    """A null or string `choices[0]` raises a retryable ProviderError, never an AttributeError.
+
+    A flaky local endpoint produces it.
+    """
     for body in ('{"choices": [null]}', '{"choices": ["err"]}'):
         with pytest.raises(ProviderError) as ei:
             _parse_response(json.loads(body))
@@ -703,9 +711,11 @@ def test_openai_malformed_choices_entry_is_provider_error() -> None:
 
 
 def test_anthropic_malformed_content_is_provider_error() -> None:
-    """content as a bare string, or a list holding a non-dict element, must
-    raise a retryable ProviderError, not iterate characters into an
-    AttributeError."""
+    """Malformed Anthropic content raises a retryable ProviderError.
+
+    Content as a bare string, or a list holding a non-dict element, must not iterate characters into
+    an AttributeError.
+    """
     from agent6.providers.anthropic import (
         _parse_response as _anthropic_parse,  # pyright: ignore[reportPrivateUsage]
     )
@@ -720,11 +730,12 @@ def test_anthropic_malformed_content_is_provider_error() -> None:
 
 
 def test_metered_gate_coerces_gateway_typed_counts() -> None:
-    """A gateway serializing counts as floats/strings ("700", 700.0) is
-    meterable -- parse_response coerces them -- but the isinstance(int) gate
-    refused it, killing a budgeted run on its first call. Absent/zero/
-    non-numeric still fails closed, as a RETRYABLE refusal (see
-    test_*_requires_usage_tokens)."""
+    """The metered gate coerces gateway-typed counts.
+
+    Counts serialized as floats or strings ("700", 700.0) are meterable, since parse_response
+    coerces them; an `isinstance(int)` gate kills a budgeted run on its first call. Absent, zero or
+    non-numeric still fails closed, as a retryable refusal (see test_*_requires_usage_tokens).
+    """
     from agent6.providers.anthropic import (
         _require_metered_usage as _anthropic_gate,  # pyright: ignore[reportPrivateUsage]
     )
@@ -742,9 +753,11 @@ def test_metered_gate_coerces_gateway_typed_counts() -> None:
 
 
 def test_boolean_reported_cost_reads_as_absent() -> None:
-    """bool subclasses int: usage.cost == true yielded float(True) == a
-    phantom $1.00 recorded per call, which becomes the AUTHORITATIVE reported
-    figure and can trip the max_usd hard stop."""
+    """A boolean reported cost reads as absent.
+
+    Bool subclasses int: `usage.cost == true` yields float(True), a phantom $1.00 per call that
+    becomes the authoritative reported figure and can trip the max_usd hard stop.
+    """
     resp = _parse_response(
         {
             "choices": [{"message": {"role": "assistant", "content": "hi"}}],
@@ -755,9 +768,11 @@ def test_boolean_reported_cost_reads_as_absent() -> None:
 
 
 def test_credential_refresh_roundtrip_is_recorded(tmp_path: Any) -> None:
-    """The 401/403 that triggers a token refresh hit the wire; the transcript
-    contract is one file per round-trip (the streaming path records it; the
-    non-streaming refresh branch silently dropped it)."""
+    """The credential-refresh round trip is recorded.
+
+    The 401 or 403 that triggers a token refresh hit the wire, and the transcript contract is one
+    file per round trip on the non-streaming branch as on the streaming one.
+    """
     from pathlib import Path
 
     from agent6.providers import TranscriptSink
@@ -794,10 +809,12 @@ def test_credential_refresh_roundtrip_is_recorded(tmp_path: Any) -> None:
 
 
 def test_connect_phase_is_bounded_below_the_read_budget() -> None:
-    """A blackholed connect must fail in seconds: the stream watchdog has no
-    response to close until the connect returns, so with a single-float
-    timeout the 600s read default sat on a dropped SYN for ten minutes
-    (caught live: verify inference wedged an ACP run)."""
+    """A blackholed connect must fail in seconds.
+
+    The stream watchdog has no response to close until the connect returns, so with a single-float
+    timeout the 600s read default sat on a dropped SYN for ten minutes (caught live: verify
+    inference wedged an ACP run).
+    """
     from agent6.providers._transport import CONNECT_TIMEOUT_S, granular_timeout
 
     t = granular_timeout(600.0)
@@ -831,7 +848,7 @@ def test_both_http_seams_pass_the_granular_timeout(monkeypatch: pytest.MonkeyPat
         contextlib.suppress(httpx2.HTTPError),
         _stream.http_stream("POST", "https://x", headers={}, content=b"", timeout=600.0),
     ):
-        pass  # pragma: no cover -- the stub raises before yielding
+        pass  # pragma: no cover, the stub raises before yielding
     assert [type(t) for t in seen] == [httpx2.Timeout, httpx2.Timeout]
     assert all(t.connect == _transport.CONNECT_TIMEOUT_S for t in seen)  # type: ignore[union-attr]
 
@@ -839,10 +856,11 @@ def test_both_http_seams_pass_the_granular_timeout(monkeypatch: pytest.MonkeyPat
 def test_an_oversized_provider_response_is_refused_not_buffered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The non-streaming seam buffered whatever arrived; a multi-MiB (or
-    hostile, unbounded) body was materialized whole while fetch and MCP bound
-    their reads. The body is read under MAX_RESPONSE_BYTES; exceeding it is a
-    retryable ProviderError, and a normal body still round-trips."""
+    """An oversized provider response is refused, not buffered.
+
+    The non-streaming seam reads the body under MAX_RESPONSE_BYTES, as fetch and MCP bound their
+    reads; exceeding it is a retryable ProviderError, and a normal body still round-trips.
+    """
     import contextlib
 
     from agent6.providers import _transport
@@ -880,12 +898,14 @@ def test_an_oversized_provider_response_is_refused_not_buffered(
 def test_a_gzip_encoded_provider_response_is_not_decoded_twice(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`iter_bytes()` yields the DECODED body, but the rebuilt Response
-    carried the wire's `content-encoding: gzip` header, so httpx2 ran the
-    decoder again over plaintext and every gzip-encoded provider response
-    (Anthropic always, OpenRouter past its size threshold) failed with
-    `DecodingError: incorrect header check`. The representation headers are
-    dropped on rebuild; the rest (retry-after here) survive."""
+    """A gzip-encoded provider response is not decoded twice.
+
+    `iter_bytes()` yields the decoded body, so a rebuilt Response carrying the wire's `content-
+    encoding: gzip` header makes httpx2 run the decoder again over plaintext, and every gzip-encoded
+    response (Anthropic always, OpenRouter past its size threshold) fails with `DecodingError:
+    incorrect header check`. The representation headers are dropped on rebuild; the rest (retry-
+    after here) survive.
+    """
     import contextlib
 
     from agent6.providers import _transport

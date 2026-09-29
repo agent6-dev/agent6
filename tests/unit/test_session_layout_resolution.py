@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""resolve_session_layout finds a session in any bucket under sessions/ (so
-anything a listing shows -- an ask, a `machine create` draft -- is inspectable
-and watchable by id too)."""
+"""resolve_session_layout finds a session in any bucket under sessions/.
+
+Anything a listing shows, an ask or a `machine create` draft, is inspectable by id.
+"""
 
 from __future__ import annotations
 

@@ -45,7 +45,8 @@ def test_port_flag_is_held_to_the_same_bounds_as_the_config_leaf(
 
     The flag skipped the schema the leaf is held to, so `--port 99999` reached
     `bind()` as an OverflowError crash report and `--port 0` bound an ephemeral
-    port while printing the unreachable `:0` as the URL."""
+    port while printing the unreachable `:0` as the URL.
+    """
     from agent6.ui.cli.web_cmds import _cmd_web  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))

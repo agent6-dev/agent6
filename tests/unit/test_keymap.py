@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""One table for the approval letters, read by every surface that offers them.
-
-They lived in three places (the CLI prompt, the TUI row, the TUI modal), and a
-fourth surface described them wrongly in a comment. These pin the shared table
-and the strings built from it, so a change lands everywhere at once.
-"""
+"""One table for the approval letters, read by every surface that offers them."""
 
 from __future__ import annotations
 
@@ -30,8 +25,7 @@ def test_the_four_answers_and_their_order() -> None:
 
 
 def test_the_cli_prompt_line_is_unchanged() -> None:
-    """The line an operator has learned: the plain answers, then the scoped
-    pair the parenthesis explains."""
+    """The line an operator has learned: the plain answers, then the scoped pair explained."""
     assert approval_prompt_suffix(standing=True) == (
         "[y/N/a/d]  (a = allow all, d = deny all, this session): "
     )
@@ -54,16 +48,14 @@ def test_anything_else_denies() -> None:
 
 
 def test_a_scoped_answer_needs_a_scoped_prompt() -> None:
-    """A prompt nobody may answer for the session takes `a` as the letter it
-    is, which denies."""
+    """A prompt nobody may answer for the session takes `a` as the letter it is, which denies."""
     assert answer_for("a", standing=False) == "no"
     assert answer_for("d", standing=False) == "no"
     assert answer_for("y", standing=False) == "yes"
 
 
 def test_the_web_describes_the_shared_keys_correctly() -> None:
-    """The web has no approval keys, but it names the CLI's in a comment; it
-    said `x`, which is the machine-watch stop key."""
+    """The web has no approval keys; its comment names the CLI's correctly."""
     js = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "the CLI's `x`" not in js
     deny_all = next(e for e in APPROVAL_ANSWERS if e.answer == "session-deny")
@@ -71,9 +63,7 @@ def test_the_web_describes_the_shared_keys_correctly() -> None:
 
 
 def test_the_keymap_and_the_bridge_agree_on_the_four_values() -> None:
-    """`record_answer` is the one place an answer's meaning is decided, and it
-    cannot read `ui.keymap` (the bridge sits below every front-end). So the two
-    are pinned together instead: the letters and the values stay one set."""
+    """`record_answer` decides an answer's meaning without `ui.keymap`; the two are pinned here."""
     from pathlib import Path
     from tempfile import mkdtemp
 
@@ -105,9 +95,7 @@ def test_an_unrecognised_answer_denies_and_persists_nothing() -> None:
 
 
 def test_completion_only_fires_on_a_line_that_is_one_word() -> None:
-    """Tab completes a directive only where a directive can start: the whole
-    line is a single `/`-word. The three completers agree, each in its own
-    language, so a token typed mid-sentence never completes."""
+    """Tab completes a directive only where the whole line is one `/`-word, in every completer."""
     import inspect
     from importlib import resources
 
@@ -128,24 +116,21 @@ def test_completion_only_fires_on_a_line_that_is_one_word() -> None:
 
 
 def test_one_key_never_means_two_things_on_one_screen() -> None:
-    """The table is read before a key is taken; a dict cannot hold an action
-    twice, so the check is that no key (alias included) serves two actions."""
+    """No key, alias included, serves two actions."""
     for screen, table in SCREEN_KEYS.items():
         keys = [key for spec in table.values() for key in spec.split(",")]
         assert len(keys) == len(set(keys)), f"{screen} binds a key twice"
 
 
 def test_refresh_is_r_wherever_a_screen_refreshes() -> None:
-    """One letter, one meaning: the machines list refreshed on `f` and ran a
-    machine on `r`, against every other screen."""
+    """One letter, one meaning across screens."""
     for screen, table in SCREEN_KEYS.items():
         refreshers = [key for action, key in table.items() if action in ("refresh", "reload")]
         assert refreshers in ([], ["r"]), f"{screen} refreshes on {refreshers}, not r"
 
 
 def test_the_approval_letters_are_free_on_every_view_of_a_session() -> None:
-    """The four answer letters bind beside a run view's table: a table letter
-    of its own would shadow an answer."""
+    """The four answer letters bind beside a run view's table; no table letter shadows an answer."""
     letters = {e.key for e in APPROVAL_ANSWERS}
     for screen in ("conversation", "dashboard", "machine watch"):
         taken = {key for spec in SCREEN_KEYS[screen].values() for key in spec.split(",")}

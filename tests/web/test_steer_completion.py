@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The web composer's slash completion mirrors directive.STEER_COMMANDS
-verbatim (the client is static JS, so the shared table is pinned, not
-imported), and /compact, /btw and /now stay live-session offers."""
+"""The web composer's slash completion mirrors directive.STEER_COMMANDS verbatim.
+
+The client is static JS, so the shared table is pinned, not imported; /compact, /btw and
+/now stay live-session offers.
+"""
 
 from __future__ import annotations
 
@@ -19,8 +21,7 @@ def test_client_mirrors_the_steer_commands_verbatim() -> None:
 
 
 def test_compact_is_gated_on_live() -> None:
-    """The resume composer withholds exactly `LIVE_RUN_COMMANDS`: the JS spells
-    the set by hand, so it is pinned against the one owner."""
+    """The resume composer withholds exactly `LIVE_RUN_COMMANDS`, spelled by hand in the JS."""
     gate = next(line for line in CLIENT_JS.splitlines() if "liveNow() ||" in line)
     assert gate.count("c !== '") == len(LIVE_RUN_COMMANDS)
     for cmd in LIVE_RUN_COMMANDS:
@@ -35,12 +36,12 @@ def test_a_typed_stop_posts_the_one_stop() -> None:
 
 
 def test_the_client_copies_only_the_spinner() -> None:
-    """The web reads rendered fields rather than re-deriving them, with one
-    exception: the heartbeat animates locally between polls, so it carries the
-    frames. Pinned, since a static client cannot import them."""
+    """The heartbeat frames are pinned: the client animates locally between polls.
+
+    Every other field is rendered by the server; a static client cannot import the frames.
+    """
     from agent6.viewmodel.format import SPINNER_FRAMES
 
     assert f"'{SPINNER_FRAMES}'" in CLIENT_JS
-    # The timestamp used to be re-derived here from the raw epoch, in the
-    # viewer's timezone rather than the one every other surface shows.
+    # The timestamp is rendered by the server, in the timezone every other surface shows.
     assert "function when(" not in CLIENT_JS

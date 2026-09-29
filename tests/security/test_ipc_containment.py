@@ -50,9 +50,11 @@ def _contained_plain_files(approvals: Path, tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("bad", HOSTILE)
 def test_an_approval_scope_cannot_steer_where_a_grant_lands(tmp_path: Path, bad: str) -> None:
-    """`mcp__../../../../tmp/x__t` parses to a server that is a path, and the
-    scope becomes a filename: answering "allow all" on that prompt wrote the
-    grant clean out of the run directory (observed landing in /tmp)."""
+    """A scope that is a path cannot write a grant outside the run directory.
+
+    `mcp__../../../../tmp/x__t` parses to a server that is a path, and the scope becomes a
+    filename; answering "allow all" on that prompt would land the grant in /tmp.
+    """
     approvals = approvals_dir(tmp_path)
     for write in (set_session_allow, set_session_deny):
         with contextlib.suppress(ValueError):
@@ -70,8 +72,10 @@ def test_an_answer_id_cannot_steer_where_an_answer_lands(tmp_path: Path, bad: st
 
 
 def test_a_separator_is_refused_rather_than_made_into_a_directory(tmp_path: Path) -> None:
-    """The one hostile shape that stays inside the dir and still corrupts the
-    layout: every marker is one file, so a scope is one file NAME."""
+    """The one hostile shape that stays inside the dir and still corrupts the layout.
+
+    Every marker is one file, so a scope is one file name.
+    """
     with pytest.raises(ValueError, match="unsafe approval scope"):
         set_session_allow(tmp_path, "mcp.a/b")
     with pytest.raises(ValueError, match="unsafe answer id"):
@@ -79,8 +83,10 @@ def test_a_separator_is_refused_rather_than_made_into_a_directory(tmp_path: Path
 
 
 def test_the_names_a_run_really_uses_still_work(tmp_path: Path) -> None:
-    """The guard is a filename check, not a charset policy: every scope and id
-    agent6 actually writes has to survive it."""
+    """The guard is a filename check, not a charset policy.
+
+    Every scope and id agent6 writes has to survive it.
+    """
     for scope in ("command", "mcp.notes", "mcp.some-server_2"):
         set_session_allow(tmp_path, scope)
         assert session_allow_set(tmp_path, scope)

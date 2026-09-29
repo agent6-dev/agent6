@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""One serving launcher at EVERY isolation level, `none` included.
+"""One serving launcher at every isolation level, `none` included.
 
-A session used to be strict-only, so hardened paid Landlock + seccomp setup on
-every command and `none` never reached the launcher at all: three execution
-paths for one lifecycle. Only strict has the PID namespace, so the two bounds
-it provided for free are explicit elsewhere -- the launcher sweeps what it
-backgrounded when its request channel closes, and the Python side sweeps each
-command's escapees.
+Only strict has the PID namespace, so the two bounds it provides for free are explicit
+elsewhere: the launcher sweeps what it backgrounded when its request channel closes, and
+the Python side sweeps each command's escapees.
 """
 
 from __future__ import annotations
@@ -35,9 +32,11 @@ def _session(cwd: Path, isolation: IsolationLevel) -> JailSession:
 
 
 def _running(pid: int) -> bool:
-    """Live, not merely present. `os.kill(pid, 0)` succeeds for a ZOMBIE, and
-    the agent is a subreaper, so a swept grandchild lingers unreaped and reads
-    as alive to a signal probe."""
+    """Live, not merely present.
+
+    `os.kill(pid, 0)` succeeds for a zombie, and the agent is a subreaper, so a swept
+    grandchild lingers unreaped and reads as alive to a signal probe.
+    """
     try:
         state = Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()[0]
     except (OSError, IndexError):
@@ -64,8 +63,7 @@ def test_a_session_serves_commands_without_namespaces(
 def test_backgrounding_works_without_a_pid_namespace(
     tmp_path: Path, isolation: IsolationLevel
 ) -> None:
-    """The launcher used to refuse a background request outside strict, which
-    is why those levels needed a launcher of their own per command."""
+    """The launcher accepts a background request outside strict."""
     session = _session(tmp_path, isolation)
     try:
         pid = session.start_background(("/bin/sh", "-c", "sleep 60"))
@@ -80,9 +78,11 @@ def test_backgrounding_works_without_a_pid_namespace(
 def test_a_backgrounded_command_dies_with_the_session(
     tmp_path: Path, isolation: IsolationLevel
 ) -> None:
-    """strict's PID namespace does this by construction; without one the
-    launcher sweeps the pids it started when its request channel closes, or a
-    server would outlive the run that started it."""
+    """Without a PID namespace the launcher sweeps the pids it started when its channel closes.
+
+    Strict's PID namespace does this by construction; otherwise a server would outlive the
+    run that started it.
+    """
     session = _session(tmp_path, isolation)
     pid = session.start_background(("/bin/sh", "-c", "sleep 60"))
     assert _running(pid)
@@ -98,9 +98,10 @@ def test_a_backgrounded_command_dies_with_the_session(
 def test_a_setsid_escapee_does_not_outlive_its_command(
     tmp_path: Path, isolation: IsolationLevel
 ) -> None:
-    """A `setsid` child leaves the command's process group, so the launcher's
-    killpg misses it. Per-command launchers used to sweep it; the session does
-    the same on the levels with no PID namespace to do it for them."""
+    """The session sweeps a `setsid` child on the levels with no PID namespace.
+
+    It leaves the command's process group, so the launcher's killpg misses it.
+    """
     session = _session(tmp_path, isolation)
     marker = tmp_path / "escapee.pid"
     try:
@@ -119,10 +120,11 @@ def test_a_setsid_escapee_does_not_outlive_its_command(
 def test_a_backgrounded_setsid_daemon_dies_with_the_session(
     tmp_path: Path, isolation: IsolationLevel
 ) -> None:
-    """The two halves together: a BACKGROUND command's `setsid` child leaves
-    the group the launcher tracked, and outlives every per-command sweep. With
-    no PID namespace nothing else bounded it, so it survived the run -- on
-    hardened, with the host's network."""
+    """A background command's `setsid` child does not survive the run on hardened.
+
+    It leaves the group the launcher tracks and outlives every per-command sweep; with no
+    PID namespace nothing else bounds it, and hardened has the host's network.
+    """
     session = _session(tmp_path, isolation)
     marker = tmp_path / "daemon.pid"
     session.start_background(
@@ -146,10 +148,11 @@ def test_a_backgrounded_setsid_daemon_dies_with_the_session(
 def test_a_backgrounded_setsid_daemon_dies_at_its_stop(
     tmp_path: Path, isolation: IsolationLevel
 ) -> None:
-    """`stop_background` took the launcher's tracked group down and answered
-    "stopped" while the command's `setsid` child kept running until the
-    session closed, for the rest of the run. With no PID namespace the stop
-    sweeps the session's escapees itself."""
+    """With no PID namespace, `stop_background` sweeps the session's escapees itself.
+
+    Taking only the launcher's tracked group down would answer "stopped" while the
+    command's `setsid` child ran on until the session closed.
+    """
     from agent6.sandbox.jail import SessionJob
 
     session = _session(tmp_path, isolation)
@@ -182,8 +185,10 @@ def test_a_backgrounded_setsid_daemon_dies_at_its_stop(
 
 
 def _alive_in_jail(session: JailSession, pid: int) -> bool:
-    """Whether the namespace-local *pid* still runs, asked from inside; a
-    zombie reads as gone, as `_running` reads one outside."""
+    """Whether the namespace-local pid still runs, asked from inside.
+
+    A zombie reads as gone, as `_running` reads one outside.
+    """
     res = session.run(("/bin/sh", "-c", f"cut -d' ' -f3 /proc/{pid}/stat 2>/dev/null"))
     assert isinstance(res, CommandResult)
     return res.returncode == 0 and res.stdout.strip() not in ("", "Z")
@@ -194,12 +199,13 @@ def _alive_in_jail(session: JailSession, pid: int) -> bool:
 def test_a_strict_stop_sweeps_its_daemon_inside_the_namespace(
     tmp_path: Path, older_first: bool
 ) -> None:
-    """Under `strict` the launcher's stop killed the command's group and a
-    `setsid` daemon inside the PID namespace lived on until the session
-    closed: reparented onto the launcher (the namespace's init), outside
-    every group. The launcher sweeps by the window rule the agent applies
-    outside a namespace: what appeared after the stopped command started and
-    before the next still-running one did, whichever order the two stop in."""
+    """Under `strict` a stop sweeps the `setsid` daemon reparented onto the launcher.
+
+    The launcher is the namespace's init, so the daemon sits outside every group; the sweep
+    uses the window rule the agent applies outside a namespace: what appeared after the
+    stopped command started and before the next still-running one did, whichever order the
+    two stop in.
+    """
     from agent6.sandbox.jail import SessionJob
 
     def daemonising(marker: str) -> tuple[str, ...]:
@@ -235,12 +241,11 @@ def test_a_strict_stop_sweeps_its_daemon_inside_the_namespace(
 
 @pytest.mark.needs_namespaces
 def test_a_strict_stop_leaves_an_older_commands_late_child_alone(tmp_path: Path) -> None:
-    """The launcher's sweep took every pid that appeared after the stopped
-    command started, an older command's own late child included, and its
-    group kill on that child's pgid took the older command down with it. A
-    live command's children stay under it: the sweep takes only what
-    reparented onto the launcher, and signals a group only through the
-    escapee that leads it."""
+    """The sweep takes only what reparented onto the launcher, signalling a group via its leader.
+
+    An older command's own late child stays under it; a group kill on that child's pgid
+    would take the older command down with it.
+    """
     from agent6.sandbox.jail import SessionJob
 
     session = _session(tmp_path, "strict")
@@ -275,11 +280,11 @@ def test_a_strict_stop_leaves_an_older_commands_late_child_alone(tmp_path: Path)
 
 @pytest.mark.needs_namespaces
 def test_a_strict_stop_sweeps_past_a_sibling_that_exited(tmp_path: Path) -> None:
-    """A background command that exited on its own stayed in the launcher's
-    window list, and its start bounded an older command's sweep: a daemon the
-    older one started after the exited sibling had was spared. Only a command
-    still running ends the window; an exited one, reaped or a zombie, is no
-    edge."""
+    """Only a running command ends a sweep window; an exited one, reaped or a zombie, is no edge.
+
+    An exited background command in the window list would bound an older command's sweep and
+    spare a daemon the older one started after it.
+    """
     from agent6.sandbox.jail import SessionJob
 
     session = _session(tmp_path, "strict")
@@ -308,10 +313,11 @@ def test_a_strict_stop_sweeps_past_a_sibling_that_exited(tmp_path: Path) -> None
 
 @pytest.mark.needs_namespaces
 def test_a_strict_stop_sweeps_a_daemons_own_setsid_child(tmp_path: Path) -> None:
-    """The sweep took one pass over what had reparented onto the launcher: a
-    daemon's own `setsid` child, still under the daemon at that moment, was
-    missed, and reparented only once the daemon was dead. Passes repeat until
-    one finds nothing."""
+    """Sweep passes repeat until one finds nothing.
+
+    A daemon's own `setsid` child is still under the daemon at the first pass and reparents
+    only once the daemon is dead.
+    """
     from agent6.sandbox.jail import SessionJob
 
     session = _session(tmp_path, "strict")
@@ -334,9 +340,11 @@ def test_a_strict_stop_sweeps_a_daemons_own_setsid_child(tmp_path: Path) -> None
 
 
 def test_a_repeat_stop_after_the_launcher_died_keeps_the_recorded_exit(tmp_path: Path) -> None:
-    """A stop asks the launcher every time (its sweep runs for a command that
-    exited on its own too), and a launcher gone by then answered as an error
-    over the exit code the status had recorded. The recorded exit stands."""
+    """A stop after the launcher is gone keeps the recorded exit code.
+
+    A stop asks the launcher every time (its sweep runs for a command that exited on its own
+    too); a launcher gone by then is not an error over the recorded exit.
+    """
     import os
     import signal
 
@@ -365,11 +373,12 @@ def test_a_repeat_stop_after_the_launcher_died_keeps_the_recorded_exit(tmp_path:
 def test_a_stop_spares_a_sibling_background_commands_daemon(
     tmp_path: Path, isolation: IsolationLevel, older_first: bool
 ) -> None:
-    """The stop-time sweep ran with the session-open snapshot, so stopping one
-    background command killed the `setsid` daemon another, still-running
-    command had left; a per-job baseline then spared only the older sibling.
-    A stop sweeps what appeared between its own command's start and the next
-    live command's, so the order the two stop in does not matter."""
+    """A stop sweeps what appeared between its own command's start and the next live command's.
+
+    The session-open snapshot would kill the `setsid` daemon another still-running command
+    left; a per-job baseline would spare only the older sibling. The order the two stop in
+    does not matter.
+    """
     from agent6.sandbox.jail import SessionJob
 
     def daemonising(marker: Path) -> tuple[str, ...]:
@@ -412,9 +421,10 @@ def test_a_stop_spares_a_sibling_background_commands_daemon(
 
 
 def test_the_unconfined_level_says_so_on_startup(tmp_path: Path) -> None:
-    """`none` reaches the launcher now, so "the launcher ran" no longer implies
-    "confinement was applied". It is loud instead: the caller surfaces this as
-    `jail.degraded`."""
+    """`none` reaches the launcher, so "the launcher ran" does not imply confinement.
+
+    It is loud instead: the caller surfaces this as `jail.degraded`.
+    """
     session = _session(tmp_path, "none")
     try:
         assert "UNCONFINED" in session.startup_stderr
@@ -435,8 +445,7 @@ def test_a_confined_level_stays_silent_on_startup(tmp_path: Path) -> None:
 
 
 def _serve_raw(cwd: Path) -> subprocess.Popen[bytes]:
-    """A serving launcher driven directly: the check-in is not on the Python
-    session API yet, so the request is written by hand."""
+    """A serving launcher driven directly, with the check-in request written by hand."""
     from agent6.sandbox.jail import _require_jail_binary  # pyright: ignore[reportPrivateUsage]
 
     proc = subprocess.Popen(
@@ -462,15 +471,13 @@ def _ask(proc: subprocess.Popen[bytes], request: dict[str, object]) -> dict[str,
 
 
 def test_a_command_outliving_the_checkin_is_handed_back_not_killed(tmp_path: Path) -> None:
-    """Whether a long command is stuck or working is a judgement, so it goes to
-    whoever can make one. The output so far comes back with it, split by stream,
-    and the log keeps filling after the hand-back.
+    """A check-in hands a long command back with its output so far, split by stream.
 
-    The two early lines are asserted as a SET, not a sequence: two writes
-    microseconds apart arrive on two drain threads, so their relative order is
-    not guaranteed -- the same limit a shared `2>&1` fd has, where the writer's
-    own buffering decides. What IS guaranteed is that output produced a second
-    later lands after both, which is the property the log is for.
+    Whether it is stuck or working is a judgement for whoever can make one, and the log keeps
+    filling after the hand-back. The two early lines are asserted as a set, not a sequence:
+    two writes microseconds apart arrive on two drain threads, so their relative order is not
+    guaranteed (the same limit a shared `2>&1` fd has); output produced a second later lands
+    after both, which is the property the log is for.
     """
     logs = tmp_path / "logs"
     logs.mkdir()
@@ -529,8 +536,10 @@ def test_a_command_outliving_the_checkin_is_handed_back_not_killed(tmp_path: Pat
 
 
 def test_a_non_positive_timeout_never_kills(tmp_path: Path) -> None:
-    """The wall-clock kill is what the check-in replaces; a positive one still
-    kills, so an operator gate that sets a number keeps its meaning."""
+    """A positive wall-clock timeout still kills alongside the check-in.
+
+    An operator gate that sets a number keeps its meaning.
+    """
     proc = _serve_raw(tmp_path)
     try:
         unbounded = _ask(

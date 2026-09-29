@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The tool-error ladder: a streak of identical tool errors draws a nudge,
-an escalation, then a stop; a denial streak is named a refusal; a metric
-run and the other modes are left to their own machinery."""
+"""The tool-error ladder: a streak of identical tool errors draws a nudge, an escalation, a stop.
+
+A denial streak is named a refusal; a metric run and the other modes keep their own machinery.
+"""
 
 from __future__ import annotations
 

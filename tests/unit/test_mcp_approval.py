@@ -2,10 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """The approval gate on MCP tool calls, and the scope it grants.
 
-A server's tools are asked about like a command, on their own scope: an "allow
-all" for one server must never be readable as consent for the command tools or
-for a sibling server. These run against the in-tree fake server so the call
-really reaches (or really does not reach) a running process.
+A server's tools are asked about on their own scope; an "allow all" for one server is never consent
+for the command tools or a sibling server. The in-tree fake server makes the call really reach a
+process.
 """
 
 from __future__ import annotations
@@ -64,9 +63,7 @@ def _cfg(**server: object) -> Config:
 
 
 def test_a_tool_call_is_asked_about_before_the_server_sees_it(tmp_path: Path) -> None:
-    """`approve = "ask"` is the default, so a fresh server prompts. The prompt
-    carries the ARGUMENTS: the server's actions are fixed, what the model chose
-    to send is not."""
+    """`approve = "ask"` is the default, so a fresh server prompts, with the arguments."""
     asked: list[tuple[str, str | None]] = []
     mgr = _manager()
     try:
@@ -86,10 +83,7 @@ def test_a_tool_call_is_asked_about_before_the_server_sees_it(tmp_path: Path) ->
 
 
 def test_the_prompt_carries_the_arguments_in_full(tmp_path: Path) -> None:
-    """The arguments ARE the risk, so the consent line carries them whole. The
-    telemetry preview (strings clipped at 200 chars, lists at 10 items) had
-    leaked into this boundary, so the operator approved a call whose payload --
-    the only part the model controls -- they never saw."""
+    """The consent line carries the arguments whole: they are the only part the model controls."""
     seen: list[str] = []
 
     def _capture(request: ApprovalRequest, /) -> ApprovalAnswer:
@@ -149,16 +143,14 @@ def test_approve_yes_is_the_standing_consent(tmp_path: Path) -> None:
 
 
 def test_auto_approve_covers_mcp_servers() -> None:
-    """ "Do not prompt me this run" that still prompted would not be that."""
+    """A "do not prompt me this run" that still prompted would not be that."""
     cfg = _cfg().with_sandbox_overrides(auto_approve=True)
     assert cfg.mcp.servers["fake"].approve == "yes"
     assert cfg.sandbox.run_commands == "yes"
 
 
 def test_allowing_every_command_does_not_allow_a_server(tmp_path: Path) -> None:
-    """The scope is the point. One "a" at a run_command prompt granted every
-    later approval in the run, MCP tools included, when a single marker meant
-    "allow everything"."""
+    """An "a" at a run_command prompt grants the command scope only, never MCP tools."""
     from agent6.sessions.ipc import set_away_mode
 
     session_dir = tmp_path / "run"
@@ -167,8 +159,7 @@ def test_allowing_every_command_does_not_allow_a_server(tmp_path: Path) -> None:
     prompts = _cli_prompts(session_dir)
 
     assert prompts.approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
-    # away-mode deny, so the ungranted call refuses instead of polling for a
-    # front-end that will never attach.
+    # away-mode deny, so the ungranted call refuses instead of polling for a front-end.
     set_away_mode(session_dir, "deny")
     mgr = _manager()
     try:
@@ -180,8 +171,7 @@ def test_allowing_every_command_does_not_allow_a_server(tmp_path: Path) -> None:
 
 
 def test_allowing_one_server_does_not_allow_its_sibling(tmp_path: Path) -> None:
-    """Two servers are two threats: the operator granted the one they were
-    asked about, and nothing else."""
+    """Two servers are two threats: a grant covers the one asked about, nothing else."""
     from agent6.sessions.ipc import session_allow_set
 
     session_dir = tmp_path / "run"
@@ -195,9 +185,7 @@ def test_allowing_one_server_does_not_allow_its_sibling(tmp_path: Path) -> None:
 
 
 def test_approving_everything_while_away_covers_the_servers_too(tmp_path: Path) -> None:
-    """A grant is per scope, so "approve all" that granted only the command
-    scope would leave a detached run blocked on its first MCP call with nobody
-    there to answer -- the hang the away-mode exists to prevent."""
+    """A grant is per scope, so an away-mode "approve all" covers a server's first call too."""
     from agent6.app.frontend import apply_spawned_away_default, approval_scopes
     from agent6.sessions.ipc import session_allow_set
 
@@ -227,10 +215,7 @@ def test_approving_everything_while_away_covers_the_servers_too(tmp_path: Path) 
 
 
 def test_denying_a_server_for_the_session_withdraws_its_tools(tmp_path: Path) -> None:
-    """ "Deny all" is the mirror of "allow all", so it has to do the mirror
-    thing: withdraw that server's tools from the next turn (the tool list is
-    rebuilt per turn) rather than refuse each call, and leave every other
-    server's alone."""
+    """A "deny all" withdraws that server's tools from the next turn and no other server's."""
     from agent6.sessions.ipc import set_session_deny
 
     session_dir = tmp_path / "run"
@@ -254,12 +239,10 @@ def test_denying_a_server_for_the_session_withdraws_its_tools(tmp_path: Path) ->
 
 
 def test_an_unconfigured_server_is_refused_before_it_is_ever_asked_about(tmp_path: Path) -> None:
-    """A name that is not a configured server is not a server, and the LLM
-    chooses tool names: `mcp__../../tmp/x__t` parsed out a server of
-    `../../tmp/x`, which became the scope of the grant the operator was asked
-    for (`tests/security/test_ipc_containment.py` holds the other half). Asking
-    at all offers consent for something that cannot exist, and the manager
-    refuses the call a moment later anyway."""
+    """A name that is not a configured server is not a server, and no consent is asked for it.
+
+    The LLM chooses tool names, so a parsed server of `../../tmp/x` would become a grant's scope.
+    """
 
     def _forbidden(request: ApprovalRequest, /) -> ApprovalAnswer:
         pytest.fail(f"the operator was asked about a server that does not exist: {request.scope}")
@@ -279,10 +262,7 @@ def test_an_unconfigured_server_is_refused_before_it_is_ever_asked_about(tmp_pat
 
 
 def test_deny_all_for_a_server_refuses_the_next_call_not_just_the_listing(tmp_path: Path) -> None:
-    """ "Deny all" WITHDREW the server's tools and nothing more: the model still
-    carries the previous turn's tool list, so calling one anyway ran it -- and
-    re-prompted the operator for the scope they had just refused. Withdrawal is
-    not refusal; the call gate reads the same marker the listing does."""
+    """A call to a withdrawn server's tool is refused by the call gate, never run or re-prompted."""
     asked: list[tuple[str, str | None]] = []
     session_dir = tmp_path / "session"
     session_dir.mkdir()
@@ -343,10 +323,10 @@ def test_denying_one_server_leaves_a_sibling_alone(tmp_path: Path) -> None:
 
 
 def test_a_huge_payload_prompts_with_a_head_and_a_full_file(tmp_path: Path) -> None:
-    """Full args are the consent rule, but a wall of text is as unread as a
-    clipped one: past the bound the COMPLETE payload lands in a session-dir
-    file (jailed commands cannot reach it) and the prompt names it. Under the
-    bound nothing changes; without a session dir the full text stays inline."""
+    """Past the bound the complete payload lands in a session-dir file and the prompt names it.
+
+    Jailed commands cannot reach it; without a session dir the full text stays inline.
+    """
     seen: list[str] = []
 
     def _capture(request: ApprovalRequest, /) -> ApprovalAnswer:

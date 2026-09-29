@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Cross-run memory write nudges: the one-shot memory advisory at the
-first red-to-green verify flip, and the once-deferred finish_session backstop
-after such a recovery. Both fire only in run mode with a memory store wired,
-and only while nothing has been recorded (bench/longhorizon FINDINGS #2)."""
+"""Cross-run memory write nudges.
+
+The one-shot memory advisory at the first red-to-green verify flip, and the once-deferred
+finish_session backstop after such a recovery. Both fire only in run mode with a memory store wired,
+and only while nothing has been recorded (bench/longhorizon FINDINGS #2).
+"""
 
 from __future__ import annotations
 
@@ -112,9 +114,11 @@ def test_flip_advisory_suppressed_without_store_write_or_run_mode() -> None:
 
 
 def test_memory_dir_edit_marks_memory_written() -> None:
-    """An edit under the memory dir is a memory write: the nudges go quiet
-    and none of the workspace-edit bookkeeping applies (the verify gate's
-    tree is untouched)."""
+    """An edit under the memory dir is a memory write.
+
+    The nudges go quiet and none of the workspace-edit bookkeeping applies (the verify gate's tree
+    is untouched).
+    """
     wf = _wf()
     state = _state()
     turn = _turn(1)
@@ -133,12 +137,13 @@ def test_memory_dir_edit_marks_memory_written() -> None:
 
 
 def test_memory_dir_patch_without_a_path_marks_memory_written() -> None:
-    """`apply_patch`'s normal shape carries no `path` (the targets are the
-    headers), so a memory-dir patch counted as a workspace edit: it withdrew
-    a green verify, left `memory_written` False (both nudges then fired at a
-    model that had just written memory) and set `ever_edited`. The targets
-    come from the patch; a patch over the store and the workspace together is
-    workspace work."""
+    """A memory-dir patch without a `path` marks memory written.
+
+    `apply_patch`'s normal shape carries no `path` (the targets are the headers); counted as a
+    workspace edit, a memory-dir patch withdraws a green verify, leaves `memory_written` False (both
+    nudges then fire at a model that just wrote memory) and sets `ever_edited`. The targets come
+    from the patch; a patch over the store and the workspace together is workspace work.
+    """
     from agent6.tools.results import PatchResult
 
     def note(patch: str) -> tuple[LoopState, TurnState]:
@@ -169,9 +174,12 @@ def test_memory_dir_patch_without_a_path_marks_memory_written() -> None:
 
 
 def test_a_preview_edit_is_no_edit() -> None:
-    """`preview=true` writes nothing, so it marks neither a memory write (both
-    nudges would go quiet over a dry run of the store) nor a tree edit (a green
-    verify would be withdrawn over a tree nothing touched)."""
+    """A preview edit is no edit.
+
+    `preview=true` writes nothing, so it marks neither a memory write (both nudges would go quiet
+    over a dry run of the store) nor a tree edit (a green verify would be withdrawn over a tree
+    nothing touched).
+    """
     from agent6.tools.results import PreviewResult
 
     def preview(path: str) -> PreviewResult:

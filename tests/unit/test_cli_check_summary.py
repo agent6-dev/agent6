@@ -13,8 +13,7 @@ from agent6.ui.cli.check_cmds import _doctor_check_config  # pyright: ignore[rep
 
 
 def test_no_providers_is_info_not_pass(capsys: pytest.CaptureFixture[str]) -> None:
-    # A fresh setup (zero providers) is unusable until `agent6 connect`; the
-    # check must not render that instruction as a PASS.
+    # A fresh setup is unusable until `agent6 connect`; that instruction is not a PASS.
     checks = _doctor_check_config(Config())
     by_name = {c.name: c for c in checks}
     assert by_name["config.provider_keys"].status == "INFO"
@@ -27,8 +26,7 @@ def test_no_providers_is_info_not_pass(capsys: pytest.CaptureFixture[str]) -> No
 def test_check_summary_carries_info_through(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `check verify` on a default config: verify_command is unset, an advisory.
-    # The summary line must say INFO (previously coerced to PASS) and exit 0.
+    # `check verify` on a default config: verify_command is unset, an advisory INFO at exit 0.
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
@@ -63,9 +61,10 @@ def test_check_verify_uses_the_jail_path_not_the_ambient_path(
 def test_check_verify_says_what_this_repo_infers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With verify_command unset, `check verify` names the command a run here
-    would infer (the deterministic tiers) rather than "inferred per run", and
-    says when there is nothing to infer from."""
+    """With verify_command unset, `check verify` names the command a run here would infer.
+
+    It says when there is nothing to infer from.
+    """
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
@@ -130,8 +129,7 @@ def test_boundaries_fails_when_a_run_would_refuse_the_config(
 def test_boundaries_alone_prints_no_empty_summary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The boundaries section reports facts and reaches no verdict, so its own
-    invocation ended on a bare `== summary ==` that read "nothing ran"."""
+    """The boundaries section reaches no verdict, so its own invocation prints no empty summary."""
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)

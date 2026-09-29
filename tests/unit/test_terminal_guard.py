@@ -40,8 +40,7 @@ def test_the_stream_drops_foreign_controls_and_keeps_the_clis_own() -> None:
 
 
 def test_the_spinner_erases_its_line_under_the_wrapper() -> None:
-    """The erase idiom was allowlisted for the spinner, so a file name carrying
-    it forged the line it sat on; the spinner writes it under the wrapper."""
+    """The erase idiom is written under the wrapper, so a file name carrying it forges nothing."""
     raw = io.StringIO()
     view = ConsoleView(ScrubbedStream(raw), color=False)  # type: ignore[arg-type]
     view._status_active = True  # pyright: ignore[reportPrivateUsage]
@@ -59,8 +58,7 @@ def test_the_guard_wraps_both_streams_for_the_block(capsys: pytest.CaptureFixtur
 
 
 def test_the_tty_writers_scrub_like_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`tty_message` and `tty_prompt` reach the controlling terminal past the
-    wrapped streams; each write passes the same scrubber."""
+    """`tty_message` and `tty_prompt` reach the terminal past the wrapped streams, scrubbed."""
     master, slave = pty.openpty()
     try:
         monkeypatch.setattr("agent6.ui.cli._steer.TTY_PATH", os.ttyname(slave))
@@ -97,11 +95,11 @@ def _session_with_task(root: Path, task: str) -> None:
 def test_a_task_a_model_wrote_cannot_drive_the_terminal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run's task can come from a plan the model wrote, a file name from a
-    command inside the jail, a subject from a commit the model made; every
-    listing printed them raw, and a terminal obeys an OSC 52 wherever it sits
-    in a line (a clipboard write, then a paste). The seam is the process's
-    stdout and stderr, not each print."""
+    """The scrub seam is the process's stdout and stderr, not each print.
+
+    A task, a file name or a commit subject the model chose reached listings raw, and a
+    terminal obeys an OSC 52 wherever it sits in a line.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     _session_with_task(tmp_path, f"rename the {OSC52}widget")
@@ -114,9 +112,7 @@ def test_a_task_a_model_wrote_cannot_drive_the_terminal(
 def test_a_crash_report_naming_model_text_prints_scrubbed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The handlers that print a refusal or a crash report run under the
-    guard: an exception quoting a name a command chose reaches stderr
-    without its sequence."""
+    """A refusal or crash report quoting a name a command chose reaches stderr scrubbed."""
 
     def crash(_argv: list[str] | None = None) -> int:
         raise RuntimeError(f"file {OSC52}gone")

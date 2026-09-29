@@ -166,8 +166,10 @@ def test_grant_rejects_non_string_token_fields(
 
 
 def test_dead_refresh_token_names_connect(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`refresh_token_expired` (and any 401) is permanent: the message names
-    `agent6 connect chatgpt` and carries a 401 so the loop never retries it."""
+    """A dead refresh token names `agent6 connect chatgpt` and carries a 401.
+
+    It is never retried.
+    """
 
     def dead(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(400, {"error": {"code": "refresh_token_expired"}})
@@ -189,9 +191,10 @@ def test_dead_refresh_token_names_connect(monkeypatch: pytest.MonkeyPatch) -> No
 def test_every_remedy_names_the_provider_it_diagnosed(
     gcfg: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A chatgpt-format provider under another name was told `agent6 connect
-    chatgpt` by four of its five remedies, which signs in a different
-    provider and leaves the broken one untouched."""
+    """Every remedy names the provider it diagnosed.
+
+    `chatgpt` for a provider under another name.
+    """
 
     def dead(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(400, {"error": {"code": "refresh_token_expired"}})
@@ -252,9 +255,10 @@ def test_credential_caches_refreshes_and_persists(
 def test_credential_adopts_a_sibling_process_rotation(
     gcfg: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """When another process already rotated the (single-use) refresh token,
-    the credential adopts the stored tokens instead of replaying the old
-    refresh token into a `refresh_token_reused` dead end."""
+    """The credential adopts a sibling process's rotation.
+
+    Replaying the old refresh token would hit a `refresh_token_reused` dead end.
+    """
 
     def never(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         pytest.fail("refresh must not run")
@@ -273,9 +277,11 @@ def test_credential_adopts_a_sibling_process_rotation(
 
 
 def test_device_auth_start_and_poll(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The device flow: usercode POST starts it (404 = disabled -> None),
-    the poll treats 403/pending codes as waiting and slow_down as back-off,
-    and success exchanges the issuer-minted code with the DEVICE redirect."""
+    """The device flow: usercode POST starts it, the poll waits on pending codes, success exchanges.
+
+    A 404 on the start means disabled (None); slow_down backs off; the exchange uses the device
+    redirect.
+    """
     from agent6.providers.chatgpt_oauth import poll_device_auth, start_device_auth
 
     posts: list[tuple[str, dict[str, str]]] = []
@@ -328,10 +334,10 @@ def test_device_auth_disabled_returns_none(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_refresh_error_scrubs_an_echoed_refresh_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A token-endpoint error that echoes the received credential (a proxy or
-    a debug body) must not carry it into ProviderError text: those messages
-    land in retry events and logs. The model wire scrubs this class via
-    scrub_secret_values; the oauth wire scrubs its own in-flight values."""
+    """A refresh error that echoes the received credential is scrubbed before it reaches error text.
+
+    Those messages land in retry events and logs; the oauth wire scrubs its own in-flight values.
+    """
     secret = "rt-veryverysecretvalue123"
 
     def echoing_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
@@ -347,9 +353,7 @@ def test_refresh_error_scrubs_an_echoed_refresh_token(monkeypatch: pytest.Monkey
 def test_device_poll_failure_scrubs_a_device_id_split_across_the_clip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`poll_device_auth`'s failure message clips the body to 200 chars
-    before scrubbing it, so a device_auth_id straddling the cut leaked its
-    leading bytes."""
+    """A device poll failure scrubs a device id that straddles the 200-char body clip."""
     from agent6.providers.chatgpt_oauth import DeviceAuth, poll_device_auth
 
     device_id = "da-longenoughtomatterandbeused"
@@ -380,9 +384,7 @@ def test_revoke_warning_scrubs_the_token(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_revoke_warning_scrubs_a_token_split_across_the_clip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`revoke_tokens` clips the body to 200 chars before scrubbing it, so a
-    token straddling the cut left its leading bytes -- a real fragment of the
-    live credential -- past the clip and out of `_scrub`'s reach."""
+    """A revoke warning scrubs a token that straddles the 200-char body clip."""
     tok = "at-echoedtokenvalue456789"
     body = "x" * 190 + tok  # tok starts at 190: its first 10 chars sit before the 200 clip
 
@@ -397,9 +399,10 @@ def test_revoke_warning_scrubs_a_token_split_across_the_clip(
 
 
 def test_account_id_never_guesses_from_user_id() -> None:
-    """`user_id` is the ChatGPT USER id, not an account id: a grant whose
-    claims carry only user_id reads as account-less (the caller demands a
-    re-connect) instead of sending a guessed `chatgpt-account-id` header."""
+    """The account id is never guessed from `user_id`.
+
+    An account-less grant demands a re-connect.
+    """
     tok = _jwt({_AUTH_CLAIM: {"user_id": "user-123"}})
     assert chatgpt_oauth.account_id_of(chatgpt_oauth.TokenGrant(tok, "", 100.0, tok)) == ""
     good = _jwt({_AUTH_CLAIM: {"chatgpt_account_id": "acct-9"}})
@@ -407,9 +410,10 @@ def test_account_id_never_guesses_from_user_id() -> None:
 
 
 def test_credential_refuses_an_account_swap(gcfg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The first read pins the account; a stored grant bound to a DIFFERENT
-    account (a login from another process) refuses with the connect hint
-    instead of riding under the old `chatgpt-account-id` header."""
+    """A stored grant bound to a different account refuses with the connect hint.
+
+    The first read pins the account.
+    """
     clock = {"now": 1000.0}
     fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
@@ -443,10 +447,7 @@ def test_credential_pins_a_claim_when_the_stored_account_is_empty(
 def test_post_401_recovery_adopts_a_sibling_grant_first(
     gcfg: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """After a 401 the credential adopts a NEWER stored grant and retries
-    with it; it only rotates the refresh token when no fresher grant exists.
-    The old path refused adoption under force-refresh and burned the
-    sibling's just-rotated (single-use) token again."""
+    """After a 401 the credential adopts a newer stored grant first and rotates only without one."""
 
     def never(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         pytest.fail("refresh must not run when a fresh sibling grant exists")
@@ -464,9 +465,10 @@ def test_post_401_recovery_adopts_a_sibling_grant_first(
 
 
 def test_403_does_not_arm_a_refresh(gcfg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A 403 is permission or entitlement: neither a sibling grant nor a
-    rotation changes what the account may do, so the credential keeps its
-    cached bearer instead of burning a single-use refresh token."""
+    """A 403 does not arm a refresh: it is permission or entitlement.
+
+    The bearer stays cached.
+    """
 
     def never(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         pytest.fail("a 403 must not trigger a refresh")
@@ -483,9 +485,7 @@ def test_403_does_not_arm_a_refresh(gcfg: Path, monkeypatch: pytest.MonkeyPatch)
 
 
 def test_invalid_grant_is_a_dead_signin(gcfg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The standard OAuth `{"error": "invalid_grant"}` (HTTP 400) means the
-    grant is expired or revoked: the error names the repair (connect), not a
-    generic HTTP 400 the retry policy would hammer."""
+    """`invalid_grant` is a dead sign-in whose error names connect, not a retryable HTTP 400."""
 
     def dead(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(400, {"error": "invalid_grant"})
@@ -501,9 +501,7 @@ def test_invalid_grant_is_a_dead_signin(gcfg: Path, monkeypatch: pytest.MonkeyPa
 
 
 def test_reused_rotation_rereads_once(gcfg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`refresh_token_reused` with a fresher grant on disk (a process on
-    ANOTHER host won the rotation and synced) adopts that grant instead of
-    declaring the sign-in dead."""
+    """`refresh_token_reused` with a fresher grant on disk adopts that grant instead of dying."""
 
     def reused(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         # A sibling's rotation lands between our read and the endpoint's answer.
@@ -554,16 +552,16 @@ def test_reused_rotation_does_not_adopt_an_expired_sibling(
 
 
 def test_callback_state_checked_before_the_error_param() -> None:
-    """A request the sign-in did not start gets nothing processed or
-    reflected from its parameters, error path included: the state check
-    outranks the error param."""
+    """The callback's state check outranks its error param.
+
+    A foreign request is not processed.
+    """
     with pytest.raises(ValueError, match="state mismatch"):
         parse_callback("error=x&error_description=<script>alert(1)</script>", state="S")
 
 
 def test_callback_error_page_escapes_the_description() -> None:
-    """The 400 page renders the refusal escaped: an attacker-supplied
-    error_description must not run script on the localhost callback origin."""
+    """The callback error page escapes the description, so error_description never runs script."""
     import urllib.error
     import urllib.request
 
@@ -589,9 +587,7 @@ def test_callback_error_page_escapes_the_description() -> None:
 def test_unheld_refresh_lock_refuses_the_rotation(
     gcfg: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The refresh token is single-use: with the interprocess lock NOT held,
-    the credential refuses (retryable) rather than risking a rotation that
-    kills the sign-in for every process."""
+    """With the interprocess refresh lock not held, the rotation is refused retryably."""
     from contextlib import contextmanager
 
     @contextmanager
@@ -611,9 +607,10 @@ def test_unheld_refresh_lock_refuses_the_rotation(
 def test_stored_account_must_match_the_tokens_own_claim(
     gcfg: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An entry written by an older parser can hold a USER id in the account
-    field; the stored id is checked against the access token's own claim and
-    refuses with the connect hint instead of sending a wrong header."""
+    """The stored account must match the token's own claim, or the credential refuses.
+
+    An entry written by an older parser can hold a user id in the account field.
+    """
     clock = {"now": 1000.0}
     fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
@@ -636,8 +633,7 @@ def test_403_reports_no_retry_worthwhile() -> None:
 def test_an_unusable_expires_in_is_a_provider_error(
     monkeypatch: pytest.MonkeyPatch, expires_in: object
 ) -> None:
-    """A non-numeric, non-finite, boolean, or non-positive expiry is unusable,
-    rather than a stored token that never expires or refreshes immediately."""
+    """A non-numeric, non-finite, boolean or non-positive expires_in is a provider error."""
 
     def odd(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(200, {"access_token": "AT", "refresh_token": "RT", "expires_in": expires_in})

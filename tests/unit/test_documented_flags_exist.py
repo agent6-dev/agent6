@@ -1,15 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Every flag the docs name in backticks is a flag the CLI actually has.
+"""Every flag the docs name in backticks is a flag the CLI has.
 
-`--max-input-tokens` and `--max-output-tokens` outlived the budget redesign in
-docs/config.md AND in three bench scripts, which would have died on
-"unrecognized arguments" at the first invocation. A doc that names a flag is a
-promise; this checks it against the parser.
-
-Backticks are the whole heuristic: the docs write every flag as code, and
-scanning the file (not the line) is what catches one named on a continuation
-line, which is exactly where the stale pair hid.
+Scanning the file rather than the line catches a flag named on a continuation line.
 """
 
 from __future__ import annotations
@@ -26,9 +19,7 @@ from agent6.ui.cli.parser import build_parser
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = [*sorted((ROOT / "docs").glob("*.md")), ROOT / "README.md"]
 
-# Other tools' flags, named in prose about what agent6 does with them: git's,
-# and Claude Code's on the claude_code child's argv (`--allowedTools` scans as
-# `--allowed`).
+# Other tools' flags named in prose: git's, and Claude Code's on the claude_code argv.
 _NOT_OURS = {
     "--no-ext-diff",
     "--no-textconv",
@@ -48,8 +39,7 @@ def _cli_flags() -> set[str]:
     def walk(parser: ArgumentParser) -> None:
         for action in parser._actions:  # pyright: ignore[reportPrivateUsage]
             found.update(o for o in action.option_strings if o.startswith("--"))
-            # Subparsers hang off a dict-valued `choices`; a plain argument's
-            # is a tuple of values with no parser to descend into.
+            # Subparsers hang off a dict-valued `choices`; a plain argument's is a tuple.
             if isinstance(action.choices, dict):
                 for sub in action.choices.values():
                     if isinstance(sub, ArgumentParser):
@@ -60,17 +50,10 @@ def _cli_flags() -> set[str]:
 
 
 def _named_flags(text: str) -> set[str]:
-    """Every flag a doc attributes to agent6.
+    """Every flag a doc attributes to agent6: backticked anywhere, or on an agent6 line in a fence.
 
-    Two rules, because the docs name flags two ways. BACKTICKED anywhere: prose
-    writes them as code, and scanning the file rather than the line is what
-    catches one on a continuation line. And every flag on an agent6-invoking
-    LINE inside a fenced block: that is where a quickstart lives, and a broken
-    flag there is the first thing a new user hits.
-
-    Line-scoped inside blocks on purpose. A shell block often mixes tools --
-    `tailscale serve --bg` sits under `agent6 web` in docs/web.md -- and
-    block-scoping would attribute that to us.
+    Fenced blocks are line-scoped because a shell block often mixes tools (`tailscale serve` under
+    `agent6 web`).
     """
     named = {m.rstrip(".,;:)") for m in re.findall(r"`(--[a-z0-9][a-z0-9-]+)", text)}
     for block in re.finditer(r"```[a-z]*\n(.*?)```", text, re.S):
@@ -88,13 +71,7 @@ def test_documented_flags_exist(doc: Path) -> None:
 
 @pytest.mark.parametrize("doc", DOCS, ids=lambda p: p.name)
 def test_documented_source_links_resolve(doc: Path) -> None:
-    """Every `blob/master/<path>` link a doc carries points at a real file.
-
-    A renamed module leaves the link 404ing on the published site, silently:
-    `docs/gen_contracts.py` pinned `tests/unit/test_runs_manifest.py` long
-    after it became `test_sessions_manifest.py`, and the generated contracts
-    page linked readers at nothing.
-    """
+    """Every `blob/master/<path>` link a doc carries points at a real file."""
     pat = re.compile(r"https://github\.com/agent6-dev/agent6/(?:blob|tree)/master/([^)\s#]+)")
     linked = pat.findall(doc.read_text(encoding="utf-8"))
     missing = sorted({p for p in linked if not (ROOT / p).exists()})
@@ -105,10 +82,7 @@ def test_documented_source_links_resolve(doc: Path) -> None:
 def test_documented_toml_examples_parse(doc: Path) -> None:
     """Every ```toml block a doc ships parses as TOML.
 
-    The state-machine spec's worked example carried inline tables split over
-    two lines, which TOML forbids: `agent6 machine check` rejected the file a
-    reader copied straight out of the page. Blocks using `<name>` placeholders
-    or `...` elisions are sketches of shape, not files, and are skipped.
+    Blocks using `<name>` placeholders or `...` elisions are sketches of shape and are skipped.
     """
     text = doc.read_text(encoding="utf-8")
     for block in re.finditer(r"```toml\n(.*?)```", text, re.S):
@@ -135,11 +109,7 @@ def _documented_routes(page: str) -> set[str]:
 
 
 def test_docs_name_every_web_write_route() -> None:
-    """docs/web.md enumerates the browser UI's write surface, which a reader
-    audits to see what a POST can do. Both halves drifted: `undo` and a
-    machine's `stop` among the `<id>/<verb>` routes, `/api/config/provider`
-    among the top-level ones.
-    """
+    """docs/web.md enumerates the browser UI's write surface, so a reader can audit every POST."""
     server = (ROOT / "src" / "agent6" / "ui" / "web" / "server.py").read_text(encoding="utf-8")
     post = server[server.index("def _route_post") :]
     post = post[: post.index("\n    def ", 1)]

@@ -1,15 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A diagnostic never starts a server outside the confinement a run gives it
-and never writes anything but the config it was asked to write.
+"""A diagnostic never starts a server outside a run's confinement, and writes only the config asked.
 
-`agent6 check mcp` and the `mcp connect` handshake start each server in the
-repository (so a script that lives there resolves, as it does in a run) under
-the run's sandbox with the workspace bound read-only. A server a run would
-refuse is a FAIL row, never started. A server the read-only probe cannot hold
-(`unconfined = true`, any write grant, no jail at all) is a WARN row naming
-the leaf, never started; with no jail `mcp connect` writes the entry unproved
-and says so.
+`agent6 check mcp` and the `mcp connect` handshake start each server in the repository
+(so a script that lives there resolves, as in a run) under the run's sandbox with the
+workspace bound read-only. A server a run would refuse is a FAIL row, never started. A
+server the read-only probe cannot hold (`unconfined = true`, any write grant, no jail at
+all) is a WARN row naming the leaf, never started; with no jail `mcp connect` writes the
+entry unproved and says so.
 """
 
 from __future__ import annotations
@@ -58,8 +56,10 @@ def _repo_with_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _force(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
-    """Resolve to *isolation* whatever the host offers (the jail, when one is
-    started, still runs at that level for real)."""
+    """Resolve to the isolation whatever the host offers.
+
+    The jail, when one is started, still runs at that level for real.
+    """
     monkeypatch.setattr(check_cmds, "detect_env", object)
 
     def _select(_req: str, _env: object) -> str:
@@ -88,9 +88,10 @@ def _never_started(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_a_startup_write_never_lands_in_the_repo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The server runs in the repository (its script resolves there) and is
-    verified, and the file it writes on startup is refused: the probe's
-    workspace is read-only."""
+    """The server runs in the repository and is verified; its startup write is refused.
+
+    Its script resolves there, and the probe's workspace is read-only.
+    """
     repo = _repo_with_server(tmp_path, monkeypatch)
     checks = _check_mcp({"notes": {"command": [_JAIL_PYTHON, "server.py"]}})
     assert [(c.name, c.status) for c in checks] == [("mcp.notes", "PASS")], checks
@@ -104,8 +105,10 @@ def test_a_startup_write_never_lands_in_the_repo(
 def test_the_workspace_is_read_only_under_hardened_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Hardened has no mount namespace to re-bind with; the Landlock carve-out
-    (read on cwd, no write grant beneath it) holds the same line."""
+    """Hardened has no mount namespace to re-bind with; the Landlock carve-out holds the same line.
+
+    Read on cwd, no write grant beneath it.
+    """
     repo = _repo_with_server(tmp_path, monkeypatch)
     _force(monkeypatch, "hardened")
     checks = _check_mcp(
@@ -137,9 +140,11 @@ def test_mcp_connect_probes_read_only_too(
 def test_mcp_connect_with_no_jail_writes_the_entry_unproved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With no jail the read-only bind is inert, so the probe would run the
-    server unconfined in the repository: it is not run. The entry is written,
-    and the operator is told what was not proved."""
+    """With no jail the server is not run; the entry is written and the unproved part is named.
+
+    The read-only bind is inert without a jail, so the probe would run the server unconfined
+    in the repository.
+    """
     repo = _repo_with_server(tmp_path, monkeypatch)
     monkeypatch.setenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", "1")
     _never_started(monkeypatch)
@@ -167,8 +172,10 @@ def test_mcp_connect_with_no_jail_writes_the_entry_unproved(
 def test_a_server_it_cannot_hold_read_only_is_reported_not_started(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Each row names the leaf that makes the server unprobeable and says a
-    run starts it as configured; nothing is spawned."""
+    """Each row names the leaf that makes the server unprobeable; nothing is spawned.
+
+    The row says a run starts it as configured.
+    """
     repo = _repo_with_server(tmp_path, monkeypatch)
     _force(monkeypatch, "strict")
     _never_started(monkeypatch)
@@ -207,8 +214,10 @@ def test_a_server_it_cannot_hold_read_only_is_reported_not_started(
 def test_an_operator_write_grant_holds_the_probe_off_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, leaf: str, value: list[str]
 ) -> None:
-    """A `[sandbox]` grant stays writable under the read-only root, so a
-    server under one is not probed either: the rule stays absolute."""
+    """A server under a `[sandbox]` grant is not probed either: the rule stays absolute.
+
+    A grant stays writable under the read-only root.
+    """
     _repo_with_server(tmp_path, monkeypatch)
     _force(monkeypatch, "strict")
     _never_started(monkeypatch)
@@ -225,9 +234,10 @@ def test_an_operator_write_grant_holds_the_probe_off_too(
 def test_a_server_a_run_would_refuse_fails_the_check_unstarted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`network = "none"` on a hardened host is a run refusal; the check
-    applies it first rather than starting the server on the host network and
-    reporting PASS."""
+    """`network = "none"` on a hardened host is a run refusal, applied before any server starts.
+
+    Never a PASS from a server started on the host network.
+    """
     _repo_with_server(tmp_path, monkeypatch)
     _force(monkeypatch, "hardened")
     _never_started(monkeypatch)
@@ -254,8 +264,10 @@ def test_a_server_a_run_would_refuse_fails_the_check_unstarted(
 def test_no_jail_means_no_probe_and_names_why(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, how: dict[str, str], cause: str
 ) -> None:
-    """With no jail nothing keeps a startup write off the repo, so the check
-    starts no spawned server; the row names what took the jail away."""
+    """With no jail the check starts no spawned server; the row names what took the jail away.
+
+    Nothing else keeps a startup write off the repo.
+    """
     repo = _repo_with_server(tmp_path, monkeypatch)
     _never_started(monkeypatch)
     if "env" in how:

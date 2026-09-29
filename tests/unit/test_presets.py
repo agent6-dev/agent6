@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Config presets: a named preset injected just above the config layer that
-selected it, so the preset OVERRIDES that config (a more-specific config layer
-or flag still wins); most-specific preset source wins, presets never stack."""
+"""Config presets: a named preset injected just above the config layer that selected it.
+
+The preset overrides that config (a more specific config layer or a flag still wins); the most
+specific preset source wins, and presets never stack.
+"""
 
 from __future__ import annotations
 
@@ -67,12 +69,14 @@ def test_custom_user_preset(repo: Path) -> None:
 
 
 def test_only_a_flag_selected_preset_is_replayed_on_resume(repo: Path) -> None:
-    """A resumed/forked execution re-applies --preset but must NOT hand a
-    config-selected name back as an override: _select_preset would call it a
-    flag, which outranks every config layer, so a run whose repo config beat a
-    global preset came back from resume with the preset winning -- gaining a
-    blocking review veto the original never had. Only the name was stamped, so
-    the two cases were indistinguishable."""
+    """Only a flag-selected preset is replayed on resume.
+
+    A resumed or forked execution re-applies `--preset` but must not hand a config-selected name
+    back as an override: `_select_preset` would call it a flag, which outranks every config layer,
+    so a run whose repo config beat a global preset would come back from resume with the preset
+    winning, gaining a blocking review veto the original never had. The stamp records which case it
+    was.
+    """
     from agent6.sessions.manifest import HarnessStamp
 
     assert HarnessStamp(preset="t", preset_from_flag=True).replay_preset == "t"
@@ -88,11 +92,12 @@ def test_only_a_flag_selected_preset_is_replayed_on_resume(repo: Path) -> None:
 
 
 def test_user_preset_named_standard_replaces_the_builtin(repo: Path) -> None:
-    """A user table named after a built-in replaces it wholesale (docs/config.md,
-    and resolve_preset's own "user presets win over built-ins" contract). The
-    name "standard" short-circuited to the empty built-in before the user table
-    was ever consulted, so its overrides were silently dropped -- while
-    `agent6 config presets` reported it selected and applied."""
+    """A user preset named `standard` replaces the built-in.
+
+    A user table named after a built-in replaces it wholesale (docs/config.md, and resolve_preset's
+    own "user presets win over built-ins" contract); short-circuiting the name to the empty built-in
+    drops its overrides silently while `agent6 config presets` reports it selected and applied.
+    """
     _write_repo_config(
         repo,
         'preset = "standard"\n\n[presets.standard]\nreview = { trigger = "before_finish",'
@@ -110,9 +115,11 @@ def test_unknown_preset_errors(repo: Path) -> None:
 
 
 def test_preset_table_instead_of_string_is_clear_error(repo: Path) -> None:
-    """A `[preset]` TABLE (e.g. from a typo'd `config set preset.porifle x`)
-    must fail as "preset must be a string", not str()-coerce the dict into
-    `unknown preset "{'porifle': 'ultra'}"`."""
+    """A `[preset]` table instead of a string is a clear error.
+
+    A mistyped `config set preset.porifle x` fails as "preset must be a string", never str()-coerced
+    into `unknown preset "{'porifle': 'ultra'}"`.
+    """
     _write_repo_config(repo, '[preset]\nporifle = "ultra"\n')
     with pytest.raises(ConfigError, match="must be a preset name string"):
         load_effective(repo)

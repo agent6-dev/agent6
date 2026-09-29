@@ -23,9 +23,11 @@ from agent6.tools.dispatch import ToolError
 
 
 def test_contain_refuses_an_uncontained_relative_path(tmp_path: Path) -> None:
-    """Containment is the walk, and the walk cannot express `..`: every caller
-    resolves first, so the invariant was a nine-caller convention. Held by the
-    SafePath now, so a caller that forgets is refused instead of walking out."""
+    """Containment is the walk, and the walk cannot express `..`.
+
+    The SafePath holds the invariant, not a per-caller convention, so a caller that forgets to
+    resolve is refused instead of walking out.
+    """
     (tmp_path / "root").mkdir()
     (tmp_path / "outside.txt").write_text("host\n", encoding="utf-8")
     with pytest.raises(ToolError, match=r"\.\."):
@@ -33,8 +35,11 @@ def test_contain_refuses_an_uncontained_relative_path(tmp_path: Path) -> None:
 
 
 def test_contain_refuses_an_absolute_path(tmp_path: Path) -> None:
-    """An absolute rel_path drops the base entirely (pathlib's join rule), so
-    the fd would be on a host file no containment check ever saw."""
+    """`contain` refuses an absolute path.
+
+    An absolute rel_path drops the base entirely (pathlib's join rule), so the fd would be on a host
+    file no containment check ever saw.
+    """
     (tmp_path / "root").mkdir()
     with pytest.raises(ToolError, match="Absolute"):
         contain(tmp_path / "root", "/etc/hostname")
@@ -42,9 +47,11 @@ def test_contain_refuses_an_absolute_path(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("rel", ["/etc/hostname", "../outside.txt"])
 def test_open_contained_re_checks_a_hand_built_safe_path(tmp_path: Path, rel: str) -> None:
-    """The walk keeps its own `..`/absolute guard rather than trusting the
-    SafePath: containment must hold even for one built directly, since the type
-    is constructible without going through `contain` or a `Workspace`."""
+    """The walk keeps its own `..`/absolute guard rather than trusting the SafePath.
+
+    Containment must hold even for one built directly, since the type is constructible without going
+    through `contain` or a `Workspace`.
+    """
     (tmp_path / "root").mkdir()
     forged = SafePath(base=tmp_path / "root", rel_path=Path(rel), abs_path=Path(rel))
     with pytest.raises(ToolError):
@@ -60,14 +67,13 @@ def test_open_contained_reads_a_contained_path(tmp_path: Path) -> None:
 
 
 def test_a_leaf_swapped_for_a_fifo_cannot_block_a_read(tmp_path: Path) -> None:
-    """`is_file()` then open is two lookups, and O_NOFOLLOW stops a symlink but
-    not a FIFO.
+    """`is_file()` then open is two lookups, and O_NOFOLLOW stops a symlink but not a FIFO.
 
     A jailed background command can swap a regular file for a FIFO in that
     window; the read tools run IN-PROCESS as the operator, so opening one with
     no writer parked the whole agent with nothing to show for it. The open is
     O_NONBLOCK now and the kind is checked by `fstat` on the descriptor just
-    opened -- one lookup, so there is no window to swap in.
+    opened, one lookup, so there is no window to swap in.
     """
     root = tmp_path / "ws"
     root.mkdir()
@@ -96,8 +102,10 @@ def test_a_leaf_swapped_for_a_fifo_cannot_block_a_read(tmp_path: Path) -> None:
 
 
 def test_a_harness_owned_file_is_readable_but_never_writable(tmp_path: Path) -> None:
-    """DECISIONS.md sits inside the memory grant (the model may read it) but
-    is harness-owned: an in-process write refuses, loudly."""
+    """DECISIONS.md sits inside the memory grant (the model may read it) but is harness-owned.
+
+    An in-process write refuses, loudly.
+    """
     from agent6.config import Config
     from agent6.tools.errors import ToolError
     from agent6.tools.policy import workspace_for
@@ -123,9 +131,11 @@ def test_a_harness_owned_file_is_readable_but_never_writable(tmp_path: Path) -> 
 
 
 def test_unlink_walks_to_the_parent_like_a_write(tmp_path: Path) -> None:
-    """The patch delete was the one mutation that unlinked by full path: a
-    component swapped for a symlink between staging and the write loop sent
-    the delete outside the workspace, where the write walk refuses it."""
+    """The patch delete was the one mutation that unlinked by full path.
+
+    A component swapped for a symlink between staging and the write loop sent the delete outside the
+    workspace, where the write walk refuses it.
+    """
     from agent6.tools._path_safety import unlink_contained, write_contained
 
     root = tmp_path / "root"
@@ -148,10 +158,12 @@ def test_unlink_walks_to_the_parent_like_a_write(tmp_path: Path) -> None:
 
 
 def test_write_contained_keeps_the_files_line_ending(tmp_path: Path) -> None:
-    """A text read translates CRLF to LF and the write emitted LF, so one
-    edited word rewrote every line ending of a CRLF file (the run's diff and
-    `sessions diff` then carried the churn). The file's first line ending
-    decides; a new file gets LF, and CRLF in the text is normalized first."""
+    """write_contained keeps the file's line ending.
+
+    The file's first line ending decides; a new file gets LF, and CRLF in the text is normalized
+    first. A text read translating CRLF to LF with a write emitting LF rewrites every line ending of
+    a CRLF file for one edited word, and the run's diff and `sessions diff` carry the churn.
+    """
     from agent6.tools._path_safety import Workspace, read_contained, write_contained
 
     root = tmp_path / "ws"

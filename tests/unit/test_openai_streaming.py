@@ -275,11 +275,13 @@ def test_streaming_httpx_transport_error_raises_provider_error() -> None:
 
 
 def test_streaming_mid_stream_error_frame_raises_not_silent() -> None:
-    """OpenRouter/OpenAI deliver an upstream error as a mid-stream `error` frame
-    then end the stream. It must surface as a ProviderError (not be swallowed) AND
-    carry the upstream status like the non-streaming 2xx-envelope path -- streaming
-    is the default, so a permanent code delivered mid-stream would otherwise be
-    retried every turn. A 502 stays retryable; insufficient_quota is permanent."""
+    """A mid-stream `error` frame raises a ProviderError carrying the upstream status.
+
+    OpenRouter and OpenAI deliver an upstream error as a mid-stream frame, then end the stream; it
+    must not be swallowed, and it carries the status like the non-streaming 2xx-envelope path, since
+    streaming is the default and a permanent code would otherwise be retried every turn. A 502 stays
+    retryable; insufficient_quota is permanent.
+    """
     from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
 
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
@@ -314,9 +316,10 @@ def test_streaming_mid_stream_error_frame_raises_not_silent() -> None:
 
 
 def test_streaming_premature_end_without_done_or_finish_raises() -> None:
-    """A stream that ends without `[DONE]` and without any `finish_reason` was
-    cut off mid-generation; its partial content must not be returned as a
-    finished turn."""
+    """A stream that ends without `[DONE]` or any `finish_reason` raises.
+
+    It was cut off mid-generation; its partial content must not be returned as a finished turn.
+    """
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
     lines = _chunk(
         {"choices": [{"index": 0, "delta": {"content": "half a sentence"}, "finish_reason": None}]}
@@ -337,8 +340,7 @@ def test_streaming_premature_end_without_done_or_finish_raises() -> None:
 
 
 def test_streaming_finish_reason_without_done_is_complete() -> None:
-    """A gateway that sends a real `finish_reason` but omits `[DONE]` is a
-    completed turn, not a premature end."""
+    """A real `finish_reason` without `[DONE]` is a completed turn, not a premature end."""
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
     lines = _chunk(
         {"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}
@@ -358,12 +360,13 @@ def test_streaming_finish_reason_without_done_is_complete() -> None:
 
 
 def test_streaming_with_budget_requires_usage_trailer() -> None:
-    """A completed stream ([DONE]) with no usage trailer still fails closed --
-    but RETRYABLE: at the call site a permanently misconfigured gateway is
-    indistinguishable from one mangled stream (a degenerate stream the
-    gateway cut dropped the trailer live, killing a $1 run at $0.09), and
-    the bounded retry lane converts the permanent case into at-most-N
-    attempts while saving the transient one."""
+    """A completed stream ([DONE]) with no usage trailer fails closed, and retryable.
+
+    At the call site a permanently misconfigured gateway is indistinguishable from one mangled
+    stream (a degenerate stream the gateway cut dropped the trailer live, killing a $1 run at
+    $0.09), and the bounded retry lane converts the permanent case into at-most-N attempts while
+    saving the transient one.
+    """
     provider = OpenAIProvider(
         api_key="sk-test",
         model="kimi",
@@ -394,11 +397,13 @@ def test_streaming_with_budget_requires_usage_trailer() -> None:
 
 
 def test_streaming_cut_before_the_usage_trailer_is_retryable() -> None:
-    """stream_options.include_usage is always set, so the usage chunk arrives
-    AFTER finish_reason and before [DONE]. A connection dropped in that window
-    is a truncated stream -- it was classified as a permanent 422 (the
-    no-usage-accounting error), so the run died on a blip every other
-    truncation retries through."""
+    """A stream cut before the usage trailer is retryable.
+
+    `stream_options.include_usage` is always set, so the usage chunk arrives after finish_reason and
+    before [DONE]; a connection dropped in that window is a truncated stream, not the permanent 422
+    for missing usage accounting, which kills the run on a blip every other truncation retries
+    through.
+    """
     provider = OpenAIProvider(
         api_key="sk-test",
         model="kimi",
@@ -457,10 +462,10 @@ def test_no_callback_does_not_stream() -> None:
 def test_streaming_idle_watchdog_kills_heartbeat_only_stream(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A stream that emits only ``:`` heartbeats must trip
-    the idle watchdog. Without this guard, OpenRouter sessions where
-    the upstream model wedges can pin the harness for 800+ seconds
-    while heartbeats keep httpx2's read-timeout reset indefinitely.
+    """A stream that emits only ``:`` heartbeats must trip the idle watchdog.
+
+    Without this guard, OpenRouter sessions where the upstream model wedges can pin the harness for
+    800+ seconds while heartbeats keep httpx2's read-timeout reset indefinitely.
     """
     import threading
     import time
@@ -523,9 +528,11 @@ def test_streaming_idle_watchdog_kills_heartbeat_only_stream(
 def test_streaming_idle_watchdog_mid_stream_uses_the_short_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Once tokens have started, a stall trips the SHORT mid-stream timeout, not
-    the long prefill budget -- the user's case (text streamed, then wedged). The
-    prefill timeout is set long here to prove the short one is what fired."""
+    """A stall after tokens have started trips the short mid-stream timeout.
+
+    Not the long prefill budget: text streamed, then wedged. The prefill timeout is set long here to
+    prove the short one is what fired.
+    """
     import threading
     import time
 
@@ -584,9 +591,12 @@ def test_streaming_idle_watchdog_mid_stream_uses_the_short_timeout(
 
 
 def test_lenient_json_object_recovers_common_malformations() -> None:
-    """Weak/open models emit args strict JSON rejects; the lenient re-parse
-    recovers the safe cases (raw newline, trailing junk) so the tool just runs,
-    and refuses the ambiguous ones so the _raw_arguments sentinel is kept."""
+    """The lenient JSON object re-parse recovers the common malformations.
+
+    Weak and open models emit arguments strict JSON rejects; the safe cases (a raw newline, trailing
+    junk) are recovered so the tool just runs, and the ambiguous ones are refused so the
+    `_raw_arguments` sentinel is kept.
+    """
     from agent6.providers._openai_recovery import lenient_json_object as _lenient_json_object
 
     # Raw newline inside a string value (a multiline code param).
@@ -602,10 +612,12 @@ def test_lenient_json_object_recovers_common_malformations() -> None:
 
 
 def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An empty role delta arrives immediately but is NOT real output, so it must
-    not flip to the short mid-stream idle timeout: a model that emits the role
-    delta then reasons silently gets the generous prefill budget, not a 45s kill
-    (regression guard for the two-phase watchdog)."""
+    """An empty role delta stays in the prefill budget.
+
+    It arrives at once but is not real output, so it must not flip to the short mid-stream idle
+    timeout: a model that emits the role delta and then reasons silently gets the generous prefill
+    budget, not a 45s kill.
+    """
     import threading
     import time
 
@@ -663,10 +675,12 @@ def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.Monkey
 
 
 def test_a_stream_cut_before_usage_is_recorded_as_truncated(tmp_path: Path) -> None:
-    """The retryable raise landed AFTER the 200 was written, so the transcript
-    showed a clean successful call for an attempt that was actually cut and
-    re-issued -- while the sibling truncation one branch up records status 0.
-    An audit of a retried run could not see what happened."""
+    """A stream cut before usage is recorded as truncated.
+
+    A retryable raise landing after the 200 is written shows a clean successful call for an attempt
+    that was cut and re-issued, while the sibling truncation one branch up records status 0; an
+    audit of a retried run must see what happened.
+    """
     from agent6.providers.types import TranscriptSink
 
     provider = OpenAIProvider(
@@ -742,8 +756,10 @@ def test_streaming_wire_fields_are_not_coerced(event: dict[str, Any]) -> None:
 
 
 def test_streaming_joins_the_data_lines_of_one_event() -> None:
-    """SSE lets an event carry its payload over several `data:` lines; the
-    reader joins them at the blank line, as it does for every wire."""
+    """The reader joins the several `data:` lines of one SSE event at the blank line.
+
+    As it does for every wire.
+    """
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
     lines = [
         'data: {"choices": [{"index": 0, "delta": {"content": "hello"},',

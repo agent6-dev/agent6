@@ -1,21 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Regression tests for graph curator resilience bugfixes.
+"""The graph curator's resilience pins.
 
-Covers:
-  #16 load_graph must skip-with-warning on a single corrupt node file instead
-      of aborting the whole graph.
-  #17 add_subtask must write the child node before the parent->child link so a
-      crash in between can't leave a dangling child reference.
-
-  in-process fail-safe: a write-path fault in a MUTATING op (which runs AFTER
-      self._nodes is updated in memory) must re-raise AND reload from disk (the
-      source of truth), so a later read never observes a node that was never
-      persisted. This replaced the old subprocess die->reload fail-safe; a clean
-      CuratorError validation reject propagates without a reload.
-  graph-resilience #2: re-rooting an orphan node changes its canonical .md path;
-      the stale nested file must be removed so load_graph never sees two .md
-      files for one id.
+`load_graph` skips a corrupt node file with a warning; `add_subtask` writes the child before the
+parent link; a write-path fault reloads from disk so no unpersisted node is observed; re-rooting an
+orphan removes its stale nested file.
 """
 
 from __future__ import annotations
@@ -45,10 +34,7 @@ def _draft(title: str = "do thing") -> TaskNodeDraft:
 def test_mutation_write_fault_reraises_and_reloads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A mutation updates self._nodes IN MEMORY before write_node(). An OSError on
-    # the write path (ENOSPC/EROFS) leaves in-memory state ahead of disk. The
-    # curator must re-raise the fault AND reload from disk, so the phantom status
-    # change is gone from a later read -- not surfaced as if it had persisted.
+    # A write fault after the in-memory update re-raises and reloads, so no phantom status survives.
     layout = _layout(tmp_path)
     c = GraphCurator(layout)
     node = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("task")))
@@ -62,8 +48,7 @@ def test_mutation_write_fault_reraises_and_reloads(
         c.update_status(UpdateStatusIntent(id=node.id, new_status="in_progress"))
     monkeypatch.undo()
 
-    # Reloaded from disk: the phantom "in_progress" never persisted, so both the
-    # in-memory graph and a fresh load see the pre-mutation "pending".
+    # Reloaded from disk: the phantom "in_progress" never persisted.
     assert c.get(node.id).status == "pending"
     assert load_graph(layout)[node.id].status == "pending"
 
@@ -71,8 +56,7 @@ def test_mutation_write_fault_reraises_and_reloads(
 def test_mutation_non_oserror_fault_also_reloads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Not just OSError: any non-CuratorError write-path fault (e.g. a
-    # serialization error surfacing from write_node) fails-safe the same way.
+    # Any non-CuratorError write-path fault fails safe the same way.
     layout = _layout(tmp_path)
     c = GraphCurator(layout)
     node = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("task")))
@@ -90,8 +74,7 @@ def test_mutation_non_oserror_fault_also_reloads(
 def test_curator_error_reject_does_not_reload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A CuratorError is a pre-mutation validation reject (nothing applied): it
-    # propagates untouched, WITHOUT the disk reload the fault path does.
+    # A CuratorError is a pre-mutation reject: it propagates without the disk reload.
     layout = _layout(tmp_path)
     c = GraphCurator(layout)
     calls = {"n": 0}
@@ -137,11 +120,7 @@ def test_load_graph_skips_single_corrupt_node_file(
 def test_add_subtask_writes_child_before_parent_link(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Simulate a crash that happens AFTER the child write but DURING the parent
-    # write. With the fix, the child .md already exists on disk and the parent
-    # on disk does NOT yet reference it -- so no dangling reference. (Before the
-    # fix, the parent link was written first, so a crash here would persist a
-    # parent referencing a child whose .md never existed.)
+    # A crash during the parent write: the child is on disk, the parent does not reference it yet.
     layout = _layout(tmp_path)
     c = GraphCurator(layout)
     parent = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("parent")))
@@ -163,19 +142,13 @@ def test_add_subtask_writes_child_before_parent_link(
 
     monkeypatch.undo()
 
-    # Reload purely from disk. The parent must NOT reference any child whose
-    # .md is missing -- i.e. no dangling references.
+    # Reloaded purely from disk: no dangling child reference.
     on_disk = load_graph(layout)
-    # The child .md was written BEFORE the parent link, so the crash during the
-    # link write leaves the child on disk as a recoverable orphan. This is the
-    # observable that distinguishes the fix from the reverted order (which writes
-    # the parent link first and never reaches the child write, losing it): under
-    # the fix two nodes persist, under the revert only the parent.
+    # The child was written first, so it persists as a recoverable orphan.
     assert len(on_disk) == 2, "child node was not persisted before the parent link"
     orphan = next(n for n in on_disk.values() if n.id != parent.id)
     assert orphan.parent_id == parent.id  # it's the child, recorded as an orphan
-    # The original parent file on disk should still be the pre-link version
-    # (children empty), because its re-write crashed.
+    # The parent on disk is the pre-link version, because its rewrite crashed.
     assert parent_path.exists()
     reloaded_parent = on_disk[parent.id]
     for child_id in reloaded_parent.children:
@@ -200,10 +173,7 @@ def test_add_subtask_normal_path_still_links(tmp_path: Path) -> None:
 def test_load_graph_reroots_orphan_when_parent_corrupt(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Skipping a corrupt PARENT (the #16 fix) left its child with a dangling
-    # parent_id, which then KeyErrored in node_md_path/_ancestor_chain on the
-    # next mutation (masked by the #6 broad except). The child must be re-rooted
-    # and node-path resolution must not raise.
+    # Skipping a corrupt parent left its child dangling; the child is re-rooted and paths resolve.
     layout = _layout(tmp_path)
     c = GraphCurator(layout)
     parent = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("parent")))
@@ -219,16 +189,14 @@ def test_load_graph_reroots_orphan_when_parent_corrupt(
     err = capsys.readouterr().err
     assert "re-rooting orphan node" in err
 
-    # The exact KeyError trigger (node_md_path -> _ancestor_chain) must now work,
-    # and a fresh curator must start + resolve the orphan without raising.
+    # The exact KeyError trigger, and a fresh curator resolves the orphan without raising.
     assert node_md_path(layout, nodes, child.id) == layout.graph_dir / f"{child.id}.md"
     reopened = GraphCurator(layout)
     node_md_path(layout, reopened.nodes(), child.id)  # must not KeyError
 
 
 def test_ancestor_chain_terminates_on_missing_parent(tmp_path: Path) -> None:
-    # Defensive: even a node carrying a dangling parent_id (not via load) must
-    # not KeyError in path resolution -- the chain terminates at the present node.
+    # A dangling parent_id set directly must not KeyError: the chain ends at the present node.
     from agent6.graph.storage import _ancestor_chain  # pyright: ignore[reportPrivateUsage]
 
     layout = _layout(tmp_path)
@@ -247,11 +215,7 @@ def test_rerooted_node_mutation_leaves_single_md_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # An orphan node (its parent file was corrupt -> skipped) is re-rooted by
-    # load_graph (parent_id -> None), which moves its canonical .md path from the
-    # nested <parent>/<child>.md to the root <child>.md. Mutating it then writes
-    # the new root path; the OLD nested file must be removed, otherwise
-    # load_graph's rglob finds TWO .md for the same id (nondeterministic winner).
+    # Re-rooting moves the canonical path; the stale nested file must go, or rglob finds two.
     from agent6.graph.models import UpdateStatusIntent
 
     layout = _layout(tmp_path)
@@ -269,12 +233,10 @@ def test_rerooted_node_mutation_leaves_single_md_file(
     # Fresh curator: child is re-rooted (parent_id None) in its in-memory graph.
     c2 = GraphCurator(layout)
     assert c2.get(child.id).parent_id is None
-    # The stale nested file still exists at this point (load_graph only re-roots
-    # in memory) -- so there are momentarily two .md for child.id on disk.
+    # load_graph re-roots in memory only, so two .md for child.id sit on disk for now.
     assert nested_path.exists()
 
-    # Mutate the re-rooted child: write_node now targets the ROOT path and must
-    # prune the stale nested file.
+    # write_node now targets the root path and prunes the stale nested file.
     fsynced_dirs: list[Path] = []
     monkeypatch.setattr(storage, "fsync_dir", fsynced_dirs.append)
     c2.update_status(UpdateStatusIntent(id=child.id, new_status="in_progress"))
@@ -293,8 +255,7 @@ def test_rerooted_node_mutation_leaves_single_md_file(
 
 
 def test_write_node_keeps_normal_path_file(tmp_path: Path) -> None:
-    # The prune must not delete the file it just wrote on the normal (no re-root)
-    # path: a plain root node round-trips with exactly one file.
+    # The prune must not delete the file it just wrote: a root node round-trips with one file.
     layout = _layout(tmp_path)
     c = GraphCurator(layout)
     n = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("solo")))

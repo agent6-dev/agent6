@@ -45,15 +45,13 @@ def test_the_handshake_answers_with_what_agent6_can_do() -> None:
 
 
 def test_session_load_is_reported_absent_rather_than_half_answered() -> None:
-    """It is exactly what ACP v2 reorganises, and resume is where agent6 has
-    the most of its own semantics."""
+    """Resume is where agent6 has the most of its own semantics, and ACP v2 reorganises it."""
     (reply,) = _exchange(_init())
     assert reply["result"]["agentCapabilities"]["loadSession"] is False
 
 
 def test_the_clients_capabilities_become_the_frontend_seam() -> None:
-    """The whole reason FrontendCapabilities went in first: ACP's handshake IS
-    a capability exchange, so it maps rather than needing new plumbing."""
+    """ACP's handshake is a capability exchange, so FrontendCapabilities maps onto it."""
     bare = capabilities_from({})
     assert bare.can_ask is True, "every ACP client must answer session/request_permission"
 
@@ -65,8 +63,10 @@ def test_an_unknown_method_is_an_error_not_a_crash() -> None:
 
 
 def test_a_notification_is_acted_on_and_not_answered() -> None:
-    """JSON-RPC: no id means no reply. Answering one desynchronises a client
-    that is not waiting for anything."""
+    """JSON-RPC: no id means no reply.
+
+    Answering one desynchronises a client that is not waiting for anything.
+    """
     assert _exchange({"jsonrpc": "2.0", "method": "initialize", "params": {}}) == []
 
 
@@ -76,8 +76,7 @@ def test_a_request_with_no_method_is_refused_by_id() -> None:
 
 
 def test_garbage_gets_a_parse_error_without_killing_the_connection() -> None:
-    """JSON-RPC requires a null-id parse error, then the next valid request
-    must still work on the same connection."""
+    """A parse error gets a null-id reply and the next valid request still works."""
     replies = _exchange(raw=b"not json\n" + json.dumps(_init()).encode() + b"\n")
     assert replies[0]["id"] is None
     assert replies[0]["error"]["code"] == PARSE_ERROR
@@ -126,10 +125,10 @@ def test_a_non_object_message_is_an_invalid_request() -> None:
 
 
 def test_an_oversized_line_is_refused_not_buffered() -> None:
-    """An unbounded readline buffers the whole line BEFORE any size check, so
-    a runaway client could exhaust memory before the cap could refuse it. The
-    refusal carries no id (the id is in the dropped bytes) and the next
-    request still works."""
+    """An oversized line is refused before it is buffered, with no id, and the next request works.
+
+    An unbounded readline buffers the whole line before any size check.
+    """
     huge = b'{"jsonrpc":"2.0","id":9,"method":"initialize","params":{"x":"'
     huge += b"A" * (MAX_LINE_BYTES + 64) + b'"}}\n'
     replies = _exchange(raw=huge + json.dumps(_init()).encode() + b"\n")
@@ -139,8 +138,7 @@ def test_an_oversized_line_is_refused_not_buffered() -> None:
 
 
 def test_text_that_cannot_encode_does_not_desynchronise_the_stream() -> None:
-    """A lone surrogate in model-emitted text would otherwise raise mid-write,
-    leaving a half-written line an editor cannot parse."""
+    """A lone surrogate in model text is written, not raised mid-write into a half line."""
     out = io.BytesIO()
     server = ACPServer(stdin=io.BytesIO(b""), stdout=out)
     server.notify_raw({"jsonrpc": "2.0", "method": "x", "params": {"t": "ok \ud83d tail"}})
@@ -150,12 +148,11 @@ def test_text_that_cannot_encode_does_not_desynchronise_the_stream() -> None:
 
 
 def test_a_clients_answer_is_delivered_before_its_envelope_is_judged() -> None:
-    """An answer to session/request_permission that omits `jsonrpc` was
-    refused by the envelope check before the reply path saw it: the worker
-    waited out the permission timeout and denied, and the error frame named
-    the id agent6 had minted, answering agent6's own request. The slot
-    waiting on the answer vouches for it; a malformed answer to a minted id
-    is refused under a null id."""
+    """A malformed answer to a minted id is refused under a null id.
+
+    Refused by the envelope check before the reply path saw it, the worker waited out the
+    permission timeout and denied, and the error frame named the id agent6 had minted.
+    """
     import threading
 
     answer = {"id": "agent6-1", "result": {"outcome": {"outcome": "selected", "optionId": "0"}}}

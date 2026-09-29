@@ -86,8 +86,7 @@ def test_thinking_enables_budget_and_drops_temperature(
 def test_adaptive_models_use_adaptive_effort_and_summary(
     monkeypatch: pytest.MonkeyPatch, model: str
 ) -> None:
-    # budget_tokens is a 400 on these models; send adaptive + effort instead,
-    # with a summarized display (their display defaults to omitted).
+    # budget_tokens is a 400 on these models; adaptive plus effort goes, with summarized display.
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
     provider = AnthropicProvider(
@@ -110,8 +109,7 @@ def test_adaptive_models_use_adaptive_effort_and_summary(
 def test_46_generation_uses_adaptive_without_display(
     monkeypatch: pytest.MonkeyPatch, model: str
 ) -> None:
-    # The 4.6 generation supports adaptive + effort but already defaults display
-    # to summarized, so no display override.
+    # The 4.6 generation defaults display to summarized, so no display override.
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
     provider = AnthropicProvider(
@@ -272,9 +270,7 @@ def test_request_drops_unsigned_thinking_but_keeps_anthropic_signature(
 def test_an_extra_body_max_tokens_below_the_thinking_budget_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The provider lifts max_tokens over the budget and extra_body then
-    overrode it, so a contradicting value reached the wire as a 400 on every
-    call; it is refused before the call, naming both numbers."""
+    """An extra_body max_tokens below the thinking budget is refused, naming both numbers."""
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
     provider = AnthropicProvider(
@@ -427,9 +423,7 @@ def test_streaming_preserves_thinking_blocks(
         text_delta_callback=lambda _s: None,
     )
 
-    # The thinking block must survive (with its signature) and precede the
-    # tool_use block, exactly as Anthropic requires when echoing the
-    # assistant turn back on the next request.
+    # The thinking block survives with its signature and precedes the tool_use block.
     blocks = resp.raw["content"]
     assert blocks[0] == {
         "type": "thinking",
@@ -442,9 +436,7 @@ def test_streaming_preserves_thinking_blocks(
 
 
 def test_two_text_blocks_in_a_response_stay_separated() -> None:
-    """A turn's text arrives as several blocks around thinking; joined bare
-    into the response's settled text they ran together, and that text is
-    what the journal, read_session and the console show."""
+    """Two text blocks in a response stay separated in the settled text."""
     from agent6.providers.anthropic import _parse_response  # pyright: ignore[reportPrivateUsage]
 
     resp = _parse_response(

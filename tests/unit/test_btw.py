@@ -26,8 +26,7 @@ from agent6.directive import parse_btw
     ],
 )
 def test_the_grammar_matches_only_a_leading_btw(text: str, expected: str | None) -> None:
-    """A btw is a question asked beside the run, never steer text, so it must
-    not be recognised mid-sentence where an operator meant the English word."""
+    """The grammar matches only a leading /btw, never the English word mid-sentence."""
     assert parse_btw(text) == expected
 
 
@@ -36,16 +35,14 @@ def _ask_dir(root: Path, name: str, *, events: list[dict[str, object]]) -> Path:
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "ask"}), encoding="utf-8")
     (d / "logs.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
-    # A started ask has a live worker.pid on disk (written before its start
-    # event); without one the status fold reads it as a worker that exited.
+    # A started ask has a live worker.pid on disk; without one the status fold reads it as exited.
     if any(e.get("type") == "session.start" for e in events):
         (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     return d
 
 
 def test_it_returns_as_soon_as_the_session_exists(tmp_path: Path) -> None:
-    """The run must not wait on it: start_btw returns the moment the session
-    is on disk, not when it has an answer."""
+    """start_btw returns the moment the session is on disk, not when it has an answer."""
     asks = tmp_path / "sessions" / "asks"
     asks.mkdir(parents=True)
     launched: list[list[str]] = []
@@ -66,11 +63,7 @@ def test_it_returns_as_soon_as_the_session_exists(tmp_path: Path) -> None:
     )
     assert err == ""
     assert session is not None and session.id == "quiet-fox-AAAAAA"
-    # Seeded with the parent's context, and `--` so a question starting with a
-    # dash cannot be read as a flag.
-    # `--no-commands`: nobody can approve for a btw (no terminal of its own, the
-    # parent mid-run), so the tools are withheld rather than offered-and-denied.
-    # `--` guards a question starting with a dash.
+    # `--no-commands`: nobody can approve for a btw; `--` guards a question starting with a dash.
     assert launched == [["ask", "--no-commands", "--from", "parent-BBBBBB", "--", "why h265"]]
 
 
@@ -129,9 +122,11 @@ def test_a_btw_that_died_says_so_rather_than_rendering_blank(tmp_path: Path) -> 
 
 
 def test_the_block_is_fenced_and_names_how_to_go_deeper() -> None:
-    """It prints INTO the run's view but is not part of it: an operator must
-    never mistake it for the run's own output, and a btw has no follow-up
-    thread -- going deeper means resuming it as the ask it is."""
+    """The block is fenced and names how to go deeper.
+
+    It prints into the run's view but is not part of it; a btw has no follow-up thread, so going
+    deeper means resuming it as the ask it is.
+    """
     block = render_btw(BtwSession(id="quiet-fox-AAAAAA", dir=Path("/x"), question="why"), "because")
     assert block.startswith("\n--- btw: why\n")
     assert "because" in block
@@ -139,13 +134,12 @@ def test_the_block_is_fenced_and_names_how_to_go_deeper() -> None:
 
 
 def test_a_btw_is_not_declared_dead_before_its_worker_starts(tmp_path: Path) -> None:
-    """`start_btw` returns as soon as the session DIR appears, which is a few
-    ms before the child writes its worker pid. Reading that window as an ending
-    made the watcher emit "(ended without an answer: created)" on its first
-    poll and stop looking, while the btw ran on and answered. A LIVE worker
-    mid-preflight is the same not-yet window; a DEAD one is a real ending
-    ("died launching") -- the old "created" word there kept the watcher polling
-    a dead btw forever."""
+    """A /btw is not declared dead before its worker starts.
+
+    `start_btw` returns as soon as the session dir appears, a few ms before the child writes its
+    worker pid; a live worker mid-preflight is the same not-yet window, and a dead one is a real
+    ending ("died launching").
+    """
     import os
 
     from agent6.app.btw import BtwSession, btw_answer
@@ -167,10 +161,10 @@ def test_a_btw_is_not_declared_dead_before_its_worker_starts(tmp_path: Path) -> 
 def test_a_btw_still_thinking_when_the_watcher_gives_up_is_said_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The watcher stopped polling at its deadline and said nothing, so a btw
-    parked on a question nobody answers (or a slow one) read as still coming
-    for the rest of the run. The give-up lands on the journal as its own
-    block, naming how to read the answer later."""
+    """A /btw still thinking when the watcher gives up is said so.
+
+    The give-up lands on the journal as its own block, naming how to read the answer later.
+    """
     from agent6.events import EventSink
     from agent6.ui import btw as ui_btw
 

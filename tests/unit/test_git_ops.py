@@ -59,8 +59,7 @@ def _init_repo(path: Path) -> None:
 
 
 def _stash_change(path: Path, name: str, content: str, message: str) -> None:
-    """Write *content* into the tracked file *name* (committed empty first when
-    it is new) and stash that change: a stash holds tracked changes only."""
+    """Write content into the tracked file (committed empty first when new) and stash the change."""
     target = path / name
     if not target.exists():
         target.write_text("", encoding="utf-8")
@@ -71,8 +70,7 @@ def _stash_change(path: Path, name: str, content: str, message: str) -> None:
 
 
 def test_modified_and_untracked_paths_split_the_operators_work(tmp_path: Path) -> None:
-    """Tracked modifications are the run's start question; untracked files are
-    the operator's and never count."""
+    """Tracked modifications are the run's start question; untracked files are the operator's."""
     _init_repo(tmp_path)
     assert modified_paths(tmp_path) == []
     assert untracked_paths(tmp_path) == frozenset()
@@ -91,11 +89,10 @@ def test_modified_and_untracked_paths_split_the_operators_work(tmp_path: Path) -
 
 
 def test_worktree_name_status_leaves_out_the_operators_untracked_files(tmp_path: Path) -> None:
-    """`worktree_name_status` feeds the conventional-subject deriver at
-    checkpoint time; every other status/diff call in the loop excludes
-    `untracked_at_start` (the operator's own files), and this one must too,
-    or a bystander untracked file skews every checkpoint's derived type and
-    scope for the whole run."""
+    """`worktree_name_status` excludes `untracked_at_start` like every status call in the loop.
+
+    A bystander untracked file would otherwise skew every checkpoint's derived type and scope.
+    """
     _init_repo(tmp_path)
     (tmp_path / "notes.txt").write_text("mine\n", encoding="utf-8")  # the operator's
     mine = untracked_paths(tmp_path)
@@ -117,9 +114,7 @@ def test_stash_tracked_changes_leaves_untracked_files_in_place(tmp_path: Path) -
 
 
 def test_commit_paths_ignores_unrelated_staged_work(tmp_path: Path) -> None:
-    # `agent6 init` scaffolds AGENTS.md + .gitignore and commits them. If the
-    # user has other work already staged, that must NOT be swept into the
-    # scaffold commit.
+    # Work the user already staged is not swept into the scaffold commit.
     _init_repo(tmp_path)
     (tmp_path / "wip.txt").write_text("in progress\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "wip.txt"], check=True)
@@ -147,9 +142,7 @@ def test_commit_paths_ignores_unrelated_staged_work(tmp_path: Path) -> None:
 
 
 def test_status_handles_unborn_head(tmp_path: Path) -> None:
-    """A freshly `git init`'d repo (no commits, unborn HEAD) must not crash
-    status() — every agent6 entry point loads the repo summary first, so an
-    unborn HEAD used to crash `machine create`/`run` in a brand-new repo."""
+    """A repo with an unborn HEAD does not crash `status()`, which every entry point loads first."""
     subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
     (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
     st = status(tmp_path)
@@ -160,9 +153,7 @@ def test_status_handles_unborn_head(tmp_path: Path) -> None:
 
 
 def test_git_ops_neutralizes_repo_fsmonitor(tmp_path: Path) -> None:
-    """A repo-controlled core.fsmonitor must NOT execute on the host when agent6
-    runs git. Defense-in-depth against a cloned/poisoned `.git/config` firing on
-    the harness's own status/commit."""
+    """A repo-controlled core.fsmonitor never executes on the host when agent6 runs git."""
     _init_repo(tmp_path)
     marker = tmp_path / "PWNED"
     subprocess.run(
@@ -184,10 +175,10 @@ def _add_pre_commit_hook(repo: Path, marker: Path) -> None:
 
 
 def test_git_ops_skips_repo_hooks_by_default(tmp_path: Path) -> None:
-    """Secure default: agent6's own commit must NOT fire a repo
-    `.git/hooks/*`. Asserts the UNTOUCHED defaults too -- calling
-    set_repo_hook_policy(False) first pinned the explicit-False path, so a
-    flipped default (module state or config) stayed green."""
+    """agent6's own commit never fires a repo `.git/hooks/*`, on the untouched defaults too.
+
+    Calling set_repo_hook_policy(False) first would pin only the explicit path.
+    """
     from agent6.config import Config
     from agent6.git_ops import _hook_policy  # pyright: ignore[reportPrivateUsage]
 
@@ -225,9 +216,7 @@ def test_git_ops_neutralizes_repo_diff_external(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
     out = diff_since(tmp_path, "HEAD")
     assert not marker.exists(), "repo diff.external command executed on the host"
-    # git >= 2.53 tries to run the empty `-c diff.external=` override and a full
-    # patch dies (safe, but empty); --no-ext-diff keeps the patch. Assert the
-    # diff still comes back so a broken-but-safe regression can't hide here.
+    # git >= 2.53 runs an empty `-c diff.external=` and the patch dies; --no-ext-diff keeps it.
     assert "README.md" in out, "diff.external neutralization silently emptied the diff"
 
 
@@ -249,8 +238,7 @@ def test_diff_range_reports_a_branch_diff_and_empty_on_bad_ref(tmp_path: Path) -
 
 
 def test_diff_range_survives_poisoned_diff_external(tmp_path: Path) -> None:
-    """`sessions compare` diffs candidates via `diff_range`; a poisoned repo config
-    must not run its payload on the host, same guarantee as `diff_since`."""
+    """`sessions compare` diffs via `diff_range`, hardened against a poisoned repo config too."""
     _init_repo(tmp_path)
     base = subprocess.run(
         ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
@@ -286,8 +274,7 @@ def test_commit_diff_survives_poisoned_diff_external(tmp_path: Path) -> None:
 
 
 def _poison_textconv(repo: Path, marker: Path) -> None:
-    # A per-file textconv driver bound via .gitattributes. `-c diff.external=`
-    # and `--no-ext-diff` do NOT disable textconv; only `--no-textconv` does.
+    # A textconv driver via .gitattributes: only `--no-textconv` disables it.
     subprocess.run(
         ["git", "-C", str(repo), "config", "diff.pwn.textconv", f"touch {marker} ; cat"],
         check=True,
@@ -319,8 +306,7 @@ def test_commit_diff_survives_poisoned_textconv(tmp_path: Path) -> None:
 
 
 def test_git_ops_neutralizes_repo_gpg_signing(tmp_path: Path) -> None:
-    """A repo-controlled gpg.program + commit.gpgsign=true must NOT execute the
-    configured (arbitrary host) program on agent6's own commit."""
+    """A repo-controlled `gpg.program` with commit.gpgsign never executes on agent6's own commit."""
     _init_repo(tmp_path)
     marker = tmp_path / "PWNED_GPG"
     subprocess.run(
@@ -408,8 +394,10 @@ def test_create_branch_at_is_additive_no_checkout(tmp_path: Path) -> None:
 
 
 def test_create_branch_at_idempotent_and_refuses_move(tmp_path: Path) -> None:
-    """A no-op when the branch already points at the sha; a GitError if it points
-    elsewhere (moving a branch would be a rewrite, which we refuse)."""
+    """A no-op when the branch already points at the sha; a GitError if it points elsewhere.
+
+    Moving a branch would be a rewrite, which git_ops refuses.
+    """
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha
     create_branch_at(tmp_path, "agent6/fork", base)
@@ -421,14 +409,11 @@ def test_create_branch_at_idempotent_and_refuses_move(tmp_path: Path) -> None:
 
 
 def test_git_ops_never_spells_a_destructive_verb() -> None:
-    """The hard rule, at argv level: no function in git_ops passes push,
-    --force, reset --hard, rebase, amend, filter-branch, or branch -D to git.
-    The one sanctioned exception is force_delete_squash_merged_branch's
-    `branch -D` (operator-only, content-safe, never LLM-reachable).
+    """The hard rule, at argv level: no function in git_ops passes a destructive verb to git.
 
-    This replaces three refuse_* helpers that no production code ever called:
-    they raised on demand in a test while git_ops could have grown a real
-    `push` beside them, green."""
+    The one sanctioned exception is force_delete_squash_merged_branch's `branch -D`, operator-only
+    and content-safe.
+    """
     from agent6 import git_ops as gm
 
     src = Path(gm.__file__).read_text(encoding="utf-8")
@@ -487,8 +472,7 @@ def test_verify_git_identity_override_wins(tmp_path: Path) -> None:
 def test_verify_git_identity_missing_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Isolate from any global/system git identity by pointing the global
-    # config at an empty file.
+    # The global git config points at an empty file, so no identity leaks in.
     empty_cfg = tmp_path / "empty.gitconfig"
     empty_cfg.write_text("", encoding="utf-8")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty_cfg))
@@ -523,14 +507,12 @@ def test_commit_all_with_identity_overrides_author(tmp_path: Path) -> None:
 
 
 def test_commit_error_surfaces_stdout_when_stderr_empty(tmp_path: Path) -> None:
-    """`git commit` writes "nothing to commit, working tree
-    clean" to STDOUT, not stderr. `_run` only captured
-    stderr, producing error strings like "git commit -m X failed: "
-    with no useful detail. The new behaviour must include stdout when
-    stderr is empty so the operator gets actionable signal."""
+    """A failed git's error text includes stdout when stderr is empty.
+
+    `git commit` writes "nothing to commit, working tree clean" to stdout.
+    """
     _init_repo(tmp_path)
-    # `commit_all` will stage a no-op and call `git commit`, which exits
-    # 1 with "nothing to commit, working tree clean" on STDOUT.
+    # `git commit` exits 1 with "nothing to commit, working tree clean" on stdout.
     with pytest.raises(GitError) as excinfo:
         commit_all(tmp_path, "no-op commit on clean repo")
     msg = str(excinfo.value)
@@ -571,10 +553,7 @@ def test_restore_stash_conflict_keeps_stash(tmp_path: Path) -> None:
 
 
 def test_find_stash_targets_the_run_stash_not_the_latest(tmp_path: Path) -> None:
-    """A stash pushed DURING the run sits at stash@{0}; the old positional
-    restore popped it (the wrong work) and left the pre-run work hidden. The
-    run's stash is found by its run-id message and restored; the other stash
-    is untouched."""
+    """The run's stash is found by its run-id message; a stash pushed mid-run is untouched."""
     _init_repo(tmp_path)
     _stash_change(tmp_path, "pre.txt", "pre-run work\n", auto_stash_message("sunny-otter-AAA111"))
     _stash_change(
@@ -597,9 +576,10 @@ def test_find_stash_targets_the_run_stash_not_the_latest(tmp_path: Path) -> None
 def test_restore_stash_raced_drop_puts_the_bystander_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`git stash drop` takes only a POSITION (git refuses a sha outright), so a
-    stash pushed between the list that resolves ours and the drop shifts the
-    stack and the drop takes a bystander's entry. Its commit must come back."""
+    """A stash that shifted the stack between the list and the drop is put back.
+
+    `git stash drop` takes only a position, so the drop can take a bystander's entry.
+    """
     _init_repo(tmp_path)
     _stash_change(tmp_path, "pre.txt", "pre-run work\n", auto_stash_message("sunny-otter-AAA111"))
     entry = find_stash(tmp_path, auto_stash_message("sunny-otter-AAA111"))
@@ -640,17 +620,12 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
         ["git", "-C", str(tmp_path), "stash", "list"], capture_output=True, text=True, check=True
     ).stdout
     assert "bystander" in listing  # never silently destroyed
-    # Ours survives too: re-resolving to drop it again would race the same way,
-    # so a raced restore leaks its own stash rather than risk a second bystander.
+    # Ours survives too: dropping it again would race the same way.
     assert auto_stash_message("sunny-otter-AAA111") in listing
 
 
 def test_find_stash_does_not_prefix_match_another_runs_stash(tmp_path: Path) -> None:
-    """Lane run ids are ordinal (`…-l1`, `…-l10`), so one run's auto-stash
-    message is a PREFIX of another's stash subject; the substring lookup
-    returned the newer `-l10` stash when asked for `-l1`, and finalization
-    then applied and dropped the wrong work. The lookup must match the
-    pushed message exactly."""
+    """The stash lookup matches the pushed message exactly: `-l1` is a prefix of `-l10`."""
     _init_repo(tmp_path)
     _stash_change(tmp_path, "one.txt", "lane l1 work\n", auto_stash_message("fanout-l1"))
     # newer: listed first
@@ -663,11 +638,11 @@ def test_find_stash_does_not_prefix_match_another_runs_stash(tmp_path: Path) -> 
 def test_raced_drop_failed_putback_raises_with_recovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """When the raced drop took a bystander's stash AND storing it back fails
-    (e.g. the stash ref lock is held by the very process that raced us), the
-    bystander's entry is gone from the list. That loss must not pass silently:
-    the restore raises, naming the orphaned commit and the exact
-    `git stash store` command that puts it back."""
+    """A bystander's stash lost in the raced drop is reported, never silently gone.
+
+    When storing it back fails, the restore raises, naming the orphaned commit and the `git stash
+    store` command that puts it back.
+    """
     _init_repo(tmp_path)
     _stash_change(tmp_path, "pre.txt", "pre-run work\n", auto_stash_message("sunny-otter-AAA111"))
     entry = find_stash(tmp_path, auto_stash_message("sunny-otter-AAA111"))
@@ -714,10 +689,10 @@ def test_raced_drop_failed_putback_raises_with_recovery(
 
 
 def test_git_runs_under_a_pinned_locale(tmp_path: Path) -> None:
-    """The bystander rescue reads git's own sentence ("Dropped stash@{0} (sha)")
-    to learn what it just dropped, and git translates that. On a host with git
-    l10n and a non-English LANG the match failed AFTER the drop had happened,
-    so the bystander's stash was destroyed with no record of it."""
+    """The bystander rescue works under a non-English git locale.
+
+    It reads git's own "Dropped stash@{0} (sha)" line, which git translates.
+    """
     _init_repo(tmp_path)
     seen: dict[str, str] = {}
     real = subprocess.Popen
@@ -734,10 +709,11 @@ def test_git_runs_under_a_pinned_locale(tmp_path: Path) -> None:
 
 
 class _HungGit:
-    """Popen stand-in for a git stuck past the timeout: the first
-    communicate() times out (creating *lock* if given -- a lock appearing
-    mid-window); terminate() exits it, unless *ignores_term* (wedged
-    uninterruptible), where only kill() reaps it."""
+    """Popen stand-in for a git stuck past the timeout.
+
+    The first communicate() times out (creating *lock* if given); terminate() exits it, unless
+    *ignores_term*, where only kill() reaps it.
+    """
 
     def __init__(self, *, lock: Path | None = None, ignores_term: bool = False) -> None:
         self.lock = lock
@@ -765,10 +741,7 @@ class _HungGit:
 
 
 def _hang_the_op_only(fake: _HungGit) -> object:
-    """A Popen replacement that hangs only the actual git OP. `_run` first runs
-    the driver-neutralization enumeration (`git config --get-regexp`, a real,
-    fast git that this test repo answers empty); letting that through keeps the
-    fake's one-call state clean, so only the op being timed out is `_HungGit`."""
+    """A Popen replacement that hangs only the git op, not the driver-neutralization enumeration."""
     real = git_ops.subprocess.Popen
 
     def fake_popen(*a: object, **k: object) -> object:
@@ -781,10 +754,10 @@ def _hang_the_op_only(fake: _HungGit) -> object:
 
 
 def test_timeout_terminates_first_and_leaves_a_survivor_lock(tmp_path: Path) -> None:
-    """A timed-out git gets SIGTERM, and git's TERM handler removes its own
-    lockfiles; SIGKILL only follows an ignored TERM. After a graceful TERM
-    exit a lock still on disk is a concurrent git's (git cleaned its own), so
-    nothing is deleted."""
+    """A timed-out git gets SIGTERM, whose handler removes its lockfiles; SIGKILL follows.
+
+    After a graceful TERM exit a lock still on disk is a concurrent git's, so nothing is deleted.
+    """
     _init_repo(tmp_path)
     lock = tmp_path / ".git" / "index.lock"
     fake = _HungGit(lock=lock)
@@ -801,9 +774,7 @@ def test_timeout_terminates_first_and_leaves_a_survivor_lock(tmp_path: Path) -> 
 
 
 def test_timeout_keeps_a_preexisting_index_lock(tmp_path: Path) -> None:
-    """A lock that already existed when the timed-out git was spawned belongs
-    to a CONCURRENT git process (operator shell, another lane); deleting it
-    would break git's index mutual exclusion, even on the SIGKILL path."""
+    """A lock that predates the timed-out git is a concurrent git's and stays, even on SIGKILL."""
     _init_repo(tmp_path)
     lock = tmp_path / ".git" / "index.lock"
     lock.write_text("held by a concurrent git\n", encoding="utf-8")
@@ -820,9 +791,7 @@ def test_timeout_keeps_a_preexisting_index_lock(tmp_path: Path) -> None:
 
 
 def test_timeout_clears_the_lock_its_own_child_created(tmp_path: Path) -> None:
-    """A child that ignores TERM (a wedged filesystem) is SIGKILLed, skipping
-    git's own lockfile cleanup; a lock that appeared under this child is
-    cleared so the run's remaining git ops recover."""
+    """A child that ignores TERM is killed, and a lock that appeared under it is cleared."""
     _init_repo(tmp_path)
     lock = tmp_path / ".git" / "index.lock"
     fake = _HungGit(lock=lock, ignores_term=True)
@@ -844,15 +813,15 @@ def test_find_stash_missing_returns_none(tmp_path: Path) -> None:
 
 
 def test_restore_stash_survives_index_shift_after_lookup(tmp_path: Path) -> None:
-    """A stash pushed AFTER the lookup shifts every stash@{N}, so restoring by
-    the recorded position applied the wrong stash (and dropped it). The entry
-    is applied and dropped by its sha, resolved fresh at drop time."""
+    """The stash entry is applied and dropped by its sha, resolved fresh at drop time.
+
+    A stash pushed after the lookup shifts every stash@{N}.
+    """
     _init_repo(tmp_path)
     _stash_change(tmp_path, "pre.txt", "pre-run work\n", auto_stash_message("sunny-otter-AAA111"))
     entry = find_stash(tmp_path, auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None and entry.ref == "stash@{0}"
-    # The shift: a stash pushed after the lookup makes the recorded position
-    # point at someone else's work.
+    # A stash pushed after the lookup makes the recorded position point at someone else's work.
     _stash_change(tmp_path, "mid.txt", "mid work\n", "pushed after lookup")
     assert restore_stash(tmp_path, entry) is True
     assert (tmp_path / "pre.txt").read_text(encoding="utf-8") == "pre-run work\n"
@@ -872,10 +841,11 @@ def _commit_file(repo: Path, name: str, content: str, msg: str) -> str:
 
 
 def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: Path) -> None:
-    """A no-ff merge is pure ref plumbing: the target branch gains a two-parent
-    commit carrying the trailer once, and a worktree already holding the run's
-    files (as after every run) is no obstacle -- afterwards `git status` shows
-    no phantom dirt because the index was brought forward."""
+    """A no-ff merge is pure ref plumbing: a two-parent commit and the index brought forward.
+
+    A worktree already holding the run's files is no obstacle, and `git status` shows no phantom
+    dirt.
+    """
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha
     run_tip = _lane_commit(tmp_path, base, "feat.txt", "x\n")
@@ -912,10 +882,7 @@ def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: Path) 
 
 
 def test_a_merge_stamp_stops_holding_once_the_run_commits_past_it(tmp_path: Path) -> None:
-    """A resumed run keeps committing under a prior execution's stamp, and the run's
-    record is its chain: read from the branch alone, a branchless run
-    (`branch_per_run` off) had nothing to compare and every stamp read as
-    holding, so prune called it merged and the later commits went unnoticed."""
+    """The run's record is its chain, so a branchless run's later commits are not called merged."""
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha
     tip = _lane_commit(tmp_path, base, "a.txt", "one\n")
@@ -938,10 +905,7 @@ def test_a_merge_stamp_stops_holding_once_the_run_commits_past_it(tmp_path: Path
 def test_a_merge_stamp_on_the_chain_holds_through_an_operator_commit_on_the_branch(
     tmp_path: Path,
 ) -> None:
-    """The stamp names the chain tip a merge took, and the operator then
-    commits on the run branch: the listing's unmerged mark accepts either tip,
-    so the stamp holds here too, or `sessions show` offered a merge the
-    listing called done."""
+    """The stamp names the chain tip a merge took, so the listing accepts either tip as merged."""
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha
     chain = _lane_commit(tmp_path, base, "a.txt", "one\n")
@@ -961,11 +925,11 @@ def test_a_merge_stamp_on_the_chain_holds_through_an_operator_commit_on_the_bran
 def test_plumb_merge_names_the_files_the_checkout_kept_its_own_version_of(
     tmp_path: Path,
 ) -> None:
-    """The merge brings a checked-out file forward only where it still matches
-    what the branch held, so an edit of the operator's survives -- and the
-    merge read as landed while the tree they then test and commit holds the
-    older content. The run's own checkout (already at the merged content) is
-    named by nothing: that is every merge."""
+    """The merge brings a checked-out file forward only where it still matches the branch.
+
+    An operator's edit survives; the run's own checkout, already at the merged content, is named by
+    nothing.
+    """
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha
     run_tip = _lane_commit(tmp_path, base, "feat.txt", "the run's line\n")
@@ -994,12 +958,12 @@ def test_plumb_merge_names_the_files_the_checkout_kept_its_own_version_of(
 
 
 def test_add_worktree_is_detached_shares_refs_and_is_removed_alone(tmp_path: Path) -> None:
-    """`add_worktree` makes a detached linked worktree at the sha whose refs
-    are the repository's own (a chain commit made there is visible from the
-    main checkout); `git_common_dir` names the repository's `.git`;
-    `remove_worktree` deletes it with its record only, so the record of
-    another worktree whose directory is missing survives, and refuses a
-    directory that is not a linked worktree of the repository."""
+    """`add_worktree`, `git_common_dir` and `remove_worktree` manage a detached linked worktree.
+
+    The worktree's refs are the repository's own; `remove_worktree` deletes it with its record only,
+    so the record of another worktree whose directory is missing survives, and refuses a directory
+    that is not a linked worktree.
+    """
     import shutil
 
     from agent6.git_ops import add_worktree, chain_commit, git_common_dir, remove_worktree
@@ -1045,11 +1009,11 @@ def test_add_worktree_is_detached_shares_refs_and_is_removed_alone(tmp_path: Pat
 def test_plumb_merge_from_a_linked_worktree_brings_the_main_checkout_forward(
     tmp_path: Path,
 ) -> None:
-    """A merge run from a linked worktree (a fork's execution auto-merging) moves
-    the shared target ref; the checkout that HAS the target checked out is the
-    main one, so its index and files are brought forward there. Checking HEAD
-    in the worktree (detached) skipped the bring-forward and left the main
-    checkout showing a phantom staged reversal of the landed work."""
+    """A merge run from a linked worktree brings the main checkout forward, not the worktree.
+
+    The main checkout has the target checked out; skipping it leaves a phantom staged reversal
+    there.
+    """
     from agent6.git_ops import add_worktree
 
     repo = tmp_path / "repo"
@@ -1076,8 +1040,7 @@ def test_plumb_merge_conflict_moves_nothing(tmp_path: Path) -> None:
     main_tip = status(tmp_path).head_sha
     res = plumb_merge(tmp_path, "main", theirs, strategy="merge", message=None)
     assert res.conflicted
-    # The conflicted PATHS only: merge-tree's informational lines ("Auto-merging
-    # README.md", "CONFLICT (content): ...") follow a blank line and stay out.
+    # The conflicted paths only; merge-tree's informational lines follow a blank line and stay out.
     assert res.conflicts == ("README.md",)
     assert _rev(tmp_path, "main") == main_tip  # nothing moved
     assert (tmp_path / "README.md").read_text(encoding="utf-8") == "main change\n"
@@ -1128,8 +1091,7 @@ def test_plumb_merge_squash_is_one_commit_and_noop_when_contained(tmp_path: Path
 
 
 def test_plumb_merge_preserves_the_operators_own_staging(tmp_path: Path) -> None:
-    """Index entries the operator staged themselves survive the bring-forward
-    exactly as staged; only entries still matching the old tip move."""
+    """Index entries the operator staged survive the bring-forward; only old-tip entries move."""
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha
     theirs = _lane_commit(tmp_path, base, "feat.txt", "x\n")
@@ -1235,9 +1197,7 @@ def test_condense_strips_prefix_and_bullets(tmp_path: Path) -> None:
 
 
 def test_condense_subject_is_first_clause_and_the_task_stays_out(tmp_path: Path) -> None:
-    """The subject is the task's first clause, capped at 72 characters; the
-    rest of the task is session prose (a plan, an instruction) and does not
-    enter the commit body."""
+    """The subject is the task's first clause, capped at 72 characters; the rest stays out."""
     task = (
         "Add a --limit flag to runs list. Then update the parser help and add a "
         "focused unit test covering the newest-N slice and the argcomplete choices"
@@ -1254,8 +1214,7 @@ def test_condense_subject_truncates_a_clauseless_run_on_with_ellipsis(tmp_path: 
 
 
 def test_condense_subject_drops_only_a_markdown_heading_mark() -> None:
-    """A TASK.md task opens with `# Title`; the squash headline showed the marks
-    (every listing drops them). A `#` with no space after it stays."""
+    """A TASK.md task's `# Title` marks are dropped from the squash headline; a bare `#` stays."""
     assert (
         condense_commit_message((), subject="# Fix the parser\n\nMore detail") == "Fix the parser"
     )
@@ -1285,17 +1244,13 @@ def test_render_commit_trailer_joins_the_code_writers() -> None:
     assert render_commit_trailer("", models=("m",)) is None
     got = render_commit_trailer("Assisted-by: agent6:{model}", models=("m1",))
     assert got == "Assisted-by: agent6:m1"
-    # Several contributing models join first-seen order, deduplicated, blanks
-    # dropped: the primary worker stays first.
+    # Contributing models join first-seen, deduplicated, blanks dropped; the worker stays first.
     got = render_commit_trailer("Assisted-by: agent6:{model}", models=("m1", "", "m2", "m1"))
     assert got == "Assisted-by: agent6:m1, m2"
 
 
 def test_diff_of_non_utf8_file_does_not_crash(tmp_path: Path) -> None:
-    # git diff/show emit raw file bytes; a latin-1 text file (no NULs, so git
-    # does not treat it as binary) put non-UTF-8 bytes in the output, and the
-    # strict text=True decode raised UnicodeDecodeError mid-run with no session.end.
-    # Both diff surfaces must return a (lossily-decoded) string instead.
+    # A latin-1 text file put non-UTF-8 bytes in the diff, and the strict decode raised mid-run.
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha
     (tmp_path / "latin1.txt").write_bytes(b"caf\xe9 au lait\n")
@@ -1323,8 +1278,7 @@ def test_list_run_commits_preserves_body_with_separator_bytes(tmp_path: Path) ->
 def test_conventional_subject_derives_type_and_scope() -> None:
     from agent6.commit_message import conventional_commit_subject
 
-    # All test files -> test; scope from the common first dir under src/ when
-    # source is touched, else the common top-level dir.
+    # All test files -> test; the scope is the common first dir under src/, else the top-level dir.
     assert conventional_commit_subject(
         [("M", "tests/unit/test_a.py"), ("M", "tests/unit/test_b.py")],
         summary="cover the resolver",
@@ -1355,10 +1309,11 @@ def _rev(path: Path, ref: str) -> str:
 
 
 def test_chain_commit_touches_no_head_index_or_checkout(tmp_path: Path) -> None:
-    """The detached chain records the worktree without moving HEAD, without
-    reading or writing the shared index, and without a checkout: the run's
-    commits land on refs/agent6/<id> (and the visible branch ref when asked)
-    while the operator's staged change survives byte-for-byte."""
+    """The detached chain records commits without moving HEAD, the shared index or the checkout.
+
+    The run's commits land on refs/agent6/<id> while the operator's staged change survives
+    byte-for-byte.
+    """
     from agent6.git_ops import chain_commit
 
     _init_repo(tmp_path)
@@ -1416,10 +1371,11 @@ def test_chain_commit_brings_a_checked_out_run_branch_index_forward(tmp_path: Pa
 
 
 def test_chain_merge_lands_a_lane_on_a_checked_out_run_branch(tmp_path: Path) -> None:
-    """With the run branch checked out, merging a lane advances the branch,
-    lands the lane's file and leaves a clean status. Moving the branch's index
-    and worktree before the worktree sync made the sync refuse to overwrite
-    the file the move had just written, after both refs had advanced."""
+    """Merging a lane onto the checked-out run branch leaves a clean status.
+
+    The worktree sync runs before the branch's index and worktree move, or it refuses to overwrite
+    the moved file.
+    """
     from agent6.git_ops import chain_commit, chain_merge
 
     _init_repo(tmp_path)
@@ -1453,8 +1409,7 @@ def test_chain_merge_lands_a_lane_on_a_checked_out_run_branch(tmp_path: Path) ->
 def test_chain_commit_skips_identical_trees_and_survives_branch_switches(
     tmp_path: Path,
 ) -> None:
-    """An unchanged worktree records nothing (None), and the chain keeps its
-    own parentage when the model or the operator switches branches mid-run."""
+    """An unchanged worktree records None; the chain keeps its parentage across a branch switch."""
     from agent6.git_ops import chain_commit
 
     _init_repo(tmp_path)
@@ -1505,8 +1460,7 @@ def test_chain_commit_root_and_trailer(tmp_path: Path) -> None:
 
 
 def _lane_commit(path: Path, parent: str, name: str, content: str) -> str:
-    """A commit adding *name* on top of *parent* built with plumbing only, like
-    an imported lane tip: it exists in the odb without any checkout."""
+    """Return a commit adding a file on top of a parent, built with plumbing only."""
     env = dict(os.environ, GIT_INDEX_FILE=str(path / ".git" / "lane-index"))
     blob = subprocess.run(
         ["git", "-C", str(path), "hash-object", "-w", "--stdin"],
@@ -1533,9 +1487,11 @@ def _lane_commit(path: Path, parent: str, name: str, content: str) -> str:
 
 
 def test_chain_merge_records_the_lane_and_syncs_the_worktree(tmp_path: Path) -> None:
-    """A clean lane merge lands as a two-parent chain commit and the lane's
-    files appear in the worktree, while HEAD and the operator's checkout stay
-    untouched; an already-contained rev is a no-op returning the tip."""
+    """A clean lane merge lands as a two-parent chain commit with the lane's files checked out.
+
+    HEAD and the operator's checkout stay untouched; an already-contained rev is a no-op returning
+    the tip.
+    """
     from agent6.git_ops import chain_commit, chain_merge
 
     _init_repo(tmp_path)
@@ -1562,11 +1518,11 @@ def test_chain_merge_records_the_lane_and_syncs_the_worktree(tmp_path: Path) -> 
 
 
 def test_chain_merge_syncs_a_file_the_lane_modified(tmp_path: Path) -> None:
-    """A lane that edits an EXISTING file merges and the edit lands in the
-    worktree. The temp index `sync_worktree` builds carries no stat data, and
-    `read-tree -m -u` refused to touch any entry it could not prove up to date
-    ("Entry 'README.md' not uptodate. Cannot merge."), so every lane that
-    changed a file the coordinator already had failed to join."""
+    """A lane that edits an existing file merges and the edit lands in the worktree.
+
+    The temp index carries no stat data, and `read-tree -m -u` refuses an entry it cannot prove up
+    to date.
+    """
     from agent6.git_ops import chain_commit, chain_merge
 
     _init_repo(tmp_path)
@@ -1583,8 +1539,7 @@ def test_chain_merge_syncs_a_file_the_lane_modified(tmp_path: Path) -> None:
 
 
 def test_chain_merge_conflict_leaves_chain_and_worktree_alone(tmp_path: Path) -> None:
-    """A textual conflict returns None: the ref keeps its tip and no file in
-    the worktree is rewritten (the coordinator reports, the model resolves)."""
+    """A textual conflict returns None: the ref keeps its tip and no worktree file is rewritten."""
     from agent6.git_ops import chain_commit, chain_merge
 
     _init_repo(tmp_path)
@@ -1599,14 +1554,12 @@ def test_chain_merge_conflict_leaves_chain_and_worktree_alone(tmp_path: Path) ->
 
 
 def test_chain_commit_keeps_tracked_but_ignored_files(tmp_path: Path) -> None:
-    """A file committed before it was gitignored stays tracked, but `add -A`
-    into the EMPTY chain temp index applied ignore rules to it (ignore covers
-    only untracked files, and to a fresh index everything is untracked): every
-    chain commit silently dropped such files from its tree, `chain_dirty` read
-    the repo as permanently dirty, and a later `sessions merge` deleted the
-    files from the operator's branch. Found by a run on a clone of this
-    repository, whose bench results are tracked-but-ignored: the run branch
-    deleted 40 of them. The temp index is now seeded from the parent tree."""
+    """A file committed before it was gitignored stays tracked in every chain commit.
+
+    The temp index is seeded from the parent tree; to an empty index everything is untracked, so
+    `add -A` applied the ignore rules and a later merge deleted such files from the operator's
+    branch.
+    """
     repo = _repo_with_ignored_tracked(tmp_path)
     ref = "refs/agent6/t/head"
     head = _rev(repo, "HEAD")
@@ -1626,11 +1579,7 @@ def test_chain_commit_keeps_tracked_but_ignored_files(tmp_path: Path) -> None:
 
 
 def test_chain_commit_leaves_the_operators_untracked_files_out(tmp_path: Path) -> None:
-    """Files untracked when the run started (`untracked_at_start`) are the
-    operator's: `add -A` into the chain temp index swept them into every
-    per-step commit, so a run's diff carried the operator's scratch files and a
-    tree holding only them read as dirty. With the set excluded, the commit
-    records the model's edits and its new files only, from any cwd."""
+    """Files untracked when the run started are the operator's and enter no per-step commit."""
     _init_repo(tmp_path)
     head = _rev(tmp_path, "HEAD")
     ref = "refs/agent6/u/head"
@@ -1688,10 +1637,7 @@ def _repo_with_ignored_tracked(tmp_path: Path) -> Path:
 
 
 def test_diff_since_excludes_untracked_at_start(tmp_path: Path) -> None:
-    """The review diff must agree with the chain: a file untracked BEFORE the
-    run started is not the run's work. Included, it read as the run's own
-    addition and a review panel ordered its removal -- the model deleted an
-    operator's untracked file."""
+    """The review diff agrees with the chain: a file untracked before the run is not its work."""
     _init_repo(tmp_path)
     base = _run_git(tmp_path, "rev-parse", "HEAD").strip()
     (tmp_path / "operator-notes.toml").write_text("k = 1\n", encoding="utf-8")
@@ -1702,9 +1648,7 @@ def test_diff_since_excludes_untracked_at_start(tmp_path: Path) -> None:
 
 
 def test_diff_since_leaves_the_real_index_untouched(tmp_path: Path) -> None:
-    """The intent-add runs against a temp index copy: `-N` entries left in
-    the real index survived the run and turned a later ref-plumbing merge
-    into a staged-deletion (`DA`) artifact that read as dirt."""
+    """The intent-add runs against a temp index copy, so no `-N` entry reaches the real index."""
     _init_repo(tmp_path)
     base = _run_git(tmp_path, "rev-parse", "HEAD").strip()
     (tmp_path / "new-work.py").write_text("x = 1\n", encoding="utf-8")
@@ -1716,9 +1660,10 @@ def test_diff_since_leaves_the_real_index_untouched(tmp_path: Path) -> None:
 
 
 def test_tree_diff_paths_names_what_changed_between_two_worktree_trees(tmp_path: Path) -> None:
-    """worktree_tree stages the worktree into a temp index (the shared index
-    untouched) and tree_diff_paths names what differs between two such
-    trees: the flip-green notice's question, asked of git."""
+    """`worktree_tree` and `tree_diff_paths` answer the flip-green notice's question from git.
+
+    The worktree is staged into a temp index, the shared index untouched.
+    """
     _init_repo(tmp_path)
     before = worktree_tree(tmp_path, "HEAD", ())
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
@@ -1733,10 +1678,7 @@ def test_tree_diff_paths_names_what_changed_between_two_worktree_trees(tmp_path:
 
 
 def test_plumb_merge_survives_a_recorded_but_missing_worktree(tmp_path: Path) -> None:
-    """A worktree git still records (its directory gone, not yet pruned) with
-    the target checked out is not a checkout to bring forward: the merge
-    lands and returns. Running git in the missing directory raised
-    FileNotFoundError after the ref had already moved."""
+    """A merge over a worktree record whose directory is gone lands and returns."""
     import shutil
 
     repo = tmp_path / "repo"
@@ -1755,10 +1697,10 @@ def test_plumb_merge_survives_a_recorded_but_missing_worktree(tmp_path: Path) ->
 
 
 def test_a_chain_commit_never_rewinds_the_run_branch(tmp_path: Path) -> None:
-    """The end banner leaves the operator on the run branch, so they can commit
-    on it. A bare `update-ref` moved the branch to the chain's new tip and
-    their commit survived only in the reflog; a compare-and-swap leaves the
-    branch where they put it, and the chain ref keeps the run's record."""
+    """The end banner leaves the operator on the run branch, and their commit there survives.
+
+    A compare-and-swap leaves the branch where they put it; the chain ref keeps the run's record.
+    """
     from agent6.git_ops import chain_commit, chain_tip
 
     _init_repo(tmp_path)
@@ -1773,8 +1715,7 @@ def test_a_chain_commit_never_rewinds_the_run_branch(tmp_path: Path) -> None:
     )
     assert first is not None and _rev(tmp_path, "refs/heads/agent6/t2") == first
 
-    # The operator commits on the run branch themselves (plumbing, so the
-    # chain's own worktree state is not the subject of this test).
+    # The operator commits on the run branch with plumbing; the chain's worktree is not the subject.
     theirs = subprocess.run(
         ["git", "-C", str(tmp_path), "commit-tree", f"{first}^{{tree}}", "-p", first, "-m", "mine"],
         capture_output=True,
@@ -1803,9 +1744,7 @@ def test_a_chain_commit_never_rewinds_the_run_branch(tmp_path: Path) -> None:
 def test_a_merge_tree_this_git_cannot_run_names_the_floor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`merge-tree --merge-base` needs git 2.40; an older git exits 129 with a
-    usage error, which read as "merge-tree failed: <usage text>". The refusal
-    names the git found and the floor."""
+    """`merge-tree --merge-base` needs git 2.40; the refusal names the git found and the floor."""
     from agent6.kinds import CommandResult
 
     _init_repo(tmp_path)
@@ -1841,9 +1780,7 @@ def test_a_merge_tree_this_git_cannot_run_names_the_floor(
 
 
 def test_remove_worktree_reports_a_tree_it_could_not_delete(tmp_path: Path) -> None:
-    """`rmtree(ignore_errors=True)` swallowed every failure and the function
-    said True over a directory still on disk, so prune printed "removed" and
-    dropped the checkout lock of a live tree."""
+    """A prune whose rmtree fails says so instead of claiming the directory removed."""
     from agent6.git_ops import add_worktree, remove_worktree
 
     repo = tmp_path / "repo"
@@ -1863,10 +1800,11 @@ def test_remove_worktree_reports_a_tree_it_could_not_delete(tmp_path: Path) -> N
 
 
 def test_a_diff_carries_a_b_prefixes_whatever_the_diff_config_says(tmp_path: Path) -> None:
-    """`diff.noprefix`, `diff.mnemonicPrefix` and `diff.srcPrefix` in the
-    operator's git config changed every header agent6 reads (`i/`, `w/`, none),
-    so the panel's hunk map filed each file under a path no citation matched
-    and every block downgraded to a warning in silence."""
+    """The operator's diff prefix settings do not change the headers agent6 reads.
+
+    `diff.noprefix`, `diff.mnemonicPrefix` and `diff.srcPrefix` would file each file under a path no
+    citation matched.
+    """
     from agent6.git_ops import diff_since
     from agent6.harness._panel import diff_hunks, is_grounded
 

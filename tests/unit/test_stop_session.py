@@ -89,8 +89,7 @@ def test_after_step_writes_the_marker_alone(tmp_path: Path) -> None:
 
 
 def test_a_run_that_answers_stops_and_is_not_killed(tmp_path: Path) -> None:
-    """The cooperative path: both bridges land, the worker reads the abort and
-    ends the run itself; the verb reports "stopped" once the log says so."""
+    """On the cooperative path the worker reads the abort and ends the run itself."""
     d = _live_run(tmp_path, "kind-run-AAAAAA")
     proc = _spawn(_ANSWERING_WORKER, str(d))
     write_worker_pid(d, proc.pid)
@@ -129,9 +128,7 @@ def test_a_run_parked_on_an_approval_reads_the_stop(tmp_path: Path) -> None:
 
 
 def test_a_worker_that_does_not_answer_is_killed_with_its_host_commands(tmp_path: Path) -> None:
-    """Nothing read the requests (a wedged stream, a parked prompt): after the
-    wait the worker and its host-side background commands get SIGTERM, and
-    SIGKILL after the grace for one that ignores SIGTERM."""
+    """When nothing reads the requests, the worker and its commands get SIGTERM, then SIGKILL."""
     d = _live_run(tmp_path, "deaf-run-AAAAAA")
     worker = _spawn("import time; time.sleep(60)")
     write_worker_pid(d, worker.pid)
@@ -213,7 +210,9 @@ def test_a_namespace_local_shell_has_no_host_target(tmp_path: Path) -> None:
 
 def test_a_stop_does_not_kill_a_worker_from_a_new_resume(tmp_path: Path) -> None:
     """The worker that received the request can end before the wait polls it.
-    A new resume is a different process even though it owns the same run dir."""
+
+    A new resume is a different process even though it owns the same run dir.
+    """
     from agent6.app import stop as stop_mod
 
     d = _live_run(tmp_path, "resumed-run-AAAAAA")
@@ -263,8 +262,7 @@ def test_a_recycled_worker_pid_is_not_signalled(tmp_path: Path) -> None:
 
 
 def test_a_recycled_shell_pid_is_not_signalled(tmp_path: Path) -> None:
-    """A shell record identifies the process that the run started, not a later
-    process that inherited its pid."""
+    """A shell record identifies the process the run started, not a later one with its pid."""
     d = _live_run(tmp_path, "recycled-shell-run-AAAAAA")
     worker = _spawn(_DEAF_WORKER)
     unrelated = _spawn("import time; time.sleep(60)")
@@ -295,8 +293,10 @@ def test_a_recycled_shell_pid_is_not_signalled(tmp_path: Path) -> None:
 
 
 def test_a_stop_never_signals_its_own_process_group(tmp_path: Path) -> None:
-    """A stop can share a process group with the worker it targets. The worker
-    must die without the group signal taking the stopping process with it."""
+    """A stop can share a process group with the worker it targets.
+
+    The worker must die without the group signal taking the stopping process with it.
+    """
     d = _live_run(tmp_path, "shared-group-run-AAAAAA")
     result = tmp_path / "stop.out"
     worker = _spawn(_GROUP_WORKER, str(d), str(result), _GROUP_STOPPER)
@@ -312,9 +312,7 @@ def test_a_stop_never_signals_its_own_process_group(tmp_path: Path) -> None:
 
 
 def test_a_stop_that_finds_nothing_to_signal_says_so(tmp_path: Path) -> None:
-    """The recorded worker is this process (a front-end that is the worker), so
-    the kill signals nothing: the outcome says the run did not answer and
-    nothing was left to signal, never that a worker was killed."""
+    """When the recorded worker is this process, the outcome says nothing was left to signal."""
     d = _live_run(tmp_path, "self-run-AAAAAA")
     write_worker_pid(d, os.getpid())
     out = stop_session(d, wait_s=0.0, grace_s=0.1)

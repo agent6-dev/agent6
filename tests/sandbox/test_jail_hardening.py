@@ -13,12 +13,14 @@ pytestmark = pytest.mark.needs_namespaces
 
 @pytest.mark.parametrize("level", ["hardened", "strict"])
 def test_a_jailed_command_cannot_create_a_device_node(tmp_path: Path, level: str) -> None:
-    """Under `sudo agent6` on a profile with no user namespace the child holds
-    real CAP_MKNOD and no MS_NODEV bind: a block device for the host disk,
-    created in its own workspace, reads and writes raw sectors past every path
-    Denied by the seccomp rule, which refuses mknod/mknodat by device type,
-    and by Landlock, which handles MakeChar/MakeBlock and grants them nowhere;
-    this pin cannot tell the two apart (seccomp alone passes it)."""
+    """A jailed command cannot mknod a block device for the host disk.
+
+    Under `sudo agent6` on a profile with no user namespace the child holds real CAP_MKNOD
+    and no MS_NODEV bind, so such a node in its own workspace would read and write raw
+    sectors past every path. Denied by the seccomp rule, which refuses mknod/mknodat by
+    device type, and by Landlock, which grants MakeChar/MakeBlock nowhere; this pin cannot
+    tell the two apart.
+    """
     from agent6.config import Config
     from agent6.sandbox.jail import run_in_jail
     from agent6.tools.dispatch import jail_policy
@@ -37,15 +39,12 @@ def test_a_jailed_command_cannot_create_a_device_node(tmp_path: Path, level: str
 
 
 def test_a_fifo_is_still_a_thing_a_build_can_make(tmp_path: Path) -> None:
-    """Device nodes are blocked by MODE, not by denying the syscall: `mkfifo`
-    and socket nodes go through mknodat too, and builds legitimately use them.
-    Denying it outright would have broken them for a threat that is only about
-    character and block devices.
+    """Device nodes are blocked by mode, not by denying mknodat: a fifo still works.
 
-    `strict` only: on `hardened` with protect_git, no NEW top-level entry in
-    cwd can be created at all (the carve-out grants RW on cwd's existing
-    children, never on cwd itself), so a fifo there fails for an unrelated
-    reason -- identically before and after this filter.
+    `mkfifo` and socket nodes go through mknodat too, and builds use them. `strict` only: on
+    `hardened` with protect_git no new top-level entry in cwd can be created at all (the
+    carve-out grants RW on cwd's existing children, never cwd itself), so a fifo there fails
+    for an unrelated reason.
     """
     level = "strict"
     from agent6.config import Config
@@ -65,22 +64,14 @@ def test_a_fifo_is_still_a_thing_a_build_can_make(tmp_path: Path) -> None:
 
 
 def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: Path) -> None:
-    """EVERY mount, read from the jail's own mountinfo -- not a list of paths
-    someone remembered to add.
+    """Every mount in the jail's own mountinfo carries the nosuid/nodev/noexec floor.
 
-    Three separate audits each found another mount missing the floor the
-    comments call unconditional: the system binds, the writable /tmp, then the
-    root tmpfs. Checking the paths those audits named would have passed each
-    time; enumerating what is actually mounted is what closes the class.
-
-    The /dev nodes are the one exception, and by necessity: `nodev` means "do
-    not interpret device special files", so a device node mounted nodev is
-    unusable. They carry nosuid and noexec instead.
-
-    A bind inherits its SOURCE mount's flags, so on a host whose /tmp is already
-    nosuid this cannot distinguish an explicit floor from an inherited one. The
-    launcher sets the flags explicitly for that reason; probed on ext4, the
-    tool_paths mount came back `ro,relatime` without them.
+    Enumerating what is mounted closes the class; a list of remembered paths misses the
+    next one. The /dev nodes are the one exception, by necessity: a device node mounted
+    nodev is unusable, so they carry nosuid and noexec only. A bind inherits its source
+    mount's flags, so on a host whose /tmp is already nosuid this cannot distinguish an
+    explicit floor from an inherited one; the launcher sets the flags explicitly for that
+    reason (probed on ext4, the tool_paths mount came back `ro,relatime` without them).
     """
     from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import run_in_jail
@@ -119,22 +110,14 @@ def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: Path) -> None:
 
 
 def test_a_submount_inside_a_grant_carries_the_floor_too(tmp_path: Path) -> None:
-    """The floor has to reach the submounts a recursive bind carries in, not
-    just the top of each grant.
+    """The floor reaches the submounts a recursive bind carries in, not just each grant's top.
 
-    `MS_REC` is silently IGNORED on `MS_REMOUNT` -- recursive attribute changes
-    need `mount_setattr(AT_RECURSIVE)` -- so every bind here mounted its whole
-    subtree and then made only its top mount read-only. A mount nested inside a
-    grant arrived with its SOURCE flags: probed, a tmpfs under a read-only grant
-    came in `rw,relatime`, and a jailed command wrote a file that was still on
-    the host afterwards.
-
-    The sibling test that reads the jail's own mountinfo does not catch this: on
-    a host with no nested mounts under any grant there is no such line to check.
-    Checking every mount of a default-shaped HOST only looks exhaustive.
-
-    Creating the submount needs a mount namespace, so the probe runs under
-    `unshare`; the jail's own userns nests inside it.
+    `MS_REC` is silently ignored on `MS_REMOUNT`; recursive attribute changes need
+    `mount_setattr(AT_RECURSIVE)`. Otherwise a mount nested inside a grant arrives with its
+    source flags: a tmpfs under a read-only grant comes in `rw,relatime`, and a jailed command
+    writes a file that is still on the host afterwards. The sibling mountinfo test cannot
+    catch this on a host with no nested mount under any grant. Creating the submount needs a
+    mount namespace, so the probe runs under `unshare`; the jail's own userns nests inside it.
     """
     import shutil
     import subprocess
@@ -217,12 +200,12 @@ def test_a_submount_inside_a_grant_carries_the_floor_too(tmp_path: Path) -> None
 
 
 def test_a_protect_path_with_its_own_submount_still_jails(tmp_path: Path) -> None:
-    """A mount nested under a protect path (`.git/objects` on its own bind) is
-    carried in by the recursive workspace bind and then covered by the protect
-    bind. Its stale mountinfo line made the protect floor remount a path that
-    is no longer a mount point -- EINVAL, and every jailed command refused.
-    The nested mount's content must instead stay visible and read-only under
-    the protect bind."""
+    """A mount nested under a protect path stays visible and read-only under the protect bind.
+
+    `.git/objects` on its own bind is carried in by the recursive workspace bind and then
+    covered by the protect bind; remounting its stale mountinfo line, which is not a mount
+    point any more, is EINVAL and would refuse every jailed command.
+    """
     import shutil
     import subprocess
     import sys
@@ -301,11 +284,12 @@ def test_a_protect_path_with_its_own_submount_still_jails(tmp_path: Path) -> Non
 
 
 def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(tmp_path: Path) -> None:
-    """A system bind whose source carries a locked flag (/etc/alternatives on a
-    noexec tmpfs, a hardened host's shape): the read-only remount must repeat
-    the source's flags -- clearing a locked one in a user namespace is refused
-    EPERM, and the jail then failed closed on exactly the hosts hardened the
-    way its own floor recommends."""
+    """A system bind whose source carries a locked flag is remounted read-only with those flags.
+
+    /etc/alternatives on a noexec tmpfs is a hardened host's shape; clearing a locked flag
+    in a user namespace is refused EPERM, so the jail would fail closed on exactly the hosts
+    hardened the way its own floor recommends.
+    """
     import shutil
     import subprocess
     import sys
@@ -371,19 +355,13 @@ def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(tmp_path: 
 
 
 def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: Path) -> None:
-    """umount2 is the unmount call to deny, and syscall 22 is not a spelling of
-    it on x86_64: 22 is `pipe(2)` there, and the 64-bit table has no legacy
-    umount at all (the i386 one is number 22 of a DIFFERENT table).
+    """umount2 is denied and syscall 22 (`pipe(2)` on x86_64) is left alone.
 
-    An audit probe called 22 with a path, read the 0 it got back as "the legacy
-    umount is ALLOWED", and the deny that followed refused pipe(2) under a
-    comment about unmounting. Nothing noticed because glibc routes pipe()
-    through pipe2(); a raw caller got EPERM from a rule that protected nothing.
-    The i386 spelling is unreachable either way -- seccompiler's arch prologue
-    kills a foreign-arch caller outright.
-
-    Both halves matter: the jail must deny the teardown AND leave an ordinary
-    syscall alone.
+    The 64-bit table has no legacy umount; number 22 is the i386 table's, unreachable either
+    way since seccompiler's arch prologue kills a foreign-arch caller. A probe that read
+    22's success as "legacy umount allowed" would deny pipe(2) under a comment about
+    unmounting, unnoticed because glibc routes pipe() through pipe2(). Both halves matter:
+    the jail denies the teardown and leaves an ordinary syscall alone.
     """
     import platform
 
@@ -426,17 +404,13 @@ def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: Path) -> None:
 def test_the_jail_launcher_does_not_carry_the_agent_env_into_the_jail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A jailed command must not be able to read the operator's provider key.
+    """A jailed command cannot read the operator's provider key.
 
-    The launcher becomes PID 1 of the jail's own PID namespace, and strict
-    mounts a fresh /proc -- so /proc/1/environ IS the launcher's environment.
-    Spawned without an explicit env it inherited the agent's, and a jailed
-    command could read `OPENROUTER_API_KEY=...` straight out of it. Probed and
-    reproduced before the fix.
-
-    docs/security.md says secrets never reach the jail; they were not mounted,
-    they were inherited. The launcher reads nothing from its environment (the
-    policy arrives on stdin), so it gets none.
+    The launcher is PID 1 of the jail's own PID namespace and strict mounts a fresh /proc,
+    so /proc/1/environ is the launcher's environment; spawned with the agent's, a jailed
+    command could read `OPENROUTER_API_KEY=...` straight out of it. docs/security.md says
+    secrets never reach the jail: the launcher reads nothing from its environment (the policy
+    arrives on stdin), so it gets none.
     """
     from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import run_in_jail
@@ -458,21 +432,15 @@ def test_the_jail_launcher_does_not_carry_the_agent_env_into_the_jail(
 def test_a_fully_populated_policy_holds_every_invariant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every jail invariant at once, against a policy with EVERY field set.
+    """Every jail invariant at once, against a policy with every field set.
 
-    The tests around this one each exercise a default-shaped policy, and that is
-    how tool_paths and extra_ro_paths kept a missing mount floor through a sweep
-    meant to close that class: a bare policy mounts neither, so enumerating
-    "every mount" enumerated everything except them. This one populates the
-    whole surface -- ro/rw/protect grants, tool paths, a child env, a memory cap
-    -- and asserts the properties together.
-
-    Honest limit on the GAPS half: a bind inherits its SOURCE mount's flags, and
-    pytest's tmp_path is usually on a tmpfs that already carries nosuid,nodev --
-    so on such a host this cannot tell an explicit floor from an inherited one
-    (red-verified: reverting the tool_paths floor leaves this passing). It bites
-    where tmp is ext4, and the ext4 case was probed by hand. The LEAK and
-    PROTECT halves are deterministic everywhere.
+    The tests around this one each exercise a default-shaped policy, which mounts neither
+    tool_paths nor extra_ro_paths, so enumerating "every mount" there misses them. This one
+    populates the whole surface (ro/rw/protect grants, tool paths, a child env, a memory
+    cap) and asserts the properties together. Limit on the gaps half: a bind inherits its
+    source mount's flags, and pytest's tmp_path is usually on a tmpfs already carrying
+    nosuid,nodev, so on such a host this cannot tell an explicit floor from an inherited one;
+    it bites where tmp is ext4. The leak and protect halves are deterministic everywhere.
     """
     from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import run_in_jail
@@ -529,9 +497,11 @@ def test_a_fully_populated_policy_holds_every_invariant(
 
 
 def test_the_jail_root_is_per_uid_and_named_in_the_refusal(tmp_path: Path) -> None:
-    """A shared /tmp/agent6-jail-root is a cross-user denial of service: any
-    local user can create it (or plant a symlink) and every other user's jail
-    then fails. The path carries the uid, and an unusable one names itself."""
+    """The jail root carries the uid, and an unusable one names itself.
+
+    A shared /tmp/agent6-jail-root is a cross-user denial of service: any local user can
+    create it or plant a symlink, and every other user's jail then fails.
+    """
     import os
     import re
 
@@ -561,17 +531,14 @@ def test_the_jail_root_is_per_uid_and_named_in_the_refusal(tmp_path: Path) -> No
 
 @pytest.mark.needs_namespaces
 def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: Path) -> None:
-    """The jail root is shared per-uid, and setup used to clear it first: two
-    launchers starting together had one remove_dir_all the tree the other was
-    building, and that one died "rootfs setup failed: No such file or
-    directory". Reachable from /parallel lanes (separate agent6 processes, one
-    uid) and from any command run while an MCP server's launcher is alive.
+    """Two launchers starting together on one uid both come up, each in its own mount namespace.
 
-    Nothing needs clearing -- each launcher mounts its own tmpfs over the
-    shared mount point in its own namespace -- so the fix was deleting the
-    destructive step. Asserted with real concurrency, and on the mount
-    namespaces too: a per-child namespace is what keeps one child's grants out
-    of another's view.
+    The jail root is shared per uid and setup clears nothing: each launcher mounts its own
+    tmpfs over the shared mount point in its own namespace, so neither can remove the tree
+    the other is building. Reachable from /parallel lanes (separate agent6 processes, one
+    uid) and from any command run while an MCP server's launcher is alive. Asserted with
+    real concurrency, and on the mount namespaces: a per-child namespace keeps one child's
+    grants out of another's view.
     """
     import threading
 
@@ -611,13 +578,12 @@ def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: Path)
 
 
 def test_dev_shm_is_the_jails_own_and_writable(tmp_path: Path) -> None:
-    """POSIX shared memory is ordinary for real toolchains -- a headless
-    chromium aborts outright without it -- so the jail mounts /dev/shm and
-    GRANTS it. Mounting without granting would have been a mount that does
-    nothing, which is how the first attempt failed.
+    """/dev/shm is mounted and granted, as the jail's own tmpfs.
 
-    It is this mount namespace's own tmpfs, so what a command writes there is
-    invisible to the host and gone when the jail exits."""
+    POSIX shared memory is ordinary for real toolchains (a headless chromium aborts without
+    it); a mount without a grant does nothing. What a command writes there is invisible to
+    the host and gone when the jail exits.
+    """
     from agent6.config import Config
     from agent6.sandbox.jail import run_in_jail
     from agent6.tools.policy import jail_policy
@@ -644,18 +610,15 @@ def test_dev_shm_is_the_jails_own_and_writable(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("level", ["hardened", "strict"])
 def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: Path, level: str) -> None:
-    """pidfd_getfd steals an already-open fd out of another process's table --
-    the pidfd-era way to do what ptrace's fd access did, without calling
-    ptrace. It is gated only by ptrace_may_access, the SAME check that gates
-    the already-denied process_vm_readv/writev/kcmp, and under `hardened`
-    (no user namespace) that check plus the host's yama tunable was a jailed
-    command's only barrier to lifting a live fd out of the agent.
+    """pidfd_getfd is EPERM at both levels; pidfd_open, the harmless handle, is not denied.
 
-    Probed by NUMBER so a userspace wrapper's own failure can't read as a deny:
-    438 (pidfd_getfd, x86_64 and aarch64) must be EPERM; 434 (pidfd_open, the
-    harmless handle) must NOT be denied -- it fails EINVAL/ESRCH on a bogus
-    pid, never EPERM from the filter. Verified before the fix: a jailed
-    command duplicated a sibling's fd into itself; after, EPERM."""
+    pidfd_getfd steals an open fd out of another process's table, gated only by
+    ptrace_may_access, the same check that gates the denied process_vm_readv/writev/kcmp;
+    under `hardened` (no user namespace) that check plus the host's yama tunable is the only
+    barrier to lifting a live fd out of the agent. Probed by number so a wrapper's own
+    failure cannot read as a deny: 438 must be EPERM; 434 fails EINVAL/ESRCH on a bogus pid,
+    never EPERM from the filter.
+    """
     import platform
 
     from agent6.kinds import JailPolicy
@@ -693,13 +656,14 @@ def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: Path, level: str)
 
 @pytest.mark.parametrize("level", ["hardened", "strict"])
 def test_io_uring_and_userfaultfd_are_denied(tmp_path: Path, level: str) -> None:
-    """io_uring's ops run in kernel worker threads seccomp never sees, so it
-    can bypass a seccomp-only property; denying io_uring_setup is a COMPLETE
-    block (enter/register need a ring only setup creates). userfaultfd is the
-    race-window primitive kernel UAF exploits lean on. Both were reachable
-    (verified before the fix); both must be EPERM now, at both levels, while
-    memfd_create -- ordinary anonymous memory, used by real toolchains -- stays
-    allowed. Probed by NUMBER so a wrapper's own failure can't read as a deny."""
+    """io_uring_setup and userfaultfd are EPERM at both levels; memfd_create stays allowed.
+
+    io_uring's ops run in kernel worker threads seccomp never sees, so denying setup is the
+    complete block (enter/register need a ring only setup creates); userfaultfd is the
+    race-window primitive kernel UAF exploits lean on; memfd_create is ordinary anonymous
+    memory real toolchains use. Probed by number so a wrapper's own failure cannot read as a
+    deny.
+    """
     import platform
 
     from agent6.kinds import JailPolicy
@@ -734,9 +698,11 @@ def test_io_uring_and_userfaultfd_are_denied(tmp_path: Path, level: str) -> None
 
 
 def test_serve_launcher_refuses_a_request_with_an_unknown_field(tmp_path: Path) -> None:
-    """The serve-mode ChildRequest carries `deny_unknown_fields` like Policy: a
-    field this binary does not know is version skew with the Python side, and
-    silently dropping it could drop a confinement the caller meant to set."""
+    """The serve-mode ChildRequest refuses an unknown field, like Policy.
+
+    A field this binary does not know is version skew with the Python side; dropping it
+    silently could drop a confinement the caller meant to set.
+    """
     import json
     import subprocess
 

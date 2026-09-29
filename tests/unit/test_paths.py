@@ -41,10 +41,12 @@ def test_state_dir_and_repo_config_path(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
 
 def test_state_tree_dirs_are_created_private_0700(tmp_path: Path) -> None:
-    """agent6's state tree is single-user (transcripts, memory, run history,
-    secrets), so it is created 0700 and other local users cannot traverse in --
-    the files inside then need no per-file mode. Only what agent6 creates: a
-    pre-existing ancestor keeps its own mode."""
+    """State tree dirs are created private, 0700.
+
+    agent6's state tree is single-user (transcripts, memory, run history, secrets), so it is created
+    0700 and other local users cannot traverse in; the files inside then need no per-file mode. Only
+    what agent6 creates: a pre-existing ancestor keeps its own mode.
+    """
     outer = tmp_path / "pre"
     outer.mkdir(mode=0o755)
     leaf = outer / "state" / "agent6" / "repo-x" / "sessions" / "runs" / "s1"
@@ -63,9 +65,11 @@ def test_repo_id_distinguishes_paths(tmp_path: Path) -> None:
 
 
 def test_repo_id_separates_paths_that_flatten_alike(tmp_path: Path) -> None:
-    """`/a/b/c` and `/a/b-c` both flatten to `a-b-c`. Sharing one state dir
-    between two real workspaces is worse than an unreadable name, so the hash
-    has to separate them."""
+    """`/a/b/c` and `/a/b-c` both flatten to `a-b-c`.
+
+    Sharing one state dir between two real workspaces is worse than an unreadable name, so the hash
+    has to separate them.
+    """
     nested = tmp_path / "b" / "c"
     nested.mkdir(parents=True)
     dashed = tmp_path / "b-c"
@@ -83,9 +87,11 @@ def test_repo_id_separates_paths_that_flatten_alike(tmp_path: Path) -> None:
     ],
 )
 def test_repo_id_stays_a_usable_directory_name(tmp_path: Path, segment: str) -> None:
-    """The filesystem limit is 255 BYTES per component. Capping CHARACTERS gave
-    a 271-byte name for a CJK path, and every state-dir command died with an
-    unhandled ENAMETOOLONG."""
+    """The filesystem limit is 255 BYTES per component.
+
+    Capping CHARACTERS gave a 271-byte name for a CJK path, and every state-dir command died with an
+    unhandled ENAMETOOLONG.
+    """
     # Rooted at `/`: under `tmp_path` the ASCII prefix would take the whole
     # head cut, leaving only the tail cut inside a multi-byte segment.
     deep = Path("/", *[f"{segment}{i}" for i in range(30)])
@@ -154,10 +160,11 @@ def test_root_optin(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_mkdir_for_real_user_hands_back_created_ancestors(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Under sudo, every directory the call CREATES is handed back to the real
-    operator: chowning only the deepest one left a root-owned state/config
-    BASE that no later non-root process could create a sibling in. Directories
-    that already existed are never touched."""
+    """Under sudo, every directory the call CREATES is handed back to the real operator.
+
+    Chowning only the deepest one left a root-owned state/config BASE that no later non-root process
+    could create a sibling in. Directories that already existed are never touched.
+    """
     monkeypatch.setattr(os, "geteuid", lambda: 0)
     monkeypatch.setenv("SUDO_UID", "1234")
     monkeypatch.setenv("SUDO_GID", "1234")
@@ -206,11 +213,12 @@ def test_chown_to_real_user_is_noop_when_not_root(
 def test_a_chown_never_resolves_a_symlink_swapped_in_mid_walk(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Under sudo this runs as root over trees a jailed command holds RW. The
-    old walk listed paths then chowned them BY NAME, so swapping a parent
-    directory for a symlink in between had root chown whatever it pointed at.
-    The swap here is what a live escapee does; the assertion is on the inode
-    each chown would actually land on."""
+    """Under sudo this runs as root over trees a jailed command holds RW.
+
+    The old walk listed paths then chowned them BY NAME, so swapping a parent directory for a
+    symlink in between had root chown whatever it pointed at. The swap here is what a live escapee
+    does; the assertion is on the inode each chown would actually land on.
+    """
     tree = tmp_path / "state"
     (tree / "sub").mkdir(parents=True)
     (tree / "sub" / "file").write_text("x", encoding="utf-8")
@@ -250,10 +258,11 @@ def test_a_chown_never_resolves_a_symlink_swapped_in_mid_walk(
 
 
 def test_state_is_keyed_on_the_project_not_the_directory_you_stood_in(tmp_path: Path) -> None:
-    """From a subdirectory the state dir was a different, empty project: `runs`
-    listed nothing, `resume` found nothing, and read_session and memory saw an
-    empty history -- silently, since an empty project and a new one look the
-    same."""
+    """The state dir is keyed on the project, not on the directory the command ran from.
+
+    From a subdirectory, `runs`, `resume`, read_session and memory saw an empty history, silently,
+    since an empty project and a new one look the same.
+    """
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)
     (repo / "src" / "deep").mkdir(parents=True)
@@ -261,10 +270,12 @@ def test_state_is_keyed_on_the_project_not_the_directory_you_stood_in(tmp_path: 
 
 
 def test_one_repo_is_one_project_even_when_the_repo_is_your_home(tmp_path: Path) -> None:
-    """Stopping the walk at $HOME gave each subdirectory of a dotfiles repo its
-    own state dir -- and its own repo.lock -- while `git -C` still resolved
-    every one of them to the SAME working tree. Two runs then committed into it
-    at once, which is exactly what the lock exists to prevent."""
+    """One repo is one project, even when the repo is your home.
+
+    Stopping the walk at $HOME gives each subdirectory of a dotfiles repo its own state dir, and its
+    own repo.lock, while `git -C` resolves every one of them to the same working tree; two runs then
+    commit into it at once, which is exactly what the lock exists to prevent.
+    """
     home = tmp_path / "home"
     (home / ".git").mkdir(parents=True)
     (home / ".config" / "nvim").mkdir(parents=True)
@@ -274,15 +285,20 @@ def test_one_repo_is_one_project_even_when_the_repo_is_your_home(tmp_path: Path)
 
 
 def test_the_filesystem_root_is_not_a_directory_named_root(tmp_path: Path) -> None:
-    """`/` flattens to nothing, and the sentinel word for it was also a legal
-    directory name: `/` and `/root` were one id, so a container with WORKDIR /
-    shared config, runs and repo.lock with anything under /root."""
+    """`/` flattens to nothing, and the sentinel word for it was also a legal directory name.
+
+    `/` and `/root` were one id, so a container with WORKDIR / shared config, runs and repo.lock
+    with anything under /root.
+    """
     assert paths.repo_id(Path("/")) != paths.repo_id(Path("/root"))
 
 
 def test_a_worktree_is_the_project_it_is_a_worktree_of(tmp_path: Path) -> None:
-    """A linked worktree's `.git` is a FILE, so an is_dir() walk would climb
-    past it into whatever repo happens to be above."""
+    """A worktree is the project it is a worktree of.
+
+    A linked worktree's `.git` is a file, so an is_dir() walk would climb past it into whatever repo
+    happens to be above.
+    """
     tree = tmp_path / "wt"
     tree.mkdir()
     (tree / ".git").write_text("gitdir: /elsewhere/.git/worktrees/wt\n", encoding="utf-8")
@@ -291,10 +307,12 @@ def test_a_worktree_is_the_project_it_is_a_worktree_of(tmp_path: Path) -> None:
 
 
 def test_a_linked_worktree_is_the_repository_it_belongs_to(tmp_path: Path) -> None:
-    """`git worktree add` writes a `.git` FILE naming the repository's
-    `.git/worktrees/<name>`: the worktree is that repository's project (one
-    state dir, config and memory), the way a subdirectory is. A pointer at a
-    directory that is gone (the pin above) keeps the worktree its own project."""
+    """`git worktree add` writes a `.git` FILE naming the repository's `.git/worktrees/<name>`.
+
+    The worktree is that repository's project (one state dir, config and memory), the way a
+    subdirectory is. A pointer at a directory that is gone (the pin above) keeps the worktree its
+    own project.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
@@ -323,11 +341,12 @@ def test_outside_a_repo_the_directory_is_the_project(tmp_path: Path) -> None:
     ["/a/b/c", "/a/b-c", "/a-b/c", "/a-b-c", "/x/y", "/x-y", "/tmp", "/home/u/my-repo/sub"],
 )
 def test_the_id_decodes_back_to_the_path_it_names(path: str) -> None:
-    """Two paths can never share a state dir, by CONSTRUCTION rather than by
-    luck: the id is reversible. It used to be a flattened path plus a short
-    hash, so paths that flatten alike were separated by 24 bits -- brute-forced
-    in 11 seconds, after which one project read another's config, runs and
-    transcripts."""
+    """Two paths can never share a state dir, by CONSTRUCTION rather than by luck.
+
+    The id is reversible. A flattened path plus a short hash separates paths that flatten alike by
+    24 bits, brute-forced in 11 seconds, after which one project reads another's config, runs and
+    transcripts.
+    """
     rid = paths.repo_id(Path(path))
     flat, tag = rid.rsplit("-", 1)
     # The name fixes the bit LENGTH, which is what makes leading zeros safe.
@@ -344,16 +363,17 @@ def test_the_id_decodes_back_to_the_path_it_names(path: str) -> None:
 
 
 def test_the_common_case_carries_no_hash_at_all(tmp_path: Path) -> None:
-    """A hash is unreadable and, here, unnecessary: the tag is 1-4 characters
-    and means something."""
+    """A hash is unreadable and, here, unnecessary: the 1-4 character tag means something."""
     assert paths.repo_id(Path("/home/u/agent6")) == "home-u-agent6-3"
     assert paths.repo_id(Path("/tmp")) == "tmp-0"
 
 
 def test_repo_root_of_id_inverts_repo_id() -> None:
-    """`agent6 ps` decodes state-dir names back to directories: the inverse
-    must round-trip every dash/slash mix, reject junk names, and reject a
-    candidate that does not re-encode identically (the elided-hash form)."""
+    """`agent6 ps` decodes state-dir names back to directories.
+
+    The inverse must round-trip every dash/slash mix, reject junk names, and reject a candidate that
+    does not re-encode identically (the elided-hash form).
+    """
     from agent6.paths import repo_id, repo_root_of_id
 
     for path in ("/a/b/c", "/a/b-c", "/a-b-c", "/x---y/z-", "/tmp/a--b", "/"):
@@ -368,9 +388,11 @@ def test_repo_root_of_id_inverts_repo_id() -> None:
 def test_cmd_ps_lists_live_sessions_with_decoded_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """One row per LIVE session across every repo state dir: the decoded
-    directory (so the operator can cd there and attach), id, mode, status,
-    pid; a dead session never lists."""
+    """One row per LIVE session across every repo state dir.
+
+    The decoded directory (so the operator can cd there and attach), id, mode, status, pid; a dead
+    session never lists.
+    """
     import json
     import os
 

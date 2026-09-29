@@ -129,9 +129,11 @@ def test_lookup_price_alias_misses_stay_unpriced(
 def test_a_model_two_providers_list_is_priced_by_its_route(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every provider cache was merged by model id, first file name winning,
-    so a cheap gateway's listing priced a call that went through OpenRouter
-    at a 41x under-count of the enforced `max_usd`."""
+    """A model two providers list is priced by its route.
+
+    Merging every provider cache by model id with the first file name winning lets a cheap gateway's
+    listing price a call that went through OpenRouter, a 41x under-count of the enforced `max_usd`.
+    """
     import json
 
     from agent6.budget import BudgetTracker
@@ -164,10 +166,12 @@ def test_a_model_two_providers_list_is_priced_by_its_route(
 def test_a_listing_that_publishes_cache_rates_prices_them(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Cache-token pricing applied Anthropic's multipliers (0.1x read, 1.25x
-    write) to every provider, while OpenRouter publishes each model's own
-    `input_cache_read` / `input_cache_write` (OpenAI's cached input is 0.5x
-    and carries no write premium)."""
+    """A listing that publishes cache rates prices them.
+
+    OpenRouter publishes each model's own `input_cache_read` and `input_cache_write` (OpenAI's
+    cached input is 0.5x and carries no write premium); Anthropic's multipliers (0.1x read, 1.25x
+    write) apply only where a listing publishes none.
+    """
     import json
 
     from agent6.budget import BudgetTracker
@@ -228,10 +232,13 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
 def test_a_route_with_its_own_card_never_prices_from_another(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A provider whose cached listing lacks the model fell through to the
-    first listing by file name that had it, so the ceiling and the receipt
-    read another provider's rate instead of "$?". The cross-listing answer
-    is for a route with no cached card at all (the direct-Anthropic alias)."""
+    """A route with its own card never prices from another.
+
+    A provider whose cached listing lacks the model must not fall through to the first listing by
+    file name that has it, or the ceiling and the receipt read another provider's rate instead of
+    "$?". The cross-listing answer is for a route with no cached card at all (the direct-Anthropic
+    alias).
+    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     _write_pricing(tmp_path, "aaa-gateway", {"other/model": [0.1, 0.2]})
     _write_pricing(tmp_path, "openrouter", {"x/model": [0.3, 0.6]})

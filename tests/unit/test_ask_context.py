@@ -30,8 +30,7 @@ def _git(cwd: Path, *args: str) -> str:
 
 
 def _make_run(tmp_path: Path) -> str:
-    # A repo with a base commit + a run branch that changed a file, plus a
-    # synthetic runs/<id>/ manifest + logs.jsonl under the out-of-tree state dir.
+    # A base commit, a run branch that changed a file, and a synthetic manifest and log.
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.email", "t@t")
     _git(tmp_path, "config", "user.name", "t")
@@ -77,8 +76,7 @@ def test_ask_run_digest_includes_task_diff_and_outcome(
     assert "changed by the run" in digest  # the diff
     assert "reason=finish_session" in digest  # the outcome
     assert rid in digest  # identifies the prior run
-    # Run state is out of the workspace; the digest says so rather than pointing
-    # the jailed worker at unreachable paths.
+    # Run state is out of the workspace; the digest says so instead of naming unreachable paths.
     assert "outside the workspace" in digest
 
 
@@ -102,8 +100,7 @@ def test_ask_run_digest_unknown_run_returns_none(
 def test_ask_from_latest_no_sessions_names_the_flag(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The error names the flag the operator typed; `--run-latest` became
-    `--from-latest` when seeding stopped being runs-only."""
+    """The error names the flag the operator typed, `--from-latest`."""
     (state_dir(tmp_path) / "sessions" / "runs").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
 
@@ -120,8 +117,7 @@ def test_seed_files_wraps_and_skips_missing(tmp_path: Path) -> None:
 
 
 def test_ask_transcript_snippet_skips_digest_tags() -> None:
-    """The one snippet every listing shows for an ask (`task_snippet` over
-    the transcript): the question, past the headers and a seeded block."""
+    """The ask snippet is the question, past the headers and a seeded block."""
     from agent6.viewmodel import task_snippet
 
     t = (
@@ -199,9 +195,7 @@ def test_ask_repl_multi_turn_carries_context(
 
 
 def test_ask_transcript_snippet_reads_interactive_transcripts(tmp_path: Path) -> None:
-    """REPL transcripts head their sections `## Q1` / `## A1` (not
-    `## Question`); the shared snippet skips those headers too, so the hubs
-    show the question, not "## Q1"."""
+    """The ask snippet skips the REPL headers `## Q1` and `## A1` too."""
     from agent6.sessions.layout import SessionLayout
     from agent6.ui.cli._ask import save_ask_repl_transcript
     from agent6.viewmodel import task_snippet
@@ -213,9 +207,7 @@ def test_ask_transcript_snippet_reads_interactive_transcripts(tmp_path: Path) ->
     assert task_snippet(text) == "why is the broker slow?"
 
 
-# --- ask outside a git repository ------------------------------------------
-# `agent6 ask` runs in any directory (run/plan refuse non-git up front); the
-# context loader and system prompt must degrade honestly instead of raising.
+# `agent6 ask` runs in any directory; the context loader and prompt degrade instead of raising.
 
 
 def test_load_repo_summary_outside_git(tmp_path: Path) -> None:
@@ -268,8 +260,7 @@ def test_system_prompt_names_non_git_directory(tmp_path: Path) -> None:
 
 
 def test_prompt_revision_context_names_non_git_directory(tmp_path: Path) -> None:
-    """The reviser context degrades the same way the worker prompt does:
-    outside git it names the situation instead of a fake empty repo header."""
+    """Outside git the reviser context names the situation instead of a fake empty repo header."""
     from agent6.harness._prompt_revision import format_prompt_revision_context
     from agent6.kinds import RepoSummary
 
@@ -299,11 +290,11 @@ def test_prompt_revision_context_names_non_git_directory(tmp_path: Path) -> None
 
 
 def test_ask_repl_prompt_uses_default_sigint(monkeypatch: pytest.MonkeyPatch) -> None:
-    """At the idle ask> prompt no step is in flight: the run's escalating steer
-    handler printed a lying "pausing after this step" banner, PEP 475 retried
-    input() (three presses to leave), and the armed stage opened a phantom
-    pause menu on the next question. The prompt must run under the DEFAULT
-    handler so one Ctrl-C raises and exits, arming nothing."""
+    """The idle ask> prompt runs under the default SIGINT handler, so one Ctrl-C exits.
+
+    No step is in flight there; the run's escalating handler would print a pause banner and arm a
+    phantom pause menu.
+    """
     import signal
     from typing import Any, cast
 
@@ -341,9 +332,7 @@ def test_ask_repl_prompt_uses_default_sigint(monkeypatch: pytest.MonkeyPatch) ->
 def test_ask_run_digest_survives_non_utf8_diff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A valid diff over non-UTF-8 content (a latin-1 file) crashed the digest:
-    text=True's strict decode raised UnicodeDecodeError out of communicate().
-    Bytes are captured and decoded lossily instead."""
+    """The run digest survives a non-UTF-8 diff: bytes are decoded lossily."""
     rid = _make_run(tmp_path)
     (tmp_path / "latin.txt").write_bytes(b"caf\xe9 r\xe9sum\xe9\n")
     _git(tmp_path, "add", "-A")
@@ -358,10 +347,7 @@ def test_ask_run_digest_survives_non_utf8_diff(
 def test_ask_run_digest_pruned_branch_falls_back_to_merge_stamp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """After a squash-merged run branch is pruned, the digest ran `git diff
-    base..gone-branch`, swallowed the failure, and seeded an EMPTY diff -- even
-    though the manifest's merge stamp still names the commit that carries the
-    run's content. The stamped commit is diffed instead."""
+    """After a squash-merged run branch is pruned, the digest diffs the merge stamp's commit."""
     rid = _make_run(tmp_path)
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / rid
     m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -382,10 +368,10 @@ def test_ask_run_digest_pruned_branch_falls_back_to_merge_stamp(
 def test_ask_run_digest_fast_forward_merge_keeps_earlier_commits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A fast-forwarded run's merge stamp IS the run's tip commit, so the
-    `sha^..sha` fallback seeded only the LAST commit's diff: a two-commit run
-    lost its first change from the digest. The stamp's `tip` names that case
-    (sha == tip), and the digest diffs base..merged instead."""
+    """A fast-forwarded run's digest diffs base..merged, keeping every commit.
+
+    The stamp's `tip` equals its sha there, and `sha^..sha` would keep only the last commit.
+    """
     rid = _make_run(tmp_path)  # leaves one commit on agent6/run
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / rid
     m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -410,10 +396,10 @@ def test_ask_run_digest_fast_forward_merge_keeps_earlier_commits(
 def test_ask_run_digest_does_not_call_a_present_branch_pruned(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The fallback fired on ANY failed diff and hardcoded "run branch pruned".
-    A base_sha that no longer resolves (gc'd, or a rewritten base) trips it with
-    the branch still sitting there, so the digest told the model the branch was
-    gone when the model could have read it."""
+    """A failed diff with the branch present is not reported as "run branch pruned".
+
+    A base_sha that no longer resolves fails the diff with the branch still there.
+    """
     rid = _make_run(tmp_path)
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / rid
     m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -434,9 +420,7 @@ def test_ask_run_digest_does_not_call_a_present_branch_pruned(
 def test_ask_run_digest_reports_unavailable_diff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A diff the repo can no longer produce (branch gone, no merge stamp) was
-    rendered as an empty diff block the model reads as "no changes"; the digest
-    now says why the diff is unavailable."""
+    """A diff the repo cannot produce is reported as unavailable, never as an empty diff."""
     rid = _make_run(tmp_path)
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / rid
     m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -473,9 +457,7 @@ def _session(tmp_path: Path, bucket: str, sid: str, mode: str, *, run_branch: st
 def test_a_session_that_wrote_no_code_shows_no_diff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A plan and an ask cut no branch. The digest fell back to HEAD, so it
-    handed the model whatever the operator had uncommitted, labelled as the
-    session's work."""
+    """A plan and an ask cut no branch, so their digest shows no diff."""
     _make_run(tmp_path)  # a repo with real, unrelated commits on HEAD
     _session(tmp_path, "runs", "plan-only-BBB222", "plan", run_branch=None)
     monkeypatch.chdir(tmp_path)
@@ -489,12 +471,12 @@ def test_a_session_that_wrote_no_code_shows_no_diff(
 
 
 def test_from_latest_skips_a_machine_draft(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A machine draft is an authoring log, not a session with a task and an
-    outcome: picking the newest one made `--from-latest` fail outright on a
-    project that had just written a machine."""
+    """--from-latest skips a machine draft.
+
+    A draft is an authoring log, not a session with a task and an outcome.
+    """
     rid = _make_run(tmp_path)
-    # A real draft, newer than the run: a husk with no manifest is skipped by
-    # every listing anyway, so it would not prove anything.
+    # A real draft, newer than the run: a husk with no manifest is skipped by every listing anyway.
     _session(tmp_path, "machines", "draft-CCC333", "machine", run_branch=None)
     monkeypatch.chdir(tmp_path)
 

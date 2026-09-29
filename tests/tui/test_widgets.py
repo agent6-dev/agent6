@@ -216,9 +216,7 @@ def test_typeahead_live_refresh_preserves_highlighted_value() -> None:
 
 
 def test_a_value_longer_than_the_row_scrolls_under_the_caret() -> None:
-    """Clipping the row to one line (instead of wrapping) cut the caret away
-    with the tail of a long value, so a focused field read as dead; the row
-    shows the slice around the cursor."""
+    """The row shows the slice around the cursor, so the caret of a long value stays visible."""
     import asyncio
 
     from textual.app import App
@@ -259,9 +257,7 @@ class _TypeaheadRowsHost(App[None]):
 
 
 def test_typeahead_rows_sit_under_the_text_line() -> None:
-    """The suggestion rows start in the text line's first column: the
-    highlight bar marks the chosen row, not an indent (the rows sat two
-    columns in, a ragged edge beside the dialog's other fields)."""
+    """The suggestion rows start in the text line's first column; the bar marks the chosen row."""
 
     async def scenario() -> None:
         app = _TypeaheadRowsHost()
@@ -289,9 +285,7 @@ _LONG = "provider/a-model-name-far-too-long-for-the-row"
 
 
 def test_picker_list_opens_above_its_field() -> None:
-    """The list opens upward, clear of the field and the composer under it,
-    with its values in the field's column (it covered the field and the
-    composer)."""
+    """The list opens upward, clear of the field and the composer, in the field's column."""
 
     async def scenario() -> None:
         app = _PickerRowHost()
@@ -311,8 +305,7 @@ def test_picker_list_opens_above_its_field() -> None:
 
 
 def test_the_last_picker_in_a_row_ends_its_value_in_an_ellipsis() -> None:
-    """A value too long for what is left of the row shortens with its arrow
-    still shown (it ran off the edge, arrow and all)."""
+    """A value too long for the row shortens with its arrow still shown."""
 
     async def scenario() -> None:
         app = _PickerRowHost()

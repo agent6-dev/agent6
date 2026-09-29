@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Spawn `python -m agent6 mcp serve` as a subprocess and
-round-trip line-delimited JSON-RPC over its stdio.
+"""Spawn `python -m agent6 mcp serve` and round-trip line-delimited JSON-RPC over its stdio.
 
-This is the only test that exercises the real argv-to-server pipeline
-including arg parsing, config loading, and the stdio reader loop.
+The only test that exercises the real argv-to-server pipeline: arg parsing, config
+loading and the stdio reader loop.
 """
 
 from __future__ import annotations

@@ -54,9 +54,10 @@ def test_finish_tool_becomes_the_verdict_not_a_step() -> None:
 
 
 def test_a_plans_finish_summary_pairs_with_its_done_line() -> None:
-    """finish_planning ends a plan (reason finish_planning); its summary is the
-    plan's own deliverable line and paired like a run's, not dropped as if the
-    end were a failure (every surface showed a bare "done" for plans)."""
+    """finish_planning ends a plan with its summary as the deliverable line, paired like a run's.
+
+    Every surface showed a bare "done" for plans.
+    """
     events = [
         {"type": "tool.call", "name": "finish_planning", "args": {"summary": "Plan seeded."}},
         {"type": "tool.result", "name": "finish_planning", "ok": True, "summary": "ok"},
@@ -100,11 +101,11 @@ def test_tool_output_ansi_is_stripped_from_the_fold() -> None:
 
 
 def test_the_scrub_is_default_deny_not_a_csi_blocklist() -> None:
-    """Stripping CSI alone let OSC and DCS through to the CLI terminal -- a
-    demonstrated OSC 52 wrote the operator's clipboard from command stdout.
-    Every string-carrying escape family goes, whole; stray C0/C1 controls drop
-    (keeping \\n and \\t); plain text and the sequences' cut-off payloads
-    surface as inert text."""
+    r"""Every string-carrying escape family is stripped whole; stray C0 and C1 controls drop.
+
+    Stripping CSI alone let a demonstrated OSC 52 write the operator's clipboard from command
+    stdout. \n and \t stay; plain text and cut-off payloads surface as inert text.
+    """
     from agent6.viewmodel.transcript import scrub_terminal_controls as scrub
 
     payload = "cGF5bG9hZA=="
@@ -127,9 +128,7 @@ def test_the_scrub_is_default_deny_not_a_csi_blocklist() -> None:
 
 
 def test_a_jail_degradation_is_a_marker_in_the_fold() -> None:
-    """The log view renders the event's detail; the conversation every surface
-    folds from carried nothing, so a run whose sandbox came up weaker than
-    asked read as an ordinary one there."""
+    """The conversation carries a degraded sandbox notice, not only the log view."""
     items = fold_transcript([{"type": "jail.degraded", "detail": "fresh /proc\nmount failed"}])
     assert [i.kind for i in items] == ["marker"]
     assert items[0].body == "sandbox degraded: fresh /proc mount failed"
@@ -258,9 +257,7 @@ def test_stopped_run_done_reads_as_stopped_not_failed() -> None:
 
 
 def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
-    """The app layer emits session.end reason="interrupted" on KeyboardInterrupt;
-    the value must live in SessionEndReason (the wire vocabulary of session.end.reason),
-    and the done line words it as every listing does: the operator's own stop."""
+    """session.end reason="interrupted" is in SessionEndReason and reads as the operator's stop."""
     from typing import get_args
 
     from agent6.harness._snapshot import SessionEndReason
@@ -273,9 +270,10 @@ def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
 
 
 def test_operator_steer_text_becomes_an_operator_item() -> None:
-    """The loop's steer injection (a typed steer, or the follow-up a resume was
-    started with) shows in the conversation as an operator turn; old logs that
-    carry only a char count yield nothing."""
+    """The loop's steer injection shows in the conversation as an operator turn.
+
+    Old logs that carry only a char count yield nothing.
+    """
     from agent6.viewmodel.transcript import OPERATOR, TranscriptFold
     from agent6.viewmodel.transcript_style import item_lines
 
@@ -293,10 +291,11 @@ def test_operator_steer_text_becomes_an_operator_item() -> None:
 
 
 def test_pins_render_once_as_operator_items() -> None:
-    """A pin is the operator's own instruction, shown like a steer where it
-    enters the conversation: the execution-start announcement (a --pin run, a fork)
-    and each /pin. A resume boundary restating the same list adds nothing;
-    the conversation carried no pin at all before."""
+    """A pin shows like a steer where it enters the conversation.
+
+    The execution-start announcement and each /pin; a resume boundary restating the list adds
+    nothing.
+    """
     from agent6.viewmodel.transcript import TranscriptFold
 
     fold = TranscriptFold()
@@ -332,7 +331,9 @@ def test_an_internal_side_call_is_not_rendered_as_agent_speech() -> None:
 
 def test_a_streamed_reply_still_renders_when_the_role_is_unnamed() -> None:
     """Older events and the delta path carry no role; they must keep working.
-    The guard drops a side call, not every result."""
+
+    The guard drops a side call, not every result.
+    """
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "role.call", "role": "worker"},
@@ -343,9 +344,7 @@ def test_a_streamed_reply_still_renders_when_the_role_is_unnamed() -> None:
 
 
 def test_streamed_deltas_are_scrubbed_even_when_a_sequence_splits() -> None:
-    """The live delta path bypassed the fold's preview scrub entirely, and an
-    escape can arrive SPLIT across two deltas: scrubbing per piece would let
-    the reassembled whole through. The fold scrubs the concatenation."""
+    """The fold scrubs the concatenation of live deltas, since an escape can arrive split."""
     from agent6.viewmodel.state import apply_event, initial_state
 
     s = initial_state()
@@ -360,8 +359,7 @@ def test_streamed_deltas_are_scrubbed_even_when_a_sequence_splits() -> None:
 
 
 def test_log_lines_carry_no_terminal_controls() -> None:
-    """format_log_line embeds model-authored fields (args, summaries, output
-    tails) into every skin's log pane; the finished line is scrubbed."""
+    """format_log_line's finished line is scrubbed; it embeds model-authored fields."""
     from agent6.viewmodel.log_line import format_log_line
 
     line = format_log_line(
@@ -377,9 +375,10 @@ def test_log_lines_carry_no_terminal_controls() -> None:
 
 
 def test_restate_compacts_since_the_last_operator_input() -> None:
-    """`/restate`: the last steer's text leads, assistant prose survives whole,
-    tools become one line with their outcome, and everything before the last
-    operator input stays out of frame."""
+    """`/restate` leads with the last steer, keeps prose whole and folds tools to one line.
+
+    Everything before the last operator input stays out of frame.
+    """
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "build the thing"},
         {"type": "role.call", "role": "worker"},
@@ -407,9 +406,10 @@ def test_restate_with_no_operator_input_says_so() -> None:
 
 
 def test_done_item_is_a_receipt_when_the_journal_carries_the_pieces() -> None:
-    """The done item ends the story INSIDE the surface: cost, wall time, the
-    counts, and the last commit subject, each present only when the journal
-    carried it (an old journal folds to the bare counts as before)."""
+    """The done item carries cost, wall time, the counts and the last commit subject when journaled.
+
+    An old journal folds to the bare counts.
+    """
     events = [
         {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
         {"type": "tool.call", "name": "apply_edit", "args": {"path": "a.py"}},
@@ -436,9 +436,10 @@ def test_done_item_is_a_receipt_when_the_journal_carries_the_pieces() -> None:
 
 
 def test_the_receipt_spells_dollars_the_way_every_other_surface_does() -> None:
-    """The done item formatted its own dollars and dropped the `~` mark: a
-    run whose spend was a known under-estimate (a model without price data)
-    closed on `$0.2500` while the hub cell and the run view read `~$0.25`."""
+    """The done item renders spend through the one formatter, `~` mark included.
+
+    A known under-estimate closed on `$0.2500` while the hub cell read `~$0.25`.
+    """
     events = [
         {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
         {"type": "budget.update", "usd_total": 0.25, "usd_partial": True},
@@ -459,9 +460,10 @@ def test_done_item_degrades_to_counts_on_a_journal_without_receipt_fields() -> N
 
 
 def test_tool_items_carry_bounded_previews() -> None:
-    """A successful read shows its head + true line count, and a successful
-    edit shows its hunk (carried from the CALL side, where the journal already
-    holds the edit pairs); an old journal without the fields folds to no tail."""
+    """A read shows its head and true line count, an edit its hunk, carried from the call side.
+
+    An old journal without the fields folds to no tail.
+    """
     events = [
         {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
         {
@@ -494,8 +496,7 @@ def test_tool_items_carry_bounded_previews() -> None:
 
 
 def test_edit_preview_shows_the_changed_lines_only() -> None:
-    """An append re-emits its anchor lines in both old_string and new_string;
-    the preview is the diff, so the anchor is not shown twice as - and +."""
+    """An append's re-emitted anchor lines are not shown twice as - and +."""
     events = [
         {
             "type": "tool.call",
@@ -520,17 +521,16 @@ def test_edit_preview_shows_the_changed_lines_only() -> None:
 
 
 def test_salient_arg_is_always_one_line() -> None:
-    """A multi-line arg value (a raw-arguments blob with embedded newlines)
-    split the tool head across lines on every skin; the clip flattens
-    whitespace so the head stays one line."""
+    """The clip flattens whitespace so a multi-line arg value keeps the tool head on one line."""
     arg = salient_arg({"_raw_arguments": '{"argv": [".venv/bin/python", "-c", "\nfrom x"]}'})
     assert "\n" not in arg
 
 
 def test_an_asks_receipt_carries_no_commit_count() -> None:
-    """An ask (or a plan) never commits: its done line counts tools only; a
-    run keeps "N commits", and a journal with no session.start keeps the
-    counts it always showed."""
+    """An ask or a plan never commits, so its done line counts tools only.
+
+    A run keeps "N commits", and a journal with no session.start keeps the counts it showed.
+    """
     ask = [
         {"type": "session.start", "mode": "ask", "user_task": "why?"},
         {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
@@ -587,9 +587,10 @@ _DONE_LABELS = {
 
 
 def test_every_end_reason_has_a_done_line_label() -> None:
-    """The done marker's label for every end reason, with `all_passed` false and
-    no verify event: an operator stop reads stopped, a clean end finished, the
-    rest failed with the reason. A new reason extends the table."""
+    """The done marker's label for every end reason, with a new reason extending the table.
+
+    An operator stop reads stopped, a clean end finished, the rest failed with the reason.
+    """
     from typing import get_args
 
     from agent6.harness._snapshot import SessionEndReason
@@ -607,9 +608,10 @@ def test_every_end_reason_has_a_done_line_label() -> None:
 
 
 def test_a_resumed_executions_receipt_is_its_own() -> None:
-    """The done item of a resumed execution carries that execution's wall clock and
-    counts, as it already carried its cost; the first execution's 45 s, tool and
-    commit do not ride on a 3 s execution that did nothing."""
+    """The done item of a resumed execution carries that execution's wall clock and counts.
+
+    The first execution's 45 s, tool and commit do not ride on a 3 s execution that did nothing.
+    """
     events = [
         {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
         {"type": "tool.call", "name": "apply_edit", "args": {"path": "a.py"}},
@@ -633,9 +635,11 @@ def test_a_resumed_executions_receipt_is_its_own() -> None:
 
 
 def test_a_resumed_execution_that_stops_before_spending_has_no_stale_cost() -> None:
-    """A resumed execution can honor a queued stop before its first provider call,
-    so no budget.update resets the execution's receipt; its prior execution's cost must not
-    be presented as spend by the zero-call resumed execution."""
+    """A zero-call resumed execution never presents its prior execution's cost as spend.
+
+    It can honor a queued stop before its first provider call, so no budget.update resets the
+    receipt.
+    """
     events = [
         {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "mode": "run"},
         {"type": "budget.update", "usd_total": 0.01},
@@ -658,9 +662,10 @@ def test_a_resumed_execution_that_stops_before_spending_has_no_stale_cost() -> N
 
 
 def test_a_tool_call_is_in_flight_until_its_result_settles_it() -> None:
-    """The fold yields a call as soon as it is seen (`ok=None`: "running" on
-    every surface), then its settled twin under the same call_id, which
-    supersedes it; the batch form keeps one item per call, at the call's place."""
+    """The fold yields a call as soon as it is seen, then its settled twin supersedes it.
+
+    `ok=None` reads "running" on every surface; the batch form keeps one item per call.
+    """
     from agent6.viewmodel.transcript import TranscriptFold
 
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
@@ -679,9 +684,10 @@ def test_a_tool_call_is_in_flight_until_its_result_settles_it() -> None:
 
 
 def test_an_approval_prompt_marks_the_call_it_gates_as_awaiting() -> None:
-    """tool.call is journaled before the approval gate, so a gated call is in
-    flight while its prompt is open: the fold says it waits (every surface
-    reads it from here), and says it runs again once answered."""
+    """A gated call reads as waiting while its prompt is open, and as running once answered.
+
+    tool.call is journaled before the approval gate, so the call is in flight the whole time.
+    """
     from agent6.viewmodel.transcript import TranscriptFold
 
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
@@ -706,11 +712,10 @@ def test_an_approval_prompt_marks_the_call_it_gates_as_awaiting() -> None:
 
 
 def test_a_prompt_marks_the_call_it_names_not_the_newest_in_flight() -> None:
-    """Two calls in flight (a concurrent review seat's read beside the gated
-    command): the prompt carries the gated call's id, and only that call
-    waits; the answer releases the same call. A prompt naming no call (an
-    id-less historical journal, a verify the harness runs itself) marks
-    nothing."""
+    """With two calls in flight, only the call the prompt names waits, and the answer releases it.
+
+    A prompt naming no call (an id-less journal, a harness-run verify) marks nothing.
+    """
     from agent6.viewmodel.transcript import TranscriptFold
 
     gated = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
@@ -733,9 +738,7 @@ def test_a_prompt_marks_the_call_it_names_not_the_newest_in_flight() -> None:
 
 
 def test_a_question_prompt_marks_the_ask_user_call_as_awaiting() -> None:
-    """ask_user's call is journaled before its prompt, so while the operator
-    answers the call is in flight: every surface read it as running (the
-    approval pair was marked, the question pair was not)."""
+    """An ask_user call reads as waiting while the operator answers, like an approval."""
     from agent6.viewmodel.transcript import TranscriptFold
 
     call = {
@@ -765,8 +768,7 @@ def test_a_question_prompt_marks_the_ask_user_call_as_awaiting() -> None:
 
 
 def test_a_dead_workers_open_call_settles_for_a_reader_that_knows() -> None:
-    """A worker killed without a session.end leaves its last call open with no
-    boundary to settle it; the reader that probes the worker settles it."""
+    """A worker killed without a session.end leaves its last call open; the prober settles it."""
     events = [
         {"type": "session.start", "user_task": "x"},
         {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}},
@@ -781,8 +783,7 @@ def test_a_dead_workers_open_call_settles_for_a_reader_that_knows() -> None:
 
 
 def test_a_second_id_less_call_under_one_name_supersedes_the_first() -> None:
-    """A journal with no call ids pairs by name: a second call under the same
-    name before the first settles would orphan it in flight for good."""
+    """A journal with no call ids pairs by name without orphaning a repeated name in flight."""
     events = [
         {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
         {"type": "tool.call", "name": "read_file", "args": {"path": "b.py"}},
@@ -795,9 +796,7 @@ def test_a_second_id_less_call_under_one_name_supersedes_the_first() -> None:
 
 
 def test_a_execution_boundary_settles_a_call_that_never_returned() -> None:
-    """A call still open at session.end (a crash, a kill) or at the next execution's
-    start (a resume over one) did not return: it settles as such instead of
-    reading "running" for the rest of time."""
+    """A call still open at session.end or the next execution's start settles as not returned."""
     call = {"type": "tool.call", "name": "run_verify_command", "args": {}, "call_id": 3}
     items = fold_transcript([call, {"type": "session.end", "reason": "crashed"}])
     assert [i.kind for i in items] == ["tool", "done"]
@@ -815,10 +814,11 @@ def test_restate_names_a_call_still_running() -> None:
 
 
 def test_compaction_renders_as_markers_on_the_conversation() -> None:
-    """No `loop.compact.*` event produced an item, so the conversation surfaces
-    (TUI, CLI stream, web, ACP) showed nothing when tier 2 replaced the history
-    the operator was reading, when the summariser failed, or when a `/compact`
-    the surface had promised was refused; only the log pane said so."""
+    """Every `loop.compact.*` event produces a conversation item.
+
+    The surfaces showed nothing when tier 2 replaced the history, the summariser failed, or a
+    promised `/compact` was refused; only the log pane said so.
+    """
     items = fold_transcript(
         [
             {"type": "loop.compact.requested", "focus": "the parser"},
@@ -842,9 +842,7 @@ def test_compaction_renders_as_markers_on_the_conversation() -> None:
 
 
 def test_parallel_compared_renders_the_ranking() -> None:
-    """A fan-out's journal records the auto-compare: the marker lists the
-    candidates best first with their gate verdict and cost, and names the
-    judge or the mechanical fallback."""
+    """A fan-out's auto-compare marker lists the candidates best first and names the judge."""
     (item,) = fold_transcript(
         [
             {
@@ -865,9 +863,10 @@ def test_parallel_compared_renders_the_ranking() -> None:
 
 
 def test_parallel_dispatched_counts_lanes_when_the_event_carries_them() -> None:
-    """A fan-out (or a group whose lane count is known at dispatch) names its
-    lanes, the count every listing shows; the task count alone said
-    "dispatched 1 parallel task" over two lanes."""
+    """A fan-out names its lanes, the count every listing shows.
+
+    The task count alone said "dispatched 1 parallel task" over two lanes.
+    """
     (item,) = fold_transcript(
         [{"type": "loop.parallel.dispatched", "group": "fan", "lanes": 2, "tasks": ["t"]}]
     )
@@ -879,8 +878,7 @@ def test_parallel_dispatched_counts_lanes_when_the_event_carries_them() -> None:
 
 
 def test_parallel_joined_renders_a_failed_lanes_reason() -> None:
-    """A failed lane's event carried only the generic status, so the persisted
-    transcript could not distinguish a failed start, a crash, or no result."""
+    """A failed lane's event distinguishes a failed start, a crash and no result."""
     (item,) = fold_transcript(
         [
             {

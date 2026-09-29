@@ -38,8 +38,7 @@ _PORT = 28411  # below the ephemeral range, like test_session_network's
 def _serving(
     tmp_path: Path, port: int, session_id: str
 ) -> tuple[ToolDispatcher, SessionNetwork, SessionLayout]:
-    """A live session holding a dev server on `port`, laid out as a run is so
-    the CLI's own id resolution finds it."""
+    """A live session holding a dev server on the port, laid out as a run so the CLI finds it."""
     layout = SessionLayout(state_dir=tmp_path, session_id=session_id, subdir="runs")
     session_dir = layout.session_dir
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -67,8 +66,10 @@ def _serving(
 
 
 def test_the_ports_a_run_serves_are_visible_only_from_inside(tmp_path: Path) -> None:
-    """Nothing on this machine can see the dev server, so listing its ports has
-    to happen in the run's network -- and stop working when the run ends."""
+    """Listing the run's ports happens in the run's network, and stops working when the run ends.
+
+    Nothing on this machine can see the dev server.
+    """
     dispatcher, net, layout = _serving(tmp_path, _PORT, "serving-1")
     try:
         assert listening_ports(layout.session_dir) == [_PORT]
@@ -102,15 +103,13 @@ def test_exec_runs_where_the_agent_runs(tmp_path: Path) -> None:
 
 
 def test_joining_a_session_without_a_network_says_why(tmp_path: Path) -> None:
-    """A run on the host network has nothing to join, and the refusal names the
-    setting rather than failing with a bare errno."""
+    """A run on the host network has nothing to join; the refusal names the setting, no errno."""
     with pytest.raises(SessionNetworkUnavailableError, match=r"sandbox\.network"):
         join_session_network(tmp_path)
 
 
 def test_forward_bridges_a_port_to_this_machine(tmp_path: Path) -> None:
-    """The dev-server ergonomic: a plain client on this machine reaches a server
-    that only exists inside the run."""
+    """The dev-server ergonomic: a plain client on this machine reaches a server inside the run."""
     dispatcher, net, layout = _serving(tmp_path, _PORT + 2, "fwd-1")
     local = _PORT + 100
     bridge = subprocess.Popen(
@@ -148,10 +147,11 @@ def test_forward_bridges_a_port_to_this_machine(tmp_path: Path) -> None:
 
 
 def test_forward_refuses_a_run_with_no_network_instead_of_waiting(tmp_path: Path) -> None:
-    """It used to bind the local port and block in accept(), then drop each
-    connection in silence -- the join happens in the per-connection child, so
-    nothing failed until someone tried to use it. A bridge to nowhere must say
-    so before it looks like a bridge."""
+    """A bridge to nowhere says so before it looks like a bridge.
+
+    The join happens in the per-connection child, so binding the local port and blocking in
+    accept() would drop each connection in silence until someone tried to use it.
+    """
     import io
 
     from agent6.ui.cli.net_cmds import forward
@@ -164,10 +164,11 @@ def test_forward_refuses_a_run_with_no_network_instead_of_waiting(tmp_path: Path
 
 
 def test_forward_stops_when_its_session_ends(tmp_path: Path) -> None:
-    """A bridge that outlives its run keeps accepting connections and dropping
-    them, which reads as a broken server rather than a finished session.
-    Observed against a real run: the run ended, `ss` still showed the listener,
-    and curl got nothing."""
+    """A bridge does not outlive its run.
+
+    Left accepting connections and dropping them, it reads as a broken server rather than a
+    finished session (`ss` still shows the listener, curl gets nothing).
+    """
     import io
     import threading
 

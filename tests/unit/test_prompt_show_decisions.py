@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 prompt show` assembles the prompt a run receives: the recorded
-rulings (the `<decisions>` block) included, not only the memory index."""
+"""`agent6 prompt show` assembles the prompt a run receives.
+
+The recorded rulings (the `<decisions>` block) included, not only the memory index.
+"""
 
 from __future__ import annotations
 

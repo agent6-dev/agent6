@@ -55,8 +55,7 @@ reason = "done"
 def test_machine_run_reads_the_explicit_config_layer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """docs/config.md presents --config as a general layer; machine run
-    resolved without it, so the file the operator named was ignored."""
+    """`machine run` resolves the top-level `--config` layer, as docs/config.md presents it."""
     from agent6.app.machine.run import run_machine
 
     monkeypatch.chdir(tmp_path)
@@ -86,8 +85,7 @@ def test_machine_run_reads_the_explicit_config_layer(
 def test_explicit_config_reaches_each_agent_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The supervisor validated `--config`, but passed only the machine-file
-    overlay to child agent runs, so their effective config silently lost it."""
+    """Child agent runs receive `--config` along with the machine-file overlay."""
     from agent6.app.machine import run as run_mod
     from agent6.machine import AgentExecResult
 

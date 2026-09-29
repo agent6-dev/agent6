@@ -42,8 +42,7 @@ class FakeStreamResponse:
         self.status_code = status_code
         self._lines = lines
         self._error_body = error_body
-        # The real httpx2 Response always exposes headers; the error path reads
-        # Retry-After from them.
+        # The real httpx2 Response always exposes headers; the error path reads Retry-After.
         self.headers: dict[str, str] = headers or {}
 
     def __enter__(self) -> FakeStreamResponse:
@@ -63,8 +62,7 @@ class FakeStreamResponse:
 
 
 def _sse(events: list[tuple[str, dict[str, Any]]]) -> list[str]:
-    """Turn (event_type, data) pairs into the raw line list httpx2
-    .iter_lines() would yield. SSE frames are separated by a blank line."""
+    """Turn (event_type, data) pairs into the raw lines httpx2 `iter_lines()` would yield."""
     out: list[str] = []
     for et, data in events:
         out.append(f"event: {et}")
@@ -224,8 +222,7 @@ def test_streaming_calls_back_on_each_text_delta(
     assert resp.input_tokens == 42
     assert resp.output_tokens == 9
     assert resp.cache_read_tokens == 7
-    # raw must be shaped like a non-streaming response so downstream
-    # assistant-block reconstruction in Harness keeps working.
+    # raw is shaped like a non-streaming response, so the assistant-block reconstruction works.
     assert resp.raw["content"] == [{"type": "text", "text": "hello world"}]
     assert resp.raw["stop_reason"] == "end_turn"
 
@@ -270,9 +267,7 @@ def test_streaming_reassembles_tool_use_input_across_deltas(
 def test_streaming_callback_exception_does_not_break_stream(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A buggy TUI callback must NOT take the run down. The callback
-    surface is cosmetic; the loop must complete and return the full
-    response either way."""
+    """A callback that raises does not take the run down."""
     sink = TranscriptSink(tmp_path / "transcripts")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
@@ -297,8 +292,7 @@ def test_streaming_callback_exception_does_not_break_stream(
 
 
 def _truncated_text_stream() -> list[str]:
-    """A stream cut off mid-message: message_start + a text delta, then a clean
-    EOF with no content_block_stop and no message_stop."""
+    """A stream cut off mid-message: message_start, a text delta, then EOF with no stops."""
     return _sse(
         [
             (
@@ -331,9 +325,11 @@ def _truncated_text_stream() -> list[str]:
 def test_streaming_premature_end_without_message_stop_raises(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A clean EOF before `message_stop` is a cut-off turn, not a completed one:
-    it must raise a (retryable) ProviderError so the loop re-issues the request,
-    not return the partial content and record input tokens as if it finished."""
+    """A clean EOF before `message_stop` raises a retryable ProviderError.
+
+    The loop re-issues the request; partial content and its input tokens are never recorded as
+    finished.
+    """
     sink = TranscriptSink(tmp_path / "transcripts")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
@@ -351,16 +347,14 @@ def test_streaming_premature_end_without_message_stop_raises(
             messages=[{"role": "user", "content": "x"}],
             text_delta_callback=pieces.append,
         )
-    # The delta was fanned to the callback before the cut, but the call itself
-    # must fail rather than report success.
+    # The delta was fanned to the callback before the cut, but the call itself fails.
     assert pieces == ["I will now edit the file"]
 
 
 def test_streaming_error_event_raises_and_records_transcript(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A mid-stream `error` event must surface as a retryable ProviderError AND
-    leave the error frame in the transcript for audit (parity with OpenAI)."""
+    """A mid-stream `error` event raises a retryable ProviderError and is kept in the transcript."""
     sink = TranscriptSink(tmp_path / "transcripts")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
@@ -463,8 +457,7 @@ def test_streaming_429_captures_retry_after(
 def test_non_streaming_path_unchanged_when_callback_is_none(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The default behaviour must NOT call httpx2.stream. Bench runs
-    rely on the audited non-streaming code path."""
+    """With no callback the provider never calls httpx2.stream; bench runs rely on that path."""
     sink = TranscriptSink(tmp_path / "transcripts")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
@@ -502,9 +495,7 @@ def test_non_streaming_path_unchanged_when_callback_is_none(
 def test_streaming_refreshes_token_command_on_401(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Regression: a Vertex-Anthropic (token_command) stream whose bearer expired
-    # must refresh + retry once on a 401, not die. Requires the streaming 401
-    # raise to carry status_code so the retry guard fires.
+    # A token_command stream whose bearer expired refreshes and retries once on a 401.
     counter = tmp_path / "n"
     script = (
         f'n=$(cat "{counter}" 2>/dev/null || echo 0); '
@@ -593,15 +584,17 @@ def test_streaming_with_budget_requires_usage_tokens(
             messages=[{"role": "user", "content": "x"}],
             text_delta_callback=lambda _p: None,
         )
-    # Missing response accounting is a transient stream-integrity failure, not
-    # an HTTP 422 saying the unchanged request body itself is malformed.
+    # Missing accounting is a transient stream-integrity failure, not a 422 about the request body.
     assert exc_info.value.status_code is None
     assert budget.snapshot().per_model == {}
 
 
 def test_foreign_opaque_blocks_never_reach_the_wire() -> None:
-    """A cross-provider resume can carry another wire's opaque replay state
-    (the ChatGPT reasoning item); sent verbatim it would 400 this API."""
+    """Foreign opaque blocks never reach the wire.
+
+    A cross-provider resume can carry another wire's opaque replay state; sent verbatim it
+    would 400.
+    """
     from agent6.providers.anthropic import shape_anthropic_messages
 
     messages = [
@@ -952,8 +945,7 @@ def test_streaming_combines_all_data_lines_in_an_sse_event(
 
 
 def test_a_stream_cut_mid_event_reads_as_cut(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A stream that dies inside an event ends with no event: the call reads
-    as cut (no message_stop) and records the cut, never as a malformed event."""
+    """A stream cut mid-event reads as cut, never as a malformed event."""
     lines = [*_complete_stream()[:3], 'data: {"type": "content_block_de']
 
     def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
@@ -970,8 +962,7 @@ def test_a_stream_cut_mid_event_reads_as_cut(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_an_unknown_block_streaming_a_delta_is_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An opaque block is kept as it arrived; one that streams a text delta
-    would otherwise close as a text block, its type lost."""
+    """An unknown block streaming a text delta is an error, so its type is never lost."""
     block = {"type": "future_block", "opaque": {"value": 7}}
     lines = _complete_stream(block=block)
     lines[6:6] = _sse(

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The shared _common glue helper resolve_or_newest_layout (a run by id, or
-the latest across every bucket)."""
+"""The shared helper resolve_or_newest_layout: a run by id, or the latest across every bucket."""
 
 from __future__ import annotations
 
@@ -16,8 +15,7 @@ from agent6.ui.cli._common import resolve_or_newest_layout
 
 
 def _session_dir(state: Path, bucket: str, session_id: str, *, log_mtime: float) -> Path:
-    """Seed a run dir with a logs.jsonl at a controlled mtime (what
-    newest_session_dir sorts by)."""
+    """Seed a run dir with a logs.jsonl at a controlled mtime (what newest_session_dir sorts by)."""
     d = state / "sessions" / bucket / session_id
     d.mkdir(parents=True)
     log = d / "logs.jsonl"

@@ -2,10 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The jail crate is held to the same standard as the Python, by the same gate.
 
-`agent6-jail` IS the security boundary, and CI only ever built it -- so its
-formatting drifted and its lints went unread. Rather than adding two more
-commands an operator has to remember, the checks run inside the suite everyone
-already runs.
+`agent6-jail` is the security boundary; its formatting, lints and tests run inside the
+suite everyone already runs rather than through commands an operator has to remember.
 """
 
 from __future__ import annotations
@@ -45,23 +43,22 @@ def test_the_crate_has_no_clippy_warnings() -> None:
 
 
 def test_the_crate_tests_pass() -> None:
-    """The crate's #[cfg(test)] suite (mountinfo filtering, stream capping)
-    runs nowhere else: the gate checked format and lints but never executed
-    the boundary binary's own tests."""
+    """The crate's #[cfg(test)] suite (mountinfo filtering, stream capping) runs in the gate.
+
+    It runs nowhere else; format and lints alone never execute the boundary binary's own tests.
+    """
     done = _cargo("test")
     assert done.returncode == 0, done.stdout + done.stderr
 
 
 @pytest.mark.parametrize("target", ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"])
 def test_the_crate_compiles_for_every_target_the_release_builds(target: str) -> None:
-    """The wheels bundle a static musl binary per arch, and only the HOST target
-    was ever checked here -- so `libc::SYS_chmod`, which arm64 does not have,
-    landed in the seccomp filter and broke the arm64 wheel build outright. It
-    compiled everywhere the suite looked.
+    """The crate compiles for every wheel target, not only the host.
 
-    `clippy` rather than `build`: it runs the whole front end (this is where an
-    arch-missing constant fails) without needing a cross-linker. Skipped when
-    the target is not installed, since a contributor need not carry both.
+    The wheels bundle a static musl binary per arch, and a constant one arch lacks
+    (`libc::SYS_chmod` on arm64) in the seccomp filter breaks that wheel's build. `clippy`
+    rather than `build`: it runs the whole front end, where an arch-missing constant fails,
+    without a cross-linker. Skipped when the target is not installed.
     """
     try:
         installed = subprocess.run(
@@ -76,13 +73,11 @@ def test_the_crate_compiles_for_every_target_the_release_builds(target: str) -> 
 
 
 def test_the_binary_the_suite_runs_is_not_older_than_the_sources() -> None:
-    """Every jail-invariant test outside the smoke file goes through
-    `run_in_jail`, which loads the BUNDLED binary -- and only the smoke file's
-    fixture checked freshness, against the `target/` build it prefers.
+    """The bundled binary every jail-invariant test loads is as fresh as the crate source.
 
-    So editing main.rs and running the suite exercised the PREVIOUS boundary:
-    observed on a mount fix that passed by hand and failed under pytest against
-    the stale bundle. Green must mean green for the code in the tree.
+    Every test outside the smoke file goes through `run_in_jail`, which loads the bundled
+    binary; a stale bundle makes the suite exercise the previous boundary, so green must mean
+    green for the code in the tree.
     """
     from agent6.sandbox.jail import locate_jail_binary
 

@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The scoped-verify selection: nearest_test_paths picks the test files most
-likely to judge a change, and diff_changed_paths reads a diff's file list."""
+"""The scoped-verify selection.
+
+Nearest_test_paths picks the test files most likely to judge a change, and diff_changed_paths reads
+a diff's file list.
+"""
 
 from __future__ import annotations
 
@@ -40,9 +43,11 @@ def _touch(root: Path, *rels: str) -> None:
 
 
 def test_sibling_and_mirror_and_scan_layouts_are_found(tmp_path: Path) -> None:
-    """One changed source finds its tests across the common layouts, most
-    specific first: same-dir sibling, package tests dir, repo-root mirror,
-    then the bounded name scan for layouts the conventions miss."""
+    """One changed source finds its tests across the common layouts, most specific first.
+
+    Same-dir sibling, package tests dir, repo-root mirror, then the bounded name scan for layouts
+    the conventions miss.
+    """
     _touch(
         tmp_path,
         "pkg/mod.py",
@@ -62,8 +67,11 @@ def test_sibling_and_mirror_and_scan_layouts_are_found(tmp_path: Path) -> None:
 
 
 def test_changed_test_files_select_themselves(tmp_path: Path) -> None:
-    """A run that edited a test file runs that file; a deleted one (absent
-    from the tree) is dropped rather than handed to pytest as an error."""
+    """Changed test files select themselves.
+
+    A run that edited a test file runs that file; a deleted one (absent from the tree) is dropped
+    rather than handed to pytest as an error.
+    """
     _touch(tmp_path, "tests/test_a.py")
     got = nearest_test_paths(tmp_path, ("tests/test_a.py", "tests/test_gone.py"))
     assert got == ("tests/test_a.py",)
@@ -94,26 +102,33 @@ def test_is_bare_pytest_names_the_shape_that_takes_appended_paths() -> None:
 
 
 def test_a_changed_helper_under_a_tests_dir_is_not_handed_to_pytest(tmp_path: Path) -> None:
-    """conftest.py and helper modules under tests/ are not test files: they
-    are neither selected as themselves nor mirrored as sources."""
+    """conftest.py and helper modules under tests/ are not test files.
+
+    They are neither selected as themselves nor mirrored as sources.
+    """
     _touch(tmp_path, "tests/conftest.py", "tests/helpers.py", "tests/test_a.py")
     changed = ("tests/conftest.py", "tests/helpers.py", "tests/test_a.py")
     assert nearest_test_paths(tmp_path, changed) == ("tests/test_a.py",)
 
 
 def test_the_scan_examines_every_entry_within_its_cap(tmp_path: Path, monkeypatch: Any) -> None:
-    """The cap counts entries examined: with three entries under tests/ and a
-    cap of three, the last one (the nested test file) is still seen."""
+    """The cap counts entries examined.
+
+    With three entries under tests/ and a cap of three, the last one (the nested test file) is still
+    seen.
+    """
     monkeypatch.setattr("agent6.harness._nearest_tests._SCAN_CAP", 3)
     _touch(tmp_path, "pkg/mod.py", "tests/test_a.py", "tests/unit/test_mod.py")
     assert nearest_test_paths(tmp_path, ("pkg/mod.py",)) == ("tests/unit/test_mod.py",)
 
 
 def test_package_level_test_dirs_are_scanned(tmp_path: Path) -> None:
-    """pandas-layout repos keep tests under the package (pandas/tests), often
-    dropping path segments (core/): the scan covers test dirs beside every
-    source ancestor, not only the repo root. A pilot execution's 240s-timed-out
-    gate found nothing to scope to on exactly this layout."""
+    """Package-level test dirs are scanned.
+
+    pandas-layout repos keep tests under the package (pandas/tests), often dropping path segments
+    (core/): the scan covers test dirs beside every source ancestor, not only the repo root, or a
+    timed-out gate finds nothing to scope to.
+    """
     _touch(tmp_path, "pkg/core/indexes/base.py", "pkg/tests/indexes/test_base.py")
     got = nearest_test_paths(tmp_path, ("pkg/core/indexes/base.py",))
     assert got == ("pkg/tests/indexes/test_base.py",)

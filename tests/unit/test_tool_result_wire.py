@@ -64,9 +64,10 @@ def _config(tmp_path: Path, *, extra: str = "") -> Config:
 
 
 def _wire(result: object) -> dict[str, Any]:
-    """Model-facing bytes of a dispatch result, before or after the typed
-    reshape. Post-reshape ``dispatch`` returns a result with ``to_wire()``;
-    today it returns the dict itself."""
+    """Model-facing bytes of a dispatch result, before or after the typed reshape.
+
+    Post-reshape ``dispatch`` returns a result with ``to_wire()``; today it returns the dict itself.
+    """
     to_wire = getattr(result, "to_wire", None)
     return to_wire() if callable(to_wire) else result  # type: ignore[return-value]
 
@@ -96,9 +97,10 @@ def test_wire_read_file_slice(tmp_path: Path) -> None:
 
 
 def test_wire_read_file_full_agrees_with_slice_on_lines_total(tmp_path: Path) -> None:
-    """Full and partial reads of one unchanged file must report the same
-    lines_total: the count the paging args index into (splitlines), not the
-    newline-count+1 heuristic that overshot every newline-terminated file."""
+    """Full and partial reads of one file report the same lines_total, the splitlines count.
+
+    The newline-count-plus-one heuristic overshot every newline-terminated file.
+    """
     (tmp_path / "abc.txt").write_text("a\nb\nc\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     assert _dumps(d.dispatch("read_file", {"path": "abc.txt"})) == (
@@ -107,8 +109,7 @@ def test_wire_read_file_full_agrees_with_slice_on_lines_total(tmp_path: Path) ->
 
 
 def test_wire_read_file_start_past_eof(tmp_path: Path) -> None:
-    """A paging overshoot returns an empty slice with lines_returned=0, not the
-    negative end-minus-start arithmetic."""
+    """A paging overshoot returns an empty slice with lines_returned=0, never a negative count."""
     (tmp_path / "abc.txt").write_text("a\nb\nc\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     out = d.dispatch("read_file", {"path": "abc.txt", "start_line": 10, "limit": 5})
@@ -259,11 +260,11 @@ def test_wire_run_verify(tmp_path: Path) -> None:
 
 
 def test_wire_run_verify_timeout_names_the_cap(tmp_path: Path) -> None:
-    """A verify killed at verify_timeout_s reached the model as a bare
-    returncode 124 with empty output (full-suite pytest spends the whole cap
-    in silent collection), indistinguishable from a failing suite; SWE-bench
-    runs re-called the 240s gate back to back. The wire now carries
-    timed_out + the cap."""
+    """A verify killed at verify_timeout_s reaches the model as timed_out with the cap.
+
+    A bare returncode 124 with empty output was indistinguishable from a failing suite, and
+    SWE-bench runs re-called the 240s gate back to back.
+    """
     toml = _VALID_TOML.replace(
         'verify_command = ["true"]', 'verify_command = ["true"]\nverify_timeout_s = 240'
     )
@@ -294,9 +295,10 @@ def test_wire_run_command(tmp_path: Path) -> None:
 
 
 def test_wire_run_command_clip_names_dropped_chars(tmp_path: Path) -> None:
-    """Output over the 20k cap reached the model as a bare tail, reading as
-    the complete output; the clip now leads with a marker naming the dropped
-    char count (the read_background rendering's shape)."""
+    """Output over the 20k cap leads with a marker naming the dropped char count.
+
+    A bare tail read as the complete output.
+    """
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     big = "x" * 25_000
     with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=_cmd_result(stdout=big)):
@@ -323,11 +325,11 @@ def test_wire_run_command_clip_names_dropped_chars(tmp_path: Path) -> None:
 
 
 def test_metric_score_survives_the_display_clip(tmp_path: Path) -> None:
-    """A metric score parsed from the display-clipped stdout (over the 20k
-    exec-output cap) either lost a real score placed before the clip's tail
-    window, or -- with a permissive pattern -- matched the clip marker's own
-    dropped-byte count instead of the metric's printed number. The score must
-    come from the command's real, unclipped output."""
+    """The metric score comes from the command's unclipped output.
+
+    Parsed from the display-clipped stdout, a real score before the tail window was lost, or a
+    permissive pattern matched the clip marker's own dropped-byte count.
+    """
     toml = _VALID_TOML.replace('isolation = "auto"', 'isolation = "auto"\nnetwork = "host"') + (
         '\n[harness.metric]\ncommand = ["/usr/bin/true"]\npattern = "(\\\\d+)"\ngoal = "minimize"\n'
     )
@@ -344,9 +346,10 @@ def test_metric_score_survives_the_display_clip(tmp_path: Path) -> None:
 
 
 def test_wire_tool_error_shape(tmp_path: Path) -> None:
-    """The model-facing error bytes come from the LOOP's error path, so drive
-    that (_note_tool_error), not a dict rebuilt in the test -- rebuilding it
-    here pinned the test's own literal and left the producer unpinned."""
+    """The model-facing error bytes are driven through the loop's error path, not a rebuilt dict.
+
+    Rebuilding it here pinned the test's own literal and left the producer unpinned.
+    """
     from unittest.mock import MagicMock
 
     from agent6.harness.loop import (
@@ -367,8 +370,7 @@ def test_wire_tool_error_shape(tmp_path: Path) -> None:
 
 
 def test_the_tool_error_log_line_names_the_tool_once() -> None:
-    """The logger prefixes the tool's name; a tool raises the bare message
-    (`unknown or disabled skill`, never `use_skill: unknown ...`)."""
+    """A tool raises the bare message; the logger prefixes the tool's name."""
     from unittest.mock import MagicMock
 
     from agent6.harness.loop import Harness, LoopState

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.budget — hard-stop token tracker."""
+"""Tests for agent6.budget, the hard-stop token tracker."""
 
 from __future__ import annotations
 
@@ -33,17 +33,14 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPa
 
 
 def _t(*, fallback: int = 100) -> BudgetTracker:
-    # model "m" is unpriced in the fixture cache, so its tokens land in the
-    # fallback ledger; max_usd stays unlimited to keep the tests single-ledger.
+    # Model "m" is unpriced in the fixture cache, so its tokens land in the fallback ledger.
     return BudgetTracker(max_usd=-1, max_tokens_fallback=fallback, max_percent=-1)
 
 
 def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
-    # Token caps huge (never fire) + fresh input ~0, but cache_creation alone
-    # costs > $1: the USD ceiling must catch the overspend the token caps miss.
+    # Token caps huge and fresh input ~0, but cache_creation alone costs over $1.
     t = BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_percent=-1)
-    # sonnet-4 input $3/M; cache_creation surcharge 1.25x -> $3.75/M.
-    # 300k * 3.75/1e6 = $1.125 > $1.
+    # sonnet-4 input $3/M, cache_creation 1.25x = $3.75/M; 300k * 3.75/1e6 = $1.125 > $1.
     t.record(
         model="claude-sonnet-4-20250514",
         input_tokens=10,
@@ -70,9 +67,11 @@ def test_usd_ceiling_off_when_unlimited() -> None:
 
 
 def test_negative_usage_never_reduces_the_ledger() -> None:
-    """A gateway's counts are third-party arithmetic: negative fields (a
-    malformed or hostile payload) subtracted from the totals and un-exhausted
-    a cap. The one sink clamps signs, so spend only ever grows."""
+    """Negative usage never reduces the ledger.
+
+    A gateway's counts are third-party arithmetic; the one sink clamps signs, so spend only ever
+    grows.
+    """
     t = _t()
     t.record(
         model="m", input_tokens=5, output_tokens=3, cache_read_tokens=1, cache_creation_tokens=2
@@ -112,8 +111,7 @@ def test_record_accumulates() -> None:
 
 
 def test_fallback_ceiling_hard_stop() -> None:
-    # The unmetered ledger sums input+output; the call that reaches the cap
-    # exhausts it (exclusive ceiling, enforced on the next check).
+    # The unmetered ledger sums input and output; the call that reaches the cap exhausts it.
     t = _t(fallback=10)
     t.record(
         model="m", input_tokens=7, output_tokens=3, cache_read_tokens=0, cache_creation_tokens=0
@@ -142,9 +140,7 @@ def test_per_model_tracking() -> None:
 
 
 def test_format_summary_renders_known_and_unknown_prices() -> None:
-    # claude-sonnet-4-5 IS priced by the fixture ($3/$15 per Mtok): the known
-    # half must render a real dollar figure, not fall through to "$?" with the
-    # priced path unexercised. 1000 in + 100 out = $0.003 + $0.0015 = $0.0045.
+    # claude-sonnet-4-5 is priced by the fixture: 1000 in + 100 out = $0.003 + $0.0015 = $0.0045.
     t = _t(fallback=10000)
     t.record(
         model="claude-sonnet-4-5",
@@ -177,10 +173,7 @@ def test_format_summary_marks_exhausted() -> None:
 
 
 def test_the_caps_have_one_home() -> None:
-    """A bare BudgetTracker() silently used its own 10.0/2M while the config
-    supplied the real caps, so changing the config default left an unconfigured
-    tracker on the old number. The caps are required now; BudgetConfig is the
-    one place the defaults live, and the docs quote it."""
+    """The caps are required arguments; BudgetConfig is the one place the defaults live."""
     import inspect
     from pathlib import Path
 
@@ -204,10 +197,11 @@ def test_the_caps_have_one_home() -> None:
 
 
 def test_percent_meter_sawtooth_and_cap() -> None:
-    """Plan-metered calls: the first reading is the baseline, rises are the
-    run's consumption, a drop (window reset) counts from zero, and the call
-    that reaches max_percent trips check(). Plan calls never drain the
-    fallback ledger and report an authoritative $0."""
+    """The percent meter: a sawtooth over window resets, and the cap trips at max_percent.
+
+    The first reading is the baseline, rises are the run's consumption and a drop counts from zero;
+    plan calls never drain the fallback ledger and report an authoritative $0.
+    """
     from agent6.budget import PlanUsage
 
     t = BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=10.0)
@@ -279,9 +273,11 @@ def _record_plan(t: BudgetTracker, plan: PlanUsage) -> None:
 
 
 def test_exhausted_window_with_credits_refuses_by_default() -> None:
-    """Past the included window, chatgpt calls draw on PURCHASED credits
-    (auto top-up can buy more): real money the $0-authoritative stance would
-    hide, so the default refuses and names [budget].allow_paid_credits."""
+    """An exhausted window with purchased credits refuses by default.
+
+    Past the included window, chatgpt calls draw real money the $0-authoritative stance would hide;
+    the refusal names [budget].allow_paid_credits.
+    """
     t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     _record_plan(t, _plan_with_credits(100.0))
     with pytest.raises(BudgetExceededError, match="allow_paid_credits"):
@@ -316,11 +312,11 @@ def test_unlimited_credits_do_not_refuse() -> None:
 
 
 def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
-    """fraction_remaining consulted only the USD and fallback-token ledgers,
-    so a plan-metered run reported ~1.0 remaining until the max_percent hard
-    stop: none of the graceful near-budget behaviour (wind-down nudges,
-    review gating, metric decisions) ever engaged. The plan ledger
-    contributes used = plan_consumed / max_percent like the others."""
+    """fraction_remaining counts the plan percent ledger as used = plan_consumed / max_percent.
+
+    Without it a plan-metered run reads ~1.0 remaining until the hard stop and no near-budget
+    behaviour engages.
+    """
     from agent6.budget import BudgetTracker, PlanUsage
 
     t = BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=5.0)
@@ -345,9 +341,10 @@ def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
 
 
 def test_preflight_reading_seeds_the_baseline_and_guards_credits() -> None:
-    """A preflight reading is the baseline the first response's delta counts
-    from (no call's spend is invisible), and the paid-credit guard sees it
-    before any call; a secondary window at 100 counts as exhausted."""
+    """A preflight reading seeds the baseline and guards credits before any call.
+
+    A secondary window at 100 counts as exhausted.
+    """
     t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
     t.record_plan_preflight(
         "m", PlanUsage.single(used_percent=40.0, window_minutes=10080, resets_at=0)
@@ -377,9 +374,10 @@ def test_preflight_reading_seeds_the_baseline_and_guards_credits() -> None:
 
 
 def test_the_binding_window_meters_the_run_whatever_its_name() -> None:
-    """Consumption is tracked per window and the cap binds on the one that
-    moved most: a per-model family the run burns counts even while the
-    primary window barely moves (the window spark burned)."""
+    """The cap binds on the window that moved most, whatever its name.
+
+    A per-model family the run burns counts while the primary window barely moves.
+    """
     from agent6.budget import PlanWindow
 
     def reading(primary: float, spark: float) -> PlanUsage:
@@ -422,17 +420,17 @@ def test_percent_cap_names_the_window_whose_consumption_bound_it() -> None:
 
     with pytest.raises(BudgetExceededError, match="gpt-5-6-spark window"):
         tracker.check()
-    # The latest reading need not carry the window that bound: the backend
-    # adds and drops per-model windows per response.
+    # The latest reading need not carry the window that bound; the backend adds and drops windows.
     _record_plan(tracker, PlanUsage(windows=(PlanWindow("primary", 92, 10080, 2e9),)))
     with pytest.raises(BudgetExceededError, match="gpt-5-6-spark window"):
         tracker.check()
 
 
 def test_purchased_credit_spend_meters_against_max_usd() -> None:
-    """With allow_paid_credits the balance that left the account during the
-    run is dollars spent: it counts into the USD estimate and trips max_usd.
-    A balance that is not a number meters nothing."""
+    """With allow_paid_credits, the balance that left the account counts into the USD estimate.
+
+    A balance that is not a number meters nothing.
+    """
     t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1, allow_paid_credits=True)
 
     def reading(balance: str) -> PlanUsage:
@@ -447,8 +445,7 @@ def test_purchased_credit_spend_meters_against_max_usd() -> None:
     _record_plan(t, reading("$12.50"))
     _record_plan(t, reading("$11.90"))
     assert t.estimate_usd()[0] == pytest.approx(0.60)
-    # The end-of-run summary states the figure the ceiling enforces: summing
-    # the per-model lines alone printed $0.0000 for real money spent.
+    # The summary states the figure the ceiling enforces, not the sum of the per-model lines.
     assert "cost=$0.60" in t.format_summary()
     t.check()
     _record_plan(t, reading("$11.40"))
@@ -493,10 +490,7 @@ def test_credit_balances_are_tracked_per_provider_entry() -> None:
 
 
 def test_credits_balance_units_convert_to_usd() -> None:
-    """The backend sells credits in 1,000-credit packs at $40 (25 per
-    dollar): a bare balance number is credits and converts; a "$"-prefixed
-    balance is already dollars and stays as sent. Treating a raw credit
-    count as dollars over-reported the balance 25x."""
+    """A bare credits balance converts at 25 credits per dollar; a "$"-prefixed one is dollars."""
 
     def usd(balance: str) -> float | None:
         return PlanUsage.single(
@@ -513,8 +507,7 @@ def test_credits_balance_units_convert_to_usd() -> None:
 
 
 def test_plan_usage_line_names_a_window_with_no_reported_length() -> None:
-    """The backend reports a `secondary` window with `window_minutes` 0; when
-    it binds, the line names the window without inventing a length."""
+    """A binding window with `window_minutes` 0 is named without an invented length."""
     from agent6.budget import PlanWindow
 
     t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
@@ -531,10 +524,10 @@ def test_plan_usage_line_names_a_window_with_no_reported_length() -> None:
 
 
 def test_an_all_unpriced_run_does_not_claim_a_usd_ceiling() -> None:
-    """The preflight says an unpriced worker is not metered by max_usd and runs
-    under the token fallback; the receipt then printed "of $10.00" anyway, put
-    the lower-bound `+` after the parenthetical, and spelled the fallback cap
-    without the separator the preflight uses."""
+    """An all-unpriced run's receipt claims no USD ceiling and spells the fallback cap.
+
+    The cap reads as the preflight spells it, with the lower-bound `+` before the parenthetical.
+    """
     t = BudgetTracker(max_usd=10.0, max_tokens_fallback=2_000_000, max_percent=-1)
     t.record(
         model="unpriced-xyz",
@@ -553,10 +546,10 @@ def test_an_all_unpriced_run_does_not_claim_a_usd_ceiling() -> None:
 
 
 def test_each_subscription_plan_prints_its_own_named_line() -> None:
-    """A run that draws on two subscription plans (a panel with a chatgpt seat
-    and a claude seat) reports one line per provider entry, each named, and
-    meters each plan's windows apart: two `primary` windows at different
-    percents are two plans, not one plan that reset."""
+    """Each subscription plan prints its own named line and meters its windows apart.
+
+    Two `primary` windows at different percents are two plans, not one plan that reset.
+    """
     t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
     t.note_route("gpt-5.6-sol", "chatgpt")
     t.note_route("claude-opus-5", "claude")

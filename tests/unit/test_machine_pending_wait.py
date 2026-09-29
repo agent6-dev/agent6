@@ -13,11 +13,7 @@ from agent6.machine.journal import JournalError, MachineJournal
 
 @pytest.mark.parametrize("contents", [b"{not json", b"\xff\xfe"])
 def test_a_corrupt_pending_wait_names_the_file_and_the_fix(tmp_path: Path, contents: bytes) -> None:
-    """The engine must not guess a wake instant from a corrupt record -- an early
-    or skipped wait is worse than a refusal. But every other refusal in agent6
-    names its remedy, and this one left the operator to infer that deleting the
-    file re-arms the wait on the next run.
-    """
+    """A corrupt wait record is refused with its remedy: deleting the file re-arms the wait."""
     journal = MachineJournal(tmp_path)
     journal.wait_path.write_bytes(contents)
 

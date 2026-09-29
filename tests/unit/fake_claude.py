@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A stand-in `claude` binary speaking the stream-json protocol exactly as
-Claude Code 2.1.251 does on the wire (line order included): the provider's
-unit fixture.
+"""A stand-in `claude` binary for the provider's unit tests.
 
-Driven by `FAKE_CLAUDE_SCENARIO` (a JSON file); everything it sees goes to
+It speaks the stream-json protocol exactly as Claude Code 2.1.251 does on the wire, line order
+included. Driven by `FAKE_CLAUDE_SCENARIO` (a JSON file); everything it sees goes to
 `FAKE_CLAUDE_CAPTURE` as JSON lines: argv, env, cwd, the system-prompt file's
 content and mode, and every stdin line (`{"stdin": ...}`).
 
@@ -88,9 +87,7 @@ class _Fake:
     def read_line(self, *, hold_on_eof: bool = False) -> dict[str, Any]:
         raw = sys.stdin.buffer.readline()
         if not raw:
-            # The CLI stays up on EOF while a tools/call awaits its answer. Short
-            # sleeps: a signal landing between the EOF and a long sleep would
-            # run its Python handler only when the sleep ends.
+            # The CLI stays up on EOF while a tools/call awaits its answer.
             while hold_on_eof:
                 time.sleep(0.05)
             sys.exit(int(self.scenario.get("exit_code", 0)))

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.config — strict pydantic loading from TOML."""
+"""Tests for agent6.config, strict pydantic loading from TOML."""
 
 from __future__ import annotations
 
@@ -76,8 +76,7 @@ def test_extra_key_forbidden(tmp_path: Path) -> None:
 
 
 def test_security_field_defaults_to_safe_value(tmp_path: Path) -> None:
-    # protect_git is a security field; omitting it must default to the SAFE
-    # (enabled) value rather than failing to load (secure-by-default).
+    # protect_git is a security field: omitted, it defaults to the safe value.
     body = _VALID_TOML.replace("protect_git = true\n", "")
     cfg = load_config(_write(tmp_path, body))
     assert cfg.sandbox.protect_git is True
@@ -110,8 +109,7 @@ def test_invalid_enum_literal(tmp_path: Path) -> None:
 
 
 def test_auto_merge_works_without_branch_per_run(tmp_path: Path) -> None:
-    """auto_merge lands the hidden chain ref when no visible branch exists, so
-    the combination is valid config."""
+    """auto_merge without branch_per_run is valid: it lands the hidden chain ref."""
     body = "[git]\nauto_merge = true\nbranch_per_run = false\n"
     cfg = load_config(_write(tmp_path, body))
     assert cfg.git.auto_merge and not cfg.git.branch_per_run
@@ -124,18 +122,19 @@ def test_auto_prune_requires_auto_merge(tmp_path: Path) -> None:
 
 
 def test_mcp_server_name_rejects_double_underscore(tmp_path: Path) -> None:
-    # `__` separates server from tool in the LLM-visible mcp__<server>__<tool>;
-    # a server name containing it would break routing, so it's rejected at load.
+    # `__` separates server from tool in mcp__<server>__<tool>, so a name containing it is rejected.
     body = _VALID_TOML + ('\n[mcp.servers.bad__name]\ncommand = ["true"]\n')
     with pytest.raises(ConfigError, match="__"):
         load_config(_write(tmp_path, body))
 
 
 def test_mcp_server_name_is_ascii_only() -> None:
-    """The stated contract is ASCII `[A-Za-z0-9_-]+`, but `str.isalnum()` also
-    accepts Unicode letters and digits, so a name built from a Cyrillic
-    homoglyph, a superscript digit, or a trailing newline slipped through the
-    check that guards a TOML table header and the mcp__<server>__ prefix."""
+    """An MCP server name is ASCII `[A-Za-z0-9_-]+`.
+
+    `str.isalnum()` alone admits Unicode homoglyphs.
+
+    The name guards a TOML table header and the mcp__<server>__ prefix.
+    """
     from agent6.config import mcp_server_name_refusal
 
     assert mcp_server_name_refusal("good-name_9") == ""
@@ -179,9 +178,7 @@ def test_extra_write_paths_accepts_absolute_rejects_relative_and_traversal(
 
 
 def test_extra_read_paths_rejects_dotdot_traversal(tmp_path: Path) -> None:
-    # FINDING 2: extra_read_paths are bind-mounted read+EXECUTE into the jail, so
-    # a `..` component (which could traverse outside the apparent target) must be
-    # rejected at config validation even though the path is absolute.
+    # extra_read_paths are bind-mounted read and execute, so a `..` component is rejected.
     body = _VALID_TOML.replace(
         "protect_git = true", 'protect_git = true\nextra_read_paths = ["/opt/../etc/shadow"]'
     )
@@ -190,9 +187,10 @@ def test_extra_read_paths_rejects_dotdot_traversal(tmp_path: Path) -> None:
 
 
 def test_memory_limit_defaults_off(tmp_path: Path) -> None:
-    """Not a security control: a memory bomb is a DoS on your own machine and
-    the kernel handles it, while a cap costs real builds. Off by default; the
-    operator sets one to bound a specific task."""
+    """The memory limit defaults off.
+
+    A memory bomb is the kernel's problem and a cap costs real builds.
+    """
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.sandbox.memory_limit_mb == 0
 
@@ -238,9 +236,7 @@ def test_openai_base_url_rejects_hostless(tmp_path: Path) -> None:
 
 
 def test_role_temperature_defaults_to_zero(tmp_path: Path) -> None:
-    # Finding C / Amp 2: agent6's tool-use loop is a feedback loop;
-    # default temperature is pinned to 0.0 so OpenRouter-routed models
-    # don't run at their (often high) provider default.
+    # The tool-use loop is a feedback loop; the default temperature is pinned to 0.0.
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.models.worker is not None
     assert cfg.models.reviewer is not None
@@ -261,8 +257,7 @@ def test_role_temperature_override(tmp_path: Path) -> None:
 
 
 def test_role_temperature_nan_rejected(tmp_path: Path) -> None:
-    # None (the provider's default) is reachable via the Python API; nan and
-    # out-of-range floats fail loud.
+    # None (the provider's default) is reachable via the Python API; nan and out-of-range fail loud.
     from agent6.config import RoleModel
 
     assert RoleModel(provider="p", model="m", temperature=None).temperature is None
@@ -270,9 +265,7 @@ def test_role_temperature_nan_rejected(tmp_path: Path) -> None:
         '[models.reviewer]\nprovider = "anthropic"\nmodel = "claude-x"',
         '[models.reviewer]\nprovider = "anthropic"\nmodel = "claude-x"\ntemperature = nan',
     )
-    # nan is rejected by ge/le bounds; the canonical "use provider default"
-    # path is to omit the field (default 0.0) or explicitly set null via
-    # the python API. Document that nan / out-of-range floats fail loud.
+    # nan is rejected by the bounds; the provider default is reached by omitting the field or None.
     with pytest.raises(ConfigError):
         load_config(_write(tmp_path, body))
 
@@ -287,9 +280,7 @@ def test_role_temperature_out_of_range(tmp_path: Path) -> None:
 
 
 def test_empty_verify_command_loads_and_is_runnable(tmp_path: Path) -> None:
-    # verify_command is OPTIONAL: an empty one loads AND is runnable. `agent6
-    # run`/`plan` infer one (or fall back to a gateless run), so require_runnable
-    # must NOT block on it -- only providers/model are required.
+    # verify_command is optional: `run` and `plan` infer one, so require_runnable allows empty.
     body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
     cfg = load_config(_write(tmp_path, body))
     assert cfg.harness.verify_command == ()
@@ -297,8 +288,7 @@ def test_empty_verify_command_loads_and_is_runnable(tmp_path: Path) -> None:
 
 
 def test_with_verify_command_injects_in_memory(tmp_path: Path) -> None:
-    # An inferred verify command is injected in-memory for one run, never
-    # mutating the original config.
+    # An inferred verify command is injected in memory for one run, never mutating the config.
     body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
     cfg = load_config(_write(tmp_path, body))
     injected = cfg.with_verify_command(("pytest", "-q"))
@@ -314,8 +304,7 @@ def test_verify_timeout_s_defaults_to_600(tmp_path: Path) -> None:
 
 
 def test_verify_timeout_s_overridable(tmp_path: Path) -> None:
-    """Bench configs set verify_timeout_s = 30 for fast failure on
-    infinite-loop edits."""
+    """Bench configs set verify_timeout_s = 30 for fast failure on infinite-loop edits."""
     body = _VALID_TOML.replace(
         'verify_command = ["true"]',
         'verify_command = ["true"]\nverify_timeout_s = 30.0',
@@ -362,8 +351,7 @@ def test_role_routes_to_unconfigured_provider_rejected(tmp_path: Path) -> None:
 
 
 def test_no_providers_loads_but_not_runnable(tmp_path: Path) -> None:
-    # Secure-by-default: a config with no providers is valid (a global config
-    # may define them); require_runnable refuses to start without one.
+    # A config with no providers is valid; require_runnable refuses to start without one.
     body = _VALID_TOML.replace(
         '[providers.anthropic]\napi_format = "anthropic"\n'
         'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
@@ -393,9 +381,10 @@ def test_openai_provider_with_no_api_key_env_loads(tmp_path: Path) -> None:
 
 
 def test_chatgpt_provider_defaults_and_refusals(tmp_path: Path) -> None:
-    """A bare api_format = "chatgpt" entry fills the Codex backend defaults;
-    the formats-only knobs (deployment, key sources, auth_style) are refused
-    rather than silently ignored."""
+    """A bare api_format = "chatgpt" fills the Codex defaults.
+
+    The other formats' knobs are refused by name.
+    """
     body = _VALID_TOML.replace(
         '[providers.anthropic]\napi_format = "anthropic"\n'
         'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
@@ -427,9 +416,10 @@ def test_chatgpt_provider_defaults_and_refusals(tmp_path: Path) -> None:
 
 
 def test_claude_code_provider_entry_has_no_transport_fields(tmp_path: Path) -> None:
-    """A bare api_format = "claude_code" entry validates with binary "claude";
-    the HTTP transport and auth knobs do not exist on it, so each is refused
-    by name rather than accepted as dead config."""
+    """A bare api_format = "claude_code" validates with binary "claude".
+
+    HTTP and auth knobs are refused.
+    """
     body = _VALID_TOML.replace(
         '[providers.anthropic]\napi_format = "anthropic"\n'
         'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
@@ -518,9 +508,10 @@ def test_metric_goal_invalid(tmp_path: Path) -> None:
 
 
 def test_operational_fields_have_defaults(tmp_path: Path) -> None:
-    """Every field has a default (security fields default to the SAFE value),
-    so a minimal TOML loads. Completeness is enforced per command by
-    require_runnable, never at load time."""
+    """Every field has a default, security fields the safe one, so a minimal TOML loads.
+
+    Completeness is enforced per command by require_runnable, never at load time.
+    """
     body = """
 [providers.anthropic]
 api_format = "anthropic"
@@ -563,8 +554,7 @@ max_tokens_fallback = 100000
 
 
 def test_compaction_defaults(tmp_path: Path) -> None:
-    # Default is now None == adaptive (sized from the worker model's context
-    # window at run construction; see models_cache.compaction_thresholds).
+    # The default None means adaptive, sized from the worker model's context window.
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.context.drop_at_chars is None
     assert cfg.context.summarise_at_chars is None
@@ -572,8 +562,7 @@ def test_compaction_defaults(tmp_path: Path) -> None:
 
 
 def test_compaction_both_or_neither(tmp_path: Path) -> None:
-    # A lone threshold is ambiguous (is the other adaptive or fixed?); the
-    # loader must reject setting only one.
+    # A lone threshold is ambiguous, so the loader rejects setting only one.
     body = _VALID_TOML + "\n[context]\ndrop_at_chars = 100000\n"
     with pytest.raises(ConfigError) as exc:
         load_config(_write(tmp_path, body))
@@ -601,8 +590,7 @@ def test_compaction_threshold_must_be_positive(tmp_path: Path) -> None:
 
 
 def test_compaction_summarise_must_exceed_drop(tmp_path: Path) -> None:
-    # Inverted ordering (tier-2 <= tier-1) is the misconfiguration that made
-    # tier-2 unreachable; the loader must reject it.
+    # Inverted ordering (tier-2 <= tier-1) makes tier-2 unreachable; the loader rejects it.
     body = _VALID_TOML + "\n[context]\ndrop_at_chars = 300000\nsummarise_at_chars = 200000\n"
     with pytest.raises(ConfigError) as exc:
         load_config(_write(tmp_path, body))
@@ -610,16 +598,17 @@ def test_compaction_summarise_must_exceed_drop(tmp_path: Path) -> None:
 
 
 def test_compaction_summarise_must_exceed_the_verbatim_tail(tmp_path: Path) -> None:
-    """A tier-2 threshold at or under keep_recent_chars re-triggers after every
-    restart (the tail alone crosses it): the loader rejects it."""
+    """A tier-2 threshold at or under keep_recent_chars is rejected.
+
+    The tail alone would re-trigger it.
+    """
     body = _VALID_TOML + "\n[context]\ndrop_at_chars = 20000\nsummarise_at_chars = 40000\n"
     with pytest.raises(ConfigError, match="keep_recent_chars"):
         load_config(_write(tmp_path, body))
 
 
 def test_auto_stash_pop_requires_the_stash_choice(tmp_path: Path) -> None:
-    # The same dependent-knob rule as auto_merge/auto_prune: a pop with nothing
-    # ever stashed is inert, so reject it with a pointer instead of loading it.
+    # A pop with nothing ever stashed is inert; rejected with a pointer, like auto_merge.
     body = _VALID_TOML.replace('dirty_tree = "ask"', 'dirty_tree = "ask"\nauto_stash_pop = true')
     with pytest.raises(ConfigError, match="auto_stash_pop"):
         load_config(_write(tmp_path, body))
@@ -640,9 +629,7 @@ def test_with_budget_overrides_noop_returns_self(tmp_path: Path) -> None:
 
 
 def test_budget_max_usd_rejects_non_finite(tmp_path: Path) -> None:
-    # TOML nan/inf parse as floats, and a non-finite cap never binds (nan
-    # fails every comparison; inf exceeds any spend), silently disabling the
-    # hard budget -- refused at the boundary like any other bad value.
+    # TOML nan and inf parse as floats and a non-finite cap never binds; refused at the boundary.
     for literal in ("nan", "-nan", "inf", "-inf"):
         body = _VALID_TOML.replace("[budget]", "[budget]\nmax_usd = " + literal)
         with pytest.raises(ConfigError, match="finite"):
@@ -650,16 +637,14 @@ def test_budget_max_usd_rejects_non_finite(tmp_path: Path) -> None:
 
 
 def test_budget_flag_override_rejects_non_finite(tmp_path: Path) -> None:
-    # --max-usd routes through the same validator (with_budget_overrides
-    # re-validates), so `--max-usd inf` cannot disable the meter either.
+    # --max-usd routes through the same validator, so `--max-usd inf` cannot disable the meter.
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     with pytest.raises(ValidationError, match="finite"):
         cfg.with_budget_overrides(max_usd=float("inf"))
 
 
 def test_string_for_bool_rejected(tmp_path: Path) -> None:
-    # Strict mode: a quoted "true" is a typo, not a bool; lax coercion
-    # laundered it into the safe-looking value.
+    # Strict mode: a quoted "true" is a typo, not a bool.
     body = _VALID_TOML.replace("protect_git = true", 'protect_git = "true"')
     with pytest.raises(ConfigError, match=r"protect_git.*valid boolean"):
         load_config(_write(tmp_path, body))
@@ -678,8 +663,7 @@ def test_bool_for_number_rejected(tmp_path: Path) -> None:
 
 
 def test_provider_timeout_rejects_non_finite(tmp_path: Path) -> None:
-    # TOML parses inf as a float; an infinite HTTP timeout raised raw
-    # OverflowError deep in the transport instead of a config error.
+    # TOML parses inf as a float; an infinite HTTP timeout is a config error, not an OverflowError.
     body = _with_openai_provider(
         '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
         "http_timeout_s = inf"
@@ -689,8 +673,7 @@ def test_provider_timeout_rejects_non_finite(tmp_path: Path) -> None:
 
 
 def test_extra_body_rejects_a_toml_date(tmp_path: Path) -> None:
-    # TOML parses bare dates/times into objects JSON cannot carry; unrefused,
-    # the crash came at request serialization mid-run instead of at load.
+    # TOML parses bare dates into objects JSON cannot carry; refused at load, not at serialization.
     body = _with_openai_provider(
         '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
         "[providers.gw.extra_body]\nsince = 2026-01-01\n"
@@ -758,9 +741,7 @@ def test_token_command_ttl_defaults_to_300(tmp_path: Path) -> None:
 
 
 def test_token_command_empty_reads_as_unset_and_a_blank_element_refuses(tmp_path: Path) -> None:
-    """`token_command` is an `Argv` leaf like every other command argv: an
-    empty list means unset (the read sites test truthiness), and an empty
-    ELEMENT is always a typo."""
+    """An empty `token_command` reads as unset; an empty element is refused as a typo."""
     body = _with_openai_provider('[providers.gw]\napi_format = "openai"\ntoken_command = []')
     entry = load_config(_write(tmp_path, body)).providers["gw"]
     assert entry.token_command == ()  # type: ignore[union-attr]
@@ -863,9 +844,7 @@ def test_explicit_auth_style_preserved(tmp_path: Path) -> None:
     ['api_key_env = "OPENAI_API_KEY"', 'token_command = ["mint-token"]'],
 )
 def test_none_auth_with_a_credential_source_is_refused(tmp_path: Path, cred_line: str) -> None:
-    """auth_style = 'none' sends no auth header, so also naming api_key_env or
-    token_command is a contradiction: the credential reads as configured yet is
-    never sent. Refuse rather than silently ignore it."""
+    """auth_style = 'none' with api_key_env or token_command is refused as a contradiction."""
     body = _with_openai_provider(
         f'[providers.x]\napi_format = "openai"\nauth_style = "none"\n{cred_line}'
     )
@@ -887,8 +866,7 @@ def test_skills_state_map_loads(tmp_path: Path) -> None:
 
 
 def test_skills_state_rejects_unknown_value(tmp_path: Path) -> None:
-    # one value per skill; only the three states exist (a skill can never be
-    # both disabled and always by construction)
+    # One value per skill; only the three states exist.
     body = _VALID_TOML + '\n[skills.state]\ncaveman = "sometimes"\n'
     with pytest.raises(ConfigError, match="skills"):
         load_config(_write(tmp_path, body))
@@ -903,9 +881,10 @@ def test_skills_rejects_unknown_key(tmp_path: Path) -> None:
 def test_extra_paths_never_target_the_private_dirs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An extra grant AT or INSIDE an agent6-private dir (secrets, state)
-    never enters the jail and is refused at config load; a grant merely
-    CONTAINING one stays valid (strict masks it out)."""
+    """An extra grant at or inside a private dir is refused at load.
+
+    One merely containing it is valid.
+    """
     cfg_home = tmp_path / "home" / ".config" / "agent6"
     cfg_home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home.parent))
@@ -922,10 +901,10 @@ def test_extra_paths_never_target_the_private_dirs(
 def test_a_symlink_to_a_private_dir_is_refused_like_the_dir_itself(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A grant naming a SYMLINK whose target is an agent6-private dir is
-    refused the same as one naming the dir directly: the mount follows the
-    link, so a literal-path check that never resolves it lets the grant
-    through (`jail_home_refusal` resolves for the same reason)."""
+    """A grant naming a symlink to a private dir is refused like the dir itself.
+
+    The mount follows the link.
+    """
     cfg_home = tmp_path / "home" / ".config" / "agent6"
     cfg_home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home.parent))
@@ -946,9 +925,7 @@ def test_hide_paths_validate_like_the_other_path_lists(tmp_path: Path) -> None:
 def test_the_skills_dir_can_be_granted_to_the_jail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Installed skills are operator content the model is meant to use, so a
-    skill's bundled script must be runnable in the jail: the data dir (and the
-    regenerable cache) are grantable, unlike config and state."""
+    """The skills data dir and its cache are grantable to the jail, unlike config and state."""
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -963,10 +940,11 @@ def test_the_skills_dir_can_be_granted_to_the_jail(
 
 
 def test_api_format_discriminates_the_provider_entry(tmp_path: Path) -> None:
-    """`api_format` routes a `[providers.*]` block to its entry class. It is
-    declared on the shared base so the field leads every entry's order, and
-    each subclass's annotation must stay the single-value literal: the union
-    discriminates on it and `config/write.py` reflects over it."""
+    """`api_format` routes a `[providers.*]` block to its entry class.
+
+    Declared on the shared base so it leads every entry's order; each subclass's annotation stays
+    the single-value literal the union discriminates on and `config/write.py` reflects over.
+    """
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert isinstance(cfg.providers["anthropic"], AnthropicProviderEntry)
 
@@ -983,9 +961,7 @@ def test_api_format_discriminates_the_provider_entry(tmp_path: Path) -> None:
 
 
 def test_a_provider_block_without_api_format_names_the_key(tmp_path: Path) -> None:
-    """pydantic's own text ("Unable to extract tag using discriminator") names
-    neither the key nor its values, and hand-writing a provider block is a
-    documented way in."""
+    """A provider block without api_format is refused naming the key and its values."""
     cfg = tmp_path / "config.toml"
     cfg.write_text('[providers.anthropic]\napi_key_env = "K"\n', encoding="utf-8")
     with pytest.raises(ConfigError) as exc:
@@ -994,9 +970,10 @@ def test_a_provider_block_without_api_format_names_the_key(tmp_path: Path) -> No
 
 
 def test_chatgpt_oauth_endpoints_are_constants_not_config() -> None:
-    """The issuer and client id are pinned to OpenAI's (a bearer authority is
-    never a config knob); a config that tries to set them is refused as an
-    unknown key, and the constants carry the pinned values."""
+    """The ChatGPT issuer and client id are constants.
+
+    A config setting them is refused as an unknown key.
+    """
     from agent6.config import ChatGPTProviderEntry
     from agent6.providers.chatgpt_oauth import CHATGPT_CLIENT_ID, CHATGPT_ISSUER
 
@@ -1009,8 +986,7 @@ def test_chatgpt_oauth_endpoints_are_constants_not_config() -> None:
 
 
 def test_extra_device_paths_must_live_under_dev() -> None:
-    """A device grant is /dev-only: anywhere else is a file grant wearing a
-    device hat (extra_read/write_paths own those), and traversal is refused."""
+    """A device grant lives under /dev, and traversal is refused."""
     from agent6.config import SandboxConfig
 
     ok = SandboxConfig(extra_device_paths=("/dev/nvidia0", "/dev/nvidiactl", "/dev/..x"))
@@ -1022,8 +998,7 @@ def test_extra_device_paths_must_live_under_dev() -> None:
 
 
 def test_model_git_control_requires_git_writes(tmp_path: Path) -> None:
-    """git.control = "model" hands git to the model; protect_git = true
-    contradicts it and refuses naming both keys."""
+    """git.control = "model" with protect_git = true is refused naming both keys."""
     body = _VALID_TOML.replace("[git]\n", '[git]\ncontrol = "model"\n')
     with pytest.raises(ConfigError, match="protect_git"):
         load_config(_write(tmp_path, body))
@@ -1055,9 +1030,10 @@ def test_max_iterations_zero_is_rejected(tmp_path: Path) -> None:
 
 
 def test_cleartext_rejection_is_scheme_case_insensitive(tmp_path: Path) -> None:
-    """URL schemes are case-insensitive on the wire: `HTTP://` dials cleartext
-    exactly like `http://`, so a prefix match would let a mixed-case scheme
-    evade the https requirement on the chatgpt endpoints."""
+    """The cleartext check on the chatgpt endpoints is scheme case-insensitive.
+
+    `HTTP://` is cleartext.
+    """
     for field, extra in (("base_url", 'base_url = "HTTP://api.example.com/codex"'),):
         body = _VALID_TOML + f'\n[providers.gpt]\napi_format = "chatgpt"\n{extra}\n'
         d = tmp_path / field
@@ -1067,8 +1043,7 @@ def test_cleartext_rejection_is_scheme_case_insensitive(tmp_path: Path) -> None:
 
 
 def test_auto_stash_pop_needs_the_stash_choice() -> None:
-    """One knob for the dirty tree: the two booleans encoded a three-valued
-    answer with a dead fourth row, and `--parallel` read only one of them."""
+    """auto_stash_pop needs the stash choice: one knob answers the dirty tree."""
     import pytest
 
     from agent6.config._git import GitConfig
@@ -1079,9 +1054,10 @@ def test_auto_stash_pop_needs_the_stash_choice() -> None:
 
 
 def test_with_model_route_names_a_provider_or_keeps_the_roles(tmp_path: Path) -> None:
-    """`--model provider/model` routes the role there; a bare id, or an id
-    whose first segment is no configured provider (an OpenRouter slug), stays
-    on the role's provider; the role's other fields survive."""
+    """`--model provider/model` routes the role.
+
+    A bare or unknown-provider id keeps the role's provider.
+    """
     body = (
         _VALID_TOML.replace(
             '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
@@ -1112,8 +1088,7 @@ def test_with_model_route_names_a_provider_or_keeps_the_roles(tmp_path: Path) ->
         "anthropic",
         "moonshotai/kimi-k2.6",
     )
-    # An unset planner falls back to the worker: the flag sets the planner
-    # itself, the worker untouched.
+    # An unset planner falls back to the worker: the flag sets the planner, the worker untouched.
     planned = cfg.with_model_route("planner", cfg.model_route("planner", "openrouter/m"))
     assert planned.models.planner is not None
     assert planned.models.planner.provider == "openrouter"
@@ -1133,8 +1108,7 @@ def test_with_model_route_refuses_what_it_cannot_route(tmp_path: Path) -> None:
 
 
 def test_with_model_route_refuses_a_blank_and_an_empty_provider(tmp_path: Path) -> None:
-    """Whitespace is no model id, and `/model` names no provider: both refuse
-    instead of becoming a model id of spaces or of `/model`."""
+    """`--model` refuses a blank id and `/model` with no provider."""
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     with pytest.raises(ConfigError, match="no model id") as exc:
         cfg.model_route("worker", "   ")

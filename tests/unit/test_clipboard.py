@@ -62,9 +62,11 @@ def test_write_transcript_file_roundtrips() -> None:
 
 
 def test_resolve_auto_uses_screen_wrap_inside_screen(monkeypatch: pytest.MonkeyPatch) -> None:
-    """GNU screen cannot decode tmux's `tmux;`-prefixed doubled-ESC DCS; auto
-    must route to the screen passthrough or every copy silently fails while
-    the toast says copied."""
+    """`auto` inside GNU screen routes to the screen passthrough.
+
+    screen cannot decode tmux's `tmux;`-prefixed doubled-ESC DCS, and a failed copy would still
+    toast "copied".
+    """
     monkeypatch.setenv("STY", "1234.pts-0.host")
     monkeypatch.delenv("TMUX", raising=False)
     assert cb.resolve_method("auto") == "osc52-screen"

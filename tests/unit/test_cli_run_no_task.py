@@ -80,8 +80,7 @@ def test_run_no_task_points_at_most_recent_plan(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # No task given but a prior plan exists: non-interactively (pytest stdin is
-    # not a TTY) refuse, but point the user at the plan + the --from form.
+    # No task but a prior plan, non-interactively: refuse and point at the plan and the --from form.
     monkeypatch.chdir(tmp_path)
     session_dir = state_dir(tmp_path) / "sessions" / "plans" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
@@ -129,8 +128,7 @@ def test_run_no_task_at_a_terminal_executes_the_plan_on_enter(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`Execute it now? [Y/n]` defaults to yes: Enter runs the plan, `n` and
-    an EOF abort. An empty answer was read as a decline once."""
+    """`Execute it now? [Y/n]` defaults to yes: Enter runs the plan, `n` and an EOF abort."""
     from agent6.ui import cli
     from agent6.ui.cli import run as run_mod
 
@@ -161,9 +159,7 @@ def test_run_no_task_at_a_terminal_executes_the_plan_on_enter(
 
 
 def test_run_continue_flag_is_gone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # `run --continue` was a strict subset of `resume`; the one obvious way
-    # remains `agent6 resume`. argparse refuses the dropped flag like any
-    # unknown flag (no alias, no special-cased message).
+    # `run --continue` was a subset of `resume`; argparse refuses it like any unknown flag.
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit) as exc:
         main(["run", "--continue"])
@@ -175,8 +171,7 @@ def test_parallel_refuses_an_explicit_run_id(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # Each lane mints its own run id; the flag was silently dropped (never
-    # forwarded to dispatch_parallel), so refuse it like -i/--tui.
+    # Each lane mints its own run id, so --session-id is refused like -i and --tui.
     monkeypatch.chdir(tmp_path)
     rc = main(["run", "--parallel", "2", "--session-id", "myid", "task"])
     assert rc == 2
@@ -188,8 +183,7 @@ def test_parallel_refuses_a_standing_goal(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--standing` reached no lane (dispatch_parallel takes none), so a
-    fan-out ran with the goal silently dropped; refuse it like --session-id."""
+    """`--parallel` refuses `--standing`, which reaches no lane, as it refuses --session-id."""
     monkeypatch.chdir(tmp_path)
     rc = main(["run", "--parallel", "2", "--standing", "keep tests green", "task"])
     assert rc == 2

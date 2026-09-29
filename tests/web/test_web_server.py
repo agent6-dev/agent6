@@ -4,7 +4,8 @@
 
 Starts the stdlib server on an ephemeral loopback port and drives it with
 `http.client`, asserting the JSON endpoints emit the same wire form as
-`agent6 attach --json` and that SSE streams a folded snapshot. No browser."""
+`agent6 attach --json` and that SSE streams a folded snapshot. No browser.
+"""
 
 from __future__ import annotations
 
@@ -140,10 +141,10 @@ def test_ipv6_loopback_bind_uses_ipv6_socket(tmp_path: Path, host: str) -> None:
 
 
 def test_explicit_config_reaches_the_server(tmp_path: Path) -> None:
-    """`agent6 --config F web` threads F to the server object every route
-    reads (`self.config_path`); the constructor used to drop it, so the whole
-    browser surface ran on the default layers while binding the configured
-    port."""
+    """`agent6 --config F web` threads F to the server object every route reads.
+
+    A dropped path ran the whole browser surface on the default layers.
+    """
     cfg = tmp_path / "f.toml"
     srv = _create_web_server("127.0.0.1", 0, tmp_path, "", cfg)  # pyright: ignore[reportPrivateUsage]
     try:
@@ -179,8 +180,7 @@ def test_run_snapshot_matches_watch_json(
     from_cli = json.loads(capsys.readouterr().out)
     assert from_web == from_cli
     assert from_web["tool_calls"][0]["name"] == "grep"
-    # Even for a log whose session.start predates the session_id field, both surfaces
-    # stamp the authoritative id from the dir (never an empty session_id).
+    # Both surfaces stamp the id from the dir, even for a session.start that predates the field.
     assert from_web["session_id"] == "willing-glen-001"
 
 
@@ -236,8 +236,7 @@ def test_unknown_run_is_404(server: tuple[WebServer, int]) -> None:
 
 
 def test_meta_resolves_the_target_kind(tmp_path: Path) -> None:
-    # `agent6 web <target>` deep-links on load; the page asks /api/meta what
-    # kind of view the target names.
+    # `agent6 web <target>` deep-links on load; the page asks /api/meta what the target names.
     runs = state_dir(tmp_path) / "sessions" / "runs" / "run-t"
     runs.mkdir(parents=True)
     (runs / "logs.jsonl").write_text('{"type": "session.start"}\n', encoding="utf-8")
@@ -352,8 +351,10 @@ def test_stop_after_step_and_compact_drop_markers_on_a_live_run(
 def test_stop_now_lands_both_bridges_and_reports_the_run_stopped(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    """The Stop now button posted a steer text; it is the one stop `agent6 stop`
-    is. A run that answers (session.end after the abort) reads "stopped"."""
+    """The Stop now button posted a steer text; it is the one stop `agent6 stop` is.
+
+    A run that answers (session.end after the abort) reads "stopped".
+    """
     _srv, port = server
     _make_run(tmp_path, "run-n", [{"type": "session.start"}])
     runs = state_dir(tmp_path) / "sessions" / "runs" / "run-n"
@@ -397,8 +398,7 @@ def test_stop_rejects_a_non_boolean_after_step(
 def test_stop_that_cannot_write_the_marker_is_refused(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    """The action announced "stopping after the current step" whatever the
-    marker write did; a write that fails is a refusal, as compact's is."""
+    """A stop-marker write that fails is a refusal, as compact's is."""
     _srv, port = server
     _make_run(tmp_path, "run-ro", [{"type": "session.start"}])
     runs = state_dir(tmp_path) / "sessions" / "runs" / "run-ro"
@@ -414,10 +414,10 @@ def test_stop_that_cannot_write_the_marker_is_refused(
 def test_session_payload_names_the_ref_holding_the_commits(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    """The Merge button gated on `run_branch`, so a `branch_per_run = false`
-    run read "no branch to merge" while `sessions merge` landed it. The
-    payload carries `commits_ref`: the branch while it exists, else the chain
-    ref while it has a tip."""
+    """The Merge button gates on `commits_ref`: the branch while it exists, else the chain ref.
+
+    Gated on `run_branch`, a `branch_per_run = false` run read "no branch to merge".
+    """
     import subprocess as sp
 
     from agent6.git_ops import chain_ref_for
@@ -530,8 +530,7 @@ def test_approve_writes_answer_file(server: tuple[WebServer, int], tmp_path: Pat
         '{"type":"approval.prompt","id":"p1","prompt":"Allow it?"}\n', encoding="utf-8"
     )
     write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
-    # The watching browser's own claim, which its SSE registers: without one the
-    # run is waiting at its terminal and the answer would reach nobody.
+    # The watching browser's own claim; without one the answer would reach nobody.
     register_frontend(session_dir, os.getpid())
     status, body = _post(port, "/api/session/appr-run/approve", {"id": "p1", "answer": "yes"})
     assert status == 200
@@ -550,8 +549,7 @@ def _run_asking_one_question(tmp_path: Path, session_id: str) -> Path:
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
     )
     write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
-    # The watching browser's own claim, which its SSE registers: without one the
-    # run is waiting at its terminal and the answer would reach nobody.
+    # The watching browser's own claim; without one the answer would reach nobody.
     register_frontend(session_dir, os.getpid())
     return session_dir
 
@@ -569,9 +567,10 @@ def test_answer_writes_question_file(server: tuple[WebServer, int], tmp_path: Pa
 def test_answer_refuses_a_list_that_does_not_match_the_prompt(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    """The asking side raises on a mismatch after consuming the answer file, so
-    an unchecked write lost the operator's answers and handed the model an
-    error instead."""
+    """An answer list is checked against the prompt before its file is written.
+
+    The asking side raises on a mismatch after consuming the file, losing the operator's answers.
+    """
     _srv, port = server
     session_dir = _run_asking_one_question(tmp_path, "q-run2")
     status, body = _post(
@@ -595,9 +594,10 @@ def test_steer_writes_answer_and_request(server: tuple[WebServer, int], tmp_path
 
 
 def test_steer_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Path) -> None:
-    """A crashed run (no session.end, dead worker) folds as unfinished, so the
-    composer offers steer; the action must refuse like stop/compact do
-    instead of toasting "steer sent" for a marker nothing will ever read."""
+    """Steering a crashed run is refused, as stop and compact are.
+
+    It folds as unfinished, so the composer offers steer for a marker nothing will read.
+    """
     _srv, port = server
     _make_run(tmp_path, "run-sd", [{"type": "session.start"}, {"type": "session.end"}])
     status, data = _post(port, "/api/session/run-sd/steer", {"text": "abort"})
@@ -617,8 +617,7 @@ def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_pa
         '{"type":"approval.prompt","id":"p1","prompt":"Allow it?"}\n', encoding="utf-8"
     )
     write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
-    # The watching browser's own claim, which its SSE registers: without one the
-    # run is waiting at its terminal and the answer would reach nobody.
+    # The watching browser's own claim; without one the answer would reach nobody.
     register_frontend(session_dir, os.getpid())
     escape = tmp_path / "pwned.answer"
     status, _ = _post(
@@ -634,9 +633,11 @@ def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_pa
 def _make_machine_with_state(
     cwd: Path, name: str, seq_state: str, *, running: bool = False
 ) -> tuple[Path, Path]:
-    """A machine instance dir + one per-state agent-log dir. Returns (instance,
-    state). ``running`` records this test process as the machine's worker, so
-    steer (which refuses a machine no state is executing under) is offered."""
+    """A machine instance dir + one per-state agent-log dir.
+
+    Returns (instance, state). ``running`` records this test process as the machine's worker, so
+    steer (which refuses a machine no state is executing under) is offered.
+    """
     inst = state_dir(cwd) / "machines" / name
     inst.mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -689,8 +690,7 @@ def test_machine_answer_id_traversal_is_contained(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
     _srv, port = server
-    # running=True so the liveness gate passes and the id-component check is
-    # the only thing that can refuse -- otherwise the traversal is never tested.
+    # running=True so the liveness gate passes and only the id-component check can refuse.
     _inst, _state = _make_machine_with_state(tmp_path, "travm", "0000-review", running=True)
     escape = tmp_path / "pwned.answer"
     status, _ = _post(port, "/api/machine/travm/answer", {"id": "../../pwned", "answers": ["x"]})
@@ -708,8 +708,7 @@ def test_pwa_assets_served(server: tuple[WebServer, int]) -> None:
 
 
 def test_favicon_matches_the_docs_asset(server: tuple[WebServer, int]) -> None:
-    # The tab favicon is docs/assets/favicon.svg embedded verbatim (the padded
-    # /icon.svg tile is only for the PWA surfaces); this pins the copy in sync.
+    # The favicon is docs/assets/favicon.svg verbatim; the padded /icon.svg tile is for the PWA.
     _srv, port = server
     st, body, ctype = _get(port, "/favicon.svg")
     assert st == 200 and "svg" in ctype
@@ -777,8 +776,7 @@ def test_machine_run_rejects_unknown_file(server: tuple[WebServer, int]) -> None
 
 
 def test_bad_post_body_is_400_with_the_field_named(server: tuple[WebServer, int]) -> None:
-    """One human line per failed field, not the repr of pydantic's error list
-    (`[{'type': 'missing', 'loc': ('task',), ...}]`) in the toast."""
+    """A validation failure toasts one human line per failed field, not pydantic's error list."""
     _srv, port = server
     status, body = _post(port, "/api/new", {"mode": "run"})
     assert (status, body["error"]) == (400, "task: field required")
@@ -790,8 +788,7 @@ def test_bad_post_body_is_400_with_the_field_named(server: tuple[WebServer, int]
 def test_a_post_on_an_unknown_session_or_machine_is_404_like_its_get(
     server: tuple[WebServer, int],
 ) -> None:
-    """The verbs answered 422 (`no session 'x'`) where the GET of the same id
-    answers 404: one status per fact."""
+    """A verb on an unknown session answers 404, as the GET of the same id does."""
     _srv, port = server
     status, body = _post(port, "/api/session/nope/steer", {"text": "x"})
     assert (status, body["error"]) == (404, "no session 'nope'")
@@ -804,9 +801,10 @@ def test_a_post_on_an_unknown_session_or_machine_is_404_like_its_get(
 def test_two_posts_on_one_connection_stay_framed(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    """Every verb drains its body, or the unread `{}` is parsed as the next
-    request line: the machine stop route did not, and a second POST on the same
-    keep-alive connection answered 501 and closed."""
+    """Every verb drains its body, or the unread `{}` is parsed as the next request line.
+
+    A second POST on the same keep-alive connection answered 501 and closed.
+    """
     _srv, port = server
     _make_machine_with_state(tmp_path, "stoppable", "0000-review", running=True)
     conn = HTTPConnection("127.0.0.1", port, timeout=10)
@@ -828,9 +826,11 @@ def test_two_posts_on_one_connection_stay_framed(
 def _read_until(
     resp: Any, cond: Callable[[dict[str, object]], bool], *, deadline_s: float = 10.0
 ) -> dict[str, object]:
-    """Read SSE data frames until *cond*(snapshot) is true; return that
-    snapshot. The stream does not close on a finished run (a resume keeps
-    painting into it), so tests read to a condition, never to EOF."""
+    """Read SSE data frames until *cond*(snapshot) is true; return that snapshot.
+
+    The stream does not close on a finished run (a resume keeps painting into it), so tests read to
+    a condition, never to EOF.
+    """
     buf = b""
     deadline = time.monotonic() + deadline_s
     while time.monotonic() < deadline:
@@ -873,9 +873,10 @@ def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path)
 def test_sse_run_emits_the_last_delta_of_a_burst(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A delta inside the coalescing window was skipped, not deferred: the last
-    delta of a burst reached the page only with the next event, so streamed
-    text stopped one chunk short until the model's turn ended."""
+    """A delta inside the coalescing window is deferred, not skipped.
+
+    Skipped, the last delta of a burst reached the page only with the next event.
+    """
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "DELTA_COALESCE_S", 2.0)
@@ -927,10 +928,10 @@ def test_an_action_on_a_session_that_is_not_live_names_resume(
 def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    """The tailer opened with stop_when_finished=True and the client closed on
-    `finished`, so a run resumed from ANOTHER surface left this page frozen on
-    "stopped" while the hub said "running", indefinitely. The stream now stays
-    open across a finish and paints the resumed execution (the TUI already did)."""
+    """The stream stays open across a finish and paints an execution resumed elsewhere.
+
+    Closing on `finished` froze the page on "stopped" while the hub said "running".
+    """
     _srv, port = server
     _make_run(
         tmp_path,
@@ -955,8 +956,7 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
             )
         snap = _read_until(resp, lambda s: s.get("finished") is False)
         assert snap["user_task"] == "execution one"
-        # The frame carries a server-computed idle age so the browser's
-        # "working… Ns" needs no clock agreement (and replay reads its true age).
+        # The frame carries a server-computed idle age, so the browser needs no clock agreement.
         age = snap["last_event_age_s"]
         assert isinstance(age, (int, float)) and 0 <= age < 60
     finally:
@@ -966,9 +966,10 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
 def test_sse_run_frame_carries_the_compare_outcome(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    """The run view paints from the SSE frame, not the one-shot snapshot; the
-    frame must carry the manifest's compare block (branch facts + compare share
-    one manifest_header helper so the two endpoints can never drift)."""
+    """The SSE frame carries the manifest's compare block, since the run view paints from it.
+
+    Branch facts and compare share one manifest_header helper, so the two endpoints cannot drift.
+    """
     _srv, port = server
     _make_run(tmp_path, "cmp-run", [{"type": "session.start", "user_task": "x"},
                                     {"type": "session.end", "all_passed": True}])  # fmt: skip
@@ -998,8 +999,7 @@ def _corrupt_journal(inst: Path) -> None:
 def test_corrupt_journal_hub_shows_unreadable(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    # One corrupt journal line must not 500 the whole landing page; the entry
-    # stays listed with an unreadable status.
+    # One corrupt journal line does not 500 the landing page; the entry lists as unreadable.
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "sick", "0000-review")
     _corrupt_journal(inst)
@@ -1012,8 +1012,7 @@ def test_corrupt_journal_hub_shows_unreadable(
 
 
 def test_hub_parked_instance_reads_waiting(server: tuple[WebServer, int], tmp_path: Path) -> None:
-    # A parked --exit-on-wait instance (an armed wait, no live worker) must read
-    # "waiting" on the hub, not "running": a paused machine never looks busy.
+    # A parked --exit-on-wait instance reads "waiting" on the hub, never busy.
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "parked", "0000-poll")
     MachineJournal(inst).write_pending_wait(PendingWait(state="route", wake_epoch=None))
@@ -1037,8 +1036,7 @@ def test_corrupt_journal_machine_snapshot_is_422(
 def test_corrupt_journal_machine_sse_sends_error_frame(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    # The SSE stream must emit an in-band error frame and close, never write a
-    # second HTTP status line into the open stream.
+    # The stream emits an in-band error frame and closes, never a second HTTP status line.
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "sick3", "0000-review")
     _corrupt_journal(inst)
@@ -1062,9 +1060,7 @@ def test_corrupt_journal_machine_sse_sends_error_frame(
 def test_sse_run_catchup_folds_history_into_few_frames(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    # Connecting to a run with a long history must not emit one full SessionState
-    # frame per historical event (13 MB probed on a 502-event run): the backlog
-    # folds into (almost) one snapshot.
+    # The backlog folds into one snapshot, not one frame per event (13 MB on a 502-event run).
     _srv, port = server
     events: list[dict[str, object]] = [{"type": "session.start", "user_task": "big"}]
     for i in range(150):
@@ -1094,10 +1090,7 @@ def test_sse_run_catchup_folds_history_into_few_frames(
 def test_sse_run_closes_even_if_tailer_dies(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The tail thread must ALWAYS enqueue its None sentinel: if it raises (the
-    # injected raise below is intentionally unhandled in that thread), the
-    # stream sends the folded snapshot and closes instead of hanging until the
-    # client gives up.
+    # The tail thread always enqueues its None sentinel, so a raise there closes the stream.
     import agent6.ui.web._sse as sse_mod
 
     def _boom(*_a: object, **_k: object) -> object:
@@ -1121,11 +1114,11 @@ def test_sse_run_closes_even_if_tailer_dies(
 def test_sse_run_dead_worker_frame_is_terminal(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A run whose worker died without a session.end must close its SSE stream with
-    a TERMINAL frame carrying the dedicated transport bit: stream_dead=True +
-    status_label="stale". `finished` stays the fold truth (False -- a crashed
-    run is stale, not finished); the client closes on either signal, so the
-    tab never reconnect-refolds forever over a dead run."""
+    """A run whose worker died without a session.end closes its stream with a terminal frame.
+
+    The frame carries `stream_dead=True` and `status_label="stale"`; `finished` stays False, so
+    the client closes on either signal and never reconnects forever over a dead run.
+    """
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
@@ -1155,11 +1148,10 @@ def test_sse_run_dead_worker_frame_is_terminal(
 def test_sse_run_pidless_stale_frame_is_terminal(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A crashed run that never recorded worker.pid (killed in preflight, or
-    the pid file cleaned) heartbeated forever: the idle close only probed a
-    RECORDED pid. The one dir decision (summarize_session_dir) already calls a
-    pid-less run silent past its window "stale"; the stream must close on it
-    with the same terminal frame as the recorded-dead-pid case."""
+    """A crashed run that never recorded worker.pid closes its stream on the same frame.
+
+    The dir decision already calls a pid-less run silent past its window stale.
+    """
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
@@ -1180,8 +1172,7 @@ def test_sse_run_pidless_stale_frame_is_terminal(
         conn.request("GET", "/api/session/pidless-stale/events")
         resp = conn.getresponse()
         assert resp.status == 200
-        # Bounded read: the buggy stream never closes but keeps heartbeating,
-        # so a plain read() would hang forever on live ping bytes.
+        # Bounded read: the buggy stream keeps heartbeating, so a plain read() would hang on pings.
         import time as _time
 
         deadline = _time.monotonic() + 4.0
@@ -1207,12 +1198,10 @@ def test_sse_run_pidless_stale_frame_is_terminal(
 def test_sse_run_created_frame_is_terminal(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A `created` run (worker killed in preflight before session.start, or a
-    fork --no-run) reaches terminal WITHOUT a session.end, but the close only
-    checked "stale": the tailer pinged forever, holding the thread and the
-    frontends/ claim. The close now asks the codebase's own died_without_end,
-    and the terminal frame keeps the truthful label ("created", not a
-    hardcoded "stale")."""
+    """A `created` run that reached its end without a session.end closes its stream.
+
+    The close asks died_without_end, and the terminal frame keeps the truthful label.
+    """
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
@@ -1253,10 +1242,7 @@ def test_sse_run_created_frame_is_terminal(
 def test_sse_run_parked_keeps_streaming(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`parked` also never reached session.end, but its stream deliberately stays
-    open: a parked submission the operator resumes starts logging into this
-    same stream. Pin the exclusion so the died_without_end close cannot
-    swallow it."""
+    """A parked run's stream stays open: a resumed submission logs into this same stream."""
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
@@ -1296,10 +1282,10 @@ def test_sse_machine_frame_carries_the_idle_age(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The machine pane anchored its "agent working… Ns" timer to when the FRAME
-    arrived, so a state wedged for forty minutes read as three seconds of work
-    every time one landed. The frame carries a server-computed age, as the run
-    stream's does, and the client ticks from that."""
+    """The machine frame carries a server-computed age, and the client ticks from that.
+
+    Anchored to the frame's arrival, a state wedged for forty minutes read as seconds of work.
+    """
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "MACHINE_POLL_S", 0.05)
@@ -1342,13 +1328,12 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
     *,
     stale_pid: bool,
 ) -> None:
-    """A machine with no worker and no armed wait (an operator stop or a
-    death mid-state; the worker clears its pid on every unwound exit, a kill
-    leaves a stale one) is resumable, so its stream carries a `worker_lost`
-    frame and stays open: closing it made the tab reconnect every few
-    seconds, each retry a fresh fold and a flap of the answer front-end
-    claim, and `ended` stays reserved for a durable MachineEnd. The same
-    connection then follows `machine run`."""
+    """A machine with no worker and no armed wait sends `worker_lost` and its stream stays open.
+
+    The machine is resumable, and the same connection then follows `machine run`; closing made
+    the tab reconnect every few seconds, each retry a fresh fold and a flap of the front-end
+    claim. `ended` stays reserved for a durable MachineEnd.
+    """
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "MACHINE_POLL_S", 0.05)
@@ -1357,8 +1342,7 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
     assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
     capsys.readouterr()
     inst = state_dir(tmp_path) / "machines" / "tiny"
-    # Un-end the journal (drop the MachineEnd line): the machine reads as
-    # mid-state with no worker.
+    # Dropping the MachineEnd line makes the machine read as mid-state with no worker.
     journal = inst / "journal.jsonl"
     lines = journal.read_text(encoding="utf-8").splitlines()
     assert "end" in lines[-1]
@@ -1394,8 +1378,7 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
 
 
 def test_oversize_post_body_is_413(server: tuple[WebServer, int]) -> None:
-    # Headers only: the server refuses on Content-Length alone, before any body
-    # bytes arrive (actually streaming 1 MiB races the server's early close).
+    # Headers only: the refusal is on Content-Length alone, and streaming 1 MiB races the close.
     _srv, port = server
     conn = HTTPConnection("127.0.0.1", port, timeout=10)
     try:
@@ -1413,10 +1396,7 @@ def test_oversize_post_body_is_413(server: tuple[WebServer, int]) -> None:
 def test_prune_body_is_drained_so_keepalive_is_not_poisoned(
     server: tuple[WebServer, int],
 ) -> None:
-    # The client posts `{}` to prune. If the route does not read that body, the
-    # 2 bytes sit on the keep-alive socket and the next pipelined request line is
-    # parsed with them prepended -> 400 Bad Request. Pipeline prune + a GET on a
-    # single socket and require the GET to be answered cleanly.
+    # Pipeline prune and a GET on one socket: an undrained `{}` body would prepend to the GET line.
     _srv, port = server
     sock = socket.create_connection(("127.0.0.1", port), timeout=10)
     try:
@@ -1438,18 +1418,14 @@ def test_prune_body_is_drained_so_keepalive_is_not_poisoned(
         raw = b"".join(chunks)
     finally:
         sock.close()
-    # Both requests were answered (prune then GET), the GET returned the hub
-    # payload, and nothing was a 400 framing error: the prune body was drained.
-    # Undrained, the GET line would parse as `{}GET /api/hub...` -> 400 and no
-    # hub JSON.
+    # Both answered cleanly, so the prune body was drained; undrained, the GET would be a 400.
     assert raw.count(b"HTTP/1.1 ") == 2, raw
     assert b" 400 " not in raw, raw
     assert b'"sessions":' in raw, raw  # the GET /api/hub payload came back intact
 
 
 def test_negative_content_length_is_rejected(server: tuple[WebServer, int]) -> None:
-    # A negative Content-Length must not reach rfile.read(n) (which would read to
-    # EOF and park the worker); reject it up front.
+    # A negative Content-Length never reaches rfile.read(n), which would read to EOF and park.
     _srv, port = server
     status, body = _post_raw(
         port,
@@ -1462,8 +1438,7 @@ def test_negative_content_length_is_rejected(server: tuple[WebServer, int]) -> N
 
 
 def test_conflicting_content_lengths_are_rejected(server: tuple[WebServer, int]) -> None:
-    """Two lengths leave request framing ambiguous; the server must refuse
-    before one value makes bytes from the body parse as another request."""
+    """Two Content-Length values are refused before one makes body bytes parse as a request."""
     _srv, port = server
     sock = socket.create_connection(("127.0.0.1", port), timeout=10)
     try:
@@ -1483,8 +1458,7 @@ def test_conflicting_content_lengths_are_rejected(server: tuple[WebServer, int])
 
 
 def test_a_non_canonical_content_length_is_rejected(server: tuple[WebServer, int]) -> None:
-    """`int()` accepts `1_0`, `+2` and non-ASCII digits; a front proxy does
-    not, so the two would frame the body differently."""
+    """Content-Length is ASCII digits only; `int()` accepts what a front proxy does not."""
     _srv, port = server
     sock = socket.create_connection(("127.0.0.1", port), timeout=10)
     try:
@@ -1501,8 +1475,7 @@ def test_a_non_canonical_content_length_is_rejected(server: tuple[WebServer, int
 
 
 def test_a_get_with_a_body_is_refused(server: tuple[WebServer, int]) -> None:
-    """A GET body is never read, so on a keep-alive connection it would parse
-    as the next request."""
+    """A GET body is never read; on a keep-alive connection it would parse as the next request."""
     _srv, port = server
     sock = socket.create_connection(("127.0.0.1", port), timeout=10)
     try:
@@ -1519,8 +1492,7 @@ def test_a_get_with_a_body_is_refused(server: tuple[WebServer, int]) -> None:
 
 
 def test_chunked_post_body_is_refused(server: tuple[WebServer, int]) -> None:
-    # Only Content-Length bodies are read; a chunked body would sit unread on
-    # the connection exactly like an undrained early-error body.
+    # Only Content-Length bodies are read; a chunked body would sit unread like an error body.
     _srv, port = server
     status, body = _post_raw(
         port,
@@ -1535,9 +1507,7 @@ def test_chunked_post_body_is_refused(server: tuple[WebServer, int]) -> None:
 def test_unknown_post_verb_does_not_poison_keepalive(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    # A 404 that leaves the body undrained poisoned the keep-alive connection:
-    # the next request parsed the leftover body as its request line (probed
-    # garbage 400). The server now closes; the client reconnects cleanly.
+    # A 404 closes the connection, or the undrained body would parse as the next request line.
     _srv, port = server
     _make_run(tmp_path, "ka-run", [{"type": "session.start", "user_task": "x"}])
     conn = HTTPConnection("127.0.0.1", port, timeout=10)
@@ -1581,8 +1551,7 @@ def test_cross_origin_post_refused(server: tuple[WebServer, int], tmp_path: Path
 def test_non_json_content_type_post_refused(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "csrf2", "0000-review")
-    # A JSON body smuggled in as a CORS-simple text/plain request is refused,
-    # and the signal file is NOT written.
+    # A JSON body smuggled as a CORS-simple text/plain request is refused; the file is not written.
     status, _ = _post_raw(
         port,
         "/api/machine/csrf2/poke",
@@ -1617,11 +1586,13 @@ def test_same_origin_post_allowed(server: tuple[WebServer, int], tmp_path: Path)
 def test_machine_answer_for_a_state_the_machine_left_is_refused(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    """The client names the state it rendered the prompt from. Once the machine
-    has advanced, that execution reads no answer: the POST was allowed on the newest
-    execution's open prompt and the answer landed in the old dir, unread, while the
-    page read it as answered. A prompt id repeats across executions, so routing to
-    the newest instead would answer a different prompt."""
+    """The client names the state it rendered the prompt from.
+
+    Once the machine has advanced, that execution reads no answer: the POST was allowed on the
+    newest execution's open prompt and the answer landed in the old dir, unread, while the page read
+    it as answered. A prompt id repeats across executions, so routing to the newest instead would
+    answer a different prompt.
+    """
     _srv, port = server
     inst, old_state = _make_machine_with_state(tmp_path, "adv", "0001-work", running=True)
     new_state = inst / "states" / "0002-review"
@@ -1675,8 +1646,7 @@ def test_machine_answer_state_hint_traversal_is_contained(
 
 
 def test_config_suggest_endpoint(server: tuple[WebServer, int]) -> None:
-    # Best-effort value suggestions; an env with no providers suggests nothing
-    # but the endpoint always answers.
+    # Best-effort suggestions: an env with no providers suggests nothing, and the endpoint answers.
     _srv, port = server
     st, body, _ = _get(port, "/api/config/suggest/models.worker.provider")
     assert st == 200
@@ -1686,8 +1656,7 @@ def test_config_suggest_endpoint(server: tuple[WebServer, int]) -> None:
 def test_steer_compact_directive_routes_to_compact_request(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    """A composer `/compact <focus>` on a live run becomes a compact request
-    carrying the focus -- never a steer message the loop would read as text."""
+    """A composer `/compact <focus>` on a live run is a compact request carrying the focus."""
     _srv, port = server
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / "compact-run"
     session_dir.mkdir(parents=True)
@@ -1708,8 +1677,10 @@ def test_steer_compact_directive_routes_to_compact_request(
 def test_a_failed_frontend_claim_does_not_consume_the_first_viewer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A failed claim-file write must leave the viewer count untouched so the
-    next connection retries registration instead of silently skipping it."""
+    """A failed claim-file write leaves the viewer count untouched.
+
+    The next connection then retries registration instead of silently skipping it.
+    """
     import agent6.ui.web.server as server_mod
 
     session_dir = tmp_path / "run"
@@ -1735,11 +1706,10 @@ def test_a_failed_frontend_claim_does_not_consume_the_first_viewer(
 
 
 def test_client_disconnects_are_quiet(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """A client vanishing mid-request is routine (a browser sends RST on
-    navigate-away, reload, or an abandoned body), and it surfaces at the
-    request-line read, outside every handler try. The stdlib handle_error
-    printed a full traceback to stderr for each one; real handler errors
-    keep their report."""
+    """A client vanishing at the request-line read is routine and logs no traceback.
+
+    A browser sends RST on navigate-away or reload; real handler errors keep their report.
+    """
     srv = WebServer(("127.0.0.1", 0), tmp_path, "")
     try:
         for quiet_exc in (ConnectionResetError(104, "reset by peer"), BrokenPipeError()):
@@ -1760,9 +1730,7 @@ def test_client_disconnects_are_quiet(tmp_path: Path, capsys: pytest.CaptureFixt
 def test_steer_btw_opens_a_side_ask(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`/btw <question>` from the web composer opens the side ask (the CLI
-    menu's mechanism, shared) instead of steering the run; a bare `/btw` is
-    refused with what to type."""
+    """`/btw <question>` from the web composer opens the side ask; a bare `/btw` is refused."""
     import agent6.ui.btw as btw_mod
 
     _srv, port = server
@@ -1823,9 +1791,10 @@ def _git_chain(repo: Path) -> tuple[str, str, str]:
 def test_step_diff_serves_one_step_or_the_cumulative_chain(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    """The diff card's step selector reads `/diff?sha=`: one step's own patch,
-    or `base..sha` with `cumulative=1`; a run the model controls has no chain
-    and is refused, as is a sha that is not one of its commits."""
+    """The diff card reads `/diff?sha=`: one step's patch, or `base..sha` with `cumulative=1`.
+
+    A run the model controls has no chain and is refused, as is a sha not among its commits.
+    """
     _srv, port = server
     base, c1, c2 = _git_chain(tmp_path)
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / "steps-run"
@@ -1854,9 +1823,10 @@ def test_step_diff_serves_one_step_or_the_cumulative_chain(
 
 
 def test_session_snapshot_as_of_a_step(server: tuple[WebServer, int], tmp_path: Path) -> None:
-    """`?step=<sha>` folds the log up to that commit (the Budget and Task graph
-    widgets follow the step picked in the Latest commit card) and stamps
-    `as_of`; a sha the run never made is refused."""
+    """`?step=<sha>` folds the log up to that commit and stamps `as_of`.
+
+    A sha the run never made is refused.
+    """
     _srv, port = server
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / "asof-run"
     session_dir.mkdir(parents=True)
@@ -1880,8 +1850,7 @@ def test_session_snapshot_as_of_a_step(server: tuple[WebServer, int], tmp_path: 
 
 
 def test_a_malformed_body_is_the_clients_error(server: tuple[WebServer, int]) -> None:
-    """A body that is not JSON, or not an object, is a 400 with the reason,
-    never a 500."""
+    """A body that is not JSON, or not an object, is a 400 with the reason, never a 500."""
     _srv, port = server
     headers = {"Content-Type": "application/json"}
     status, body = _post_raw(port, "/api/new", b"not json", headers)
@@ -1893,8 +1862,7 @@ def test_a_malformed_body_is_the_clients_error(server: tuple[WebServer, int]) ->
 def test_prune_route_passes_the_squash_opt_in_through(
     server: tuple[WebServer, int], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The button's checkbox has to reach the CLI flag, or the web can never
-    prune what the default merge strategy leaves behind."""
+    """The prune button's checkbox reaches the CLI flag."""
     from agent6.ui.web import actions as web_actions
 
     seen: list[bool] = []
@@ -1913,9 +1881,7 @@ def test_prune_route_passes_the_squash_opt_in_through(
 
 
 def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: Path) -> None:
-    """Only `session_snapshot` stamped `shells`, and the run view streams from
-    `session_state_as_dict`: the first frame after the snapshot paint wiped the
-    Background shells card, and `/shells` then said there were none."""
+    """The run stream's frames stamp `shells`, so the Background shells card survives them."""
     from agent6.tools.background import SHELLS_DIR
     from agent6.ui.web._sse import SseChannel, stream_session
 
@@ -1950,10 +1916,10 @@ def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: Path) -> None
 
 
 def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: Path) -> None:
-    """The header was read once per connection, so a merge landing after
-    session.end (the run's own auto-merge, or any surface's) never reached an
-    open page: its branch line and Merge button kept the pre-merge answer. The
-    finished heartbeat now pushes the refreshed header once it changes."""
+    """The finished heartbeat pushes a refreshed header when a merge lands after session.end.
+
+    Read once per connection, the branch line and Merge button kept the pre-merge answer.
+    """
     import threading
 
     from agent6.sessions.layout import SessionLayout
@@ -2017,9 +1983,7 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: Path) -> Non
 
 
 def test_the_step_picker_fetches_through_the_base_it_was_rendered_with() -> None:
-    """A machine-create draft renders through `/api/draft/<name>`, and its
-    drafting execution commits, so the picker paints; both of its fetches hardcoded
-    `/api/session/`, and every selection read "no session '<name>'"."""
+    """A machine-create draft's fetches go through `/api/draft/<name>`."""
     from agent6.ui.web.page import CLIENT_JS
 
     start = CLIENT_JS.index("function paintRun(")
@@ -2056,9 +2020,7 @@ def test_the_draft_route_serves_what_the_step_picker_asks_for(
 def test_the_web_names_a_crashed_run_where_it_paints_no_conversation(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    """A crashed run and a never-started one both read "this session made no
-    conversation" on the web, where the CLI and the TUI name the crash; the
-    read model words a dead run once and the page renders that."""
+    """The web names a crashed run and a never-started one as the CLI and the TUI do."""
     from agent6.ui.web.page import CLIENT_JS
 
     _, port = server
@@ -2076,9 +2038,7 @@ def test_the_web_names_a_crashed_run_where_it_paints_no_conversation(
 def test_a_content_length_that_is_not_a_number_closes_the_connection(
     server: tuple[WebServer, int],
 ) -> None:
-    """`int()` raised before the body was read, and the ValueError handler
-    (written for a body already consumed) kept the connection open: the
-    unread body parsed as the next request line (a 501 for a pipelined GET)."""
+    """A bad Content-Length closes the connection, so the unread body is never a request."""
     _srv, port = server
     sock = socket.create_connection(("127.0.0.1", port), timeout=10)
     try:
@@ -2105,8 +2065,10 @@ def test_a_content_length_that_is_not_a_number_closes_the_connection(
 def test_a_stream_header_error_does_not_start_an_orphaned_tailer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The fallible manifest read must finish before the background log tailer
-    starts, or a header error leaves that daemon following the file forever."""
+    """The manifest read finishes before the log tailer starts.
+
+    A header error would otherwise leave that daemon following the file forever.
+    """
     from agent6.ui.web import _sse
 
     started: list[bool] = []
@@ -2121,8 +2083,7 @@ def test_a_stream_header_error_does_not_start_an_orphaned_tailer(
     def boom(*_args: object, **_kwargs: object) -> object:
         raise RuntimeError("bad manifest")
 
-    # The module's own binding, never the stdlib's: patching `threading.Thread`
-    # would replace every thread another component starts meanwhile.
+    # The module's own binding: patching `threading.Thread` would replace every other thread too.
     monkeypatch.setattr(
         _sse, "threading", SimpleNamespace(Thread=FakeThread, Event=threading.Event)
     )
@@ -2138,9 +2099,7 @@ def test_a_stream_header_error_does_not_start_an_orphaned_tailer(
 def test_an_error_after_the_sse_headers_is_a_frame_not_a_second_status_line(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A stream that raised after `_begin_sse` fell into the GET handler's
-    500 path, which wrote a second status line into the event body; the
-    client saw a generic network error and no reason."""
+    """A stream that raises after `_begin_sse` reports its reason in the event body, not a 500."""
     from agent6.ui.web import _sse
 
     def boom(*_a: object, **_k: object) -> object:
@@ -2162,8 +2121,7 @@ def test_an_error_after_the_sse_headers_is_a_frame_not_a_second_status_line(
 
 
 def test_the_machine_stream_error_frame_is_typed_like_the_run_streams(tmp_path: Path) -> None:
-    """The machine stream sent `{"error": ...}` while the run stream sends
-    `{"type": "error", "error": ...}`: one frame shape, read by both pages."""
+    """The machine stream's error frame has the run stream's shape."""
     from agent6.ui.web._sse import SseChannel, stream_machine
 
     sent: list[Any] = []
@@ -2176,9 +2134,11 @@ def test_the_machine_stream_error_frame_is_typed_like_the_run_streams(tmp_path: 
 def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The CLI has `fork` and the TUI Run > Fork; the web run view had only
-    /undo. The verb forks through the same lifecycle call and answers with the
-    new session's id, which the page opens so its composer can start it."""
+    """The CLI has `fork` and the TUI Run > Fork; the web run view had only /undo.
+
+    The verb forks through the same lifecycle call and answers with the new session's id, which the
+    page opens so its composer can start it.
+    """
     from agent6.ui.web import actions
 
     _srv, port = server
@@ -2199,10 +2159,10 @@ def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
 
 
 def test_the_config_page_adds_a_provider_block(server: tuple[WebServer, int]) -> None:
-    """The TUI's config page has an add-provider form; the web could only
-    edit leaves that already existed, so a `[providers.<name>]` block could not
-    be created from a browser. One POST writes the block through the
-    same writer, and the choices endpoint serves the form its fixed values."""
+    """The web creates a `[providers.<name>]` block through one POST, as the TUI's form does.
+
+    The choices endpoint serves the form its fixed values.
+    """
     _srv, port = server
     status, body, _ = _get(port, "/api/config/provider_choices")
     assert status == 200
@@ -2223,9 +2183,7 @@ def test_the_config_page_adds_a_provider_block(server: tuple[WebServer, int]) ->
 
 
 def test_re_adding_a_provider_keeps_its_other_keys(server: tuple[WebServer, int]) -> None:
-    """The add-provider form over a name that exists updates the block as the
-    TUI's does: a base_url set earlier survives a later POST that omits it. A
-    whole-block replace dropped every key the second form left blank."""
+    """The add-provider form over an existing name updates the block, keeping keys it omits."""
     _srv, port = server
     status, data = _post(
         port,
@@ -2248,11 +2206,11 @@ def test_re_adding_a_provider_keeps_its_other_keys(server: tuple[WebServer, int]
 def test_routes_payload_lists_every_route_and_the_modes_default(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`/api/routes?mode=&preset=` feeds the composer's model box: every
-    provider/model the config can run and the label naming the one the mode
-    runs under the preset (a preset that swaps the worker model moves the
-    default); an unknown mode is refused. The hub names the config's preset,
-    and a run's resume row what a resume without flags runs under."""
+    """`/api/routes?mode=&preset=` feeds the composer's model box.
+
+    Every route the config can run and the label naming the one the mode runs under the preset;
+    an unknown mode is refused. The hub names the config's preset.
+    """
     _srv, port = server
     xdg = tmp_path / "xdg-config"
     (xdg / "agent6").mkdir(parents=True)
@@ -2324,9 +2282,7 @@ def test_new_work_carries_the_picked_model(
 def test_review_answers_with_the_cli_review_of_a_finished_run(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The CLI has `sessions review` and the TUI Run > Review this run…; the
-    web verb runs the same CLI and answers with its markdown, or with the
-    CLI's refusal (a live run, no reviewer route)."""
+    """The web review verb runs `sessions review` and answers with its markdown or refusal."""
     from agent6.ui.web import actions
 
     _srv, port = server

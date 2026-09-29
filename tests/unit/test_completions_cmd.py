@@ -16,8 +16,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     monkeypatch.delenv("ZDOTDIR", raising=False)
-    # Point the process-tree walk at an empty dir so detection falls back to
-    # $SHELL deterministically (the real tree ends in whatever shell runs pytest).
+    # The process-tree walk points at an empty dir, so detection falls back to $SHELL.
     monkeypatch.setattr("agent6.ui.cli.completions_cmd._PROC", tmp_path / "no-proc")
     return tmp_path
 
@@ -46,13 +45,11 @@ def test_bash_install_is_idempotent(capsys: pytest.CaptureFixture[str], home: Pa
 def test_bash_block_does_not_execute_a_path_with_shell_metacharacters(
     home: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The script path is serialized into rc text the operator's shell sources,
-    so a `$(...)` in XDG_CONFIG_HOME must be inert on source, not executed."""
+    """A `$(...)` in XDG_CONFIG_HOME is inert in the rc text the operator's shell sources."""
     import shlex
     import subprocess
 
-    # A config dir whose name is a command substitution (no slash, so it stays
-    # one path component); if it executes on source it creates PWNED in cwd.
+    # A config dir named by a command substitution; executed on source it creates PWNED in cwd.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "$(touch PWNED)" / "agent6"))
     assert cmd_completions("bash", print_only=False) == 0
     rc = home / ".bashrc"
@@ -104,16 +101,14 @@ def test_xonsh_writes_autoloaded_completer(home: Path, capsys: pytest.CaptureFix
     assert cmd_completions("xonsh", print_only=False) == 0
     target = home / ".config" / "xonsh" / "rc.d" / "agent6.xsh"
     code = target.read_text(encoding="utf-8")
-    # The completer drives the argcomplete protocol against the live agent6,
-    # so the file must parse as Python and set the protocol request.
+    # The completer drives the argcomplete protocol against the live agent6, so the file must parse.
     import ast
 
     ast.parse(code)
     assert "_ARGCOMPLETE_STDOUT_FILENAME" in code
     assert "COMP_LINE" in code
     assert 'add_one_completer("agent6"' in code
-    # Candidates with shell-hostile characters are quoted before insertion,
-    # and a missing/hung agent6 yields no candidates instead of a traceback.
+    # Shell-hostile candidates are quoted; a missing or hung agent6 yields no candidates.
     assert "shlex.quote" in code
     assert "TimeoutExpired" in code
     out = capsys.readouterr().out
@@ -135,9 +130,7 @@ def test_xonsh_detected_in_process_walk(home: Path, monkeypatch: pytest.MonkeyPa
 
 
 def test_detects_shell_from_process_tree(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """$SHELL is the login shell, not the running one (a fish started from
-    bash keeps $SHELL=bash). The walk returns the nearest shell ancestor,
-    skipping non-shell wrappers like uv."""
+    """The shell is the nearest shell ancestor in the process tree, not $SHELL (the login shell)."""
     proc = home / "proc"
     # the parent chain: agent6 under uv (50), under fish (40), under bash (30), under init
     for pid, comm, ppid in ((50, "uv", 40), (40, "fish", 30), (30, "bash", 1)):
@@ -154,9 +147,7 @@ def test_detects_shell_from_process_tree(home: Path, monkeypatch: pytest.MonkeyP
 def test_bash_install_refuses_an_unreadable_rc(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The installer reads the rc to decide whether the source block is already
-    there; an unreadable rc is the operator's file, so it refuses through the
-    boundary instead of crash-reporting (and never appends blind)."""
+    """Bash install refuses an unreadable rc through the boundary and never appends blind."""
     from agent6.errors import OperatorError
 
     rc = home / ".bashrc"
@@ -173,9 +164,10 @@ def test_bash_install_refuses_an_unreadable_rc(
 def test_a_moved_config_home_updates_the_stale_source_block(
     home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """After the config home moves, install saw its marker and printed
-    "already sourced" while the block kept pointing at the OLD script path:
-    success reported, completions still broken."""
+    """After the config home moves, install rewrites the stale source block.
+
+    "Already sourced" over a block naming the old script path would leave completions broken.
+    """
     assert cmd_completions("bash", print_only=False) == 0
     rc = home / ".bashrc"
     old_block = rc.read_text(encoding="utf-8")
@@ -193,8 +185,7 @@ def test_a_moved_config_home_updates_the_stale_source_block(
 def test_malformed_completion_markers_are_refused_untouched(
     home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """agent6 edits only its ONE owned marker block; a duplicated or mangled
-    set is the operator's to fix, never silently rewritten."""
+    """A duplicated or mangled marker set is refused untouched; agent6 edits only its one block."""
     rc = home / ".bashrc"
     rc.write_text(
         "# >>> agent6 completions >>>\nx\n# <<< agent6 completions <<<\n"

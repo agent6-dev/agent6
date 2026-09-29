@@ -19,10 +19,7 @@ from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 def test_an_unusable_launcher_binary_is_refused_with_the_remedy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The launcher's Popen raised its bare OSError (Exec format error for a
-    build of another architecture, Permission denied for a missing exec bit),
-    so `agent6 check`, the run preflight and every command tool crashed with a
-    traceback instead of naming the binary and how to replace it."""
+    """An unexecutable launcher binary is named in a refusal, not a bare OSError."""
     fake = tmp_path / "agent6-jail"
     fake.write_text("#!/bin/sh\n", encoding="utf-8")
     fake.chmod(0o644)
@@ -38,11 +35,11 @@ def test_an_unusable_launcher_binary_is_refused_with_the_remedy(
 def test_a_fork_or_descriptor_failure_is_not_blamed_on_the_binary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every OSError of the spawn read "cannot be executed ... reinstall":
-    EAGAIN (fork), EMFILE (pipes) and ENOMEM got a remedy for a binary that
-    was fine, and through the cached strict probe a transient fork failure at
-    startup resolved `auto` to hardened for the whole run. Only ENOEXEC and
-    EACCES speak about the binary; the rest pass through unchanged."""
+    """Only ENOEXEC and EACCES speak about the binary; EAGAIN, EMFILE and ENOMEM pass through.
+
+    Through the cached strict probe, a transient fork failure at startup would resolve `auto` for
+    the whole run.
+    """
     fake = tmp_path / "agent6-jail"
     fake.write_text("#!/bin/sh\n", encoding="utf-8")
     fake.chmod(0o755)

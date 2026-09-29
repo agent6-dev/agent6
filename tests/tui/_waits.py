@@ -36,8 +36,10 @@ async def wait_for(
     pump: Callable[[], None] | None = None,
     timeout: float = TIMEOUT_S,
 ) -> None:
-    """Wait until *cond* holds, failing by name at the deadline. *pump* drives
-    whatever the condition waits on (a host tick, a screen poll) each pass."""
+    """Wait until the condition holds, failing by name at the deadline.
+
+    `pump` drives whatever the condition waits on (a host tick, a screen poll) each pass.
+    """
     deadline = time.monotonic() + timeout
     while not cond():
         assert time.monotonic() < deadline, f"timed out waiting for {what}"
@@ -47,16 +49,19 @@ async def wait_for(
 
 
 def answerable(view: Any) -> bool:
-    """Whether *view*'s approval row can take an answer: mounted, labels and
-    all. `query(ApprovalRow)` alone is true a frame earlier."""
+    """Whether *view*'s approval row can take an answer: mounted, labels and all.
+
+    `query(ApprovalRow)` alone is true a frame earlier.
+    """
     rows = view.query(ApprovalRow)
     return bool(rows) and bool(rows.first().query(".answer-yes"))
 
 
 async def focus_answers(view: Any, pilot: Any, timeout: float = TIMEOUT_S) -> None:
     """Put the focus on the row's first answer and wait until it holds there.
-    A focus that lands on nothing leaves the composer focused, where the answer
-    keys are text."""
+
+    A focus that lands on nothing leaves the composer focused, where the answer keys are text.
+    """
 
     def holds() -> bool:
         rows = view.query(ApprovalRow)
@@ -73,9 +78,10 @@ async def focus_answers(view: Any, pilot: Any, timeout: float = TIMEOUT_S) -> No
 async def row_gone(
     view: Any, pilot: Any, pump: Callable[[], None] | None = None, timeout: float = TIMEOUT_S
 ) -> bool:
-    """Whether the row has unmounted, which follows an answer a tick later.
-    *pump* feeds the fold each pass, for a withdrawal that waits on an event the
-    screen has yet to read."""
+    """Return whether the row has unmounted, which follows an answer a tick later.
+
+    `pump` feeds the fold each pass, for a withdrawal that waits on an unread event.
+    """
     deadline = time.monotonic() + timeout
     while view.query(ApprovalRow):
         if time.monotonic() >= deadline:
@@ -89,13 +95,13 @@ async def row_gone(
 async def answer_written(
     run: Path, pilot: Any, name: str = "ap1", timeout: float = TIMEOUT_S
 ) -> str:
-    """The answer file's text once the click's or key's answer has landed
-    through the host.
+    """The answer file's text once the click's or key's answer has landed through the host.
 
     Three paths answer nothing and leave no file: a key a text field kept or
     that reached no row, a screen holding no open approval, and a host that
     reads dead. The wait ends in which of them it was, since the file's absence
-    alone names none."""
+    alone names none.
+    """
     path = run / "approvals" / f"{name}.answer"
     deadline = time.monotonic() + timeout
     while not path.exists():

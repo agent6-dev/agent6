@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""`ui.spawn.spawn_new_work`: the one start every hub (TUI, web) makes for a
-new run / plan / ask, its argv, its `/parallel` fan-out, and its refusals."""
+"""`ui.spawn.spawn_new_work`, the one start every hub makes for a new run, plan or ask.
+
+Its argv, its `/parallel` fan-out and its refusals.
+"""
 
 from __future__ import annotations
 
@@ -27,8 +29,7 @@ def _capture_locate(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
 def test_argv_ends_options_before_task_and_carries_the_preset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`agent6 <mode> [--preset P] -- <task>`: a task that looks like a flag rides
-    behind `--`; the "(config default)" choice (preset="") adds no flag."""
+    """A task that looks like a flag rides behind `--`; the config-default preset adds no flag."""
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "run", "--allow-root pwn", preset="quick")
     assert captured[-1][1:] == ["run", "--preset", "quick", "--", "--allow-root pwn"]
@@ -52,9 +53,7 @@ def test_unknown_mode_and_empty_task_are_refused(
 
 
 def test_detached_env_streams_and_waits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The child streams its reasoning to logs.jsonl (a live view renders it)
-    and its approvals / questions wait for a front-end; the rest of the
-    environment (PATH) is inherited."""
+    """The child streams to logs.jsonl and its prompts wait for a front-end; PATH is inherited."""
     captured_env: dict[str, str] = {}
 
     class _FakeProc:
@@ -87,8 +86,7 @@ def test_parallel_lane_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
 
 def _configure_worker() -> None:
-    """A worker route in the global config, so a lane's bare model id has a
-    provider to run on."""
+    """A worker route in the global config, so a lane's bare model id has a provider to run on."""
     from agent6.paths import global_config_dir
 
     cfg_home = global_config_dir()
@@ -172,8 +170,7 @@ def test_parallel_refuses_unknown_model_before_spawn(
 def test_parallel_validation_uses_the_picked_model_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A hub model pick changes the worker provider before a `/parallel`
-    segment's model ids are checked, as it does in the spawned CLI child."""
+    """A hub model pick changes the worker provider before a `/parallel` segment is checked."""
     from agent6.config import Config
     from agent6.models import validate as models_validate
 
@@ -262,8 +259,7 @@ def test_parallel_multi_segment_spawns_one_fanout_per_segment(
 def test_parallel_partial_spawn_failure_surfaces(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One lane failing to spawn fails the whole message: the surfaces open
-    the run XOR show the error, so a swallowed failure must not navigate."""
+    """One lane failing to spawn fails the whole message: open the run or show the error."""
 
     def fake_spawn(
         cwd: Path,
@@ -315,8 +311,7 @@ def test_multi_segment_malformed_spawns_nothing(
 def test_a_busy_checkout_is_refused_at_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A run into a checkout another run is driving would park after the
-    locate wait; the hub says so at once instead (plan/ask spawn freely)."""
+    """A run into a checkout another run is driving is refused at once; plan and ask spawn."""
     captured = _capture_locate(monkeypatch)
 
     def _held(_state: Path, _checkout: Path) -> bool:
@@ -337,10 +332,10 @@ def test_a_busy_checkout_is_refused_at_once(
 def test_detached_resume_refuses_a_malformed_steer_before_spawning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A composer's continue on a finished run rides a detached `resume
-    --steer`; a bare `/pin` (a `/parallel` with no task) is refused HERE, with
-    the message the child would print to a stdio nobody reads while the
-    composer says "resuming"."""
+    """A bare `/pin` on a finished run is refused here, with the child's message.
+
+    The continue rides a detached `resume --steer` whose stdio nobody reads.
+    """
 
     def _must_not_spawn(*_a: object, **_k: object) -> object:
         pytest.fail("nothing may be spawned for a malformed steer")
@@ -354,8 +349,10 @@ def test_detached_resume_refuses_a_malformed_steer_before_spawning(
 
 
 def test_a_timeout_says_what_it_knows(tmp_path: Path) -> None:
-    """A child still starting after the wait is not known to have failed: a
-    slow resume preflight read as "has not started" while the run went on."""
+    """A child still starting after the wait is not known to have failed.
+
+    A slow resume preflight read as "has not started" while the run went on.
+    """
     err = spawn.spawn_and_confirm(
         ["sleep", "3"], tmp_path, started=lambda pid: False, timeout_s=0.5
     )
@@ -363,8 +360,7 @@ def test_a_timeout_says_what_it_knows(tmp_path: Path) -> None:
 
 
 def test_argv_carries_the_model_route(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The picker's route rides as `--model`, after the preset and before the
-    `--`; every /parallel lane gets it too."""
+    """The picker's route rides as `--model` after the preset, on every /parallel lane too."""
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "plan", "t", preset="quick", model="o/m")
     assert captured[-1][1:] == ["plan", "--preset", "quick", "--model", "o/m", "--", "t"]
@@ -375,9 +371,10 @@ def test_argv_carries_the_model_route(tmp_path: Path, monkeypatch: pytest.Monkey
 def test_a_composer_command_as_the_task_is_refused_before_any_spawn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The new-work box takes a task, not a composer command: `/task` typed
-    there is named before a run starts, since the child's own refusal would
-    land on a detached process nobody reads."""
+    """`/task` typed in the new-work box is named before a run starts.
+
+    The child's own refusal would land on a detached process nobody reads.
+    """
     captured = _capture_locate(monkeypatch)
 
     session_dir, err = spawn.spawn_new_work(tmp_path, "run", "/task fix the parser")

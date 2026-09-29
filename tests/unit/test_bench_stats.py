@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Validate the pure-Python statistics in bench/sweep/stats.py against known
-reference values, so the benchmark's numbers are trustworthy."""
+"""The pure-Python statistics in bench/sweep/stats.py against known reference values."""
 
 from __future__ import annotations
 
@@ -66,8 +65,7 @@ def test_effective_cost_derives_for_unpriced_anthropic_only() -> None:
         "output_tokens": 1_000_000,
     }
     assert abs(stats.effective_cost(opus) - 30.0) < 1e-6
-    # A measured cost is preferred over derivation: same priced slug and
-    # tokens as above (derivation would say $30), but the measured $0.05 wins.
+    # A measured cost wins over derivation: derivation would say $30, the measured $0.05 stands.
     measured = dict(opus, cost_usd=0.05)
     assert stats.effective_cost(measured) == 0.05
     # Unknown unpriced model stays at its measured (0) cost, not invented.

@@ -53,23 +53,23 @@ def test_an_unknown_id_resolves_to_nothing(tmp_path: Path) -> None:
 
 
 def test_ask_is_a_mode_resume_and_fork_may_act_on(tmp_path: Path) -> None:
-    """The privilege gate refused "ask" outright, so an ask was a dead end: no
-    resume, no fork. It is LESS privileged than plan, not unknown."""
+    """The ask mode passes the privilege gate as less privileged than plan.
+
+    Resume and fork act on it.
+    """
     d = _session(tmp_path, "asks", "quiet-fox-AAAAAA", "ask")
     assert read_manifest(d).session_mode() == "ask"
 
 
 def test_an_unknown_mode_is_still_refused(tmp_path: Path) -> None:
-    """The gate's whole point: a damaged manifest must not fall open to the
-    privileged write mode."""
+    """A damaged manifest must not fall open to the privileged write mode."""
     d = _session(tmp_path, "asks", "odd-AAAAAA", "wat")
     with pytest.raises(ManifestError, match="unknown session mode"):
         read_manifest(d).session_mode()
 
 
 def test_a_resumed_ask_is_still_clamped() -> None:
-    """The clamp lives with the mode, not with one lifecycle, so continuing an
-    ask cannot hand it the auto-approval a fresh one never had."""
+    """A resumed ask is still clamped: the clamp lives with the mode, not one lifecycle."""
     from agent6.app._setup import session_config
 
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
@@ -78,8 +78,7 @@ def test_a_resumed_ask_is_still_clamped() -> None:
 
 
 def test_a_run_can_be_seeded_from_an_ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The direction the operator asked for: work something out in an ask, then run it.
-    The ask is untouched -- seeding starts a NEW session, unlike fork."""
+    """A run can be seeded from an ask; the ask is untouched, since seeding starts a new session."""
     import json
 
     from agent6.config import Config

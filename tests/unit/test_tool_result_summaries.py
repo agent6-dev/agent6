@@ -234,8 +234,7 @@ def test_summary_string_is_pinned(result: ToolResult, expected: str) -> None:
 
 
 def test_base_summary_fallback_is_ok() -> None:
-    """A result type that does not override summary() reports the generic "ok"
-    (the sniffer's fallback: echoing the tool name doubled the name column)."""
+    """A result type without its own summary() reports "ok", not the tool name doubled."""
 
     class _Minimal(ToolResult):
         def to_wire(self) -> dict[str, Any]:
@@ -249,7 +248,8 @@ def test_every_concrete_result_type_is_pinned() -> None:
 
     Compares by class NAME over the module's own namespace (not
     ``__subclasses__``, which under the test import layout lists each class
-    twice with distinct identities)."""
+    twice with distinct identities).
+    """
     concrete = {
         name
         for name, obj in vars(results_mod).items()

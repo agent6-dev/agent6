@@ -2,16 +2,14 @@
 # Copyright 2026 Eric Lesiuta
 """The in-process file boundary (`Workspace`).
 
-`sandbox.hide_paths` was wired only into the jail policy, so the tools -- which
-run IN-PROCESS, outside the jail, and ask no approval -- bypassed it: `read_file`
-returned a hidden secret, `list_dir` showed it, and `apply_edit` WROTE into one.
-With a workspace root containing agent6's own config dir (root=$HOME) that
-extended to `secrets.toml` and to `config.toml`, whose next load sets isolation
-and run_commands -- cross-run loosening by persistence.
-
-The tools are the front door of the file axis and the jail is the fence, so the
-boundary is derived from config VALUES and holds at EVERY isolation level: a
-degradation (auto falling back, macOS having no jail) must never widen it.
+The tools run in-process, outside the jail, and ask no approval, so `sandbox.hide_paths`
+binds them as it binds the jail policy: `read_file` never returns a hidden secret,
+`list_dir` never shows it, `apply_edit` never writes into one. With a workspace root
+containing agent6's own config dir (root=$HOME) that covers `secrets.toml` and
+`config.toml`, whose next load sets isolation and run_commands. The tools are the front
+door of the file axis and the jail is the fence, so the boundary is derived from config
+values and holds at every isolation level: a degradation (auto falling back, macOS having
+no jail) never widens it.
 """
 
 from __future__ import annotations
@@ -51,8 +49,10 @@ def test_read_file_refuses_a_hidden_path(tmp_path: Path) -> None:
 
 
 def test_list_dir_hides_the_entry_but_says_how_many(tmp_path: Path) -> None:
-    """Filtered, not named: the listing stays true ("something is hidden")
-    without disclosing what, and the model stops probing."""
+    """Filtered, not named: the listing stays true without disclosing what is hidden.
+
+    "Something is hidden" is enough, and the model stops probing.
+    """
     (tmp_path / ".env").write_text(_SECRET, encoding="utf-8")
     (tmp_path / "main.py").write_text("x = 1\n", encoding="utf-8")
     out = _dispatch(tmp_path, _hiding(tmp_path, ".env"), "list_dir", {"path": "."})
@@ -68,8 +68,11 @@ def test_list_dir_omits_the_count_when_nothing_is_hidden(tmp_path: Path) -> None
 
 
 def test_apply_edit_refuses_to_write_a_hidden_path(tmp_path: Path) -> None:
-    """The write half: refusing the read while allowing the write would leave
-    the model able to plant content in a path the operator hid."""
+    """The write half: a hidden path cannot be written either.
+
+    Refusing the read while allowing the write would let the model plant content in a path
+    the operator hid.
+    """
     secret = tmp_path / ".env"
     secret.write_text(_SECRET, encoding="utf-8")
     with pytest.raises(ToolError, match="hidden from this run"):
@@ -89,8 +92,7 @@ def test_a_normal_path_is_untouched(tmp_path: Path) -> None:
 
 
 def test_a_hidden_file_never_reaches_the_symbol_index(tmp_path: Path) -> None:
-    """find_definition would otherwise leak the symbol NAMES and line numbers
-    of a file nothing is allowed to read."""
+    """find_definition does not leak the symbol names and line numbers of an unreadable file."""
     (tmp_path / "secrets.py").write_text("def leaked_symbol():\n    pass\n", encoding="utf-8")
     (tmp_path / "main.py").write_text("def public_symbol():\n    pass\n", encoding="utf-8")
     cfg = _hiding(tmp_path, "secrets.py")
@@ -102,9 +104,10 @@ def test_a_hidden_file_never_reaches_the_symbol_index(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("isolation", ["strict", "hardened", "none"])
 def test_the_boundary_holds_at_every_isolation_level(tmp_path: Path, isolation: str) -> None:
-    """The rule: config VALUES define the boundary, never the isolation level.
-    `none` has no jail at all (and is what macOS resolves to), so a boundary
-    that tracked the level would vanish exactly where it is the only one left.
+    """Config values define the boundary, never the isolation level.
+
+    `none` has no jail at all (and is what macOS resolves to), so a boundary that tracked
+    the level would vanish exactly where it is the only one left.
     """
     (tmp_path / ".env").write_text(_SECRET, encoding="utf-8")
     d = _dispatcher(tmp_path, _hiding(tmp_path, ".env"), isolation)
@@ -118,9 +121,11 @@ def test_the_boundary_holds_at_every_isolation_level(tmp_path: Path, isolation: 
 def test_agent6s_own_secrets_are_denied_when_the_workspace_contains_them(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A workspace root that CONTAINS the config dir (root=$HOME) put
-    `secrets.toml` -- provider keys -- inside the tree the tools may reach, with
-    no hide_paths entry naming it. The builtin private dirs are denied too."""
+    """The builtin private dirs are denied under a workspace root that contains the config dir.
+
+    root=$HOME would put `secrets.toml`, the provider keys, inside the tree the tools may
+    reach with no hide_paths entry naming it.
+    """
     root = tmp_path / "home"
     root.mkdir()
     monkeypatch.setenv("XDG_CONFIG_HOME", str(root / ".config"))
@@ -136,8 +141,10 @@ def test_agent6s_own_secrets_are_denied_when_the_workspace_contains_them(
 def test_the_config_a_later_run_loads_cannot_be_written(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Persistence, not just disclosure: editing `~/.config/agent6/config.toml`
-    sets `isolation` / `run_commands` for the NEXT run."""
+    """Persistence, not just disclosure.
+
+    Editing `~/.config/agent6/config.toml` sets `isolation` / `run_commands` for the next run.
+    """
     root = tmp_path / "home"
     root.mkdir()
     monkeypatch.setenv("XDG_CONFIG_HOME", str(root / ".config"))
@@ -163,8 +170,10 @@ def test_the_config_a_later_run_loads_cannot_be_written(
 def test_a_workspace_inside_a_private_dir_refuses_at_preflight(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every tool call would refuse, so the run is told why up front instead of
-    failing on every path. One exactly-known case, not an enumeration."""
+    """A run every tool call would refuse is told why up front.
+
+    One exactly-known case, not an enumeration.
+    """
     from agent6.app.confine import check_workspace_outside_private_dirs
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -182,10 +191,11 @@ def test_a_workspace_inside_a_private_dir_refuses_at_preflight(
 def test_a_state_dir_inside_the_workspace_refuses_at_preflight(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A state base relocated INSIDE the workspace (`XDG_STATE_HOME` pointing
-    into it) exposes transcripts and keys to jailed commands and stages them
-    into commits, so preflight refuses the overlap in this direction too
-    (masking alone does not stop the auto-commit from staging them)."""
+    """Preflight refuses a state base relocated inside the workspace.
+
+    `XDG_STATE_HOME` pointing into it exposes transcripts and keys to jailed commands and
+    stages them into commits; masking alone does not stop the auto-commit from staging them.
+    """
     from agent6.app.confine import check_workspace_outside_private_dirs
 
     workspace = tmp_path / "project"
@@ -209,8 +219,10 @@ def _granting(read: Path | None = None, write: Path | None = None) -> Config:
 
 
 def test_an_absolute_path_inside_a_grant_is_readable(tmp_path: Path) -> None:
-    """The tools reach the trees the jail mounts for commands. An absolute path
-    is the only way to name one, so grants would otherwise be unreachable."""
+    """The tools reach the trees the jail mounts for commands, by absolute path.
+
+    An absolute path is the only way to name one, so grants would otherwise be unreachable.
+    """
     root = tmp_path / "repo"
     root.mkdir()
     sdk = tmp_path / "sdk"
@@ -271,8 +283,10 @@ def test_a_write_grant_is_writable_and_readable(tmp_path: Path) -> None:
 
 
 def test_denied_beats_a_grant(tmp_path: Path) -> None:
-    """A hide inside a granted region wins: the same precedence the jail uses
-    when it masks a hidden path out of a broader mount."""
+    """A hide inside a granted region wins.
+
+    The same precedence the jail uses when it masks a hidden path out of a broader mount.
+    """
     root = tmp_path / "repo"
     root.mkdir()
     granted = tmp_path / "granted"
@@ -300,10 +314,12 @@ def _hide_on_hardened(root: Path, path: str, extra: dict[str, object] | None = N
 def test_hide_paths_refuses_the_launcher_grant_regions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The preflight built its region set from cwd + the extra grants only,
-    while the launcher also grants /tmp, the system roots, and the operator
-    tool dirs -- a hide_paths entry under those passed preflight and stayed
-    readable (a silently-inert explicit setting)."""
+    """Preflight's region set covers everything the launcher grants, not only cwd and the extras.
+
+    The launcher also grants /tmp, the system roots and the operator tool dirs; a hide_paths
+    entry under those would otherwise pass preflight and stay readable, a silently inert
+    explicit setting.
+    """
     monkeypatch.chdir(tmp_path)
     tool_dir = Path("/nonexistent-tools/bin")
     monkeypatch.setattr(
@@ -321,9 +337,10 @@ def test_hide_paths_refuses_the_launcher_grant_regions(
 def test_hide_paths_resolves_aliases_and_refuses_inner_grants(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A literal `..` refuses upstream at config validation; a symlink alias
-    resolves before containment; a grant INSIDE the hidden tree exposes part
-    of it and refuses too."""
+    """A literal `..` refuses at config validation; a symlink alias resolves before containment.
+
+    A grant inside the hidden tree exposes part of it and refuses too.
+    """
     monkeypatch.chdir(tmp_path)
     with pytest.raises(Exception, match="'\\.\\.'"):
         _hide_on_hardened(tmp_path, "/opt/../etc/shadow-file")

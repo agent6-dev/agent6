@@ -70,9 +70,7 @@ reason = "x"
 
 
 def test_the_authoring_prompt_asks_for_no_key_a_state_refuses() -> None:
-    """The prompt asked for "a one-line rationale per state in `summary`";
-    no state has that key (`extra="forbid"`), so an obedient draft failed
-    `machine check` and burned an attempt."""
+    """The authoring prompt asks for no key the schema forbids (`summary` per state)."""
     import pydantic
 
     from agent6.machine.spec import MachineSpec
@@ -98,16 +96,14 @@ def test_build_authoring_prompt_first_attempt() -> None:
 
 
 def test_authoring_guide_describes_the_metered_budget() -> None:
-    # One budget story for every draft: max_usd caps metered spend; unpriced
-    # models fall to the operator's max_tokens_fallback. No per-draft steering.
+    # One budget story: max_usd caps metered spend, unpriced models fall to max_tokens_fallback.
     prompt = build_authoring_prompt("Poll a queue", attempt=1)
     assert "max_usd" in prompt and "max_tokens_fallback" in prompt
     assert "best_effort_usd_limit" not in prompt
 
 
 def test_build_authoring_prompt_retry_carries_only_the_diagnostics() -> None:
-    """The draft is in the workspace, so a retry names the problems and sends
-    the agent back to its own files instead of re-pasting them into the prompt."""
+    """A retry names the problems and sends the agent back to its own files in the workspace."""
     prompt = build_authoring_prompt(
         "Poll a queue",
         attempt=2,
@@ -123,8 +119,7 @@ def test_build_authoring_prompt_retry_carries_only_the_diagnostics() -> None:
 
 def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     def _load(_root: object, _explicit: object = None) -> object:
-        # A REAL Config: the authoring execution materializes it as its overlay
-        # (`cfg.model_dump`), so a stand-in namespace would dodge that path.
+        # A real Config: the authoring execution materializes it as its overlay.
         cfg = Config.model_validate(
             {
                 "sandbox": {"isolation": "none"},
@@ -139,8 +134,7 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     def _no_preflight(_cfg: object, **_kw: object) -> str:
-        # The isolation preflight is the run lifecycle's (select_isolation),
-        # tested there; a stand-in config has none of what it reads.
+        # The isolation preflight is the run lifecycle's, tested there.
         return "none"
 
     monkeypatch.setattr(_create, "load_effective", _load)
@@ -152,8 +146,7 @@ def _stub_runner(
     monkeypatch: pytest.MonkeyPatch,
     drafts: Iterable[tuple[dict[str, str], AgentExecResult]],
 ) -> None:
-    """Each attempt writes its files into the drafting workspace, as the real
-    authoring execution does with `apply_edit`, then returns its result."""
+    """Each attempt writes its files into the drafting workspace, then returns its result."""
     seq = iter(drafts)
 
     def fake_build(
@@ -186,10 +179,7 @@ def _draft(machine: str, **scripts: str) -> dict[str, str]:
 
 
 def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The authoring agent must INHERIT the worker model (model=None), not get
-    an empty-string override. `model=""` overwrote the worker model with "" and
-    failed min_length validation, making every `machine create` attempt error
-    out -- a path the request-ignoring stub runner never exercised."""
+    """The authoring agent inherits the worker model (model=None), never an empty override."""
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
     captured: list[AgentRequest] = []
@@ -269,9 +259,7 @@ def test_create_writes_default_path(
 
 
 def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """machine create writes a logs.jsonl in the draft dir (session.start carrying the
-    NL task + session.end) and points the agent runner at that same path, so the TUI
-    can open the dashboard on the draft and follow the authoring live, like a run."""
+    """Machine create writes a watchable logs.jsonl in the draft dir, so the TUI can follow it."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
@@ -298,8 +286,7 @@ def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.M
     assert events[0]["type"] == "session.start"
     assert events[0]["user_task"] == "Greet the user"  # the dashboard header
     end = next(e for e in events if e["type"] == "session.end")
-    # session.end carries the one shape every emitter agrees on: reason + iterations
-    # (authoring attempts) + all_passed. One attempt succeeded here.
+    # session.end carries reason, iterations (authoring attempts) and all_passed.
     assert {"reason", "iterations", "all_passed"} <= end.keys()
     assert end["iterations"] == 1
     assert end["all_passed"] is True
@@ -308,9 +295,7 @@ def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.M
 def test_create_logs_the_cumulative_spend_across_attempts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Each attempt's subprocess logs its OWN reset budget.update, so the fold's
-    last one showed only the last attempt. create emits the true cumulative total
-    at the end, so the watchable draft's cost is the real spend, not the last try."""
+    """`create` emits the true cumulative budget.update at the end, over every attempt's reset."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
@@ -351,9 +336,7 @@ def test_create_logs_the_cumulative_spend_across_attempts(
 
 
 def test_create_saves_the_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The natural-language task is saved to the draft dir as prompt.txt, so the
-    draft is self-describing (otherwise the task only survives embedded inside the
-    authoring transcript)."""
+    """The natural-language task is saved to the draft dir as prompt.txt."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
@@ -437,10 +420,7 @@ def test_create_refuses_to_replace_a_broken_output_symlink(
 def test_create_collision_refusal_ends_the_watchable_log_as_failed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The collision refusal exits 1 and writes nothing, but session.end had
-    already said machine_created / all_passed=true -- a failed create rendered
-    as done on every watch surface. The refusal ends the log as its own
-    failure token instead."""
+    """The collision refusal exits 1, writes nothing, and ends the log as its own failure token."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     (tmp_path / "greeter.asm.toml").write_text("# do not clobber\n", encoding="utf-8")
@@ -462,10 +442,7 @@ def test_create_collision_refusal_ends_the_watchable_log_as_failed(
 def test_create_write_failure_ends_the_watchable_log_as_failed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """machine_created was emitted before the bundle writes, so a write that
-    fails (read-only target dir) raised out of the CLI with the log already
-    claiming success. The write failure ends the log as its own failure token,
-    keeps the paid-for draft on stdout, and exits 1."""
+    """A bundle write failure ends the log as a failure, keeps the draft on stdout, and exits 1."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
@@ -542,8 +519,7 @@ def test_create_never_valid_exits_1(
 def test_create_surfaces_a_reason_per_failed_attempt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Each failed attempt logs a one-line reason, not a bare "attempt N/M" with
-    # the only diagnostics buried at the very end.
+    # Each failed attempt logs a one-line reason, not a bare "attempt N/M".
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
     _stub_runner(
@@ -567,8 +543,7 @@ def test_create_surfaces_a_reason_per_failed_attempt(
 
 
 def test_attempt_reason_pulls_the_error_from_an_introducing_block() -> None:
-    # 'offline test x failed (exit 1):' alone explains nothing; the block's
-    # last line carries the actual error (a traceback or test dump ends on it).
+    # The block's last line carries the actual error.
     from agent6.app.machine.create import _attempt_reason  # pyright: ignore[reportPrivateUsage]
 
     block = "offline test scripts/t.py failed (exit 1):\nusage: run.py <pkg>\nAssertionError"
@@ -624,10 +599,7 @@ def test_create_output_flag_creates_parent_dirs(
 def test_create_publishes_the_bytes_the_lint_gate_passed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The gate lints with `--fix` on a scratch copy, so the source that PASSED
-    is ruff's repaired one. Publishing the model's original bytes wrote a bundle
-    that failed the `agent6 machine check` this command points the operator at
-    (observed live: 4 fixable errors in a freshly created bundle)."""
+    """The gate lints with `--fix` on a scratch copy and publishes ruff's repaired source."""
     from agent6.app.machine import _scriptcheck as scriptcheck
 
     if "ruff" not in scriptcheck.available_tools():
@@ -657,9 +629,7 @@ def test_create_publishes_the_bytes_the_lint_gate_passed(
 def test_create_retry_prompt_names_the_script_problem(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A draft that fails the script gate gets the problems in the next
-    # attempt's prompt; the source itself stays in the workspace, where the
-    # agent reads and patches its own file.
+    # The problems go in the next attempt's prompt; the source stays in the workspace.
     from agent6.app.machine import _scriptcheck as scriptcheck
 
     if "ruff" not in scriptcheck.available_tools():
@@ -736,10 +706,7 @@ SCRIPT_BODY = "import json\nprint(json.dumps({}))"
 def test_create_attempts_share_one_budget_ledger(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Each attempt's subprocess is otherwise a fresh budget tracker, so N
-    retries could bill N full budgets. Attempts share one ledger: every
-    request carries the REMAINING cap, and a spent-out create stops instead
-    of paying for another attempt."""
+    """Attempts share one budget ledger: every request carries the remaining cap."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
@@ -787,8 +754,7 @@ def test_create_writes_script_bundle(
     assert (tmp_path / "scripted.asm.toml").exists()
     script = tmp_path / "scripts" / "run.py"
     assert script.exists()
-    # The published bytes are the gate's (ruff --fix ran on the copy that
-    # passed), so this compares content rather than the model's exact source.
+    # The published bytes are the gate's (ruff --fix ran), so content is compared.
     written = script.read_text(encoding="utf-8")
     assert written.startswith("import json") and "print(json.dumps({}))" in written
     assert "1 script(s)" in out.err
@@ -797,10 +763,7 @@ def test_create_writes_script_bundle(
 def test_create_refuses_to_overwrite_existing_script(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The default (no -o) path is documented as clobbering NOTHING; that must
-    cover the whole bundle. An operator's pre-existing scripts/run.py whose
-    name collides with an LLM-chosen bundle script was silently replaced
-    (unrecoverable if uncommitted) while the sibling .asm.toml got a refusal."""
+    """The default (no -o) path clobbers nothing, the whole bundle included."""
     monkeypatch.chdir(tmp_path)
     sentinel = "# operator-authored, do not clobber\n"
     (tmp_path / "scripts").mkdir()
@@ -827,8 +790,7 @@ def test_create_refuses_to_overwrite_existing_script(
 def test_create_rejects_missing_script_then_succeeds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A TOML that runs scripts/run.py but ships no scripts must fail bundle
-    validation (the user's bug), then succeed once the agent supplies it."""
+    """A machine that runs a script it does not ship fails bundle validation until it exists."""
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
     _stub_runner(
@@ -856,8 +818,7 @@ def test_create_rejects_missing_script_then_succeeds(
 def test_create_rejects_lint_bad_script(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A structurally-valid machine whose script has a lint error must NOT be
-    written — ruff/ty run in the create loop and the failure is a diagnostic."""
+    """A machine whose script has a lint error is not written; the failure is a diagnostic."""
     from agent6.app.machine import _scriptcheck as scriptcheck
 
     if "ruff" not in scriptcheck.available_tools():
@@ -884,10 +845,10 @@ def test_create_rejects_lint_bad_script(
 def test_create_publish_validates_the_destination_before_claiming_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The scratch validation ran on a clean copy; the destination can differ
-    (a pre-existing escaping symlink under scripts/). rc 0 with machine_created
-    plus a "won't run yet" warning was a success banner over a broken bundle;
-    a published bundle that fails validation is now a FAILED outcome."""
+    """A published bundle that fails validation at its destination is a failed outcome.
+
+    The scratch validation ran on a clean copy; the destination can differ.
+    """
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
     _stub_runner(
@@ -914,9 +875,7 @@ def test_create_publish_validates_the_destination_before_claiming_success(
 def test_create_writes_scripts_before_the_machine_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The .asm is the bundle's commit point: a death mid-publish must leave
-    inert scripts, never a machine file whose scripts are missing. A script
-    write failure therefore leaves no machine file behind."""
+    """The .asm is the bundle's commit point: a failed script write leaves no machine file."""
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
     _stub_runner(
@@ -968,10 +927,7 @@ def test_create_never_ships_script_exits_1(
 def test_timed_out_agent_state_salvages_spend_from_its_event_log(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A SIGKILLed (timed-out) agent subprocess never writes result.json, but
-    its event log carries the loop's running budget totals. The runner must
-    book that real spend, or a 24/7 machine full of weak-model timeouts burns
-    money against a $0 ledger and its budget guard never trips."""
+    """A SIGKILLed agent subprocess writes no result.json; its event log's spend is still booked."""
     import subprocess as sp
 
     events_log = tmp_path / "logs.jsonl"
@@ -986,11 +942,7 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
             return 0
 
     def _popen(*_args: Any, **_kwargs: Any) -> _HungProc:
-        # The subprocess writes its budget.update lines DURING the call --
-        # after run_agent captured the log offset (the offset scopes a shared
-        # draft log to this call's own events; see the double-book fix).
-        # Writing at spawn time mirrors that, where a pre-seeded log would
-        # simulate a PRIOR call's spend and correctly salvage $0.
+        # The budget.update lines are written during the call, after run_agent captured the offset.
         with events_log.open("a", encoding="utf-8") as fh:
             fh.write(
                 json.dumps({"type": "budget.update", "input_total": 100, "output_total": 5}) + "\n"
@@ -1028,10 +980,7 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
 def test_create_failure_end_reason_names_the_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A create that never produced a valid machine folds to ("failed", reason),
-    and that reason is the detail every listing prints beside the word. It has to
-    name the failure like every other emitter's token, not read as success prose
-    under a failed status."""
+    """A create that never produced a valid machine folds to ("failed", reason)."""
     from agent6.viewmodel.listing import status_word
 
     monkeypatch.chdir(tmp_path)
@@ -1056,10 +1005,7 @@ def test_create_failure_end_reason_names_the_failure(
 def test_create_stamps_a_liveness_marker_on_the_draft(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The draft dir is watchable -- the hub lists it and the SSE endpoints
-    stream it -- but stamped no worker.pid, so a draft whose process died read
-    "running" until the 10-minute log-silence window expired, holding its stream
-    open the whole time. Every other watchable run-style dir records one."""
+    """A draft whose process died reads as dead, not "running": the draft dir records worker.pid."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
@@ -1077,10 +1023,7 @@ def test_create_stamps_a_liveness_marker_on_the_draft(
 def test_create_runs_the_shared_isolation_preflight(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`machine create` goes through the run lifecycle's preflight
-    (select_isolation), so the shared refusal list applies: a state base
-    inside the workspace refuses here as it does for `agent6 run` and
-    `machine run`. Its own copy checked only the network and hidden paths."""
+    """`machine create` goes through the run lifecycle's preflight, so the shared refusals apply."""
     from agent6.app import _session as session_mod
     from agent6.config import Config, ModelsConfig, OpenAIProviderEntry, RoleModel
     from agent6.config.layer import EffectiveConfig
@@ -1130,10 +1073,7 @@ def test_create_runs_the_shared_isolation_preflight(
 def test_a_structural_failure_still_reports_the_scripts_lint_problems(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """One attempt reveals every problem class: a draft whose TOML fails
-    validation AND whose script fails lint gets both in the same retry
-    diagnostics, instead of schema-then-lint costing an attempt each (the
-    serial reveal burned sol's whole budget on a simple machine)."""
+    """One attempt reveals every problem class: a TOML failure and a lint failure together."""
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
     bad_toml = 'machine = "x"\nversion = 1\ninitial = "missing_state"\n'
@@ -1163,10 +1103,11 @@ def test_a_structural_failure_still_reports_the_scripts_lint_problems(
 def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The bundle is files in a workspace, not a finish payload: a ~20KB TOML
-    string inside tool-call JSON defeated kimi-k2.6's emitter three times in a
-    row. The execution drafts with the edit tools and no shell -- the validators need
-    agent6 itself, which no jailed command can reach."""
+    """The bundle is files in a workspace, not a finish payload.
+
+    A ~20KB TOML string inside tool-call JSON defeated a model's emitter three times in a row; the
+    execution drafts with the edit tools and no shell.
+    """
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
     captured: list[tuple[AgentRequest, Path, object]] = []
@@ -1178,8 +1119,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             captured.append((request, root, cfg))
-            # Read while the execution is running: a published create removes the
-            # workspace, so nothing about it survives to assert on afterwards.
+            # Read while the execution runs: a published create removes the workspace.
             seen.append((root / ".git").exists())
             for rel, content in _draft(VALID_MACHINE).items():
                 (root / rel).write_text(content, encoding="utf-8")
@@ -1196,30 +1136,25 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     assert seen == [True], "the workspace is a repo, like any run's"
     assert not root.exists(), "and it is gone once its bundle is published"
     assert root != tmp_path, "never the operator's checkout"
-    # The jail masks the state dir, so a workspace inside it would be hidden
-    # from the run that must write there (a live create burned 200 iterations
-    # on `list_dir: Path is hidden from this run`).
+    # The jail masks the state dir, so a workspace inside it would be hidden from the run.
     state = state_dir(tmp_path)
     assert state not in root.parents, "the workspace sits outside the state dir"
     assert isinstance(cfg, dict)
-    # The operator's own settings ride as the overlay: the workspace's per-repo
-    # layer is empty, so without them a repo-pinned worker model is invisible
-    # to the execution and every attempt fails.
+    # The operator's own settings ride as the overlay; the workspace's per-repo layer is empty.
     assert cfg["models"]["worker"]["provider"] == "openrouter"
     assert cfg["models"]["worker"]["model"] == "test-model"
     assert cfg["sandbox"]["run_commands"] == "no", "and it still carries no command tool"
-    # A workspace that never ran has no state dir to remove, which rmtree
-    # reports like a failure: every published create printed that it stayed.
+    # A workspace that never ran has no state dir; rmtree reported that like a failure.
     assert "the drafting workspace stays" not in capsys.readouterr().err
 
 
 def test_create_publishes_the_files_a_referenced_script_needs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A referenced script imports modules and reads data files, and none of
-    those appear in a `tool` command. Publishing only the referenced set gave
-    the operator a bundle that fails at its first state, after the workspace
-    holding the missing file was gone."""
+    """The published bundle carries every file in the workspace, not only the referenced scripts.
+
+    A referenced script imports modules and reads data files that appear in no `tool` command.
+    """
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
     _stub_runner(
@@ -1244,8 +1179,7 @@ def test_create_publishes_the_files_a_referenced_script_needs(
 
 
 def test_bundle_scripts_take_the_bundles_own_writer_and_mode(tmp_path: Path) -> None:
-    """The `.asm.toml` went through atomic_write (owner-only, crash-safe) while
-    its scripts were plain write_text at the umask: one bundle, two modes."""
+    """The bundle's scripts are written with the same mode as its machine file."""
     import stat
 
     from agent6.app.machine.create import _write_scripts  # pyright: ignore[reportPrivateUsage]
@@ -1259,8 +1193,7 @@ def test_bundle_scripts_take_the_bundles_own_writer_and_mode(tmp_path: Path) -> 
 
 
 def test_discarding_the_workspace_takes_its_empty_base_with_it(tmp_path: Path) -> None:
-    """The fan-out cleanup removes the per-repo workdir base once empty; the
-    drafting workspace's discard left it behind."""
+    """Discarding the drafting workspace removes the per-repo workdir base once empty."""
     from agent6.app.machine.create import _discard_workspace  # pyright: ignore[reportPrivateUsage]
     from agent6.app.reporter import Reporter
 
@@ -1282,9 +1215,7 @@ def test_an_operator_stop_ends_create_instead_of_retrying(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """An operator stopping the drafting agent (`steer_abort`) ends the
-    command; absent that reason from `_CREATE_STOP_REASONS`, the loop read
-    the stop as a failed attempt and re-ran the whole authoring prompt."""
+    """An operator stopping the drafting agent (`steer_abort`) ends the command, not a retry."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)

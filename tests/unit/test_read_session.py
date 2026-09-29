@@ -37,8 +37,11 @@ def _session(state: Path, bucket: str, sid: str, mode: str, task: str, turns: li
 
 
 def test_the_roster_spans_every_bucket(tmp_path: Path) -> None:
-    """A run, a plan and an ask are all sessions; a roster that showed only
-    runs would hide exactly the quick ask you wanted to pick up."""
+    """The roster spans every bucket.
+
+    A run, a plan and an ask are all sessions; a roster of runs alone hides exactly the quick ask
+    the model wants to pick up.
+    """
     _session(tmp_path, "asks", "quiet-fox-AAAAAA", "ask", "how do I convert h264", ["use ffmpeg"])
     _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "add a flag", ["done"])
     modes = {b.id: b.mode for b in session_briefs(tmp_path)}
@@ -62,8 +65,11 @@ def test_the_conversation_reads_oldest_first(tmp_path: Path) -> None:
 
 
 def test_truncation_keeps_the_tail(tmp_path: Path) -> None:
-    """A later session usually wants what the earlier one CONCLUDED; the head
-    is the task the roster already carries."""
+    """Truncation keeps the tail.
+
+    A later session usually wants what the earlier one concluded; the head is the task the roster
+    already carries.
+    """
     _session(tmp_path, "runs", "long-BBBBBB", "run", "t", ["x" * 400, "THE ANSWER"])
     layout = session_layout(tmp_path, "long-BBBBBB")
     assert layout is not None
@@ -73,8 +79,11 @@ def test_truncation_keeps_the_tail(tmp_path: Path) -> None:
 
 
 def test_a_query_finds_a_session_by_its_content(tmp_path: Path) -> None:
-    """An id is useless to a model that does not know it; content and recency
-    are how a session is actually found."""
+    """A query finds a session by its content.
+
+    An id is useless to a model that does not know it; content and recency are how a session is
+    found.
+    """
     _session(
         tmp_path, "asks", "quiet-fox-AAAAAA", "ask", "video question", ["use ffmpeg -c:v libx265"]
     )
@@ -85,11 +94,13 @@ def test_a_query_finds_a_session_by_its_content(tmp_path: Path) -> None:
 
 
 def test_a_side_calls_answer_is_not_read_as_the_assistants_own_words(tmp_path: Path) -> None:
-    """Every side call made during a session (a review seat, the verify
-    inferer, a squash pass, the summariser, the prompt reviser) emits its own
-    `role.result` onto the session's log. Folding one in as "assistant"
-    misattributed a reviewer's critique, or a compaction summary, as the
-    session's own reply: a denylist of side roles missed two of the five."""
+    """A side call's answer is not read as the assistant's own words.
+
+    Every side call made during a session (a review seat, the verify inferer, a squash pass, the
+    summariser, the prompt reviser) emits its own `role.result` onto the session's log; folded in as
+    "assistant", a reviewer's critique or a compaction summary reads as the session's own reply. A
+    denylist of side roles misses two of the five.
+    """
     d = _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", [])
     lines = (d / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     lines.append(json.dumps({"type": "role.result", "role": "worker", "text": "use ffmpeg"}))
@@ -139,15 +150,20 @@ def test_a_session_with_no_conversation_says_so(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("escape", ["../../etc", "..", "/etc/passwd", "a/../../b"])
 def test_no_path_from_the_model_reaches_the_filesystem(tmp_path: Path, escape: str) -> None:
-    """The model names a session by id, never a path: resolution matches real
-    directory names in the project's buckets, so traversal cannot resolve."""
+    """The model names a session by id, never a path.
+
+    Resolution matches real directory names in the project's buckets, so traversal cannot resolve.
+    """
     _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", ["x"])
     assert session_layout(tmp_path, escape) is None
 
 
 def test_the_tool_returns_the_roster_and_refuses_an_unknown_id(tmp_path: Path) -> None:
-    """Dispatch-level: the roster rides on every answer (like read_background),
-    and an id the project does not have is an error, not an empty read."""
+    """The tool returns the roster and refuses an unknown id.
+
+    At the dispatch level: the roster rides on every answer (like read_background), and an id the
+    project does not have is an error, not an empty read.
+    """
     from agent6.config import Config
     from agent6.tools.dispatch import ToolDispatcher, ToolError
 
@@ -172,8 +188,11 @@ def test_the_tool_is_unwired_without_a_project_state_dir(tmp_path: Path) -> None
 
 
 def test_a_project_with_many_sessions_does_not_flood_the_context(tmp_path: Path) -> None:
-    """Every read_session call pays for the roster. At 2000 sessions the
-    uncapped list rendered ~70k tokens, so one lookup cost more than the answer."""
+    """Every read_session call pays for the roster.
+
+    At 2000 sessions the uncapped list rendered ~70k tokens, so one lookup cost more than the
+    answer.
+    """
     for i in range(ROSTER_MAX + 25):
         _session(tmp_path, "runs", f"s{i:04d}-AAAAAA", "run", "t", [])
     got = roster(tmp_path, "")
@@ -190,8 +209,10 @@ def test_a_query_matching_everything_is_capped_too(tmp_path: Path) -> None:
 
 
 def test_a_query_reads_journals_without_holding_them_in_memory(tmp_path: Path) -> None:
-    """Journals reach megabytes; slurping each one to answer a yes/no was ~1 GB
-    per call. The needle is planted across a chunk boundary."""
+    """Journals reach megabytes; slurping each one to answer a yes/no was ~1 GB per call.
+
+    The needle is planted across a chunk boundary.
+    """
     big = _session(tmp_path, "runs", "big-AAAAAA", "run", "t", []) / "logs.jsonl"
     with big.open("w") as fh:
         fh.write("x" * ((1 << 16) - 4))  # the needle straddles a chunk boundary
@@ -213,12 +234,13 @@ def _peak_bytes_reading(fn: Callable[[], object]) -> int:
 
 
 def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: Path) -> None:
-    """Written by the real emitter, not by hand. The prose reached the journal
-    only as `role.text_delta`, which is emitted only when streaming is on -- so
-    a headless run (CI, a redirected stdout, every spawned ask) recorded no
-    assistant text, and this tool returned the task and a list of tool names.
-    Every fixture that hand-wrote `{"type": "role.result", "text": ...}` passed
-    against a shape the engine never emitted."""
+    """Written by the real emitter, not by hand.
+
+    The prose reached the journal only as `role.text_delta`, which is emitted only when streaming is
+    on, so a headless run (CI, a redirected stdout, every spawned ask) recorded no assistant text,
+    and this tool returned the task and a list of tool names. Every fixture that hand-wrote
+    `{"type": "role.result", "text": ...}` passed against a shape the engine never emitted.
+    """
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 

@@ -95,16 +95,16 @@ def _repo(path: Path) -> Path:
 
 
 def _loaded(*_a: object, **_k: object) -> EffectiveConfig:
-    """The loader's result for a test that stubs `run_task`: the real type (the
-    bridge reads `explicit_leaves` off it), unconfigured (the real loader
-    would refuse a config with no model to run)."""
+    """The loader's result for a test that stubs `run_task`: the real type, unconfigured."""
     return EffectiveConfig(config=Config(), sources={}, layers=())
 
 
 def test_the_reporter_never_writes_to_stdout(capsys: pytest.CaptureFixture[str]) -> None:
-    """stdout IS the protocol stream. One status line on it desynchronises the
-    connection irrecoverably, and no editor recovers from that. The same line
-    reaches the editor as agent6's own prose, marked once."""
+    """Stdout IS the protocol stream.
+
+    One status line on it desynchronises the connection irrecoverably, and no editor recovers from
+    that. The same line reaches the editor as agent6's own prose, marked once.
+    """
     wire = io.BytesIO()
     said: list[str] = []
     reporter = forwarding_reporter(ACPServer(stdin=io.BytesIO(), stdout=wire), "s", said)
@@ -122,10 +122,11 @@ def test_the_reporter_never_writes_to_stdout(capsys: pytest.CaptureFixture[str])
 
 
 def test_a_cancel_reaches_the_run_it_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The run id is minted BEFORE the run starts, so the session has a handle
-    to address. Letting the lifecycle mint its own left `session_id` empty: the
-    cancel reported success while the run continued to completion, spending
-    budget and making commits."""
+    """The run id is minted BEFORE the run starts, so the session has a handle to address.
+
+    Letting the lifecycle mint its own left `session_id` empty: the cancel reported success while
+    the run continued to completion, spending budget and making commits.
+    """
     stopped: list[Path] = []
 
     def _record(path: Path, *, after_step: bool = False) -> StopOutcome:
@@ -193,13 +194,7 @@ def test_a_cancelled_turn_says_so(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 def test_the_runs_journal_streams_out_as_session_update(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The tail is the whole live view: without it an editor sees a turn that
-    starts, says nothing for minutes, and then answers.
-
-    Driven by the RECORDED journal the fold's golden test uses, not by
-    hand-written events: a fabricated shape the engine never emits is how a
-    surface tests green while rendering nothing.
-    """
+    """The tail is the whole live view; without it the editor sees nothing until the answer."""
     monkeypatch.chdir(tmp_path)
     recorded = Path(__file__).parent.parent / "unit" / "data" / "golden_session_logs.jsonl"
 
@@ -236,9 +231,7 @@ def test_the_runs_journal_streams_out_as_session_update(
 def test_a_fault_after_the_journal_opened_still_reaches_the_editor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The bare-refusal guard assumed a journal means the fold reported the
-    ending, but a fault between the journal's first line and its session.end
-    ended the turn as `{"stopReason": "refusal"}` with no words at all."""
+    """A fault between the journal's first line and its session.end is reported in words."""
     from agent6.paths import state_dir
     from agent6.sessions.layout import SessionLayout
 
@@ -272,13 +265,11 @@ def test_a_fault_after_the_journal_opened_still_reaches_the_editor(
 def test_a_resumed_turns_own_failure_does_not_borrow_a_stale_end_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`_run` trusted the journal's LAST `session.end` whenever the file grew
-    at all, but `session.start`/`loop.resume.start` never clear `end_reason`:
-    an execution that appends only a `loop.resume.start` before dying (its own
-    provider crash, exit 1) inherited an EARLIER, already-finished execution's
-    reason. An execution that really did hit `max_iterations` two turns ago made
-    every later provider-crashed turn report itself as `max_turn_requests`
-    to the editor instead of `refusal`."""
+    """A turn's stop reason comes from its own `session.end`, never an earlier execution's.
+
+    `session.start` and `loop.resume.start` never clear `end_reason`, so a turn that appended
+    only a `loop.resume.start` before dying inherited an earlier execution's reason.
+    """
     from agent6.paths import state_dir
 
     monkeypatch.chdir(tmp_path)
@@ -319,8 +310,7 @@ def test_a_resumed_turns_own_failure_does_not_borrow_a_stale_end_reason(
 def test_a_fault_after_session_end_still_keeps_its_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A finalizer fault after session.end was hidden because the transcript
-    had already announced the journal's verdict."""
+    """A finalizer fault after session.end is reported, not hidden behind the journal's verdict."""
     from agent6.events import EventSink
 
     monkeypatch.chdir(tmp_path)
@@ -345,9 +335,10 @@ def test_a_fault_after_session_end_still_keeps_its_reason(
 
 
 def test_a_run_that_cannot_start_says_why(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A broken config is the ordinary case, and it raises before the run has a
-    journal to carry the reason. The editor would otherwise see a turn end with
-    a stop reason and no words at all."""
+    """A broken config is reported in words, not as a stop reason alone.
+
+    It raises before the run has a journal to carry the reason.
+    """
     monkeypatch.chdir(tmp_path)
 
     def _broken(*_a: object, **_kw: object) -> object:
@@ -423,9 +414,11 @@ def test_an_approval_round_trips_through_the_editor() -> None:
     ],
 )
 def test_only_an_option_we_offered_is_an_answer(answer: dict[str, Any]) -> None:
-    """A timeout, a cancel and an echoed string are all "no answer". Treating
-    an unknown string as one would let it become an allow by prefix, and the
-    seam reads a None as the cautious answer."""
+    """A timeout, a cancel and an echoed string are all "no answer".
+
+    Treating an unknown string as one would let it become an allow by prefix, and the seam reads a
+    None as the cautious answer.
+    """
     bridge = _bridge(answer)
     session = session_mod.Session(acp_id="s", cwd=Path("/x"))
     assert (
@@ -437,8 +430,7 @@ def test_only_an_option_we_offered_is_an_answer(answer: dict[str, Any]) -> None:
 
 
 def test_an_option_id_has_to_match_the_offered_id_exactly() -> None:
-    """`00` was accepted as option `0`, so an id the server never issued could
-    grant a permission."""
+    """`00` is not option `0`: an id the server never issued grants nothing."""
     bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "00"}})
     session = session_mod.Session(acp_id="s", cwd=Path("/x"))
     assert (
@@ -455,14 +447,15 @@ def test_an_option_id_has_to_match_the_offered_id_exactly() -> None:
 
 
 def test_the_option_kinds_carry_what_the_editor_may_remember() -> None:
-    """`allow once` is the fetch tool's off-list host, where an editor that
-    remembers the answer would silently cover a different host."""
+    """`allow once` is offered for the fetch tool's off-list host.
+
+    A remembered answer would silently cover a different host.
+    """
     assert option_kind("allow", True) == "allow_always"
     assert option_kind("allow once", False) == "allow_once"
     assert option_kind("deny", True) == "reject_once"
     assert option_kind("dark", None) == "allow_once"
-    # The MODEL writes a question's options. Keying on the text let it name one
-    # "allow" and have it advertised as a permission the editor may REMEMBER.
+    # The model writes the options; keyed on text, one named "allow" read as a remembered grant.
     assert option_kind("allow", None) == "allow_once"
 
 
@@ -474,25 +467,20 @@ def test_the_stop_reason_is_one_acp_defines() -> None:
 
 
 def test_the_iteration_cap_uses_acps_specific_stop_reason() -> None:
-    """Agent6's iteration cap is ACP's maximum agent requests between user
-    turns, not a refusal by the agent."""
+    """The iteration cap is ACP's maximum agent requests between user turns, not a refusal."""
     assert stop_reason(1, end_reason="max_iterations") == "max_turn_requests"
 
 
 def test_a_deliberate_finish_over_a_red_gate_is_end_turn() -> None:
-    """Exit 4 is "finished deliberately, gate not green": the agent answered,
-    so the editor must not be told the turn was refused (a live smoke saw a
-    committed, summarised fix reported as stopReason=refusal)."""
+    """Exit 4 is a deliberate finish with the gate not green, not a refusal."""
     assert stop_reason(4) == "end_turn"
 
 
 def test_an_editor_driven_run_is_not_refused_for_lack_of_a_terminal() -> None:
     """`agent6 acp`'s stdin is the protocol pipe, never a tty.
 
-    The refusal used to test the tty rather than the surface's own declaration,
-    so with the stock `run_commands = "ask"` EVERY editor-driven run was
-    refused before it started -- and the whole `session/request_permission`
-    path it refused on behalf of was unreachable.
+    The refusal reads the surface's own declaration, not the tty: tested on the tty, the stock
+    `run_commands = "ask"` refused every editor-driven run before it started.
     """
     from agent6.app.preflight import headless_approval_refusal
     from agent6.config import Config
@@ -555,7 +543,7 @@ def test_a_session_outside_a_git_repo_is_refused(tmp_path: Path) -> None:
 
     `agent6 run` walls this with the same check; the ACP path was the one
     caller that never ran it, so a client could point a run at any absolute
-    path -- and `$HOME` on a machine with dotfiles under git would hand the
+    path, and `$HOME` on a machine with dotfiles under git would hand the
     model the whole home directory as its workspace.
     """
     wire = _Wire()
@@ -585,9 +573,10 @@ def test_a_relative_or_missing_cwd_is_refused(tmp_path: Path) -> None:
 def test_a_refusal_that_never_reached_a_journal_still_says_why(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """About a dozen lifecycle paths `return 2` after writing their reason to
-    the reporter and nowhere else. With no `session.end` the fold produces no
-    ending, so the editor saw a turn stop with a stop reason and no words."""
+    """A lifecycle path that returns 2 with its reason on the reporter reaches the editor in words.
+
+    With no session.end the fold produces no ending.
+    """
     monkeypatch.chdir(tmp_path)
 
     def _refusing_run(*_a: object, **kw: object) -> int:
@@ -610,10 +599,10 @@ def test_a_refusal_that_never_reached_a_journal_still_says_why(
 
 
 def test_a_closed_editor_stops_waiting_for_answers_it_will_never_get() -> None:
-    """The read loop is the only thing that delivers a client's answer, so once
-    it is gone a worker parked on an approval waits the full permission
-    timeout -- far longer than the EOF grace, so the process always exited and
-    killed the run it was trying to let finish."""
+    """A worker parked on an approval after the read loop is gone is released within the grace.
+
+    The read loop is the only thing that delivers a client's answer.
+    """
     server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     answered: list[dict[str, Any]] = []
     asking = threading.Thread(
@@ -633,8 +622,7 @@ def test_a_closed_editor_stops_waiting_for_answers_it_will_never_get() -> None:
 
 
 def test_a_request_started_after_the_editor_left_returns_at_once() -> None:
-    """Once the first broken write marked the editor gone, a later permission
-    request registered a waiter but no path woke it."""
+    """A permission request registered after the editor is gone is woken, not parked."""
     server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     server._gone = True  # pyright: ignore[reportPrivateUsage]
     answered: list[dict[str, Any]] = []
@@ -650,8 +638,7 @@ def test_a_request_started_after_the_editor_left_returns_at_once() -> None:
 
 
 def test_cancelling_while_permission_is_open_releases_the_turn() -> None:
-    """A cancel marker could not release the ACP permission wait, so a cancelled
-    turn stayed parked for the five-minute permission timeout."""
+    """A cancel marker releases the ACP permission wait."""
     bridge = RunBridge(server=ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
     waiting = threading.Event()
 
@@ -680,10 +667,11 @@ def test_cancelling_while_permission_is_open_releases_the_turn() -> None:
 
 
 def test_a_question_with_no_buttons_is_not_put_to_the_editor() -> None:
-    """ACP v1 carries a question as a permission request, whose options ARE
-    the buttons. A free-form `ask_user` has none, so there was nothing to
-    press: it stalled the full 300s timeout and then answered "said nothing"
-    anyway -- up to eight times in one call, sequentially."""
+    """ACP v1 carries a question as a permission request, whose options ARE the buttons.
+
+    A free-form `ask_user` has none, so there was nothing to press: it stalled the full 300s timeout
+    and then answered "said nothing" anyway, up to eight times in one call, sequentially.
+    """
     sent: list[tuple[str, dict[str, Any]]] = []
     bridge = _bridge({"outcome": {"outcome": "cancelled"}})
 
@@ -703,8 +691,10 @@ def test_a_question_with_no_buttons_is_not_put_to_the_editor() -> None:
 
 def test_an_approval_closes_the_tool_call_it_announced() -> None:
     """`toolCall` is required on a permission request, so an ask announces one.
-    ACP models a tool call as an entity with a lifecycle, so an editor kept one
-    PENDING entry per approval for the life of the session."""
+
+    ACP models a tool call as an entity with a lifecycle, so an editor kept one PENDING entry per
+    approval for the life of the session.
+    """
     sent: list[dict[str, Any]] = []
     bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "0"}})
     bridge.server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
@@ -720,9 +710,10 @@ def test_an_approval_closes_the_tool_call_it_announced() -> None:
 
 
 def test_a_malformed_frame_cannot_answer_an_outstanding_approval() -> None:
-    """`_deliver` keyed on "has an id and no method", so any junk carrying an
-    outstanding id became that approval's answer -- and an unreadable answer
-    denies, so a stray frame could silently refuse a command."""
+    """Only a frame answering an outstanding request under its own id is that request's answer.
+
+    Any junk carrying the id became the answer, and an unreadable answer denies the command.
+    """
     server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     answered: list[dict[str, Any]] = []
     asking = threading.Thread(
@@ -744,9 +735,7 @@ def test_a_malformed_frame_cannot_answer_an_outstanding_approval() -> None:
 
 
 def test_the_approval_dialog_is_scrubbed_too() -> None:
-    """The one surface an operator MUST read before granting a command, and it
-    never went through the scrub: the prompt embeds the model's own argv, and
-    a `UserQuestion`'s option strings are model-written outright."""
+    """The permission prompt is scrubbed: it embeds the model's argv and option strings."""
     sent: list[dict[str, Any]] = []
     bridge = _bridge({"outcome": {"outcome": "cancelled"}})
 
@@ -769,8 +758,10 @@ def test_the_approval_dialog_is_scrubbed_too() -> None:
 
 
 def test_the_unsandboxed_gate_is_never_offered_as_remember_me() -> None:
-    """docs/security.md documents it as a ONE-TIME gate. ACP's `allow_always`
-    is exactly the button that would let one click silence it forever."""
+    """docs/security.md documents it as a ONE-TIME gate.
+
+    ACP's `allow_always` is exactly the button that would let one click silence it forever.
+    """
     from agent6.config import Config
 
     front, asked = _acp_front(reply="allow once")
@@ -780,10 +771,12 @@ def test_the_unsandboxed_gate_is_never_offered_as_remember_me() -> None:
 
 
 def test_a_cwd_that_does_not_exist_is_refused_by_name(tmp_path: Path) -> None:
-    """A stale workspace path is the ordinary editor mistake. Asking git first
-    meant `subprocess` could not chdir into it, and the FileNotFoundError
-    surfaced as `{"code": -32603, "message": "FileNotFoundError"}` -- an
-    internal error where a named refusal belongs."""
+    """A stale workspace path is the ordinary editor mistake.
+
+    Asking git first meant `subprocess` could not chdir into it, and the FileNotFoundError surfaced
+    as `{"code": -32603, "message": "FileNotFoundError"}`, an internal error where a named refusal
+    belongs.
+    """
     wire = _Wire()
     try:
         wire.send(id=1, method="initialize", params={"clientCapabilities": {}})
@@ -799,10 +792,10 @@ def test_a_cwd_that_does_not_exist_is_refused_by_name(tmp_path: Path) -> None:
 def test_a_second_prompt_resumes_the_same_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An ACP session is one conversation: the first prompt mints a run id and
-    starts a run; the next prompt resumes that run with its text as the steer
-    seed, and only a session with no snapshot starts fresh."""
+    """An ACP session is one conversation: the next prompt resumes the run as its steer seed.
 
+    Only a session with no snapshot starts fresh.
+    """
     calls: list[tuple[str, str, str]] = []
     monkeypatch.chdir(tmp_path)
 
@@ -843,9 +836,10 @@ def test_a_second_prompt_resumes_the_same_run(
 def test_a_refused_second_turn_does_not_inherit_the_first_turns_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A resume refused before it journals its own session.end leaves the
-    first turn's end in the journal; read as this turn's, an iteration-capped
-    first turn made a refused second turn report max_turn_requests."""
+    """A resume refused before its own session.end does not report the first turn's end.
+
+    An iteration-capped first turn made a refused second turn report max_turn_requests.
+    """
     from agent6.events import EventSink
 
     monkeypatch.chdir(tmp_path)
@@ -884,8 +878,7 @@ def test_a_refused_second_turn_does_not_inherit_the_first_turns_reason(
 def test_a_fault_on_a_resumed_turn_still_reaches_the_editor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The previous turn's session.end must not hide a fault in the resumed
-    turn's preflight."""
+    """The previous turn's session.end must not hide a fault in the resumed turn's preflight."""
     monkeypatch.chdir(tmp_path)
 
     def _state_dir(_cwd: Path) -> Path:
@@ -934,10 +927,10 @@ def _journal_types(layout: SessionLayout) -> list[str]:
 def test_a_gated_call_reads_pending_on_the_wire(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A call blocked on an approval: the editor is asked under the CALL's own
-    id, after the call was announced, and the call reads pending until the
-    answer lands. The journaled prompt/answer pair is what lets the fold say
-    so, on this wire and on every other surface."""
+    """A call blocked on an approval reads pending under its own id until the answer lands.
+
+    The journaled prompt and answer pair is what lets the fold say so on every surface.
+    """
     from agent6.events import EventSink
 
     monkeypatch.chdir(tmp_path)
@@ -1004,8 +997,7 @@ def test_a_gated_call_reads_pending_on_the_wire(
 
 
 def test_a_request_waits_for_the_announcement_only_while_the_tail_reads() -> None:
-    """The wait ends on the announcement, when the tail stops reading (it
-    closes the register), or when the turn is cancelled; never on a clock."""
+    """The wait ends on the announcement, the tail's close or a cancel, never on a clock."""
     import time
 
     announced = Announced(turn=1)
@@ -1047,9 +1039,7 @@ def test_a_request_waits_for_the_announcement_only_while_the_tail_reads() -> Non
 def test_a_tool_call_id_is_unique_across_a_sessions_turns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A later prompt resumes the same run under a fresh dispatcher, whose
-    stamped call ids restart at 1: turn 2's first call overwrote turn 1's in
-    an editor keyed on toolCallId."""
+    """The tool call id carries the turn, since a resumed dispatcher restarts its ids at 1."""
     from agent6.events import EventSink
 
     monkeypatch.chdir(tmp_path)
@@ -1100,8 +1090,7 @@ def test_a_tool_call_id_is_unique_across_a_sessions_turns(
 
 
 def test_a_late_tail_keeps_its_own_turn(tmp_path: Path) -> None:
-    """A tail that outlives its turn's join reads the turn it was started for;
-    the next turn's increment must not restamp its late items."""
+    """A tail that outlives its turn's join keeps its turn; the next turn does not restamp it."""
     import time
 
     from agent6.events import EventSink
@@ -1134,8 +1123,7 @@ def test_a_late_tail_keeps_its_own_turn(tmp_path: Path) -> None:
 def test_model_deltas_stream_once_in_journal_order_and_side_calls_stay_hidden(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ACP is a live surface: waiting for role.result batches the stream, and
-    side-role deltas are not messages from the agent to the operator."""
+    """Deltas stream live, and side-role deltas are not messages to the operator."""
     events = [
         {"type": "role.call", "role": "reviewer"},
         {"type": "role.text_delta", "role": "reviewer", "text": "private"},
@@ -1182,8 +1170,7 @@ def test_model_deltas_stream_once_in_journal_order_and_side_calls_stay_hidden(
 
 
 def test_a_dead_workers_open_tool_call_is_settled(tmp_path: Path) -> None:
-    """When a worker died between tool.call and tool.result, ACP left the call
-    in progress even though every dir-aware surface read the worker as dead."""
+    """A worker that died between tool.call and tool.result leaves no call in progress."""
     from agent6.events import EventSink
 
     sent: list[dict[str, Any]] = []
@@ -1206,8 +1193,7 @@ def test_a_dead_workers_open_tool_call_is_settled(tmp_path: Path) -> None:
 def test_a_relative_config_path_keeps_the_launch_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The bridge chdirs to the editor's workspace, so a relative --config
-    otherwise resolves in that workspace instead of where agent6 was launched."""
+    """A relative --config resolves where agent6 was launched, not in the editor's workspace."""
     launch = tmp_path / "launch"
     workspace = tmp_path / "workspace"
     launch.mkdir()
@@ -1223,8 +1209,7 @@ def test_a_relative_config_path_keeps_the_launch_directory(
 
 
 def test_an_already_answered_permission_is_not_sent_to_the_editor() -> None:
-    """The file bridge could answer before request() registered its slot, but
-    ACP still opened a stale dialog for an answer the run had already used."""
+    """An answer the run already used opens no dialog."""
     out = io.BytesIO()
     server = ACPServer(stdin=io.BytesIO(), stdout=out)
     assert server.request("session/request_permission", {}, timeout_s=1.0, until=lambda: True) == {}
@@ -1232,9 +1217,10 @@ def test_an_already_answered_permission_is_not_sent_to_the_editor() -> None:
 
 
 def test_the_runs_notices_reach_the_editor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The stash notice and the where-are-my-changes footer are facts the CLI
-    prints at the end of a run. Over ACP they went to stderr only once a
-    journal existed, so stashes accumulated invisibly."""
+    """The stash notice and the where-are-my-changes footer reach the editor on every run.
+
+    Over ACP they went to stderr only once a journal existed, so stashes accumulated invisibly.
+    """
     from agent6.events import EventSink
 
     monkeypatch.chdir(tmp_path)
@@ -1280,9 +1266,11 @@ def test_the_runs_notices_reach_the_editor(tmp_path: Path, monkeypatch: pytest.M
 def test_the_editor_gets_each_ending_fact_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The fold's done item carries the summary and the cost. The lifecycle's
-    cost receipt and the ending go to stderr (the editor's agent log), so
-    the editor reads each fact once and the log keeps its headline."""
+    """The fold's done item carries the summary and the cost.
+
+    The lifecycle's cost receipt and the ending go to stderr (the editor's agent log), so the editor
+    reads each fact once and the log keeps its headline.
+    """
     from agent6.events import EventSink
 
     monkeypatch.chdir(tmp_path)
@@ -1354,9 +1342,10 @@ def _two_sessions_one_blocked(
 def test_a_queued_prompt_says_what_it_waits_for(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Runs are serialised on the connection, so a second session's prompt can
-    wait for minutes. It waited in silence: the editor saw a turn that had
-    started and said nothing."""
+    """Runs are serialised on the connection, so a second session's prompt can wait for minutes.
+
+    It waited in silence: the editor saw a turn that had started and said nothing.
+    """
     wire, first, second, release = _two_sessions_one_blocked(tmp_path, monkeypatch)
     try:
         said = wire.until("session/update", timeout=3.0)
@@ -1371,8 +1360,7 @@ def test_a_queued_prompt_says_what_it_waits_for(
 def test_a_cancel_of_a_queued_prompt_answers_at_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A queued turn blocked on the run lock noticed its cancel only when the
-    other turn ended, so the editor's stop button answered minutes later."""
+    """A queued turn blocked on the run lock notices its cancel at once."""
     wire, _first, _second, release = _two_sessions_one_blocked(tmp_path, monkeypatch)
     try:
         wire.send(method="session/cancel", params={"sessionId": _second})
@@ -1388,9 +1376,7 @@ def test_a_cancel_of_a_queued_prompt_answers_at_once(
 def test_a_request_names_the_call_it_gates_not_the_newest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two calls in flight (a concurrent seat's read beside the gated
-    command): the request names the call the journaled prompt carries, and
-    only that call reads pending on the wire."""
+    """With two calls in flight, only the gated call reads pending on the wire."""
     from agent6.events import EventSink
 
     monkeypatch.chdir(tmp_path)
@@ -1448,10 +1434,10 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
 
 
 def test_an_answer_file_ends_the_editors_pending_request(tmp_path: Path) -> None:
-    """An editor over ACP is asked through a request that blocks until it
-    replies; `agent6 answer` and the web write the session's answer file,
-    which nothing in that wait read, so they reported "answered" to a run
-    that kept waiting on the editor."""
+    """The session's answer file answers an ACP permission wait too.
+
+    `agent6 answer` and the web write that file, and the blocking request never read it.
+    """
     from agent6.app.frontend import FrontendCapabilities
     from agent6.sessions.ipc import write_answer, write_question_answers
     from agent6.tools.operator_prompts import ApprovalRequest, QuestionRequest
@@ -1495,10 +1481,10 @@ def test_an_answer_file_ends_the_editors_pending_request(tmp_path: Path) -> None
 
 
 def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: Path) -> None:
-    """The lifecycle speaks from the run thread while the tail projects the
-    journal a poll behind: an ending line ("no changes were committed") reached
-    the editor before the turn's last tool calls, and a stop notice before the
-    work it stopped."""
+    """The turn's ending reaches the editor after the tail's last items.
+
+    The lifecycle speaks from the run thread while the tail projects the journal a poll behind.
+    """
     import time
 
     from agent6.events import EventSink
@@ -1540,9 +1526,10 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: Path) 
 def test_a_turn_that_cannot_choose_its_run_says_why(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The id is chosen before the run's try, and a global config that cannot
-    be read raises there: the turn ended with a bare "refusal" and not a word,
-    while the same failure a step later was reported."""
+    """A global config that cannot be read is reported, not a bare refusal.
+
+    The id is chosen before the run's try, so the failure raised outside the reporting path.
+    """
     monkeypatch.chdir(tmp_path)
 
     def _broken(*_a: object, **_kw: object) -> object:
@@ -1562,8 +1549,7 @@ def test_a_turn_that_cannot_choose_its_run_says_why(
 
 
 def test_an_internal_error_keeps_its_reason(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A handler bug answered the editor with the exception's class name alone
-    (`KeyError`) and wrote nothing to stderr."""
+    """A handler bug reaches the editor with its message and stderr, not the class name alone."""
     from agent6.ui.acp.session import Sessions
 
     def _boom(self: object, params: object) -> object:
@@ -1585,10 +1571,10 @@ def test_an_internal_error_keeps_its_reason(monkeypatch: pytest.MonkeyPatch) -> 
 def test_a_cancel_before_the_turn_starts_leaves_no_marker_for_the_next(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The cancel writes the run's stop marker before the turn starts (the id
-    exists, the run does not); a turn cancelled unstarted is stopped by not
-    starting, and the marker would otherwise stop the session's next turn at
-    its first step."""
+    """A turn cancelled before it starts is stopped by not starting, leaving no marker behind.
+
+    The marker would otherwise stop the session's next turn at its first step.
+    """
     from agent6.sessions.ipc import request_stop, stop_request_pending
 
     monkeypatch.chdir(tmp_path)
@@ -1611,10 +1597,11 @@ def test_a_cancel_before_the_turn_starts_leaves_no_marker_for_the_next(
 def test_a_second_prompt_after_a_recorded_turn_with_no_snapshot_starts_a_new_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A first turn that wrote its manifest and died before its first
-    checkpoint leaves a run the lifecycle refuses to start again and cannot
-    resume; the session goes on under a new run and the editor is told. A
-    turn that recorded nothing starts under the same id."""
+    """A first turn that died before its first checkpoint goes on under a new run.
+
+    The lifecycle refuses to start that run again and cannot resume it, and the editor is told;
+    a turn that recorded nothing starts under the same id.
+    """
     minted = iter(("run-AAAA11", "run-BBBB22"))
     calls: list[str] = []
     monkeypatch.chdir(tmp_path)
@@ -1657,8 +1644,7 @@ def test_a_second_prompt_after_a_recorded_turn_with_no_snapshot_starts_a_new_run
 
 
 def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: Path) -> None:
-    """The tool_call_update for an edit carries each path the result journaled,
-    absolute, so the editor follows along."""
+    """An edit's tool_call_update carries each journaled path, absolute, so the editor follows."""
     from agent6.events import EventSink
 
     sent: list[dict[str, Any]] = []
@@ -1686,12 +1672,11 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: Path) 
 def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The lifecycle sweeps bridge files older than the execution's start, and the
-    bridge passes its turn's start: a cancel written after the turn began and
-    before that sweep (during the lifecycle's own startup) survives it and
-    stops the run at its first step. Keyed on the lifecycle's own clock, the
-    sweep dropped it, and the run ran on while the editor was told
-    "cancelled"."""
+    """A cancel written between the turn's start and the lifecycle's sweep still stops the run.
+
+    The sweep drops bridge files older than the execution's start; keyed on the lifecycle's
+    own clock, it dropped the cancel and the run ran on while the editor read "cancelled".
+    """
     from agent6.app import preflight as preflight_mod
     from agent6.app import run as run_mod
     from agent6.app._execution import ExecutionEnd
@@ -1739,10 +1724,11 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
 def test_a_missing_provider_key_refuses_the_turn_before_any_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The key preflight was the CLI's alone, so an ACP turn whose provider had
-    no key built the run's state and died at its first provider call. The
-    lifecycle owns the preflight: the turn is refused before any state
-    exists, and the refusal names `agent6 connect`."""
+    """A turn whose provider has no key is refused before any state exists.
+
+    The key preflight was the CLI's alone, so the run's state was built and died at its first
+    call; the refusal names `agent6 connect`.
+    """
     from agent6.paths import state_dir
 
     repo = _repo(tmp_path / "repo")

@@ -139,9 +139,11 @@ def test_non_dict_snapshot_skips_check(tmp_path: Path) -> None:
 
 
 def test_guard_never_reads_the_checkout(tmp_path: Path) -> None:
-    """Divergence is detected from the ref alone while HEAD sits anywhere: the
-    operator's checkout is on a rewritten main, the chain is aligned, and the
-    guard still passes (an implementation comparing HEAD would refuse)."""
+    """Divergence is detected from the ref alone while HEAD sits anywhere.
+
+    The operator's checkout is on a rewritten main, the chain is aligned, and the guard still
+    passes; an implementation comparing HEAD would refuse.
+    """
     repo = _init_repo(tmp_path)
     base = _git(repo, "rev-parse", "HEAD")
     _git(repo, "update-ref", _REF, base)

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions review`: a finished session's journal folds into a digest
-the reviewer role reads, and the review prints and is saved, with nothing
-written to the repo or the memory."""
+"""`agent6 sessions review`.
+
+A finished session's journal folds into a digest the reviewer role reads, and the review prints and
+is saved, with nothing written to the repo or the memory.
+"""
 
 from __future__ import annotations
 
@@ -137,9 +139,11 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: Path) -> None:
 
 
 def test_every_writer_of_a_fact_is_credited_not_only_the_first_and_last(repo: Path) -> None:
-    """A creates a fact, B edits it, C edits it: reviewing B credited B with
-    no memory write, because the record kept only the first and the last
-    writer."""
+    """A creates a fact, B edits it, C edits it.
+
+    Reviewing B credited B with no memory write, because the record kept only the first and the last
+    writer.
+    """
     layout = _write_session(repo)
     record_use(layout.state_dir, session="run-A", wrote=("fact",), read={})
     record_use(layout.state_dir, session="run-AAAA11", wrote=("fact",), read={})
@@ -169,9 +173,11 @@ def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: Path) -> None:
 
 
 def test_a_plan_or_an_ask_has_no_gate_to_pass(repo: Path) -> None:
-    """A plan's and an ask's `session.end` carries `all_passed: true` (nothing
-    gated them), and the digest read that as "verify passed": a plan that ran
-    no verify was reviewed as green."""
+    """A plan's or an ask's `all_passed: true` is not a verify pass.
+
+    Nothing gated them; a digest reading it as "verify passed" reviews a plan that ran no verify as
+    green.
+    """
     plan = [
         {"type": "session.start", "session_id": "plan-1", "mode": "plan", "user_task": "plan it"},
         {"type": "session.end", "reason": "finish_planning", "iterations": 3, "all_passed": True},
@@ -188,8 +194,10 @@ def test_a_plan_or_an_ask_has_no_gate_to_pass(repo: Path) -> None:
 
 
 def test_the_digest_clips_a_runaway_index_like_the_prompt_does(repo: Path) -> None:
-    """The index reaches the reviewer under the same cap the prompt applies,
-    with the same marker, so one runaway index cannot flood a review call."""
+    """The digest clips a runaway index under the same cap and marker as the prompt.
+
+    One runaway index cannot flood a review call.
+    """
     from agent6.memory import INDEX_INJECT_CAP
 
     layout = _write_session(repo)
@@ -201,11 +209,13 @@ def test_the_digest_clips_a_runaway_index_like_the_prompt_does(repo: Path) -> No
 
 
 def test_the_gate_word_agrees_with_the_listing_scan(repo: Path) -> None:
-    """Three shapes the digest got wrong against `sessions show`: a resumed
-    run whose red verify was in execution 1 and whose execution 2 ran none reads
-    "unverified" (the scan resets at the resume); a gated run whose gate never
-    ran (all_passed false, no verify.end) reads "unverified", not "not
-    gated"; a killed run (a green verify, no session.end) reads "unverified"."""
+    """Three shapes the digest got wrong against `sessions show`.
+
+    A resumed run whose red verify was in execution 1 and whose execution 2 ran none reads
+    "unverified" (the scan resets at the resume); a gated run whose gate never ran (all_passed
+    false, no verify.end) reads "unverified", not "not gated"; a killed run (a green verify, no
+    session.end) reads "unverified".
+    """
     from agent6.viewmodel.listing import scan_session_log
 
     resumed = [
@@ -362,10 +372,12 @@ def test_the_verb_prints_and_saves_the_review(
 def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The verb resolved through the git verbs' resolver, which refused a
-    model-git run, a fan-out and a session with no manifest, and with no id
-    picked the newest RUN while a plan that just ended was newer. The review
-    reads a journal: any session by id, the newest session without one."""
+    """The verb reviews any session by id, and the newest session across buckets without one.
+
+    The review reads a journal, so it does not go through the git verbs' resolver, which refuses a
+    model-git run, a fan-out and a session with no manifest, and with no id picks the newest run
+    while a plan that just ended is newer.
+    """
     import time as _time
 
     provider = _FakeProvider(response_text="## Outcome\nok")

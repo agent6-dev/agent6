@@ -2,9 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 answer`: the headless seat at an `ask_user` question.
 
-`agent6 steer` refuses a run blocked on a question and every other way in
-needs a terminal, so a script that forwards questions somewhere else had no
-way to send the reply back.
+`agent6 steer` refuses a run blocked on a question and every other way in needs a terminal.
 """
 
 from __future__ import annotations
@@ -68,8 +66,7 @@ def test_answer_writes_the_file_the_run_is_waiting_on(
 def test_answer_with_no_text_prints_the_question_and_its_options(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The operator has to see what they are answering, so a bare call reads
-    the prompt instead of guessing at it."""
+    """A bare call prints the question and its options."""
     _run_with_question(
         tmp_path,
         monkeypatch,
@@ -86,8 +83,10 @@ def test_answer_with_no_text_prints_the_question_and_its_options(
 def test_a_short_answer_list_is_refused_rather_than_misaligned(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Answers align to the prompt's questions by index: one answer for a
-    two-question prompt would answer the wrong one."""
+    """A short answer list is refused rather than misaligned.
+
+    Answers align to the prompt's questions by index.
+    """
     layout = _run_with_question(
         tmp_path,
         monkeypatch,
@@ -126,8 +125,7 @@ def test_answer_refuses_a_run_that_is_not_waiting(
 def test_answer_refuses_a_dead_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Only a live run holds a question open; a dead one's answer file would
-    sit unread forever."""
+    """Only a live run holds a question open; a dead one's answer file would sit unread forever."""
     layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
     write_worker_pid(layout.session_dir, 999_999_999)
 
@@ -152,10 +150,11 @@ def test_answer_refuses_a_question_another_surface_answered(
 def test_answer_reaches_a_run_waiting_at_its_own_terminal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A foreground run's terminal prompt reads the answer file while it waits,
-    so the verb takes a run with no away-mode and no front-end too. It once
-    refused that run as "waiting at its own terminal", while the web and the
-    TUI wrote the file and said "answered" to a run that never looked."""
+    """Answer reaches a run waiting at its own terminal.
+
+    A foreground run's terminal prompt reads the answer file while it waits, so the verb takes a
+    run with no away-mode and no front-end too.
+    """
     layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
     (layout.session_dir / "approvals" / "away.mode").unlink()  # no away-mode, no front-end
 
@@ -168,8 +167,7 @@ def test_answer_reaches_a_run_waiting_at_its_own_terminal(
 def test_a_bare_call_prints_the_question_even_on_a_terminal_bound_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Reading the question needs no delivery channel. Gating the read on one
-    hid the question from the operator it was asked of."""
+    """Reading the question needs no delivery channel."""
     layout = _run_with_question(
         tmp_path, monkeypatch, questions=[{"question": "Which port?", "options": ["8080"]}]
     )
@@ -183,8 +181,10 @@ def test_a_bare_call_prints_the_question_even_on_a_terminal_bound_run(
 def test_a_live_run_with_no_question_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The refusal names the state the run is in, not one it is not: a run that
-    is not waiting at all was told it was waiting at its terminal."""
+    """A live run with no question says so.
+
+    The refusal names the state the run is in, not one it is not.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -206,9 +206,11 @@ def test_a_live_run_with_no_question_says_so(
 def test_answer_asks_the_affordance_question_the_other_verbs_ask(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """ "Will anything read what I write" has one predicate. `answer` probed the
-    pid instead, where `steer` and the web's approve read the status word, so
-    the same run could be answerable on one surface and not another."""
+    """Whether anything will read an answer has one predicate.
+
+    `answer`, `steer` and the web's approve read the same status word, so a run is answerable on
+    every surface or none.
+    """
     import inspect
 
     from agent6.ui.cli import answer_cmd

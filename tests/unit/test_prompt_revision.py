@@ -243,9 +243,11 @@ def test_workflow_interactive_selector_can_use_original(tmp_path: Path) -> None:
 
 
 def test_quit_at_the_revise_choice_reads_as_an_operator_stop(tmp_path: Path) -> None:
-    """An operator's `q` (or Ctrl-D) at the interactive revise_prompt choice
-    ended the run as `prompt_revision_failed`, "prompt revision failed" in
-    every listing, though nothing failed: it is the operator's own stop."""
+    """A quit at the revise choice reads as an operator stop.
+
+    An operator's `q` (or Ctrl-D) at the interactive revise_prompt choice is the operator's own
+    stop, not `prompt_revision_failed` ("prompt revision failed" in every listing).
+    """
     from agent6.viewmodel.listing import status_word
 
     def quit_at_the_choice(_original: str, _revised: str, _questions: tuple[str, ...]) -> None:

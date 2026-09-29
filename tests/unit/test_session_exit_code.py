@@ -44,9 +44,11 @@ def test_exit_code_other_failures_are_one() -> None:
 
 
 def test_exit_code_finish_over_a_red_verify_is_four() -> None:
-    """`completed` means the agent stopped deliberately, not that the work
-    verified: a finish_session over a red or stale gate exited 0 and read as
-    success to every script. Its own code, distinct from a broken run (1)."""
+    """`completed` means the agent stopped deliberately, not that the work verified.
+
+    A finish_session over a red or stale gate exited 0 and read as success to every script;
+    its own code is distinct from a broken run (1).
+    """
     assert (
         session_exit_code(_result(completed=True, reason="finish_session", verified="failed")) == 4
     )
@@ -64,9 +66,11 @@ def test_exit_code_verified_finish_is_zero() -> None:
 
 
 def test_exit_code_unverified_finish_is_four() -> None:
-    """4 means "the tree is not green": a gated finish nothing observed (no
-    verify ran this execution, or edits landed after the last green) exits 4 like a
-    red one -- exiting 0 would let a worker pass by never running the gate."""
+    """A gated finish nothing observed exits 4, like a red one.
+
+    No verify ran this execution, or edits landed after the last green; exiting 0 would let a
+    worker pass by never running the gate.
+    """
     assert (
         session_exit_code(_result(completed=True, reason="finish_session", verified="unverified"))
         == 4
@@ -74,9 +78,10 @@ def test_exit_code_unverified_finish_is_four() -> None:
 
 
 def test_auto_merge_needs_a_vouched_for_tree() -> None:
-    """auto_merge lands only work the gate vouched for (or that had no gate):
-    a red OR unverified finish stays on its branch. The eligibility check is
-    one shared predicate, so run and resume cannot drift."""
+    """auto_merge lands only work the gate vouched for, or that had no gate.
+
+    A red or unverified finish stays on its branch; run and resume share the one predicate.
+    """
     from agent6.app.finalize import auto_merge_eligible
 
     assert auto_merge_eligible(_result(completed=True, reason="finish_session", verified="passed"))
@@ -91,10 +96,11 @@ def test_auto_merge_needs_a_vouched_for_tree() -> None:
 
 
 def test_exit_code_stranded_edits_are_five() -> None:
-    """Completed, gate green (or absent), but the promised branch never
-    materialized and the edits sit uncommitted: 0 would tell a script the
-    deliverable landed. A red gate outranks 5 (the gate is the primary
-    signal); an unstranded finish stays 0."""
+    """A green finish whose promised branch never materialized exits 5, not 0.
+
+    The edits sit uncommitted, so 0 would tell a script the deliverable landed. A red gate
+    outranks 5; an unstranded finish stays 0.
+    """
     ok = _result(completed=True, reason="finish_session", verified="passed")
     assert session_exit_code(ok, stranded=True) == 5
     assert session_exit_code(ok, stranded=False) == 0
@@ -105,9 +111,10 @@ def test_exit_code_stranded_edits_are_five() -> None:
 
 
 def test_stranded_edits_reads_git_reality(tmp_path: Path) -> None:
-    """The predicate is true exactly when the manifest promised a branch that
-    does not exist AND the tree is dirty; a clean tree (nothing to commit) and
-    an existing branch are both False."""
+    """The predicate is true exactly when the promised branch is missing and the tree is dirty.
+
+    A clean tree and an existing branch are both False.
+    """
     import subprocess
 
     from agent6.app.finalize import stranded_edits
@@ -148,13 +155,13 @@ def test_stranded_edits_reads_git_reality(tmp_path: Path) -> None:
 
 
 def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: Path) -> None:
-    """The predicate keyed on the branch name, so under `branch_per_run =
-    false` a completed run whose commit never landed exited 0 with no
-    warning, and under `commit_per_step = false` a green finish over a dirty
-    tree exited 5 over a "failed" commit nothing ever attempted. It reads
-    the record: `commits_ref` (the branch, else the chain ref) and the
-    manifest's commit stamp; a run with no chain to commit to (a plan,
-    `[git].control = "model"`) never strands."""
+    """The stranded predicate reads the commit record, not the branch name.
+
+    Keyed on the branch name, `branch_per_run = false` exited 0 with no warning over a commit
+    that never landed, and `commit_per_step = false` exited 5 over a commit nothing attempted.
+    It reads `commits_ref` (the branch, else the chain ref) and the manifest's commit stamp; a
+    run with no chain to commit to (a plan, `[git].control = "model"`) never strands.
+    """
     import json
     import os
     import subprocess

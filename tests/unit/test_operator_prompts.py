@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The one gate every operator prompt goes through (`tools.operator_prompts`):
-it mints the ids, journals the prompt/answer pair, names the call a prompt
-gates, and no front-end journals a copy."""
+"""The one gate every operator prompt goes through (`tools.operator_prompts`).
+
+It mints the ids, journals the prompt and answer pair, names the call a prompt gates, and no front-
+end journals a copy.
+"""
 
 from __future__ import annotations
 
@@ -65,8 +67,11 @@ def _dispatcher(session_dir: Path, events: EventSink, prompts: OperatorPrompts) 
 
 
 def test_an_approval_is_journaled_with_the_call_it_gates(tmp_path: Path) -> None:
-    """The dispatcher journals tool.call, then the gate journals the prompt
-    stamped with THAT call's id and the answer with the approver's source."""
+    """An approval is journaled with the call it gates.
+
+    The dispatcher journals tool.call, then the gate journals the prompt stamped with that call's id
+    and the answer with the approver's source.
+    """
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
     d = _dispatcher(session_dir, events, _prompts(session_dir, events, approver=_deny))
@@ -106,9 +111,12 @@ def test_a_question_is_journaled_with_the_call_it_gates(tmp_path: Path) -> None:
 
 
 def test_concurrent_seats_each_name_their_own_call(tmp_path: Path) -> None:
-    """Two seats dispatching at once on one dispatcher, both past their stamp
-    before either reads it: each prompt names the call its own thread is
-    dispatching (a stamp shared across threads would name the other seat's)."""
+    """Concurrent seats each name their own call.
+
+    Two seats dispatching at once on one dispatcher, both past their stamp before either reads it:
+    each prompt names the call its own thread is dispatching (a stamp shared across threads would
+    name the other seat's).
+    """
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
     named: dict[str, int | None] = {}
@@ -137,9 +145,11 @@ def test_concurrent_seats_each_name_their_own_call(tmp_path: Path) -> None:
 
 
 def test_a_verify_the_harness_runs_gates_no_call(tmp_path: Path) -> None:
-    """`run_verify` outside a dispatch (the harness's own certification) goes
-    through the same gate and carries no call; so does a question asked
-    before the loop."""
+    """A verify the harness runs gates no call.
+
+    `run_verify` outside a dispatch (the harness's own certification) goes through the same gate and
+    carries no call; so does a question asked before the loop.
+    """
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
     prompts = _prompts(session_dir, events, approver=_deny)
@@ -154,9 +164,11 @@ def test_a_verify_the_harness_runs_gates_no_call(tmp_path: Path) -> None:
 
 
 def test_a_standing_grant_answers_without_a_prompt(tmp_path: Path) -> None:
-    """ "Allow all" for a scope answers that scope's later prompts itself: no
-    front-end is asked and no prompt is journaled, only the answer. The id is
-    still consumed, so the sequence stays in step on every surface."""
+    """An "Allow all" for a scope answers that scope's later prompts itself.
+
+    No front-end is asked and no prompt is journaled, only the answer. The id is still consumed, so
+    the sequence stays in step on every surface.
+    """
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
     seen: list[str] = []
@@ -176,9 +188,11 @@ def test_a_standing_grant_answers_without_a_prompt(tmp_path: Path) -> None:
 
 
 def test_a_premature_answer_is_cleared_before_the_prompt_is_journaled(tmp_path: Path) -> None:
-    """Ids are predictable counters, so an answer written ahead of its prompt
-    must be gone before any front-end could read the slot: the gate clears
-    it, then journals the prompt, then asks."""
+    """A premature answer is cleared before the prompt is journaled.
+
+    Ids are predictable counters, so an answer written ahead of its prompt must be gone before any
+    front-end could read the slot: the gate clears it, then journals the prompt, then asks.
+    """
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
     write_answer(session_dir, "approval-1", "yes")  # the premature POST
@@ -196,9 +210,11 @@ def test_a_premature_answer_is_cleared_before_the_prompt_is_journaled(tmp_path: 
 
 
 def test_answers_align_to_the_questions(tmp_path: Path) -> None:
-    """A front-end that answered fewer questions left the rest unanswered
-    (the TUI writes no answers for a dismissed modal); more answers than
-    questions is a front-end defect and fails loudly."""
+    """Answers align to the questions.
+
+    A front-end that answered fewer questions leaves the rest unanswered (the TUI writes no answers
+    for a dismissed modal); more answers than questions is a front-end defect and fails loudly.
+    """
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
     questions = (UserQuestion(question="a?"), UserQuestion(question="b?"))
@@ -218,9 +234,11 @@ def test_answers_align_to_the_questions(tmp_path: Path) -> None:
 
 
 def test_every_prompt_event_has_exactly_one_emitter() -> None:
-    """The prompt/answer pairs are journaled in one place; a front-end that
-    journals its own copy drifts (its own counter, its own idea of the gated
-    call)."""
+    """Every prompt event has exactly one emitter.
+
+    The prompt and answer pairs are journaled in one place; a front-end that journals its own copy
+    drifts (its own counter, its own idea of the gated call).
+    """
     emits = re.compile(r'(?:emit|journal)\(\s*"(approval|question)\.(prompt|answer)"')
     sites: dict[str, set[str]] = {}
     for path in _SRC.rglob("*.py"):
@@ -236,9 +254,11 @@ def test_every_prompt_event_has_exactly_one_emitter() -> None:
 
 
 def test_an_unseen_question_says_so_in_its_result(tmp_path: Path) -> None:
-    """A headless run answered `ask_user` with bare empty strings, and the
-    model asked again: the reason (nobody attached) reached the console only.
-    The result carries it; a blank a person left does not."""
+    """A headless run answered `ask_user` with bare empty strings, and the model asked again.
+
+    The reason (nobody attached) reached the console only. The result carries it; a blank a person
+    left does not.
+    """
     from agent6.tools.operator_prompts import UNANSWERED_NOTE, unanswered_note
 
     session_dir = tmp_path / "s"

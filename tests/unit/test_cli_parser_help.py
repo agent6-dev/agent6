@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parser UX guards: leaf --help descriptions, subcommand metavars, terminology
-(machine *id*), completers/metavars on options, and plain punctuation."""
+"""Parser UX guards.
+
+Leaf --help descriptions, subcommand metavars, terminology (machine *id*), completers and
+metavars on options, and plain punctuation.
+"""
 
 from __future__ import annotations
 
@@ -49,9 +52,10 @@ def _positional(parser: argparse.ArgumentParser, dest: str) -> argparse.Action:
 
 
 def test_the_command_list_is_grouped_and_complete() -> None:
-    """`agent6 --help` listed its commands flat, 29 of them, setup verbs between
-    the work verbs. The list is titled groups in a fixed order, leading with
-    the work verbs, and every command sits in exactly one."""
+    """`agent6 --help` lists its commands in titled groups, work verbs first.
+
+    Every command sits in exactly one group.
+    """
     from agent6.ui.cli.parser import COMMAND_GROUPS
 
     parser = build_parser()
@@ -77,16 +81,14 @@ def test_the_command_list_is_grouped_and_complete() -> None:
 
 
 def test_every_subparser_has_a_description() -> None:
-    # Leaf --help used to open with no summary at all; each add_parser carries
-    # its whole help string as the description.
+    # Each add_parser carries its whole help string as the description.
     parser = build_parser()
     missing = [name for name, sub in _subparsers(parser) if not sub.description]
     assert missing == []
 
 
 def test_the_command_list_shows_one_sentence_per_command() -> None:
-    """`agent6 --help` is a list of commands: each entry is its command's first
-    sentence, and the rest waits in `agent6 <command> --help`."""
+    """Each entry in `agent6 --help` is its command's first sentence."""
     parser = build_parser()
     action = next(
         a
@@ -102,9 +104,7 @@ def test_the_command_list_shows_one_sentence_per_command() -> None:
         description = action.choices[name].description or ""
         assert ". " not in entry, f"{name} lists more than its first sentence"
         assert description.startswith(entry.rstrip(".")), name
-        # An abbreviation ends in a period, so a first sentence containing one
-        # is cut there: `system` listed "Host/OS setup that needs privileges
-        # (e.g." and lost the rest, unbalanced bracket included.
+        # An abbreviation's period would cut the first sentence at "(e.g.", bracket unbalanced.
         assert not entry.rstrip().endswith(("e.g.", "i.e.", "etc.")), f"{name}: {entry}"
         assert entry.count("(") == entry.count(")"), f"{name}: {entry}"
 
@@ -112,9 +112,7 @@ def test_the_command_list_shows_one_sentence_per_command() -> None:
 def test_bare_parent_command_error_names_subcommand_not_dest(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # A parent whose subcommand is required must name "<subcommand>", not leak
-    # the argparse dest ("plan_command"). (`runs` no longer errors here: bare
-    # `agent6 sessions` lists runs.)
+    # A required subcommand is named "<subcommand>", never the argparse dest.
     with pytest.raises(SystemExit):
         build_parser().parse_args(["plan"])
     err = capsys.readouterr().err
@@ -168,8 +166,7 @@ def test_plan_task_help_does_not_promise_omission() -> None:
 
 
 def test_fork_help_covers_read_only_session_modes() -> None:
-    # Fork preserves its source mode: run forks get worktrees, while plan and
-    # ask forks are read-only and stay in the current checkout.
+    # Fork preserves its source mode: run forks get worktrees, plan and ask forks stay read-only.
     fork = _find(build_parser(), "fork")
     assert (fork.description or "").startswith("Copy a session at one of its saved turns")
     assert "A run copy gets its own git worktree" in (fork.description or "")
@@ -329,8 +326,10 @@ def test_profile_flags_have_the_profiles_completer() -> None:
 
 
 def test_the_model_flag_rides_every_session_verb_with_its_completer() -> None:
-    """`--model [PROVIDER/]MODEL` on run, resume, plan run and ask query, each
-    completing the routes the config can run."""
+    """`--model [PROVIDER/]MODEL` rides run, resume, plan run and ask query.
+
+    Completing the routes.
+    """
     parser = build_parser()
     carriers = (
         _find(parser, "run"),
@@ -347,8 +346,7 @@ def test_the_model_flag_rides_every_session_verb_with_its_completer() -> None:
 
 
 def test_config_show_keys_complete_like_config_get() -> None:
-    """`config show KEY...` takes several effective leaves (or section prefixes)
-    and offers them on TAB, the same pool `config get` completes."""
+    """`config show KEY...` completes the same pool `config get` does."""
     parser = build_parser()
     action = _positional(_find(_find(parser, "config"), "show"), "keys")
     assert action.nargs == "*"
@@ -365,8 +363,7 @@ def test_option_metavars() -> None:
 
 
 def test_model_header_names_reviewer_fallback(capsys: pytest.CaptureFixture[str]) -> None:
-    # config.py: planner and reviewer fall back to worker (the header said
-    # "planner/worker").
+    # Planner and reviewer fall back to worker.
     from agent6.ui.cli import main
 
     assert main(["model"]) == 0
@@ -375,8 +372,7 @@ def test_model_header_names_reviewer_fallback(capsys: pytest.CaptureFixture[str]
 
 
 def test_the_directories_epilog_offers_no_env_override() -> None:
-    """`--help` ends with the four XDG directories; `XDG_*` alone decides them,
-    so no `AGENT6_*_HOME` override is offered."""
+    """The directories epilog offers no `AGENT6_*_HOME` override; `XDG_*` alone decides them."""
     epilog = build_parser().epilog or ""
     assert "AGENT6_" not in epilog
     listed = [line.split()[0] for line in epilog.splitlines() if line.startswith("  ")]

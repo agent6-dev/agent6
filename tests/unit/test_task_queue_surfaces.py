@@ -35,8 +35,7 @@ def _node(**kw: Any) -> TaskNode:
 
 
 def test_the_tree_view_carries_who_added_a_task() -> None:
-    """The graph.update snapshot grew `created_by` so a surface can tell the
-    operator's queued work from the model's own breakdown."""
+    """The graph.update snapshot carries `created_by`, telling queued work from the model's own."""
     nodes = {
         "root": {"title": "run", "parent_id": None, "children": ["a", "b"], "created_by": "user"},
         "a": {"title": "model's", "parent_id": "root", "children": [], "created_by": "worker"},
@@ -87,10 +86,10 @@ def test_an_end_over_an_operator_task_names_it_as_theirs() -> None:
 
 
 def test_every_surface_reads_one_owner_note() -> None:
-    """The TUI and web decided "queued by you" for themselves and marked no
-    standing goal; the CLI tree marked nothing. One owner (owner_note) and
-    one field on the view, with the id leading every line as `/retire` takes
-    it."""
+    """One owner note on the view marks queued and standing tasks, with the id leading every line.
+
+    The TUI and web decided "queued by you" for themselves and the CLI tree marked nothing.
+    """
     from agent6.graph.models import owner_note
     from agent6.ui.cli._task_tree import task_tree_lines
     from agent6.viewmodel.state import task_tree_views

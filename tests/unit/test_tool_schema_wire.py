@@ -70,9 +70,10 @@ def _digest() -> list[dict[str, Any]]:
 
 
 def _extra_digest() -> list[dict[str, Any]]:
-    """Structural digest of every tool OUTSIDE ALL_TOOLS, deduped by name (dag_*
-    appear in both LOOP and PLAN; finish_session in both LOOP and MACHINE) and sorted,
-    so the pin is order-independent of the tuples."""
+    """A structural digest of every tool outside ALL_TOOLS, deduped by name and sorted.
+
+    dag_* appear in both LOOP and PLAN, finish_session in both LOOP and MACHINE.
+    """
     by_name: dict[str, dict[str, Any]] = {}
     for cls in (*LOOP_EXTRA_TOOLS, *PLAN_EXTRA_TOOLS, *ASK_EXTRA_TOOLS, *MACHINE_EXTRA_TOOLS):
         schema = cls.model_json_schema()
@@ -102,9 +103,10 @@ def test_extra_tool_schemas_structure_matches_golden() -> None:
 
 
 def test_read_background_does_not_claim_the_default_configured_interval() -> None:
-    """The tool resolves an omitted wait_s from harness.command_checkin_s, so
-    its static description must not claim the 900-second Config default after
-    an operator configures another interval."""
+    """The description never claims the 900-second default once an operator configures another.
+
+    The tool resolves an omitted wait_s from harness.command_checkin_s.
+    """
     from agent6.tools.schema import ReadBackgroundInput
 
     assert "900 s by default" not in ReadBackgroundInput.TOOL_DESCRIPTION
@@ -126,10 +128,10 @@ def test_status_pattern_bytes_are_pinned() -> None:
 
 
 def test_an_ask_user_question_is_bounded_like_every_other_model_string() -> None:
-    """The question and its options reach the journal, an ACP permission title,
-    the TUI modal and the web composer verbatim. Uncapped, a model that ran
-    away wrote all of them: every sibling string in this schema is bounded, and
-    this one was the exception."""
+    """The question and its options are bounded like every sibling string in the schema.
+
+    They reach the journal, an ACP permission title, the TUI modal and the web composer verbatim.
+    """
     import pytest
     from pydantic import ValidationError
 
@@ -147,9 +149,10 @@ def test_an_ask_user_question_is_bounded_like_every_other_model_string() -> None
 
 
 def test_add_task_parent_id_is_bounded_like_its_siblings() -> None:
-    """parent_id was the one task-id param without the bound its siblings
-    enforce; "" passed the schema and silently attached the task to the run
-    root. None still means root; an empty or oversized id fails loud."""
+    """parent_id carries the bound its sibling task-id params enforce.
+
+    "" passed the schema and silently attached the task to the run root; None still means root.
+    """
     import pytest
     from pydantic import ValidationError
 
@@ -165,12 +168,11 @@ def test_add_task_parent_id_is_bounded_like_its_siblings() -> None:
 
 
 def test_wire_schema_strips_schema_titles_but_keeps_a_field_named_title() -> None:
-    """The loop's tool list and the descriptor dump share one schema builder;
-    it drops pydantic's schema-level "title" noise and nothing else. The old
-    stripper dropped every "title" key, add_task's `title` FIELD included (the
-    descriptor dump alone had it, so tests pinned a schema the model never
-    saw and the model would have seen add_task without its one required
-    field once the loop shared it)."""
+    """The one schema builder drops pydantic's schema-level "title" noise and nothing else.
+
+    The old stripper dropped every "title" key, add_task's `title` field included, so tests
+    pinned a schema the model never saw.
+    """
     from agent6.harness._toolset import tool_definitions
     from agent6.tools.schema import DagAddTaskInput, ReadFileInput, wire_schema
 

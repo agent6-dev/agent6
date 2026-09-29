@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The Harness-free lane bookkeeping behind `/parallel` dispatch, pinned at
-the unit level now that it lives outside the loop (harness/_parallel_dispatch)."""
+"""The Harness-free lane bookkeeping behind `/parallel` dispatch (`harness/_parallel_dispatch`)."""
 
 from __future__ import annotations
 
@@ -40,8 +39,11 @@ def test_segment_lanes_expands_counts_and_models() -> None:
 
 
 def test_join_lane_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A failed lane, a conflicted merge, and a GitError each reduce to a
-    non-"joined" LaneJoin instead of aborting the run."""
+    """join_lane_result never raises.
+
+    A failed lane, a conflicted merge and a GitError each reduce to a non-"joined" LaneJoin instead
+    of aborting the run.
+    """
     kw: dict[str, Any] = {
         "ref": "refs/agent6/run",
         "fallback_parent": None,
@@ -124,13 +126,15 @@ def test_lane_note_wordings() -> None:
 
 
 def test_segment_lanes_carry_the_operator_pins_out_of_band() -> None:
-    """`/pin` tells the worker an instruction "stays binding for the rest of the
-    run", and a lane's branch is merged back into the coordinator's -- so a lane
-    that never saw the pin could violate a standing instruction and have that
-    work land anyway. But a pin folded into the TASK became the lane's manifest
-    user_task, so every listing and the judge's CandidateBrief led with
-    "PINNED operator instructions (verbatim):" instead of the work. Pins ride
-    the LaneTask out-of-band; the task text stays the task."""
+    """Segment lanes carry the operator pins out of band.
+
+    `/pin` tells the worker an instruction "stays binding for the rest of the run", and a lane's
+    branch is merged back into the coordinator's, so a lane that never saw the pin could violate a
+    standing instruction and have that work land. A pin folded into the task text becomes the lane's
+    manifest user_task, so every listing and the judge's CandidateBrief lead with "PINNED operator
+    instructions (verbatim):" instead of the work. Pins ride the LaneTask; the task text stays the
+    task.
+    """
     lanes = segment_lanes(
         Segment(spec="2", task="refactor the model layer"), ["never touch schema files"], limit=4
     )
@@ -147,9 +151,11 @@ def test_segment_lanes_carry_the_operator_pins_out_of_band() -> None:
 def test_a_dirty_origin_fans_out_under_stash_and_include(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`--parallel` read `require_clean_worktree` alone, so the documented
-    stash-without-asking setup refused to fan out and named a key the run
-    path ignored. One knob decides for both."""
+    """A dirty origin fans out under stash and include.
+
+    One knob decides for the run path and `--parallel` alike; reading `require_clean_worktree` alone
+    refuses the documented stash-without-asking setup and names a key the run path ignores.
+    """
     from agent6.config import Config
     from agent6.ui.cli import parallel as cli_parallel
 
@@ -179,9 +185,11 @@ def test_a_dirty_origin_fans_out_under_stash_and_include(
 
 
 def test_summary_hands_a_conflicted_lane_to_the_operator() -> None:
-    """The summary told the model to run `git merge` itself; git is agent6's in
-    a run and `.git` is read-only in the jail, so the line names the operator
-    and tells the model to continue."""
+    """The summary hands a conflicted lane to the operator.
+
+    Git is agent6's in a run and `.git` is read-only in the jail, so the line names the operator and
+    tells the model to continue rather than run `git merge` itself.
+    """
     text = summary_text("g", [_join("conflict")])
     assert "for the operator (`git merge " in text and "continue without it" in text
     assert "resolve" not in text

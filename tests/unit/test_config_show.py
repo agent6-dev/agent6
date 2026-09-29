@@ -18,10 +18,7 @@ from agent6.viewmodel.config_view import render_key_detail, render_show
 def test_a_top_level_scalar_is_not_dressed_as_a_table(tmp_path: Path) -> None:
     """`preset` is a bare top-level key, not a `[preset]` table.
 
-    The renderer grouped every leaf by its first dotted segment, so a key with
-    no dot became its own one-row "section" under a `[preset]` header. Copying
-    that into a config file writes invalid TOML, and `config fill` -- the other
-    half of the same feature -- already emits top-level scalars correctly.
+    `config fill` emits top-level scalars the same way.
     """
     out = render_show(load_effective(tmp_path, preset="quick"))
 
@@ -34,12 +31,7 @@ def test_a_top_level_scalar_is_not_dressed_as_a_table(tmp_path: Path) -> None:
 def test_config_presets_reads_the_explicit_config_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`--config FILE` is a global flag every config subcommand honours -- except
-    `presets`, which hardcoded None and silently listed only the built-ins.
-
-    Silently: the file parsed, the preset was there, and the listing simply did
-    not mention it.
-    """
+    """`config presets` honours `--config FILE` like every other config subcommand."""
     from agent6.ui.cli import main
 
     cfg = tmp_path / "custom.toml"
@@ -53,17 +45,9 @@ def test_config_presets_reads_the_explicit_config_file(
 def test_a_filled_config_can_be_used_as_an_explicit_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`config fill` snapshots every effective value into one explicit file. That
-    file has to be a config agent6 will actually load.
+    """`config fill` emits no `preset` selector, so its file loads as an explicit `--config`.
 
-    It emitted the top-level `preset` selector, which the layer REFUSES from an
-    explicit `--config` file -- so `agent6 config fill` produced a file that
-    `agent6 --config <it>` rejected. `--parallel` was collateral: the
-    orchestrator materializes each lane's config the same way, so every lane
-    died before starting.
-
-    A preset SELECTS other leaves; once they are materialized the selector is
-    both redundant and, for a named preset, would apply twice.
+    A preset selects other leaves; once they are materialized the selector would apply twice.
     """
     from agent6.config.layer import materialize
 
@@ -79,14 +63,10 @@ def test_a_filled_config_can_be_used_as_an_explicit_config(
 def test_config_fill_keeps_the_presets_the_file_defines(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`config fill` rewrites the operator's own config file. A `[presets.*]`
-    table in it is meta-config -- stripped before validation, so absent from the
-    `Config` the snapshot is rendered from -- and the rewrite dropped it.
+    """`config fill` keeps the `[presets.*]` tables the file defines.
 
-    Silently, and with `--force` there is no earlier copy: `config presets`
-    listed `myfast` before the fill and only the built-ins after. The leaves the
-    preset selected survive (they are materialized), the definition did not, so
-    `--preset myfast` stopped resolving at all.
+    They are stripped before validation, so they are absent from the `Config` the snapshot is
+    rendered from.
     """
     from agent6.ui.cli import main
 
@@ -105,10 +85,7 @@ def test_config_fill_keeps_the_presets_the_file_defines(
     assert after.config.sandbox.run_commands == "yes", "the preset stopped applying"
     text = (cfg_home / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[presets.myfast" in text, f"config fill deleted the operator's preset:\n{text}"
-    # The SELECTOR survives, and the preset's EFFECT is not baked: the filled
-    # leaf is the default, with the preset still applying over it at runtime.
-    # Baking it froze the old values while the selector -- what the operator
-    # edits -- was dropped, so later preset edits did nothing.
+    # The selector survives and the preset's effect is not baked; the filled leaf is the default.
     assert 'preset = "myfast"' in text
     assert 'run_commands = "ask"' in text, f"the preset's effect was baked in:\n{text}"
 
@@ -121,17 +98,19 @@ def test_descriptions_mode_prints_the_meaning_under_each_row() -> None:
 
 
 def test_key_detail_always_carries_the_meaning() -> None:
-    """`config show <key>` is a deliberate ask about one key, so the meaning is
-    part of the answer, no flag needed."""
+    """`config show <key>` carries the meaning with no flag."""
     eff = EffectiveConfig(config=Config(), sources={}, layers=())
     detail = render_key_detail(eff, ["budget.max_usd"])
     assert "meaning: Cap on the metered spend" in detail
 
 
 def test_key_detail_takes_several_keys_in_the_order_asked() -> None:
-    """`config show a b` prints a's leaves then b's (a section prefix expands
-    to its leaves, a leaf named twice prints once); a key matching nothing
-    raises KeyError naming it, so the command can refuse by name."""
+    """`config show a b` prints a's leaves then b's.
+
+    A key matching nothing raises KeyError naming it.
+
+    A section prefix expands to its leaves; a leaf named twice prints once.
+    """
     eff = EffectiveConfig(config=Config(), sources={}, layers=())
     detail = render_key_detail(eff, ["sandbox.network", "budget", "sandbox.network"])
     heads = [line.strip() for line in detail.splitlines() if not line.startswith("    ")]
@@ -154,8 +133,7 @@ def _effort_config(tmp_path: Path, body: str) -> EffectiveConfig:
 def test_an_unset_effort_shows_what_the_openai_wire_actually_sends(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`(unset)` claimed nothing was chosen while openai-compatible reasoning
-    models were getting `low` on every call."""
+    """An unset effort shows the `low` the OpenAI wire sends to a reasoning model, not `(unset)`."""
     monkeypatch.delenv("AGENT6_REASONING_EFFORT", raising=False)
     eff = _effort_config(
         tmp_path,
@@ -209,8 +187,10 @@ def test_a_configured_effort_is_not_marked_resolved(tmp_path: Path) -> None:
 def test_the_env_override_is_the_value_shown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """AGENT6_REASONING_EFFORT sits below the config and above the built-in
-    default; `config show` reads the same resolver the request does."""
+    """AGENT6_REASONING_EFFORT is the value shown.
+
+    `config show` reads the resolver the request does.
+    """
     monkeypatch.setenv("AGENT6_REASONING_EFFORT", "medium")
     eff = _effort_config(
         tmp_path,
@@ -223,9 +203,7 @@ def test_the_env_override_is_the_value_shown(
 
 
 def test_an_empty_string_default_renders_a_visible_token(tmp_path: Path) -> None:
-    """`preset`, `git.commit.trailer`, `prompt.system_prompt_file` and
-    `parallel.workdir` default to "" and rendered a blank cell, which reads as
-    a rendering failure next to `(unset)`, `[]` and `{}`."""
+    """An empty string default renders a visible token, not a blank cell."""
     eff = _effort_config(tmp_path, "")
     rows = render_show(eff, resolved=resolved_adaptive_values(eff.config)).splitlines()
     preset = next(line for line in rows if line.split()[:1] == ["preset"])
@@ -233,10 +211,7 @@ def test_an_empty_string_default_renders_a_visible_token(tmp_path: Path) -> None
 
 
 def test_the_auto_sandbox_leaves_show_what_this_host_resolves_them_to(tmp_path: Path) -> None:
-    """`sandbox.isolation = auto` and `sandbox.network = auto` resolved at one
-    place, `agent6 check config`; the config views on every surface showed
-    `auto` with no resolution, so a browser-only operator never learned what
-    a run here would get."""
+    """The `auto` sandbox leaves show what this host resolves them to on every surface."""
     from agent6.app.confine import resolved_config_values
     from agent6.viewmodel.config_view import build_config_view
 
@@ -256,10 +231,10 @@ def test_the_auto_sandbox_leaves_show_what_this_host_resolves_them_to(tmp_path: 
 def test_the_resolved_values_leave_the_sandbox_leaves_auto_without_a_jail_binary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The `auto` sandbox leaves resolve through the jail binary's probe, which
-    raises JailBinaryError when there is no binary to ask; the config view
-    crashed with it. The view keeps the two leaves at `auto` (a run here
-    refuses, naming the binary)."""
+    """Without a jail binary the config view keeps the sandbox leaves at `auto`.
+
+    The probe raises JailBinaryError; a run here refuses, naming the binary.
+    """
     from typing import NoReturn
 
     from agent6.app import confine

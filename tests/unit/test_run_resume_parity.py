@@ -43,10 +43,12 @@ def test_both_lifecycles_run_the_one_execution_body() -> None:
 
 
 def test_both_lifecycles_detach_under_the_invocations_flags() -> None:
-    """A `/detach` spawns a background `resume`; each lifecycle hands it this
-    invocation's overrides as flags (`override_flags`), or the detached execution
-    runs under the config's defaults: an `--auto-approve` run detached and
-    waited on its first approval with nobody attached."""
+    """Both lifecycles detach under the invocation's flags.
+
+    A `/detach` spawns a background `resume`; each lifecycle hands it this invocation's overrides as
+    flags (`override_flags`), or the detached execution runs under the config's defaults: an
+    `--auto-approve` run detached would wait on its first approval with nobody attached.
+    """
     assert _calls(agent6.app.run, "override_flags") == 1
     assert _calls(agent6.app.resume, "override_flags") == 1
 
@@ -57,9 +59,11 @@ def test_both_lifecycles_hand_a_detach_to_the_one_helper() -> None:
 
 
 def test_every_budget_override_survives_a_detach() -> None:
-    """A detached execution re-reads config for anything the flags do not carry, so a
-    dropped flag silently restores the config default: `--max-percent` was
-    missing, and its default is -1 (unlimited)."""
+    """Every budget override survives a detach.
+
+    A detached execution re-reads config for anything the flags do not carry, so a dropped flag
+    silently restores the config default; `--max-percent` defaults to -1 (unlimited).
+    """
     import argparse
 
     from agent6.app._setup import BudgetOverrides
@@ -73,8 +77,11 @@ def test_every_budget_override_survives_a_detach() -> None:
 
 
 def test_the_model_flag_survives_a_detach() -> None:
-    """A `--model` route rides the detached execution's argv like the budget and
-    sandbox flags, else the detached execution re-reads the config's model."""
+    """The model flag survives a detach.
+
+    A `--model` route rides the detached execution's argv like the budget and sandbox flags, or the
+    detached execution re-reads the config's model.
+    """
     from agent6.app._setup import override_flags
     from agent6.kinds import ModelRoute
 

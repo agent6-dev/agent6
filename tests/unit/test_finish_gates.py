@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The finish gates that reach the panel, the metric budget and the
-standing goal through the turn context: the panel's rejection revokes a
-finish with no text of its own, an early finish on a metric run is refused
-while runway remains, and a standing task re-enters instead of ending."""
+"""The finish gates reach the panel, the metric budget and the standing goal via the context.
+
+The panel's rejection revokes a finish with no text of its own, an early finish on a metric run is
+refused while runway remains, and a standing task re-enters instead of ending.
+"""
 
 from __future__ import annotations
 
@@ -40,8 +41,7 @@ def _state() -> LoopState:
 
 
 def test_the_gates_run_in_precedence_order() -> None:
-    """One precedence for every end: the declared-end path had its own copy
-    of three gates in another order, with its own red test."""
+    """One precedence for every end: the declared-end path has no copy of the gates."""
     assert [gate.__name__ for gate in FINISH_GATES] == [
         "finish_contract",
         "verify_finish",

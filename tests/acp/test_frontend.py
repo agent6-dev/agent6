@@ -44,8 +44,7 @@ def _frontend(*, can_ask: bool = True, reply: str | None = "allow"):
 
 
 def _prompts(front: SessionFrontend, session_dir: Path, log: str = "logs.jsonl") -> OperatorPrompts:
-    """The gate over this front-end's approver and questioner, journaling
-    into `<session_dir>/<log>`: the pairing a run wires."""
+    """The gate over this front-end's approver and questioner, journaling into the session dir."""
     return OperatorPrompts(
         approver=front.build_approver(session_dir),
         questioner=front.build_questioner(session_dir),
@@ -68,8 +67,7 @@ def test_a_client_that_cannot_be_asked_gets_a_no(tmp_path: Path) -> None:
     approve = _prompts(front, tmp_path).approve
     assert approve("Allow run_command: rm -rf /") is False
     assert asked == [], "it must not even try"
-    # The journal says nobody was asked: the CLI's word for a deny with no
-    # front-end to prompt, never a source claiming the editor answered.
+    # The journal says nobody was asked, the CLI's word for a deny with no front-end to prompt.
     assert _journal(tmp_path / "logs.jsonl")[-1]["source"] == "headless"
 
 
@@ -80,8 +78,7 @@ def test_declining_is_a_no(tmp_path: Path) -> None:
 
 
 def test_a_question_carries_its_options_and_an_unanswered_one_is_empty(tmp_path: Path) -> None:
-    """The loop already reads an empty answer as "the operator said nothing",
-    which is different from a value."""
+    """The loop reads an empty answer as "the operator said nothing", which differs from a value."""
     front, asked = _frontend(reply="dark")
     ask_user = _prompts(front, tmp_path).ask
     assert ask_user((UserQuestion(question="Theme?", options=("dark", "light")),)).answers == (
@@ -97,15 +94,16 @@ def test_a_question_carries_its_options_and_an_unanswered_one_is_empty(tmp_path:
 
 
 def test_a_free_form_question_says_that_no_editor_could_answer_it(tmp_path: Path) -> None:
-    """ACP v1 has no free-form answer control; silently returning an ordinary
-    blank told the model an operator saw the question and chose to say nothing."""
+    """ACP v1 has no free-form answer control, so a blank is not an answer.
+
+    Silently returning an ordinary blank told the model an operator chose to say nothing.
+    """
     front, asked = _frontend()
     answer = _prompts(front, tmp_path).ask((UserQuestion(question="Which port?"),))
     assert asked == []
     assert answer.answers == ("",)
     assert unanswered_note(answer)
-    # A batch with one free-form question reached nobody either: `unseen` is
-    # per request, and a blank beside an answered button read as deliberate.
+    # `unseen` is per request: a blank beside an answered button would read as deliberate.
     mixed = (UserQuestion(question="Proxy?", options=("yes", "no")), UserQuestion(question="Port?"))
     answer = _prompts(front, tmp_path).ask(mixed)
     assert asked == []
@@ -114,10 +112,11 @@ def test_a_free_form_question_says_that_no_editor_could_answer_it(tmp_path: Path
 
 
 def test_the_unsandboxed_prompt_fires_only_when_it_is_true() -> None:
-    """The lifecycle calls this on EVERY run; the "is this dangerous" test
-    lives in the answer. Asking regardless told the editor a confined run was
-    unsandboxed -- a false statement about the run, on the one approval that
-    must never become reflexive."""
+    """The lifecycle calls this on EVERY run; the "is this dangerous" test lives in the answer.
+
+    Asking regardless told the editor a confined run was unsandboxed, a false statement about the
+    run, on the one approval that must never become reflexive.
+    """
     from agent6.config import Config
 
     front, asked = _frontend(reply="allow")
@@ -140,9 +139,10 @@ def test_an_unsandboxed_autorun_still_needs_a_human() -> None:
 
 
 def test_an_approval_that_must_not_be_remembered_says_so(tmp_path: Path) -> None:
-    """A prompt with no scope is the fetch tool's off-list host, where a GET
-    can carry data out in its path. An editor that offers "always allow" needs
-    something to key that decision on."""
+    """A prompt with no scope is the fetch tool's off-list host, where a GET can carry data out.
+
+    An editor that offers "always allow" needs something to key that decision on.
+    """
     front, asked = _frontend(reply="allow once")
     approve = _prompts(front, tmp_path).approve
     assert approve("Allow fetch: evil.example /x") is True
@@ -153,11 +153,11 @@ def test_an_approval_that_must_not_be_remembered_says_so(tmp_path: Path) -> None
 
 
 def test_the_editor_is_the_live_view_and_nothing_is_drawn() -> None:
-    """An ACP client renders from session/update, so the deltas have to be
-    EMITTED, and the editor counts as the live view: the lifecycle prints its
-    headless end block (headline, summary) only when no live view rendered
-    the run, and the reporter repeats every line to the editor, which already
-    has the fold's done item. The console view it would attach is nothing."""
+    """The editor is the live view: deltas are emitted and no headless end block is printed.
+
+    The lifecycle prints its headline and summary only when no live view rendered the run, and
+    the reporter repeats every line to the editor, which already has the fold's done item.
+    """
     front, _asked = _frontend()
     assert front.stream_modes(False) == (True, True)
     assert front.attach_console_view(None) is None  # pyright: ignore[reportArgumentType]
@@ -165,8 +165,7 @@ def test_the_editor_is_the_live_view_and_nothing_is_drawn() -> None:
 
 
 def test_the_steer_seam_is_inert() -> None:
-    """ACP steers by prompting into a live session; a SIGINT pause menu has no
-    terminal to draw on."""
+    """ACP steers by prompting into a live session; a pause menu has no terminal to draw on."""
     front, _asked = _frontend()
     steer = front.make_steer_state(None, Path("/x"), lambda: None)  # pyright: ignore[reportArgumentType]
     assert steer.requested() is False
@@ -178,8 +177,10 @@ def test_the_steer_seam_is_inert() -> None:
 
 
 def test_parallel_lanes_are_not_spawned_into_a_single_pane() -> None:
-    """`/parallel` fans out sibling runs. An ACP client renders ONE session, so
-    lanes would run invisibly."""
+    """`/parallel` fans out sibling runs.
+
+    An ACP client renders ONE session, so lanes would run invisibly.
+    """
     from agent6.config import Config
 
     front, _asked = _frontend()
@@ -197,10 +198,11 @@ def test_the_ask_repl_is_refused_rather_than_faked() -> None:
 
 
 def test_steer_hooks_consume_a_seeded_resume_steer(tmp_path: Path) -> None:
-    """A later ACP prompt resumes the run with its text seeded through the
-    steer files (resume --steer); the frontend's hooks are the file bridge
-    that reads them. Inert hooks dropped the seeded instruction, so the
-    resumed model ran one turn without it and re-finished the old task."""
+    """A later ACP prompt reaches the resumed run through the steer files.
+
+    The frontend's hooks are the file bridge that reads them; inert hooks dropped the seeded
+    instruction, so the resumed model re-finished the old task.
+    """
     from agent6.sessions.ipc import request_steer, write_steer_answer
 
     front, _ = _frontend()
@@ -225,9 +227,11 @@ def _journal(path: Path) -> list[dict[str, object]]:
 
 
 def test_a_request_names_the_call_the_prompt_carries(tmp_path: Path) -> None:
-    """The editor is asked under the id of the call the gate stamped on the
-    prompt, never one the front-end re-derives from its own event stream:
-    with two calls in flight, the gated one is not the newest."""
+    """The editor is asked under the id the gate stamped on the prompt.
+
+    With two calls in flight the gated one is not the newest, so an id re-derived from the
+    front-end's own event stream names the wrong call.
+    """
     calls: list[int | None] = []
 
     def _ask(
@@ -259,9 +263,11 @@ def test_a_request_names_the_call_the_prompt_carries(tmp_path: Path) -> None:
 def test_a_multi_question_ask_shares_one_deadline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Each question of an ask_user got the whole permission timeout, so a
-    three-question request held a run three times the documented bound when
-    the editor never answered; one deadline covers the request."""
+    """One deadline covers a whole ask_user request, not one per question.
+
+    Each question got the whole permission timeout, so a three-question request held a run
+    three times the documented bound when the editor never answered.
+    """
     from agent6.tools.operator_prompts import QuestionRequest
     from agent6.ui.acp import frontend as frontend_mod
 

@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The sandbox-reachability note: the second consecutive jail exec failure of
-a binary the host has draws one note; a nonzero exit, an absent binary, a
-different binary or a later call draws none."""
+"""The sandbox-reachability note fires on the second consecutive jail exec failure of a host binary.
+
+A nonzero exit, an absent binary, a different binary or a later call draws none.
+"""
 
 from __future__ import annotations
 

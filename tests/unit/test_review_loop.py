@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""In-loop review-panel wiring: the panel fires at before_finish, grounds against
-the run diff, and gates the finish only under a gating decision (no network)."""
+"""In-loop review-panel wiring.
+
+The panel fires at before_finish, grounds against the run diff, and gates the finish only under a
+gating decision (no network).
+"""
 
 from __future__ import annotations
 
@@ -78,8 +81,10 @@ def test_has_reviewer_true_with_seats() -> None:
 
 
 def test_panel_blocks_finish_under_veto_then_accepts() -> None:
-    """A grounded security block under veto revokes the first finish_session; once the
-    seat passes, the second finish_session is accepted."""
+    """A grounded security block under veto revokes the finish until the seat passes.
+
+    The first `finish_session` is revoked; once the seat passes, the second is accepted.
+    """
     worker = MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("f1", _finish_tool_use("a", "done")),
@@ -107,10 +112,11 @@ def test_panel_blocks_finish_under_veto_then_accepts() -> None:
 
 
 def test_panel_skipped_when_budget_fraction_low() -> None:
-    """When remaining budget < review_budget_fraction the panel is SKIPPED
-    (approve-and-proceed): reviewing costs most when budget is scarcest. The
-    seat that WOULD block is never called, and finish_session is accepted. This is
-    the only behavioural test of review_budget_fraction (previously dead config)."""
+    """When remaining budget < review_budget_fraction the panel is SKIPPED (approve-and-proceed).
+
+    Reviewing costs most when budget is scarcest. The seat that WOULD block is never called, and
+    finish_session is accepted. This is the only behavioural test of review_budget_fraction.
+    """
     worker = MagicMock()
     worker.call.return_value = _resp_with_tool_use("f1", _finish_tool_use("a", "done"))
     seat_provider = MagicMock()
@@ -149,8 +155,10 @@ def test_panel_advisory_does_not_block_finish() -> None:
 
 
 def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
-    """A grounded 'style' block is downgraded by the aggregator, so veto can't
-    stall on taste -- finish accepted on iter 1."""
+    """A grounded 'style' block never stalls a finish, even under veto.
+
+    The aggregator downgrades it, so the finish is accepted on the first iteration.
+    """
     worker = MagicMock()
     worker.call.side_effect = [_resp_with_tool_use("f1", _finish_tool_use("a", "done"))]
     seat_provider = MagicMock()
@@ -168,8 +176,10 @@ def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
 
 
 def test_disarm_after_max_total_rejections_lets_finish_through() -> None:
-    """Once review_rejections_total hits the cap, the gate disarms to advisory so
-    a persistently-blocking panel can't stall the run forever."""
+    """Once `review_rejections_total` hits the cap, the gate disarms to advisory.
+
+    A persistently blocking panel cannot stall the run forever.
+    """
     worker = MagicMock()
     # the worker keeps trying to finish; the seat keeps blocking
     worker.call.side_effect = [
@@ -195,11 +205,12 @@ def test_disarm_after_max_total_rejections_lets_finish_through() -> None:
 
 
 def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
-    """The in-loop panel is the copy that spends the run's budget and feeds the
-    critique to the model. An all-abstain panel must name the abstention, not
-    'No blocking findings.' (the CLI verdict was fixed for the same reason).
-    Uses the shared panel_is_inconclusive/inconclusive_note owner; the gate
-    still lets the finish through (a panel never deadlocks a run)."""
+    """The in-loop panel names an all-abstain panel's abstention, never 'No blocking findings.'.
+
+    The in-loop panel spends the run's budget and feeds the critique to the model; it uses the
+    shared `panel_is_inconclusive` and `inconclusive_note` owner, and the gate still lets the finish
+    through, since a panel never deadlocks a run.
+    """
     import agent6.harness._reviewer as review_mod
     from agent6.harness._panel import PanelResult, ReviewVerdict
     from agent6.harness.loop import LoopState

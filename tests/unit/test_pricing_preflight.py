@@ -4,7 +4,8 @@
 
 Prices for direct-Anthropic ids live only in that catalog (pricing's alias);
 a config with just [providers.anthropic] refreshed nothing that carries
-prices, so the $ cap ran unpriced on a cold cache."""
+prices, so the $ cap ran unpriced on a cold cache.
+"""
 
 from __future__ import annotations
 
@@ -76,8 +77,10 @@ def test_openrouter_config_does_not_double_refresh(monkeypatch: pytest.MonkeyPat
 
 
 def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A seat pinning `persona@prov/model` used to skip key preflight: the run
-    started, mutated state, and died only when the seat was constructed."""
+    """A seat pinning `persona@prov/model` gets key preflight too.
+
+    Without it the run starts, mutates state, and dies only when the seat is constructed.
+    """
 
     def _no_key(*_a: object, **_k: object) -> str:
         return ""
@@ -115,8 +118,11 @@ def test_a_seat_naming_an_absent_provider_is_refused(monkeypatch: pytest.MonkeyP
 
 
 def test_machine_state_pins_ride_the_same_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The machine call site passes per-state provider pins as extras; an
-    absent pinned provider refuses before any state runs."""
+    """Machine state pins ride the same preflight.
+
+    The machine call site passes per-state provider pins as extras; an absent pinned provider
+    refuses before any state runs.
+    """
     monkeypatch.setattr(_setup, "load_secrets", dict)
     cfg = Config.model_validate(
         {
@@ -130,8 +136,10 @@ def test_machine_state_pins_ride_the_same_preflight(monkeypatch: pytest.MonkeyPa
 
 
 def test_budget_preflight_prices_a_seat_pinned_model() -> None:
-    """A seat's pinned model joins the reachable set: with unmetered calls
-    refused, an unpriced seat model refuses up front instead of mid-review."""
+    """A seat's pinned model joins the reachable set.
+
+    With unmetered calls refused, an unpriced seat model refuses up front instead of mid-review.
+    """
     from agent6.app.preflight import budget_preflight
 
     cfg = Config.model_validate(
@@ -149,9 +157,12 @@ def test_budget_preflight_prices_a_seat_pinned_model() -> None:
 def test_chatgpt_provider_without_sign_in_is_refused_statically(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A routed chatgpt provider with no stored OAuth sign-in fails the
-    preflight (naming `agent6 connect chatgpt`), not mid-setup after state
-    exists; with tokens stored it passes without any key lookup."""
+    """A chatgpt provider without a sign-in is refused statically.
+
+    A routed chatgpt provider with no stored OAuth sign-in fails the preflight (naming `agent6
+    connect chatgpt`), not mid-setup after state exists; with tokens stored it passes without any
+    key lookup.
+    """
     monkeypatch.setattr(_setup, "load_secrets", dict)
     cfg = _cfg("gpt-5-codex", {"chatgpt": {"api_format": "chatgpt"}})
     err = _setup.check_provider_keys(cfg)
@@ -175,9 +186,11 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
 def test_plan_metered_routes_skip_the_fallback_note(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A model routed through a ChatGPT plan is percent-metered: the
-    unpriced-fallback note must not claim the token ledger bounds it, and
-    max_percent = 0 refuses it up front like the sibling zeros."""
+    """A model routed through a ChatGPT plan is percent-metered.
+
+    The unpriced-fallback note must not claim the token ledger bounds it, and max_percent = 0
+    refuses it up front like the sibling zeros.
+    """
     from agent6.app.preflight import budget_preflight
 
     cfg = _cfg("gpt-5.6-sol", {"chatgpt": {"api_format": "chatgpt"}})
@@ -200,8 +213,11 @@ def test_plan_metered_routes_skip_the_fallback_note(
 def test_a_plan_cap_under_three_points_is_flagged_at_run_start(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The plan meter reports whole percents, so a cap of 1 or 2 points can end
-    the run on its first tick; the run-start note says so, and only then."""
+    """A plan cap under three points is flagged at run start.
+
+    The plan meter reports whole percents, so a cap of 1 or 2 points can end the run on its first
+    tick; the run-start note says so, and only then.
+    """
     from agent6.app.preflight import budget_preflight
 
     def _with_cap(cap: float) -> str:
@@ -228,9 +244,11 @@ def _signed_in(binary: str, *, timeout_s: float = 20.0) -> str | None:
 def test_claude_code_routes_are_plan_metered(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A model routed through a claude_code provider is percent-metered like a
-    chatgpt one: the plan note, the max_percent = 0 refusal, and no OpenRouter
-    catalog refresh for its bare claude-* id (an authoritative $0 needs no price)."""
+    """A model routed through a claude_code provider is percent-metered like a chatgpt one.
+
+    The plan note, the max_percent = 0 refusal, and no OpenRouter catalog refresh for its bare
+    claude-* id (an authoritative $0 needs no price).
+    """
     from agent6.app.preflight import budget_preflight
 
     cfg = _cfg("claude-haiku-4-5", {"claude": {"api_format": "claude_code"}})
@@ -259,9 +277,11 @@ def test_claude_code_routes_are_plan_metered(
 
 
 def test_claude_code_route_needs_a_signed_in_binary(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A routed claude_code provider is preflighted with `login_status`: a
-    signed-out binary refuses statically, naming the provider block, before any
-    state exists; a signed-in one passes with no key lookup."""
+    """A routed claude_code provider is preflighted with `login_status`.
+
+    A signed-out binary refuses statically, naming the provider block, before any state exists; a
+    signed-in one passes with no key lookup.
+    """
 
     def signed_out(binary: str) -> str | None:
         return f"{binary} says: run `claude auth login`"
@@ -281,9 +301,11 @@ def test_claude_code_route_needs_a_signed_in_binary(monkeypatch: pytest.MonkeyPa
 def test_machine_pins_carry_their_provider_into_the_notes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A per-state (provider, model) pin routes the note correctly: a
-    chatgpt-pinned model is plan-metered, never 'bounded by fallback
-    tokens' (the pin's provider was dropped and the note lied)."""
+    """A per-state (provider, model) pin routes the note correctly.
+
+    A chatgpt-pinned model is plan-metered, never 'bounded by fallback tokens' (the pin's provider
+    was dropped and the note lied).
+    """
     from agent6.app.preflight import budget_preflight
 
     cfg = _cfg(
@@ -299,9 +321,10 @@ def test_machine_pins_carry_their_provider_into_the_notes(
 def test_budget_preflight_prices_a_route_from_its_own_card(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The preflight priced with no provider while the budget priced with the
-    route's: a model only another provider's card listed passed the preflight
-    and then ran unmetered."""
+    """The preflight priced with no provider while the budget priced with the route's.
+
+    A model only another provider's card listed passed the preflight and then ran unmetered.
+    """
     import json
 
     from agent6.app.preflight import budget_preflight

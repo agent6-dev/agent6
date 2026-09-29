@@ -77,8 +77,7 @@ def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: Path) -> 
 
 
 def _torn_utf8_line() -> tuple[bytes, bytes]:
-    """A JSON line split in the middle of a multibyte UTF-8 sequence (the first
-    byte of the é lands in the first chunk)."""
+    """A JSON line split in the middle of a multibyte UTF-8 sequence."""
     full = json.dumps({"type": "role.text_delta", "text": "café"}, ensure_ascii=False).encode()
     cut = full.rindex(b"\xc3\xa9") + 1
     return full[:cut], full[cut:]
@@ -118,9 +117,7 @@ def test_tail_completes_torn_utf8_line_across_polls(tmp_path: Path) -> None:
 
 
 def test_follow_cancels_via_should_stop(tmp_path: Path) -> None:
-    """should_stop is the only way out of a follow on a run that never ends
-    (crashed, or exit_on_end=False): the consumer thread must join promptly
-    once the flag flips, else every closed dashboard leaks a polling thread."""
+    """The consumer thread joins promptly once should_stop flips, on a run that never ends."""
     p = tmp_path / "logs.jsonl"
     p.write_text(json.dumps({"type": "first"}) + "\n", encoding="utf-8")
     flag = threading.Event()
@@ -141,9 +138,7 @@ def test_follow_cancels_via_should_stop(tmp_path: Path) -> None:
 
 
 def test_should_stop_still_hands_over_what_was_appended(tmp_path: Path) -> None:
-    """A worker that finishes and exits within one poll leaves its last events
-    (the finish, session.end) in the file as the liveness probe flips; the
-    follow drains them before returning instead of stopping one step short."""
+    """The follow drains the last events of a worker that exited within one poll, then returns."""
     p = tmp_path / "logs.jsonl"
     p.write_text(json.dumps({"type": "first"}) + "\n", encoding="utf-8")
     polls = {"n": 0}
@@ -243,10 +238,10 @@ def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: Path) -> Non
 
 
 def test_start_at_yields_a_line_appended_before_the_tail_attached(tmp_path: Path) -> None:
-    """The caller measures the offset before its execution starts; a line the execution
-    appends before the tail opens the file follows the offset and is yielded.
-    Measured at attach time instead, that line was skipped with the prior
-    executions, and a resumed ACP turn's first tool call never reached the editor."""
+    """A line appended between the caller's offset measure and the tail's open is yielded.
+
+    Measured at attach time, a resumed ACP turn's first tool call never reached the editor.
+    """
     path = tmp_path / "logs.jsonl"
     path.write_text(
         '{"type": "session.start"}\n{"type": "tool.call", "call_id": 1}\n', encoding="utf-8"
@@ -262,9 +257,7 @@ def test_start_at_yields_a_line_appended_before_the_tail_attached(tmp_path: Path
 
 
 def test_start_at_skips_the_lines_before_the_offset(tmp_path: Path) -> None:
-    """A resumed run appends to a journal whose prior executions the viewer already
-    rendered: start_at yields only what follows the measured offset --
-    including past a prior execution's session.end, which must not stop it."""
+    """start_at yields only what follows the offset, past a prior execution's session.end."""
     path = tmp_path / "logs.jsonl"
     path.write_text(
         '{"type": "old"}\n{"type": "session.end"}\n',
@@ -292,10 +285,11 @@ def test_start_at_skips_the_lines_before_the_offset(tmp_path: Path) -> None:
 
 
 def test_tail_reports_an_events_offset_before_yielding_it(tmp_path: Path) -> None:
-    """A consumer ordering its own lines against the journal reads the position
-    while handling the event; reported after the yield, it lagged one event
-    behind, and a line stamped at this event's end waited for the next one.
-    The trailing fragment a non-follow drain yields is reported the same way."""
+    """The position is reported while handling the event, not after the yield.
+
+    Reported after, it lagged one event behind; a non-follow drain's trailing fragment is
+    reported the same way.
+    """
     path = tmp_path / "logs.jsonl"
     first = json.dumps({"type": "a"}) + "\n"
     last = json.dumps({"type": "b"})  # no trailing newline: the drained fragment
@@ -308,9 +302,7 @@ def test_tail_reports_an_events_offset_before_yielding_it(tmp_path: Path) -> Non
 
 
 def test_log_tail_starts_over_when_the_file_shrinks(tmp_path: Path) -> None:
-    """A rewritten log (shorter than the last read position) made the reader
-    seek past its end and return nothing until the file grew back past the
-    old offset; it starts over from the head and says so."""
+    """A rewritten log shorter than the last read position starts over from the head and says so."""
     from agent6.viewmodel.tail import LogTail
 
     log = tmp_path / "logs.jsonl"

@@ -166,11 +166,13 @@ def test_manager_skips_tools_with_invalid_names() -> None:
 
 
 def test_a_tool_name_with_a_trailing_newline_is_skipped() -> None:
-    """`re.match` against a `^[A-Za-z0-9_-]+$` pattern accepts a terminal
-    newline: `$` matches just before it, so a tool advertised as "sneaky\\n"
-    passed the filter and registered as mcp__fake__sneaky\\n -- a newline
-    spliced into the LLM-visible tool definition. fullmatch admits no trailing
-    newline, so the tool is skipped like any other invalid name."""
+    r"""A tool name with a trailing newline is skipped.
+
+    `re.match` against `^[A-Za-z0-9_-]+$` accepts a terminal newline, since `$` matches just before
+    it, so a tool advertised as "sneaky\n" would register as mcp__fake__sneaky\n, a newline spliced
+    into the LLM-visible tool definition; fullmatch admits none, so the tool is skipped like any
+    other invalid name.
+    """
     mgr = MCPManager.start(
         [
             MCPServerSpec(
@@ -206,10 +208,12 @@ def test_manager_routes_calls_to_right_server_and_tool() -> None:
 
 
 def test_call_tool_rejects_unadvertised_tool_name() -> None:
-    """The tool name rides in from the LLM. A name the server never advertised
-    (one filtered at registration, or a hidden tool the model was told to reach)
-    must be refused HERE, before any tools/call leaves agent6 -- otherwise the
-    fake server below happily echoes it back as a successful result."""
+    """The tool name rides in from the LLM.
+
+    A name the server never advertised (one filtered at registration, or a hidden tool the model was
+    told to reach) must be refused HERE, before any tools/call leaves agent6, otherwise the fake
+    server below happily echoes it back as a successful result.
+    """
     mgr = MCPManager.start(
         [
             MCPServerSpec(
@@ -287,10 +291,12 @@ def test_manager_times_out_on_hanging_server() -> None:
 
 
 def test_a_timeout_carries_the_servers_own_words() -> None:
-    """A server that logs its reason and then waits on stdin is the common
-    shape of a misconfigured one. Its reason sat in the stderr buffer while the
-    operator got a bare timeout, and `mcp connect`'s hint sent them to sandbox
-    grants that were not the problem -- the same server EXITING says why."""
+    """A timeout carries the server's own words.
+
+    A server that logs its reason and then waits on stdin is the common shape of a misconfigured
+    one; with its reason left in the stderr buffer the operator gets a bare timeout and a hint about
+    sandbox grants that were not the problem, while the same server exiting says why.
+    """
     logs: list[str] = []
     mgr = MCPManager.start(
         [
@@ -314,8 +320,11 @@ def test_a_timeout_carries_the_servers_own_words() -> None:
 
 
 def test_a_broken_stdin_carries_the_servers_own_words() -> None:
-    """A server can print its startup failure and close stdin before the first
-    request; reporting only Broken pipe hid the actionable failure."""
+    """A broken stdin carries the server's own words.
+
+    A server can print its startup failure and close stdin before the first request; reporting only
+    Broken pipe hides the actionable failure.
+    """
     from agent6.sandbox.jail import JailedProcess
     from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
 
@@ -338,10 +347,12 @@ def test_a_broken_stdin_carries_the_servers_own_words() -> None:
 
 
 def test_a_timed_out_call_restarts_the_server_before_the_next_call() -> None:
-    """A stdio server still busy with the call it never answered is wedged
-    for the next one, which then timed out too. agent6 owns the spawn: the
-    timed-out call's error names the restart, and the next call gets a fresh
-    server."""
+    """A timed-out call restarts the server before the next call.
+
+    A stdio server still busy with the call it never answered is wedged for the next one; agent6
+    owns the spawn, so the timed-out call's error names the restart and the next call gets a fresh
+    server.
+    """
     mgr = MCPManager.start(
         [
             MCPServerSpec(
@@ -407,11 +418,13 @@ def test_manager_close_is_idempotent() -> None:
 
 
 def test_concurrent_calls_do_not_interleave_stdin_writes() -> None:
-    """tools/call from concurrent threads (explore-review seats share one
-    dispatcher across a thread pool) must serialize on the server's stdin:
-    pipe writes larger than PIPE_BUF interleave across unlocked writers,
-    corrupting the JSON-RPC framing -- the server read malformed JSON and
-    died, failing every in-flight call."""
+    """Concurrent calls do not interleave stdin writes.
+
+    tools/call from concurrent threads (explore-review seats share one dispatcher across a thread
+    pool) serializes on the server's stdin: pipe writes larger than PIPE_BUF interleave across
+    unlocked writers and corrupt the JSON-RPC framing, so the server reads malformed JSON and dies,
+    failing every in-flight call.
+    """
     mgr = MCPManager.start(
         [
             MCPServerSpec(
@@ -446,10 +459,12 @@ def test_concurrent_calls_do_not_interleave_stdin_writes() -> None:
 
 
 def test_a_server_is_not_handed_the_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The spawn passed no `env`, so a server inherited the agent's FULL
-    environment -- including the keys resolved via `[providers.*].api_key_env`.
-    An MCP server is third-party code that may log or forward what it is given.
-    Proved by asking the server itself what it can see."""
+    """A server is not handed the provider keys.
+
+    A spawn with no `env` inherits the agent's full environment, including the keys resolved via
+    `[providers.*].api_key_env`; an MCP server is third-party code that may log or forward what it
+    is given. Proved by asking the server itself what it can see.
+    """
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-DECOY")
     monkeypatch.setenv("MCP_PROBE_TOKEN", "named-and-wanted")
     script = (
@@ -484,10 +499,12 @@ def test_a_server_is_not_handed_the_provider_keys(monkeypatch: pytest.MonkeyPatc
 
 
 def test_oversized_descriptions_and_results_degrade_instead_of_breaking_turns() -> None:
-    """LOW finding: under the 8 MiB transport cap, a compromised operator-run
-    server could still emit multi-MiB descriptions (riding in EVERY provider
-    request) and results (flooding the context), breaking every turn. Both are
-    bounded at the trust boundary with a marker."""
+    """Oversized descriptions and results degrade instead of breaking turns.
+
+    Under the 8 MiB transport cap, a compromised operator-run server could still emit multi-MiB
+    descriptions (riding in every provider request) and results (flooding the context); both are
+    bounded at the trust boundary with a marker.
+    """
     from agent6.tools.mcp_client import (
         _MAX_INLINE_TEXT_CHARS,  # pyright: ignore[reportPrivateUsage]
         _MAX_RESULT_CHARS,  # pyright: ignore[reportPrivateUsage]
@@ -515,8 +532,10 @@ def test_oversized_descriptions_and_results_degrade_instead_of_breaking_turns() 
 
 
 def test_an_oversized_echo_result_comes_back_bounded() -> None:
-    """The end-to-end path: a server whose result serializes past the cap
-    reaches the model as one bounded text block, not a context flood."""
+    """An oversized echo result comes back bounded.
+
+    End to end, a result serialized past the cap reaches the model as one bounded text block.
+    """
     from agent6.tools.mcp_client import _MAX_RESULT_CHARS  # pyright: ignore[reportPrivateUsage]
 
     mgr = MCPManager.start(
@@ -548,11 +567,13 @@ def _pid_alive(pid: int) -> bool:
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="setsid sweep is Linux-only")
 def test_manager_close_kills_setsid_escapee(tmp_path: Path) -> None:
-    """Closing an MCP server must not leave a process behind. A server with no
-    PID namespace (`hardened`, or `none` here) that forks a `setsid` child puts
-    that child outside the launcher's process group, so it reparents onto the
-    agent and survives a kill of the launcher pid alone. close() must run the
-    escapee sweep, not just signal the launcher."""
+    """Closing an MCP server must not leave a process behind.
+
+    A server with no PID namespace (`hardened`, or `none` here) that forks a `setsid` child puts
+    that child outside the launcher's process group, so it reparents onto the agent and survives a
+    kill of the launcher pid alone. close() must run the escapee sweep, not just signal the
+    launcher.
+    """
     from agent6.sandbox.jail import _become_subreaper  # pyright: ignore[reportPrivateUsage]
 
     # So the escapee reparents onto THIS process, where the sweep looks.
@@ -612,8 +633,7 @@ def test_manager_close_kills_setsid_escapee(tmp_path: Path) -> None:
 
 
 def test_initialize_sends_the_canonical_version(tmp_path: Path) -> None:
-    """clientInfo.version hardcoded "0" while every other public surface
-    imports agent6.__version__; the handshake now carries the canonical one."""
+    """The handshake sends `agent6.__version__` as clientInfo.version, like every public surface."""
     import agent6
     from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
 
@@ -657,11 +677,12 @@ def test_initialize_sends_the_canonical_version(tmp_path: Path) -> None:
 
 
 def test_unconfined_server_ties_to_the_agent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The operator-opted-out (no-jail) MCP spawn is the spawner's `none`
-    level: the parent-death tie (a stdio server that ignores stdin EOF must
-    not outlive a SIGKILLed agent6), its own session, and the pid registered
-    so a sibling handle's escapee sweep spares it. A second Popen here
-    carried the first two and not the third."""
+    """The operator-opted-out (no-jail) MCP spawn is the spawner's `none` level.
+
+    The parent-death tie (a stdio server that ignores stdin EOF must not outlive a SIGKILLed
+    agent6), its own session, and the pid registered so a sibling handle's escapee sweep spares it.
+    A second Popen here carried the first two and not the third.
+    """
     from agent6.sandbox import jail as jail_mod
     from agent6.tools import mcp_client
 
@@ -696,8 +717,11 @@ def test_unconfined_server_ties_to_the_agent(monkeypatch: pytest.MonkeyPatch) ->
 def test_a_failed_starts_survivors_reach_the_managers_close(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A server whose handshake fails is closed by the manager's start, and
-    the pids that close's sweep could not kill were dropped there."""
+    """A failed start's survivors reach the manager's close.
+
+    A server whose handshake fails is closed by the manager's start; the pids that close's sweep
+    could not kill must not be dropped there.
+    """
     from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 
     def sweep(exclude: frozenset[int]) -> frozenset[int]:
@@ -720,8 +744,10 @@ def test_a_failed_starts_survivors_reach_the_managers_close(
 
 
 def test_a_restarted_servers_survivors_accumulate(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A server closed twice (a restart, then the teardown) hands back the
-    survivors of both closes, not the last one's."""
+    """A restarted server's survivors accumulate.
+
+    A server closed twice (a restart, then the teardown) hands back the survivors of both closes.
+    """
     from agent6.sandbox.jail import JailedProcess
     from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
 
@@ -745,10 +771,11 @@ def test_a_restarted_servers_survivors_accumulate(monkeypatch: pytest.MonkeyPatc
 
 
 def test_a_call_cut_short_by_another_callers_restart_is_retried_once() -> None:
-    """Two callers on one server (review seats share a dispatcher): A's
-    timeout replaces the process under B's in-flight call. B does not time
-    out on a server that no longer exists, nor restart the fresh one: it
-    goes once more on it. One restart in total."""
+    """Two callers on one server (review seats share a dispatcher).
+
+    A's timeout replaces the process under B's in-flight call. B neither times out on the replaced
+    server nor restarts the fresh one: it goes once more on it. One restart in total.
+    """
     mgr = MCPManager.start(
         [
             MCPServerSpec(
@@ -790,10 +817,12 @@ def test_a_call_cut_short_by_another_callers_restart_is_retried_once() -> None:
 def test_the_manager_hands_back_every_survivor_of_its_servers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A server's escapee the sweep could not kill was dropped on the floor by
-    the client's close; the execution records what the manager hands back as a jail
-    degradation, the way the run's own session close does. Driven through the
-    real client: a stand-in with a `close()` of its own pinned only the union."""
+    """The manager hands back every survivor of its servers.
+
+    The execution records what the manager hands back as a jail degradation, the way the run's own
+    session close does; a client close that drops an escapee the sweep could not kill loses it.
+    Driven through the real client: a stand-in with a `close()` of its own pins only the union.
+    """
     from agent6.sandbox.jail import JailedProcess
     from agent6.tools.mcp_client import (
         MCPManager,

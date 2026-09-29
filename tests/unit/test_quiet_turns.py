@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The quiet-turn nudges: an early prose stall on an untouched tree, a prose
-turn that ends on a question, and an empty turn, each bounded."""
+"""The quiet-turn nudges.
+
+An early prose stall on an untouched tree, a prose turn that ends on a question, and an empty turn,
+each bounded.
+"""
 
 from __future__ import annotations
 
@@ -80,8 +83,10 @@ def test_an_empty_turn_is_nudged_up_to_the_cap_with_the_starved_wording() -> Non
 
 
 def test_the_config_knob_sets_the_cap() -> None:
-    """`[harness].went_quiet_max_nudges` is the one knob: 0 ends the run on
-    the first empty turn (no nudge), and the default caps the streak at 4."""
+    """`[harness].went_quiet_max_nudges` is the one knob.
+
+    0 ends the run on the first empty turn (no nudge), and the default caps the streak at 4.
+    """
     assert went_quiet(_state(), turn_context(went_quiet_max_nudges=0), _empty()) is None
     default = went_quiet(_state(), turn_context(), _empty())
     assert default is not None and default.fields["nudges_max"] == 4

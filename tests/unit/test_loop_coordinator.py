@@ -2,11 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """Coordinator dispatch: `/parallel` steer fans out subordinate lanes.
 
-Drives Harness._drive_loop with a fake provider (steer fires once after the
-first turn) and a fake GROUP spawner that fabricates real, mergeable branches in
-the coordinator's tmp repo -- so the loop's dispatch phase (parse, dirty-tree
-gate, sequential join, DAG stamping, events, summary message) is exercised
-end-to-end without spawning real runs. A fake curator records DAG mutations.
+A fake provider fires the steer once, and a fake group spawner fabricates real mergeable branches in
+the coordinator's tmp repo, so parse, the dirty-tree gate, the sequential join, DAG stamping, events
+and the summary run end-to-end.
 """
 
 from __future__ import annotations
@@ -40,13 +38,10 @@ def _silent(_msg: str) -> None:
     return None
 
 
-# The `/parallel` grammar itself is covered in tests/unit/test_directive.py; this
-# file drives the coordinator's dispatch phase end-to-end.
+# The `/parallel` grammar is covered in test_directive.py; this drives the dispatch phase.
 
 
-# ---------------------------------------------------------------------------
-# Loop-driving harness
-# ---------------------------------------------------------------------------
+# Loop-driving harness.
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -101,9 +96,10 @@ class _OneShotSteer:
 
 
 class _FakeGraph:
-    """A minimal in-memory curator: records add/update/record_commit, so the
-    loop's DAG stamping is observable without a real curator. It refuses an
-    unknown parent and links a child into its parent, as the curator does."""
+    """A minimal in-memory curator recording add, update and record_commit.
+
+    It refuses an unknown parent and links a child into its parent, as the curator does.
+    """
 
     def __init__(self) -> None:
         self._seq = 0
@@ -166,9 +162,7 @@ class _FakeEvents:
 def _make_branch(
     repo: Path, branch: str, base_sha: str, fname: str, content: str, wt_dir: Path
 ) -> None:
-    """Create *branch* at a divergent commit off *base_sha* via a throwaway
-    worktree, so it exists as a real ref the coordinator can merge -- without
-    touching the main worktree."""
+    """Create *branch* at a divergent commit off *base_sha* via a throwaway worktree."""
     _git(repo, "worktree", "add", "-b", branch, str(wt_dir), base_sha)
     (wt_dir / fname).write_text(content, encoding="utf-8")
     _git(wt_dir, "add", "-A")
@@ -177,9 +171,10 @@ def _make_branch(
 
 
 class _FakeGroupSpawner:
-    """A synchronous GroupLaneSpawner stand-in: for each lane fabricate a real
-    mergeable branch in the coordinator repo and return a LaneResult. Records the
-    (lanes, group) it was handed so a test can assert the parse + expansion."""
+    """A synchronous GroupLaneSpawner stand-in that fabricates a mergeable branch per lane.
+
+    Records the (lanes, group) it was handed so a test can assert the parse and expansion.
+    """
 
     def __init__(
         self,
@@ -270,8 +265,7 @@ def _build_wf(
                 verify_when=verify_when,
                 verify_retries=2,
             ),
-            # A real int, not a Mock: segment_lanes compares the spec's lane
-            # count against this cap.
+            # A real int, not a Mock: segment_lanes compares the lane count against this cap.
             parallel=SimpleNamespace(max_lanes=4),
         ),
         provider=provider,
@@ -308,14 +302,11 @@ def _final_messages(provider: MagicMock) -> list[dict[str, Any]]:
     return last.kwargs.get("messages") or last.args[1]
 
 
-# ---------------------------------------------------------------------------
-# Dispatch behaviour
-# ---------------------------------------------------------------------------
+# Dispatch behaviour.
 
 
 def test_the_root_task_is_titled_by_the_headline_every_listing_shows(tmp_path: Path) -> None:
-    """The root took the task's first non-empty line verbatim: a seeded run's
-    root was the `<prior-run>` opener and a TASK.md task's kept its `# `."""
+    """The root's title drops a `<prior-run>` opener and a TASK.md task's `# `."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     graph = _FakeGraph()
@@ -329,8 +320,7 @@ def test_the_root_task_is_titled_by_the_headline_every_listing_shows(tmp_path: P
 
 
 def test_none_spawner_answers_with_feedback_and_continues(tmp_path: Path) -> None:
-    """No lane_spawner (default / headless) -> the directive is answered with a
-    'not available' notice and the run continues; never a crash."""
+    """Without a lane spawner the directive is answered with a notice and the run continues."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = MagicMock()
@@ -348,9 +338,7 @@ def test_none_spawner_answers_with_feedback_and_continues(tmp_path: Path) -> Non
 
 
 def test_parallel_lookalike_steer_flows_through_as_plain_steer(tmp_path: Path) -> None:
-    """A steer beginning `/parallelfoo ...` is NOT a directive: it reaches the
-    model verbatim as an OPERATOR STEERING message, and nothing is dispatched or
-    answered with parse feedback."""
+    """A steer beginning `/parallelfoo ...` is not a directive and reaches the model verbatim."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "run-lk", tmp_path / "wt")
@@ -369,8 +357,7 @@ def test_parallel_lookalike_steer_flows_through_as_plain_steer(tmp_path: Path) -
 
 
 def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:
-    """Two clean lanes -> both branches join in dispatch order, each DAG node is
-    passed with its join sha, and dispatched/joined events fire."""
+    """Two clean lanes join in dispatch order with their DAG nodes passed and events fired."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     coord_id = "run-abc"
@@ -396,21 +383,18 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:
     # The spawner saw the parsed sibling group under a p1 group id.
     assert spawner.tasks() == ["task one", "task two"]
     assert spawner.calls[0][1] == "p1"
-    # Both lane branches merged onto the coordinator's chain, in order; the
-    # operator's HEAD never moves.
+    # Both lane branches merged onto the chain, in order; the operator's HEAD never moves.
     log = _git(repo, "log", "--oneline", "refs/agent6/coord")
     assert "agent6/run-abc-p1-l1" in log
     assert "agent6/run-abc-p1-l2" in log
     assert "l1" not in _git(repo, "log", "--oneline")
     assert log.index("l1") > log.index("l2")  # l1 merged first => older => lower in log
-    # Two steering nodes were added (besides the seeded root) and both passed
-    # with a recorded commit sha.
+    # Two steering nodes added beside the root, both passed with a recorded commit sha.
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 2
     assert all(n.status == "passed" and n.commit_sha for n in steering)
     assert len(graph.commit_calls) == 2
-    # Events render the fan-out truthfully: dispatched carries tasks + group
-    # (lane ids do not exist yet); joined names the REAL ids from the results.
+    # dispatched carries tasks and group (no lane ids yet); joined names the real ids.
     dispatched = events.of("loop.parallel.dispatched")
     joined = events.of("loop.parallel.joined")
     assert dispatched and dispatched[0] == {
@@ -420,8 +404,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:
     }
     assert joined and [ln["status"] for ln in joined[0]["lanes"]] == ["joined", "joined"]
     assert [ln["session_id"] for ln in joined[0]["lanes"]] == ["run-abc-p1-l1", "run-abc-p1-l2"]
-    # The join names the group the lanes were stamped with -- the id
-    # `sessions compare` takes -- not the loop's local counter.
+    # The join names the group the lanes were stamped with, the id `sessions compare` takes.
     assert joined[0]["group"] == "run-abc-p1"
     assert not events.of("loop.parallel.failed")
     # One summary message names both joined lanes.
@@ -433,8 +416,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:
 
 
 def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: Path) -> None:
-    """`/parallel m1,m2 <task>` -> two lanes of that task, one per model, under a
-    SINGLE segment DAG node that records the last joined sha."""
+    """`/parallel m1,m2 <task>` runs one lane per model under a single segment node."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     coord_id = "run-mdl"
@@ -462,8 +444,7 @@ def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: Path) -> None:
         ("refactor the parser", "kimi"),
         ("refactor the parser", "glm"),
     ]
-    # ONE DAG node for the segment (not one per lane), passed with a join sha, and
-    # its note names both lanes.
+    # One DAG node for the segment, passed with a join sha, its note naming both lanes.
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 1
     assert steering[0].status == "passed" and steering[0].commit_sha
@@ -505,9 +486,7 @@ def test_lane_count_spec_expands_to_n_default_lanes(tmp_path: Path) -> None:
 
 
 def test_join_conflict_emits_event_message_and_continues(tmp_path: Path) -> None:
-    """A lane whose branch conflicts -> join returns None -> node failed, a
-    loop.parallel.failed event fires, the summary tells the model to merge
-    manually, and the run continues."""
+    """A conflicting lane fails its node, the summary says merge by hand, and the run continues."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     base = _head(repo)  # before conflict.txt exists
@@ -539,8 +518,7 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: Path) -> None
 
     assert provider.call.call_count == 2  # run continued past the conflict
     assert result.reason == "max_iterations"
-    # The clean lane's file reached the worktree (chain sync); the conflicted
-    # merge touched nothing.
+    # The clean lane's file reached the worktree; the conflicted merge touched nothing.
     assert (repo / "lane1.txt").read_text(encoding="utf-8") == "lane 1\n"
     assert (repo / "conflict.txt").read_text(encoding="utf-8") == "main version"
     joined = events.of("loop.parallel.joined")[0]
@@ -556,8 +534,7 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: Path) -> None
 
 
 def test_failed_lane_is_reported_truthfully(tmp_path: Path) -> None:
-    """A lane the spawner could not run (ok=False) -> node failed, summary says
-    FAILED with the reason, run continues."""
+    """A lane the spawner could not run fails its node with the reason; the run continues."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     coord_id = "run-fl"
@@ -596,10 +573,11 @@ def test_failed_lane_is_reported_truthfully(tmp_path: Path) -> None:
 
 
 def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: Path) -> None:
-    """The group spawner raising (mkdir OSError, a pool-propagated spawn fault,
-    a result-count mismatch) must not abort the coordinator: the run continues,
-    loop.parallel.failed fires, a truthful feedback message is injected, and no
-    steering node is left pending."""
+    """A raising group spawner does not abort the coordinator.
+
+    The run continues, loop.parallel.failed fires, truthful feedback is injected, and no steering
+    node is left pending.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
     coord_id = "run-boom"
@@ -661,8 +639,7 @@ def test_bare_parallel_directive_dispatches_nothing(tmp_path: Path) -> None:
 
 
 def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: Path) -> None:
-    """A changed worktree at the boundary is chain-committed (lanes cut from
-    the chain tip only), then dispatch proceeds."""
+    """A changed worktree at the boundary is chain-committed before dispatch cuts the lanes."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     coord_id = "run-dirty"
@@ -697,7 +674,7 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: Path) -> None:
     wf.run("start")
 
     assert spawner.calls and spawner.calls[0][1] == "p1"  # dispatched
-    # The wip edit was captured by the pre-dispatch checkpoint -- on the chain.
+    # The wip edit was captured by the pre-dispatch checkpoint, on the chain.
     assert _git(repo, "show", "refs/agent6/coord:wip.txt") == "uncommitted work"
     chain_log = _git(repo, "log", "--oneline", "refs/agent6/coord")
     assert "checkpoint before /parallel dispatch" in chain_log
@@ -715,8 +692,7 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: Path) -> None:
 def test_dirty_tree_that_cannot_be_cleaned_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """If the tree stays dirty after the auto-commit attempt, dispatch is refused
-    (never clone stale work) and the run continues."""
+    """A tree still dirty after the auto-commit refuses dispatch and the run continues."""
 
     # chain_commit becomes a no-op, so the tree stays dirty after the attempt.
     def _noop_commit(*_a: object, **_k: object) -> None:
@@ -757,9 +733,7 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
     assert any("could not be" in t and "auto-committed" in t for t in texts)
 
 
-# ---------------------------------------------------------------------------
-# run.py / resume.py wiring gate (depth 1 by construction)
-# ---------------------------------------------------------------------------
+# The run.py and resume.py wiring gate (depth 1 by construction).
 
 
 def test_coordinator_spawner_gate_under_subrun(

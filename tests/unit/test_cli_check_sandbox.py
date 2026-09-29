@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 check sandbox` runs its probes under the host's *effective* isolation.
+"""`agent6 check sandbox` runs its probes under the host's effective isolation.
 
-Pure-logic tests: the jail itself is stubbed out, so these run on any host
-(no namespaces required). They pin the behaviour that on a host that can only
-run `hardened` (default-seccomp Docker, AppArmor-restricted Ubuntu) the check
-PASSES rather than spuriously failing against a `strict` jail the agent would
-never use there.
+The jail is stubbed out, so these run on any host. On a host that can only run `hardened` the check
+passes rather than failing against a `strict` jail the agent would never use.
 """
 
 from __future__ import annotations
@@ -141,8 +138,7 @@ def test_check_sandbox_none_skips_probes(
     assert rc == 1, out
     assert "effective isolation (auto): none" in out
     assert stub_jail == []
-    # Nothing is confined under "none": grant language about tool dirs would
-    # describe a boundary that does not exist, so the block is absent.
+    # Nothing is confined under "none", so grant language about tool dirs is absent.
     assert "granted read-only" not in out
     assert "mounted read-only" not in out
 
@@ -150,10 +146,10 @@ def test_check_sandbox_none_skips_probes(
 def test_check_sandbox_degraded_names_why(
     monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A degraded level never appears without its cause. Reproduced on a
-    userns-blocked host (user.max_user_namespaces = 0): the line read
-    `effective isolation (auto): hardened` and nothing said why, while
-    `check config` did."""
+    """A degraded level never appears without its cause.
+
+    On a userns-blocked host the line reads `effective isolation (auto): hardened` and why.
+    """
     from agent6.sandbox.tool_paths import ToolMountNotes
 
     why = "unprivileged user namespaces are disabled (user.max_user_namespaces = 0)"
@@ -167,8 +163,7 @@ def test_check_sandbox_degraded_names_why(
     out = capsys.readouterr().out
     assert rc == 0, out
     assert f"not strict: {why}" in out
-    # Under hardened nothing is MOUNTED (no mount namespace): the tool-dir
-    # exposure is a Landlock read grant and the words must say so.
+    # Under hardened nothing is mounted: the tool-dir exposure is a Landlock read grant.
     assert "granted read-only (Landlock path rules)" in out
     assert "mounted read-only into the jail" not in out
     assert "1 tool on the PATH" in out
@@ -177,10 +172,11 @@ def test_check_sandbox_degraded_names_why(
 def test_check_sandbox_probes_the_isolation_the_config_selects(
     monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The probes exercise the jail a run here would use. With
-    `sandbox.isolation = "hardened"` configured on a strict-capable host the
-    section reported `(auto): strict` and probed strict, contradicting the
-    `check config` section of the same command."""
+    """The probes exercise the jail a run here would use.
+
+    With `sandbox.isolation = "hardened"` on a strict-capable host, the section agrees with `check
+    config`.
+    """
     _honour_request(monkeypatch)
     cfg = Config(sandbox=SandboxConfig(isolation="hardened"))
     rc = check_cmds._cmd_check_sandbox(cfg)  # pyright: ignore[reportPrivateUsage]
@@ -193,12 +189,11 @@ def test_check_sandbox_probes_the_isolation_the_config_selects(
 def test_check_sandbox_names_the_degrade_reason_only_for_auto(
     monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`degrade_reason` answers why `auto` does not reach `strict` here; it is
-    not about an explicitly configured level. With `sandbox.isolation =
-    "hardened"` set on purpose, a host-wide degrade reason must not print
-    "not strict: ..." as if auto had downgraded -- `check config` and the
-    run's own `warn_sandbox_gaps` both gate this line on `isolation == "auto"`,
-    and `check sandbox` must agree."""
+    """The degrade reason prints only for `auto`.
+
+    `degrade_reason` answers why `auto` does not reach `strict`; `check config` and the run's
+    `warn_sandbox_gaps` gate the line on `isolation == "auto"`, and `check sandbox` agrees.
+    """
     why = "unprivileged user namespaces are disabled (user.max_user_namespaces = 0)"
     _force_profile(monkeypatch, "hardened", reason=why)
     cfg = Config(sandbox=SandboxConfig(isolation="hardened"))
@@ -212,9 +207,10 @@ def test_check_sandbox_names_the_degrade_reason_only_for_auto(
 def test_check_names_a_jail_binary_it_cannot_run(
     monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An unusable AGENT6_JAIL_BIN read as "this host blocks user namespaces"
-    (`userns supported: False`, `auto` resolved to hardened): the environment
-    probe hands back the binary's own refusal, and each section prints it."""
+    """An unusable AGENT6_JAIL_BIN is named as the binary's own refusal in each section.
+
+    It is not reported as a host that blocks user namespaces.
+    """
     refusal = "agent6-jail at /opt/agent6-jail cannot be executed: Exec format error. Reinstall it"
 
     def _binary_refusal() -> object:
@@ -239,8 +235,10 @@ def test_check_names_a_jail_binary_it_cannot_run(
 def test_check_sandbox_fails_on_an_isolation_this_host_refuses(
     monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An explicit level the host cannot give is a FAIL naming the refusal (a
-    run would refuse too), never probes run under some other level."""
+    """An explicit level the host refuses is a FAIL naming the refusal.
+
+    Probes on another level.
+    """
     monkeypatch.setattr(check_cmds, "detect_env", object)
 
     def _refuse(req: str, _env: object) -> str:
@@ -259,8 +257,10 @@ def test_check_sandbox_fails_on_an_isolation_this_host_refuses(
 def test_check_sandbox_names_which_opt_out_left_nothing_to_probe(
     monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`none` from the config is the operator's opt-out, not a platform without
-    a sandbox: the skip line must not blame the platform."""
+    """`none` from the config is the operator's opt-out.
+
+    The skip line does not blame the platform.
+    """
     _honour_request(monkeypatch)
     rc = check_cmds._cmd_check_sandbox(  # pyright: ignore[reportPrivateUsage]
         Config(sandbox=SandboxConfig(isolation="none"))
@@ -294,8 +294,10 @@ def test_check_sandbox_fails_when_its_config_cannot_be_loaded(
 def test_check_config_runs_the_refusal_ladder_a_run_applies(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`check config` FAILS on an explicit knob the selected isolation cannot
-    honour, with the run's own refusal text: hardened + network = session."""
+    """`check config` fails on an explicit knob the isolation cannot honour, with the run's refusal.
+
+    The case: hardened plus network = session.
+    """
     env = SimpleNamespace(
         kernel=SimpleNamespace(raw="6.8"),
         userns_supported=True,
@@ -328,8 +330,7 @@ def test_check_config_runs_the_refusal_ladder_a_run_applies(
 def test_check_sandbox_runs_its_probes_unstubbed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Every other test here stubs `landlock_abi` and `run_in_jail`, so the
-    operator's one "is my sandbox working" command never ran for real."""
+    """The operator's one "is my sandbox working" command runs its probes unstubbed once."""
     if check_cmds.landlock_abi() < 1:
         pytest.skip("no Landlock: the command's own landlock_abi row fails here")
     monkeypatch.chdir(tmp_path)

@@ -2,9 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """MachineWatchCursor: the shared what-have-I-shown state for machine watchers.
 
-Pins the three dedup rules the CLI watch loop and the TUI machine screen must
-agree on: transitions by count, notifications by identity across the sliding
-window, and byte-offset log tailing that never consumes a partial line.
+Transitions dedup by count, notifications by identity across the sliding window, and the log tail by
+byte offset, never consuming a partial line.
 """
 
 from __future__ import annotations
@@ -47,9 +46,7 @@ def test_new_transitions_are_yielded_once() -> None:
 
 
 def test_notifications_dedup_by_identity_across_the_sliding_window() -> None:
-    """The viewmodel caps ms.notifications, so a count index would miss every
-    notify past the cap; identity dedup must keep working when old entries
-    slide out of the window."""
+    """Identity dedup keeps working when old notifications slide out of the capped window."""
     cur = MachineWatchCursor()
     assert cur.new_notifications(_ms(notifications=(_n("1"), _n("2")))) == [_n("1"), _n("2")]
     # Window slid: "1" dropped out, "3" arrived. Only "3" is new.

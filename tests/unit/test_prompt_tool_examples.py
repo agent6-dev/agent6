@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Every call-shaped tool example in the model-facing prompt text names real
-schema fields: a prompt teaching `tool(field, ...)` with a renamed or deleted
-field walks the model into a validation failure on its first try."""
+"""Every call-shaped tool example in the model-facing prompt text names real schema fields.
+
+A prompt teaching `tool(field, ...)` with a renamed or deleted field walks the model into a
+validation failure on its first try.
+"""
 
 from __future__ import annotations
 

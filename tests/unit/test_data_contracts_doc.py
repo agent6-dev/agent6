@@ -2,12 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """Staleness pin for the generated data-contracts page.
 
-``docs/data-contracts.md`` is DERIVED from the contract modules' docstrings and
-the source tree by ``docs/gen_contracts.py``; a hand edit or a docstring change
-that shifts a card leaves it stale. This regenerates the markdown in-memory and
-asserts the committed file matches, same shape as
-``tests/security/test_subprocess_allowlist.py``. The fix is never to edit the
-page: run ``uv run python docs/gen_contracts.py``."""
+`docs/data-contracts.md` is derived from the contract modules' docstrings by
+`docs/gen_contracts.py`; this regenerates it in memory and asserts the committed file matches. The
+fix is never to edit the page: run `uv run python docs/gen_contracts.py`.
+"""
 
 from __future__ import annotations
 
@@ -25,8 +23,7 @@ def _load_generator() -> ModuleType:
     )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
-    # Register before exec so the module's `from __future__ import annotations`
-    # dataclasses can resolve their own stringized annotations via sys.modules.
+    # Registered before exec so the module's stringized dataclass annotations resolve.
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 resume` preflight ordering: the snapshot-version refusal must land
-BEFORE the egress broker is spawned (like `fork`, which refuses instantly), so a
-v1-snapshot resume never spawns a broker + netns or prints the egress preamble.
+"""`agent6 resume` preflight ordering.
+
+The snapshot-version refusal must land BEFORE the egress broker is spawned (like `fork`, which
+refuses instantly), so a v1-snapshot resume never spawns a broker + netns or prints the egress
+preamble.
 """
 
 from __future__ import annotations
@@ -36,11 +38,13 @@ def _git_repo(path: Path) -> None:
 def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The parked branch is the SECOND preset replay site: it handed the raw
-    stamped name to load_effective, where _select_preset treats it as a flag
-    that outranks every config layer -- so a parked submission under a
-    config-selected preset started under a config its original submission
-    never had. The snapshot-resume path already replays via replay_preset."""
+    """The parked branch is the SECOND preset replay site.
+
+    It handed the raw stamped name to load_effective, where _select_preset treats it as a flag that
+    outranks every config layer, so a parked submission under a config-selected preset started
+    under a config its original submission never had. The snapshot-resume path already replays via
+    replay_preset.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
@@ -79,10 +83,11 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
 def test_resume_refuses_a_malformed_steer_directive_before_any_execution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`resume --steer "/pin"` (every front-end's continue lands here) is
-    refused before a session is even resolved: an execution spent on a directive
-    the loop declines ends as a silent finish and flips a passed run to
-    failed."""
+    """A malformed steer directive is refused before any execution.
+
+    Every front-end's continue lands on `resume --steer`; an execution spent on a directive the loop
+    declines ends as a silent finish and flips a passed run to failed.
+    """
     monkeypatch.chdir(tmp_path)
     assert _cmd_resume(None, "any-run-AAAAAA", force=False, steer="/pin") == 2
     assert "pin needs an instruction" in capsys.readouterr().err
@@ -125,10 +130,11 @@ def test_parked_resume_carries_the_original_flag_selected_profile_stamp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A parked execution never ran, but its manifest recorded a FLAG-selected preset.
-    Restarting it must re-stamp the SAME (name, from_flag) so a later resume/fork
-    replays the flag precedence; deriving the stamp from the (empty) resume
-    `preset` dropped the from_flag bit and silently downgraded a flag-selected
-    preset's blocking veto on the next execution."""
+
+    Restarting it must re-stamp the SAME (name, from_flag) so a later resume/fork replays the flag
+    precedence; deriving the stamp from the (empty) resume `preset` dropped the from_flag bit and
+    silently downgraded a flag-selected preset's blocking veto on the next execution.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
@@ -147,8 +153,10 @@ def test_parked_resume_carries_the_original_flag_selected_profile_stamp(
 def test_parked_resume_with_its_own_profile_flag_lets_run_task_derive_the_stamp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A resume that DOES pass --preset is a fresh flag choice for this execution, so
-    it must NOT pin the manifest's old stamp -- run_task derives from `preset`."""
+    """A parked resume that passes `--preset` lets run_task derive the stamp from the flag.
+
+    A fresh flag choice for this execution never pins the manifest's old stamp.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
@@ -168,11 +176,13 @@ def test_parked_resume_with_its_own_profile_flag_lets_run_task_derive_the_stamp(
 def test_parked_resume_of_a_config_selected_profile_re_derives_the_stamp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A CONFIG-selected preset (from_flag False) re-resolves from the CURRENT
-    config on restart, so pinning the manifest's OLD name would show a stale
-    preset if the config changed since. Pass preset_stamp=None so run_task
-    derives from the re-resolved cfg, like a fresh run -- only a FLAG-selected
-    preset (whose blocking veto must survive) is pinned."""
+    """A parked resume of a config-selected preset re-derives the stamp from the current config.
+
+    A config-selected preset (from_flag False) re-resolves on restart, so pinning the manifest's old
+    name would show a stale preset when the config changed since; `preset_stamp=None` lets run_task
+    derive it like a fresh run. Only a flag-selected preset, whose blocking veto must survive, is
+    pinned.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
@@ -268,9 +278,11 @@ def _stub_load_effective(monkeypatch: pytest.MonkeyPatch, toml_body: str, tmp: P
 def test_plan_resume_requires_the_planner_role(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A plan run resumes under the planner role. Resume hard-coded "worker" at
-    its readiness gate, so a planner-only config could START a plan (fresh
-    preflight passes require_runnable("planner")) but never resume it."""
+    """A plan run resumes under the planner role.
+
+    Resume hard-coded "worker" at its readiness gate, so a planner-only config could START a plan
+    (fresh preflight passes require_runnable("planner")) but never resume it.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
@@ -292,9 +304,11 @@ def test_plan_resume_requires_the_planner_role(
 def test_resume_preset_flag_is_recorded_for_later_executions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`resume --preset X` continues the run under X and stamps it as the run's
-    flag-selected preset, so a later plain resume replays X and every listing
-    names it; without the flag the stamp is untouched."""
+    """`resume --preset X` stamps X as the run's flag-selected preset for later executions.
+
+    A later plain resume replays X and every listing names it; without the flag the stamp is
+    untouched.
+    """
     from agent6.sessions.manifest import read_manifest
 
     repo = tmp_path / "repo"
@@ -320,11 +334,13 @@ def test_resume_preset_flag_is_recorded_for_later_executions(
 def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A hub's detached resume reads the run's worker.pid as the child owning
-    the run (spawn_and_confirm) and `sessions show` reads it as a live worker:
-    written before the preflight, every refusal past that point (the checkout
-    lock, a missing snapshot, the git guards, config, isolation) still read
-    "resuming" from the hub and "alive" from the listing."""
+    """A resume writes its worker pid only after the preflight passed.
+
+    A hub's detached resume reads worker.pid as the child owning the run and `sessions show` reads
+    it as a live worker; a pid written before the preflight makes every refusal past that point (the
+    checkout lock, a missing snapshot, the git guards, config, isolation) read "resuming" from the
+    hub and "alive" from the listing.
+    """
     from agent6.app._execution import ExecutionEnd
     from agent6.app.preflight import SessionRefusedError
 
@@ -378,8 +394,11 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
 def test_a_late_resume_refusal_does_not_record_unrun_preset_or_model_picks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A pick becomes the run's recorded default only when its execution starts; a
-    later preflight refusal must leave the last running execution's choices intact."""
+    """A late resume refusal records no unrun preset or model pick.
+
+    A pick becomes the run's recorded default only when its execution starts; a refusal leaves the
+    last running execution's choices intact.
+    """
     from agent6.app.preflight import SessionRefusedError
     from agent6.sessions.manifest import read_manifest
 
@@ -415,8 +434,10 @@ def test_a_resume_startup_failure_keeps_the_crash_replay_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Approving a replay spends the marker only when the provider replay begins.
-    Clearing it before run_execution setup meant a provider-construction or MCP startup
-    failure made the next attempt replay the crashed turn's tools without warning."""
+
+    Clearing it before run_execution setup meant a provider-construction or MCP startup failure made
+    the next attempt replay the crashed turn's tools without warning.
+    """
     from unittest.mock import MagicMock
 
     from agent6.harness._snapshot import (
@@ -469,8 +490,11 @@ def _finished_execution(*_a: object, **_k: object) -> object:
 def test_a_frontend_teardown_failure_still_clears_the_worker_pid_on_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An in-process front-end outlives the resume, so its pid must not stay
-    the session's worker identity when closing its console view fails."""
+    """A front-end teardown failure still clears the worker pid on resume.
+
+    An in-process front-end outlives the resume, so its pid must not stay the session's worker
+    identity when closing its console view fails.
+    """
     from unittest.mock import MagicMock
 
     from agent6.app._execution import ExecutionEnd
@@ -504,8 +528,10 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid_on_resume(
 def test_a_misspelled_away_mode_refuses_a_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The typo refusal reads the raw launcher value on resume as on run; the
-    valid-or-recorded away answer hid the typo and let the resume start."""
+    """A misspelled away mode refuses a resume as it refuses a run.
+
+    The typo refusal reads the raw launcher value; the valid-or-recorded away answer hides the typo.
+    """
     from agent6.app._execution import ExecutionEnd
 
     repo = tmp_path / "repo"
@@ -530,10 +556,12 @@ def test_a_misspelled_away_mode_refuses_a_resume(
 def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A parked submission resumed by `agent6 resume` runs through run_task,
-    whose teardown keeps worker.pid through a detach (the spawned child then
-    holds the file). resume_task's own teardown then cleared it: every listing
-    read the live child as stale until its loop wrote the pid again."""
+    """A parked resume's detach leaves the pid with the spawned child.
+
+    A parked submission resumed by `agent6 resume` runs through run_task, whose teardown keeps
+    worker.pid through a detach; a second clear in resume_task's teardown makes every listing read
+    the live child as stale until its loop writes the pid again.
+    """
     import subprocess
     from unittest.mock import MagicMock
 
@@ -581,9 +609,11 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
 def test_a_parked_resume_hands_run_task_the_explicit_leaves(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A parked run's task runs through run_task, whose refusal ladder tells an
-    explicit setting the host cannot honor (refuse) from an automatic one
-    (degrade) by the explicit leaves; the parked path handed it none."""
+    """A parked resume hands run_task the explicit leaves.
+
+    run_task's refusal ladder tells an explicit setting the host cannot honor (refuse) from an
+    automatic one (degrade) by the explicit leaves.
+    """
     from unittest.mock import MagicMock
 
     from agent6.config import load_config
@@ -624,9 +654,11 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
 def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """ "the tree holds changes no commit has ...; this execution's next commit takes
-    them" named the operator's files untracked when the run started, which
-    every chain commit leaves out."""
+    """The resume note leaves out the files that were untracked when the run started.
+
+    Every chain commit leaves them out, so "the tree holds changes no commit has; this execution's
+    next commit takes them" must not name them.
+    """
     from unittest.mock import MagicMock
 
     from agent6.sessions.layout import write_untracked_at_start
@@ -693,11 +725,12 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
 def test_the_resume_note_names_the_files_it_hands_to_the_operator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A file that appeared between executions and no tool of the run wrote joins
-    the operator's set and leaves every later commit of the run, and the
-    resume said nothing about it: an operator whose command-written file
-    vanished from the run's commits had nothing to read. The note names
-    what it reassigned."""
+    """The resume note names the files it hands to the operator.
+
+    A file that appeared between executions and no tool of the run wrote joins the operator's set
+    and leaves every later commit of the run; an operator whose command-written file vanished from
+    the run's commits needs the note to say what was reassigned.
+    """
     from unittest.mock import MagicMock
 
     from agent6.sessions.layout import write_untracked_at_start
@@ -762,9 +795,11 @@ def test_the_resume_note_names_the_files_it_hands_to_the_operator(
 def test_plan_resume_builds_the_planner_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The resumed execution's DRIVING provider is the planner route: with both roles
-    configured, the old path silently switched a plan run to the worker model
-    on its second execution (and stamped the transcript seat "worker")."""
+    """The resumed execution's DRIVING provider is the planner route.
+
+    With both roles configured, the old path silently switched a plan run to the worker model on its
+    second execution (and stamped the transcript seat "worker").
+    """
     import dataclasses
 
     import agent6.ui.cli.resume as cli_resume_mod
@@ -826,8 +861,10 @@ def _session_dir(state: Path, bucket: str, sid: str, mode: str) -> Path:
 def test_an_id_matching_two_buckets_is_refused_by_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The fallback re-resolved inside runs/ only, so a prefix matching BOTH a
-    run and an ask silently resumed the run."""
+    """An id matching two buckets is refused by name.
+
+    A fallback that re-resolves inside runs/ only silently resumes the run over the ask.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
@@ -847,9 +884,11 @@ def test_an_id_matching_two_buckets_is_refused_by_name(
 def test_a_session_resume_cannot_continue_is_left_untouched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """resume reaches every bucket, and it locked + cleared the target's state
-    on the way to discovering it could not continue it -- killing a live machine
-    draft's worker.pid."""
+    """A session resume cannot continue is left untouched.
+
+    Resume reaches every bucket; locking and clearing the target's state before discovering it
+    cannot continue kills a live machine draft's worker.pid.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
@@ -869,9 +908,12 @@ def test_a_session_resume_cannot_continue_is_left_untouched(
 def test_a_resumed_ask_needs_no_repo_and_answers_where_a_fresh_one_does(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fresh ask is read-only and may run outside a git repo; resuming one
-    refused with talk of branches an ask never cuts, and an execution that DID run
-    printed no answer and left transcript.md holding the first execution's."""
+    """A resumed ask needs no repo and answers where a fresh one does.
+
+    A fresh ask is read-only and may run outside a git repo; a resume refusing with talk of
+    branches, or an execution that ran but printed no answer and left transcript.md holding the
+    first execution's, contradicts it.
+    """
     from agent6.ui.cli._ask import save_ask_transcript
 
     outside = tmp_path / "notarepo"
@@ -938,8 +980,11 @@ def test_resuming_a_finished_run_without_a_steer_is_refused(
 def test_a_finished_run_still_resumes_with_a_steer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The refusal is narrow: `--steer` is new work, so it goes straight
-    through -- pinned by the run getting all the way to the snapshot check."""
+    """The refusal is narrow.
+
+    `--steer` is new work, so it goes straight through, pinned by the run getting all the way to
+    the snapshot check.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
@@ -966,12 +1011,13 @@ def test_a_finished_run_still_resumes_with_a_steer(
 def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, ended: bool
 ) -> None:
-    """A finished run resumed with `--steer` kept its original task, so its
-    listing row and the squash merge of the new execution were titled with work an
-    earlier merge had already landed. The steer IS the work (the fork rule,
-    `stamp_fork_task`, for the only resume a finished run allows); a run that
-    had not finished keeps its task, the steer being a follow-up. Stamped past
-    every refusal: a resume with no snapshot renames nothing."""
+    """A steer that resumes a finished run becomes its task.
+
+    The steer is the work (the fork rule, `stamp_fork_task`, for the only resume a finished run
+    allows), so the listing row and the squash merge of the new execution are titled with it, not
+    with work an earlier merge already landed; a run that had not finished keeps its task, the steer
+    being a follow-up. Stamped past every refusal: a resume with no snapshot renames nothing.
+    """
     from unittest.mock import MagicMock
 
     from agent6.app.manifest import read_manifest
@@ -1044,9 +1090,11 @@ def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
 def test_resume_refuses_a_fan_out_coordinator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A `run --parallel` fan-out is a session of its own with no loop to
-    continue: resuming it is refused by name, pointing at its lanes, before
-    the snapshot check would call it "no resume snapshot"."""
+    """A `run --parallel` fan-out is a session of its own with no loop to continue.
+
+    Resuming it is refused by name, pointing at its lanes, before the snapshot check would call it
+    "no resume snapshot".
+    """
     from agent6.paths import state_dir
     from agent6.sessions.layout import SessionLayout
 
@@ -1073,9 +1121,11 @@ def test_resume_refuses_a_fan_out_coordinator(
 def test_a_declined_unconfined_confirm_is_the_operators_refusal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The operator answering no at the unconfined-autorun confirm exited 1,
-    the code the exit table gives a broken run; every other declined startup
-    confirm and refusal exits 2, the operator's own code."""
+    """A declined unconfined-autorun confirm is the operator's refusal, exit 2.
+
+    Exit 1 is the exit table's code for a broken run; every other declined startup confirm and
+    refusal exits 2.
+    """
     from agent6.app._session import select_isolation
     from agent6.app.preflight import SessionRefusedError
     from agent6.app.reporter import Reporter
@@ -1104,9 +1154,11 @@ def test_a_declined_unconfined_confirm_is_the_operators_refusal(
 def test_a_parked_resume_with_no_provider_key_refuses_and_stays_parked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """resume_task checked the key itself before handing a parked run to
-    run_task, which owns that preflight for every run it starts: the one
-    check refuses, names `agent6 connect`, and the run stays parked."""
+    """A parked resume with no provider key refuses and stays parked.
+
+    run_task owns the key preflight for every run it starts: the one check refuses, names `agent6
+    connect`, and the run stays parked.
+    """
     from unittest.mock import MagicMock
 
     from agent6.app import run as run_mod
@@ -1137,9 +1189,11 @@ def test_a_parked_resume_with_no_provider_key_refuses_and_stays_parked(
 def test_a_parked_resume_says_it_is_starting_once_it_starts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """resume_task announced "starting it now" before handing the run over,
-    so a refused start (no key) read as started; the lifecycle that starts
-    the execution says so, after its refusals."""
+    """A parked resume says it is starting once it starts.
+
+    "starting it now" announced before the hand-over reads a refused start (no key) as started; the
+    lifecycle that starts the execution says so, after its refusals.
+    """
     from unittest.mock import MagicMock
 
     from agent6.app import run as run_mod
@@ -1172,8 +1226,10 @@ def test_a_parked_resume_says_it_is_starting_once_it_starts(
 def test_resume_model_flag_is_recorded_and_replayed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`resume --model X` runs the execution on X and stamps it on the run, so a
-    later plain resume routes to X again; a refused route stamps nothing."""
+    """`resume --model X` runs the execution on X and stamps it for later resumes.
+
+    A later plain resume routes to X again; a refused route stamps nothing.
+    """
     from agent6.app.manifest import stamp_execution
     from agent6.config import load_config
     from agent6.sessions.manifest import read_manifest

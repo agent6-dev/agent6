@@ -512,7 +512,7 @@ banned-from = [
 # page.py composes embedded HTML asset strings; line length is meaningless there.
 "src/agent6/ui/web/page.py" = ["E501"]
 # A test module, class or function needs no docstring; one that has one names the regression.
-"tests/**" = ["ANN", "B017", "D1", "D", "DOC", "ICN003", "PLC0415", "PLR0915", "PLR2004", "S"]
+"tests/**" = ["ANN", "B017", "D1", "DOC", "ICN003", "PLC0415", "PLR0915", "PLR2004", "S"]
 
 [tool.pyright]
 include = ["docs/gen_contracts.py", "src", "tests"]

@@ -2,11 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """Headless drive of the textual dashboard via textual's run_test Pilot.
 
-textual ships in the base install, so these run in CI. They cover the bits
-that previously could only be checked by a human: that streamed reasoning +
-markup-hostile model output render without crashing, that the approval modal
-is keyboard-answerable (the y/n routing bug), and that the new Ctrl-C steer
-modal writes the right bridge file.
+textual ships in the base install, so these run in CI. They cover what only a human could
+check otherwise: streamed reasoning and markup-hostile model output render without crashing,
+the approval is keyboard-answerable, and the steer composer writes the right bridge file.
 """
 
 from __future__ import annotations
@@ -43,8 +41,7 @@ def _ev(**fields: Any) -> dict[str, object]:
 
 
 def _screen_is(app: Agent6TUI, name: str) -> bool:
-    """`app.screen` raises while the stack is transiently empty (startup,
-    mid-switch); a poll reads that as "not yet", never an error."""
+    """`app.screen` raising on a transiently empty stack reads as "not yet", never an error."""
     try:
         current = app.screen
     except ScreenStackError:
@@ -53,10 +50,10 @@ def _screen_is(app: Agent6TUI, name: str) -> bool:
 
 
 async def _show_dashboard(pilot: Any) -> None:
-    """The app opens on the conversation view; flip to the dashboard (Ctrl+D)
-    so the pane tests drive the dashboard like before. Waits for each screen to
-    actually be on top: startup pushes the screens asynchronously, and a Ctrl+D
-    fired before the conversation lands would type into the wrong screen."""
+    """Open on the conversation, then flip to the dashboard and wait for it to be on top.
+
+    Startup pushes the screens asynchronously; a Ctrl+D fired early types into the wrong screen.
+    """
     app = pilot.app
     await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
     await pilot.press("ctrl+d")
@@ -79,9 +76,10 @@ class _ModalHost(App[None]):
 
 
 def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
-    """A digit typed into an answer field is plain text: the multi-question modal
-    has no digit quick-select. An option button fills its question's field (never
-    dismisses); ctrl+s submits the collected answers as a tuple."""
+    """A digit typed into an answer field is plain text; an option button fills its field.
+
+    The multi-question modal has no digit quick-select; ctrl+s submits the answers as a tuple.
+    """
     result: dict[str, tuple[str, ...] | None] = {}
 
     class _Host(App[None]):
@@ -99,7 +97,7 @@ def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
             assert isinstance(modal, QuestionModal)
             modal.query_one("#ans-0", Input).focus()
             await pilot.pause()
-            await pilot.press("2")  # a digit is just text now, not an option pick
+            await pilot.press("2")  # a digit is text, not an option pick
             await pilot.pause()
             assert isinstance(app.screen, QuestionModal)  # still open (no digit-select)
             assert "v" not in result
@@ -143,8 +141,10 @@ def test_diff_colors_content_with_header_like_prefixes(tmp_path: Path) -> None:
 
 
 def test_modal_arrow_keys_move_focus() -> None:
-    """Arrow keys move focus in a modal like Tab (the app.focus_next fix). Tested
-    on the button-only confirm dialog, where no text field consumes the arrows."""
+    """Arrow keys move focus in a modal like Tab (the app.focus_next fix).
+
+    Tested on the button-only confirm dialog, where no text field consumes the arrows.
+    """
 
     class _Host(App[None]):
         def on_mount(self) -> None:
@@ -226,9 +226,7 @@ def test_each_consequential_modal_delivers_one_result() -> None:
 
 
 def test_tools_table_maximizes_to_full_height(tmp_path: Path) -> None:
-    """Pressing `f` on the focused tool table fills the screen, not its 20%
-    resting height -- regression: the explicit `height: 20%` made the maximized
-    view stay short until `#tools.-maximized { height: 1fr; }` was added."""
+    """`f` on the focused tool table fills the screen, not its 20% resting height."""
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
 
     async def scenario() -> None:
@@ -254,10 +252,7 @@ def test_tools_table_maximizes_to_full_height(tmp_path: Path) -> None:
 
 
 def test_plan_tree_maximizes_to_full_width(tmp_path: Path) -> None:
-    """Pressing `f` on the focused task-graph pane fills the screen WIDTH, not its
-    32% resting width -- the width analogue of the tool-table height bug; the
-    explicit `width: 32%` made the maximized view stay a narrow column until
-    `#plan.-maximized { width: 1fr; }` was added."""
+    """`f` on the focused task-graph pane fills the screen width, not its 32% resting width."""
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
 
     async def scenario() -> None:
@@ -296,8 +291,7 @@ def test_plan_tree_maximizes_to_full_width(tmp_path: Path) -> None:
 
 
 def test_tool_row_enter_opens_detail_with_full_args(tmp_path: Path) -> None:
-    """Enter on a tool-calls row opens a read-only detail modal carrying the FULL
-    arg value, not the column-truncated preview."""
+    """Enter on a tool-calls row opens a read-only detail modal carrying the full arg value."""
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
     long_val = "abc/" * 100  # 400 chars, well past the 80-char preview + 90-char column
 
@@ -326,8 +320,7 @@ def test_tool_row_enter_opens_detail_with_full_args(tmp_path: Path) -> None:
 
 
 def test_render_and_modals(tmp_path: Path) -> None:
-    # The app suppresses live affordances for a session whose worker is gone;
-    # these drive a LIVE run, so its pid belongs on disk as it would be.
+    # These drive a live run, so its pid belongs on disk as it would be.
     (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
 
@@ -335,10 +328,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test() as pilot:
             await _show_dashboard(pilot)
-            # Render with bracket-laden (markup-hostile) content must not crash —
-            # exercises the header, the plan TREE (step titles), the tool TABLE
-            # (names/args), the stream pane and the diff pane, all of which carry
-            # model output that would otherwise be parsed as Rich markup.
+            # Markup-hostile model output in every pane must not parse as Rich markup.
             for ev in (
                 _ev(type="session.start", user_task="do [a] thing", mode="run"),
                 _ev(
@@ -387,8 +377,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
             await pilot.press("n")
             assert await answer_written(tmp_path, pilot, "ap2") == "no"
 
-            # An external steer request routes to the docked composer bar (no
-            # popup): the bar takes focus, typing + Enter answers over the bridge.
+            # An external steer request routes to the docked bar, which takes focus.
             from agent6.ui.tui.composer import SteerInput
 
             app._handle_event(_ev(type="session.steer_requested", source="sigint"))
@@ -401,9 +390,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
             await pilot.pause()
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "fix"
 
-            # Question modal (ask_user): markup-hostile options render; clicking an
-            # option fills its answer field, and ctrl+s writes the bridge file (a
-            # JSON list of answers aligned to the questions).
+            # Markup-hostile options render; a click fills its field, ctrl+s writes the file.
             app._handle_event(
                 _ev(
                     type="question.prompt",
@@ -445,9 +432,10 @@ def test_render_and_modals(tmp_path: Path) -> None:
 
 
 def test_start_question_before_session_start_is_answerable(tmp_path: Path) -> None:
-    """A run asks about the working tree's uncommitted changes BEFORE
-    session.start (the same channel as ask_user); a TUI opened on that dir
-    reads it as waiting, shows the question, and answers over the bridge."""
+    """A run asking about uncommitted changes before session.start reads as waiting.
+
+    The TUI shows the question and answers over the bridge, the ask_user channel.
+    """
     (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (tmp_path / "manifest.json").write_text(
         json.dumps({"mode": "run", "session_id": tmp_path.name, "user_task": "t"}),
@@ -496,10 +484,10 @@ def test_start_question_before_session_start_is_answerable(tmp_path: Path) -> No
 
 
 def test_back_and_quit_exit_codes(tmp_path: Path) -> None:
-    """Esc leaves the run view for the hub (exit 0) from both the conversation and
-    the dashboard (their composer bars own plain letters, so there is no q alias);
-    Ctrl+Q quits the hub from anywhere. Standalone, every one of them just
-    closes."""
+    """Esc leaves the run view for the hub from both views; Ctrl+Q quits from anywhere.
+
+    The composer bars own plain letters, so there is no q alias; standalone, each just closes.
+    """
     from agent6.ui.tui.app import TuiExit
 
     async def press(from_hub: bool, *keys: str) -> TuiExit | None:
@@ -520,9 +508,11 @@ def test_back_and_quit_exit_codes(tmp_path: Path) -> None:
 
 
 def test_dashboard_pane_maximize_and_restore(tmp_path: Path) -> None:
-    """f maximizes the focused pane to full screen; Esc and f both restore it. Esc
-    while maximized must minimize (not also back out to the hub), and a non-default
-    pane like the diff must be focusable for this to work."""
+    """F maximizes the focused pane to full screen; Esc and f both restore it.
+
+    Esc while maximized must minimize (not also back out to the hub), and a non-default pane like
+    the diff must be focusable for this to work.
+    """
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -553,9 +543,7 @@ def test_dashboard_pane_maximize_and_restore(tmp_path: Path) -> None:
 
 
 def test_dashboard_diff_pane_scrolls(tmp_path: Path) -> None:
-    """A long diff overflows the diff pane, which is a scroll container, so it can be
-    scrolled -- inline and while maximized (regression: it used to be a plain Static
-    that just clipped)."""
+    """A long diff scrolls in the diff pane, inline and while maximized."""
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -580,10 +568,12 @@ def test_dashboard_diff_pane_scrolls(tmp_path: Path) -> None:
 
 
 def test_dashboard_inline_log_is_a_bounded_gapless_window(tmp_path: Path) -> None:
-    """Coalescing folds many events between paints. The inline log must stay a bounded
-    window: feed a pre-burst, then a burst larger than the window in one tick, and the
-    RichLog caps at MAX_LOG_TAIL -- the gap-causing pre-burst lines are evicted, so it
-    is the gapless recent window, not pre-burst lines + a hole + the tail."""
+    """Coalescing folds many events between paints.
+
+    The inline log must stay a bounded window: feed a pre-burst, then a burst larger than the window
+    in one tick, and the RichLog caps at MAX_LOG_TAIL: the gap-causing pre-burst lines are
+    evicted, so it is the gapless recent window, not pre-burst lines + a hole + the tail.
+    """
     from agent6.viewmodel.state import MAX_LOG_TAIL
 
     async def scenario() -> None:
@@ -607,11 +597,10 @@ def test_dashboard_inline_log_is_a_bounded_gapless_window(tmp_path: Path) -> Non
 
 
 def test_conversation_and_dashboard_footers_match(tmp_path: Path) -> None:
-    """The two run views share one shortcut scheme: the same footer entries in
-    the same order, Ctrl+D leftmost (only its label differs: Dashboard vs
-    Conversation), and no plain-letter keys (the composer bars own letters).
-    One deliberate extra on the conversation: ^t Detail (the transcript's
-    detail cycle -- the dashboard has no transcript)."""
+    """The two run views share one footer scheme, Ctrl+D leftmost, no plain-letter keys.
+
+    The conversation's one extra is ^t Detail, since the dashboard has no transcript.
+    """
     from textual.widgets._footer import FooterKey
 
     async def scenario() -> None:
@@ -619,19 +608,18 @@ def test_conversation_and_dashboard_footers_match(tmp_path: Path) -> None:
         app = Agent6TUI(tmp_path, from_hub=True)
 
         async def footer_keys(pilot: Any, what: str) -> list[tuple[str, str]]:
-            """The footer's entries once it renders its screen's bindings in
-            their own order.
+            """The footer's entries once it renders its screen's bindings in their own order.
 
             The first render carries every key already, in an order of its own,
             and settles a frame later. The set, the count and two equal reads
             all read as ready during it; the screen's own `active_bindings` is
-            the order it is settling towards, so that is what says when."""
+            the order it is settling towards, so that is what says when.
+            """
 
             def settled() -> bool:
                 shown = [k for k, b in app.screen.active_bindings.items() if b.binding.show]
                 keys = [fk.key for fk in app.screen.query(FooterKey)]
-                # The footer adds the command palette itself, which no binding
-                # here names: compare only the keys the screen offers.
+                # The footer adds the palette itself; compare only the keys the screen offers.
                 return bool(shown) and [k for k in keys if k in shown] == shown
 
             await wait_for(pilot, settled, what)
@@ -657,10 +645,7 @@ def test_conversation_and_dashboard_footers_match(tmp_path: Path) -> None:
 
 
 def test_dashboard_claims_are_per_process(tmp_path: Path) -> None:
-    """Concurrent front-ends hold independent claims: mounting registers OUR
-    claim without touching a live peer's, and unmount removes only ours -- the
-    single-slot frontend.pid (where one viewer's exit could deregister
-    another) is gone."""
+    """Concurrent front-ends hold independent claims; unmount removes only ours."""
     import os
     import subprocess
     import sys
@@ -690,8 +675,7 @@ def test_dashboard_claims_are_per_process(tmp_path: Path) -> None:
 
 
 def test_dead_peer_claim_does_not_mask_the_live_dashboard(tmp_path: Path) -> None:
-    """A hard-killed viewer's stale claim must not affect liveness: the probe
-    reads the dashboard's own live claim (and prunes the dead one)."""
+    """A hard-killed viewer's stale claim does not affect liveness; the probe prunes it."""
     import os
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -711,11 +695,8 @@ def test_dead_peer_claim_does_not_mask_the_live_dashboard(tmp_path: Path) -> Non
 
 
 def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: Path) -> None:
-    """`agent6 resume` appends a new session whose prompt ids restart at
-    approval-1; a dashboard held across the resume must pop the new session's
-    modal, not swallow it as already seen."""
-    # The app suppresses live affordances for a session whose worker is gone;
-    # these drive a LIVE run, so its pid belongs on disk as it would be.
+    """A dashboard held across a resume pops the new session's modal, whose ids restart at 1."""
+    # These drive a live run, so its pid belongs on disk as it would be.
     (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
 
@@ -732,11 +713,7 @@ def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: Path) -> N
             await pilot.press("y")
             assert await answer_written(tmp_path, pilot, "approval-1") == "yes"
             app._handle_event(_ev(type="approval.answer", id="approval-1", approved=True))
-            # The resume: a real resumed execution emits ONLY loop.resume.start (never
-            # a second session.start -- harness/loop.py run() vs resume()), then
-            # the new session's approval-1. Feeding session.start here masked the
-            # bug where the seen-set was cleared only on session.start and every
-            # resumed execution's modals were swallowed forever.
+            # A resumed execution emits only loop.resume.start, never a second session.start.
             app._handle_event(_ev(type="loop.resume.start", iteration=2, messages=4))
             # The worker drops a stale answer as it emits the prompt.
             clear_answer(tmp_path, "approval-1")
@@ -763,11 +740,10 @@ def test_steer_request_marker_round_trip(tmp_path: Path) -> None:
 
 
 def test_dashboard_bar_is_default_focus_and_steers(tmp_path: Path) -> None:
-    """The dashboard opens ready to type -- the composer bar is the default focus
-    (like the conversation) -- and Enter drops the steer.request marker + the
-    instruction together, for the run to inject at its next boundary. The run
-    must be LIVE (a recorded live worker): a dir with no worker routes the
-    composer to resume instead, because a steer file there is never read."""
+    """The dashboard opens with the composer focused, and Enter drops the steer marker and text.
+
+    The run must be live: a dir with no worker routes the composer to resume instead.
+    """
     import os
 
     from agent6.sessions.ipc import steer_request_pending, write_worker_pid
@@ -793,10 +769,10 @@ def test_dashboard_bar_is_default_focus_and_steers(tmp_path: Path) -> None:
 
 
 def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypatch: Any) -> None:
-    """Typing into the composer bar of a FINISHED run spawns a detached
-    `agent6 resume --steer=<text>`: the follow-up rides the flag (a pre-seeded
-    steer file would be wiped by resume's stale-state clear) and is injected at
-    the resumed session's first boundary -- the claude-code follow-up flow."""
+    """Typing into the composer of a finished run spawns a detached `agent6 resume --steer=<text>`.
+
+    The follow-up rides the flag, since resume's stale-state clear would wipe a seeded file.
+    """
     from agent6.ui.tui import app as app_mod
     from agent6.ui.tui.composer import SteerInput
 
@@ -908,9 +884,7 @@ def _no_kill(_session_dir: Path, _worker: object, _grace_s: float) -> tuple[bool
 
 
 def test_stop_now_aborts_via_bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Run > Stop now on a LIVE run confirms, then the one stop every surface
-    uses lands both bridges: the abort steer the stream watchdog reads, and the
-    stop marker a wait reads."""
+    """Run > Stop now on a live run confirms, then lands the abort steer and the stop marker."""
     import os
 
     import agent6.app.stop as stop_mod
@@ -944,11 +918,11 @@ def test_stop_now_aborts_via_bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 
 def test_ctrl_z_on_the_run_spawned_view_detaches_the_run_itself(tmp_path: Path) -> None:
-    """The view `agent6 run --tui` spawns fronts a run in the terminal's own
-    process; leaving the view alone left that run streaming in the foreground
-    (the shell never came back). Ctrl-Z there steers a detach, so the
-    lifecycle hands the run to a background resume at its next step; a plain
-    viewer (`attach --tui`) leaves the run it watches untouched."""
+    """Ctrl-Z on the view `agent6 run --tui` spawns steers a detach; a plain viewer leaves the run.
+
+    That view fronts a run in the terminal's own process, so leaving it alone left the run
+    streaming in the foreground.
+    """
     import os
 
     from agent6.sessions.ipc import steer_request_pending, write_worker_pid
@@ -991,8 +965,7 @@ def test_ctrl_z_on_the_run_spawned_view_detaches_the_run_itself(tmp_path: Path) 
 
 
 def test_a_typed_stop_is_the_one_stop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`/stop` in the composer, on a live run, is the stop `agent6 stop` is: no
-    confirm (it was typed); on a session that is not live it says so."""
+    """`/stop` in the composer on a live run stops without a confirm; a dead session says so."""
     import os
 
     from agent6.app.stop import StopOutcome
@@ -1038,9 +1011,7 @@ def test_a_typed_stop_is_the_one_stop(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:
-    """Run > Stop after this step on a LIVE run confirms, then drops the
-    stop.request marker the loop honors at its next completed-iteration
-    boundary."""
+    """Run > Stop after this step on a live run confirms, then drops the stop.request marker."""
     import os
 
     from agent6.sessions.ipc import stop_request_pending, write_worker_pid
@@ -1068,8 +1039,7 @@ def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:
 
 
 def test_context_pct_readout_in_top_line_and_bar(tmp_path: Path, monkeypatch: Any) -> None:
-    """With the model's context window known, the dashboard's top line shows
-    `ctx: NN%` and the composer bar's subtitle carries the same readout."""
+    """With the context window known, the top line and the composer subtitle show `ctx: NN%`."""
     from agent6.ui.tui.composer import SteerInput
 
     def _window(_provider: str, _model: str) -> int:
@@ -1110,9 +1080,10 @@ def test_context_pct_readout_in_top_line_and_bar(tmp_path: Path, monkeypatch: An
 
 
 def test_working_timer_anchors_to_the_last_events_ts_not_the_attach(tmp_path: Path) -> None:
-    """Replayed history bumped the idle anchor too, so attaching to a run
-    wedged 40 minutes read "working… 3s" -- the timer meant to tell "thinking"
-    from "hung" concealed the hang. The anchor is the last event's own ts."""
+    """The idle anchor is the last event's own ts, so a wedged run reads as wedged.
+
+    Replayed history bumped the anchor, so a run wedged 40 minutes read "working… 3s".
+    """
 
     async def scenario() -> None:
         from agent6.sessions.ipc import write_worker_pid
@@ -1139,9 +1110,10 @@ def test_working_timer_anchors_to_the_last_events_ts_not_the_attach(tmp_path: Pa
 
 
 def test_budget_meter_reads_this_executions_spend_not_the_runs_total(tmp_path: Path) -> None:
-    """The cap re-arms each resume execution while usd_total stays cumulative, so
-    dividing the cumulative spend by the CURRENT execution's cap showed a resumed run
-    at "budget: 100%" having used 20% of it."""
+    """The budget percentage divides the execution's own spend by its cap.
+
+    The cap re-arms each resume while usd_total stays cumulative.
+    """
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -1163,9 +1135,7 @@ def test_budget_meter_reads_this_executions_spend_not_the_runs_total(tmp_path: P
 
 
 def test_compact_now_drops_the_marker_for_a_live_run(tmp_path: Path) -> None:
-    """The Run menu's "Compact context now" drops the compact.request marker for
-    the run to honor at its next boundary; a finished run refuses (nothing to
-    compact)."""
+    """Run > Compact context now drops the compact.request marker; a finished run refuses."""
     import os
 
     from agent6.sessions.ipc import read_compact_request, write_worker_pid
@@ -1191,10 +1161,7 @@ def test_compact_now_drops_the_marker_for_a_live_run(tmp_path: Path) -> None:
 
 
 def test_payload_literal_does_not_swallow_a_real_steer(tmp_path: Path) -> None:
-    # The seed counts steers the same way the fold does: an event whose PAYLOAD
-    # contains the quoted literal (a grep of the source for the event name) must
-    # not inflate the baseline, or the NEXT real steer is silently swallowed
-    # while the run blocks awaiting an instruction.
+    # The seed counts steers as the fold does: a payload quoting the event name must not inflate it.
     from agent6.ui.tui.composer import SteerInput
 
     (tmp_path / "logs.jsonl").write_text(
@@ -1233,9 +1200,7 @@ def test_payload_literal_does_not_swallow_a_real_steer(tmp_path: Path) -> None:
 
 
 def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: Path) -> None:
-    # A CLI Ctrl-C that DETACHED leaves session.steer_requested in the log. Opening the
-    # TUI must not treat that stale (already-handled) request as live -- only one
-    # that arrives AFTER the TUI is watching should route to the composer bar.
+    # A stale steer request left by a detached Ctrl-C is not live; only one arriving later routes.
     from agent6.ui.tui.composer import SteerInput
 
     (tmp_path / "logs.jsonl").write_text(
@@ -1275,9 +1240,7 @@ def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: Path) 
 
 
 def test_toggle_and_log_viewer_keys(tmp_path: Path) -> None:
-    # Ctrl+D flips conversation <-> dashboard even with a composer bar focused
-    # (the default focus on both); the log viewer opens from the View menu (the
-    # run views have no bare letters) and closes with its own keys.
+    # Ctrl+D flips the views with a composer focused; the log viewer opens from the View menu.
     from agent6.ui.tui.dashboard import DashboardScreen
     from agent6.ui.tui.logview import LogScreen
 
@@ -1315,9 +1278,7 @@ def test_toggle_and_log_viewer_keys(tmp_path: Path) -> None:
 
 
 def test_task_filter_scopes_tools_log_and_diff(tmp_path: Path) -> None:
-    # Two tasks, each with a tool call + a commit. Selecting a task filters the
-    # tools table / log / diff to just that task's activity; the fold stamps each
-    # event with the cursor task in focus when it landed.
+    # Two tasks, each with a tool call and a commit; selecting one filters to its activity.
     def _nodes(cur_status: dict[str, str]) -> dict[str, object]:
         return {
             tid: {"title": t, "status": cur_status[tid], "parent_id": None, "children": []}
@@ -1385,9 +1346,7 @@ def test_task_filter_scopes_tools_log_and_diff(tmp_path: Path) -> None:
 
 
 def test_question_modal_multi_collects_all_answers() -> None:
-    """A prompt with several questions: each has its own answer field, option
-    buttons fill their own field, and Submit (ctrl+s) returns every answer as a
-    tuple aligned to the questions."""
+    """A multi-question prompt returns every answer as a tuple aligned to the questions."""
     result: dict[str, tuple[str, ...] | None] = {}
     qs = (
         Question(question="Framework?", options=("React", "Vue")),
@@ -1416,9 +1375,7 @@ def test_question_modal_multi_collects_all_answers() -> None:
 
 
 def test_conversation_is_the_primary_view(tmp_path: Path) -> None:
-    """The app opens on the run's conversation; Ctrl+D toggles the dashboard and
-    back with the SAME conversation instance (state persists); Esc on the primary
-    view leaves for the hub (exit 0)."""
+    """Ctrl+D toggles the dashboard and back with the same conversation instance; Esc leaves."""
     from agent6.ui.tui.conversation import ConversationScreen
     from agent6.ui.tui.dashboard import DashboardScreen
 
@@ -1448,13 +1405,11 @@ def test_conversation_is_the_primary_view(tmp_path: Path) -> None:
 def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """A worker killed without a session.end (kill -9 / OOM) must not render as a
-    live spinner forever. Every other surface probes worker.pid (the hub says
-    "stale", the web refuses steer); the dashboard was the one surface with no
-    liveness check: it spun "working…", accepted steer with a success toast
-    nobody would read, and REFUSED resume -- the one correct action. The ~1/s
-    heartbeat probe flips the dir status to stale, the body says the worker
-    exited, and the composer routes to resume."""
+    """A worker killed without a session.end reads stale, and the composer routes to resume.
+
+    The heartbeat probe flips the dir status; without it the dashboard spun "working…" forever,
+    accepted steer with a toast and refused resume, the one correct action.
+    """
     import json
 
     from agent6.ui.tui import app as app_mod
@@ -1488,7 +1443,7 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
             await _show_dashboard(pilot)
-            app._heartbeat_at = 0.0  # age the throttle so the probe fires now
+            app._heartbeat_at = 0.0  # age the throttle so the probe fires
             app._tick()
             await pilot.pause()
             assert app.worker_lost is True
@@ -1509,9 +1464,7 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
 
 
 def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
-    """An attached dashboard on a live-but-silent run shows a ticking "working…
-    Ns" heartbeat, so a thinking / resuming run reads as alive, not hung. The
-    elapsed count advances across ticks even with no new events."""
+    """A live but silent run shows a ticking "working… Ns" heartbeat."""
     import json
 
     events = [
@@ -1521,8 +1474,7 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
     (tmp_path / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
     )
-    # "live-but-silent" is the whole subject: a run with no worker.pid is one
-    # whose worker exited, and a dead run must NOT show a ticking heartbeat.
+    # A run with no worker.pid is one whose worker exited, and it shows no ticking heartbeat.
     (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     import re
@@ -1540,8 +1492,7 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
                 app._tick()  # pyright: ignore[reportPrivateUsage]
                 return _seconds(str(app._dash.query_one("#stream-body", Static).render())) >= 1
 
-            # The heartbeat needs real wall time (>=1s since the last event);
-            # poll until it shows instead of betting on a fixed budget.
+            # The heartbeat needs real wall time (at least 1s since the last event), so poll for it.
             await wait_for(pilot, advanced, "the working… heartbeat to advance", timeout=15.0)
             return str(app._dash.query_one("#stream-body", Static).render())
 
@@ -1551,19 +1502,17 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
 
 
 def test_tick_survives_an_empty_screen_stack(tmp_path: Path) -> None:
-    """The 0.2s _tick interval races shutdown: teardown pops every screen, and a
-    tick landing in that window hit the raising App.screen property, crashing the
-    app (ScreenStackError surfaced at run_test exit -- the load-only flake that
-    took down a different TUI test each full-suite run). A tick on an empty stack
-    must be a no-op, including the steer-request routing path."""
+    """A tick on an empty screen stack is a no-op, the steer-request routing path included.
+
+    A tick landing in teardown's window hit the raising App.screen property and crashed the app.
+    """
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
         app = Agent6TUI(tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            # Empty the stack only around the synchronous tick (restored after),
-            # so run_test teardown still sees the screens it expects to pop.
+            # Empty the stack only around the synchronous tick, so teardown still finds its screens.
             stack = app._screen_stack  # pyright: ignore[reportPrivateUsage]
             saved = list(stack)
             stack.clear()
@@ -1575,9 +1524,7 @@ def test_tick_survives_an_empty_screen_stack(tmp_path: Path) -> None:
 
 
 def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
-    """The detach->attach symptom the user hit: after opening on a live run, NEW
-    events appended by the background process must appear (not a frozen snapshot).
-    Attach on a partial log, append more, and assert the new tool row shows."""
+    """Events appended after attach appear; the view is not a frozen snapshot."""
     import json
 
     logs = tmp_path / "logs.jsonl"
@@ -1622,9 +1569,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
 
 
 def test_composer_compact_directive_routes_to_compact_request(tmp_path: Path) -> None:
-    """A composer `/compact <focus>` on a LIVE run becomes a compact request
-    carrying the focus (no steer files); `/pin <text>` stays a steer for the
-    loop's own parser."""
+    """A composer `/compact <focus>` on a live run is a compact request; `/pin` stays a steer."""
     import json
     import os
 
@@ -1658,9 +1603,7 @@ def test_composer_compact_directive_routes_to_compact_request(tmp_path: Path) ->
 
 
 def test_the_composer_title_shows_its_brackets(tmp_path: Path) -> None:
-    """A border title is markup: the live composer's `/compact [focus]` hint
-    lost its `[focus]` (rendered as "/compact )") the way `[git]` vanished from
-    a toast, so the title is escaped where it is set."""
+    """The composer's border title is escaped, so `/compact [focus]` keeps its `[focus]`."""
     import os
 
     from rich.markup import escape
@@ -1683,8 +1626,7 @@ def test_the_composer_title_shows_its_brackets(tmp_path: Path) -> None:
 
 
 def test_the_menu_bar_title_keeps_the_tasks_brackets(tmp_path: Path) -> None:
-    """The bar mirrors the app subtitle, which carries the task the user
-    typed; a Static given a str parses it as markup, so `[wip]` vanished."""
+    """The bar mirrors the app subtitle escaped, so a task's `[wip]` does not vanish as markup."""
     from rich.text import Text
     from textual.widgets import Static
 
@@ -1708,10 +1650,10 @@ def test_the_menu_bar_title_keeps_the_tasks_brackets(tmp_path: Path) -> None:
 
 
 def test_the_hidden_detail_level_says_what_it_hides(tmp_path: Path) -> None:
-    """At detail "hidden" every thinking and tool item renders no line, and the
-    view painted the empty-conversation placeholder ("no conversation yet")
-    over a run in its first minutes of reasoning and tool calls; the note names
-    what is hidden and the key that shows it."""
+    """At detail "hidden" the view says what is hidden and the key that shows it.
+
+    It painted the empty-conversation placeholder over a run in its first minutes.
+    """
     import json
 
     events = [
@@ -1735,9 +1677,7 @@ def test_the_hidden_detail_level_says_what_it_hides(tmp_path: Path) -> None:
             tail = str(screen._tail_widget().render())
             assert "no conversation" not in tail
             assert "hidden at this detail level" in tail and "Ctrl+T" in tail
-            # A call still in flight renders no sealed line at ANY level: the
-            # note is for the hidden level alone, or it would promise Ctrl+T
-            # shows a call that is simply still running.
+            # A call in flight renders no sealed line at any level; the note is for hidden alone.
             (tmp_path / "logs.jsonl").write_text(
                 json.dumps(events[0]) + "\n" + json.dumps(events[2]) + "\n", encoding="utf-8"
             )
@@ -1750,9 +1690,10 @@ def test_the_hidden_detail_level_says_what_it_hides(tmp_path: Path) -> None:
 
 
 def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: Path) -> None:
-    """Before any role.call the header names the manifest's driver and the
-    dashboard says the live worker is starting. The first call then supplies
-    the role and model shown with its in-flight beat."""
+    """Before any role.call the header names the driver and says the worker is starting.
+
+    The first call then supplies the role and model shown with its in-flight beat.
+    """
     (tmp_path / "manifest.json").write_text(
         json.dumps(
             {
@@ -1798,9 +1739,11 @@ def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: Pa
 def test_dashboard_does_not_call_a_dead_driverless_run_idle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A missing driver supplies no role fact, not an idle state. A worker that
-    died launching reads stale, while the unknown role is a dash cached from
-    the manifest rather than a manifest read on every heartbeat."""
+    """A missing driver supplies no role fact, not an idle state.
+
+    A worker that died launching reads stale, while the unknown role is a dash cached from the
+    manifest rather than a manifest read on every heartbeat.
+    """
     from agent6.ui.tui import _dashboard_header as header_mod
 
     (tmp_path / "manifest.json").write_text(
@@ -1835,9 +1778,10 @@ def test_dashboard_does_not_call_a_dead_driverless_run_idle(
 
 
 def test_the_dashboard_header_leads_with_the_status_and_never_wraps(tmp_path: Path) -> None:
-    """A long model id pushed "failed · max iterations" onto a line of its
-    own, split mid-phrase. The status leads line 1 and every header line ends
-    in an ellipsis before it would wrap."""
+    """A long model id pushed "failed · max iterations" onto a line of its own, split mid-phrase.
+
+    The status leads line 1 and every header line ends in an ellipsis before it would wrap.
+    """
 
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
@@ -1861,9 +1805,11 @@ def test_the_dashboard_header_leads_with_the_status_and_never_wraps(tmp_path: Pa
 
 
 def test_a_short_terminal_dashboard_shows_one_pane_row_at_a_time(tmp_path: Path) -> None:
-    """At 80x24 every pane got a line or two. Below 28 rows the dashboard folds
-    to the row holding focus (the log and diff otherwise) plus a summary line,
-    and Tab still reaches a folded pane, which unfolds it."""
+    """At 80x24 every pane got a line or two.
+
+    Below 28 rows the dashboard folds to the row holding focus (the log and diff otherwise) plus a
+    summary line, and Tab still reaches a folded pane, which unfolds it.
+    """
     from textual.widgets import DataTable
 
     async def scenario() -> None:
@@ -1881,8 +1827,7 @@ def test_a_short_terminal_dashboard_shows_one_pane_row_at_a_time(tmp_path: Path)
             summary = str(dash.query_one("#summary", Static).render())
             assert "1 tool call · last read_file" in summary
             tools.focus()
-            # The fold follows the focus through a relayout, which is a frame
-            # or more away under load.
+            # The fold follows the focus through a relayout, a frame or more away under load.
             await wait_for(pilot, lambda: tools.region.height > 3, "the tools pane unfolded")
             assert dash.query_one("#body").region.height == 0
             await pilot.resize_terminal(120, 40)

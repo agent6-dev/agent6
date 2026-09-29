@@ -62,8 +62,10 @@ _CAPGET = (
 
 
 def _scaffold_available() -> bool:
-    """The retained-caps profile needs subuid auto-mapping + setpriv ambient
-    support; probe the exact scaffold rather than guessing from versions."""
+    """Probe the exact scaffold the retained-caps profile needs, rather than guessing from versions.
+
+    It needs subuid auto-mapping and setpriv ambient support.
+    """
     probe = subprocess.run(
         [*_SCAFFOLD, "sh", "-c", "grep -q '^CapAmb:.*2000' /proc/self/status"],
         capture_output=True,
@@ -74,8 +76,10 @@ def _scaffold_available() -> bool:
 
 
 def test_a_launcher_without_cap_setpcap_still_strips_the_child(tmp_path: Path) -> None:
-    """Under the ambient-caps/no-CAP_SETPCAP profile the jailed command's
-    effective set is empty: the bounding-set EPERM does not skip the capset."""
+    """Under the ambient-caps/no-CAP_SETPCAP profile the jailed command's effective set is empty.
+
+    The bounding-set EPERM does not skip the capset.
+    """
     binary = locate_jail_binary()
     if binary is None:
         pytest.skip("no agent6-jail binary")

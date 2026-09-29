@@ -2,10 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """Adversarial probes against a jailed MCP server.
 
-Every one of these is written as the ATTACKER: the assertion is that the
-attack fails, and the probe prints what it actually managed so a pass cannot
-be vacuous. If defending one of these ever needs a special case in the
-launcher, the design is wrong -- these are here to find that out.
+Every one is written as the attacker: the assertion is that the attack fails, and the
+probe prints what it managed so a pass cannot be vacuous. If defending one of these ever
+needs a special case in the launcher, the design is wrong; these are here to find that out.
 """
 
 from __future__ import annotations
@@ -34,9 +33,11 @@ def _attack(script: str, cwd: Path, **policy_kw: object) -> str:
 
 
 def test_the_server_cannot_read_the_policy_channel(tmp_path: Path) -> None:
-    """The policy travels on an inherited fd. If it survived the exec, the
-    server could read the operator's whole sandbox description -- every path,
-    every grant -- and, worse, a future policy could carry something secret."""
+    """The policy's inherited fd does not survive the exec.
+
+    A server that could read it would have the operator's whole sandbox description, every
+    path and grant, and a future policy could carry something secret.
+    """
     script = (
         "import os\n"
         "found = []\n"
@@ -57,8 +58,10 @@ def test_the_server_cannot_read_the_policy_channel(tmp_path: Path) -> None:
 
 
 def test_the_server_cannot_read_the_launchers_environment(tmp_path: Path) -> None:
-    """PID 1 of the jail's namespace is the launcher. If its /proc entry were
-    readable, a server could lift whatever the launcher was started with."""
+    """The launcher's own /proc entry, PID 1 of the jail's namespace, is unreadable.
+
+    Readable, it would let a server lift whatever the launcher was started with.
+    """
     script = (
         "import os\n"
         "try:\n"
@@ -77,9 +80,11 @@ def test_the_server_cannot_read_the_launchers_environment(tmp_path: Path) -> Non
 def test_the_server_cannot_reach_the_operators_secrets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The persistence attack: a server that can read the config dir has the
-    provider keys, and one that can WRITE it owns every future run (set
-    isolation = none and the sandbox is gone tomorrow). Masked, so neither."""
+    """The config dir is masked: a server can neither read nor write it.
+
+    Reading it has the provider keys; writing it owns every future run (set `isolation =
+    none` and the sandbox is gone tomorrow).
+    """
     cfg_dir = tmp_path / "cfg" / "agent6"
     cfg_dir.mkdir(parents=True)
     (cfg_dir / "secrets.toml").write_text("key = 'sk-SECRET'\n", encoding="utf-8")
@@ -106,9 +111,11 @@ def test_the_server_cannot_reach_the_operators_secrets(
 
 
 def test_the_server_cannot_plant_a_tool_for_the_next_run(tmp_path: Path) -> None:
-    """The other half of the persistence attack: `~/.local/bin` is mounted
-    read+exec into every jail, so a binary planted there would run inside
-    tomorrow's sandbox. It is a read-only mount, and $HOME is not granted."""
+    """`~/.local/bin` is a read-only mount, and $HOME is not granted.
+
+    The other half of the persistence attack: it is mounted read+exec into every jail, so a
+    binary planted there would run inside tomorrow's sandbox.
+    """
     script = (
         "import os, pathlib\n"
         "home = pathlib.Path(os.path.expanduser('~'))\n"
@@ -130,9 +137,11 @@ def test_the_server_cannot_plant_a_tool_for_the_next_run(tmp_path: Path) -> None
 
 
 def test_a_symlink_out_of_the_workspace_reaches_nothing(tmp_path: Path) -> None:
-    """A server can create any symlink it likes inside its own workspace. It
-    buys nothing: the target does not exist in the assembled root, so the
-    resolution fails rather than escaping."""
+    """A symlink a server creates inside its workspace buys nothing.
+
+    The target does not exist in the assembled root, so the resolution fails rather than
+    escaping.
+    """
     secret = tmp_path / "outside.txt"
     secret.write_text("OUTSIDE\n", encoding="utf-8")
     ws = tmp_path / "ws"
@@ -151,9 +160,11 @@ def test_a_symlink_out_of_the_workspace_reaches_nothing(tmp_path: Path) -> None:
 
 
 def test_killing_agent6_takes_the_server_with_it(tmp_path: Path) -> None:
-    """A server that outlives the run holds its pipe and keeps whatever grants
-    it had. The launcher is PID 1 of the server's namespace, so the namespace
-    dying is the server dying -- no sweep required."""
+    """A server dies with its namespace, no sweep required.
+
+    The launcher is PID 1 of the server's namespace; a server that outlived the run would
+    hold its pipe and keep its grants.
+    """
     script = "import time\nprint('UP', flush=True)\ntime.sleep(300)\n"
     argv = ("/usr/bin/python3", "-c", script)
     policy = jail_policy(tmp_path, Config(), "strict", argv, network="none")
@@ -172,9 +183,11 @@ def test_killing_agent6_takes_the_server_with_it(tmp_path: Path) -> None:
 
 
 def test_the_server_cannot_write_the_repos_git_dir(tmp_path: Path) -> None:
-    """protect_git covers a server for free now: a poisoned `.git/config`
-    filter runs on the HOST at agent6's next auto-commit, so a server able to
-    write it escapes the jail entirely."""
+    """protect_git covers a server.
+
+    A poisoned `.git/config` filter runs on the host at agent6's next auto-commit, so a
+    server able to write it escapes the jail entirely.
+    """
     git_dir = tmp_path / ".git"
     git_dir.mkdir()
     (git_dir / "config").write_text("[core]\n", encoding="utf-8")
@@ -193,10 +206,12 @@ def test_the_server_cannot_write_the_repos_git_dir(tmp_path: Path) -> None:
 
 
 def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: Path) -> None:
-    """Capturing a server's stderr is what makes a failed start explainable,
-    and it is also a channel third-party code controls. To a file it filled
-    1.8 GB in three seconds; to an undrained pipe the server wedges at 64 KB.
-    Drained, capped, and the tail still says what happened."""
+    """A server's stderr is drained and capped, and the tail still says what happened.
+
+    Capturing it is what makes a failed start explainable, and it is a channel third-party
+    code controls: to a file it filled 1.8 GB in three seconds; to an undrained pipe the
+    server wedges at 64 KB.
+    """
     import threading
 
     from agent6.portable import drain_stderr, stderr_tail
@@ -227,11 +242,11 @@ def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: Path) 
 
 
 def test_a_finished_launcher_stops_shielding_its_pid(tmp_path: Path) -> None:
-    """The escapee sweep skips pids in `_live_launchers`. Every transport that
-    adds one used to have to remember to remove it -- and the MCP one did not,
-    so a dead server's pid stayed shielded and the NEXT process handed that pid
-    would have survived a sweep. The set is pruned against our real children
-    instead, so forgetting is no longer possible."""
+    """`_live_launchers` is pruned against the real children; a dead server's pid is not shielded.
+
+    The escapee sweep skips pids in the set; a transport that forgot to remove one would let
+    the next process handed that pid survive a sweep.
+    """
     from agent6.sandbox import jail as jail_mod
 
     argv = ("/usr/bin/python3", "-c", "pass")

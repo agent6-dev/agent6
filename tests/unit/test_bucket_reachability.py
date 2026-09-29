@@ -2,9 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Anything a listing shows is reachable by every command that takes an id.
 
-Each of these sites rebuilt "id -> layout" or "newest -> layout" with `runs/`
-hardcoded, so it saw only one bucket. Splitting plans/ out of runs/ turned that
-latent narrowness into a plan nothing could open.
+A site that rebuilds "id -> layout" with `runs/` hardcoded sees one bucket and cannot open a plan or
+an ask.
 """
 
 from __future__ import annotations
@@ -36,9 +35,7 @@ def _seed(state: Path, bucket: str, session_id: str, *, mode: str, marker: str =
 def test_history_graph_without_an_id_finds_a_plan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The no-id form scanned runs/ and then built a runs/ layout, so the split
-    made a plan's graph unopenable -- and an id from anywhere else pointed at a
-    directory that does not exist."""
+    """History graph without an id finds a plan."""
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
@@ -47,8 +44,7 @@ def test_history_graph_without_an_id_finds_a_plan(
 
     main(["sessions", "graph"])
     err = capsys.readouterr().err
-    # It RESOLVED the plan (an empty graph is a separate, honest complaint);
-    # before, it could not see the bucket at all.
+    # It resolved the plan: an empty graph is a separate, honest complaint.
     assert "brave-oak-AAAAAA" in err
     assert "no sessions with a graph" not in err
 
@@ -72,15 +68,13 @@ def test_history_transcript_without_an_id_finds_a_plan(
 def test_sessions_diff_names_the_real_problem_for_a_plan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A plan HAS no branch to diff, which is a different sentence from "no
-    session matches that id". The id resolves; the answer is about branches."""
+    """Sessions diff on a plan says it has no branch, not that no session matches the id."""
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
     state = state_dir(tmp_path)
     _seed(state, "plans", "brave-oak-AAAAAA", mode="plan")
-    # A populated runs/ so the resolver takes its real path rather than
-    # short-circuiting on a missing bucket with a different error.
+    # A populated runs/, so the resolver takes its real path instead of failing on a missing bucket.
     _seed(state, "runs", "quiet-fox-BBBBBB", mode="run")
 
     main(["sessions", "diff", "brave-oak-AAAAAA"])
@@ -91,8 +85,7 @@ def test_sessions_diff_names_the_real_problem_for_a_plan(
 def test_the_repl_watch_reads_its_own_log(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`/watch` inside an ask looked under runs/ for an id that lives in asks/,
-    so it always reported a missing log."""
+    """The REPL watch reads its own log under asks/."""
     from agent6.ui.cli._repl import repl_show_recent_events  # pyright: ignore[reportPrivateUsage]
 
     state = state_dir(tmp_path)
@@ -104,8 +97,7 @@ def test_the_repl_watch_reads_its_own_log(
 
 
 def test_the_mcp_tools_see_every_bucket(tmp_path: Path) -> None:
-    """`list_sessions` is named for what it lists. It read runs/ only, so a plan
-    or an ask was invisible to an editor driving agent6 over MCP."""
+    """`list_sessions` lists every bucket, so a plan or an ask is visible over MCP."""
     import io
 
     from agent6.config import Config

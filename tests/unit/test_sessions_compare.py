@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `agent6 sessions compare`: advisory verify+judge ranking across
-already-run candidates. Real tmp git repos + fabricated run state (manifest.json
-+ logs.jsonl), same fabrication pattern as test_cli_runs_merge.py (branches) and
-test_parallel_orchestrator.py (`_write_fake_run`). The judge path is driven with
-a fake provider (no network)."""
+"""Tests for `agent6 sessions compare`: advisory verify+judge ranking across already-run candidates.
+
+Real tmp git repos + fabricated run state (manifest.json + logs.jsonl), same fabrication pattern as
+test_cli_runs_merge.py (branches) and test_parallel_orchestrator.py (`_write_fake_run`). The judge
+path is driven with a fake provider (no network).
+"""
 
 from __future__ import annotations
 
@@ -56,10 +57,11 @@ def _setup_run(
     cost: float = 0.05,
     manifest_extra: dict[str, Any] | None = None,
 ) -> None:
-    """Cut agent6/<session_id> off base_sha with *commits*, write manifest.json +
-    logs.jsonl (the run-branch + run-state fixture `sessions compare` reads), and
-    return the checkout to where it was. *manifest_extra* merges extra manifest
-    fields (e.g. a fan-out lane's lineage + compare stamp)."""
+    """Cut agent6/<session_id> off base_sha with commits and write the run's state fixture.
+
+    Writes manifest.json and logs.jsonl, then returns the checkout to where it was;
+    *manifest_extra* merges extra manifest fields (a fan-out lane's lineage, a compare stamp).
+    """
     branch = f"agent6/{session_id}"
     current = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
     _git(repo, "checkout", "-q", base_sha)
@@ -125,9 +127,10 @@ def test_compare_needs_at_least_two_ids(repo: Path, capsys: pytest.CaptureFixtur
 def test_compare_of_a_fanout_id_compares_its_lanes(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The fan-out id is what the console prints and the operator holds; given
-    alone it names every lane whose manifest carries it, in lane order (it
-    read as one run, too few, and `sessions show` calls it ambiguous)."""
+    """A fan-out id given alone names every lane carrying it, in lane order.
+
+    It read as one run, too few, and `sessions show` called it ambiguous.
+    """
     base = _init_repo(repo)
     for lane, cost in ((1, 0.09), (2, 0.01)):
         _setup_run(
@@ -213,8 +216,7 @@ def test_compare_prefix_resolution_and_mechanical_ranking(
 def test_compare_row_of_a_merged_run_says_so(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A candidate already merged is not offered `sessions merge` again; its
-    row names the base it landed on."""
+    """A candidate already merged is not offered `sessions merge` again; its row names the base."""
     base = _init_repo(repo)
     _setup_run(
         repo,
@@ -244,9 +246,10 @@ def test_compare_row_of_a_merged_run_says_so(
 def test_compare_rows_and_total_format_cost_the_same_way(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Per-row and total costs must render through the one cost formatter, which
-    switches to cents at >= $1. Hand-formatting the rows at four decimals put
-    '$1.5000' in a row above a '$1.52' total on the same screen."""
+    """Per-row and total costs render through the one cost formatter.
+
+    Hand-formatting the rows at four decimals put '$1.5000' above a '$1.52' total.
+    """
     base = _init_repo(repo)
     _setup_run(
         repo,
@@ -274,11 +277,11 @@ def test_compare_rows_and_total_format_cost_the_same_way(
 def test_compare_excludes_a_run_that_never_finished(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run that died without reaching session.end has no verdict to compare, and
-    its truncated spend is the LOWEST, so mechanical ranking (verify-pass first,
-    then cheapest) floated it to first place and told the operator to merge it.
-    The fan-out already excludes such lanes; the hand-picked path must too, and
-    must say which run it dropped rather than silently shrinking the table."""
+    """A run that died before session.end is dropped from a hand-picked comparison, and said so.
+
+    Its truncated spend is the lowest, so mechanical ranking floated it to first place with a
+    merge suggestion; the fan-out already excludes such lanes.
+    """
     base = _init_repo(repo)
     _setup_run(
         repo,
@@ -311,10 +314,11 @@ def test_compare_excludes_a_run_that_never_finished(
 def test_compare_excludes_a_run_that_is_still_live(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A live running/waiting run has the same shape as a died one -- verify
-    reads the None of a clean unverified finish and its spend is truncated to
-    the lowest -- so mechanical ranking floated the half-done run to first
-    place with a merge suggestion for a branch that is still moving."""
+    """A live run is dropped from a comparison like a died one.
+
+    Its verify reads None and its spend is truncated to the lowest, so ranking floated the
+    half-done run to first place with a merge suggestion for a branch still moving.
+    """
     import os
 
     base = _init_repo(repo)
@@ -395,10 +399,11 @@ class _FakeProvider:
 
 
 def _stub_builder(provider: object) -> Any:
-    """Stand-in for `_build_role_provider` so the judge path needs no API key or
-    network; returns *provider* regardless of the (cfg, role, ...) it's called
-    with. *provider* is any object with the fake `.call()` shape (`_FakeProvider`,
-    `_SlowFakeProvider`), cast to `Provider` for the caller."""
+    """Stand in for `_build_role_provider` so the judge path needs no API key or network.
+
+    Returns *provider* regardless of the arguments: any object with the fake `.call()` shape,
+    cast to `Provider` for the caller.
+    """
 
     def _build(*_a: Any, **_k: Any) -> Provider:
         return cast(Provider, provider)
@@ -407,8 +412,7 @@ def _stub_builder(provider: object) -> Any:
 
 
 class _CostingFakeProvider(_FakeProvider):
-    """A fake provider that also bills each call into the BudgetTracker its
-    builder received, the way a real provider records usage."""
+    """A fake provider that bills each call into the BudgetTracker its builder received."""
 
     budget: BudgetTracker | None = None
 
@@ -459,8 +463,7 @@ def test_compare_uses_judge_when_reviewer_configured(
 def test_compare_total_line_accounts_the_judge_calls_own_spend(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The judge call is real money: the ranked report's total line carries it
-    (candidates + judge = grand total), so judging spend is never invisible."""
+    """The judge call's spend lands on the ranked report's total line."""
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")], cost=0.10)
     _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")], cost=0.02)
@@ -486,9 +489,7 @@ def _lane_extra(*, winner: bool, rank: int) -> dict[str, Any]:
 def test_compare_discloses_a_fresh_verdict_that_contradicts_the_stamp(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Re-judging one fan-out's own lanes can flip the winner; the recorded
-    stamp (the listings' star) is never rewritten, so the clash must be said
-    out loud, not left for the operator to trip over in `sessions list`."""
+    """Re-judging a fan-out's lanes never rewrites the stamp, and a flipped winner is said."""
     base = _init_repo(repo)
     _setup_run(
         repo,
@@ -548,9 +549,10 @@ def test_compare_stays_quiet_when_the_fresh_verdict_agrees_with_the_stamp(
 def test_failed_judge_announces_what_its_attempts_still_spent(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Two malformed replies fall back to the mechanical ranking, but both
-    attempts billed; the degradation line must carry that spend and the
-    mechanical outcome must stamp it (never-invisible is the whole point)."""
+    """Two malformed judge replies fall back to the mechanical ranking with their spend reported.
+
+    The degradation line carries the spend and the mechanical outcome stamps it.
+    """
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")], cost=0.10)
     _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")], cost=0.02)
@@ -568,8 +570,10 @@ def test_failed_judge_announces_what_its_attempts_still_spent(
 
 
 class _UnpricedFakeProvider(_FakeProvider):
-    """Bills usage with NO reported cost under an unpriced model name, the
-    shape that makes estimate_usd return (0.0, unknown=True)."""
+    """Bill usage with no reported cost under an unpriced model name.
+
+    The shape that makes estimate_usd return (0.0, unknown=True).
+    """
 
     budget: BudgetTracker | None = None
 
@@ -588,9 +592,7 @@ class _UnpricedFakeProvider(_FakeProvider):
 def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An unpriced reviewer with no reported cost estimates $0.0000 with the
-    unknown flag; suppressing the judge figure entirely would make judging
-    spend invisible again, so it renders as the ~ lower bound instead."""
+    """An unpriced reviewer with no reported cost renders as the ~ lower bound, never hidden."""
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")], cost=0.10)
     _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")], cost=0.02)
@@ -614,9 +616,10 @@ def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
 def test_compare_falls_back_to_mechanical_on_judge_error(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A reviewer model is configured but the judge never produces a valid
-    verdict (two malformed replies -> JudgeError): `rank` falls back to the
-    mechanical ranking, same as `--parallel`'s auto-compare."""
+    """A configured reviewer that never yields a verdict falls back to the mechanical ranking.
+
+    Two malformed replies raise JudgeError; `rank` then ranks as `--parallel`'s auto-compare.
+    """
     base = _init_repo(repo)
     _setup_run(
         repo,
@@ -690,9 +693,11 @@ class _FakeTTYOut(io.StringIO):
 
 
 class _SlowFakeProvider:
-    """Like `_FakeProvider`, but `.call()` sleeps first so a real terminal's
-    spinner gets time to tick during the (fake) judge call -- and can raise
-    instead of responding, to exercise the judge-failure cleanup path."""
+    """A fake provider whose `.call()` sleeps first, and can raise instead of responding.
+
+    The sleep gives a real terminal's spinner time to tick; the raise exercises the
+    judge-failure cleanup path.
+    """
 
     def __init__(
         self, *, sleep_s: float, text: str = "", raise_exc: Exception | None = None
@@ -713,8 +718,7 @@ class _SlowFakeProvider:
 def test_rank_plain_judging_line_on_non_tty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Piped/detached (not a terminal, the default under capsys): one truthful
-    line around the judge call, no animation frames."""
+    """Piped or detached, one truthful line surrounds the judge call and no frame animates."""
     provider = _FakeProvider([_VERDICT])
     monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
 
@@ -726,8 +730,7 @@ def test_rank_plain_judging_line_on_non_tty(
 def test_rank_animates_the_judging_status_on_a_tty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A real terminal spins the SAME glyphs/cadence as the run stream's
-    provider-call heartbeat, then clears the line before the ranked table."""
+    """A real terminal spins the run stream's glyphs and cadence, then clears the line."""
     fake = _FakeTTYOut()
     monkeypatch.setattr(sys, "stdout", fake)
     provider = _SlowFakeProvider(sleep_s=_HEARTBEAT_TICK_S * 2.4, text=_VERDICT)
@@ -760,8 +763,7 @@ def test_rank_clears_the_judging_status_even_when_the_judge_call_fails(
 def test_rank_mechanical_path_prints_no_judging_line(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """No reviewer configured -> the mechanical fallback is instant; nothing to
-    show a status for."""
+    """With no reviewer configured the mechanical fallback is instant and shows no status."""
     outcome = compare_mod.rank(Config(), _two_candidates(), transcript_dir=tmp_path)
 
     assert outcome.ranked_by == "mechanical"
@@ -769,9 +771,10 @@ def test_rank_mechanical_path_prints_no_judging_line(
 
 
 def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:
-    """No second spinner/rank implementation to drift: the fan-out auto-compare
-    and `sessions compare` both route through the ONE core in `app.compare`; the CLI
-    side only injects the console spinner + reviewer-provider wiring."""
+    """The fan-out auto-compare and `sessions compare` route through the one core in `app.compare`.
+
+    The CLI side only injects the console spinner and the reviewer-provider wiring.
+    """
     from agent6.app import compare as app_compare
     from agent6.app import parallel
     from agent6.ui.cli import sessions_compare
@@ -785,8 +788,7 @@ def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:
 def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """After `prune --delete-squashed` the run branch is gone; the candidate's
-    diff comes from the recorded merge instead of reading as empty."""
+    """After `prune --delete-squashed` a candidate's diff comes from the recorded merge."""
     base = _init_repo(repo)
     _setup_run(repo, "run-PPPP77", base_sha=base, commits=[("p.txt", "p\n", "add p")])
     tip = _git(repo, "rev-parse", "agent6/run-PPPP77")
@@ -808,8 +810,7 @@ def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
 
 
 def _stamped_fanout(repo: Path) -> None:
-    """Two lanes of one fan-out, stamped with the verdict its auto-compare
-    recorded (run-BBBB22 first)."""
+    """Two lanes of one fan-out, stamped with the verdict its auto-compare recorded."""
     base = _init_repo(repo)
     _setup_run(
         repo,
@@ -831,8 +832,7 @@ def _stamped_fanout(repo: Path) -> None:
 def test_compare_of_a_fanout_id_prints_the_recorded_verdict_without_judging(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Asking a fan-out for its comparison spent a judge call every time, and
-    could answer differently than the stamp `sessions show` reads."""
+    """Asking a fan-out for its comparison reads the stamp, never a fresh judge call."""
     _stamped_fanout(repo)
     judge = _FakeProvider(['{"ranking": ["run-AAAA11", "run-BBBB22"], "rationale": "flip"}'])
     monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(judge))
@@ -866,8 +866,7 @@ def test_rejudge_on_a_fanout_id_spends_a_fresh_judge_call(
 def test_a_fanout_with_no_recorded_verdict_is_judged(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An auto-compare that never ran leaves no stamp to print; the lanes are
-    ranked rather than reported as an empty verdict."""
+    """An auto-compare that never ran leaves no stamp, so the lanes are ranked instead."""
     base = _init_repo(repo)
     for sid, name in (("run-AAAA11", "a"), ("run-BBBB22", "b")):
         _setup_run(

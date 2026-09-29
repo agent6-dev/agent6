@@ -2,13 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Byte pin for the machine-agent subprocess IPC.
 
-`MachineAgentRequest` (app/machine_agent.py) owns the ``request.json`` file
-shape and `AgentExecResult` (machine/engine.py) owns ``result.json``; the argv
-contract (``python -m agent6.ui.cli.machine_agent <request.json>
-<result.json>``) is frozen. The files are transient per-invocation (writer and
-reader are always the same install), so the pin is a same-version one: the
-fixed objects below must serialize to exactly these bytes, and validating the
-bytes must reproduce the objects.
+`MachineAgentRequest` owns `request.json`, `AgentExecResult` owns `result.json`, and the argv
+contract is frozen; the files are transient per invocation, so the pin is a same-version one.
 """
 
 from __future__ import annotations
@@ -94,11 +89,10 @@ def test_result_bytes_validate_to_same_object() -> None:
 
 
 def test_result_payload_with_a_lone_surrogate_still_serializes() -> None:
-    """A model's finish_session arguments reach the payload through json.loads,
-    which accepts a lone surrogate, while model_dump_json refuses one. The
-    subprocess writes result.json with exactly that call, so an unscrubbed
-    payload killed it before the write; the host then read the dead subprocess
-    as reason="error" and routed a SUCCESSFUL agent state to its on.failed edge.
+    """A model's finish_session arguments reach the payload through json.loads, surrogates too.
+
+    An unscrubbed payload killed the subprocess before its result write, and the host routed a
+    successful state to on.failed.
     """
     import json
 
@@ -109,8 +103,7 @@ def test_result_payload_with_a_lone_surrogate_still_serializes() -> None:
 
 
 def test_defaulted_request_omits_nothing() -> None:
-    # Optional envelope fields serialize explicitly (null / []), never key-drop:
-    # the reader side needs no .get defaults, which is the point of the model.
+    # Optional envelope fields serialize explicitly, never key-drop, so the reader needs no default.
     minimal = MachineAgentRequest(
         cwd=Path("/w"),
         root=Path("/w"),

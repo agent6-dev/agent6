@@ -95,8 +95,7 @@ def test_the_loop_adopts_the_goal(tmp_path: Path) -> None:
 
 
 def test_a_new_goal_retires_the_old_one(tmp_path: Path) -> None:
-    """Retired, not made ordinary: a goal reads as an activity, and an ordinary
-    task of that shape is worked once and marked passed."""
+    """A retired goal is not made ordinary; an ordinary task of that shape is worked once."""
     curator, root, wf = _run(tmp_path)
     for goal in ("first goal", "second goal"):
         queue_request(curator.layout.session_dir, "standing", goal)

@@ -2,9 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The module-style import rule's list is the tree.
 
-`banned-from` names every leaf module of agent6, so `from agent6.pkg.module
-import name` is refused everywhere and `from agent6.pkg import module` is the
-way; a module added without its entry would slip through.
+`banned-from` names every leaf module of agent6, so `from agent6.pkg.module import name` is refused
+everywhere; a module added without its entry would slip through.
 """
 
 from __future__ import annotations

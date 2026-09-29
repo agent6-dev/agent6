@@ -53,9 +53,12 @@ def test_repo_writer_second_acquire_refused_and_holder_named(tmp_path: Path) -> 
 
 
 def test_one_probe_does_not_read_another_probe_as_a_live_run(tmp_path: Path) -> None:
-    """The probe took the EXCLUSIVE lock to ask whether anyone held it, so two
-    at once (a web hub and a TUI, or two hub tabs) each reported the other as
-    a run driving the checkout and refused a submission nothing was blocking."""
+    """One probe does not read another probe as a live run.
+
+    A probe that takes the exclusive lock to ask whether anyone holds it makes two at once (a web
+    hub and a TUI, or two hub tabs) each report the other as a run driving the checkout, refusing a
+    submission nothing was blocking.
+    """
     import os
     import threading
 
@@ -140,9 +143,12 @@ def _load_cfg() -> Config:
 
 
 def test_second_run_parks_with_the_verbatim_task(repo: Path) -> None:
-    """While a live worker holds the checkout, a second `run` submission is
-    refused, but the exact typed prompt is saved as a parked, resumable run —
-    with no tree mutation (no stash, no branch cut)."""
+    """A second run parks with the verbatim task.
+
+    While a live worker holds the checkout, a second `run` submission is refused, but the exact
+    typed prompt is saved as a parked, resumable run with no tree mutation (no stash, no branch
+    cut).
+    """
     from agent6.app.run import run_task
 
     state = state_dir(repo)
@@ -183,9 +189,10 @@ def test_second_run_parks_with_the_verbatim_task(repo: Path) -> None:
 def test_resume_starts_a_parked_run_with_the_saved_task(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`agent6 resume <parked-id>` delegates to a fresh run_task with the
-    verbatim saved task under the same run id (releasing its own locks first,
-    so the fresh start can take them)."""
+    """`agent6 resume <parked-id>` starts a fresh run_task with the saved task under the same id.
+
+    It releases its own locks first, so the fresh start can take them.
+    """
     from agent6.app import resume as resume_mod
     from agent6.app.manifest import stamp_parked, write_session_manifest
 
@@ -230,8 +237,10 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
 def test_resume_refuses_while_another_run_drives_the_checkout(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Resuming run B while run A's worker is live in the same checkout must
-    refuse (a resumed worker drives the tree exactly like a fresh one)."""
+    """Resuming run B while run A's worker is live in the same checkout refuses.
+
+    A resumed worker drives the tree exactly like a fresh one.
+    """
     from agent6.app import resume as resume_mod
 
     state = state_dir(repo)
@@ -267,9 +276,11 @@ def test_resume_refuses_while_another_run_drives_the_checkout(
 def test_hub_new_work_preflight_refuses_while_checkout_busy(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A hub refuses a New Work `run` submission up front (naming the live
-    run) instead of spawning a detached run that parks and times out the locate;
-    plan submissions are read-only and spawn freely."""
+    """A hub refuses a New Work `run` submission up front while the checkout is busy.
+
+    The refusal names the live run instead of spawning a detached run that parks and times out the
+    locate; plan submissions are read-only and spawn freely.
+    """
     from agent6.ui import spawn
 
     def must_not_spawn(*a: object, **k: object) -> tuple[Path | None, str]:
@@ -289,9 +300,12 @@ def test_hub_new_work_preflight_refuses_while_checkout_busy(
 def test_hub_new_work_fans_out_while_checkout_busy(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A fan-out takes no writer lock (its lanes clone the checkout), and the
-    plain-run refusal told the operator to /parallel instead, yet the same
-    check refused the /parallel message before parsing it."""
+    """A hub's New Work fans out while the checkout is busy.
+
+    A fan-out takes no writer lock (its lanes clone the checkout), and the plain-run refusal tells
+    the operator to `/parallel` instead, so the same check must not refuse the `/parallel` message
+    before parsing it.
+    """
     from agent6.ui import spawn
 
     spawned: list[str] = []
@@ -335,10 +349,11 @@ def test_hub_new_work_fans_out_while_checkout_busy(
 def test_runs_show_reports_a_parked_run_as_parked(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The refusal hands the operator a run id to resume, so `sessions show` on it has
-    to lead with the same word the listing uses. A parked run is a saved,
-    resumable submission -- never "unknown (no events yet)", which reads as a
-    broken husk and hides the one action that starts it."""
+    """`sessions show` reports a parked run as parked.
+
+    The refusal hands the operator a run id to resume, so the show page leads with the listing's
+    word; "unknown (no events yet)" reads as a broken husk and hides the one action that starts it.
+    """
     from agent6.app.run import run_task
     from agent6.ui.cli.sessions_show import _cmd_status  # pyright: ignore[reportPrivateUsage]
 
@@ -365,10 +380,12 @@ def test_runs_show_reports_a_parked_run_as_parked(
 
 
 def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: Path) -> None:
-    """The parked manifest's harness.preset is what resume feeds back to
-    load_effective; the park path stamped the SANDBOX preset there
-    ('strict'/'hardened'/'none'), so `agent6 resume <parked-id>` died with
-    "CONFIG ERROR: unknown preset 'strict'" on every sandboxed host."""
+    """The parked manifest records the config preset, not the sandbox one.
+
+    `harness.preset` is what resume feeds back to load_effective; the sandbox preset stamped there
+    ('strict', 'hardened', 'none') makes `agent6 resume <parked-id>` die with "CONFIG ERROR: unknown
+    preset 'strict'" on every sandboxed host.
+    """
     from agent6.app.run import run_task
     from agent6.config.layer import load_effective
 
@@ -395,9 +412,11 @@ def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: Pa
 def test_parked_resume_passes_the_steer_through_to_run_task(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`resume --steer` on a PARKED run: the bridge files resume seeds are
-    wiped by run_task's own stale-state clear, so the follow-up must ride the
-    delegation (initial_steer) instead of dying on the floor."""
+    """`resume --steer` on a PARKED run.
+
+    The bridge files resume seeds are wiped by run_task's own stale-state clear, so the follow-up
+    must ride the delegation (initial_steer) instead of dying on the floor.
+    """
     from agent6.app import resume as resume_mod
     from agent6.app.manifest import stamp_parked, write_session_manifest
 
@@ -436,8 +455,10 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
 
 
 def test_run_task_seeds_initial_steer_on_the_bridge(repo: Path) -> None:
-    """run_task's initial_steer lands on the bridge before the loop starts, so
-    its first boundary poll finds it."""
+    """run_task's initial_steer lands on the bridge before the loop starts.
+
+    Its first boundary poll finds it.
+    """
     from agent6.app.run import run_task
     from agent6.sessions.ipc import read_steer_answer, steer_request_pending
 
@@ -455,7 +476,7 @@ def test_run_task_seeds_initial_steer_on_the_bridge(repo: Path) -> None:
         )
     finally:
         release_single_writer(holder_fd)
-    assert rc == 2  # parked (checkout busy) -- but the steer already landed
+    assert rc == 2  # parked (checkout busy), but the steer already landed
     d = SessionLayout(state_dir=state, session_id="run-STEERSEED").session_dir
     assert steer_request_pending(d)
     assert read_steer_answer(d) == "focus on tests"
@@ -464,11 +485,12 @@ def test_run_task_seeds_initial_steer_on_the_bridge(repo: Path) -> None:
 def test_teardown_raise_still_releases_both_writer_locks(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A raise inside run_task's teardown must still release both writer
-    flocks. A CLI exit drops them with the process anyway, but the ACP
-    front-end calls run_task IN-PROCESS and outlives the run, where a leaked
-    flock refused every later run on the session/checkout until the server
-    restarted."""
+    """A raise inside run_task's teardown must still release both writer flocks.
+
+    A CLI exit drops them with the process anyway, but the ACP front-end calls run_task IN-PROCESS
+    and outlives the run, where a leaked flock refused every later run on the session/checkout until
+    the server restarted.
+    """
     from agent6.app import run as run_mod
 
     def boom(*a: Any, **kw: Any) -> None:
@@ -501,8 +523,11 @@ def test_teardown_raise_still_releases_both_writer_locks(
 def test_resume_teardown_raise_still_releases_both_writer_locks(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A front-end teardown failure must not strand either resume flock in an
-    in-process editor server; later runs must not wait for a process restart."""
+    """A resume teardown raise still releases both writer locks.
+
+    A front-end teardown failure must not strand either resume flock in an in-process editor server;
+    later runs must not wait for a process restart.
+    """
     from agent6.app import resume as resume_mod
     from agent6.app._execution import ExecutionEnd
     from agent6.harness._snapshot import SessionSnapshot
@@ -567,10 +592,12 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
 def test_resume_drops_a_stop_written_between_executions(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The sweep kept every marker younger than the journal's last line, so a
-    stop that landed after the previous execution ended (nobody honored it) stopped
-    the next execution at its first step. This execution's start is the threshold: a
-    marker older than it is stale, whatever the journal says."""
+    """Resume drops a stop written between executions.
+
+    This execution's start is the threshold: a marker older than it is stale, whatever the journal
+    says. Keeping every marker younger than the journal's last line lets a stop that landed after
+    the previous execution ended (nobody honoured it) stop the next execution at its first step.
+    """
     import os
 
     from agent6.app import resume as resume_mod
@@ -621,11 +648,13 @@ def test_resume_drops_a_stop_written_between_executions(
 def test_a_reused_ask_dir_drops_the_previous_executions_markers_and_keeps_this_executions(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An ask session reuses its dir under the same id (transient Q&A), so a
-    run_task that sweeps nothing starts the second execution on the first execution's
-    leftover markers. A marker older than this execution's start is stale, even one
-    younger than the journal (a steer typed after the execution ended); one written
-    since the execution began (an editor's cancel while it came up) is this execution's."""
+    """A reused ask dir drops the previous execution's markers and keeps this one's.
+
+    An ask session reuses its dir under the same id (transient Q&A), so the second execution must
+    not start on the first execution's leftover markers. A marker older than this execution's start
+    is stale, even one younger than the journal (a steer typed after the execution ended); one
+    written since the execution began (an editor's cancel while it came up) is this execution's.
+    """
     import os
 
     from agent6.app import run as run_mod
@@ -669,14 +698,16 @@ def test_a_reused_ask_dir_drops_the_previous_executions_markers_and_keeps_this_e
 def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The untracked set was recorded once, at the run's first execution, so a log or
-    note the operator wrote between executions was untracked at the resume's start
-    yet absent from the set, and the resumed execution's first checkpoint committed
-    it. At resume, every file untracked now that no tool call of the run
-    wrote joins the set; the run's own uncommitted file stays its own."""
+    """Resume treats a file that arrived between executions as the operator's.
+
+    The untracked set is recorded at the run's first execution, so a log or note the operator wrote
+    between executions is untracked at the resume's start yet absent from the set, and the resumed
+    execution's first checkpoint would commit it. At resume, every currently untracked file that no
+    tool call of the run wrote joins the set; the run's own uncommitted file stays its own.
+    """
     from agent6.app import _execution as execution_mod
     from agent6.app import resume as resume_mod
-    from agent6.app._execution import ExecutionInputs, ExecutionEnd
+    from agent6.app._execution import ExecutionEnd, ExecutionInputs
     from agent6.harness._snapshot import SessionSnapshot
     from agent6.secrets import save_secret
     from agent6.sessions.layout import read_untracked_at_start
@@ -727,7 +758,9 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     (repo / "note.md").write_text("the operator's\n", encoding="utf-8")
     seen: list[frozenset[str]] = []
 
-    def _execution(cfg: object, layout: object, inputs: ExecutionInputs, **_k: object) -> ExecutionEnd:
+    def _execution(
+        cfg: object, layout: object, inputs: ExecutionInputs, **_k: object
+    ) -> ExecutionEnd:
         seen.append(inputs.untracked_at_start)
         return ExecutionEnd(rc=0)
 
@@ -760,9 +793,11 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
 
 
 def test_a_run_started_in_a_subdirectory_shares_the_checkouts_lock(tmp_path: Path) -> None:
-    """The lock is one per CHECKOUT, wherever the operator stood when they
-    started the run: keyed on the cwd, a run from `src/` took a lock of its
-    own and drove the working tree beside the run holding the root's."""
+    """The lock is one per CHECKOUT, wherever the operator stood when they started the run.
+
+    Keyed on the cwd, a run from `src/` took a lock of its own and drove the working tree beside the
+    run holding the root's.
+    """
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
