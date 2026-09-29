@@ -1,50 +1,45 @@
 # AGENTS.md: instructions for coding agents working on this repo
 
-Read by coding agents (agent6 itself included) working in this repository.
-Every rule here binds; principles live here, detail lives in `docs/`.
-Two registers stay distinct, each binding only itself: how we develop agent6, and how agent6 behaves.
+- Every rule here binds; principles live here, detail lives in `docs/`.
+- Two registers stay distinct, each binding only itself: how we develop agent6, and how agent6 behaves.
 
 ## How we develop agent6
 
 ### Design principles
 
-We follow the **Zen of Python** (`python -c 'import this'`).
-The agent6 concretions, and the principles the Zen leaves out:
-
+- We follow the **Zen of Python** (`python -c 'import this'`).
 - **Simplicity first.** Less code beats more; build an abstraction the moment it is needed.
-  A beginner follows it and a reviewer reads the module top to bottom in one sitting: inline a one-caller helper, make a stateless class a function, drop pass-through wrappers.
-  Refactoring is continuous, so every series leaves the shapes it touched simpler.
+  Inline a one-caller helper, make a stateless class a function, drop pass-through wrappers.
+  Every series leaves the shapes it touched simpler.
 - **Rip out wrong shapes.** A rename lands everywhere in one change, the old name gone with it.
 - **Right-shaped data.** Fix the shape first and the code around it gets small.
   Settle a feature's config keys, schema and payload before implementing behind them.
-  Fields set together live in one frozen type, and repeated conversion between shapes means the shape is wrong.
-  One name per thing, so a collision or a rename on import is a smell.
+  Fields set together live in one frozen type; repeated conversion between shapes means the shape is wrong.
+  One name per thing.
 - **One obvious way.** One well-named command, one knob per behaviour, one mechanism per job.
-  A second implementation of the same decision drifts from the first: harden the one that exists.
-  One decision has one owner every surface reads, which is what keeps them consistent and catches a mistake once; duplicated code is cheaper than an abstraction with one caller.
+  One decision has one owner every surface reads; duplicated code is cheaper than an abstraction with one caller.
 - **Least surprise.** A command does the expected thing.
-  Config writes land in the global config unless `--repo` or `--machine-file FILE` redirects them, the same way everywhere; set-valued config merges last-overlay-wins.
+  Config writes land in the global config unless `--repo` or `--machine-file FILE` redirects them; set-valued config merges last-overlay-wins.
 - **Consistency.** Learning one command teaches its siblings: positional core args, `--repo`/`--machine-file` target flags, completion over every valid input.
-- **The explanation is the test.** Explain a change in a sentence before writing it; needing a paragraph of conditions means the shape is wrong.
-- **Explicit.** Defaults are real values `agent6 config show` prints with their origin; behaviour follows visible state, and errors are loud (see Errors).
-- **Surfaces tell the truth.** A failed run reads failed, a dead pane reads dead, a truncated answer reads truncated, and an error keeps its reason.
-  Every surface shows state the system actually holds, so invented or hidden state is a bug wherever it appears.
+- **The explanation is the test.** Explain a change in a sentence before writing it; a paragraph of conditions means the shape is wrong.
+- **Explicit.** Defaults are real values `agent6 config show` prints with their origin; behaviour follows visible state; errors are loud.
+- **Surfaces tell the truth.** A failed run reads failed, a dead pane reads dead, a truncated answer reads truncated, an error keeps its reason.
+  Every surface shows state the system actually holds; invented or hidden state is a bug.
 - **Fix the root cause.** Delete the wrong shape rather than guard it.
   A recurring problem has a systematic cause: correlate every occurrence before calling one transient, and say so plainly while the cause stays unfound.
 - **Evidence over churn.** Adopt what measurement shows is better and delete the old shape.
-  A change claiming better model behaviour, prompts or performance ships on a measured A/B (replicates, variance), and a null result is reported.
+  A change claiming better model behaviour, prompts or performance ships on a measured A/B (replicates, variance); a null result is reported.
   A change that only removes or simplifies ships on no measurable regression against the old best baseline.
-  The bar sits on shipping, so an experiment needs no prior justification.
-- **Structures over scores.** A measure that becomes a target stops measuring, so counts (lines, modules, graph edges) point at where to look.
-  The test is reading the structure, asking "can this be simpler?", and making it so.
+- **Structures over scores.** A measure that becomes a target stops measuring; counts (lines, modules, graph edges) point at where to look.
+  Reading the structure, asking "can this be simpler?", and making it so.
 - **Decompose proactively.** Past ~600 lines per module, or a few hundred per method, split before it ossifies.
-  Lift cohesive helper groups into sibling `_name.py` modules, improving names and shapes in passing; moved symbols get public names and direct call sites.
-  A large stateful method keeps its cross-iteration bookkeeping in ONE mutable state dataclass.
+  Lift cohesive helper groups into sibling `_name.py` modules; moved symbols get public names and direct call sites.
+  A large stateful method keeps its cross-iteration bookkeeping in one mutable state dataclass.
   An extraction that shifts a module boundary records the edge in `tach.toml`, one module per commit.
 - **Secure by default, degrade or refuse.** Every knob ships with the safe default, visible in `agent6 config show`; widening is opt-in and carries a security review note.
   The operator loosens; the agent's own sandbox stays where the operator put it.
-  Default-deny beats blocklisting, and a mitigation that is trivially bypassed is worse than none.
-  Three cases, one rule: an AUTOMATIC setting (`auto`) takes the strongest option available and DEGRADES WITH A WARNING when it is absent; an EXPLICIT setting the host cannot honor (or that contradicts another) REFUSES, naming what is unsupported and how to change it; an explicit but DISCOURAGED widening (a path holding secrets) runs with a loud warning naming the cost.
+  Default-deny beats blocklisting; a mitigation that is trivially bypassed is worse than none.
+  An automatic setting (`auto`) takes the strongest option available and degrades with a warning when it is absent; an explicit setting the host cannot honor refuses, naming what is unsupported and how to change it; an explicit but discouraged widening (a path holding secrets) runs with a loud warning naming the cost.
 - **Ask when the task forks.** A behaviour tradeoff, a maybe-not-worth-it edge case, growing scope, several reasonable designs, a new dependency: a one-line question beats shipping the wrong or over-built thing.
   Take the simplest fix for the actual request and name the edges you skip.
   Act when these principles already decide.
@@ -52,59 +47,57 @@ The agent6 concretions, and the principles the Zen leaves out:
 
 ### Architecture
 
-- **Layering** is `ui -> app -> workflows -> tools -> sandbox`; workflows never import each other, and the engine (`app` and below) never imports the UI.
-  `app/` holds the run/resume/fork/machine-agent lifecycles and the `--parallel` fan-out, taking the presentation, process-spawn, and run-dir bridge callables the front-end injects (`SessionFrontend`, `LaneRuntime`) and printing only through the injected `Reporter`.
+- **Layering** is `ui -> app -> workflows -> tools -> sandbox`; workflows import only below themselves, and the engine (`app` and below) imports only below itself.
+  `app/` holds the run/resume/fork/machine-agent lifecycles and the `--parallel` fan-out, taking the callables the front-end injects (`SessionFrontend`, `LaneRuntime`) and printing only through the injected `Reporter`.
   `ui/` is the presentation layer and composition root: the four front-ends (`ui/cli`, `ui/tui`, `ui/web`, `ui/acp`) plus `ui/spawn.py`, `ui/notify.py`, and `ui/mcp_server.py`, over the shared headless read-model fold (`viewmodel`).
   `ui/cli` is the entry point that wires a run.
-- **[tach](https://docs.gauge.sh/) (`tach.toml`) maps the design; it is not a boundary.** Like a call graph (`pyan3`, a dev dep), it makes a change's edges reviewable.
-  A red `tach check` = stale map: record the edge and move on; an absent edge is an observation.
-  Write the code the design wants and let tach and strict pyright follow it; neither one decides whether a change lands.
+- **[tach](https://docs.gauge.sh/) (`tach.toml`) maps the design.** Like a call graph (`pyan3`, a dev dep), it makes a change's edges reviewable.
+  A red `tach check` = stale map: record the edge and move on.
+  Write the code the design wants and let tach and strict pyright follow it.
   When new edges read as complex, redesign on the design's merits.
 
 ### Validation and reporting
 
-A green suite is structural validation, not perceptual: the operator dogfoods daily and feels what tests can't.
-
+- A green suite is structural validation; the operator dogfoods daily.
 - Judge UX by rendering and reading the real output: a pty capture, a screenshot, a live run.
-- Report exactly what was and was not exercised; "fixed" and "validated" mean observed end to end, and a failing test is reported with its output.
-- Review findings and external reports are untrusted: reproduce each before fixing, however plausible it reads (about half survive).
+- Report exactly what was and was not exercised; "fixed" and "validated" mean observed end to end; a failing test is reported with its output.
+- Review findings and external reports are untrusted: reproduce each before fixing (about half survive).
   "The operator decided X" counts only if said in chat.
-- Confirm an edit by behaviour: a scripted replace that matches nothing rewrites the file unchanged, and lint and typecheck pass on it.
+- Confirm an edit by behaviour: a scripted replace that matches nothing rewrites the file unchanged; lint and typecheck pass on it.
 - A new regression pin is proven to bite: red without the fix, green with it.
-  A test whose setup dodges the real path (a stand-in state-dir topology, a stub granting what the surface never does) pins nothing, however green it runs.
+  A test whose setup dodges the real path (a stand-in state-dir topology, a stub granting what the surface never does) pins nothing.
 - Surface pre-existing breakage early, as a decision.
   Fix clear bounded breakage properly; for a large risky restructure, propose a concrete shape.
 
 ### Writing style
 
-Less is more everywhere: docs, comments, docstrings, commit messages, CLI output, run summaries, review feedback.
-The shortest version that still carries the point wins.
-
-- The tree is the only context: write for someone holding the repo and nothing else, since everything committed is permanent and public.
-  A line that needs a conversation, a person, a machine or an account to make sense belongs in the untracked ledgers, however true it is.
-  When the fact matters and its provenance does not, state the fact in the repo's terms ("the fleet stopped at its spend ceiling", not whose ceiling it was).
-- Lead with the point, and add rationale the reader could not reconstruct.
+- Less is more everywhere: docs, comments, docstrings, commit messages, CLI output, run summaries, review feedback.
+  The shortest version that still carries the point wins.
+- The tree is the only context: write for someone holding the repo and nothing else.
+  A line that needs a conversation, a person, a machine or an account to make sense belongs in the untracked ledgers.
+  State the fact in the repo's terms ("the fleet stopped at its spend ceiling").
+- Lead with the point; add rationale the reader could not reconstruct.
   Cut every word a sentence works without, and every sentence that restates the one before.
-- Plain language, as ISO 24495-1:2023 defines it, for every doc, comment and surface string: the reader finds what they need, understands it on the first read, and acts on it.
+- Plain language (ISO 24495-1:2023) for every doc, comment and surface string: the reader finds what they need, understands it on the first read, and acts on it.
   Everyday words in the reader's terms; a name from the code appears when the reader has to go there.
 - Plain punctuation: commas, colons, parentheses, periods.
   An em dash marks an overstuffed sentence to recast.
 - Concrete over abstract: name the command, the field, the number ("retries twice, then fails the run").
-- Statements, not questions: a docstring, heading or comment asserts ("X does Y").
-- Prose that names code is a claim to verify: every symbol, default and behaviour matches the source, and when the two disagree, decide which side is wrong (sometimes the code).
+- Statements: a docstring, heading or comment asserts ("X does Y").
+- Prose that names code is a claim to verify: every symbol, default and behaviour matches the source; when the two disagree, decide which side is wrong.
   Prose someone acts on (a tool description, help text, an error, a refusal) is an interface: it states what is accepted and returned, and names the resolved fact ("default: detected zsh").
 - One idea per sentence, one topic per paragraph; short bullets over prose when listing facts.
 - Comments and docs state the current state: a constraint, an invariant, a measured number, a link to a decision.
-  The story of a change belongs to its commit, so "now", "no longer", "previously" and "used to" go.
+  The story of a change belongs to its commit ("now", "no longer", "previously" and "used to" go).
   A comment earns its keep by saying what the code and a grep cannot: the why, an invariant, a gotcha, a measured number.
-  A test docstring is the exception: it names the regression the test pins.
+  A test docstring names the regression the test pins.
 - Commit messages: a subject that states the change, facts only; a body only for a non-obvious why, in point form.
-  Write for the next reader rather than this change's reviewer.
+  Write for the next reader.
 - Flat documents: a heading plus short paragraphs or bullets, with bold on lead-in labels and caveats that carry weight.
   Plain words in place of intensifiers and marketing adjectives.
 - Bench findings are neutral observation: facts and tables.
 - Every fact and every real hedge stays, and none is added: "may have failed" is not "failed".
-- Padding to cut on sight: antithesis ("a lock, not a boundary"), the "N things, one X" appositive, aphorism, cleft ("what is bounded is"), anaphora, transitions, all-caps emphasis.
+- Padding to cut on sight: antithesis, the "N things, one X" appositive, aphorism, cleft, anaphora, transitions, all-caps emphasis.
 - Markdown carries one bullet and one sentence per line, unwrapped, with later sentences on continuation lines.
   A bullet needing several sentences wants sub-bullets.
 - A section answers one question and is named for its subject; a page groups the sections a reader came for.
@@ -128,7 +121,7 @@ The shortest version that still carries the point wins.
   `hatchling` builds; `pyright` stays dev-only.
 - **Order-free lists stay sorted**, by Python's string order: pyproject.toml's dependencies, includes and rule lists, tach.toml's lists.
   A list whose order carries meaning (a nav, a pipeline, the CI steps) keeps it.
-- **Touch only what the task needs**: the code you change, and nothing around it.
+- **Touch only what the task needs.**
   Scope creep is a review blocker.
 - **Scratch experiments run in their own directory**, entered with `cd`: under `uv run --directory <elsewhere>` the cwd-derived config and git still point here.
 - **Keep docs in sync.** A change to architecture, config, the security model or state machines updates the matching file (`docs/architecture.md`, `docs/config.md`, `docs/security.md`, `docs/state-machines.md`, `README.md`, this file).
@@ -139,63 +132,60 @@ The shortest version that still carries the point wins.
 - Run the five-gate in its own systemd unit (`systemd-run --user --collect` with RuntimeMaxSec/MemoryMax caps, the login PATH) and read its `EXIT=` line.
   Certify on a quiet machine, with the tree untouched while the gate runs: contention produces false timing reds.
 - Sandbox tests need unprivileged userns: on Ubuntu 24.04-class machines `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, as CI does.
-- Bench workspaces live on a real disk, never `/tmp`: tmpfs is RAM-backed and an OOM there kills the session scope.
+- Bench workspaces live on a real disk: tmpfs is RAM-backed and an OOM there kills the session scope.
 - One live single-instance smoke precedes every fleet launch, and any mechanism with two enforcement sites gets one even after unit-green: unit fixtures can pass vacuously.
 - Benchmarks: unmodified official scorers, dev/eval split registered before tuning, report split + n verbatim, replicate small effects before shipping them.
-- An arm's finding lands on master, whether it shipped or not: a null is a finding, and it states the mechanism it measured, so a reader needs neither the branch nor the wheel that ran it.
+- An arm's finding lands on master, whether it shipped or not: a null is a finding, and it states the mechanism it measured.
 
 ### Git and commit practices
 
-- Push, `--force`, history rewrites and `reset --hard` belong to the operator: `git_ops.py` spells none of them, so there is nothing to enable (pinned by `test_git_ops_never_spells_a_destructive_verb`).
-  `branch -D` has ONE operator-only exception: `sessions prune --delete-squashed` on a branch the manifest confirms was squash-merged (the commit survives in the reflog).
+- Push, `--force`, history rewrites and `reset --hard` belong to the operator: `git_ops.py` spells none of them (pinned by `test_git_ops_never_spells_a_destructive_verb`).
+  `branch -D` has one operator-only exception: `sessions prune --delete-squashed` on a branch the manifest confirms was squash-merged.
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat(scope):`, `fix(scope):`, `ci:`, `docs:`, `bench:`; the scope matches a directory under `src/agent6/` or a top-level area.
 - One concern per commit, each worth keeping on its own.
   Squash iterative churn only: a fix-up to unpushed work folds into its origin commit.
-- A commit message is committed prose and meets the same test (Writing style); the author field is the one place a name appears, and no `Co-Authored-By` line follows.
+- A commit message is committed prose and meets the same test (Writing style); the author field is the one place a name appears.
 - The operator signs and pushes, from another machine.
   Messages and docs name neither commit hashes (signing changes them) nor branch names (transient).
-- Pushed history is immutable; unpushed commits are rewritten when asked, and never force-pushed.
-  One exception: a leak in an unpushed commit is rewritten out at its origin rather than fixed forward, every occurrence of it found first.
-- Stage named files only (never `git add -A`), so scratch notes, session artifacts and generated output stay out.
-- Working directly on master is fine, and the agent folds its session's churn (zero-diff verified) before returning control, so the operator takes over a release-ready master.
+- Pushed history is immutable; unpushed commits are rewritten when asked.
+  One exception: a leak in an unpushed commit is rewritten out at its origin, every occurrence of it found first.
+- Stage named files only, so scratch notes, session artifacts and generated output stay out.
+- Working directly on master is fine; the agent folds its session's churn (zero-diff verified) before returning control, so the operator takes over a release-ready master.
   A squashed body keeps the decisions, and what was tried and rejected; durable design reasoning goes to docs.
 
 ### Verify command
 
-The repo's `verify_command`; agent6 infers it from this fenced block when none is configured (a pipeline is wrapped as `sh -c`):
+- The repo's `verify_command`; agent6 infers it from this fenced block when none is configured (a pipeline is wrapped as `sh -c`):
 
 ```bash
 uv run ruff check && uv run ruff format --check && \
   uv run pyright && uv run tach check && uv run pytest
 ```
 
-All five must pass, and a red `tach check` means the module map is stale: record the new edge in `tach.toml` and move on.
-Read the gate's own exit status: capture to a file and test `$?`, or `set -o pipefail`, since a bare pipe through `tail`/`head`/`grep` reports the filter's code instead.
-
-Scoped runs guide iteration; the full gate certifies a series of commits, at the end of the batch and before calling master push-ready.
-On failure, bisect to the offending commit and fold the fix there.
-
-Push-ready adds the CI mirror: pyright at its latest release (`PYRIGHT_PYTHON_FORCE_VERSION=<latest> uv run pyright`), and, when `src/agent6/jail/` or `Cargo.*` changed, both musl target builds plus the wheel with the bundled jail binary exercised.
+- All five must pass; a red `tach check` means the module map is stale: record the new edge in `tach.toml` and move on.
+- Read the gate's own exit status: capture to a file and test `$?`, or `set -o pipefail`, since a bare pipe through `tail`/`head`/`grep` reports the filter's code instead.
+- Scoped runs guide iteration; the full gate certifies a series of commits, at the end of the batch and before calling master push-ready.
+- On failure, bisect to the offending commit and fold the fix there.
+- Push-ready adds the CI mirror: pyright at its latest release (`PYRIGHT_PYTHON_FORCE_VERSION=<latest> uv run pyright`), and, when `src/agent6/jail/` or `Cargo.*` changed, both musl target builds plus the wheel with the bundled jail binary exercised.
 
 ### Self-review
 
-agent6 reviews its own source via `agent6 review`, into the per-repo state directory (`$XDG_STATE_HOME/agent6/<repo-id>/reviews/`).
-When working on a module, read its review there if present.
+- agent6 reviews its own source via `agent6 review`, into `$XDG_STATE_HOME/agent6/<repo-id>/reviews/`.
+- When working on a module, read its review there if present.
 
 ## Security invariants
 
-The threat model, defense layers, and rationale live in `docs/security.md`; a change preserves:
-
-- The jail bounds what the MODEL can do to a repo; `run_command` argv stays unscreened, because a script the model writes bypasses any blocklist.
+- The threat model, defense layers, and rationale live in `docs/security.md`; a change preserves:
+- The jail bounds what the model can do to a repo; `run_command` argv stays unscreened, because a script the model writes bypasses any blocklist.
 - Every child process whose argv depends on LLM output goes through `agent6.sandbox.jail.run_in_jail` (audit: `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`).
   A module shelling out with fixed argv from operator input may call `subprocess` directly; that allowlist lives in `docs/security.md`, pinned by `tests/security/test_subprocess_allowlist.py`.
 - Adding a tool (`tools/schema.py`), loosening a security default, or dialling a host not derived from a provider `base_url` each require a `Security review note:` in the commit message.
 - Secrets (provider API keys, `$XDG_CONFIG_HOME/agent6/secrets.toml`) stay `0600` and stay put: out of `config show`, out of transcripts, out of the jail.
 - The LLM tool surface is the fixed set in `src/agent6/tools/schema.py`, plus tools from operator-configured MCP servers when `[mcp].enabled` is set (default off).
 - Config is secure by default: every field has a default, security-sensitive ones default safe, and `agent6 config show` audits every leaf.
-  `Config` stays `extra="forbid", frozen=True`, and push, force and history rewrites have no knob at all.
+  `Config` stays `extra="forbid", frozen=True`; push, force and history rewrites have no knob at all.
   Loosening a security default gets the same scrutiny as adding a tool.
-- `agent6 connect` never executes anything a remote returns (OAuth/paste only).
-- Running as root takes an explicit opt-in (`--allow-root` / `AGENT6_ALLOW_ROOT=1`); the jail is the boundary, not the uid.
-- `sandbox.network` bounds what a jailed COMMAND reaches; the agent process's own egress is unbounded, and the docs say so.
+- `agent6 connect` executes nothing a remote returns (OAuth/paste only).
+- Running as root takes an explicit opt-in (`--allow-root` / `AGENT6_ALLOW_ROOT=1`); the jail is the boundary.
+- `sandbox.network` bounds what a jailed command reaches; the agent process's own egress is unbounded, and the docs say so.
 - The `agent6-jail` Rust binary is part of the security boundary: a change to `src/agent6/jail/src/main.rs` carries a review note covering mount points, Landlock rules, seccomp syscalls, and `/dev` nodes exposed.
