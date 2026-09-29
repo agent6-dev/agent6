@@ -62,7 +62,7 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResul
 
 [`agent6.viewmodel.events`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/events.py) &middot; tagged union of 28 frozen families
 
-Typed read model for the logs.jsonl event families the SessionState fold consumes.
+Type the logs.jsonl event families the session fold consumes.
 
 Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommit`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionUndone`, `RawEvent`
 
@@ -140,9 +140,9 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 
 [`agent6.viewmodel.state`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state.py) &middot; mutable container + 12 frozen turn types
 
-Pure event-fold: list[event_dict] -> SessionState.
+Fold a session's events into a `SessionState` and its wire form.
 
-**session_state_as_dict** &mdash; The JSON-able wire form of a SessionState, stable field names: what `agent6 attach --json` and a web client serialize.
+**session_state_as_dict** &mdash; Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
 - **Written by:** viewmodel/{machine_state, state}
 - **Read by:** ui/cli/{_interact, _repl, _steer_menu, _task_tree, answer_cmd}, ui/tui/{_dashboard_header, _diff_pane, app, composer, conversation, dashboard, logview, modals, prompts}, ui/web/{_sse, actions, model}, viewmodel/{__init__, wire}

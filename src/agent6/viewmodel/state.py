@@ -1,16 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Pure event-fold: list[event_dict] -> SessionState.
+"""Fold a session's events into a `SessionState` and its wire form.
 
-The wire form `session_state_as_dict` built from a SessionState is the data
-contract for any external viewer (`attach --json`, the web page, a future
-TS mirror): SessionState's fields plus `status`/`status_label`/`dead_state`/`shells`/`live`/
-`operator_blocked`, with `log_tail` as plain strings. Keep its keys stable.
-
-The fold itself does no I/O (dataclasses + an `apply_event` that returns a
-new frozen `SessionState`, so "if state is state_prev, nothing changed");
-`session_state_as_dict` with a session_dir also reads the dir's status probes and
-manifest to fill the dir-backed fields.
+`session_state_as_dict` is the contract every external viewer reads (`attach --json`,
+the web page): the state's fields plus `status`, `status_label`, `dead_state`,
+`shells`, `live` and `operator_blocked`, with `log_tail` as plain strings; its keys
+stay stable. The fold does no I/O: `apply_event` returns a new frozen state, so an
+unchanged identity means nothing changed. With a session dir, the wire form also
+reads the dir's status probes and manifest.
 """
 
 from __future__ import annotations
@@ -53,27 +50,38 @@ NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "o
 
 @dataclass(frozen=True, slots=True)
 class TaskNodeView:
-    """One node of the live task DAG, flattened (DFS pre-order) with a depth for
-    tree rendering. Mirrors graph.models.TaskNode; fed by the `graph.update`
-    snapshot the worker emits whenever it mutates its task breakdown."""
+    """One node of the live task tree, flattened in DFS pre-order with its depth.
+
+    Mirrors `graph.models.TaskNode`; fed by the `graph.update` snapshot the worker
+    emits whenever it changes its task breakdown.
+
+    Attributes:
+        id: The graph's id for the task.
+        title: The task's title.
+        status: The task's status word.
+        depth: The nesting depth, for tree rendering.
+        is_cursor: The worker is on this task.
+        created_by: Who added the task; "" for a run dir written before the field existed.
+        standing: The task is the standing goal.
+        note: The operator's mark beside a task they own ("queued by you", "standing
+            goal"), or "".
+        short_id: The id as the operator reads and types it.
+        glyph: The status as every surface draws it; the cursor's task draws as in progress.
+    """
 
     id: str
     title: str
     status: NodeStatus = "pending"
     depth: int = 0
     is_cursor: bool = False
-    # Who added the task; "" for a run dir written before the field existed.
     created_by: str = ""
     standing: bool = False
-    # The operator's mark beside a task they own (graph.models.owner_note):
-    # "queued by you", "standing goal", or "".
     note: str = ""
-    short_id: str = ""  # the id as the operator reads and types it (`/retire`)
-    # The status as every surface draws it (TASK_STATUS_GLYPH); the cursor's
-    # task draws as in progress, that being where the worker is.
+    short_id: str = ""
     glyph: str = ""
 
     def __post_init__(self) -> None:
+        """Fill `glyph` from the status when the caller left it empty."""
         if not self.glyph:
             status = "in_progress" if self.is_cursor else self.status
             object.__setattr__(self, "glyph", TASK_STATUS_GLYPH.get(status, "·"))
@@ -81,19 +89,30 @@ class TaskNodeView:
 
 @dataclass(frozen=True, slots=True)
 class ToolCallView:
+    """One tool call in the bounded history.
+
+    Attributes:
+        name: The tool's name.
+        args_preview: The args rendered with each value truncated, for the inline table.
+        args_full: The args rendered with a generous per-value cap, for the detail view.
+        result_summary: The result's summary once it landed.
+        ok: The tool's verdict; None while in flight.
+        task_id: The task in focus when the call ran, for filtering.
+        call_id: The per-dispatch correlation id; None on a log without ids.
+    """
+
     name: str
-    args_preview: str  # rendered, per-value truncated, for the inline table
-    args_full: str = ""  # rendered with a generous per-value cap, for the detail modal
+    args_preview: str
+    args_full: str = ""
     result_summary: str = ""
-    ok: bool | None = None  # None = in-flight
-    task_id: str | None = None  # DAG task in focus when the call ran (for filtering)
-    call_id: int | None = None  # per-dispatch correlation id; None on id-less logs
+    ok: bool | None = None
+    task_id: str | None = None
+    call_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class LogLine:
-    """One audit-log line plus the DAG task in focus when it was emitted, so a
-    viewer can filter the log to a selected task."""
+    """One log line plus the task in focus when it was emitted, so a viewer can filter."""
 
     text: str
     task_id: str | None = None
@@ -110,8 +129,18 @@ class DiffView:
 
 @dataclass(frozen=True, slots=True)
 class VerifyView:
+    """The last verify gate run.
+
+    Attributes:
+        cmd: The gate's argv.
+        exit_code: The exit code; None while in flight.
+        duration_s: How long it ran.
+        stdout_tail: The capped stdout tail.
+        stderr_tail: The capped stderr tail.
+    """
+
     cmd: tuple[str, ...]
-    exit_code: int | None = None  # None = in-flight
+    exit_code: int | None = None
     duration_s: float = 0.0
     stdout_tail: str = ""
     stderr_tail: str = ""
@@ -119,23 +148,39 @@ class VerifyView:
 
 @dataclass(frozen=True, slots=True)
 class BudgetView:
-    # Token counters are the current execution's (they pair with the per-execution
-    # enforcement caps); usd_total is cumulative across resume executions: "cost" on
-    # any surface means what the run cost, and the hub scanner
-    # (listing.scan_session_log) sums executions the same way, so the surfaces agree.
+    """The run's spend as every surface shows it.
+
+    Token and plan counters and the caps are the current execution's, pairing with
+    the per-execution enforcement; `usd_total` is cumulative across executions, as
+    the listing scan sums it, so the surfaces agree on what a run cost.
+
+    Attributes:
+        input_total: This execution's input tokens.
+        output_total: This execution's output tokens.
+        cache_read_total: The cached side of the input.
+        cache_creation_total: Cache-creation tokens.
+        usd_total: The spend across every execution.
+        usd_prior_executions: The spend banked by completed executions.
+        usd_partial: Some model had no price, so `usd_total` is a lower bound.
+        usd_cap: `[budget].max_usd` for this execution; -1 unlimited, 0 unknown.
+        tokens_unmetered: Input and output tokens of calls the meter could not price.
+        tokens_fallback_cap: `[budget].max_tokens_fallback`; -1 unlimited, 0 unknown.
+        plan_used_percent: The account's reported plan usage; 0 until a plan call runs.
+        plan_consumed: This execution's consumed plan points.
+        plan_cap: `[budget].max_percent`; 0 until a plan call runs.
+        plan_resets_at: When the plan window resets, as epoch seconds.
+    """
+
     input_total: int = 0
     output_total: int = 0
-    cache_read_total: int = 0  # the cached side of the input, execution-local too
+    cache_read_total: int = 0
     cache_creation_total: int = 0
     usd_total: float = 0.0
-    usd_prior_executions: float = 0.0  # banked spend of completed resume executions
-    usd_partial: bool = False  # True if some models had no price (under-estimate)
-    usd_cap: float = 0.0  # [budget].max_usd for this execution (-1 unlimited, 0 unknown)
-    tokens_unmetered: int = 0  # input+output tokens of calls the meter could not price
-    tokens_fallback_cap: int = 0  # [budget].max_tokens_fallback (-1 unlimited, 0 unknown)
-    # Subscription plan usage (percent-metered providers), execution-local like the
-    # caps: the account's reported percent, this execution's consumed points, and
-    # [budget].max_percent. 0s when no percent-metered call has run.
+    usd_prior_executions: float = 0.0
+    usd_partial: bool = False
+    usd_cap: float = 0.0
+    tokens_unmetered: int = 0
+    tokens_fallback_cap: int = 0
     plan_used_percent: float = 0.0
     plan_consumed: float = 0.0
     plan_cap: float = 0.0
@@ -144,29 +189,33 @@ class BudgetView:
 
 @dataclass(frozen=True, slots=True)
 class RoleCall:
+    """The last model call and what it streamed.
+
+    Attributes:
+        role: The role that called.
+        model: The model called.
+        in_flight: The call has not returned.
+        provider: The provider that dialled the model; pairs with `model` for the
+            registry's context-window lookup.
+        ctx_tokens: The full prompt in tokens at the last completed call (fresh input
+            plus cache reads and writes); 0 until a result lands.
+        streamed_text: The live text, reset on every call, appended per delta, kept to
+            the last `_STREAM_TAIL` characters.
+        streamed_thinking: The live reasoning, with the same lifecycle.
+    """
+
     role: str
     model: str
     in_flight: bool
-    # The provider that dialled the model (role.call carries it); pairs with
-    # `model` for the registry's context-window lookup.
     provider: str = ""
-    # Context size at the last completed call: the full prompt in tokens
-    # (fresh input + cache reads + cache writes; input_tokens is normalised to
-    # fresh-only across providers). 0 until a result lands.
     ctx_tokens: int = 0
-    # Live SSE text accumulator. Reset on every role.call,
-    # appended-to on each role.text_delta, frozen on role.result.
     streamed_text: str = ""
-    # Live reasoning accumulator, fed by role.thinking_delta. Same
-    # lifecycle as streamed_text; shown in the TUI's "thinking" view so a
-    # long reasoning burst reads as progress rather than a hang.
     streamed_thinking: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class CommitStep:
-    """One per-step commit of the run: the iteration it closed, its sha, its
-    subject. The dashboards select among these."""
+    """One per-step commit of the run, which the dashboards select among."""
 
     iteration: int
     sha: str
@@ -174,16 +223,23 @@ class CommitStep:
 
     @property
     def label(self) -> str:
-        """The line every step picker and diff header shows: `iter N · sha7 ·
-        subject`, a part left out when empty."""
+        """The step picker's line: `iter N · sha7 · subject`, a part left out when empty."""
         return " · ".join(p for p in (f"iter {self.iteration}", self.sha[:7], self.subject) if p)
 
 
 def approval_parts(prompt: str) -> tuple[str, str]:
-    """An approval prompt's two parts: the head (`Allow run_command`, the
-    question) and the payload (the command under judgment, possibly several
-    lines). Every dispatch prompt is "Allow <tool>: <payload>"; one without a
-    payload is all head. The CLI, TUI and web render exactly these two."""
+    """Split an approval prompt into its head and payload.
+
+    Every dispatch prompt is "Allow <tool>: <payload>"; the CLI, TUI and web render
+    exactly these two parts.
+
+    Args:
+        prompt: The prompt's words.
+
+    Returns:
+        The head (the question) and the payload (the command under judgment); a prompt
+        without a payload is all head.
+    """
     head, sep, payload = prompt.partition(": ")
     if sep and payload.strip():
         return head, payload
@@ -192,27 +248,43 @@ def approval_parts(prompt: str) -> tuple[str, str]:
 
 @dataclass(frozen=True, slots=True)
 class ApprovalPrompt:
+    """One approval the run asked for.
+
+    Attributes:
+        id: The prompt's id.
+        prompt: The prompt's words.
+        standing: An "allow all" is on offer for this prompt.
+        answered: An answer was folded.
+        approved: The answer; None until answered.
+        asked_ep: When it was asked, for the waiting status's age.
+    """
+
     id: str
     prompt: str
-    # False when no "allow all" is on offer for this prompt (see the event).
     standing: bool = True
     answered: bool = False
     approved: bool | None = None
-    asked_ep: float | None = None  # for the waiting status's age
+    asked_ep: float | None = None
 
     @property
     def head(self) -> str:
+        """The question part of the prompt."""
         return approval_parts(self.prompt)[0]
 
     @property
     def payload(self) -> str:
+        """The command under judgment, "" when the prompt has none."""
         return approval_parts(self.prompt)[1]
 
 
 @dataclass(frozen=True, slots=True)
 class Question:
-    """One question within an `ask_user` prompt. `options` are selectable presets;
-    the user may also type a free-text answer."""
+    """One question within an `ask_user` prompt.
+
+    Attributes:
+        question: The question's text.
+        options: Selectable presets; the operator may also type a free-text answer.
+    """
 
     question: str
     options: tuple[str, ...] = ()
@@ -220,131 +292,164 @@ class Question:
 
 @dataclass(frozen=True, slots=True)
 class QuestionPrompt:
-    """An agent->user `ask_user` prompt: one or more related questions the operator
-    answers together (reviewing before submitting). `answers` align to `questions`.
-    `from_harness`: agent6 itself asked (a start gate such as the dirty-tree
-    question), decided by when it was asked: before the session started or
-    after it finished, no model is running to ask anything."""
+    """An `ask_user` prompt: related questions the operator answers together.
+
+    Attributes:
+        id: The prompt's id.
+        questions: The questions asked.
+        answered: An answer was folded.
+        answers: One answer per question, aligned to `questions`.
+        from_harness: agent6 itself asked (a start gate such as the dirty-tree
+            question): it was asked before the session started or after it finished,
+            when no model runs.
+        asked_ep: When it was asked, for the waiting status's age.
+    """
 
     id: str
     questions: tuple[Question, ...] = ()
     answered: bool = False
     answers: tuple[str, ...] = ()
     from_harness: bool = False
-    asked_ep: float | None = None  # for the waiting status's age
+    asked_ep: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class SessionState:
+    """A session's folded state, the read model every front-end paints.
+
+    Attributes:
+        session_id: The session's id, "" until an event carries it.
+        user_task: The task text.
+        tasks: The live task tree in DFS pre-order.
+        cursor_task_id: The task the worker is on.
+        last_role: The last model call.
+        tool_calls: The bounded tool-call history, most recent last.
+        last_verify: The last verify gate run.
+        budget: The spend.
+        pending_approvals: Every approval asked this execution, answered or not.
+        pending_questions: Every question prompt asked this execution, answered or not.
+        log_tail: The bounded window of log lines, most recent last.
+        log_count: The monotonic count of log lines ever; a live viewer diffs on it,
+            since `len(log_tail)` freezes once the window saturates.
+        recent_diffs: The bounded auto-commit diffs, for task filtering.
+        started: An execution has begun; a parked or created run has none.
+        finished: A session.end was folded and no later execution began.
+        all_passed: The verify tri-state; None when no verify command gated the end.
+        verify_scoped: The judging gate ran scoped.
+        end_reason: The session.end reason word.
+        unattended_questions: Questions the harness answered empty because nobody was
+            attached, across every execution.
+        undone_to: The child session /undo forked, which surfaces follow.
+        undone_text: The message /undo took back, for the composer to refill.
+        finish_summary: The finish tool's summary, the agent's closing statement.
+        latest_diff: The patch of the most recent auto-commit.
+        steps: The run's per-step commits, oldest first.
+        steer_requests: The monotonic count of mid-run steer requests; the TUI
+            compares it with its own count to react once per press.
+        compact_elided: The elision markers in the current context.
+        compact_gists_live: The live gists in the current context; a demoted gist is
+            back to a bare marker, and a tier-2 restart resets both.
+        pins: The operator's /pin instructions in force, most recent last.
+        last_event_ep: The last folded event's own ts, the idle anchor every
+            "working… Ns" timer measures from, so replayed history reads as its true age.
+    """
+
     session_id: str = ""
     user_task: str = ""
-    tasks: tuple[TaskNodeView, ...] = ()  # live task DAG, DFS pre-order
+    tasks: tuple[TaskNodeView, ...] = ()
     cursor_task_id: str | None = None
     last_role: RoleCall | None = None
-    tool_calls: tuple[ToolCallView, ...] = ()  # most-recent-last, bounded
+    tool_calls: tuple[ToolCallView, ...] = ()
     last_verify: VerifyView | None = None
     budget: BudgetView = field(default_factory=BudgetView)
     pending_approvals: tuple[ApprovalPrompt, ...] = ()
     pending_questions: tuple[QuestionPrompt, ...] = ()
-    log_tail: tuple[LogLine, ...] = ()  # most-recent-last, bounded
-    log_count: int = 0  # monotonic total log lines ever (log_tail is windowed)
-    recent_diffs: tuple[DiffView, ...] = ()  # auto-commit diffs, bounded, for task filtering
-    started: bool = False  # a session.start was folded (a parked/created run has none)
+    log_tail: tuple[LogLine, ...] = ()
+    log_count: int = 0
+    recent_diffs: tuple[DiffView, ...] = ()
+    started: bool = False
     finished: bool = False
     all_passed: bool | None = None
-    verify_scoped: bool = False  # session.end scoped: the judging gate ran scoped
-    end_reason: str = ""  # session.end reason: finish_session | steer_abort | provider_error | ...
-    unattended_questions: int = (
-        0  # answered empty by the harness: nobody was attached (all executions)
-    )
-    undone_to: str = ""  # /undo's fork: the child session id surfaces follow
-    undone_text: str = ""  # the message /undo took back (composer refill)
-    finish_summary: str = ""  # the finish tool's summary: the agent's closing statement
-    latest_diff: str = ""  # patch of the most recent auto-commit (diff.updated)
-    # The run's per-step commits, oldest first (the dashboard's step selector).
+    verify_scoped: bool = False
+    end_reason: str = ""
+    unattended_questions: int = 0
+    undone_to: str = ""
+    undone_text: str = ""
+    finish_summary: str = ""
+    latest_diff: str = ""
     steps: tuple[CommitStep, ...] = ()
-    # Monotonic count of mid-run steer requests (Ctrl-C). The TUI compares it
-    # against its own "seen" count to react exactly once per press.
     steer_requests: int = 0
-    # Context-compaction truth for the status surfaces: elision markers and
-    # live gists in the CURRENT context (a demoted gist is back to a bare
-    # marker; a tier-2 restart wipes every marker, so both reset there).
     compact_elided: int = 0
     compact_gists_live: int = 0
-    # Operator /pin instructions recorded so far (loop.pin.added), most-recent-last.
     pins: tuple[str, ...] = ()
-    # Epoch of the last folded event's own ts: the idle anchor every
-    # "working… Ns" timer measures from, so replayed history reads as its true
-    # age, never as fresh activity.
     last_event_ep: float | None = None
 
 
 def initial_state() -> SessionState:
+    """Return the state before any event."""
     return SessionState()
 
 
 _MAX_TOOL_HISTORY = 50
-_MAX_DIFF_HISTORY = 30  # auto-commit diffs retained for per-task filtering
-MAX_LOG_TAIL = 400  # public: the inline log RichLog caps to this so it stays a gapless window
-# Live streamed reasoning/text is the frontier of an in-flight call; keep only the
-# tail so a 25k-char reasoning burst doesn't bloat every SSE frame or re-render.
-# The full turn is preserved in the transcript, which the conversation view folds.
+_MAX_DIFF_HISTORY = 30
+# The inline log widget caps to this so it stays a gapless window.
+MAX_LOG_TAIL = 400
+# Only the tail of an in-flight stream travels; the transcript keeps the full turn.
 _STREAM_TAIL = 6000
 
-# Streaming deltas are ephemeral live-view events: the reasoning shows in the
-# stream/conversation panes as it arrives. They are not audit-log events, so the
-# log_tail and the full LogScreen skip them; otherwise a reasoning model floods the
-# log with thousands of contentless "role.thinking_delta" lines.
+# Live-view only: a reasoning model would flood the log with contentless delta lines.
 STREAM_DELTA_EVENTS = frozenset({"role.thinking_delta", "role.text_delta"})
-# Loop-side mirrors of events already rendered (tool.call carries the args,
-# budget.update the totals); folding them would double every tool call and
-# budget tick in the log view without adding a field worth reading.
+# Loop-side mirrors of events the log already shows.
 LOG_NOISE_EVENTS = frozenset({"loop.tool.call", "loop.budget"})
 
 
 def _answered_only[PromptT: (ApprovalPrompt, QuestionPrompt)](
     prompts: tuple[PromptT, ...],
 ) -> tuple[PromptT, ...]:
-    """Drop unanswered prompts at an execution boundary: they belong to the execution that
-    died holding them, and the new execution re-asks with restarted ids (see the
-    SessionStart/ResumeStart arms)."""
+    """Drop the unanswered prompts at an execution boundary.
+
+    They belong to the execution that died holding them; the new one re-asks with
+    restarted ids.
+
+    Args:
+        prompts: The prompts folded so far.
+
+    Returns:
+        The answered ones.
+    """
     return tuple(p for p in prompts if p.answered)
 
 
 def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per event type
-    """Fold one event into the session state. Pure function.
+    """Fold one event into the session state.
 
-    The event is parsed once (`events.parse_event`) into a typed family; each arm
-    reads typed fields instead of sniffing the dict. The log line and the session_id
-    peek still read the raw dict (they render arbitrary events, including the
-    RawEvent long tail). An unknown/telemetry type folds to RawEvent -> no state
-    change."""
+    The event is parsed once into a typed family; the log line and the session id
+    peek read the raw dict, since they render every event. An unknown or telemetry
+    type changes no state.
+
+    Args:
+        state: The state so far.
+        event: The raw event dict.
+
+    Returns:
+        The new state, or `state` itself when nothing changed.
+    """
     etype = event.get("type", "")
     if not state.session_id and event.get("session_id"):
         state = replace(state, session_id=str(event["session_id"]))
-    # The idle anchor for every "working… Ns" timer: the event's own ts, so a
-    # viewer that replays history (attach, the web/TUI catch-up) measures from
-    # when the run last spoke, not from when it started watching. An arrival
-    # anchor would read "working… 3s" on a run wedged 40 minutes.
+    # The event's own ts, so replayed history measures idle time from when the run last spoke.
     if (ep := events.event_epoch(event.get("ts"))) is not None:
         state = replace(state, last_event_ep=ep)
     if etype not in STREAM_DELTA_EVENTS and etype not in LOG_NOISE_EVENTS:
-        # Deltas are live-stream only; noise mirrors add no readable field.
-        # cursor_task_id is the focus task (graph.update lands before a turn's calls).
+        # cursor_task_id is the focus task: graph.update lands before a turn's calls.
         entry = LogLine(format_log_line(event), state.cursor_task_id)
         new_log = _push_bounded(state.log_tail, entry, MAX_LOG_TAIL)
-        # log_count is monotonic; log_tail is a sliding window. A live viewer must
-        # diff on the count (which keeps growing): diffing on len(log_tail) freezes
-        # the panel once the window saturates at MAX_LOG_TAIL.
         state = replace(state, log_tail=new_log, log_count=state.log_count + 1)
 
     match events.parse_event(event):
         case events.SessionStart(user_task=task):
-            # A session.start begins an execution: by definition it is running. The ask REPL
-            # re-enters wf.run() per follow-up on the same log, so a second
-            # session.start must clear the prior execution's terminal state. Unlike
-            # ResumeStart, do not bank usd: the REPL reuses one BudgetTracker,
-            # so usd_total is already cumulative across executions.
+            # The ask REPL re-runs on one log, so a second start clears the prior end.
+            # No banking, unlike ResumeStart: the REPL's one tracker is already cumulative.
             return replace(
                 state,
                 user_task=task,
@@ -359,19 +464,9 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             )
 
         case events.ResumeStart():
-            # A resume restarts a finished/stopped run in place (it appends to the
-            # same log): it is running again, so clear the terminal state. The new
-            # execution's budget counters start fresh, so bank the cumulative spend now
-            # (usd_total keeps its value until the execution's first budget.update) and
-            # zero the token and plan counters and caps: BudgetView documents them as the
-            # current execution's, and scan_session_log resets for the same reason.
-            # Unanswered prompts are the dead execution's: the resumed execution re-asks
-            # with restarted ids, so a held-over orphan would read "waiting"
-            # forever and duplicate when the same id is re-prompted.
+            # The new execution's counters start fresh: bank the spend, zero the rest.
             return replace(
                 state,
-                # `started` = an execution has begun, not "a session.start was seen": a
-                # fork is driven by resume(), so its fresh log never carries one.
                 started=True,
                 finished=False,
                 end_reason="",
@@ -425,8 +520,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                     model=model,
                     in_flight=True,
                     provider=provider,
-                    # Keep the last known context size until this call's result
-                    # lands, so the readout doesn't blink to nothing per turn.
+                    # The last known context size stays until this call's result lands.
                     ctx_tokens=prior.ctx_tokens if prior is not None else 0,
                     streamed_text="",
                     streamed_thinking="",
@@ -434,9 +528,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             )
 
         case events.RoleTextDelta(text=piece):
-            # Append SSE delta to the in-flight RoleCall. Scrub the
-            # concatenation: an escape sequence can arrive split across deltas,
-            # and per-piece scrubbing would let the reassembled whole through.
+            # Scrub the concatenation: an escape sequence can arrive split across deltas.
             last = state.last_role
             if last is None or not last.in_flight or not piece:
                 return state
@@ -447,8 +539,6 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             )
 
         case events.RoleThinkingDelta(text=piece):
-            # Append a reasoning delta to the in-flight RoleCall (scrubbed as a
-            # whole, like the text deltas above).
             last = state.last_role
             if last is None or not last.in_flight or not piece:
                 return state
@@ -462,7 +552,6 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             last = state.last_role
             if last is None:
                 return state
-            # The full prompt of this call = the context size right now.
             ctx = tin + cr + cc
             return replace(
                 state,
@@ -480,8 +569,6 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 task_id=state.cursor_task_id,
                 call_id=cid,
             )
-            # The finish tools' summary is the agent's closing statement; keep it
-            # so an ended run's panes can render the end story, not a dead one.
             finish_summary = state.finish_summary
             if name in ("finish_session", "finish_planning") and isinstance(raw_args, dict):
                 finish_summary = str(raw_args.get("summary", "")).strip() or finish_summary
@@ -495,8 +582,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             if not state.tool_calls:
                 return state
             if cid is not None:
-                # Pair on the stamped id: concurrent seats interleave events, so
-                # the matching call is not necessarily the last entry.
+                # Concurrent seats interleave events, so the matching call may not be the last.
                 for i in range(len(state.tool_calls) - 1, -1, -1):
                     if state.tool_calls[i].call_id == cid:
                         updated = replace(state.tool_calls[i], ok=ok, result_summary=summary)
@@ -509,7 +595,6 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                             ),
                         )
                 return state
-            # Id-less (historical) event: the sequential last-entry pairing.
             last = state.tool_calls[-1]
             if last.name != name:
                 return state
@@ -547,9 +632,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             plan_cap=plan_cap,
             plan_resets_at=plan_resets,
         ):
-            # The event's usd_total is the current execution's; the view's is
-            # cumulative. usd_partial is sticky: unpriced spend in any prior
-            # execution keeps the cumulative total an under-estimate.
+            # The event's usd_total is this execution's; the view's is cumulative.
             return replace(
                 state,
                 budget=BudgetView(
@@ -596,9 +679,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 replace(q, answered=True, answers=answers) if q.id == wanted else q
                 for q in state.pending_questions
             )
-            # Counted per event, as the listing scan counts: prompt ids restart
-            # on every execution, so a per-prompt flag would be overwritten by the
-            # next execution's answer to the same id.
+            # Counted per event: prompt ids restart on every execution.
             return replace(
                 state,
                 pending_questions=new_q,
@@ -644,17 +725,23 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
 
 
 def task_tree_views(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNodeView, ...]:
-    """Flatten the curator's node map into a DFS pre-order list with depths, so
-    the TUI can render the DAG as an indented tree. Roots are nodes with no
-    parent (or whose parent is missing); children follow their parent's recorded
-    order. Cycles/dupes are guarded by a visited set."""
+    """Flatten the task node map into DFS pre-order with depths, for an indented tree.
+
+    Args:
+        nodes: The `graph.update` node map.
+        cursor: The id of the task in progress.
+
+    Returns:
+        The views: roots first in sorted id order, each followed by its children in
+        recorded order; a node whose parent is missing follows the roots; cycles and
+        duplicates are visited once.
+    """
     out: list[TaskNodeView] = []
     seen: set[str] = set()
 
     def visit(nid: str, depth: int) -> None:
+        """Append the node and its subtree, skipping a malformed or already-seen node."""
         node = nodes.get(nid)
-        # isinstance (not `is None`) so a malformed non-dict value is skipped
-        # rather than crashing .get(), consistent with the roots filter below.
         if not isinstance(node, dict) or nid in seen:
             return
         seen.add(nid)
@@ -683,11 +770,7 @@ def task_tree_views(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNode
         for child in children:
             visit(str(child), depth + 1)
 
-    # Sorted, not the map's own iteration order: insertion order live and
-    # filesystem order after a resume would show roots (a repeat ask/run execution)
-    # in a different order than `tree_order` gives list_tasks and every other
-    # surface. A node whose parent is missing follows the roots, as it does
-    # there.
+    # Sorted like `tree_order`, so the roots read in the same order on every surface.
     roots = [
         nid
         for nid in sorted(nodes)
@@ -701,6 +784,7 @@ def task_tree_views(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNode
 
 
 def _push_bounded[T](existing: tuple[T, ...], item: T, cap: int) -> tuple[T, ...]:
+    """Return the tuple with the item appended, the oldest dropped past the cap."""
     new = (*existing, item)
     if len(new) > cap:
         return new[-cap:]
@@ -708,9 +792,14 @@ def _push_bounded[T](existing: tuple[T, ...], item: T, cap: int) -> tuple[T, ...
 
 
 def fold_session(events: Iterable[dict[str, Any]]) -> SessionState:
-    """Reduce a session's whole event stream to one SessionState (apply_event from the
-    initial state). The snapshot a one-shot viewer or the JSON wire form builds
-    on; the TUI folds incrementally and a CLI tail renders line-by-line instead."""
+    """Fold a session's whole event stream into one state.
+
+    Args:
+        events: The raw events, in order.
+
+    Returns:
+        The state after the last event.
+    """
     state = initial_state()
     for event in events:
         state = apply_event(state, event)
@@ -720,39 +809,53 @@ def fold_session(events: Iterable[dict[str, Any]]) -> SessionState:
 def open_approval_of(
     state: SessionState, *, taken: Callable[[str], bool] = lambda _aid: False
 ) -> ApprovalPrompt | None:
-    """The approval a surface answers now: the oldest unanswered one the
-    surface has not already taken (a modal pushed, a row docked). The one
-    rule behind the server's answer route, the run views' docked row and the
-    web's box, so no surface offers an approval the run will refuse."""
+    """Return the approval a surface answers now.
+
+    The one rule behind the server's answer route, the run views' docked row and the
+    web's box, so no surface offers an approval the run will refuse.
+
+    Args:
+        state: The folded state.
+        taken: Whether the surface already took the approval with that id.
+
+    Returns:
+        The oldest unanswered approval not yet taken, or None.
+    """
     return next(
         (ap for ap in state.pending_approvals if not ap.answered and not taken(ap.id)), None
     )
 
 
 def open_approval(session_dir: Path) -> ApprovalPrompt | None:
-    """The run's open approval (`open_approval_of`), or None when none is open."""
-    from agent6.viewmodel.tail import tail_events  # noqa: PLC0415 -- cycle at import time
+    """Return the run's open approval from its journal, or None when none is open."""
+    from agent6.viewmodel.tail import tail_events  # noqa: PLC0415  # cycle at import time
 
     return open_approval_of(fold_session(tail_events(session_dir / LOGS_NAME, follow=False)))
 
 
 def open_question(session_dir: Path) -> QuestionPrompt | None:
-    """The run's unanswered `ask_user` prompt, oldest first; None when none is
-    open. Every surface that writes an answer file checks it against this, so
-    an answer list of the wrong length is refused instead of consumed and
-    thrown away by the asking side."""
-    from agent6.viewmodel.tail import tail_events  # noqa: PLC0415 -- cycle at import time
+    """Return the run's oldest unanswered `ask_user` prompt, or None when none is open.
+
+    Every surface that writes an answer file checks against it, so an answer list of
+    the wrong length is refused rather than thrown away by the asking side.
+    """
+    from agent6.viewmodel.tail import tail_events  # noqa: PLC0415  # cycle at import time
 
     state = fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
     return next((q for q in state.pending_questions if not q.answered), None)
 
 
 def fold_until_commit(events: Iterable[dict[str, Any]], sha: str) -> SessionState | None:
-    """The state as of one of the run's commits: every event up to and
-    including its loop.auto_commit folded, later ones dropped (the details a
-    step selector time-travels to). *sha* is the full sha or a prefix of at
-    least 7 hex digits (the first commit it matches wins). None when no
-    commit has it."""
+    """Fold the state as of one of the run's commits.
+
+    Args:
+        events: The raw events, in order.
+        sha: The commit's full sha or a prefix of at least 7 hex digits; the first
+            commit it matches wins.
+
+    Returns:
+        The state after that commit's `loop.auto_commit`, or None when no commit has it.
+    """
     if len(sha) < 7:
         return None
     state = initial_state()
@@ -764,9 +867,16 @@ def fold_until_commit(events: Iterable[dict[str, Any]], sha: str) -> SessionStat
 
 
 def status_facts(state: SessionState) -> StatusFacts:
-    """The fold's answers to the status questions, the typed twin of
-    `LogScan.status_facts()`, for surfaces that hold a `SessionState`. The two
-    producers must agree on the same log (pinned by the status matrix test)."""
+    """Return the fold's answers to the status questions.
+
+    The typed twin of `LogScan.status_facts`; the two agree on the same log.
+
+    Args:
+        state: The folded state.
+
+    Returns:
+        The facts `status_for_session_dir` reads.
+    """
     pending: list[tuple[str, float | None]] = [
         ("approval", a.asked_ep) for a in state.pending_approvals if not a.answered
     ] + [("question", q.asked_ep) for q in state.pending_questions if not q.answered]
@@ -789,16 +899,22 @@ def status_facts(state: SessionState) -> StatusFacts:
 
 @functools.lru_cache(maxsize=64)
 def _window(provider: str, model: str) -> int | None:
-    # The registry reads the bundled table and the provider's model cache file;
-    # every surface asks per heartbeat, so the answer is memoised per model.
+    """Return the model's context window, memoised since every surface asks per heartbeat."""
     return context_window(provider, model)
 
 
 def context_fill(state: SessionState) -> int | None:
-    """Context-window fill (percent) at the last completed model call: the
-    call's full prompt tokens over the model's window (bundled priors, else the
-    provider listing cache). None until both sides are known. The one rule
-    behind every surface's `ctx N%` readout."""
+    """Return the context-window fill in percent at the last completed model call.
+
+    The one rule behind every surface's `ctx N%` readout.
+
+    Args:
+        state: The folded state.
+
+    Returns:
+        The call's full prompt tokens over the model's window, capped at 100; None
+        until both sides are known.
+    """
     role = state.last_role
     if role is None or role.ctx_tokens <= 0 or not role.model:
         return None
@@ -809,23 +925,24 @@ def context_fill(state: SessionState) -> int | None:
 
 
 def session_state_as_dict(state: SessionState, session_dir: Path | None = None) -> dict[str, Any]:
-    """The JSON-able wire form of a SessionState, stable field names: what
-    `agent6 attach --json` and a web client serialize. Tuples become lists, nested
-    view dataclasses become dicts. `status_label` is a computed convenience the
-    web/CLI render verbatim so the label logic lives in one place.
+    """Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
-    Pass *session_dir* whenever the caller has one: the label is then the dir-aware
-    status (parked/starting/stale/waiting, not the fold's blanket "running"),
-    `live` says whether steer/stop/compact would reach anything, `ports` lists
-    what the run's network is serving, a plan's `plan_md` is its written
-    deliverable, and the dir-backed identity (session_id, the manifest's
-    user_task) fills what the fold left empty.
-    Without it the payload keeps the fold-only label and `live: None`, correct
-    only for a genuinely dir-less stream (the machine reasoning snapshot)."""
+    Args:
+        state: The folded state.
+        session_dir: The session's state dir; with it `status` is the dir-aware word,
+            `live` says whether a steer or stop would reach anything, `ports` and
+            `shells` are live probes, a plan's `plan_md` is its deliverable, and the
+            dir fills the identity the fold left empty. Without it `live` is None,
+            right only for a dir-less stream (the machine reasoning snapshot).
+
+    Returns:
+        The state's fields with tuples as lists, plus the computed `context_pct`,
+        `needs_new_work`, `open_approval`, `status`, `status_label`, `task_line`,
+        `dead_state`, `operator_blocked`, the rendered budget text, approval parts and
+        step labels, and `log_tail` as plain strings.
+    """
     d = asdict(state)
     d["context_pct"] = context_fill(state)
-    # Whether a bare resume has anything to do, decided once here: the web
-    # composer reads this rather than re-deriving it from the end fields.
     d["needs_new_work"] = needs_new_work(
         finished=state.finished, end_reason=state.end_reason, all_passed=state.all_passed
     )
@@ -839,42 +956,26 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
         row["head"], row["payload"] = approval_parts(ap.prompt)
     for step, row in zip(state.steps, d["steps"], strict=True):
         row["label"] = step.label
-    # The one approval the run will take an answer to (`open_approval_of`).
     current = open_approval_of(state)
     d["open_approval"] = None if current is None else current.id
     if session_dir is not None:
         word, reason = status_for_session_dir(session_dir, status_facts(state))
         d["live"] = word in LIVE_STATUS_WORDS
-        # The dir is authoritative for identity: a resumed/forked execution's log can
-        # start at loop.resume.start, folding session_id/user_task empty. Fill them
-        # here so every consumer (web, watch, SSE) carries the same identity.
-        # The same fold the CLI banner and the TUI composer read, so a web
-        # client cannot show a different answer.
         d["policy"] = session_policy(session_dir).line()
+        # A forked execution's log opens at loop.resume.start and folds its identity empty.
         d["session_id"] = d["session_id"] or session_dir.name
-        # The mode is dir-backed identity too: without it a client cannot say
-        # what it is showing and heads every session "Run".
         d["mode"] = d.get("mode") or ""
         with contextlib.suppress(ManifestError):
             manifest = read_manifest(session_dir)
             d["user_task"] = d["user_task"] or manifest.user_task
             d["mode"] = d["mode"] or manifest.mode
-        # What the run is serving (a dev server the agent started): the ports
-        # its session network listens on, reachable via `agent6 forward`.
-        # A live probe, [] once the network is gone.
         d["ports"] = listening_ports(session_dir)
-        # The background-shell roster, on every frame: the run view streams
-        # from this dict, so a card painted from the snapshot alone would
-        # vanish on the first frame.
+        # On every frame: the run view streams from this dict.
         d["shells"] = roster_from_dir(session_dir / SHELLS_DIR)
         if d["mode"] == "plan":
-            # The planning run's deliverable (`agent6 plan show` prints the
-            # same file), per frame: it lands when the plan finishes.
             with contextlib.suppress(OSError):
                 d["plan_md"] = (session_dir / "plan.md").read_text(encoding="utf-8")
     else:
-        # A genuinely dir-less stream (the machine reasoning snapshot):
-        # liveness is unknowable here.
         d["live"] = None
         word, reason = status_word(
             finished=state.finished,
@@ -883,24 +984,11 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
             scoped=state.verify_scoped,
             gate_red=status_facts(state).gate_red,
         )
-    # The raw status word, not only the human label, so a client can branch on
-    # it: the waiting line in place of the "working" heartbeat when the run is
-    # blocked on the operator (a "waiting" run is still live).
     d["status"] = word
     d["status_label"] = status_label(word, reason)
-    # The headline every listing shows, after the manifest fill above: a
-    # client never re-derives it from the composed task.
     d["task_line"] = task_snippet(d["user_task"])
-    # A run no model is touching (parked, never started, worker gone), worded
-    # once for every surface; "" otherwise.
     d["dead_state"] = dead_run_note(word, reason)[0]
-    # Whether an operator prompt is unanswered, straight from the fold: a dir-less
-    # consumer (the machine watch folds an agent-state log with no session_dir, so it
-    # has no dir status) still needs the "blocked, not working" signal to quiet
-    # its heartbeat.
+    # From the fold, so a dir-less consumer still gets the "blocked, not working" signal.
     d["operator_blocked"] = status_facts(state).operator_blocked
-    # log_tail holds LogLine objects; the wire form is a flat list of strings
-    # (web + `watch --json` consumers render lines verbatim). task_id filtering is
-    # a TUI-local concern that reads the SessionState directly.
     d["log_tail"] = [line.text for line in state.log_tail]
     return d

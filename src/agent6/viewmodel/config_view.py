@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The effective-config view-model: one structure every front-end renders.
+"""Shape the effective config into the one view `config show`, the TUI and the web render.
 
-`config show` (CLI), the TUI config page, and the web UI all render the same
-ConfigView, so config display logic (provenance, defaults, enum choices,
-adaptive resolution) lives here once and the renderers stay thin. Loading,
-merging, and writing config stays in `agent6.config.layer`; this module only
-reads an EffectiveConfig.
+Provenance, defaults, enum choices and adaptive resolution live here once, so the
+renderers stay thin. Loading, merging and writing config stays in `agent6.config.layer`.
 """
 
 from __future__ import annotations
@@ -31,26 +28,44 @@ from agent6.config.layer import (
 
 @dataclass(frozen=True, slots=True)
 class ConfigSetting:
-    """One config leaf, fully described for display + editing."""
+    """One config leaf, described for display and editing.
 
-    key: str  # dotted leaf path, e.g. "sandbox.run_commands"
-    section: str  # top-level section, e.g. "sandbox"
-    value: Any  # raw effective value (None for an unset/adaptive setting)
-    effective_value: Any  # resolved value; == value unless a caller resolves it
-    default: Any  # the built-in default (None if unknown / no static default)
-    source: str  # layer that set it: default/preset/global/repo/flag/machine
-    modified: bool  # a layer set it (source != "default")
-    is_adaptive: bool  # effective_value was resolved away from the raw value
-    py_type: str  # str | int | bool | float | choice | list | table
-    choices: tuple[str, ...] | None  # enum options for a dropdown, else None
-    description: str  # the leaf's operator-facing meaning (the docs table cell)
+    Attributes:
+        key: The dotted leaf path, such as "sandbox.run_commands".
+        section: The top-level section, such as "sandbox".
+        value: The raw effective value; None for an unset or adaptive setting.
+        effective_value: The resolved value; equal to `value` unless a caller resolved it.
+        default: The built-in default; None when unknown or not static.
+        source: The layer that set it: default, preset, global, repo, flag or machine.
+        modified: A layer set it, so `source` is not "default".
+        is_adaptive: `effective_value` was resolved away from the raw value.
+        py_type: str, int, bool, float, choice, list or table.
+        choices: The enum options for a picker, else None.
+        description: The leaf's operator-facing meaning, the docs table cell.
+    """
+
+    key: str
+    section: str
+    value: Any
+    effective_value: Any
+    default: Any
+    source: str
+    modified: bool
+    is_adaptive: bool
+    py_type: str
+    choices: tuple[str, ...] | None
+    description: str
 
 
 @dataclass(frozen=True, slots=True)
 class ConfigView:
-    """The whole effective config as a flat, section-ordered list of settings,
-    plus the contributing layers for a provenance legend. The one structure
-    every UI renders."""
+    """The whole effective config as a flat, section-ordered list of settings.
+
+    Attributes:
+        settings: Every leaf, section by section.
+        sections: The section names in display order.
+        layers: The contributing layers, for a provenance legend.
+    """
 
     settings: tuple[ConfigSetting, ...]
     sections: tuple[str, ...]
@@ -58,8 +73,7 @@ class ConfigView:
 
 
 def _unwrap_optional(ann: Any) -> Any:
-    """`X | None` -> `X`; leave a genuine multi-member union (e.g. the
-    provider-entry union) untouched."""
+    """Return `X` for `X | None`, leaving a multi-member union untouched."""
     if get_origin(ann) in (Union, types.UnionType):
         non_none = [a for a in get_args(ann) if a is not type(None)]
         if len(non_none) == 1:
@@ -68,6 +82,7 @@ def _unwrap_optional(ann: Any) -> Any:
 
 
 def _literal_choices(ann: Any) -> tuple[str, ...] | None:
+    """Return a Literal annotation's members as strings, None for any other annotation."""
     ann = _unwrap_optional(ann)
     if get_origin(ann) is Literal:
         return tuple(str(a) for a in get_args(ann))
@@ -75,6 +90,7 @@ def _literal_choices(ann: Any) -> tuple[str, ...] | None:
 
 
 def _nested_model(ann: Any) -> type[BaseModel] | None:
+    """Return the pydantic model an annotation names, None for any other annotation."""
     ann = _unwrap_optional(ann)
     if isinstance(ann, type) and issubclass(ann, BaseModel):
         return ann
@@ -82,14 +98,20 @@ def _nested_model(ann: Any) -> type[BaseModel] | None:
 
 
 def _value_models(ann: Any) -> tuple[type[BaseModel], ...]:
-    """The model(s) a `dict` field maps to: one for a plain model value, or
-    several for a discriminated union (e.g. `providers` ->
-    Anthropic|OpenAI entry). Returns () when the value isn't model-shaped."""
+    """Return the models a `dict` field's values take.
+
+    Args:
+        ann: The field's annotation.
+
+    Returns:
+        One model for a plain model value, several for a discriminated union (the
+        provider entries), empty when the value is not model-shaped.
+    """
     ann = _unwrap_optional(ann)
     if get_origin(ann) is not dict:
         return ()
     val = get_args(ann)[1]
-    if get_origin(val) is Annotated:  # Annotated[Union[...], Discriminator(...)]
+    if get_origin(val) is Annotated:
         val = get_args(val)[0]
     if get_origin(val) in (Union, types.UnionType):
         return tuple(m for m in get_args(val) if _nested_model(m) is not None)
@@ -100,10 +122,18 @@ def _value_models(ann: Any) -> tuple[type[BaseModel], ...]:
 def _merge_field_schema(
     models: tuple[type[BaseModel], ...], parts: list[str]
 ) -> tuple[str, tuple[str, ...] | None, Any, str] | None:
-    """Resolve a field across discriminated-union members, merging choices: a
-    field shared by every member (e.g. `auth_style`) keeps its choices; the
-    discriminator itself (`api_format`: Literal['anthropic'] in one member,
-    Literal['openai'] in the other) becomes the union of both."""
+    """Resolve a field across discriminated-union members, merging their choices.
+
+    A field shared by every member keeps its choices; the discriminator itself becomes
+    the union of every member's literal.
+
+    Args:
+        models: The union's members.
+        parts: The dotted path below the union.
+
+    Returns:
+        `(py_type, choices, default, description)`, or None when no member has the field.
+    """
     results = [r for m in models if (r := _field_schema(m, parts)) is not None]
     if not results:
         return None
@@ -122,6 +152,7 @@ def _merge_field_schema(
 
 
 def _type_label(ann: Any) -> str:
+    """Return the `py_type` word for an annotation."""
     ann = _unwrap_optional(ann)
     origin = get_origin(ann)
     if origin is Literal:
@@ -131,8 +162,7 @@ def _type_label(ann: Any) -> str:
     if origin is dict:
         return "table"
     if isinstance(ann, type) and issubclass(ann, BaseModel):
-        # An unset optional nested section (models.reviewer, harness.metric):
-        # groups with the other structured leaves, not the model's own class name.
+        # An unset optional section groups with the other structured leaves.
         return "table"
     if isinstance(ann, type):
         return ann.__name__
@@ -142,9 +172,16 @@ def _type_label(ann: Any) -> str:
 def _field_schema(
     model_cls: type[BaseModel], parts: list[str]
 ) -> tuple[str, tuple[str, ...] | None, Any, str] | None:
-    """Walk *model_cls* down the dotted *parts* to a leaf field and return
-    `(py_type, choices, default, description)`, or None if the path can't be resolved
-    (e.g. a dynamic provider key whose value model is a discriminated union)."""
+    """Walk a model down a dotted path to a leaf field's schema.
+
+    Args:
+        model_cls: The model to start from.
+        parts: The dotted path's parts.
+
+    Returns:
+        `(py_type, choices, default, description)`, or None when the path cannot be
+        resolved (a dynamic key whose value model is unknown).
+    """
     name = parts[0]
     fi = getattr(model_cls, "model_fields", {}).get(name)
     if fi is None:
@@ -160,16 +197,24 @@ def _field_schema(
         return _field_schema(nested, parts[1:])
     models = _value_models(ann)
     if models and len(parts) >= 3:
-        return _merge_field_schema(models, parts[2:])  # skip the dynamic dict key
+        return _merge_field_schema(models, parts[2:])
     return None
 
 
 def _configured_choices(eff: EffectiveConfig, leaf: str) -> tuple[str, ...] | None:
-    """Choices the schema cannot state but the effective config can: the
-    preset names for `preset` (built-ins plus the user's `[presets.*]`) and
-    the configured provider names for `models.<role>.provider`. Every editor's
-    picker and TAB completion read them from here; the model ids of a
-    `models.<role>.model` leaf are a fetch (`models.choices`), not a choice."""
+    """Return the choices only the effective config can state.
+
+    Every editor's picker and TAB completion read them from here; the model ids of a
+    `models.<role>.model` leaf are a fetch, not a choice.
+
+    Args:
+        eff: The effective config.
+        leaf: The dotted leaf path.
+
+    Returns:
+        The preset names for `preset`, the configured provider names for a
+        `models.<role>.provider` leaf, else None.
+    """
     if leaf == "preset":
         return eff.presets or tuple(preset_names(eff.layers))
     parts = leaf.split(".")
@@ -181,16 +226,17 @@ def _configured_choices(eff: EffectiveConfig, leaf: str) -> tuple[str, ...] | No
 def build_config_view(
     eff: EffectiveConfig, *, resolved: dict[str, Any] | None = None
 ) -> ConfigView:
-    """Combine the effective config, its provenance, the schema (types + enum
-    choices + defaults), the choices only the config can state
-    (`_configured_choices`), and any caller-resolved values into the flat
-    ConfigView every UI renders.
+    """Build the flat view every UI renders from the effective config.
 
-    *resolved* maps a dotted key to its resolved value for settings whose raw
-    value is a placeholder for runtime resolution (compaction left unset ->
-    adaptive, sized from the model's context window). It never changes
-    provenance or the modified flag: it only fills `effective_value` /
-    `is_adaptive` so a UI can show the real number.
+    Args:
+        eff: The effective config with its provenance.
+        resolved: A dotted key to its resolved value, for settings whose raw value
+            stands in for a runtime resolution (compaction sized from the model's
+            context window); it fills `effective_value` and `is_adaptive` only, never
+            provenance or the modified flag.
+
+    Returns:
+        The view.
     """
     resolved = resolved or {}
     leaves = config_leaves(eff.config)
@@ -222,9 +268,7 @@ def build_config_view(
                     effective_value=eff_val,
                     default=default,
                     source=source,
-                    # Provenance, not "differs from the default": a preset or a
-                    # config file may pin a leaf to the default's own value, and
-                    # the TUI's Reset needs to know a layer owns it.
+                    # Provenance, not "differs from the default": a layer may pin that value.
                     modified=source != "default",
                     is_adaptive=leaf in resolved and eff_val != value,
                     py_type=py_type,
@@ -235,15 +279,19 @@ def build_config_view(
     return ConfigView(settings=tuple(settings), sections=tuple(ordered), layers=eff.layers)
 
 
-# ---------------------------------------------------------------------------
-# Rendering: `config show`
-# ---------------------------------------------------------------------------
+# Rendering: `config show`.
 
 
 def format_value(val: Any) -> str:
-    """A config leaf value as every surface prints it: `(unset)`, `(empty)`
-    for an empty string, TOML booleans, `[a, b]` lists, `{...}` for a
-    non-empty table."""
+    """Return a config leaf value as every surface prints it.
+
+    Args:
+        val: The raw value.
+
+    Returns:
+        `(unset)` for None, `(empty)` for an empty string, TOML booleans, `[a, b]`
+        lists, `{...}` for a non-empty table.
+    """
     if val is None:
         return "(unset)"
     if isinstance(val, str):
@@ -258,14 +306,14 @@ def format_value(val: Any) -> str:
 
 
 def display_value(s: ConfigSetting) -> str:
-    """The value column: the resolved value marked `(adaptive)` when a
-    setting resolved away from its raw value, else the raw value."""
+    """Return the value column: the resolved value marked `(adaptive)`, else the raw value."""
     if s.is_adaptive:
         return f"{format_value(s.effective_value)}  (adaptive)"
     return format_value(s.value)
 
 
 def _truncate(text: str, width: int) -> str:
+    """Return the text cut to `width`, an ellipsis marking the cut."""
     if len(text) <= width:
         return text
     if width <= 1:
@@ -274,13 +322,12 @@ def _truncate(text: str, width: int) -> str:
 
 
 def plain_description(description: str) -> str:
-    """A leaf's description as a terminal shows it: markdown bold stripped
-    (backticks read fine there; `**` is noise)."""
+    """Return a leaf's description as a terminal shows it, markdown bold stripped."""
     return description.replace("**", "")
 
 
 def _description_lines(description: str, indent: str) -> list[str]:
-    """The description wrapped for a terminal (see `plain_description`)."""
+    """Return the description wrapped for a terminal at the given indent."""
     return textwrap.wrap(
         plain_description(description),
         width=92,
@@ -292,11 +339,15 @@ def _description_lines(description: str, indent: str) -> list[str]:
 
 
 def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
-    """One leaf's machine-readable view (shared by the full dump and the
-    single-key path, so the two JSON shapes cannot drift). `display` and
-    `default_display` are the value column and the default as every surface
-    prints them (`display_value` / `format_value`), so a client renders them
-    verbatim instead of keeping its own formatter."""
+    """Return one leaf's JSON view, shared by the full dump and the single-key path.
+
+    Args:
+        s: The leaf.
+
+    Returns:
+        The leaf's fields, plus `display` and `default_display` as every surface prints
+        them, so a client renders them verbatim.
+    """
     return {
         "value": s.value,
         "effective": s.effective_value,
@@ -320,12 +371,21 @@ def render_key_detail(
     color: bool = False,
     as_json: bool = False,
 ) -> str:
-    """Render the config leaves under *keys* (each a leaf or a whole section
-    prefix) untruncated, in the order asked, for `agent6 config show <key>...`:
-    the full-width table clips long values (e.g. a verify_command), so this
-    view prints the value as every surface does (a table as `{...}`, whole
-    under `--json`) plus its source, default, and choices. Raises
-    KeyError naming the first key that matches nothing."""
+    """Render the leaves under the given keys untruncated, for `config show <key>...`.
+
+    Args:
+        eff: The effective config.
+        keys: Leaf paths or section prefixes, in the order to print.
+        resolved: The caller-resolved values, as for `build_config_view`.
+        color: Bold the key and dim the meaning with ANSI.
+        as_json: Print the leaves' JSON views instead.
+
+    Returns:
+        Each leaf's value, source, default, choices and meaning.
+
+    Raises:
+        KeyError: The first key that matches nothing.
+    """
     view = build_config_view(eff, resolved=resolved)
     matched: list[ConfigSetting] = []
     for key in keys:
@@ -363,22 +423,18 @@ def render_show(
     color: bool = False,
     descriptions: bool = False,
 ) -> str:
-    """Render the effective config + provenance from the shared ConfigView.
+    """Render the effective config and its provenance for `config show`.
 
-    Plain mode is a section-grouped, fixed-width 3-column table
-    (key / value / source) with a leading `*` on rows that override the
-    default, no box drawing, so it never wraps badly. `*` rows are the
-    ones to eyeball; settings whose value is resolved at runtime (compaction
-    left adaptive) show their resolved value tagged `(adaptive)`. JSON mode
-    emits the full per-leaf view (value, effective, default, source, modified,
-    adaptive, type, choices), the complete machine-readable picture.
+    Args:
+        eff: The effective config.
+        as_json: Emit the full per-leaf JSON view instead of the table.
+        resolved: The caller-resolved values, as for `build_config_view`.
+        color: Dim the default rows with ANSI so the operator-set rows stand out.
+        descriptions: Print each leaf's meaning wrapped under its row.
 
-    *resolved* maps dotted keys to their resolved values (e.g. adaptive
-    compaction sized from the worker model); the caller computes it. *color*
-    dims the default rows (tty only; the caller passes `isatty()`) so the
-    `*` operator-set rows stand out. *descriptions* prints each leaf's
-    meaning wrapped and dimmed under its row (`--descriptions`); the default
-    stays values-only so the values stay scannable.
+    Returns:
+        A section-grouped, fixed-width table of key, value and source with a leading
+        `*` on rows a layer set, then the provenance legend.
     """
     view = build_config_view(eff, resolved=resolved)
     if as_json:
@@ -389,26 +445,22 @@ def render_show(
     for s in view.settings:
         by_section.setdefault(s.section, []).append(s)
 
-    # Column widths (capped to avoid wide-terminal sprawl / narrow wrap).
     key_w = min(max((len(s.key) for s in view.settings), default=10) + 1, 40)
     val_w = 40
     lines: list[str] = []
 
     def emit(s: ConfigSetting) -> None:
+        """Append one leaf's row, and its meaning when asked."""
         value = display_value(s)
         mark = "*" if s.modified else " "
         key, val = _truncate(s.key, key_w), _truncate(value, val_w)
         row = f"{mark} {key:<{key_w}} {val:<{val_w}} {s.source}"
-        # Dim the default rows so the `*` operator-set values stand out of
-        # what is otherwise a long dump of built-in defaults.
         lines.append(f"\x1b[2m{row}\x1b[0m" if color and not s.modified else row)
         if descriptions and s.description:
             for line in _description_lines(s.description, "      "):
                 lines.append(f"\x1b[2m{line}\x1b[0m" if color else line)
 
-    # Top-level scalars first and headerless, as TOML requires and `config fill`
-    # already emits: keyed by their own name, they would otherwise each become a
-    # one-row `[section]` an operator cannot paste back into a config file.
+    # Top-level scalars first and headerless, as TOML requires, so the output pastes back.
     scalars = [s for s in view.settings if "." not in s.key]
     if scalars:
         for s in scalars:
@@ -428,8 +480,7 @@ def render_show(
     lines.append("source: default | " + (legend_layers or "(no config files; all defaults)"))
     lines.append("* = set by a config layer (see the source column)")
     for layer in eff.layers:
-        # "flag" alone loses the one path the operator typed; name the file so
-        # the source column reads back to something on disk.
+        # The source column's "flag" reads back to the file the operator typed.
         if layer.name == "flag" and layer.path is not None:
             lines.append(f"flag = {layer.path}")
     return "\n".join(lines).rstrip("\n") + "\n"

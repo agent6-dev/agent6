@@ -500,7 +500,7 @@ banned-from = [
 "src/agent6/ui/cli/**" = ["ANN", "D", "DOC", "ICN003"]
 "src/agent6/ui/tui/**" = ["ANN", "D", "DOC", "ICN003"]
 "src/agent6/ui/web/**" = ["ANN", "D", "DOC", "ICN003"]
-"src/agent6/viewmodel/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/viewmodel/**" = ["ICN003"]
 "docs/{gen_config,gen_contracts,gen_diagrams}.py" = ["ANN", "D", "DOC", "ICN003"]
 "docs/screenshots/{build_fixtures,keystroke_overlay,llm_proxy,make_cover,seed,tui_snapshot,web_demo}.py" = ["ANN", "D", "DOC", "ICN003"]
 # gen_contracts.py embeds the artifact's CSS/SVG/HTML as strings; line length is moot there.

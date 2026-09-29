@@ -1,14 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Cross-surface presentation constants shared by the CLI, TUI, and web.
+"""Word and mark run state the same way on the CLI, the TUI and the web.
 
-The single source of truth for how run/task state reads to a human, so the same
-state never renders differently across surfaces (per-front-end glyph maps
-drift). The web client reads the rendered fields the view models carry: a
-task's glyph, a state's mark, a transition's line, a cost cell, a timestamp.
-
-`SPINNER_FRAMES` is the one constant it copies, because it animates locally
-between polls rather than per frame from the server; `tests/web` pins the copy.
+The web client reads the rendered fields the view models carry (a task's glyph, a
+transition's line, a cost cell) rather than keeping its own maps. `SPINNER_FRAMES` is
+the one constant it copies, since it animates locally between polls; `tests/web`
+pins the copy.
 """
 
 from __future__ import annotations
@@ -16,12 +13,10 @@ from __future__ import annotations
 import time
 from typing import Literal
 
-from agent6.budget import format_usd  # the surfaces' one import of it
+from agent6.budget import format_usd
 from agent6.sessions.manifest import CompareStamp, ModelBrief
 
-# Task-node status glyphs. Text characters (not graphics) so every terminal font
-# renders them. ruff's ambiguous-glyph rule (RUF001) flags the en-dash /
-# multiplication-sign, which is the intended distinct look here.
+# Text characters, not graphics, so every terminal font renders them.
 TASK_STATUS_GLYPH = {
     "passed": "✓",
     "failed": "✗",
@@ -33,7 +28,7 @@ TASK_STATUS_GLYPH = {
 
 
 def format_model_route(driver: ModelBrief | None) -> str:
-    """A manifest driver as provider/model, or its legacy model-only value."""
+    """Return a manifest driver as provider/model, or its model alone, or ""."""
     if driver is None or not driver.model:
         return ""
     return f"{driver.provider}/{driver.model}" if driver.provider else driver.model
@@ -43,16 +38,22 @@ SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
 def clip_cell(text: str, width: int) -> str:
-    """One line of at most *width* characters, ending in an ellipsis when it
-    was cut: a bare slice would read as the whole value."""
+    """Return the text as one line of at most `width` characters, an ellipsis marking a cut."""
     line = " ".join(text.split())
     return line if len(line) <= width else line[: max(1, width - 1)] + "\u2026"
 
 
 def dead_run_note(word: str, detail: str) -> tuple[str, str]:
-    """What a run with no live worker reads as, on every surface: the state
-    it is in, and the one action left (the TUI's composer line; the web adds
-    its own). ("", "") for anything live, or that ended normally."""
+    """Word a run with no live worker for every surface.
+
+    Args:
+        word: The run's status word.
+        detail: The status detail beside it.
+
+    Returns:
+        The state the run is in and the one action left (the TUI's composer line);
+        `("", "")` for anything live or that ended normally.
+    """
     if word == "parked":
         why = f" ({detail})" if detail else ""
         return f"parked at submission{why}", "type the go-ahead below (Enter resumes)"
@@ -64,28 +65,41 @@ def dead_run_note(word: str, detail: str) -> tuple[str, str]:
             "type a follow-up below (Enter resumes)",
         )
     if word == "unreadable":
-        # A corrupt manifest cannot be resumed (fork/resume refuse it), so no
-        # composer action: the pane states the fact its own header shows.
+        # A corrupt manifest cannot be resumed, so there is no composer action.
         detail_s = f" ({detail})" if detail else ""
         return f"session state is unreadable{detail_s}", ""
     return "", ""
 
 
 def spinner_frame(tick: int) -> str:
-    """The braille spinner frame for *tick*, one owner for every surface."""
+    """Return the braille spinner frame for a tick."""
     return SPINNER_FRAMES[tick % len(SPINNER_FRAMES)]
 
 
 def short_task_id(task_id: str) -> str:
-    """A task id as an operator reads and types it: the run's own count, with
-    the padding zeros dropped. A graph carried in from before shows the end of
-    its opaque id, which is the part that told those apart."""
+    """Return a task id as an operator reads and types it.
+
+    Args:
+        task_id: The graph's id for the task.
+
+    Returns:
+        The run's own count with the padding zeros dropped, or the last six characters
+        of an opaque id carried in from before.
+    """
     return task_id.lstrip("0") or "0" if task_id.isdigit() else task_id[-6:]
 
 
 def format_when(epoch: float, *, short: bool = False) -> str:
-    """A listing's `when` column: local `MM-DD HH:MM`; *short* (a narrow
-    terminal) keeps only the time for today and only the date for older."""
+    """Return a listing's `when` cell in local time.
+
+    Args:
+        epoch: The time as epoch seconds.
+        short: Keep only the time for today and only the date for older, for a
+            narrow terminal.
+
+    Returns:
+        `MM-DD HH:MM`, or the short form.
+    """
     if not short:
         return time.strftime("%m-%d %H:%M", time.localtime(epoch))
     today = time.localtime().tm_yday, time.localtime().tm_year
@@ -94,8 +108,7 @@ def format_when(epoch: float, *, short: bool = False) -> str:
 
 
 def format_age(seconds: float) -> str:
-    """A compact how-long figure for status cells: `<1m`, `12m`, `3h`, `2d`.
-    Floors, so two readings moments apart agree."""
+    """Return a compact age for status cells: `<1m`, `12m`, `3h`, `2d`, floored."""
     s = max(0.0, seconds)
     if s < 60:
         return "<1m"
@@ -107,22 +120,38 @@ def format_age(seconds: float) -> str:
 
 
 def machine_state_mark(*, is_current: bool, is_visited: bool) -> str:
-    """The mark before a machine state in the overview: the current state,
-    a visited one, or none. Text glyphs (the task-status set's)."""
+    """Return the mark before a machine state: current, visited or none."""
     return "▸" if is_current else ("·" if is_visited else " ")
 
 
 def format_transition(seq: int, state: str, label: str, goto: str, detail: str = "") -> str:
-    """One journaled machine transition as every surface prints it:
-    `[seq] state --label--> goto`, the failure evidence appended when there is
-    any."""
+    """Return a machine transition as every surface prints it.
+
+    Args:
+        seq: The transition's sequence number.
+        state: The state left.
+        label: The transition's label.
+        goto: The state entered.
+        detail: The failure evidence, appended when there is any.
+
+    Returns:
+        `[seq] state --label--> goto`, then ` -- detail` when given.
+    """
     line = f"[{seq}] {state} --{label}--> {goto}"
     return f"{line} -- {detail}" if detail else line
 
 
 def format_cost_cell(usd: float, *, partial: bool = False, plan_points: float | None = None) -> str:
-    """A listing's cost cell: plan points for a subscription-metered execution,
-    otherwise blank for a genuinely clean $0 or `format_usd`."""
+    """Return a listing's cost cell.
+
+    Args:
+        usd: The dollar figure.
+        partial: The figure is a lower bound.
+        plan_points: The plan points consumed on a subscription-metered execution.
+
+    Returns:
+        The points as `Npt` when given, "" for a clean $0, else `format_usd`.
+    """
     if plan_points is not None:
         return f"{plan_points:g}pt"
     if usd <= 0 and not partial:
@@ -133,9 +162,18 @@ def format_cost_cell(usd: float, *, partial: bool = False, plan_points: float | 
 def budget_usd_text(
     usd_total: float, *, partial: bool, usd_cap: float, usd_prior_executions: float
 ) -> str:
-    """The run view's cost line: the cumulative figure, then this execution's spend
-    against its cap (the cap re-arms on every resume execution while the figure stays
-    cumulative); `(unlimited)` for a cap of -1."""
+    """Return the run view's cost line.
+
+    Args:
+        usd_total: The cumulative spend across executions.
+        partial: The figure is a lower bound.
+        usd_cap: This execution's cap; -1 for unlimited, 0 for none set.
+        usd_prior_executions: The spend banked by earlier executions.
+
+    Returns:
+        The cumulative figure, then this execution's spend against its cap when earlier
+        executions spent; `(unlimited)` for a cap of -1.
+    """
     text = format_usd(usd_total, partial=partial)
     if usd_cap > 0:
         cap = format_usd(usd_cap)
@@ -146,21 +184,27 @@ def budget_usd_text(
     return f"{text} (unlimited)" if usd_cap == -1 else text
 
 
-# The fan-out winner marker, shown on listing rows (a lane the auto-compare
-# ranked first). Text glyph so every terminal font renders it.
+# The mark on the lane a fan-out's compare ranked first.
 WINNER_GLYPH = "★"
 
 
 def winner_id(session_id: str, *, winner: bool) -> str:
-    """The id cell of a listing row: the winner glyph suffixed on a fan-out
-    compare winner (folded into the cell so column widths stay aligned)."""
+    """Return a listing row's id cell, the winner glyph suffixed on a compare winner."""
     return f"{session_id} {WINNER_GLYPH}" if winner else session_id
 
 
 def format_branch(run_branch: str, base_branch: str, merged_into: str) -> str:
-    """Where a run's work lives, one wording for every header: the run branch
-    merged into its base, or the run branch and the base a merge lands on.
-    "" for a session with no run branch (an ask, branch_per_run off)."""
+    """Word where a run's work lives, for every header.
+
+    Args:
+        run_branch: The run's branch, "" for a session without one.
+        base_branch: The branch a merge lands on.
+        merged_into: The branch the run was merged into, "" while unmerged.
+
+    Returns:
+        The run branch merged into its base, or the run branch and the base a merge
+        lands on; "" for a session with no run branch.
+    """
     if not run_branch:
         return ""
     if merged_into:
@@ -169,8 +213,16 @@ def format_branch(run_branch: str, base_branch: str, merged_into: str) -> str:
 
 
 def format_lineage(parent: str | None, turn: int | None, sha: str | None) -> str:
-    """Where a forked run came from, one wording for every header:
-    `<parent>@turn <n> (<sha12>)`; "" for a run that is not a fork."""
+    """Word where a forked run came from, for every header.
+
+    Args:
+        parent: The parent session's id, None for a run that is not a fork.
+        turn: The turn the fork left from.
+        sha: The commit the fork left from.
+
+    Returns:
+        `<parent>@turn <n> (<sha12>)`, or "" for a run that is not a fork.
+    """
     if not parent:
         return ""
     sha_note = f" ({sha[:12]})" if sha else ""
@@ -178,13 +230,16 @@ def format_lineage(parent: str | None, turn: int | None, sha: str | None) -> str
 
 
 def format_compare(compare: CompareStamp | None) -> tuple[str, str] | None:
-    """A lane's fan-out compare outcome as `(headline, rationale)`, or None when
-    the run carries no `compare` stamp. The headline reads e.g.
-    `rank 1/2 · winner · judge ($0.0102)`; the parenthesised figure is the
-    judge call's cost for the whole group, present whenever a judge call was
-    made (a `~` marks an unpriced lower bound). The rationale is the judge's
-    text, empty for a mechanical ranking. Shared by `sessions show` and the TUI run
-    header; the web SPA renders the same stamp fields from the snapshot JSON."""
+    """Word a lane's fan-out compare outcome.
+
+    Args:
+        compare: The lane's compare stamp, None for a run outside a compared fan-out.
+
+    Returns:
+        The headline (`rank 1/2 · winner · judge ($0.0102)`, the figure being the judge
+        call's cost for the whole group) and the judge's rationale (empty for a
+        mechanical ranking), or None without a stamp.
+    """
     if compare is None:
         return None
     parts = [f"rank {compare.rank}/{compare.of}"]
@@ -200,41 +255,42 @@ def format_compare(compare: CompareStamp | None) -> tuple[str, str] | None:
 
 
 def status_label(status: str, reason: str = "") -> str:
-    """The one human label for a run outcome: the status word (from
-    `status_word`), plus the reason with underscores spaced when there is one
-    ("failed · provider error"). Shared by every hub listing, the run header, and
-    the web wire form, so the same run reads the same on every surface."""
+    """Return the label for a run outcome: the word, then the reason with underscores spaced."""
     return status if not reason else f"{status} · {reason.replace('_', ' ')}"
 
 
-# Status words that already name the session's mode; every other word reads as
-# a run's unless the listing cell says otherwise.
+# Status words that already name the session's mode.
 _MODE_IMPLIED: dict[str, str] = {"planned": "plan", "answered": "ask"}
 
-# The end words: a merged/unmerged mark only means something once the run is
-# over (a live run's branch is unmerged by definition).
+# An unmerged mark means something only once the run is over.
 _ENDED_WORDS = frozenset({"passed", "failed", "finished", "stopped", "undone"})
 
 
 def lane_count(n: int) -> str:
-    """The folded lanes' count as every listing words it: "3 lanes", "1 lane"."""
+    """Return the lane count as every listing words it: "3 lanes", "1 lane"."""
     return f"{n} lane{'' if n == 1 else 's'}"
 
 
 def lane_id_cell(id_cell: str, depth: int = 1) -> str:
-    """A lane's id cell under its fan-out's row, marked the same way in the
-    CLI list, `ps` and the TUI hub (a leading space alone does not survive a
-    table cell); *depth* steps in once more for a lane of a lane."""
+    """Return a lane's id cell nested under its fan-out's row, stepped in once per depth."""
     return f"{'  ' * depth}└ {id_cell}"
 
 
 def listing_status_label(
     mode: str, status: str, reason: str = "", *, unmerged: bool = False
 ) -> str:
-    """The one listing status cell: the mode folded in when the word does not
-    imply it ("plan · running", a bare "planned"), the reason, and the
-    unmerged mark on an ended run ("passed · unmerged"). One owner so the CLI
-    list, the TUI hub, and the web hub rows cannot drift."""
+    """Return the listing status cell every hub shows.
+
+    Args:
+        mode: The session's mode.
+        status: The status word.
+        reason: The status detail.
+        unmerged: The run's branch holds commits its base does not.
+
+    Returns:
+        The mode folded in when the word does not imply it ("plan · running", a bare
+        "planned"), the reason, and the unmerged mark on an ended run.
+    """
     label = status_label(status, reason)
     if mode not in ("run", "?", "") and _MODE_IMPLIED.get(status) != mode:
         label = f"{mode} · {label}"
@@ -245,28 +301,24 @@ def listing_status_label(
 
 StatusLevel = Literal["ok", "info", "active", "warn", "error", "neutral"]
 
-# How a status word (a run's from `listing.status_word`, a machine's from
-# `machine_status_word`, the hub's pre-start words) reads: the level, decided
-# once here; each surface maps a level to its own palette (Rich style, ANSI
-# SGR, CSS class). A word not listed is neutral and renders plain: a clean
-# finish carries no signal worth a colour, while a lost worker or a parked
-# submission must never fade into the listing.
+# Each surface maps a level to its own palette; an unlisted word is neutral and renders plain.
 STATUS_LEVEL: dict[str, StatusLevel] = {
     "starting": "active",
     "running": "active",
-    "waiting": "warn",  # blocked on the operator (approval / question)
-    "parked": "warn",  # needs a resume to start
-    "created": "warn",  # never started (`fork --no-run`): a resume starts it
-    "stopped": "warn",  # the operator's own act, not a failure
-    "stale": "error",  # a lost worker: a crash is not neutral
+    "waiting": "warn",
+    "parked": "warn",
+    "created": "warn",
+    "stopped": "warn",
+    "stale": "error",
     "failed": "error",
-    "unreadable": "error",  # a corrupt machine source or journal, or a session manifest
+    "unreadable": "error",
     "passed": "ok",
-    "answered": "ok",  # an ask that answered is terminal success
-    "ok": "ok",  # a machine's clean end
-    "planned": "info",  # a completed plan verifies nothing: informational
+    "answered": "ok",
+    "ok": "ok",
+    "planned": "info",
 }
 
 
 def status_level(status: str) -> StatusLevel:
+    """Return the level a status word renders at, neutral for an unlisted word."""
     return STATUS_LEVEL.get(status, "neutral")

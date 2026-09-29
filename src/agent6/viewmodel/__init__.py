@@ -1,29 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The shared view-model: the JSONL event stream folded into render-ready state.
+"""Fold the JSONL event stream into the render-ready state every front-end paints.
 
-This is the data contract every front-end consumes. The CLI, the textual TUI,
-the web UI and ACP all read the same `<run-dir>/logs.jsonl`, fold it through
-the same pure functions here, and only differ in how they paint the result.
+The CLI, the TUI, the web UI and ACP read the same `<run-dir>/logs.jsonl`, fold it
+through the same pure functions here, and differ only in how they paint the result.
+The folds do no I/O and hold no async: frozen dataclasses and pure functions, so a
+viewer in any language mirrors `SessionState` and `MachineState` field for field.
 
-Layout:
+Modules:
     events.py            typed read model of the event families the fold consumes.
-    state.py             pure event-fold: list[event] -> SessionState (a run / agent state).
-    machine_state.py     pure fold: machine journal -> MachineState (+ the watch cursor).
-    tail.py              stdlib JSONL file tailer (the event source).
-    transcript.py        event-fold: logs.jsonl -> live conversation TranscriptItems.
+    state.py             event fold: list[event] -> SessionState.
+    machine_state.py     journal fold: machine journal -> MachineState, plus the watch cursor.
+    tail.py              stdlib JSONL file tailer, the event source.
+    transcript.py        event fold: logs.jsonl -> live conversation TranscriptItems.
     transcript_style.py  one styled-line renderer for a folded TranscriptItem.
-    transcript_render.py fold + Markdown render of the per-call provider transcripts.
-    listing.py           run-dir scan -> SessionSummary rows (sessions list / pickers).
+    transcript_render.py fold and Markdown render of the per-call provider transcripts.
+    listing.py           run-dir scan -> SessionSummary rows for listings and pickers.
     log_line.py          one-line renderings of an event for the log views.
-    wire.py              the one-object wire snapshots (a session's, a machine's).
+    wire.py              the one-object wire snapshots of a session and of a machine.
     policy.py            a session's policy facts, folded from its dir.
-    format.py            shared glyphs + cost/status formatting.
+    format.py            shared glyphs and cost/status formatting.
     config_view.py       effective-config tree -> the `config show` view.
-
-No I/O in the folds, no textual, no async: just frozen dataclasses and pure
-functions, so a viewer in any language mirrors `SessionState` / `MachineState`
-field-for-field.
 """
 
 from __future__ import annotations

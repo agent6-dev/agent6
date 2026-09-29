@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The one-object wire snapshots: a session's folded state and a machine
-instance's, as `agent6 attach --json` prints them and the web serves them.
-One fold each, so the two never disagree."""
+"""Build the one-object wire snapshots of a session and of a machine instance.
+
+`agent6 attach --json` prints them and the web serves them from the same fold.
+"""
 
 from __future__ import annotations
 
@@ -26,11 +27,18 @@ from agent6.viewmodel.tail import tail_events
 
 
 def existing_run_branch(manifest: SessionManifest, repo: Path | None) -> str:
-    """The run's branch while it exists, else "". The manifest names the
-    branch at run start and git creates it at the first commit, so a run that
-    never committed has none to merge or prune, whatever the manifest says
-    (`sessions show --json` reports `run_branch` by this rule). With no *repo*
-    to ask, the manifest's word stands, as `merged_into` trusts its stamp."""
+    """Return the run's branch while it exists, else "".
+
+    The manifest names the branch at run start and git creates it at the first
+    commit, so a run that never committed has none to merge or prune.
+
+    Args:
+        manifest: The session's manifest.
+        repo: The repository to ask; None lets the manifest's word stand.
+
+    Returns:
+        The branch name, or "" when the manifest names none or the repo lacks it.
+    """
     name = manifest.run_branch or ""
     if not name or (repo is not None and not branch_exists(repo, name)):
         return ""
@@ -38,15 +46,20 @@ def existing_run_branch(manifest: SessionManifest, repo: Path | None) -> str:
 
 
 def commits_ref(manifest: SessionManifest, repo: Path) -> str:
-    """The ref holding the run's commits, what merge, diff and the footer
-    read: the run branch while it exists and still covers the chain, else the
-    chain ref while it has a tip, else "" (the run recorded nothing; the chain
-    is created by its first commit).
+    """Return the ref holding the run's commits, what merge, diff and the footer read.
 
-    The chain is the record and the branch is a view of it: a commit of the
-    operator's on the run branch takes it off the chain, and the run's later
-    commits then land on the chain alone, so the branch would show a frozen
-    prefix of the run."""
+    The chain is the record and the branch a view of it: an operator's commit on the
+    run branch takes it off the chain, and the run's later commits land on the chain
+    alone, so the branch would show a frozen prefix of the run.
+
+    Args:
+        manifest: The session's manifest.
+        repo: The repository.
+
+    Returns:
+        The run branch while it exists and still covers the chain, else the chain ref
+        while it has a tip, else "" (the run recorded nothing).
+    """
     chain = chain_ref_for(manifest.session_id)
     head = chain_tip(repo, chain)
     branch = existing_run_branch(manifest, repo)
@@ -56,16 +69,21 @@ def commits_ref(manifest: SessionManifest, repo: Path) -> str:
 
 
 def manifest_branches(session_dir: Path, *, repo: Path | None = None) -> dict[str, str]:
-    """Branch facts from the run's manifest (run_branch / base_branch /
-    merged_into, and `branch_line`, their one wording) plus `commits_ref`,
-    the ref a merge or diff reads, for the run header.
-    The event fold does not carry them, and an operator needs to see where a
-    run's work lives and where Merge lands (consecutive spawns chain branches
-    invisibly otherwise). Empty for a run with no manifest. With *repo*,
-    `run_branch` is the branch only while it exists
-    (`existing_run_branch`) and `merged_into` is claimed only while the merge
-    stamp still describes the branch (a resumed run commits past its stamp;
-    the footer and `sessions show` apply the same check)."""
+    """Return the run header's branch facts from the session's manifest.
+
+    The event fold does not carry them, and an operator needs to see where a run's
+    work lives and where Merge lands.
+
+    Args:
+        session_dir: The session's state dir.
+        repo: The repository; with it, `run_branch` is claimed only while the branch
+            exists and `merged_into` only while the merge stamp still describes it
+            (a resumed run commits past its stamp).
+
+    Returns:
+        `run_branch`, `base_branch`, `merged_into`, `commits_ref` and `branch_line`
+        (their one wording), each present when known; empty for a run with no manifest.
+    """
     try:
         manifest = read_manifest(session_dir)
     except ManifestError:
@@ -74,7 +92,15 @@ def manifest_branches(session_dir: Path, *, repo: Path | None = None) -> dict[st
 
 
 def branch_facts(manifest: SessionManifest, repo: Path | None) -> dict[str, str]:
-    """`manifest_branches` for a manifest already read."""
+    """Return `manifest_branches` for a manifest already read.
+
+    Args:
+        manifest: The session's manifest.
+        repo: The repository, or None to take the manifest's word.
+
+    Returns:
+        The branch facts, each present when known.
+    """
     out: dict[str, str] = {}
     run_branch = existing_run_branch(manifest, repo)
     if run_branch:
@@ -92,8 +118,7 @@ def branch_facts(manifest: SessionManifest, repo: Path | None) -> dict[str, str]
         merged_into = stamp.into if holds else ""
     if merged_into:
         out["merged_into"] = merged_into
-    # The line names the manifest's branch when merged (the stamp describes
-    # it, pruned or not, as `sessions show` prints it) or existing.
+    # The line names the manifest's branch when merged, pruned or not, else the existing one.
     named = (manifest.run_branch or "") if merged_into else run_branch
     line = format_branch(named, manifest.base_branch or "", merged_into)
     if line:
@@ -102,11 +127,20 @@ def branch_facts(manifest: SessionManifest, repo: Path | None) -> dict[str, str]
 
 
 def manifest_header(session_dir: Path, *, repo: Path | None = None) -> dict[str, Any]:
-    """Manifest-derived session-header fields the event fold does not carry:
-    the branch facts, the fork lineage (`forked_from`, one wording), and the
-    fan-out compare outcome (rank/winner/rationale). Merged into every session
-    snapshot (one-shot and streamed) so the header a page paints from cannot
-    drift. Empty for a run with no (readable) manifest, read once."""
+    """Return the session-header fields the event fold does not carry.
+
+    Merged into every session snapshot, one-shot and streamed, so the header a page
+    paints from cannot drift.
+
+    Args:
+        session_dir: The session's state dir.
+        repo: The repository, or None to take the manifest's word on branches.
+
+    Returns:
+        The branch facts, `git_control`, `base_sha`, the fork lineage as `forked_from`,
+        the `worktree` and the fan-out `compare` outcome with its `line`; empty for a
+        run with no readable manifest.
+    """
     try:
         m = read_manifest(session_dir)
     except ManifestError:
@@ -133,12 +167,24 @@ class UnknownStepError(ValueError):
 def session_snapshot(
     session_dir: Path, *, repo: Path | None = None, step: str = ""
 ) -> dict[str, Any]:
-    """A session's folded state as the wire dict, with the dir-aware status
-    (parked / stale / waiting, not the fold's blanket "running"), the
-    dir-backed identity fill, and the manifest header. A session with no log
-    yet (a parked submission, a `fork --no-run`) folds nothing and lets the
-    dir supply the word. *step* (a commit sha of the run) folds only up to
-    that commit and stamps `as_of`."""
+    """Fold a session's state into the wire dict.
+
+    The dict carries the dir-aware status (parked, stale, waiting, not the fold's
+    blanket "running"), the dir-backed identity fill and the manifest header. A
+    session with no log yet (a parked submission, a `fork --no-run`) folds nothing
+    and lets the dir supply the word.
+
+    Args:
+        session_dir: The session's state dir.
+        repo: The repository, or None to take the manifest's word on branches.
+        step: A commit sha of the run; folds only up to that commit and stamps `as_of`.
+
+    Returns:
+        The session snapshot.
+
+    Raises:
+        UnknownStepError: `step` is none of the run's commits.
+    """
     events = tail_events(session_dir / LOGS_NAME, follow=False)
     as_of: dict[str, Any] | None = None
     if step:
@@ -158,13 +204,22 @@ def session_snapshot(
 def machine_snapshot(
     machine_dir: Path, *, execution: AgentExecution | None = None
 ) -> dict[str, Any]:
-    """A machine instance's folded MachineState as the wire dict. Raises
-    MachineError for an unloadable source and JournalError for a corrupt
-    journal; the callers word those.
+    """Fold a machine instance's state into the wire dict.
 
     Carries the instance's `spend`: a machine runs unattended against
-    `[budget].max_usd`, so every surface that watches one reads the same
-    figure."""
+    `[budget].max_usd`, so every surface that watches one reads the same figure.
+
+    Args:
+        machine_dir: The instance's dir.
+        execution: The newest agent execution to fold in, when the caller has it.
+
+    Returns:
+        The machine snapshot.
+
+    Raises:
+        MachineError: The machine source cannot be loaded.
+        JournalError: The journal is corrupt.
+    """
     spec = load_machine(machine_dir / "machine.asm.toml")
     events = MachineJournal(machine_dir).read()
     ms = fold_machine(spec, events)

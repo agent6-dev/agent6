@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Shared run-listing helpers, used by every front-end's hub/watch listing.
+"""Scan session dirs into the listing rows every front-end's hub shows.
 
-The last-activity time and the task snippet live only here; the CLI, TUI,
-and web hub all read them, so the three listings cannot disagree.
+The last-activity time, the status word and the task snippet live only here, so the
+CLI, TUI and web listings cannot disagree.
 """
 
 from __future__ import annotations
@@ -40,15 +40,16 @@ from agent6.viewmodel.format import (
 
 
 def session_mtime(session_dir: Path) -> float:
-    """Last-activity time of a session: the mtime of its `logs.jsonl` (when the
-    run last appended an event), else its manifest (written once, when the
-    session was created), else the dir.
+    """Return a session's last-activity time as epoch seconds.
 
-    Not the run-directory mtime: a viewer writes its `frontends/` claim into the
-    dir on open, bumping the directory mtime, so sorting by it floats a
-    merely-viewed run to "most recent". A run with no log yet (parked, or a
-    `fork --no-run`) has a manifest and nothing else that moves, so that is its
-    time.
+    The journal's mtime, else the manifest's, else the dir's; never the dir's first,
+    since a viewer's `frontends/` claim bumps it and would float a viewed run to newest.
+
+    Args:
+        session_dir: The session's state dir.
+
+    Returns:
+        The mtime, 0.0 when none of the three can be read.
     """
     for candidate in (session_dir / LOGS_NAME, session_dir / MANIFEST_NAME, session_dir):
         try:
@@ -59,10 +60,15 @@ def session_mtime(session_dir: Path) -> float:
 
 
 def session_dirs(state_dir: Path, buckets: Iterable[str] = HUB_BUCKETS) -> list[Path]:
-    """Every session dir a listing shows across *buckets* (names under
-    `sessions/`, the hub's by default), newest first by last activity; husks
-    skipped, like every listing skips them. The one enumeration behind the
-    hubs' tables and a spawn's before/after locate set."""
+    """Return every session dir a listing shows, newest first by last activity.
+
+    Args:
+        state_dir: The repo's state dir.
+        buckets: The bucket names under `sessions/` to walk; the hub's by default.
+
+    Returns:
+        The session dirs, husks skipped.
+    """
     dirs: list[Path] = []
     for name in buckets:
         bucket = bucket_dir(state_dir, name)
@@ -73,20 +79,16 @@ def session_dirs(state_dir: Path, buckets: Iterable[str] = HUB_BUCKETS) -> list[
 
 
 def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
-    """The most recently active session dir (by logs.jsonl mtime, not dir mtime: a
-    viewer's front-end claim must not float a run to latest) across the given
-    bucket dirs.
+    """Return the most recently active session dir across the given bucket dirs.
 
-    The one run-recency query: callers name the buckets in scope explicitly,
-    a lone `runs/` dir for run/plan/resume/fork/ask scope, or every
-    `SESSION_BUCKETS` dir for a cross-bucket listing (attach / runs stop). A
-    missing bucket dir is skipped; returns None when no bucket holds a run.
-    Callers that key off the id take `.name` of the result.
+    Husks are skipped: a crash-orphaned dir is newer than the real runs, and returning
+    it would point a bare `attach` at a phantom no listing shows.
 
-    Husks are skipped, like every listing skips them: a crash-orphaned dir with
-    no manifest and no log is newer than the real runs, so returning it would
-    point bare `attach` / `sessions show` / `stop` at a phantom the
-    operator cannot see in any listing.
+    Args:
+        buckets: The bucket dirs in scope; a missing one is skipped.
+
+    Returns:
+        The newest session dir by last activity, or None when no bucket holds one.
     """
     runs: list[Path] = []
     for bucket in buckets:
@@ -97,10 +99,15 @@ def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
 
 
 def task_snippet(text: str, max_chars: int | None = None) -> str:
-    """One-line summary of a task or ask transcript for a listing: its
-    headline, else its first line (a task that is only a file block names the
-    file); clipped to *max_chars* with an ellipsis, so a cut task never reads
-    as the whole one."""
+    """Return a task's one-line summary for a listing.
+
+    Args:
+        text: The task text or ask transcript.
+        max_chars: The width to clip to, with an ellipsis; None leaves it whole.
+
+    Returns:
+        The task's headline, else its first non-blank line.
+    """
     snip = task_headline(text) or next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
     if max_chars is not None and len(snip) > max_chars:
         snip = snip[: max_chars - 1] + "…"
@@ -108,23 +115,27 @@ def task_snippet(text: str, max_chars: int | None = None) -> str:
 
 
 def is_session_husk(session_dir: Path) -> bool:
-    """True for a session dir that never really started: neither manifest.json nor
-    logs.jsonl (a preflight refused it, or a crash orphaned it). Listings skip
-    husks, and id lookups must not let one shadow a real run of the same id in
-    another bucket (runs/ vs asks/).
+    """Return whether a session dir never started: no manifest, no log, no live worker.
 
-    Exception: a dir with a live worker.pid is a just-launched run in its
-    pre-manifest preflight window, kept listed (it reads "starting"). Only a dir
-    with no live worker is a husk."""
+    A dir with a live worker is a just-launched run in its pre-manifest preflight
+    window and stays listed as "starting". Listings skip husks, and an id lookup must
+    not let one shadow a real run of the same id in another bucket.
+    """
     return not session_has_record(session_dir) and not worker_is_alive(session_dir)
 
 
 def session_compare(session_dir: Path) -> CompareStamp | None:
-    """The `compare` stamp a fan-out's auto-compare recorded on an imported
-    lane's manifest (rank/of/winner/ranked_by/rationale), or None for a run that
-    was never part of a compared fan-out. The event fold doesn't carry it (it is
-    post-import manifest state), so every run view reads it from here. Best effort:
-    a missing/corrupt manifest reads as None, never an error."""
+    """Return the fan-out compare stamp on a lane's manifest.
+
+    The event fold does not carry it, so every run view reads it from here.
+
+    Args:
+        session_dir: The session's state dir.
+
+    Returns:
+        The stamp, or None for a run outside a compared fan-out or with an unreadable
+        manifest.
+    """
     try:
         manifest = read_manifest(session_dir)
     except ManifestError:
@@ -133,52 +144,61 @@ def session_compare(session_dir: Path) -> CompareStamp | None:
 
 
 def is_winner(session_dir: Path) -> bool:
-    """True when a run is the fan-out compare winner (rank 1), for a listing
-    marker. False for any run outside a compared fan-out."""
+    """Return whether a run is its fan-out's compare winner."""
     compare = session_compare(session_dir)
     return compare is not None and compare.winner
 
 
 @dataclass(frozen=True, slots=True)
 class SessionSummary:
-    """One listing row: everything a hub or `sessions list` needs, uncolored."""
+    """One listing row: everything a hub or `sessions list` needs, uncolored.
+
+    Attributes:
+        session_id: The session's id.
+        mode: "run", "plan", "ask" or "?".
+        task: The raw task text; callers snippet it for their layout.
+        status: The status word (created, starting, running, waiting, stale, passed,
+            answered, planned, finished, stopped, undone, failed).
+        reason: The detail beside the word: the end reason when failed, what it waits
+            on when waiting, else "".
+        cost_usd: The cumulative spend across executions.
+        usd_partial: `cost_usd` is a lower bound: some execution had unpriced spend.
+        mtime: The last-activity time as epoch seconds.
+        unmerged: The run's chain or branch holds commits its base does not, per the
+            merge stamp and the caller's branch-tips snapshot; False without a
+            snapshot, and for an undone run (its /undo child carries the mark).
+        verify_ok: The gate verdict from the gate facts, not the status word: the
+            compare table and the judge read it.
+        coordinator: The session that dispatched this lane, the row it nests under.
+        lane: The lane number within its fan-out.
+        plan_consumed: The plan points this execution consumed on a plan-metered provider.
+        plan_cap: The plan's points cap, `[budget].max_percent`.
+        plan_used_percent: The account's reading; 0 unless a plan provider answered.
+        model: The manifest's provider/model route for this execution.
+        model_from_flag: The route came from a `--model` flag rather than config.
+    """
 
     session_id: str
-    mode: str  # run | plan | ask | ?
-    task: str  # raw task text; callers snippet/truncate for their layout
-    # created|starting|running|waiting|stale|passed|answered|planned|finished|
-    # stopped|undone|failed
+    mode: str
+    task: str
     status: str
-    reason: str  # detail: the end reason when "failed", "needs answer" when "waiting", else ""
+    reason: str
     cost_usd: float
-    usd_partial: bool  # sticky: cost_usd is a lower bound (unpriced spend in some execution)
+    usd_partial: bool
     mtime: float
-    # The run branch holds commits its base does not (per the merge stamp and
-    # the caller's branch-tips snapshot); False when unknowable (no snapshot),
-    # and for an undone run: its /undo child carries the mark for the commits
-    # up to the checkpoint, and the later ones were taken back.
     unmerged: bool = False
-    # The gate verdict from the gate facts (LogScan.verify_verdict), not the
-    # status word: the compare table and the judge read it, and the word calls
-    # a red-gated finish "finished".
     verify_ok: bool | None = None
-    # A fan-out lane: the session that dispatched it (its manifest's
-    # `parallel.coordinator`, the row it nests under) and its lane number.
     coordinator: str = ""
     lane: int | None = None
-    # A plan-metered provider charges subscription points rather than USD.
-    # The figures are current-execution, like LogScan's counters.
     plan_consumed: float = 0.0
     plan_cap: float = 0.0
-    plan_used_percent: float = 0.0  # the account's reading; 0 unless a plan provider answered
-    model: str = ""  # the manifest's provider/model route for this execution
+    plan_used_percent: float = 0.0
+    model: str = ""
     model_from_flag: bool = False
 
     @property
     def cost_cell(self) -> str:
-        """The cost unit this run used: plan points once a subscription plan
-        answered a call (the cap alone is config, set for dollar runs too),
-        else USD."""
+        """The cost cell: plan points once a subscription plan answered a call, else USD."""
         metered = self.plan_used_percent > 0 or self.plan_consumed > 0
         points = self.plan_consumed if metered else None
         return format_cost_cell(self.cost_usd, partial=self.usd_partial, plan_points=points)
@@ -186,24 +206,27 @@ class SessionSummary:
 
 @dataclass(frozen=True, slots=True)
 class ListingRow:
-    """One listing row: a session and the fan-out lanes nested under it, each
-    a row of its own (a lane that dispatched a group carries its lanes)."""
+    """One listing row: a session and the fan-out lanes nested under it, rows themselves."""
 
     summary: SessionSummary
     lanes: tuple[ListingRow, ...] = ()
 
     @property
     def mtime(self) -> float:
-        """The row's last activity: its own or a lane's, whichever is later
-        (a coordinator's journal is quiet while its lanes run)."""
+        """The row's last activity: its own or a lane's, whichever is later."""
         return max((self.summary.mtime, *(lane.mtime for lane in self.lanes)))
 
 
 def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
-    """The listing's rows, newest first: a lane nests under the session that
-    dispatched it when that session is listed, in lane order, at whatever
-    depth; a lane whose coordinator is not listed has nothing to nest under
-    and stays a row. Every session appears exactly once."""
+    """Nest each lane under the listed session that dispatched it.
+
+    Args:
+        summaries: The sessions to list.
+
+    Returns:
+        The rows, newest first, every session appearing once: a lane whose coordinator
+        is not listed stays a row of its own.
+    """
     items = list(summaries)
     by_id = {s.session_id: s for s in items}
     children: dict[str, list[SessionSummary]] = {}
@@ -226,14 +249,24 @@ def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
 
 
 def _lane_order(lane: SessionSummary) -> tuple[int, str]:
+    """Return the sort key placing lanes in lane order, then by id."""
     return (lane.lane or 0, lane.session_id)
 
 
 def lanes_of(
     state_dir: Path, coordinator: str, *, branch_tips: Mapping[str, str] | None = None
 ) -> list[SessionSummary]:
-    """The lanes whose manifests name *coordinator*, in lane order; with
-    *branch_tips* each carries its unmerged mark (`summarize_session_dir`)."""
+    """Return the lanes whose manifests name a coordinator, in lane order.
+
+    Args:
+        state_dir: The repo's state dir.
+        coordinator: The dispatching session's id.
+        branch_tips: The caller's branch-tips snapshot; with it each lane carries its
+            unmerged mark.
+
+    Returns:
+        The lanes' summaries.
+    """
     lanes = [
         s
         for d in session_dirs(state_dir)
@@ -243,8 +276,15 @@ def lanes_of(
 
 
 def row_json(row: ListingRow, *, winners: Container[str]) -> dict[str, object]:
-    """A listing row and its nested lanes as JSON (`summary_row` for each);
-    `mtime` is the row's, the group's latest activity."""
+    """Return a listing row and its nested lanes as JSON.
+
+    Args:
+        row: The row.
+        winners: The ids of the fan-out compare winners.
+
+    Returns:
+        The `summary_row` dict with `mtime` and `when` set to the group's latest activity.
+    """
     out = summary_row(
         row.summary,
         winner=row.summary.session_id in winners,
@@ -261,13 +301,16 @@ def summary_row(
     winner: bool = False,
     lanes: Sequence[dict[str, object]] = (),
 ) -> dict[str, object]:
-    """One listing row as JSON: the shape `sessions list --json` prints and
-    `/api/hub` serves, so one name per fact reaches every reader.
+    """Return one listing row as JSON, the shape `sessions list --json` and `/api/hub` share.
 
-    `label` and `level` are the rendered status cell and its colour level, so a
-    client needs no copy of the status maps. The task rides whole, with the
-    one-line `task_line` the web hub shows beside it. *lanes*
-    are a fan-out's lane rows, nested (`row_json` builds them).
+    Args:
+        s: The row's summary.
+        winner: The row is its fan-out's compare winner.
+        lanes: The nested lane rows, as `row_json` builds them.
+
+    Returns:
+        The row, with the status cell rendered as `label` and `level` so a client
+        needs no copy of the status maps, and the one-line `task_line` beside the task.
     """
     return {
         "session_id": s.session_id,
@@ -279,7 +322,6 @@ def summary_row(
         "label": listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
         "level": status_level(s.status),
         "mtime": s.mtime,
-        # Rendered here, like the cost cell: every surface shows one clock.
         "when": format_when(s.mtime) if s.mtime else "",
         "cost_usd": s.cost_usd,
         "usd_partial": s.usd_partial,
@@ -306,55 +348,45 @@ def status_word(
     scoped: bool = False,
     gate_red: bool = False,
 ) -> tuple[str, str]:
-    """Map an end state to `(word, reason-detail)`.
+    """Map an end state to the status word and its detail.
 
-    The single place that decides how a run's outcome reads, shared by
-    `session_state_as_dict` (headers) and `summarize_session_dir` (listings) so the
-    surfaces can never disagree. "stopped" and "undone" are the operator's
-    own acts (a stop, an /undo), not failures; "planned" and "answered" are
-    the no-verify clean exits (a plan pass / an ask, where "passed" would
-    mislead); "passed" means all verify gates green, "finished" is a
-    deliberate finish without all-passed (over an observed red gate,
-    `gate_red`, it reads "finished · gate red"; over a tree nothing certified,
-    "finished · unverified"), and anything else is "failed" with the reason
-    (provider_error, went_quiet, ...).
+    The one place that decides how a run's outcome reads; headers and listings share
+    it. "stopped" and "undone" are the operator's own acts, "planned" and "answered"
+    the clean exits that verified nothing, "passed" every gate green, "finished" a
+    deliberate finish without all-passed, and anything else "failed" with the reason.
 
-    `all_passed` is the wire's verify tri-state: True = the final tree was
-    observed verify-green, False = it was not (red, stale, or an error end),
-    None = nothing gated it (no verify command). None reads "finished"
-    whatever the reason: an ungated end never claims "passed" and never
-    reads "failed". `scoped` qualifies a pass: the gate that certified the
-    tree ran scoped to the tests nearest the run's diff, so it reads
-    "passed · scoped gate", never a bare "passed". `gate_red` is the
-    observation itself (this execution's last verify ran and failed): False also
-    covers a stale green and a gate nothing ever ran, which are not red.
+    Args:
+        finished: A session.end was seen.
+        all_passed: The verify tri-state: True when the final tree was observed
+            verify-green, False when not (red, stale or an error end), None when no
+            verify command gated it; None reads "finished" whatever the reason.
+        end_reason: The session.end reason word.
+        scoped: The certifying gate ran scoped to the tests nearest the run's diff,
+            so a pass reads "passed · scoped gate".
+        gate_red: This execution's last verify ran and failed; False also covers a
+            stale green and a gate nothing ran.
+
+    Returns:
+        The `(word, detail)` pair.
     """
     if not finished:
         return "running", ""
     if end_reason in ("steer_abort", "steer_exit", "interrupted", "interactive_stop"):
-        return "stopped", ""  # each is the operator's own act, not a failure
-    # A clean exit that verified nothing gets its own word, never "passed": a
-    # plan pass ends via finish_planning, an ask by answering, /undo takes the
-    # last message back (the fork it cut continues), and a run settles with
-    # committed work the gate never passed: gateless "unverified", over a red
-    # gate "gate red" (deliberate, so "finished"; never green, never "failed").
+        return "stopped", ""
+    # A clean exit that verified nothing gets its own word, never "passed" and never "failed".
     not_green = {
         "finish_planning": ("planned", ""),
         "answered": ("answered", ""),
         "undone": ("undone", ""),
         "settled": ("finished", "gate red" if gate_red else "unverified"),
-        # The gate is red, and a verify against an unmodified tree proved it
-        # was red before this run touched anything. "Your run failed" and "your
-        # change broke nothing new" are different facts.
+        # A verify against the unmodified tree proved the gate red before the run touched it.
         "gate_red_at_base": ("finished", "gate was already red"),
     }
     if end_reason in not_green:
         return not_green[end_reason]
     if all_passed:
         return "passed", "scoped gate" if scoped else ""
-    # Only an observed not-green (False) can word "failed"; a deliberate finish
-    # over one is the agent's own act, so "finished" with what the gate said.
-    # The ungated None falls through to a bare "finished" whatever the reason.
+    # Only an observed not-green words "failed"; a deliberate finish over one is "finished".
     if all_passed is False and end_reason:
         detail = "gate red" if gate_red else "unverified"
         clean_end = end_reason in ("finish_session", "silent_finish", "metric_plateau")
@@ -362,55 +394,63 @@ def status_word(
     return "finished", ""
 
 
-# The two prompt events that mean "alive but blocked on the operator". One
-# definition: the hub listing and `sessions show` both key their "waiting (needs
-# answer)" status on it, so the two surfaces can't disagree.
+# The prompt events that mean "alive but blocked on the operator".
 OPERATOR_PROMPT_EVENTS = frozenset({"approval.prompt", "question.prompt"})
 OPERATOR_ANSWER_EVENTS = frozenset({"approval.answer", "question.answer"})
 
 
-# The word a parked submission reads as; the detail beside it is the
-# manifest's short cause ("checkout busy", "uncommitted changes"), and every
-# surface says the same thing about it: a resume starts it.
+# A parked submission's word; the detail beside it is the manifest's short cause.
 PARKED_WORD = "parked"
 
 
 @dataclass(frozen=True, slots=True)
 class StatusFacts:
-    """The event-derived inputs to :func:`status_for_session_dir`, producible from
-    either event reader (`LogScan.status_facts()`, the tolerant scanner behind
-    listings and `sessions show`, and `state.status_facts`, the typed fold
-    behind the live views), so every surface feeds the one status decision the
-    same answers for the same log."""
+    """The event-derived inputs to `status_for_session_dir`.
 
-    started: bool = False  # a session.start was seen (a parked/created run has none)
+    Both event readers produce them, the tolerant scanner behind listings and the
+    typed fold behind the live views, so every surface feeds the one status decision
+    the same answers for the same log.
+
+    Attributes:
+        started: A session.start was seen; a parked or created run has none.
+        finished: A session.end was seen and no later execution began.
+        all_passed: The verify tri-state; None when no verify command gated the end.
+        verify_scoped: The judging gate ran scoped, which qualifies a pass.
+        gate_red: This execution's last verify ran and failed.
+        end_reason: The session.end reason word.
+        operator_blocked: An approval or question is still unanswered.
+        blocked_kind: The oldest unanswered prompt's kind, "approval" or "question".
+        blocked_since_ep: That prompt's asked-at epoch.
+        unattended_questions: Questions the harness answered empty because nobody was attached.
+    """
+
+    started: bool = False
     finished: bool = False
-    all_passed: bool | None = False  # None = the end was ungated (no verify command)
-    verify_scoped: bool = False  # the judging gate ran scoped (qualifies a pass)
-    gate_red: bool = False  # this execution's last verify ran and failed (an observed red)
+    all_passed: bool | None = False
+    verify_scoped: bool = False
+    gate_red: bool = False
     end_reason: str = ""
-    operator_blocked: bool = False  # alive but waiting on an unanswered approval/question
-    blocked_kind: str = ""  # "approval" | "question" | "" (oldest unanswered prompt)
-    blocked_since_ep: float | None = None  # that prompt's asked-at epoch
-    unattended_questions: int = 0  # questions the harness answered empty: nobody was attached
+    operator_blocked: bool = False
+    blocked_kind: str = ""
+    blocked_since_ep: float | None = None
+    unattended_questions: int = 0
 
 
 def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, str]:
-    """The `(word, reason)` for a session that has a dir on disk.
+    """Decide the status word and detail for a session that has a dir on disk.
 
-    Every listing and header feeds this the event facts and lets the dir
-    supply what events cannot: a parked submission (manifest) and worker
-    liveness (worker.pid). The pure fold's `session_state_as_dict`
-    is only for a stream with genuinely no dir (`attach --json`); a surface
-    with a run dir that folds events alone reads every non-`session.end` state
-    as "running" and disagrees with the hub.
+    The dir supplies what events cannot: a parked submission (the manifest) and
+    worker liveness (the pid file). A started session is live iff its worker is: the
+    pid is written before session.start, so no pid file means the worker cleared it
+    on the way out. Log silence cannot stand in for this: a `kill -9` leaves the pid
+    file while an abnormal exit through the finally clears it.
 
-    A started session is live iff its worker is: the pid is written before
-    session.start, so no pid file means the worker cleared it on the way out.
-    Log silence cannot stand in for this; it inverts the evidence. A `kill -9`
-    leaves the pid file (silence would read "stale" at once) while an abnormal
-    exit through the finally (SIGPIPE from `run ... | head`) clears it
-    (silence would read "running" until its window elapsed).
+    Args:
+        session_dir: The session's state dir.
+        facts: The event-derived facts from either reader.
+
+    Returns:
+        The `(word, detail)` pair.
     """
     if facts.finished:
         word, reason = status_word(
@@ -421,14 +461,10 @@ def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, 
             gate_red=facts.gate_red,
         )
         if not reason and (n := facts.unattended_questions):
-            # The questions wait in the transcript; a steer on resume answers them.
             reason = f"{n} question{'s' if n != 1 else ''} unanswered"
         return word, reason
     if facts.operator_blocked and worker_is_alive(session_dir):
-        # Before session.start too: a run asks about the working tree's
-        # uncommitted changes before it starts. The detail names what it
-        # waits on and for how long ("approval 12m"); a log whose prompt
-        # carried no parseable ts keeps the generic wording.
+        # Before session.start too: a run asks about uncommitted changes before it starts.
         if facts.blocked_kind and facts.blocked_since_ep is not None:
             age = format_age(time.time() - facts.blocked_since_ep)
             return "waiting", f"{facts.blocked_kind} {age}"
@@ -441,15 +477,19 @@ def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, 
 
 
 def _unstarted_status(session_dir: Path) -> tuple[str, str]:
-    """Status before any session.start: a live worker is still launching (egress +
-    verify inference run before the loop's first turn) -> "starting". No live
-    worker is a parked submission (saved with its cause; resume starts it), a
-    worker that died launching (its pid file survives the kill; a clean
-    refusal clears it), or a never-started dir (`fork --no-run`) -> "created".
-    The dead-pid case is kept distinct from "created": a killed preflight
-    spent real dollars and must not wear the never-ran word. A manifest.json
-    that exists but fails to parse reads "unreadable" with its error on one
-    cell-sized line, never the never-ran "created"."""
+    """Decide the status of a session before any session.start.
+
+    A live worker is still in preflight ("starting"). Without one, the dir is a parked
+    submission, a manifest that fails to parse ("unreadable"), a worker that died
+    launching (its pid file survives the kill: "stale", since a killed preflight spent
+    real dollars) or a never-started dir ("created").
+
+    Args:
+        session_dir: The session's state dir.
+
+    Returns:
+        The `(word, detail)` pair.
+    """
     if worker_is_alive(session_dir):
         return "starting", ""
     if (session_dir / MANIFEST_NAME).is_file():
@@ -464,50 +504,35 @@ def _unstarted_status(session_dir: Path) -> tuple[str, str]:
     return "created", ""
 
 
-# Status words for a run that reached terminal without its own session.end: the
-# worker died (stale) or never started (created/parked/?). The fan-out's
-# awaiting gate deliberately accepts them so an await cannot hang; the web live
-# view closes their stream, and `sessions compare` screens them out (no verdict
-# to compare, spend truncated at the death).
+# Terminal without a session.end: the fan-out's await accepts them so it cannot hang.
 _DIED_WITHOUT_END = frozenset({"stale", "created", "parked", "unreadable", "?"})
 
 
 def died_without_end(status: str) -> bool:
-    """Whether *status* is a session that never reached its own `session.end`."""
+    """Return whether the status word means the session never reached its own end."""
     return status in _DIED_WITHOUT_END
 
 
-# Status words for a session that ended deliberately: its own clean session.end
-# (passed/finished/planned/answered) or the operator's stop. Only these are
-# results a fan-out may rank, crown, or join; "failed" (an abnormal end:
-# provider_error, went_quiet, ...), a died-without-end word, or a live word is
-# work with no verdict. A positive set: an unknown new status word is not a
-# result until it earns membership.
+# A positive set: a new status word is not a result a fan-out may rank until it is listed.
 _RESULT_WORDS = frozenset({"passed", "finished", "stopped", "planned", "answered"})
 
 
 def produced_result(status: str) -> bool:
-    """Whether the session ended deliberately and left mergeable work: the
-    lane-candidacy question (only such a lane is a fan-out compare candidate
-    or joins a coordinator's branch), and the word for a session a stop
-    finds already ended."""
+    """Return whether the status word means a deliberate end that left mergeable work.
+
+    Only such a lane is a fan-out compare candidate or joins a coordinator's branch.
+    """
     return status in _RESULT_WORDS
 
 
-# Status words for a run that can still receive operator input over the file
-# bridge. Anything else (parked/created: never started, stale: worker gone, and
-# every end word) means a surface must offer resume instead: a steer or answer
-# marker there is read by nobody.
+# A run in any other state reads no steer or answer marker: a surface offers resume instead.
 LIVE_STATUS_WORDS = frozenset({"running", "starting", "waiting"})
 
 
 def session_is_live(session_dir: Path) -> bool:
-    """Whether the operator can still act on this session: the affordance question,
-    "will anything read what I write", not `worker_is_alive`'s "is a pid
-    running" (a parked run resumes; a dead worker's buttons reach nobody).
+    """Return whether anything will read what the operator writes to this session.
 
-    Derived from the status word, so a surface cannot disagree with the label
-    it is showing; fed empty facts it degenerates to the pid probe.
+    Derived from the status word, so a surface cannot disagree with the label it shows.
     """
     logs = session_dir / LOGS_NAME
     facts = scan_session_log(logs).status_facts() if logs.is_file() else StatusFacts()
@@ -516,58 +541,80 @@ def session_is_live(session_dir: Path) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class LogScan:
-    """One tolerant pass over a session's `logs.jsonl`: the shared scan behind the
-    hub listing and `sessions show`. One owner, so the resume rules (bank cost
-    executions, un-finish) and the torn-line tolerances cannot drift between
-    consumers.
+    """One tolerant pass over a session's journal, behind the hub listing and `sessions show`.
 
-    Token counters are the current execution's; `cost_usd` is cumulative across
-    resume executions (None = no budget.update ever), matching the typed fold's
-    BudgetView so no two surfaces can disagree on what a run cost. `executions`
-    lets a renderer say which scope a figure describes when they differ.
+    One owner, so the resume rules (bank the cost of past executions, un-finish) and
+    the torn-line tolerances cannot drift between consumers. Token counters are the
+    current execution's; `cost_usd` is cumulative, matching the typed fold's BudgetView.
+
+    Attributes:
+        saw_start: A session.start or loop.resume.start was seen; neither means unstarted.
+        mode: The session's mode, "?" until a start event names it.
+        task: The task text as session.start carried it.
+        finished: A session.end was seen and no later execution began.
+        all_passed: The verify tri-state; None when no verify command gated the end.
+        verify_scoped: The judging gate ran scoped.
+        end_reason: The session.end reason word.
+        cost_usd: The spend across every execution; None when no budget.update was seen.
+        usd_partial: Some execution had unpriced spend, so `cost_usd` is a lower bound.
+        executions: One plus the completed resume executions.
+        input_tokens: This execution's input tokens, None until a budget.update carries them.
+        output_tokens: This execution's output tokens.
+        cache_read_tokens: The cached side of the input, None when the event lacked it.
+        cache_creation_tokens: Cache-creation tokens, None when the event lacked it.
+        plan_consumed: The plan points this execution consumed; 0.0 until a plan call runs.
+        plan_cap: `[budget].max_percent`, 0.0 until a plan call runs.
+        plan_used_percent: The account's reading, 0.0 until a plan call runs.
+        iteration: The last event's iteration.
+        start_ep: session.start's epoch, else the first event's (a fork's log has none).
+        last_ep: The last event's epoch.
+        last_type: The last event's type.
+        operator_blocked: A prompt is still unanswered on this execution.
+        blocked_kind: The oldest unanswered prompt's kind, "approval" or "question".
+        blocked_since_ep: That prompt's asked-at epoch.
+        last_verify_rc: This execution's last verify.end exit code.
+        pins: The operator's pinned instructions in force.
+        unattended_questions: Questions answered empty because nobody was attached.
     """
 
-    saw_start: bool = (
-        False  # session.start OR loop.resume.start seen (an execution began); neither = unstarted
-    )
+    saw_start: bool = False
     mode: str = "?"
     task: str = ""
-    finished: bool = False  # a later resume un-finishes
-    all_passed: bool | None = False  # None = the end was ungated (no verify command)
-    verify_scoped: bool = False  # session.end scoped: the judging gate ran scoped
+    finished: bool = False
+    all_passed: bool | None = False
+    verify_scoped: bool = False
     end_reason: str = ""
     cost_usd: float | None = None
-    usd_partial: bool = False  # sticky: unpriced spend in any execution -> under-estimate
-    executions: int = 1  # 1 + completed resume executions
+    usd_partial: bool = False
+    executions: int = 1
     input_tokens: int | None = None
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
-    # The plan points this execution consumed and [budget].max_percent (the typed
-    # fold's BudgetView rule: 0.0 until a percent-metered call runs).
     plan_consumed: float = 0.0
     plan_cap: float = 0.0
     plan_used_percent: float = 0.0
-    iteration: int | None = None  # last event carrying an int iteration
-    # session.start's ts (epoch seconds), else the first event's: a fork's log
-    # opens with loop.resume.start and never carries a session.start.
+    iteration: int | None = None
     start_ep: float | None = None
-    last_ep: float | None = None  # last event with a parseable ts
-    last_type: str | None = None  # last event's type
-    operator_blocked: bool = False  # a prompt is still unanswered on this execution
-    blocked_kind: str = ""  # oldest unanswered prompt's kind ("approval"/"question")
-    blocked_since_ep: float | None = None  # its asked-at epoch
-    last_verify_rc: int | None = None  # this execution's last verify.end exit code
-    pins: tuple[str, ...] = ()  # the operator's pinned instructions in force
-    unattended_questions: int = 0  # questions answered empty because nobody was attached
+    last_ep: float | None = None
+    last_type: str | None = None
+    operator_blocked: bool = False
+    blocked_kind: str = ""
+    blocked_since_ep: float | None = None
+    last_verify_rc: int | None = None
+    pins: tuple[str, ...] = ()
+    unattended_questions: int = 0
 
     def verify_verdict(self) -> bool | None:
-        """The gate verdict from the gate facts, for judging candidates: True =
-        the run ended all-passed (the gate vouched for the final tree), False =
-        this execution's last verify ran and failed, None = nothing observed the
-        final tree (gateless, no verify this execution, or a green made stale by
-        later edits). The folded status word cannot answer it: finish_session
-        over a red gate folds to "finished"."""
+        """Return the gate verdict for judging candidates.
+
+        The status word cannot answer it: a finish over a red gate folds to "finished".
+
+        Returns:
+            True when the run ended all-passed, False when this execution's last verify
+            failed, None when nothing observed the final tree (gateless, no verify this
+            execution, a green made stale by later edits, or a mode other than run).
+        """
         if self.mode != "run":
             return None
         if self.finished and self.all_passed:
@@ -577,9 +624,10 @@ class LogScan:
         return None
 
     def status_facts(self) -> StatusFacts:
-        """This scan's answers to the status questions, for status_for_session_dir.
-        The typed fold's `state.status_facts` must agree on the same log
-        (pinned by the status matrix test)."""
+        """Return this scan's answers to the status questions.
+
+        The typed fold's `state.status_facts` agrees on the same log.
+        """
         return StatusFacts(
             started=self.saw_start,
             finished=self.finished,
@@ -595,19 +643,31 @@ class LogScan:
 
 
 def _figure(ev: Mapping[str, object], key: str, last_good: float) -> float:
-    """A budget.update figure as the typed fold reads it: absent is 0.0 (an
-    event summing a machine's attempts or a judge's seats carries only what
-    it summed, and a kept value would be another execution's); present, the
-    tolerant read below."""
+    """Read a budget.update figure as the typed fold does.
+
+    Args:
+        ev: The event.
+        key: The figure's key.
+        last_good: The figure to keep when the value is unusable.
+
+    Returns:
+        0.0 for an absent key (an aggregate event carries only what it summed), else
+        the tolerant float.
+    """
     return _tolerant_float(ev[key], last_good) if key in ev else 0.0
 
 
 def _tolerant_float(raw: object, last_good: float) -> float:
-    """*raw* as a float when it is a real number or numeric string; else the
-    last good figure. A torn/adversarial figure degrades like a torn line,
-    never aborts the scan (the typed fold makes the same call in parse_event),
-    and falsy junk (`""`, `False`) keeps the figure; an `or 0.0` fallback would
-    silently reset it."""
+    """Read a figure that a torn or adversarial line may have mangled.
+
+    Args:
+        raw: The raw value.
+        last_good: The figure to keep when the value is unusable; falsy junk keeps it
+            too, where an `or 0.0` fallback would reset it.
+
+    Returns:
+        The float of a real number or numeric string, else `last_good`.
+    """
     if isinstance(raw, (int, float)) and not isinstance(raw, bool):
         return float(raw)
     if isinstance(raw, str):
@@ -617,23 +677,26 @@ def _tolerant_float(raw: object, last_good: float) -> float:
 
 
 def needs_new_work(*, finished: bool, end_reason: str, all_passed: bool | None) -> bool:
-    """Whether a bare resume of a run in this state would have nothing to do.
+    """Return whether a bare resume of a run in this state would have nothing to do.
 
-    True only when the agent ended it by calling `finish_session` over a tree
-    the gate certified green, or with no gate at all: the resumed execution spends
-    a call, answers in prose with no tool use, records a silent_finish, and
-    leaves a run that passed reading as failed for a tree nobody touched.
-    Every other ending is exactly what resume is for: budget_exhausted,
-    provider_error, steer_abort, a finish the gate did not certify (red, stale,
-    or never run). The one predicate behind `agent6 resume`'s refusal, the
-    web composer's hint and the wire's `needs_new_work`, so they cannot
-    disagree.
+    The one predicate behind the resume refusal, the web composer's hint and the
+    wire's `needs_new_work`. A bare resume of such a run spends a call, answers in
+    prose, records a silent_finish and leaves a passed run reading as failed.
+
+    Args:
+        finished: A session.end was seen.
+        end_reason: The session.end reason word.
+        all_passed: The verify tri-state.
+
+    Returns:
+        True only for a `finish_session` end over a tree the gate certified green or
+        that no gate judged; every other end is what resume is for.
     """
     return finished and end_reason == "finish_session" and all_passed is not False
 
 
 def finished_needs_new_work(session_dir: Path) -> bool:
-    """`needs_new_work` over the run's log, for a verb that holds only the dir."""
+    """Return `needs_new_work` over the run's log, for a verb that holds only the dir."""
     scan = scan_session_log(session_dir / LOGS_NAME)
     return needs_new_work(
         finished=scan.finished, end_reason=scan.end_reason, all_passed=scan.all_passed
@@ -641,8 +704,7 @@ def finished_needs_new_work(session_dir: Path) -> bool:
 
 
 def needs_new_work_refusal(session_id: str) -> str:
-    """The one wording for it, so `agent6 resume` and the web composer refuse a
-    finished run in the same words."""
+    """Return the refusal `agent6 resume` and the web composer share for a finished run."""
     return (
         f"run {session_id!r} already finished (the agent called finish_session)."
         " Give it new work with:\n"
@@ -650,22 +712,25 @@ def needs_new_work_refusal(session_id: str) -> str:
     )
 
 
-def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915 (linear fold, like build_parser)  # one branch per event type
-    """Fold `logs.jsonl` into a :class:`LogScan`: session.start (mode/task), the
-    last session.end (un-finished again by a later resume), the running per-execution
-    budget banked across resumes into a cumulative total, and the liveness
-    anchors (timestamps, iteration, last event type) `sessions show` reads.
+def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915  # one branch per event type
+    """Fold a session's journal into a `LogScan`.
 
-    errors="replace": a live writer can leave a torn multibyte UTF-8 tail; strict
-    decoding would take down the whole listing. The mangled line just fails
-    json.loads and is skipped."""
+    A live writer can leave a torn multibyte tail, so the file is decoded with
+    replacement and the mangled line fails `json.loads` and is skipped.
+
+    Args:
+        logs: The journal path.
+
+    Returns:
+        The scan; an empty one when the file cannot be read.
+    """
     mode, task = "?", ""
     finished, end_reason = False, ""
     all_passed: bool | None = False
     verify_scoped = False
     saw_start = False
-    usd_execution = 0.0  # latest execution's running total
-    usd_prior_executions = 0.0  # summed totals of completed (resumed-past) executions
+    usd_execution = 0.0
+    usd_prior_executions = 0.0
     saw_budget = False
     usd_partial = False
     executions = 1
@@ -679,8 +744,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915 (li
     first_ep: float | None = None
     last_ep: float | None = None
     last_type: str | None = None
-    # Prompt ids still awaiting their answer. A later event must not clear the
-    # bit: Ctrl-C emits session.steer_requested while an approval still waits.
+    # Only an answer or an execution boundary clears a prompt: a steer request leaves it waiting.
     pending_prompts: dict[str, tuple[str, float | None]] = {}
     unattended_questions = 0
     last_verify_rc: int | None = None
@@ -693,7 +757,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915 (li
                 except ValueError:
                     continue
                 if not isinstance(ev, dict):
-                    continue  # a valid-JSON non-object line (torn/adversarial)
+                    continue
                 etype = ev.get("type")
                 ep = event_epoch(ev.get("ts"))
                 if ep is not None:
@@ -705,9 +769,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915 (li
                 if isinstance(ev.get("iteration"), int):
                     iteration = ev["iteration"]
                 if etype in OPERATOR_PROMPT_EVENTS:
-                    # Coerce like events.py: the answer side discards str(id), so a
-                    # non-string id (an int) must be stored as str to match and
-                    # clear, else the run stays "waiting" forever.
+                    # Keyed by str(id) like the answer side, so an int id still clears.
                     if (pid := ev.get("id")) is not None:
                         kind = "approval" if etype == "approval.prompt" else "question"
                         pending_prompts[str(pid)] = (kind, ep)
@@ -717,12 +779,10 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915 (li
                         unattended_questions += 1
                 if etype == "session.start":
                     saw_start = True
-                    finished = False  # an execution is starting (ask REPL re-runs in place)
+                    finished = False
                     mode = str(ev.get("mode", mode))
                     task = str(ev.get("user_task", ""))
-                    # An execution boundary invalidates unanswered prompts: the new execution
-                    # re-asks with restarted ids, so a held-over entry would keep
-                    # the run "waiting" forever (the typed fold's rule too).
+                    # A new execution re-asks with restarted ids; a held-over prompt waits forever.
                     pending_prompts.clear()
                     last_verify_rc = None
                     if start_ep is None:
@@ -731,35 +791,25 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915 (li
                     finished = True
                     if isinstance(ev.get("iterations"), int):
                         iteration = ev["iterations"]
-                    # An explicit null is the ungated tri-state; an absent key
-                    # stays False.
+                    # An explicit null is the ungated tri-state; an absent key folds False.
                     raw_ap = ev.get("all_passed", False)
                     all_passed = None if raw_ap is None else bool(raw_ap)
                     verify_scoped = bool(ev.get("scoped", False))
                     end_reason = str(ev.get("reason", ""))
                 elif etype == "loop.resume.start":
                     if saw_start:
-                        # A prior execution exists: bank its budget and count a new
-                        # execution. Each resume execution starts a fresh budget (usd_total
-                        # resets to 0), so bank the finished execution's total before
-                        # it does: the displayed cost is then the true
-                        # cumulative spend across all executions (per-execution budgets stay
-                        # the enforcement mechanism). The typed fold applies the
-                        # same rule (state.BudgetView), so the hub row and the
-                        # run view can never disagree. Token counters reset too:
-                        # they are documented as the current execution's. A fork's log
-                        # opens with this event, which begins execution 1.
+                        # Each execution's budget starts at 0: bank the finished one's total.
                         usd_prior_executions += usd_execution
                         usd_execution = 0.0
                         input_tokens = output_tokens = None
                         cache_read_tokens = cache_creation_tokens = None
                         plan_consumed = plan_cap = plan_used_percent = 0.0
-                        last_verify_rc = None  # execution-scoped, like the token counters
+                        last_verify_rc = None
                         executions += 1
-                    saw_start = True  # an execution has begun; a fork's log has only this
-                    mode = str(ev.get("mode", mode))  # stamped like session.start
-                    finished = False  # a resume un-finishes the run
-                    pending_prompts.clear()  # see session.start
+                    saw_start = True
+                    mode = str(ev.get("mode", mode))
+                    finished = False
+                    pending_prompts.clear()
                 elif etype == "verify.end":
                     rc = ev.get("exit_code")
                     if isinstance(rc, int) and not isinstance(rc, bool):
@@ -767,7 +817,6 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915 (li
                 elif etype == "loop.pin.added":
                     pins.append(str(ev.get("text", "")))
                 elif etype == "loop.pin.restored":
-                    # The full list in force at execution start (the typed fold's rule).
                     raw_pins = ev.get("pins")
                     pins = [str(p) for p in raw_pins] if isinstance(raw_pins, list) else []
                 elif etype == "budget.update":
@@ -776,10 +825,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915 (li
                     usd_partial = bool(ev.get("usd_partial")) or usd_partial
                     ti, to = ev.get("input_total"), ev.get("output_total")
                     if isinstance(ti, int):
-                        # The four counters travel as one group: an event
-                        # carrying totals without the cached side (an aggregate
-                        # a draft writes, an older journal) shows none rather
-                        # than a stale one from an earlier event.
+                        # The four counters travel as one group: no stale cached side from earlier.
                         cr, cc = ev.get("cache_read_total"), ev.get("cache_creation_total")
                         input_tokens = ti
                         cache_read_tokens = cr if isinstance(cr, int) else None
@@ -834,14 +880,20 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915 (li
 def summarize_session_dir(
     session_dir: Path, *, branch_tips: Mapping[str, str] | None = None
 ) -> SessionSummary:
-    """One listing row from `logs.jsonl` + the manifest. The manifest owns the
-    task (the event clips it to 200 chars); an "ask" run's task is replaced by
-    its transcript, which shows what was asked.
+    """Fold a session dir's journal and manifest into one listing row.
 
-    *branch_tips* is the caller's one-call `git_ops.run_ref_tips` snapshot;
-    with it the row says whether the run's chain or branch still holds commits
-    no merge stamped. Without it `unmerged` stays False: no mark, never a
-    wrong one."""
+    The manifest owns the task (the event clips it to 200 chars); an ask's task is
+    the first line under its transcript's first heading, which shows what was asked.
+
+    Args:
+        session_dir: The session's state dir.
+        branch_tips: The caller's `git_ops.run_ref_tips` snapshot; with it the row says
+            whether the chain or branch still holds commits no merge stamped, without
+            it `unmerged` stays False (no mark, never a wrong one).
+
+    Returns:
+        The row.
+    """
     logs = session_dir / LOGS_NAME
     scan = scan_session_log(logs) if logs.is_file() else LogScan()
     manifest: SessionManifest | None = None
@@ -849,29 +901,19 @@ def summarize_session_dir(
         manifest = read_manifest(session_dir)
     mode, task = scan.mode, scan.task
     if manifest is not None:
-        # The mode falls back to the manifest's for a log with no session.start:
-        # a launching run still in preflight (verify inference is a ~80s LLM
-        # call before the loop's first turn), a manifest-only `fork --no-run`,
-        # or a forked/resumed execution whose log opens with loop.resume.start (which
-        # begins an execution but records no mode).
+        # A log with no session.start yet (preflight, `fork --no-run`, a fork) names no mode.
         task = manifest.user_task or task
         if mode == "?":
             mode = manifest.mode or mode
     if mode == "?" and not task:
-        task = "(no logs)"  # a husk: no manifest, and a log naming nothing
+        task = "(no logs)"
     word, reason = status_for_session_dir(session_dir, scan.status_facts())
     if mode == "ask":
-        # An ask has no task, so its row shows what was asked: the transcript's
-        # own first line, never the whole file. A JSON reader takes this field
-        # whole, and a long answer there is a transcript, not a task.
         with contextlib.suppress(OSError):
             transcript = (session_dir / "transcript.md").read_text(
                 encoding="utf-8", errors="replace"
             )
-            # The question is the first line under the transcript's first `##`
-            # heading (`## Question`, or `## Q1` from the REPL form); the first
-            # non-heading line would be the answer whenever the question begins
-            # with `#`.
+            # The first non-heading line would be the answer whenever the question begins with `#`.
             lines = transcript.splitlines()
             heading = next((i for i, ln in enumerate(lines) if ln.startswith("## ")), None)
             body = lines[heading + 1 :] if heading is not None else []
@@ -888,8 +930,7 @@ def summarize_session_dir(
             )
             if tip
         }
-        # The chain is the run's record; the branch may carry the operator's
-        # own commits on top of it, and a merge stamps whichever tip it merged.
+        # The branch may carry the operator's own commits; a merge stamps whichever tip it merged.
         unmerged = bool(tips - {manifest.base_sha}) and (
             manifest.merged is None or manifest.merged.tip not in tips
         )

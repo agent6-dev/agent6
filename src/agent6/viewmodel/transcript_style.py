@@ -1,17 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""One renderer for a folded `TranscriptItem`, shared by the CLI stream and the
-TUI conversation view.
+"""Render a folded `TranscriptItem` as styled lines for the CLI stream and the TUI view.
 
-`item_lines` produces medium-agnostic styled lines: each line is a list of
-`(text, style)` spans, where *style* is a semantic name, not an ANSI code or a
-Rich style. Each front-end maps those names to its own output (the CLI to ANSI,
-the TUI to a Rich `Text`), so the structure and the styling decisions live in
-one place and the two skins cannot drift.
-
-Relative indent is baked into the line text (a tool's result/tail sit under its
-call); each front-end adds its own left margin (the CLI a two-space gutter, the
-TUI its CSS padding).
+Each line is a list of `(text, style)` spans, the style a semantic name each
+front-end maps to its own output, so the two skins cannot drift. Relative indent
+is in the line text; each front-end adds its own left margin.
 """
 
 from __future__ import annotations
@@ -52,29 +45,31 @@ StyleName = Literal[
 Span = tuple[str, StyleName]
 Line = list[Span]
 
-# One detail level, cycled by a single shortcut in the TUI:
-#   hidden    -- thinking and tool items omitted entirely: just the dialogue,
-#                prose, operator, commits and verdict
-#   collapsed -- thinking as a one-line marker, tool detail clipped (the default)
-#   expanded  -- thinking and tool detail both in full
+# hidden omits thinking and tool items; collapsed clips them; expanded shows them in full.
 DetailLevel = Literal["hidden", "collapsed", "expanded"]
 
-TAIL_CLIP = 120  # chars of a failed tool's captured output tail shown inline
-DETAIL_CLIP = 120  # chars of a tool result's first line shown inline (the rest -> "+N more")
+TAIL_CLIP = 120
+DETAIL_CLIP = 120
 
 
 def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
-    """A tool call's lines: the call head, then the result; an in-flight call
-    is its head alone, marked running. The RESULT glyph carries the pass/fail
-    colour; the detail is its own neutral span, never tinted by the fail
-    colour. Collapsed, a long multi-line detail (a failed tool's error dump)
-    is clipped to its first line + a "+N more lines" note so it can't
-    dominate; expanded, the full detail is shown, indented and still neutral."""
+    """Render a tool call: the head, then the result under it.
+
+    The result glyph carries the pass or fail colour; the detail is its own neutral
+    span.
+
+    Args:
+        item: The tool item.
+        expanded: Show the whole detail and tail rather than a clipped first line.
+
+    Returns:
+        The lines; an in-flight call is its head alone, marked running.
+    """
     head_style: StyleName = "verify" if item.name == "run_verify_command" else "call"
     head: Line = [(f"{CALL} {item.name}", head_style)]
     if item.arg:
         head.append((f"  {item.arg}", "arg"))
-    if item.ok is None:  # in flight: the head alone, marked; its result replaces it
+    if item.ok is None:
         head.append((f"  · {item.detail or 'running'}", "more"))
         return [head]
     glyph: StyleName = "ok" if item.ok else "fail"
@@ -94,9 +89,6 @@ def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
         lines = [head, result]
     if item.tail:
         if expanded:
-            # Full captured output, line-structured: without it the expanded
-            # level would match collapsed for tool items, where a
-            # run_command's output is what the toggle is for.
             lines.extend([(f"    {ln}", "tail")] for ln in item.tail.split("\n"))
         else:
             flat = " ".join(item.tail.split())
@@ -106,11 +98,16 @@ def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
 
 
 def _thinking_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
-    """A reasoning block's lines. Expanded: one entry per body line (the
-    contract every consumer's line arithmetic relies on), continuation lines
-    aligned under the glyph. Collapsed: one line of the reasoning as the
-    summary (first non-empty line, clipped) with a more-count, so collapsed
-    still says what the model is thinking about."""
+    """Render a reasoning block.
+
+    Args:
+        item: The thinking item.
+        expanded: One line per body line, the contract every consumer's line
+            arithmetic relies on; collapsed gives the first non-empty line and a count.
+
+    Returns:
+        The lines.
+    """
     if expanded:
         body_lines = item.body.split("\n")
         out: list[Line] = [[(f"{THINK} ", "think-marker"), (body_lines[0], "thinking")]]
@@ -127,11 +124,16 @@ def _thinking_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
 
 
 def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
-    """The styled lines for one folded conversation item (both skins render these).
-    `detail` is the one detail level cycled in the TUI (see DetailLevel)."""
+    """Render one folded conversation item as styled lines.
+
+    Args:
+        item: The item.
+        detail: The detail level the TUI cycles.
+
+    Returns:
+        The lines; none for a thinking or tool item at the hidden level.
+    """
     if detail == "hidden" and item.kind in ("thinking", "tool"):
-        # The least-noise level reads as pure dialogue; the items survive in
-        # the fold, so cycling back restores them.
         return []
     lines: list[Line] = []
     if item.kind == "thinking":
@@ -141,23 +143,17 @@ def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
     elif item.kind == "tool":
         lines.extend(_tool_lines(item, expanded=detail == "expanded"))
     elif item.kind == "operator":
-        # The operator's own words (steer / resume follow-up): always shown in
-        # full at every detail level, as the other half of the dialogue.
         body_lines = item.body.split("\n")
         lines.append([(f"{OPERATOR} ", "operator"), (body_lines[0], "operator")])
         lines.extend([(f"  {ln}", "operator")] for ln in body_lines[1:])
     elif item.kind == "commit":
         lines.append([(f"{COMMIT} commit  {item.detail}", "commit")])
     elif item.kind == "marker":
-        # First line is the divider headline; any further lines (a parallel
-        # dispatch's tasks, a join's per-lane rows) sit under it, indented.
         body_lines = item.body.split("\n")
         lines.append([(f"── {body_lines[0]} ──", "marker")])
         lines.extend([(f"   {ln}", "marker")] for ln in body_lines[1:])
     elif item.kind == "done":
-        # Green for a verified pass, the failure colour for a red gate,
-        # neutral for an end no gate judged (a gateless finish, the operator's
-        # own stop or undo).
+        # Neutral for an end no gate judged: a gateless finish, a stop, an undo.
         badge: Line = [
             (
                 f"{DONE} {item.name}",
@@ -167,7 +163,7 @@ def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
         body_lines = item.body.split("\n") if item.body else []
         if body_lines:
             badge.append((f"  {body_lines[0]}", "body"))
-        lines.append([])  # a blank line sets the verdict apart
+        lines.append([])
         lines.append(badge)
         lines.extend([(f"  {ln}", "body")] for ln in body_lines[1:])
         lines.append([(item.detail, "done-detail")])

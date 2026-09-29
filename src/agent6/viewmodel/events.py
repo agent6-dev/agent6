@@ -1,24 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Typed read model for the logs.jsonl event families the SessionState fold consumes.
+"""Type the logs.jsonl event families the session fold consumes.
 
-The write side (`agent6.events.EventSink`) appends free-form `{"type", "ts",
-**fields}` dicts and never validates; ~90 distinct types exist. The SessionState fold
-(`viewmodel.state.apply_event`) structurally consumes only the families defined
-here. `parse_event` turns one raw event dict into exactly one of those frozen
-families, or a `RawEvent` passthrough for every other type, the compatibility
-surface that keeps old run dirs folding: a type this module does not know becomes
-`RawEvent`, which the fold drops, never a crash.
+The write side (`agent6.events.EventSink`) appends free-form `{"type", "ts", **fields}`
+dicts and never validates; about 90 types exist. `parse_event` turns one raw dict into
+one of the frozen families here, or a `RawEvent` for every other type, which the fold
+drops: an old run dir folds without a crash whatever it holds.
 
-Hand-rolled frozen dataclasses, not pydantic (unlike `machine/journal.py`):
-logs.jsonl is append-only history, so the fold keeps the exact coercion
-semantics old run dirs were written against (`str()`/`int()`/`bool()` with
-per-field defaults, `as_int`'s swallow-to-zero, the isinstance guards). A
-pydantic model would impose its own coercion and validation-failure semantics,
-changing how a malformed old line folds; these parsers hold that coercion in
-one place per family. `parse_event` never raises on an unknown type (RawEvent)
-but keeps the latent raise on a non-coercible known field (e.g. `verify.end`
-exit_code).
+Frozen dataclasses, not pydantic: logs.jsonl is append-only history, so each family
+holds the exact coercion old run dirs were written against (`str()`, `int()`, `bool()`
+with per-field defaults, `as_int`'s swallow-to-zero, the isinstance guards) in one
+place, where a pydantic model would impose its own coercion and failure semantics.
 """
 
 from __future__ import annotations
@@ -28,19 +20,20 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-# A run session begins: a fresh run() emits session.start; a resumed execution emits
-# only loop.resume.start (never a second session.start). Per-process state that
-# restarts at a session boundary (the prompt-id counters, a screen's
-# live/finished tracking, the receipt's mode) keys on both. One definition so
-# the folds can't drift.
+# A fresh run emits session.start; a resumed execution emits only loop.resume.start.
 SESSION_START_EVENTS = frozenset({"session.start", "loop.resume.start"})
 
 
 def event_epoch(value: object) -> float | None:
-    """Parse an event `ts` to epoch seconds, or None if unparseable.
+    """Return an event `ts` as epoch seconds, None when unparseable.
 
-    EventSink writes `ts` as an ISO-8601 string (`datetime.isoformat`),
-    so the elapsed-time anchor must parse that, not only bare numbers.
+    Accepts the ISO-8601 string `EventSink` writes as well as a bare number.
+
+    Args:
+        value: The raw `ts` field.
+
+    Returns:
+        The epoch seconds, or None for a bool, a non-ISO string or any other type.
     """
     if isinstance(value, bool):
         return None
@@ -55,17 +48,30 @@ def event_epoch(value: object) -> float | None:
 
 
 def tool_result_ok(value: Any) -> bool:
-    """The persisted `tool.result.ok` flag, tolerating the stringified form on
-    older logs: "True" is ok, "False" (and everything else) is not. The one
-    coercion both folds use, so a run-state surface and the conversation can
-    never disagree on a tool's verdict."""
+    """Return the persisted `tool.result.ok` flag, tolerating the stringified form.
+
+    Both folds use this one coercion, so a run-state surface and the conversation
+    never disagree on a tool's verdict.
+
+    Args:
+        value: The raw `ok` field.
+
+    Returns:
+        True for True or "True"; False for everything else.
+    """
     return value in (True, "True")
 
 
 def readable_summary(value: Any) -> str:
-    """A tool result's `summary` should be a string; a malformed dict/list value
-    renders as neutral JSON, not the single-quoted Python repr `str()`
-    produces."""
+    """Return a tool result's `summary` as text.
+
+    Args:
+        value: The raw `summary` field.
+
+    Returns:
+        The string as is; a dict or list as JSON rather than a Python repr; anything
+        else through `str()`.
+    """
     if isinstance(value, str):
         return value
     if isinstance(value, (dict, list)):
@@ -77,7 +83,7 @@ def readable_summary(value: Any) -> str:
 
 
 def as_int(value: object) -> int:
-    """An event field as an int; 0 for anything unusable (untrusted log data)."""
+    """Return an event field as an int, 0 for anything unusable."""
     try:
         return int(value)  # type: ignore[arg-type]  # int() rejects bad types itself
     except (TypeError, ValueError):
@@ -86,24 +92,34 @@ def as_int(value: object) -> int:
 
 @dataclass(frozen=True, slots=True)
 class SessionStart:
+    """session.start: a fresh run began on the task text."""
+
     user_task: str
 
 
 @dataclass(frozen=True, slots=True)
 class ResumeStart:
-    """loop.resume.start: a finished/stopped run restarts in place."""
+    """loop.resume.start: a finished or stopped run restarts in place."""
 
 
 @dataclass(frozen=True, slots=True)
 class GraphUpdate:
-    # The node map is walked defensively by the tree builder (isinstance guards for
-    # cycles, dupes, and malformed non-dict values), so it stays raw here.
+    """graph.update: the task tree and its cursor.
+
+    Attributes:
+        nodes: The raw node map; the tree builder walks it with isinstance guards
+            for cycles, duplicates and malformed values, so it is not coerced here.
+        cursor: The id of the task in progress, None when none is.
+    """
+
     nodes: Any
     cursor: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class DiffUpdated:
+    """diff.updated: the run's cumulative patch and the commit it reaches."""
+
     patch: str
     sha: str
 
@@ -119,6 +135,8 @@ class AutoCommit:
 
 @dataclass(frozen=True, slots=True)
 class RoleCall:
+    """role.call: a model call began for a role."""
+
     role: str
     model: str
     provider: str
@@ -126,6 +144,8 @@ class RoleCall:
 
 @dataclass(frozen=True, slots=True)
 class RoleResult:
+    """role.result: a model call returned, with its input token counts."""
+
     tokens_in: int
     cache_read: int
     cache_creation: int
@@ -133,26 +153,45 @@ class RoleResult:
 
 @dataclass(frozen=True, slots=True)
 class RoleTextDelta:
+    """role.text_delta: a streamed piece of the assistant's text."""
+
     text: str
 
 
 @dataclass(frozen=True, slots=True)
 class RoleThinkingDelta:
+    """role.thinking_delta: a streamed piece of the assistant's thinking."""
+
     text: str
 
 
 @dataclass(frozen=True, slots=True)
 class ToolCall:
+    """tool.call: a tool was dispatched.
+
+    Attributes:
+        name: The tool's name.
+        args: The raw args; rendered per value and isinstance-checked downstream, so a
+            garbled value degrades instead of raising.
+        call_id: The correlation id stamped per dispatch; None on a log without ids.
+    """
+
     name: str
-    # Raw args: rendered per-value and isinstance-checked for the finish
-    # summary, so a non-dict value degrades instead of raising.
     args: Any
-    # Correlation id stamped per dispatch; None on historical id-less logs.
     call_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class ToolResult:
+    """tool.result: a tool returned.
+
+    Attributes:
+        name: The tool's name.
+        ok: The tool's verdict.
+        summary: The result's one-line summary.
+        call_id: The correlation id of the matching call; None on a log without ids.
+    """
+
     name: str
     ok: bool
     summary: str
@@ -161,11 +200,15 @@ class ToolResult:
 
 @dataclass(frozen=True, slots=True)
 class VerifyStart:
+    """verify.start: the verify gate began running its command."""
+
     cmd: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class VerifyEnd:
+    """verify.end: the verify gate finished, with its exit code and output tails."""
+
     cmd: tuple[str, ...]
     exit_code: int
     duration_s: float
@@ -175,9 +218,27 @@ class VerifyEnd:
 
 @dataclass(frozen=True, slots=True)
 class BudgetUpdate:
+    """budget.update: the cumulative token and spend figures.
+
+    Attributes:
+        input_total: Input tokens so far.
+        output_total: Output tokens so far.
+        cache_read_total: The cached side of the input; 0 in a journal written before
+            it was recorded.
+        cache_creation_total: Cache-creation tokens so far.
+        usd_total: Spend so far.
+        usd_partial: Some of the spend is unpriced, so `usd_total` is a lower bound.
+        usd_cap: The execution's spend cap; -1 for unlimited.
+        tokens_unmetered: Tokens no price list covered.
+        tokens_fallback_cap: The token cap that stands in for an unpriceable run.
+        plan_used_percent: Subscription plan usage, 0 when the provider is not plan-metered.
+        plan_consumed: Plan points consumed by this run.
+        plan_cap: The plan's points cap.
+        plan_resets_at: When the plan window resets, as epoch seconds.
+    """
+
     input_total: int
     output_total: int
-    # The cached side of the input (0 in a journal written before it was recorded).
     cache_read_total: int
     cache_creation_total: int
     usd_total: float
@@ -185,7 +246,6 @@ class BudgetUpdate:
     usd_cap: float
     tokens_unmetered: int
     tokens_fallback_cap: int
-    # Subscription plan usage (percent-metered providers); 0s when absent.
     plan_used_percent: float = 0.0
     plan_consumed: float = 0.0
     plan_cap: float = 0.0
@@ -194,45 +254,72 @@ class BudgetUpdate:
 
 @dataclass(frozen=True, slots=True)
 class ApprovalPrompt:
+    """approval.prompt: the run is waiting for an operator's yes or no.
+
+    Attributes:
+        id: The prompt's id, matched by the answer.
+        prompt: The words shown to the operator.
+        standing: An "allow all" would cover calls beyond this one, so a front-end
+            offers the button; a log written before the field existed folds True.
+        asked_ep: When it was asked, as epoch seconds, for the waiting status's age;
+            None when the line carried no parseable ts.
+        call_id: The dispatched tool call the prompt gates; None for one gating no call
+            (a verify the harness runs itself) or a log written before the field.
+    """
+
     id: str
     prompt: str
-    # Whether an "allow all" would actually cover anything beyond this call, so
-    # a front-end only offers the button when it means something. A log written
-    # before the field existed folds True.
     standing: bool = True
-    # When it was asked (epoch), for the waiting status's age; None on a log
-    # whose line carried no parseable ts.
     asked_ep: float | None = None
-    # The dispatched tool call the prompt gates; None for one gating no call
-    # (a verify the harness runs itself) or a log written before the field.
     call_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class ApprovalAnswer:
+    """approval.answer: an operator answered an approval prompt."""
+
     id: str
     approved: bool
 
 
 @dataclass(frozen=True, slots=True)
 class EventQuestion:
+    """One question of a question.prompt, with its offered options."""
+
     question: str
     options: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class QuestionPrompt:
+    """question.prompt: the run is waiting for an operator's answers.
+
+    Attributes:
+        id: The prompt's id, matched by the answer.
+        questions: The questions asked.
+        asked_ep: When it was asked, as epoch seconds, for the waiting status's age.
+        call_id: The gated `ask_user` call; None for a pre-run question.
+    """
+
     id: str
     questions: tuple[EventQuestion, ...]
-    asked_ep: float | None = None  # asked-at epoch, for the waiting status's age
-    call_id: int | None = None  # the gated `ask_user` call; None for a pre-run question
+    asked_ep: float | None = None
+    call_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class QuestionAnswer:
+    """question.answer: the answers to a question prompt.
+
+    Attributes:
+        id: The prompt's id.
+        answers: One answer per question.
+        unseen: Nobody was attached, so the harness answered empty.
+    """
+
     id: str
     answers: tuple[str, ...]
-    unseen: bool = False  # nobody was attached: the harness answered empty
+    unseen: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,18 +331,20 @@ class PinAdded:
 
 @dataclass(frozen=True, slots=True)
 class PinsRestored:
-    """loop.pin.restored: a resume/fork execution restored the snapshot's pins. The
-    full list replaces the fold's pins (a plain resume's log already carries
-    the pin.added events; a fork's fresh log carries only this)."""
+    """loop.pin.restored: a resume or fork execution restored the snapshot's pins.
+
+    The full list replaces the fold's pins: a fork's fresh log carries only this event.
+    """
 
     pins: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class CompactRestored:
-    """loop.compact.restored: a resume/fork execution counted the elision markers its
-    restored context actually carries. The counts replace the fold's, since a
-    fork's fresh log has no compact.dropped events to fold."""
+    """loop.compact.restored: the elision markers a restored context carries.
+
+    The counts replace the fold's: a fork's fresh log has no compact.dropped events.
+    """
 
     elided: int
     gists: int
@@ -271,7 +360,7 @@ class CompactDropped:
 
 @dataclass(frozen=True, slots=True)
 class CompactGists:
-    """loop.compact.gists: gists created / demoted in a tier-1 pass."""
+    """loop.compact.gists: gists created and demoted in a tier-1 pass."""
 
     gisted: int
     demoted: int
@@ -279,8 +368,10 @@ class CompactGists:
 
 @dataclass(frozen=True, slots=True)
 class CompactSummarised:
-    """loop.compact.summarise.done: a tier-2 restart replaced the history (and
-    with it every elision marker and gist the context held)."""
+    """loop.compact.summarise.done: a tier-2 restart replaced the history.
+
+    Every elision marker and gist the context held went with it.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,19 +381,27 @@ class SteerRequested:
 
 @dataclass(frozen=True, slots=True)
 class SessionEnd:
-    # The verify tri-state: True = final tree observed verify-green, False =
-    # not green (red/stale/error), None = nothing gated it (no verify command).
+    """session.end: the execution ended.
+
+    Attributes:
+        all_passed: True when the final tree was observed verify-green, False when not
+            (red, stale or error), None when no verify command gated it.
+        reason: The end reason word.
+        scoped: The gate ran scoped to the tests nearest the run's diff because the
+            full command overran `verify_timeout_s`, so a pass is qualified.
+    """
+
     all_passed: bool | None
     reason: str
-    # The gate that judged the tree ran scoped to the tests nearest the run's
-    # diff (the full command overran verify_timeout_s): a pass is qualified.
     scoped: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class SessionUndone:
-    """session.undone: /undo forked this run; surfaces follow the child with
-    the undone text back in the composer."""
+    """session.undone: /undo forked this run.
+
+    Surfaces follow the child with the undone text back in the composer.
+    """
 
     new_session_id: str
     undone_text: str
@@ -310,9 +409,10 @@ class SessionUndone:
 
 @dataclass(frozen=True, slots=True)
 class RawEvent:
-    """Any event the fold does not structurally consume (the ~65 loop.* telemetry
-    types, unknown/future types, a line with no `type`). Carries the raw dict so
-    the log-line renderer still reads it; the fold drops it."""
+    """Any event the fold does not consume: telemetry, unknown types, a line with no type.
+
+    Carries the raw dict so the log-line renderer still reads it; the fold drops it.
+    """
 
     type: str
     raw: dict[str, Any] = field(default_factory=dict)
@@ -351,17 +451,24 @@ Event = (
 
 
 def _call_id(raw: dict[str, Any]) -> int | None:
+    """Return the event's `call_id` when it is an int, else None."""
     cid = raw.get("call_id")
     return cid if isinstance(cid, int) else None
 
 
 def parse_event(raw: dict[str, Any]) -> Event:
-    """One raw logs.jsonl event dict -> one typed family, or RawEvent for the rest.
+    """Parse one raw logs.jsonl event into its typed family.
 
-    A malformed field inside a known family (a torn numeric in `verify.end` or
-    `budget.update`) degrades to RawEvent exactly like an unknown type: the
-    fold runs unwrapped inside live tails (web SSE, TUI reader), so it must
-    never raise on a line an interrupted writer left behind."""
+    A malformed field inside a known family (a torn numeric in `verify.end`) degrades
+    to `RawEvent` like an unknown type: the fold runs unwrapped inside live tails, so
+    it never raises on a line an interrupted writer left behind.
+
+    Args:
+        raw: The event dict as read from the journal.
+
+    Returns:
+        The typed family, or `RawEvent` for every other type.
+    """
     try:
         return _parse_known(raw)
     except (ValueError, TypeError, AttributeError, KeyError, IndexError):
@@ -369,8 +476,18 @@ def parse_event(raw: dict[str, Any]) -> Event:
 
 
 def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912  # one branch per event type
-    """The per-family arms, one coercion per family, so every event on disk
-    folds to the same output field for field."""
+    """Parse a raw event by type, one coercion per family.
+
+    Args:
+        raw: The event dict as read from the journal.
+
+    Returns:
+        The typed family, or `RawEvent` for an unknown type.
+
+    Raises:
+        ValueError: A known family's field cannot be coerced.
+        TypeError: A known family's field has an unusable type.
+    """
     match raw.get("type", ""):
         case "session.start":
             return SessionStart(user_task=str(raw.get("user_task", "")))
@@ -379,8 +496,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
         case "graph.update":
             nodes = raw.get("nodes", {}) or {}
             if not isinstance(nodes, dict):
-                # Degrade, don't coerce: an empty-dict fold would replace the
-                # task tree; RawEvent keeps the last good graph.
+                # An empty-dict fold would replace the task tree; RawEvent keeps the last one.
                 raise ValueError("graph.update nodes must be an object")
             cursor = raw.get("cursor")
             return GraphUpdate(
@@ -415,8 +531,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             args = raw.get("args")
             return ToolCall(
                 name=str(raw.get("name", "")),
-                # Coerce, don't degrade: the call happened even if its args
-                # field is garbled, and args is display-only downstream.
+                # The call happened even with garbled args, and args is display-only downstream.
                 args=args if isinstance(args, dict) else {},
                 call_id=_call_id(raw),
             )
@@ -513,8 +628,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 undone_text=str(raw.get("undone_text", "") or ""),
             )
         case "session.end":
-            # An explicit null is the ungated tri-state; an absent key (a
-            # pre-tri-state log) stays False.
+            # An explicit null is the ungated tri-state; an absent key folds False.
             raw_ap = raw.get("all_passed", False)
             return SessionEnd(
                 all_passed=None if raw_ap is None else bool(raw_ap),

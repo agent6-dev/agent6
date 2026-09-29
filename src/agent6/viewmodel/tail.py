@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Stdlib JSONL tail-follower. No third-party deps."""
+"""Tail a JSONL journal with the stdlib alone."""
 
 from __future__ import annotations
 
@@ -21,29 +21,27 @@ def tail_events(
     start_at: int | None = None,
     on_position: Callable[[int], None] | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Yield JSON-decoded events from *path* as they are appended.
+    """Yield the journal's events as they are appended.
 
-    *on_position* hears the byte offset an event ends at, before that event
-    is yielded, so a caller handling the event can order its own lines
-    against the journal read so far.
+    Reads bytes and splits on newlines before decoding: a writer flushes a long line
+    in several syscalls, so a poll can hit EOF inside a multibyte sequence. Only
+    complete lines are decoded; the byte tail stays pending until its newline arrives.
+    A malformed line is skipped (a partial write in flight is picked up next poll).
 
-    - Waits for the file to appear (up to forever if follow=True).
-    - Yields each existing line on startup, then tails for new ones.
-    - If *stop_when_finished* is true, exits after a `session.end` event.
-    - If *should_stop* is given, exits at the next poll boundary once it returns
-      True (lets a caller cancel a follow, e.g. on client disconnect).
-    - If *follow* is false, yields existing lines and returns.
-    - If *start_at* is given, the bytes before that offset are skipped: a
-      resumed run's journal already holds the prior executions a viewer has seen,
-      and the caller measures the end before the execution starts, so a line the
-      execution appends before the tail attaches is not lost with them.
-    - Skips malformed JSON lines silently (the writer may have a partial
-      write in flight; we'll pick it up on the next poll).
+    Args:
+        path: The journal file; waited for while it does not exist and `follow` is set.
+        poll_s: Seconds between polls.
+        follow: Keep polling for new lines after the existing ones; false returns after them.
+        stop_when_finished: Return after a `session.end` that nothing follows in its batch.
+        should_stop: Polled each round; once true, the lines already appended are
+            yielded and the tail returns.
+        start_at: A byte offset to start from, skipping the prior executions a viewer
+            has seen; measured before the execution starts, so nothing it appends is lost.
+        on_position: Hears the byte offset an event ends at, before that event is yielded,
+            so a caller can order its own lines against the journal read so far.
 
-    Reads bytes and splits on b"\\n" before decoding: writers flush long lines
-    in multiple syscalls, so a poll can hit EOF mid multibyte UTF-8 sequence and
-    a text-mode read() would raise UnicodeDecodeError. Only complete lines are
-    decoded; the byte tail stays pending until its newline arrives.
+    Yields:
+        Each JSON-decoded event, in file order.
     """
     while follow and not path.exists():
         if should_stop is not None and should_stop():
@@ -55,14 +53,10 @@ def tail_events(
     pos = start_at or 0
     pending = b""
     heard = on_position or _ignore_position
-    final_drain = False  # should_stop fired: read what is already appended, then stop
+    final_drain = False
     while True:
         if should_stop is not None and not final_drain and should_stop():
-            # The writer is gone (a dead worker) or the caller is leaving: what
-            # sits in the file is final, so hand it over before returning.
-            # Otherwise a worker that finishes and exits within one poll leaves
-            # its last events (the finish, session.end) unread, one step short
-            # of the run's end.
+            # A worker that exits within one poll leaves its last events unread otherwise.
             final_drain = True
         try:
             with path.open("rb") as fh:
@@ -76,13 +70,9 @@ def tail_events(
             continue
 
         if chunk:
-            base = pos - len(chunk) - len(pending)  # where the first line below starts
+            base = pos - len(chunk) - len(pending)
             parsed, pending = _complete_lines(pending + chunk, base)
-            # stop_when_finished halts at a session.end only when nothing follows it
-            # in this batch: a resume appends events after a session.end (a stopped
-            # run's steer_abort, or the resume of a finished one), and stopping
-            # at that superseded end would silently drop everything the resumed
-            # run does. A live run's real end is the batch's last event.
+            # A resume appends past a session.end; only the batch's last one is the real end.
             for i, (end, evt) in enumerate(parsed):
                 heard(end)
                 yield evt
@@ -103,8 +93,16 @@ def _ignore_position(_end: int) -> None:
 
 
 def _complete_lines(buffer: bytes, base: int) -> tuple[list[tuple[int, dict[str, Any]]], bytes]:
-    """*buffer*'s complete lines as (end offset, event), malformed ones skipped,
-    and the trailing fragment; *base* is the offset the buffer starts at."""
+    """Split a buffer into its complete events and the trailing fragment.
+
+    Args:
+        buffer: The bytes read so far.
+        base: The byte offset the buffer starts at.
+
+    Returns:
+        The (end offset, event) pairs of the complete lines, malformed ones skipped,
+        and the bytes after the last newline.
+    """
     lines = buffer.split(b"\n")
     parsed: list[tuple[int, dict[str, Any]]] = []
     end = base
@@ -116,7 +114,7 @@ def _complete_lines(buffer: bytes, base: int) -> tuple[list[tuple[int, dict[str,
 
 
 def journal_size(path: Path) -> int:
-    """The journal's size in bytes, 0 when it does not exist yet."""
+    """Return the journal's size in bytes, 0 when it does not exist yet."""
     try:
         return path.stat().st_size
     except OSError:
@@ -124,6 +122,7 @@ def journal_size(path: Path) -> int:
 
 
 def _parse_event_line(line: bytes) -> dict[str, Any] | None:
+    """Return one journal line decoded, None for a blank, malformed or non-object line."""
     if not line.strip():
         return None
     try:
@@ -134,12 +133,15 @@ def _parse_event_line(line: bytes) -> dict[str, Any] | None:
 
 
 class LogTail:
-    """Incremental logs.jsonl reader for a UI poll loop. Each `read` returns the
-    events appended since the last call (byte-offset based, tolerant of a partial
-    line at EOF). One reader follows a run and its same-dir resume; cheaper than
-    re-reading the whole file every tick. A file shorter than the last position
-    was rewritten: the read starts over from its head and `rewound` says so,
-    for a holder folding the events to start its fold over too."""
+    """Read a journal incrementally for a UI poll loop.
+
+    One reader follows a run and its same-dir resume by byte offset, tolerating a
+    partial line at EOF.
+
+    Attributes:
+        rewound: The last read found the file shorter than its position (rewritten)
+            and started over from its head, so a holder folding the events starts over too.
+    """
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -148,6 +150,7 @@ class LogTail:
         self.rewound = False
 
     def read(self) -> list[dict[str, Any]]:
+        """Return the events appended since the last read, none when the file is unreadable."""
         out: list[dict[str, Any]] = []
         self.rewound = False
         try:

@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""One-line renderings of a run's events for the log views: the argument
-preview every tool call carries, and the `format_log_line` row.
-
-Every log pane paints the return value as one row."""
+"""Render a run's events as the one-line rows the log views paint."""
 
 from __future__ import annotations
 
@@ -15,8 +12,7 @@ from agent6.viewmodel.transcript import scrub_terminal_controls
 
 
 def _edit_kind(edit: dict[str, object]) -> str:
-    """The kind an `apply_edit` pair resolves to, as the tool resolves it: an
-    omitted discriminator follows the pair's shape."""
+    """Return the kind an `apply_edit` pair resolves to, as the tool resolves it."""
     kind = str(edit.get("kind") or "")
     if kind:
         return kind
@@ -24,9 +20,16 @@ def _edit_kind(edit: dict[str, object]) -> str:
 
 
 def _render_arg_value(key: str, value: Any) -> str:
-    """One arg value, human-shaped: argv as a shell line, ask_user's questions as
-    their text, apply_edit's edits as their kinds, everything else as its string
-    / repr."""
+    """Render one arg value for a reader.
+
+    Args:
+        key: The arg's name.
+        value: The arg's raw value.
+
+    Returns:
+        An argv as a shell line, questions as the first one's text, edits as their
+        kinds, a string as is, anything else as its repr.
+    """
     if key == "argv" and isinstance(value, (list, tuple)) and value:
         return shlex.join(str(a) for a in value)
     if key == "questions" and isinstance(value, (list, tuple)) and value:
@@ -34,27 +37,31 @@ def _render_arg_value(key: str, value: Any) -> str:
         q = first.get("question", "") if isinstance(first, dict) else str(first)
         return str(q) + (f" (+{len(value) - 1})" if len(value) > 1 else "")
     if key == "edits" and isinstance(value, (list, tuple)) and value:
-        # apply_edit: the kinds (replace/create), not the raw
-        # {old_string, ...} dict repr.
         return ", ".join(_edit_kind(e) if isinstance(e, dict) else str(e) for e in value)
     return value if isinstance(value, str) else repr(value)
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
-    """An untrusted event field as a dict; the raw log renderer must be total."""
+    """Return an untrusted event field as a dict, empty for any other type."""
     return value if isinstance(value, dict) else {}
 
 
 def _as_list(value: Any) -> list[Any]:
-    """An untrusted event field as a list; the raw log renderer must be total."""
+    """Return an untrusted event field as a list, empty for any other type."""
     return list(value) if isinstance(value, (list, tuple)) else []
 
 
 def render_args(args: dict[str, Any], *, max_value: int = 80) -> str:
-    """Render an args dict as `k=v, ...`, truncating each value to *max_value*
-    chars. The inline table uses the tight default; the detail modal renders with
-    a generous cap so a long arg (a command, a path, a payload) is readable while
-    one pathological value still can't bloat the bounded history."""
+    """Render an args dict as `k=v, ...`.
+
+    Args:
+        args: The tool call's args.
+        max_value: The characters each value keeps; the inline row uses the default,
+            the detail view a generous cap.
+
+    Returns:
+        The pairs joined by ", ".
+    """
     pairs: list[str] = []
     for k, v in args.items():
         s = _render_arg_value(k, v)
@@ -65,15 +72,24 @@ def render_args(args: dict[str, Any], *, max_value: int = 80) -> str:
 
 
 def _cut(text: str, limit: int) -> str:
-    """*text* to at most *limit* characters, ending in an ellipsis when cut,
-    so a reader can tell a value ended from a value that was clipped."""
+    """Return the text cut to `limit` characters, an ellipsis marking the cut."""
     return text if len(text) <= limit else text[: limit - 1] + "\u2026"
 
 
 def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR0915  # one branch per event type
+    """Render one event as a log row: timestamp, type, then the salient field.
+
+    The row embeds model-authored text, so it is scrubbed of terminal controls and
+    kept to one line.
+
+    Args:
+        event: The raw event dict.
+
+    Returns:
+        The row.
+    """
     ts = str(event.get("ts", ""))
     etype = str(event.get("type", "?"))
-    # Compact one-line representation: timestamp, type, salient field.
     salient = ""
     match etype:
         case "graph.update":
@@ -92,9 +108,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
         case "tool.result":
             summ = events.readable_summary(event.get("summary", ""))
             salient = f"{event.get('name', '')} ok={event.get('ok')} {summ}"
-            # Execution tools carry capped output tails; show a one-line hint of
-            # the latest stderr (else stdout) so a command's outcome reads in the
-            # log without opening the transcript. The full tail is in the event.
+            # A hint of the latest stderr (else stdout), so an outcome reads without the transcript.
             tail = str(event.get("stderr_tail") or event.get("stdout_tail") or "")
             snippet = _cut(" ".join(tail.split()), 100)
             if snippet:
@@ -104,7 +118,6 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
         case "role.result":
             role = event.get("role", "")
             if event.get("error"):
-                # The error is how a dead run gets diagnosed from the log view.
                 salient = f"{role} error: {_cut(str(event.get('error')), 160)}"
             else:
                 tin = event.get("tokens_in")
@@ -117,8 +130,6 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
         case "loop.pin.refused":
             salient = f"pin refused: over the {event.get('limit')}-char cap"
         case "loop.pin.restored":
-            # The pins in force at execution start: --pin on a fresh run, or a
-            # resume/fork's snapshot. The event never says which.
             pins = [str(p) for p in _as_list(event.get("pins"))]
             salient = (
                 f"{len(pins)} pinned: " + " | ".join(_cut(p, 80) for p in pins)
@@ -153,8 +164,6 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
         case "loop.compact.summarise.done":
             salient = f"restarted on a {event.get('summary_chars')}-char progress summary"
         case "loop.compact.summarise.failed" | "loop.compact.gist.failed":
-            # Without the reason a 429'd summariser reads as nothing having
-            # happened.
             salient = _cut(str(event.get("error", "")), 160)
         case "loop.compact.requested":
             focus = str(event.get("focus", ""))
@@ -164,8 +173,6 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
         case "loop.compact.refused":
             salient = _cut(str(event.get("reason", "")), 160)
         case "jail.degraded":
-            # The sandbox came up weaker than asked, or left a process behind:
-            # the reason is the row. Startup stderr spans lines; the row is one.
             salient = _cut(" ".join(str(event.get("detail", "")).split()), 160)
         case "mcp.server_unavailable":
             salient = f"{event.get('server')} unavailable: {_cut(str(event.get('error', '')), 120)}"
@@ -175,8 +182,6 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
             salient = f"iteration={event.get('iteration')} messages={event.get('messages')}"
         case "budget.update":
             usd = event.get("usd_total")
-            # Not format_usd: this is the raw log view, but a float-repr tail
-            # ($0.015091189999999999) is noise, not truth.
             usd_s = f"${usd:.4f}" if isinstance(usd, (int, float)) else f"${usd}"
             salient = f"in={event.get('input_total')} out={event.get('output_total')} {usd_s}"
         case "session.start":
@@ -201,11 +206,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
         case _:
             salient = ""
     line = f"{ts[11:23] if len(ts) > 23 else ts}  {etype:<18}"
-    # The salient text embeds model-authored fields (args, summaries, output
-    # tails): scrub the finished line so no skin's log pane relays an escape.
-    # One line by contract: the scrubber keeps \n (a transcript needs it), and
-    # a provider error carrying an SSE dump would paint a dozen rows with no
-    # timestamp and no event name on any of them.
+    # The scrubber keeps newlines for transcripts; a provider error's SSE dump would paint rows.
     if not salient:
         return line
     scrubbed = scrub_terminal_controls(f"{line} {salient}")

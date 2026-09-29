@@ -1,19 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Render a session's per-call provider transcripts into a readable conversation.
+"""Fold a session's per-call provider transcripts into conversation turns and render them.
 
-agent6 writes one JSON file per LLM round-trip under `<run>/transcripts/`:
-the full, lossless `{request, response}` (secrets redacted). Each request
-carries the whole conversation up to that call, so the sequence is a complete,
-self-contained record (no join with `logs.jsonl` needed). This module folds
-that sequence, across the Chat Completions, Anthropic, and Responses wire
-shapes, into an ordered list of conversation turns and renders them as
-Markdown.
-
-`agent6 sessions transcript` is the CLI front end (`--json` returns the raw
-transcript array instead). The fold walks transcripts in seq order, emitting
-only newly-introduced messages per call, so the cumulative-snapshot growth is
-not double-printed and a mid-run context-compaction reset shows as a marker.
+agent6 writes one JSON file per round-trip under `<run>/transcripts/`, the redacted
+`{request, response}`; each request carries the whole conversation up to that call.
+The fold walks them in seq order across the Chat Completions, Anthropic and Responses
+wire shapes, emitting only the messages each call introduced, so the cumulative
+snapshots are not double-printed and a compaction restart shows as a marker.
+`agent6 sessions transcript` is the CLI front end.
 """
 
 from __future__ import annotations
@@ -27,9 +21,8 @@ from typing import Any
 
 from agent6.providers import result_text
 
-# Matches ELISION_PREFIX in harness/_compaction.py, duplicated so the
-# read-model needs no runtime import of the engine; a test pins the equality
-# and the placeholder bytes themselves are pinned in the compaction tests.
+# Equals ELISION_PREFIX in harness/_compaction.py (a test pins it), so the read model
+# needs no engine import.
 ELISION_MARKER_PREFIX = "<elided by context compaction"
 _GIST_MARKER_PREFIX = ELISION_MARKER_PREFIX + " (distilled)"
 _ELIDED_IDENTITY_RE = re.compile(r": the result of (.+?) was replaced")
@@ -37,43 +30,47 @@ _ELIDED_IDENTITY_RE = re.compile(r": the result of (.+?) was replaced")
 
 @dataclass
 class Turn:
-    """One normalized conversation turn (provider-agnostic).
+    """One normalized conversation turn, provider-agnostic.
 
-    Deliberately mutable: `fold_conversation` builds a turn in a shape helper
-    that does not know the call it came from, then stamps `seq` on it. Freezing
-    would force threading seq through every builder for no gain.
+    Mutable: a shape helper builds the turn without knowing its call, and
+    `fold_conversation` stamps `seq` on it after.
+
+    Attributes:
+        role: "system", "user", "assistant", "tool" or "marker".
+        text: The turn's text.
+        thinking: The assistant's reasoning.
+        tool_calls: The assistant's calls as (name, args JSON).
+        tool_name: The tool a "tool" turn is the result of.
+        seq: The transcript seq the turn was introduced by.
     """
 
-    role: str  # "system" | "user" | "assistant" | "tool" | "marker"
+    role: str
     text: str = ""
     thinking: str = ""
-    tool_calls: list[tuple[str, str]] = field(default_factory=list)  # (name, args_json)
-    tool_name: str = ""  # for role == "tool"
+    tool_calls: list[tuple[str, str]] = field(default_factory=list)
+    tool_name: str = ""
     seq: int = 0
 
 
-# The seats whose round-trips are the conversation: the loop's driving provider,
-# whose role differs by mode ("planner" in plan mode). Everything else (the gist
-# distiller, the tier-2 summariser, a review seat) shares the run's sink but is a
-# side-call, and a side-call's one-message request reads as a compaction restart
-# to the fold below. A transcript with no stamped seat is the driving seat's.
+# The driving seats; a side call's one-message request would read as a compaction restart.
 CONVERSATION_SEATS = frozenset({"worker", "planner"})
 
 
 def transcript_seq(t: dict[str, Any]) -> int:
-    """A transcript's run-global seq, 0 when the record carries no integer one:
-    the one owner of that coercion for the sort, the `(seq N)` label and the
-    `--seq` window, which a hand-edited or corrupt `seq` would otherwise
-    crash."""
+    """Return a transcript's seq, 0 when the record carries no integer one."""
     seq = t.get("seq", 0)
     return seq if isinstance(seq, int) else 0
 
 
 def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
-    """Every transcript JSON object under a session's transcripts/ dir, in seq
-    order, all seats. The raw list is `sessions transcript --json`'s output, the
-    one CLI surface for a side-call's actual request/response; the conversation
-    fold filters for itself (`conversation_transcripts`)."""
+    """Load every transcript under a session's transcripts dir, in seq order, all seats.
+
+    Args:
+        transcripts_dir: The session's transcripts dir.
+
+    Returns:
+        The transcript objects; an unreadable file is skipped, a missing dir yields none.
+    """
     if not transcripts_dir.is_dir():
         return []
     out: list[dict[str, Any]] = []
@@ -89,11 +86,12 @@ def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
 
 
 def conversation_transcripts(transcripts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Only the CONVERSATION_SEATS' round-trips (see the comment above)."""
+    """Return the driving seats' round-trips; a transcript with no seat is the driver's."""
     return [t for t in transcripts if str(t.get("seat", "") or "worker") in CONVERSATION_SEATS]
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
+    """Return the value as a dict, a JSON string decoded, empty for anything else."""
     if isinstance(value, str):
         try:
             value = json.loads(value)
@@ -103,25 +101,24 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 
 def _shape(req: dict[str, Any], resp: dict[str, Any]) -> str:
-    """Detect the provider wire shape of one transcript."""
+    """Return the provider wire shape of one transcript: openai, anthropic or responses."""
     if isinstance(resp.get("choices"), list):
         return "openai"
     if isinstance(resp.get("content"), list) and resp.get("role"):
         return "anthropic"
     if isinstance(resp.get("output"), list) or isinstance(req.get("input"), list):
         return "responses"
-    # Fall back on the request: Anthropic carries a top-level `system` and
-    # content-block messages; OpenAI uses a system *message* + flat strings.
+    # Anthropic carries a top-level `system`; OpenAI a system message.
     return "anthropic" if "system" in req else "openai"
 
 
 def _request_items(req: dict[str, Any], shape: str) -> list[Any]:
-    """The request's conversation list: Responses `input`, else `messages`."""
+    """Return the request's conversation list: Responses `input`, else `messages`."""
     return (req.get("input") if shape == "responses" else req.get("messages")) or []
 
 
 def _item_text(item: dict[str, Any]) -> str:
-    """A Responses message item's text parts, joined."""
+    """Return a Responses message item's text parts, joined."""
     content = item.get("content")
     if isinstance(content, str):
         return content
@@ -133,13 +130,23 @@ def _item_text(item: dict[str, Any]) -> str:
 
 
 def _responses_turns(items: list[Any], names: dict[str, str]) -> list[Turn]:
-    """Responses items -> turns. One model response spans several items
-    (reasoning, a message, function calls), so consecutive assistant-side items
-    fold into one assistant turn; a user message or a call output ends it."""
+    """Fold Responses items into turns.
+
+    One model response spans several items (reasoning, a message, function calls),
+    so consecutive assistant-side items fold into one assistant turn.
+
+    Args:
+        items: The Responses items.
+        names: The call id to tool name map, filled as calls are seen.
+
+    Returns:
+        The turns.
+    """
     turns: list[Turn] = []
     current: Turn | None = None
 
     def flush() -> None:
+        """Close the assistant turn being built, if any."""
         nonlocal current
         if current is not None:
             turns.append(current)
@@ -184,9 +191,11 @@ def _responses_turns(items: list[Any], names: dict[str, str]) -> list[Turn]:
 
 
 def _same_item(a: Any, b: Any) -> bool:
-    """Whether a replayed Responses input item is the recorded output item: by
-    id when both carry one, else by what it says, since a replayed message
-    drops the id, status and annotations the response carried."""
+    """Return whether a replayed Responses input item is the recorded output item.
+
+    By id when both carry one, else by what it says, since a replayed message drops
+    the id, status and annotations the response carried.
+    """
     if not isinstance(a, dict) or not isinstance(b, dict) or a.get("type") != b.get("type"):
         return False
     key = "call_id" if a.get("type") == "function_call" else "id"
@@ -198,7 +207,7 @@ def _same_item(a: Any, b: Any) -> bool:
 
 
 def _pretty_args(raw: Any) -> str:
-    """Tool-call arguments -> compact one-line JSON (best effort)."""
+    """Return tool-call arguments as compact one-line JSON, or as text when not JSON."""
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
@@ -211,6 +220,15 @@ def _pretty_args(raw: Any) -> str:
 
 
 def _openai_turns(m: dict[str, Any], names: dict[str, str]) -> list[Turn]:
+    """Fold one Chat Completions message into its turns.
+
+    Args:
+        m: The message.
+        names: The call id to tool name map, filled as calls are seen.
+
+    Returns:
+        The turns.
+    """
     role = m.get("role", "")
     if role == "tool":
         name = names.get(str(m.get("tool_call_id", "")), "")
@@ -235,6 +253,15 @@ def _openai_turns(m: dict[str, Any], names: dict[str, str]) -> list[Turn]:
 
 
 def _anthropic_turns(m: dict[str, Any], names: dict[str, str]) -> list[Turn]:
+    """Fold one Anthropic message into its turns.
+
+    Args:
+        m: The message.
+        names: The tool-use id to tool name map, filled as calls are seen.
+
+    Returns:
+        The turns; a user message's tool results come first, then its text.
+    """
     role = m.get("role", "user")
     content = m.get("content")
     if isinstance(content, str):
@@ -272,8 +299,7 @@ def _anthropic_turns(m: dict[str, Any], names: dict[str, str]) -> list[Turn]:
                 tool_calls=calls,
             )
         ]
-    # The loop may append a notice after a batch of tool results in the same
-    # canonical user message; both are conversation turns.
+    # The loop may append a notice after a batch of tool results in the same message.
     text = "\n\n".join(text_parts).strip()
     if tool_results:
         return [*tool_results, *([Turn(role=role, text=text)] if text else [])]
@@ -281,19 +307,19 @@ def _anthropic_turns(m: dict[str, Any], names: dict[str, str]) -> list[Turn]:
 
 
 def _message_turns(m: dict[str, Any], shape: str, names: dict[str, str]) -> list[Turn]:
+    """Return one request message's turns by wire shape."""
     return _openai_turns(m, names) if shape == "openai" else _anthropic_turns(m, names)
 
 
 def _response_turns(resp: dict[str, Any], shape: str, names: dict[str, str]) -> list[Turn]:
+    """Return a response body's assistant turns by wire shape."""
     if shape == "responses":
         return _responses_turns(resp.get("output") or [], names)
     if shape == "openai":
         choices = resp.get("choices") or []
         if not choices:
             return []
-        # A response message is the assistant's, so stamp the role rather than
-        # trusting the body to carry it: the streaming path synthesises the
-        # message without one.
+        # The streaming path synthesises the message without a role.
         message = {**_as_dict(choices[0].get("message")), "role": "assistant"}
         return _openai_turns(message, names)
     if resp.get("content") is not None:
@@ -302,8 +328,7 @@ def _response_turns(resp: dict[str, Any], shape: str, names: dict[str, str]) -> 
 
 
 def _elided_strings(msg: dict[str, Any]) -> list[str]:
-    """Every elision-placeholder string one wire message carries (either shape:
-    an OpenAI `role: tool` string content, or Anthropic `tool_result` items)."""
+    """Return every elision-placeholder string one wire message carries, either shape."""
     out: list[str] = []
     content = msg.get("content") if "content" in msg else msg.get("output")
     if isinstance(content, str):
@@ -319,12 +344,13 @@ def _elided_strings(msg: dict[str, Any]) -> list[str]:
 
 
 def _elision_identity(placeholder: str) -> str:
-    """The elided call's identity, recovered from the placeholder's own copy."""
+    """Return the elided call's identity, recovered from the placeholder's own words."""
     m = _ELIDED_IDENTITY_RE.search(placeholder)
     return m.group(1) if m else "a tool result"
 
 
 def _elision_label(placeholder: str) -> str:
+    """Return the placeholder's identity, noting a kept gist."""
     label = _elision_identity(placeholder)
     if placeholder.startswith(_GIST_MARKER_PREFIX):
         label += " (distilled gist kept)"
@@ -332,12 +358,21 @@ def _elision_label(placeholder: str) -> str:
 
 
 def _elision_marker(prev: list[Any], msgs: list[Any], upto: int) -> str:
-    """Marker text when old tool_results were mutated into elision placeholders
-    between two request snapshots, or "" when none were. The conversation view
-    keeps showing the original results; this line is the truth about what the
-    model still sees. Compares identity counts, not placeholder bytes: a gist
-    demoting to the bare marker is not re-reported, while a second result of
-    the same identity elided in a later pass still is."""
+    """Word the tool results elided between two request snapshots.
+
+    The conversation view keeps showing the original results; this line says what
+    the model still sees. Identity counts are compared, not placeholder bytes: a gist
+    demoting to the bare marker is not re-reported, a second result of the same
+    identity elided later is.
+
+    Args:
+        prev: The prior request's messages.
+        msgs: This request's messages.
+        upto: How many leading messages both requests share.
+
+    Returns:
+        The marker text, or "" when nothing new was elided.
+    """
     labels: list[str] = []
     for i in range(min(upto, len(prev), len(msgs))):
         cur_m, prev_m = msgs[i], prev[i]
@@ -361,50 +396,47 @@ def _elision_marker(prev: list[Any], msgs: list[Any], upto: int) -> str:
 
 
 def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
-    """Fold per-call transcripts into one ordered conversation (no double-print).
+    """Fold per-call transcripts into one ordered conversation.
 
-    Reconciles each request against the prior one instead of predicting: a
-    recorded response only reappears as the next request's `msgs[prev_len]`
-    when the history actually grew. Error transcripts (a 5xx body) and
-    empty-response retries re-send the identical message list, so assuming one
-    committed assistant message per transcript would misread every provider
-    retry as a compaction restart and re-print the whole history.
+    Each request is reconciled against the prior one rather than predicted: a
+    recorded response reappears as the next request's message only when the history
+    grew, since an error transcript or an empty-response retry re-sends the identical
+    list. Only the driving seats fold.
 
-    Folds only the conversation seats: a side-call's one-message request reads
-    as a restart here (see `CONVERSATION_SEATS`).
+    Args:
+        transcripts: The transcripts, in seq order.
+
+    Returns:
+        The turns, a marker for a compaction restart or an unreadable seq included.
     """
     transcripts = conversation_transcripts(transcripts)
     turns: list[Turn] = []
-    names: dict[str, str] = {}  # tool_call/use id -> tool name (to label results)
-    prev_len = 0  # messages of the prior request already emitted
-    prev_msgs: list[Any] = []  # the prior request's messages, for elision diffing
-    pending_response = False  # the prior transcript's response yielded turns
-    prev_output: list[Any] = []  # a Responses call's output items, echoed by the next request
+    names: dict[str, str] = {}
+    prev_len = 0
+    prev_msgs: list[Any] = []
+    pending_response = False
+    prev_output: list[Any] = []
     for t in transcripts:
         seq = t.get("seq", 0)
         if not isinstance(seq, int):
-            # Unplaceable in this walk; `--json` still hands the record over raw.
             turns.append(Turn(role="marker", text=f"unreadable seq {seq!r}: call skipped"))
             continue
         req = _as_dict(_as_dict(t.get("request")).get("body"))
         resp = _as_dict(_as_dict(t.get("response")).get("body"))
         shape = _shape(req, resp)
         msgs = _request_items(req, shape)
-        # Anthropic and Responses keep the system prompt out of the message
-        # list; surface it once.
+        # Anthropic and Responses keep the system prompt out of the message list.
         sys = req.get("system") if shape == "anthropic" else req.get("instructions")
         if shape in ("anthropic", "responses") and prev_len == 0 and sys:
             turns.append(
                 Turn(role="system", seq=seq, text=sys if isinstance(sys, str) else json.dumps(sys))
             )
-        if len(msgs) < prev_len:  # a context-compaction restart shrank the history
+        if len(msgs) < prev_len:
             turns.append(Turn(role="marker", text="context summarised / restarted", seq=seq))
             prev_len = 0
             pending_response = False
         elif marker := _elision_marker(prev_msgs, msgs, prev_len):
             turns.append(Turn(role="marker", text=marker, seq=seq))
-        # The previously-emitted response is msgs[prev_len] only when the
-        # history grew; a retry that re-sends the identical list skips nothing.
         # A Responses call's output is several items, echoed back verbatim.
         start = prev_len
         if shape == "responses":
@@ -426,7 +458,7 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
         for tt in new_turns:
             tt.seq = seq
             turns.append(tt)
-        response_turns = _response_turns(resp, shape, names)  # this call's assistant output
+        response_turns = _response_turns(resp, shape, names)
         for rt in response_turns:
             rt.seq = seq
             turns.append(rt)
@@ -438,15 +470,19 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
 
 
 def window_turns(turns: list[Turn], lo: int, hi: int) -> list[Turn]:
-    """The turns whose seq falls in [lo, hi], extended so a call and its
-    result are never shown one without the other.
+    """Select the turns whose seq falls in a window, calls and results kept together.
 
-    A tool result is stamped with the seq of the request that echoes it back:
-    one round after the call that dispatched it (see `fold_conversation`). A
-    plain `lo <= seq <= hi` filter then drops the result when the window ends
-    at the call's own round, or drops the call when the window starts at the
-    result's round. Chase each kept tool turn back to its call, and each kept
-    call forward through its (possibly several, for parallel calls) results.
+    A tool result carries the seq of the request that echoes it back, one round
+    after its call, so a plain filter would split the pair at either edge.
+
+    Args:
+        turns: The folded turns.
+        lo: The first seq to keep.
+        hi: The last seq to keep.
+
+    Returns:
+        The turns in the window, each kept tool turn with its call and each kept
+        call with its results.
     """
     keep = [lo <= t.seq <= hi for t in turns]
     for i, k in enumerate(keep):
@@ -467,6 +503,7 @@ def window_turns(turns: list[Turn], lo: int, hi: int) -> list[Turn]:
 
 
 def _clip(s: str, n: int) -> str:
+    """Return the text cut to `n` characters, the cut noted with its size."""
     return s if len(s) <= n else s[:n] + f"… (+{len(s) - n} chars)"
 
 
@@ -478,7 +515,18 @@ def render_markdown(
     tools: str = "both",
     result_cap: int = 4000,
 ) -> str:
-    """Render folded turns as a Markdown conversation. `tools` in both|calls|none."""
+    """Render folded turns as a Markdown conversation.
+
+    Args:
+        turns: The turns to render.
+        session_id: The heading's session id.
+        show_thinking: Include the assistant's reasoning.
+        tools: "both" for calls and results, "calls" for calls alone, "none".
+        result_cap: The characters a tool result keeps.
+
+    Returns:
+        The Markdown text.
+    """
     out: list[str] = [f"# Transcript: {session_id}", ""]
     for tn in turns:
         if tn.role == "marker":

@@ -1,18 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Pure fold of a machine's journal into a render-ready watch view.
+"""Fold a machine instance's journal and spec into the watch view every front-end renders.
 
-The machine analogue of state.py: where SessionState folds a run's logs.jsonl, this
-folds a machine instance's journal (the StepEvent / MachineEnd stream) plus its
-spec into a MachineState that the CLI `agent6 attach`, the TUI
-MachineWatchScreen, and the web client all render. The agent reasoning
-inside an `agent` state is itself a run log, so it folds through SessionState
-(state.py); this module models only the machine level: which states exist, where
-we are, the path taken, and how it ended.
-
-Position is exposed semantically (is_current / is_visited), not as a marker
-glyph, so each front-end picks its own (the CLI uses ".", the TUI "·", a web
-client a CSS class) without the model dictating presentation.
+The machine analogue of state.py: which states exist, where the machine is, the path
+taken and how it ended. The reasoning inside an agent state is itself a run log and
+folds through `SessionState`.
 """
 
 from __future__ import annotations
@@ -43,22 +35,30 @@ from agent6.viewmodel.format import format_transition, machine_state_mark, statu
 from agent6.viewmodel.state import SessionState, apply_event, fold_session, initial_state
 from agent6.viewmodel.tail import LogTail, tail_events
 
-# How many recent machine.notify events a MachineState carries. Front-ends render
-# them as ephemeral surfaces, so only the tail matters; the journal keeps them all.
+# Front-ends render notifications as ephemeral surfaces, so only the tail travels.
 _NOTIFY_KEEP = 20
 
 
 @dataclass(frozen=True, slots=True)
 class MachineStateView:
-    """One state in the overview: its name, kind, and where we are relative to it."""
+    """One state in the overview: its name, kind and position.
+
+    Attributes:
+        name: The state's name.
+        kind: The state's kind from the spec.
+        is_current: The machine is in this state, or is about to run it.
+        is_visited: The machine entered or left this state.
+        mark: The mark before the name, as every surface draws it.
+    """
 
     name: str
     kind: str
     is_current: bool
     is_visited: bool
-    mark: str = ""  # the mark before the name, as every surface draws it
+    mark: str = ""
 
     def __post_init__(self) -> None:
+        """Fill `mark` from the position flags when the caller left it empty."""
         if not self.mark:
             mark = machine_state_mark(is_current=self.is_current, is_visited=self.is_visited)
             object.__setattr__(self, "mark", mark)
@@ -66,19 +66,24 @@ class MachineStateView:
 
 @dataclass(frozen=True, slots=True)
 class TransitionView:
-    """One journaled transition: state --label--> goto, in order.
+    """One journaled transition: state --label--> goto.
 
-    `detail` is the failure evidence a debugging operator needs at the
-    surface, bounded: a failed tool's exit code and last stderr/stdout line,
-    a failed agent state's stop reason. Empty on success, so the happy path
-    stays one line."""
+    Attributes:
+        seq: The transition's sequence number.
+        state: The state left.
+        label: The transition's label.
+        goto: The state entered.
+        detail: Bounded failure evidence (a failed tool's exit code and last output
+            line, a failed agent state's stop reason); "" on success.
+        line: `format_transition` of the fields, as every surface prints it.
+    """
 
     seq: int
     state: str
     label: str
     goto: str
     detail: str = ""
-    line: str = ""  # `format_transition` of the fields, as every surface prints it
+    line: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,14 +98,27 @@ class NotificationView:
 
 @dataclass(frozen=True, slots=True)
 class MachineState:
+    """A machine instance's folded watch view.
+
+    Attributes:
+        machine: The spec's declared name.
+        version: The spec's version.
+        initial: The initial state's name.
+        current: Where the machine is, or is about to run.
+        states: Every state in spec order, position-flagged.
+        transitions: The path taken, in order.
+        ended: The end record, None while the machine has not ended.
+        notifications: The recent `machine.notify` events, oldest first.
+    """
+
     machine: str
     version: int
     initial: str
-    current: str  # where the machine is, or is about to run
-    states: tuple[MachineStateView, ...]  # spec order, position-flagged
-    transitions: tuple[TransitionView, ...]  # the path taken, in order
+    current: str
+    states: tuple[MachineStateView, ...]
+    transitions: tuple[TransitionView, ...]
     ended: MachineResult | None
-    notifications: tuple[NotificationView, ...]  # recent machine.notify, oldest first
+    notifications: tuple[NotificationView, ...]
 
     @property
     def current_kind(self) -> str | None:
@@ -109,6 +127,7 @@ class MachineState:
 
 
 def _transition_view(s: StepEvent) -> TransitionView:
+    """Return a step event as its view, with the detail and line rendered."""
     detail = _fact_detail(s)
     line = format_transition(s.seq, s.state, s.label, s.goto, detail)
     return TransitionView(
@@ -117,7 +136,7 @@ def _transition_view(s: StepEvent) -> TransitionView:
 
 
 def _fact_detail(step: StepEvent) -> str:
-    """Bounded failure evidence for one transition; "" on success."""
+    """Return bounded failure evidence for one transition, "" on success."""
     fact = step.fact
     if isinstance(fact, ToolFact) and (fact.exit_code != 0 or fact.timed_out):
         tail = next(
@@ -136,10 +155,15 @@ def _fact_detail(step: StepEvent) -> str:
 
 
 def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
-    """Reduce a machine journal (StepEvent/MachineEnd stream) to a watch view.
+    """Fold a machine journal into its watch view.
 
-    current = the goto of the last transition (where the machine is, or is about
-    to run), else the initial state. visited = every state entered or left.
+    Args:
+        spec: The machine's spec.
+        events: The journal's events.
+
+    Returns:
+        The state: `current` is the last transition's goto, else the initial state;
+        a state is visited when any transition entered or left it.
     """
     steps = [e for e in events if isinstance(e, StepEvent)]
     end = next((e for e in reversed(events) if isinstance(e, MachineEnd)), None)
@@ -178,14 +202,21 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
 def machine_status_word(
     ms: MachineState, *, parked: bool, alive: bool, blocked: bool = False
 ) -> str:
-    """The liveness word front-ends read, so a machine that isn't working never
-    renders busy. Terminal reports its ok/failed end; an armed `--exit-on-wait`
-    wait (parked), a live worker blocked in a foreground `wait` state, or a live
-    worker whose agent state holds an unanswered operator prompt (blocked) is
-    "waiting"; a live worker in any other state is "running"; a dead pid that is
-    neither parked nor ended is "stopped". The fold is pure, so parked (a
-    persisted PendingWait), alive (a live worker.pid) and blocked (the newest
-    state log's open prompt) are probed by the caller."""
+    """Decide the liveness word, so a machine that is not working never renders busy.
+
+    The fold is pure, so the caller probes the three dir facts.
+
+    Args:
+        ms: The folded state.
+        parked: A persisted wait record is armed for the current state.
+        alive: The worker pid is live.
+        blocked: The newest state log holds an unanswered operator prompt.
+
+    Returns:
+        The end's own status for an ended machine; "waiting" when parked, blocked or
+        live in a wait state; "running" for a live worker elsewhere; "stopped" for a
+        dead worker that is neither parked nor ended.
+    """
     if ms.ended is not None:
         return ms.ended.status
     if parked:
@@ -201,16 +232,26 @@ def machine_status_word(
 class AgentExecution:
     """The newest agent state's execution as the operator verbs see it.
 
-    `open`: the execution has begun and not ended, so a steer has a reader.
-    `blocked_in`: the state dir (`0001-attempt`) holding an unanswered approval
-    or question, else "" (the machine waits on the operator there)."""
+    Attributes:
+        open: The execution has begun and not ended, so a steer has a reader.
+        blocked_in: The state dir (`0001-attempt`) holding an unanswered approval or
+            question, else "".
+    """
 
     open: bool = False
     blocked_in: str = ""
 
 
 def execution_of(state: SessionState, log: Path) -> AgentExecution:
-    """The :class:`AgentExecution` a folded state log *log* describes."""
+    """Return the execution a folded state log describes.
+
+    Args:
+        state: The log's fold.
+        log: The log's path; its parent names the state dir.
+
+    Returns:
+        The execution facts.
+    """
     open_prompts = [*state.pending_approvals, *state.pending_questions]
     return AgentExecution(
         open=state.started and not state.finished,
@@ -219,8 +260,16 @@ def execution_of(state: SessionState, log: Path) -> AgentExecution:
 
 
 def newest_agent_execution(machine_dir: Path) -> AgentExecution:
-    """The :class:`AgentExecution` of the newest state log (one fold of that log); a
-    poll loop holds a :class:`NewestExecutionFold` instead."""
+    """Return the newest state log's execution from one fold of that log.
+
+    A poll loop holds a `NewestExecutionFold` instead.
+
+    Args:
+        machine_dir: The instance's dir.
+
+    Returns:
+        The execution facts, empty when no agent state has a log yet.
+    """
     log = newest_state_log(machine_dir)
     if log is None:
         return AgentExecution()
@@ -228,12 +277,15 @@ def newest_agent_execution(machine_dir: Path) -> AgentExecution:
 
 
 class NewestExecutionFold:
-    """The newest state log folded across a poll loop: each `refresh` reads the
-    bytes appended since the last one and folds them into the held state, and
-    starts a fresh fold when the machine has entered a newer agent state or
-    the log was rewritten. The TUI poll and the web frame each read the log
-    once per tick through this, where a fold from scratch per reader cost a
-    whole read of the log per reader per tick."""
+    """The newest state log folded across a poll loop.
+
+    Each `refresh` folds the bytes appended since the last one into the held state,
+    and starts over when the machine entered a newer agent state or the log was
+    rewritten, so a tick reads the log once instead of whole.
+
+    Attributes:
+        state: The held fold.
+    """
 
     def __init__(self) -> None:
         self._log: Path | None = None
@@ -241,8 +293,14 @@ class NewestExecutionFold:
         self.state: SessionState = initial_state()
 
     def refresh(self, machine_dir: Path) -> Path | None:
-        """Fold what the newest state log gained; returns that log, None when
-        no agent state has one yet."""
+        """Fold what the newest state log gained since the last refresh.
+
+        Args:
+            machine_dir: The instance's dir.
+
+        Returns:
+            The newest state log, None when no agent state has one yet.
+        """
         log = newest_state_log(machine_dir)
         if log != self._log:
             self._log, self._tail, self.state = log, LogTail(log) if log else None, initial_state()
@@ -260,15 +318,25 @@ class NewestExecutionFold:
         return self._log
 
     def execution(self) -> AgentExecution:
-        """The :class:`AgentExecution` of the held fold."""
+        """Return the execution facts of the held fold."""
         return execution_of(self.state, self._log) if self._log is not None else AgentExecution()
 
 
 def armed_wait(machine_dir: Path, ms: MachineState) -> PendingWait | None:
-    """The persisted wait record when it is this occurrence of the current
-    state, the engine's own test (the record names `ms.current` and its
-    transition count); None otherwise, a record a death left behind an earlier
-    visit included. Raises JournalError on a corrupt record."""
+    """Return the persisted wait record when it belongs to this visit of the current state.
+
+    The engine's own test: the record names `ms.current` and its transition count.
+
+    Args:
+        machine_dir: The instance's dir.
+        ms: The folded state.
+
+    Returns:
+        The record, or None, a record a death left behind an earlier visit included.
+
+    Raises:
+        JournalError: The wait record is corrupt.
+    """
     pending = MachineJournal(machine_dir).read_pending_wait()
     if pending is None or pending.state != ms.current or pending.seq != len(ms.transitions):
         return None
@@ -277,13 +345,17 @@ def armed_wait(machine_dir: Path, ms: MachineState) -> PendingWait | None:
 
 @dataclass(frozen=True, slots=True)
 class InstanceProbes:
-    """What an instance dir says beside its fold: the worker, the armed wait
-    and the newest agent execution (folded only for a live, unended machine, the one
-    whose execution could read a steer or an answer). Under --exit-on-wait
-    scheduling a parked machine legitimately has no live process, so a dead
-    pid reads as parked, never as crashed, while a wait is armed. A corrupt
-    wait record reads as parked (keep streaming) and names itself in
-    `wait_error`."""
+    """What an instance dir says beside its fold.
+
+    Under `--exit-on-wait` scheduling a parked machine has no live process, so a dead
+    pid reads as parked, never as crashed, while a wait is armed.
+
+    Attributes:
+        alive: The worker pid is live.
+        parked: A wait record is armed for the current state.
+        execution: The newest agent execution, folded only for a live, unended machine.
+        wait_error: The corrupt wait record's error; such a machine reads as parked.
+    """
 
     alive: bool
     parked: bool
@@ -291,14 +363,22 @@ class InstanceProbes:
     wait_error: str = ""
 
     def status_word(self, ms: MachineState) -> str:
-        """:func:`machine_status_word` fed these probes."""
+        """Return `machine_status_word` fed these probes."""
         return machine_status_word(
             ms, parked=self.parked, alive=self.alive, blocked=bool(self.execution.blocked_in)
         )
 
     def refusals(self, name: str, ms: MachineState) -> dict[MachineVerb, str]:
-        """:func:`verb_refusals` fed these probes; a corrupt wait record names
-        itself on every verb."""
+        """Return `verb_refusals` fed these probes.
+
+        Args:
+            name: The instance's name.
+            ms: The folded state.
+
+        Returns:
+            Each verb's refusal, "" where it can act; a corrupt wait record names itself
+            on every verb.
+        """
         if self.wait_error:
             return dict.fromkeys(MACHINE_VERBS, f"machine {name!r}: {self.wait_error}")
         return verb_refusals(
@@ -314,9 +394,17 @@ class InstanceProbes:
 def probe_instance(
     machine_dir: Path, ms: MachineState, *, execution: AgentExecution | None = None
 ) -> InstanceProbes:
-    """The :class:`InstanceProbes` of *machine_dir* for its fold *ms*. A caller
-    holding the newest execution's fold (:class:`NewestExecutionFold`) passes its *execution*;
-    else the log is folded here, for a live, unended machine."""
+    """Probe an instance dir beside its fold.
+
+    Args:
+        machine_dir: The instance's dir.
+        ms: The folded state.
+        execution: The newest execution from a caller's `NewestExecutionFold`; without
+            it the log is folded here, for a live, unended machine.
+
+    Returns:
+        The probes.
+    """
     alive = worker_is_alive(machine_dir)
     if execution is None:
         execution = (
@@ -331,34 +419,48 @@ def probe_instance(
 
 @dataclass(frozen=True, slots=True)
 class MachineSummary:
-    """One machine-instance row: what a hub or `machine list` shows, uncolored."""
+    """One machine-instance row: what a hub or `machine list` shows, uncolored.
 
-    name: str  # the instance dir name (the machine's name)
-    machine: str  # the spec's declared name; "" when unreadable
-    current: str  # where the machine is; "" when unreadable
-    status: str  # machine_word_for_dir's word, or "unreadable"
-    reason: str  # a failed end's reason, or what a live instance waits on; else ""
+    Attributes:
+        name: The instance dir's name.
+        machine: The spec's declared name; "" when unreadable.
+        current: Where the machine is; "" when unreadable.
+        status: The dir-aware status word, or "unreadable".
+        reason: A failed end's reason, or what a live instance waits on; else "".
+        mtime: The last-activity time as epoch seconds.
+    """
+
+    name: str
+    machine: str
+    current: str
+    status: str
+    reason: str
     mtime: float
 
 
 @dataclass(frozen=True, slots=True)
 class Spend:
-    """A dollar + token spend triple, summable so booked and live spend fold.
+    """A dollar and token spend, summable so booked and live spend fold.
 
-    `partial` marks a known under-estimate (an unpriced model contributed
-    $0 to the dollar figure); it ORs across folds so one unpriceable slice
-    taints the total, and the render adds the shared '~' marker instead of
-    showing a lower bound as exact."""
+    Attributes:
+        usd: The dollar figure.
+        input_tokens: Input tokens.
+        output_tokens: Output tokens.
+        partial: An unpriced model contributed $0, so `usd` is a lower bound; it ORs
+            across folds and the render adds the shared "~" marker.
+        cache_read_tokens: The cached side of the input; 0 where never recorded.
+        cache_creation_tokens: Cache-creation tokens; 0 where never recorded.
+    """
 
     usd: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
     partial: bool = False
-    # The cached side of the input; 0 where a ledger never recorded it.
     cache_read_tokens: int = 0
     cache_creation_tokens: int = 0
 
     def __add__(self, other: Spend) -> Spend:
+        """Return the field-wise sum, `partial` ORed."""
         return Spend(
             self.usd + other.usd,
             self.input_tokens + other.input_tokens,
@@ -370,20 +472,22 @@ class Spend:
 
 
 def read_budget_totals(log_path: Path, *, from_offset: int = 0) -> Spend:
-    """The latest running budget totals from an agent state's per-state event log,
-    or `Spend()` if there is none / the log is unreadable.
+    """Read the latest running budget totals from an agent state's event log.
 
-    Each turn's `budget.update` event carries cumulative totals from that
-    call's own BudgetTracker, so the last one is the running total of whichever
-    call wrote it. `from_offset` scopes the read to events appended after a
-    byte offset: a caller salvaging one call on a shared log (machine create's
-    draft log spans every attempt) must pass the log size captured before its
-    spawn, or a call that died before its first budget.update reads the prior
-    call's totals and double-books them. Recovers spend for a timed-out/killed
-    subprocess whose `result.json` never landed, and reads the live total of an
-    in-flight state whose `StepEvent` is not written yet (an agent state's spend
-    would otherwise book as $0, so a 24/7 machine burns real money against a $0
-    ledger and its budget guard never trips)."""
+    Each `budget.update` carries cumulative totals from its call's own tracker, so
+    the last one is that call's running total. This recovers the spend of a killed
+    subprocess whose `result.json` never landed, and the live total of an in-flight
+    state whose `StepEvent` is not written yet.
+
+    Args:
+        log_path: The state's journal.
+        from_offset: Read only events appended after this byte offset; a caller
+            salvaging one call on a shared log passes the size captured before its
+            spawn, or a call that died before its first update double-books the prior one.
+
+    Returns:
+        The totals, or an empty `Spend` when there are none or the log is unreadable.
+    """
     usd, tin, tout, cr, cc = 0.0, 0, 0, 0, 0
     partial = False
     with contextlib.suppress(OSError):
@@ -402,30 +506,31 @@ def read_budget_totals(log_path: Path, *, from_offset: int = 0) -> Spend:
                 tout = int(e.get("output_total", tout) or 0)
                 cr = int(e.get("cache_read_total", cr) or 0)
                 cc = int(e.get("cache_creation_total", cc) or 0)
-                # Sticky, like the run surface: once any update flags an
-                # under-estimate the whole figure is one.
                 partial = partial or bool(e.get("usd_partial", False))
     return Spend(usd, tin, tout, partial, cr, cc)
 
 
 def state_dir_seq(dir_name: str) -> int | None:
-    """The transition seq encoded in a `<seq>-<state>` per-state log dir name."""
+    """Return the transition seq a `<seq>-<state>` dir name encodes, None when it has none."""
     head = dir_name.split("-", 1)[0]
     return int(head) if head.isdigit() else None
 
 
 def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple[Spend, str]:
-    """Total spend for a machine instance and the in-flight state's name (`""`
-    if none): the sum of completed states' booked AgentFacts and crashed
-    attempts' booked AttemptSpends, plus the live spend of the
-    currently-running state.
+    """Sum a machine instance's spend, the in-flight state's live figure included.
 
-    A state books its StepEvent only when it completes, so a machine
-    mid-agent-state otherwise reads $0/dead while burning money. The running
-    state's per-state log dir is numbered with the current transition seq, which
-    has no StepEvent yet, so a newest-log seq absent from the booked seqs is
-    unambiguously the in-flight state (no double-count); we fold it only when the
-    worker is alive so a crashed in-flight log is ignored."""
+    A state books its StepEvent only when it completes, so the running state's log
+    dir carries a seq no StepEvent holds: that log is the in-flight state, folded only
+    while the worker is alive so a crashed in-flight log is ignored.
+
+    Args:
+        events: The journal's events.
+        root: The instance's dir.
+        alive: The worker pid is live.
+
+    Returns:
+        The total and the in-flight state's name, "" when none is running.
+    """
     total = Spend()
     step_seqs: set[int] = set()
     for event in events:
@@ -439,15 +544,9 @@ def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple
                     event.fact.usd_partial,
                 )
         elif isinstance(event, AttemptSpend):
-            # A crashed attempt's booked slice (see book_crashed_attempt).
             total += Spend(event.usd, event.input_tokens, event.output_tokens, event.usd_partial)
         elif isinstance(event, MachineEnd):
-            # A slice that ran but never got a StepEvent (a capture that could
-            # not be reduced) rides on the end event. Folded unconditionally: an
-            # end with no unbooked slice contributes Spend() anyway, while
-            # gating on a truthy `usd` would drop an unpriced slice whole (its
-            # usd is 0.0 by definition) with its tokens and the sticky
-            # lower-bound flag.
+            # An unbooked slice rides on the end; gating on its usd would drop an unpriced one.
             total += Spend(event.usd, event.input_tokens, event.output_tokens, event.usd_partial)
     inflight_state = ""
     newest = newest_state_log(root) if alive else None
@@ -460,7 +559,7 @@ def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple
 
 
 def machine_mtime(machine_dir: Path) -> float:
-    """Last activity: the journal's mtime, else the dir's."""
+    """Return the instance's last activity: the journal's mtime, else the dir's, else 0.0."""
     for candidate in (machine_dir / "journal.jsonl", machine_dir):
         try:
             return candidate.stat().st_mtime
@@ -470,8 +569,7 @@ def machine_mtime(machine_dir: Path) -> float:
 
 
 def machine_instance_dirs(state_dir: Path) -> list[Path]:
-    """Every machine instance under the state machines/ dir (holds
-    machine.asm.toml + journal), newest first."""
+    """Return every machine instance dir under the state dir, newest first."""
     root = machines_root(state_dir)
     if not root.is_dir():
         return []
@@ -480,15 +578,20 @@ def machine_instance_dirs(state_dir: Path) -> list[Path]:
 
 
 def summarize_machine_dir(machine_dir: Path) -> MachineSummary:
-    """The instance row from its dir: spec + journal folded to the shared status
-    word. A corrupt source or journal (JournalError is a MachineError) reads
-    "unreadable" rather than vanishing from a listing."""
+    """Fold an instance dir's spec and journal into its listing row.
+
+    Args:
+        machine_dir: The instance's dir.
+
+    Returns:
+        The row; a corrupt source or journal reads "unreadable" with the error's
+        first line rather than vanishing from the listing.
+    """
     mtime = machine_mtime(machine_dir)
     try:
         spec = load_machine(machine_dir / "machine.asm.toml")
         ms = fold_machine(spec, MachineJournal(machine_dir).read())
     except (MachineError, OSError) as exc:
-        # One line: the row is a table cell, and a spec's problems come one per line.
         first_line = str(exc).split("\n", 1)[0]
         return MachineSummary(machine_dir.name, "", "", "unreadable", first_line, mtime)
     probes = probe_instance(machine_dir, ms)
@@ -506,9 +609,7 @@ def summarize_machine_dir(machine_dir: Path) -> MachineSummary:
 
 
 def machine_files(cwd: Path) -> list[Path]:
-    """The authored `.asm.toml` files a hub offers to run or create from: the
-    cwd top level (where `machine create` writes by default) plus a
-    conventional `machines/` subdir, sorted by path."""
+    """Return the `.asm.toml` files a hub offers, from the cwd and its `machines/` subdir."""
     found: set[Path] = set(cwd.glob("*.asm.toml"))
     sub = cwd / "machines"
     if sub.is_dir():
@@ -529,14 +630,23 @@ def verb_refusals(
     agent_open: bool,
     prompt_open: bool,
 ) -> dict[MachineVerb, str]:
-    """Why each verb cannot reach machine *name*, "" where it can. Pure, like
-    :func:`machine_status_word`: an unknown machine is named as unknown (not as
-    stopped); an ended one consumes no input; a poke reaches only an open wait
-    (a signal is a wake, never a queue), a steer only an open agent state, an
-    answer only an open prompt, and a stop any live worker.
+    """Decide why each verb cannot reach a machine, "" where it can.
 
-    The probes are the caller's, so a caller holding the fold does not read the
-    journal a second time to reach the same answer.
+    Pure, like `machine_status_word`: the probes are the caller's, so a caller holding
+    the fold does not read the journal again.
+
+    Args:
+        name: The instance's name.
+        ended: The end record, None while the machine runs.
+        alive: The worker pid is live.
+        open_wait: A wait record is armed.
+        agent_open: The newest agent execution has begun and not ended.
+        prompt_open: The newest agent execution holds an unanswered prompt.
+
+    Returns:
+        A refusal per verb: an ended machine consumes no input; a poke reaches only an
+        open wait, a steer only an open agent state, an answer only an open prompt,
+        and a stop any live worker.
     """
     if ended is not None:
         done = f"machine {name!r} already ended in {ended.state!r} ({ended.status}: {ended.reason})"
@@ -575,11 +685,15 @@ def verb_refusals(
 
 
 def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str]:
-    """:func:`verb_refusals` over an instance dir, reading the journal itself.
-    A front-end paints every verb at once, so it asks once; the CLI asks for the
-    one verb it is about to run through :func:`machine_verb_refusal`. The
-    newest state log is folded only for a live, unended machine, the one whose
-    execution could read a steer or an answer (every instance dir is asked on a TAB)."""
+    """Return `verb_refusals` over an instance dir, reading the journal itself.
+
+    Args:
+        machine_dir: The instance's dir.
+        name: The instance's name.
+
+    Returns:
+        A refusal per verb; an unknown or unreadable instance names itself on every verb.
+    """
     if not machine_dir.is_dir():
         return dict.fromkeys(MACHINE_VERBS, f"no machine {name!r}")
     try:
@@ -591,11 +705,15 @@ def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str
 
 
 def wait_line(machine_id: str, state: str, wake_at: str) -> str:
-    """Where a parked machine is, when it wakes, and how to wake it now.
+    """Return the sentence naming where a parked machine waits, when it wakes and how to wake it.
 
-    `machine status` and the foreground `machine run` say the same sentence:
-    the run blocks in the wait with nothing on the terminal otherwise, which
-    reads as a hang for the whole interval.
+    Args:
+        machine_id: The instance's name.
+        state: The wait state's name.
+        wake_at: The scheduled wake time, "" for a wait on a poke alone.
+
+    Returns:
+        The sentence `machine status` and the foreground `machine run` share.
     """
     poke = f"agent6 machine poke {machine_id} [--message TEXT]"
     if wake_at:
@@ -604,11 +722,17 @@ def wait_line(machine_id: str, state: str, wake_at: str) -> str:
 
 
 def verb_answer(machine_dir: Path, name: str, verb: MachineVerb) -> tuple[bool, str]:
-    """A verb's answer before it acts, for every surface: (False, why) when the
-    instance cannot be read (the whole journal, not the tail the paint and
-    the completers read), (True, refusal) when the verb has nothing to act on
-    (for `stop` that is the note and the stop's own outcome, no marker), and
-    (True, "") when the verb acts."""
+    """Answer a verb before it acts, for every surface.
+
+    Args:
+        machine_dir: The instance's dir.
+        name: The instance's name.
+        verb: The verb about to run.
+
+    Returns:
+        `(False, why)` when the whole journal cannot be read, `(True, refusal)` when
+        the verb has nothing to act on, and `(True, "")` when it acts.
+    """
     if not machine_dir.is_dir():
         return False, f"no machine {name!r}"
     try:
@@ -619,33 +743,31 @@ def verb_answer(machine_dir: Path, name: str, verb: MachineVerb) -> tuple[bool, 
 
 
 def machine_verb_refusal(machine_dir: Path, name: str, verb: MachineVerb) -> str:
-    """Why *verb* cannot reach machine *name* now, or "" when it can
-    (:func:`machine_verb_refusals` for the whole set)."""
+    """Return why one verb cannot reach a machine now, "" when it can."""
     return machine_verb_refusals(machine_dir, name)[verb]
 
 
 def machine_word_for_dir(ms: MachineState, machine_dir: Path) -> str:
-    """The status word for a machine instance with a dir on disk:
-    :func:`machine_status_word` fed the two dir probes (armed wait, worker
-    pid), so surfaces cannot pair the probes differently."""
+    """Return the status word for an instance with a dir on disk, its probes fed in."""
     return probe_instance(machine_dir, ms).status_word(ms)
 
 
 def notification_key(n: NotificationView) -> tuple[str, str, str]:
-    """A stable identity for a notification, for dedup across the sliding window
-    (front-ends track which they have surfaced by this key, not by a count into
-    the capped `notifications` tuple). Mirrors the web client's ts|state|message."""
+    """Return a notification's identity for dedup across the sliding window.
+
+    Mirrors the web client's `ts|state|message`.
+    """
     return (n.ts, n.state, n.message)
 
 
 def newest_state_log(root: Path) -> Path | None:
-    """The logs.jsonl of the most recent agent-state execution (highest seq), or
-    None. That is the state whose reasoning a watcher should follow live."""
+    """Return the newest agent state's journal, the one a watcher follows live, or None."""
     states = root / "states"
     if not states.is_dir():
         return None
 
     def seq_of(p: Path) -> int:
+        """Return the dir's seq, -1 for a dir without one."""
         head = p.name.split("-", 1)[0]
         return int(head) if head.isdigit() else -1
 
@@ -657,12 +779,18 @@ def newest_state_log(root: Path) -> Path | None:
 
 
 def read_complete_lines(path: Path, offset: int) -> tuple[list[str], int]:
-    """Complete new lines of *path* past byte *offset*, plus the new offset
-    (the start of any partial trailing line, re-read next poll).
+    """Read the complete lines a file gained past a byte offset.
 
-    Byte reads: a poll can hit EOF mid multibyte UTF-8 sequence (the writer
-    flushes long lines in several syscalls) and a text-mode readline would
-    raise UnicodeDecodeError there. Only complete lines are decoded."""
+    Reads bytes: a poll can hit EOF inside a multibyte sequence, where a text-mode
+    readline would raise. Only complete lines are decoded.
+
+    Args:
+        path: The file.
+        offset: Where the last read stopped.
+
+    Returns:
+        The new lines and the new offset, the start of any partial trailing line.
+    """
     lines: list[str] = []
     pos = offset
     try:
@@ -683,11 +811,16 @@ def read_complete_lines(path: Path, offset: int) -> tuple[list[str], int]:
 class MachineWatchCursor:
     """What a live machine watcher has already surfaced.
 
-    One implementation of the three dedup rules every front-end (the CLI watch
-    loop, the TUI machine screen) must agree on: transitions by count,
-    notifications by identity (`ms.notifications` is a sliding window, so a
-    count index would miss every notify past its cap), and the newest state
-    log by (path, byte offset) with only complete lines consumed."""
+    The three dedup rules every front-end agrees on: transitions by count,
+    notifications by identity (the tuple is a sliding window, so a count would miss
+    every notify past its cap), and the newest state log by path and byte offset.
+
+    Attributes:
+        seen_steps: How many transitions were surfaced.
+        seen_notifications: The keys of the notifications surfaced; None before seeding.
+        log_path: The state log being followed.
+        log_offset: Where the last complete line of that log ended.
+    """
 
     seen_steps: int = 0
     seen_notifications: set[tuple[str, str, str]] | None = None
@@ -695,16 +828,17 @@ class MachineWatchCursor:
     log_offset: int = 0
 
     def seed_notifications(self, ms: MachineState) -> None:
-        """Mark every already-recorded notification as seen, so opening a watch
-        does not re-announce history."""
+        """Mark every recorded notification as seen, so opening a watch does not replay them."""
         self.seen_notifications = {notification_key(n) for n in ms.notifications}
 
     def new_transitions(self, ms: MachineState) -> list[TransitionView]:
+        """Return the transitions not yet surfaced and mark them seen."""
         out = list(ms.transitions[self.seen_steps :])
         self.seen_steps = len(ms.transitions)
         return out
 
     def new_notifications(self, ms: MachineState) -> list[NotificationView]:
+        """Return the notifications not yet surfaced and mark them seen."""
         if self.seen_notifications is None:
             self.seen_notifications = set()
         out: list[NotificationView] = []
@@ -716,9 +850,15 @@ class MachineWatchCursor:
         return out
 
     def advance_log(self, root: Path) -> tuple[Path | None, bool]:
-        """Track the newest per-state log under *root*. Returns the current log
-        and True when it changed; the caller resets its render state (elapsed
-        anchor, pending text) and announces the new agent state."""
+        """Follow the newest per-state log under the instance dir.
+
+        Args:
+            root: The instance's dir.
+
+        Returns:
+            The current log and whether it changed; on a change the caller resets its
+            render state and announces the new agent state.
+        """
         newest = newest_state_log(root)
         if newest != self.log_path:
             self.log_path, self.log_offset = newest, 0
@@ -726,7 +866,7 @@ class MachineWatchCursor:
         return newest, False
 
     def read_log_lines(self) -> list[str]:
-        """Complete new lines of the current state log since the last poll."""
+        """Return the complete lines the current state log gained since the last poll."""
         if self.log_path is None:
             return []
         lines, self.log_offset = read_complete_lines(self.log_path, self.log_offset)
@@ -736,29 +876,27 @@ class MachineWatchCursor:
 def machine_state_as_dict(
     ms: MachineState, machine_dir: Path | None = None, *, execution: AgentExecution | None = None
 ) -> dict[str, Any]:
-    """The JSON-able wire form of a MachineState, stable field names: what
-    `agent6 attach --json` and a web client serialize.
+    """Return the wire form of a `MachineState`, what `attach --json` and the web serialize.
 
-    Pass *machine_dir* whenever the caller has one: `status` is then the
-    dir-aware word (:func:`machine_word_for_dir`), so a client can tell a
-    parked "waiting" instance from a running one. Without it a client's only
-    liveness signal is `ended`, and Steer on a parked machine reads as live."""
+    Args:
+        ms: The folded state.
+        machine_dir: The instance's dir; with it `status` is the dir-aware word, so a
+            client can tell a parked instance from a running one, and every verb's
+            refusal rides along so a front-end gates its buttons from the one decision.
+        execution: The newest execution from a caller's `NewestExecutionFold`.
+
+    Returns:
+        The state's fields, plus `status`, `level`, `refusals` and, for a stopped
+        machine, `worker_lost`.
+    """
     d = asdict(ms)
     if machine_dir is not None:
         probes = probe_instance(machine_dir, ms, execution=execution)
         d["status"] = probes.status_word(ms)
-        d["level"] = status_level(d["status"])  # the hub row's level, for the page's pill
+        d["level"] = status_level(d["status"])
         if d["status"] == "stopped":
-            # No worker and no armed wait (an operator stop or a death
-            # mid-state, the same dir): resumable, and the wire says so. A
-            # fabricated `ended` (a status the journal vocabulary does not
-            # hold) would style it terminal; `ended` stays a durable MachineEnd.
+            # Resumable, and the wire says so; `ended` stays a durable MachineEnd.
             d["worker_lost"] = {"reason": "no worker running", "state": ms.current}
-        # Every verb's refusal, so a front-end gates and labels its buttons from
-        # the one decision the CLI and the TUI already use instead of deriving
-        # its own from the status word (which conflates parked, an open agent
-        # state and live-but-blocked). Fed from this fold and these probes:
-        # asking `machine_verb_refusals` would read the journal and fold it
-        # again, doubling the work of every SSE frame.
+        # Fed from this fold's probes: `machine_verb_refusals` would fold the journal again.
         d["refusals"] = probes.refusals(machine_dir.name, ms)
     return d

@@ -1,22 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Fold a session's event stream into an ordered conversation of `TranscriptItem`s.
+"""Fold a session's event stream into the ordered conversation items every front-end paints.
 
-The medium-agnostic half of live conversation rendering. `TranscriptFold` walks
-`logs.jsonl` events in emission order and yields the things worth showing as
-plain data: a reasoning block, an assistant message, a tool call (in flight,
-then settled with its result), a commit, the final verdict. Each front-end (the
-CLI ANSI stream, the TUI conversation, the web SPA, ACP) maps these items to
-its own styling; the glyphs and content helpers here are shared so they never
-drift.
-
-One order everywhere: an item lands when it completes, so a tool call's
-settled item lands after anything that landed during the call. The call shows
-in flight (`ok=None`) from its `tool.call` until then, in the surface's
-progress spot (the TUI pane, the web items, an ACP status).
-
-`fold_transcript` is the batch form (whole stream at once); the CLI/TUI live
-tailers feed the same `TranscriptFold` one event at a time.
+`TranscriptFold` walks the events in emission order and yields what is worth showing
+as plain data: a reasoning block, an assistant message, a tool call (in flight, then
+settled with its result), a commit, the final verdict. An item lands when it
+completes, so a settled tool call lands after anything that landed during the call;
+until then the call shows in flight. `fold_transcript` folds a whole stream; the
+live tailers feed the same fold one event at a time.
 """
 
 from __future__ import annotations
@@ -33,15 +24,8 @@ from agent6.viewmodel.events import SESSION_START_EVENTS, as_int, event_epoch, t
 from agent6.viewmodel.format import format_usd, lane_count, status_label
 from agent6.viewmodel.listing import status_word
 
-# Terminal control sequences in model-authored text and command output.
-# Default-deny, not a CSI-only blocklist: stripping CSI alone leaves OSC intact
-# (an OSC 52 writes the terminal's clipboard) and DCS/SOS/PM/APC
-# carry arbitrary payloads; a C1 byte opens the same doors 8-bit. Sequences are
-# removed whole (a payload cut off at a chunk boundary surfaces as inert text);
-# stray C0 controls (BEL, \r spoofing) and DEL drop too, keeping \n and \t.
-# Consumed by every skin: the fold's previews and log lines, the streamed
-# deltas, and the CLI's live stream. The TUI's own OSC 52 copy feature is
-# agent6-authored output and never passes through here.
+# Default-deny: CSI alone would let an OSC 52 clipboard write and DCS/SOS/PM/APC payloads
+# through, and a C1 byte opens the same doors 8-bit. Sequences drop whole; \n and \t stay.
 _CONTROL_RE = re.compile(
     r"\x1b\[[0-9;?]*[ -/]*[@-~]"  # CSI
     r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?"  # OSC, BEL- or ST-terminated (or cut off)
@@ -53,70 +37,60 @@ _CONTROL_RE = re.compile(
 
 
 def scrub_terminal_controls(text: str) -> str:
-    """Drop every terminal control sequence and stray control character from
-    model-authored text (see `_CONTROL_RE`). Idempotent, so accumulating
-    stream tails re-scrub for free."""
+    """Return the text without terminal control sequences and stray control characters.
+
+    Idempotent, so an accumulating stream tail re-scrubs for free.
+    """
     return _CONTROL_RE.sub("", text)
 
 
-# What the CLI's stdout, stderr and /dev/tty let through, whoever wrote it:
-# SGR styling, conceal (SGR 8, which hides the text after it) excepted; a
-# 256-colour grey (`38;5;8`) drops with it, and its text stays. A
-# colour cannot move the cursor or rewrite a line; the approval prompt drops
-# styling from the text under judgment all the same. The spinners' erase idiom
-# and the composer's cursor movement go under the wrapper
-# (`ui/cli/_terminal_guard.raw_stream`), since a carriage return and an erase
-# in a file name would forge the line. Anything else the process prints (a
-# commit subject, a summary, a task) is text, wherever it came from.
+# SGR styling passes, conceal (SGR 8) excepted; a colour cannot move the cursor or rewrite a
+# line. The spinners' erase idiom goes under `ui/cli/_terminal_guard.raw_stream` instead.
 _TERMINAL_RE = re.compile(
     r"(?P<own>\x1b\[(?!(?:[0-9;]*;)?0*8(?:;|m))[0-9;]*m)|" + _CONTROL_RE.pattern, re.DOTALL
 )
 
 
 def scrub_terminal_output(text: str) -> str:
-    """`scrub_terminal_controls` for everything the CLI writes to its terminal:
-    SGR styling passes (conceal excepted), every other control sequence and
-    stray control character drops."""
+    """Return the text the CLI may write to its terminal: SGR styling kept, controls dropped."""
     return _TERMINAL_RE.sub(lambda m: m.group("own") or "", text)
 
 
-# Shared glyph vocabulary (text characters, not graphics, so every terminal font
-# renders them). One place so cli/tui/web agree.
-CALL = "→"  # a tool call
-RESULT = "└"  # its result, on the line below (U+2514: base box-drawing, renders in every mono font)
-COMMIT = "✎"  # an auto-commit
-THINK = "·"  # a reasoning block
-DONE = "●"  # run start / final verdict
-OPERATOR = "❯"  # noqa: RUF001 -- deliberate prompt glyph, not a mistyped >
+# Text characters, not graphics, so every terminal font renders them.
+CALL = "→"
+RESULT = "└"
+COMMIT = "✎"
+THINK = "·"
+DONE = "●"
+OPERATOR = "❯"  # noqa: RUF001  # a prompt glyph, not a mistyped >
 
-# Tool names the loop treats as terminal; their call is folded into the final
-# verdict rather than shown as an ordinary step. Kept as literals so viewmodel
-# stays free of a tools import (layering).
+# Literals, so the viewmodel needs no tools import.
 _FINISH_TOOLS = frozenset({"finish_session", "finish_planning"})
 
 ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done", "operator"]
 
 
-# Events that render between turns rather than as part of one: {type: (kind,
-# the field holding the text)}. An empty field renders nothing.
+# Events that render between turns: type -> (kind, the field holding the text).
 _BETWEEN_TURNS: dict[str, tuple[ItemKind, str]] = {
-    # The operator's typed instruction: a steer, or the follow-up a resume
-    # started with.
     "loop.steer.injected": ("operator", "text"),
-    # A side question's answer: not the run's output, so it never joins its prose.
     "btw.answered": ("marker", "block"),
 }
 
-# Where the operator's own words live in the journal: the opening task, then
-# every steer. Sibling of `_BETWEEN_TURNS` (renders steers) and of
-# `tools.sessions._SPEAKER` (quotes them across sessions).
+# Where the operator's own words live in the journal; `tools.sessions._SPEAKER` quotes them.
 _OPERATOR_TEXT = {"session.start": "user_task", "loop.steer.injected": "text"}
 
 
 def worker_models(events: Iterable[dict[str, Any]]) -> tuple[str, ...]:
-    """The models that wrote code in a session: every `role.call` worker
-    model, first-seen order (the primary worker first), deduplicated. Commit
-    trailers read this; a message-writing model never joins the list."""
+    """Return the models that wrote code in a session, in first-seen order.
+
+    Commit trailers read this; a message-writing model never joins the list.
+
+    Args:
+        events: The raw events, in order.
+
+    Returns:
+        Every `role.call` worker model once, the primary worker first.
+    """
     seen: dict[str, None] = {}
     for event in events:
         if event.get("type") == "role.call" and event.get("role") == "worker":
@@ -127,9 +101,14 @@ def worker_models(events: Iterable[dict[str, Any]]) -> tuple[str, ...]:
 
 
 def operator_inputs(events: Iterable[dict[str, Any]]) -> list[str]:
-    """The operator's typed messages, oldest first, consecutive repeats
-    collapsed. Fed from the on-disk journal, so it spans resume executions and every
-    surface's steers; input-history recall and search read it."""
+    """Return the operator's typed messages, oldest first, consecutive repeats collapsed.
+
+    Args:
+        events: The raw events, in order; the journal spans every execution and surface.
+
+    Returns:
+        The opening task, then every steer.
+    """
     out: list[str] = []
     for event in events:
         field = _OPERATOR_TEXT.get(str(event.get("type", "")))
@@ -143,20 +122,28 @@ def operator_inputs(events: Iterable[dict[str, Any]]) -> list[str]:
 
 @dataclass(frozen=True, slots=True)
 class TranscriptItem:
-    """One rendered conversation step. Only the fields its `kind` needs are set."""
+    """One rendered conversation step; only the fields its `kind` needs are set.
+
+    Attributes:
+        kind: The item's kind.
+        body: The thinking, text or marker prose; the final summary for `done`.
+        name: The tool's name; the status label for `done`.
+        arg: The tool's salient argument (a path, a pattern, a command).
+        ok: The tool or run outcome; None while in flight or when not applicable.
+        detail: The tool result's summary, the verify badge or the commit and done
+            metadata; for a call in flight, why it waits ("awaiting approval").
+        tail: A tool's captured output tail.
+        call_id: The stamped call id, so a surface pairs a call's start with its
+            outcome by identity where two identical calls would collide on name and arg.
+    """
 
     kind: ItemKind
-    body: str = ""  # thinking / text / marker prose; the final summary for `done`
-    name: str = ""  # tool name
-    arg: str = ""  # the tool's salient argument (path, pattern, command, ...)
-    ok: bool | None = None  # tool or run outcome (None = not applicable / in flight)
-    # Tool result summary, verify badge, or commit/done metadata; for a call in
-    # flight, why it waits ("awaiting approval"), empty while it runs.
+    body: str = ""
+    name: str = ""
+    arg: str = ""
+    ok: bool | None = None
     detail: str = ""
-    tail: str = ""  # a failed tool's captured output tail
-    # The provider's stamped call_id, for a surface that pairs a tool's start
-    # with its outcome by identity: two identical calls collide under a key
-    # reconstructed from name+arg.
+    tail: str = ""
     call_id: str = ""
 
 
@@ -164,17 +151,21 @@ _PRIMARY_ARGS = ("path", "file", "pattern", "query", "command", "cmd", "url", "t
 
 
 def _clip(text: str, n: int = 60) -> str:
-    # One line by contract: every caller puts the clip on a single rendered
-    # line, and an embedded newline (a multi-line arg value) would split the
-    # tool head in two on every skin.
+    """Return the text as one line of at most `n` characters, an ellipsis marking a cut."""
     text = " ".join(text.split())
     return text if len(text) <= n else text[: n - 3] + "…"
 
 
 def _call_preview(name: str, args: Any) -> str:
-    """A bounded preview carried from the call side of a tool whose substance
-    is in its arguments: apply_edit's first hunk (the journal carries the edit
-    pairs nearly whole). Other tools carry none."""
+    """Return a bounded preview of an `apply_edit` call's first hunk, "" for other tools.
+
+    Args:
+        name: The tool's name.
+        args: The raw args.
+
+    Returns:
+        The changed lines of the first edit, clipped, with counts of what was left out.
+    """
     if name != "apply_edit" or not isinstance(args, dict):
         return ""
     edits = args.get("edits")
@@ -185,9 +176,7 @@ def _call_preview(name: str, args: Any) -> str:
         return ""
     old = str(first.get("old_string", ""))
     new = str(first.get("new_string", ""))
-    # The changed lines only (an anchor line the edit re-emits unchanged is
-    # not news), each clipped: the preview is multi-line by design (the tail
-    # renders line-structured), while _clip's one-line contract caps each row.
+    # The changed lines only: an anchor line the edit re-emits unchanged is not news.
     changed = [
         ln
         for ln in difflib.ndiff(old.splitlines(), new.splitlines())
@@ -203,15 +192,20 @@ def _call_preview(name: str, args: Any) -> str:
 
 
 def salient_arg(args: Any) -> str:
-    """The one argument worth showing beside a tool name (best effort). Takes
-    untrusted event data, so a non-dict `args` is tolerated, not assumed away."""
+    """Return the one argument worth showing beside a tool name.
+
+    Args:
+        args: The raw args; a non-dict is tolerated.
+
+    Returns:
+        An argv as a shell line, a question's text, the first primary arg found, else
+        the first pair; "" when there are no args.
+    """
     if not isinstance(args, dict) or not args:
         return ""
-    # argv (run_command): a shell-style line, not a Python list repr.
     argv = args.get("argv")
     if isinstance(argv, (list, tuple)) and argv:
         return _clip(shlex.join(str(a) for a in argv))
-    # ask_user: the question text, not the nested {questions:[{...}]} repr.
     questions = args.get("questions")
     if isinstance(questions, (list, tuple)) and questions:
         first = questions[0]
@@ -227,15 +221,21 @@ def salient_arg(args: Any) -> str:
 
 
 def _parallel_group_label(event: dict[str, Any]) -> str:
+    """Return the group's label: `group <name>`, or "parallel" for an unnamed one."""
     group = str(event.get("group", "")).strip()
     return f"group {group}" if group else "parallel"
 
 
 def _parallel_dispatched_body(event: dict[str, Any]) -> str:
-    """The coordinator dispatched a group: how many lanes (the count every
-    listing shows) for how many tasks, and which tasks; a journal whose event
-    carries no lane count names the tasks alone (lane ids do not exist yet: the
-    spawner names them)."""
+    """Word a dispatched group: how many lanes for how many tasks, and which.
+
+    Args:
+        event: The `loop.parallel.dispatched` event.
+
+    Returns:
+        The head line, then one bullet per task; an event carrying no lane count
+        names the tasks alone.
+    """
     tasks_raw = event.get("tasks")
     tasks = [str(t).strip() for t in tasks_raw] if isinstance(tasks_raw, list) else []
     n = len(tasks)
@@ -252,9 +252,14 @@ def _parallel_dispatched_body(event: dict[str, Any]) -> str:
 
 
 def _parallel_compared_body(event: dict[str, Any]) -> str:
-    """A fan-out ranked its candidates: best first, each with its gate
-    verdict and cost, and who ranked them (the judge or the mechanical
-    fallback)."""
+    """Word a fan-out's ranking: best first, each with its gate verdict and cost.
+
+    Args:
+        event: The `loop.parallel.compared` event.
+
+    Returns:
+        The head line naming who ranked, then one line per candidate.
+    """
     raw = event.get("ranking")
     rows = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
     by = str(event.get("ranked_by", "")).strip() or "?"
@@ -268,8 +273,14 @@ def _parallel_compared_body(event: dict[str, Any]) -> str:
 
 
 def _parallel_joined_body(event: dict[str, Any]) -> str:
-    """The coordinator joined a group's lanes back: one line per lane naming its
-    id, branch, status, and (when it landed) short sha."""
+    """Word a joined group: one line per lane with its status, id, branch and sha.
+
+    Args:
+        event: The `loop.parallel.joined` event.
+
+    Returns:
+        The head line, then one line per lane.
+    """
     lanes_raw = event.get("lanes")
     lanes = [ln for ln in lanes_raw if isinstance(ln, dict)] if isinstance(lanes_raw, list) else []
     head = f"joined {_parallel_group_label(event)}: {len(lanes)} lane(s)"
@@ -291,11 +302,15 @@ def _parallel_joined_body(event: dict[str, Any]) -> str:
 
 
 def _parallel_failed_body(event: dict[str, Any]) -> str | None:
-    """A `/parallel` dispatch failure, or a fan-out's failed lane details.
+    """Word a dispatch failure or a fan-out's failed lanes.
 
-    Two shapes: a dispatch failure carries `error`; a post-join failure carries
-    only `lanes`, a subset of the joined event, which already showed each lane's
-    status. A fan-out has no joined event, so its lane details render here.
+    Args:
+        event: The `loop.parallel.failed` event.
+
+    Returns:
+        The dispatch error when the event carries one; a fan-out's failed lanes
+        otherwise; None for a post-join failure, whose joined event already showed
+        each lane's status.
     """
     error = str(event.get("error", "")).strip()
     if error:
@@ -313,12 +328,13 @@ def _parallel_failed_body(event: dict[str, Any]) -> str | None:
 
 
 def _mcp_unavailable_body(event: dict[str, Any]) -> str:
-    """A configured MCP server that did not start: why, and what it costs.
+    """Word an MCP server that did not start: the error and the tools it costs.
 
-    The tools it would have carried are absent, so without this the run looks
-    normal and quietly cannot do what the operator configured it for. The
-    error already names the server (every startup-path MCPError does), so the
-    line adds only the consequence.
+    Args:
+        event: The `mcp.server_unavailable` event.
+
+    Returns:
+        The error, which names the server, and the consequence.
     """
     error = str(event.get("error", "")).strip()
     if not error:
@@ -327,61 +343,60 @@ def _mcp_unavailable_body(event: dict[str, Any]) -> str:
     return f"{error}; its tools are missing"
 
 
-# Events that render as a marker between turns, each composing its own body.
-# A builder returning None renders nothing.
 def _compact_requested_body(event: dict[str, Any]) -> str:
+    """Return the line for a compaction request, with its focus."""
     focus = str(event.get("focus", "")).strip()
     return f"compaction requested: {focus}" if focus else "compaction requested"
 
 
 def _task_queued_body(event: dict[str, Any]) -> str:
-    """The operator added work to the graph mid-run. It reaches the model only
-    when the frontier gets there, so the line says it arrived, nothing more."""
+    """Return the line for a queued task; it reaches the model when the frontier gets there."""
     return f"task queued: {str(event.get('title', '')).strip()}".rstrip(": ")
 
 
 def _task_retired_body(event: dict[str, Any]) -> str:
-    """The operator dropped a task from the graph."""
+    """Return the line for a retired task."""
     return f"task retired: {str(event.get('title', '')).strip()}".rstrip(": ")
 
 
 def _standing_set_body(event: dict[str, Any]) -> str:
-    """The operator aimed the run at a new goal mid-run."""
+    """Return the line for the standing goal the operator set."""
     return f"standing goal: {str(event.get('title', '')).strip()}".rstrip(": ")
 
 
 def _compact_done_body(event: dict[str, Any]) -> str:
-    """Tier 2 replaced the history above this line with a summary."""
+    """Return the line for a tier-2 compaction: the summary's size and the turns kept."""
     chars = as_int(event.get("summary_chars"))
     kept = as_int(event.get("kept_turns"))
     return f"context compacted: {chars:,}-char summary, {kept} recent turns kept verbatim"
 
 
 def _request_refused_body(event: dict[str, Any]) -> str:
-    """The composer said "task queued" or "retiring"; the run's refusal is the
-    line that takes it back."""
+    """Return the line for a refused operator request, which takes the composer's word back."""
     kind, text = str(event.get("kind", "")), str(event.get("text", "")).strip()
     error = str(event.get("error", "")).strip()
     return f"{kind} request refused ({text[:60]}): {error}"
 
 
 def _compact_failed_body(event: dict[str, Any]) -> str:
+    """Return the line for a failed compaction, with its error."""
     error = str(event.get("error", "")).strip()
     return f"compaction failed: {error}" if error else "compaction failed"
 
 
 def _compact_refused_body(event: dict[str, Any]) -> str:
+    """Return the line for a refused compaction, with its reason."""
     reason = str(event.get("reason", "")).strip()
     return f"compaction refused: {reason}" if reason else "compaction refused"
 
 
 def _jail_degraded_body(event: dict[str, Any]) -> str:
-    """The sandbox came up weaker than asked, or a stop left a process behind:
-    the reason is the notice."""
+    """Return the line for a degraded sandbox, with its reason."""
     detail = " ".join(str(event.get("detail", "")).split())
     return f"sandbox degraded: {detail}" if detail else "sandbox degraded"
 
 
+# Events that render as a marker between turns; a builder returning None renders nothing.
 _MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     "mcp.server_unavailable": _mcp_unavailable_body,
     "jail.degraded": _jail_degraded_body,
@@ -389,9 +404,6 @@ _MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     "loop.parallel.joined": _parallel_joined_body,
     "loop.parallel.failed": _parallel_failed_body,
     "loop.parallel.compared": _parallel_compared_body,
-    # Compaction rewrites the history the reader is looking at: the surface
-    # that promised a `/compact` "applies before the next model call" is the
-    # one that says it did, failed, or was refused.
     "loop.task.queued": _task_queued_body,
     "loop.task.retired": _task_retired_body,
     "loop.standing.set": _standing_set_body,
@@ -404,66 +416,59 @@ _MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
 
 
 def _pending_key(event: dict[str, Any], name: str) -> int | str:
-    """The pairing key for a tool.call/tool.result: the stamped call_id, or the
-    name for id-less historical events."""
+    """Return the pairing key of a tool event: the stamped call id, else the name."""
     cid = event.get("call_id")
     return cid if isinstance(cid, int) else name
 
 
 class TranscriptFold:
-    """Incremental event -> `TranscriptItem` fold. Feed events in order; each
-    `feed` returns the items that event produced (usually zero or one).
+    """Fold events one at a time into conversation items.
 
-    A tool call is several items under one `call_id`, each superseding the
-    last: in flight at `tool.call` (`ok=None`), marked awaiting while the
-    prompt naming it (`approval.prompt` / `question.prompt`, by `call_id`) is
-    open, settled at `tool.result`. A consumer keeping a list drops the
-    superseded one (`fold_transcript` does). An execution boundary settles every
-    call still open; a reader that knows the worker died calls
-    `settle_open_calls` itself.
+    A tool call is several items under one `call_id`, each superseding the last: in
+    flight at `tool.call`, marked awaiting while the prompt naming it is open,
+    settled at `tool.result`. A consumer keeping a list drops the superseded one, as
+    `fold_transcript` does. An execution boundary settles every call still open; a
+    reader that knows the worker died calls `settle_open_calls` itself.
     """
 
     def __init__(self) -> None:
         self._thinking: list[str] = []
         self._text: list[str] = []
-        # Calls awaiting their result, as (the in-flight item, the call-side
-        # preview), keyed by the per-dispatch call_id: a concurrent
-        # explore-tier review panel shares one dispatcher across threads, so
-        # same-name calls interleave. An id-less historical event falls back
-        # to its name key (sequential pairing).
+        # Keyed by call id, since a concurrent panel interleaves same-name calls; an id-less
+        # event pairs by name.
         self._pending: dict[int | str, tuple[TranscriptItem, str]] = {}
-        # The call each open prompt holds, by prompt id: the answer event
-        # names only the prompt.
+        # The call each open prompt gates, by prompt id: the answer names only the prompt.
         self._gated: dict[str, int] = {}
-        self._verify: tuple[bool, str] | None = None  # (ok, badge) for run_verify_command
-        self._finish = ""  # summary from the terminal finish tool
+        self._verify: tuple[bool, str] | None = None
+        self._finish = ""
         self._tools = 0
         self._commits = 0
-        self._mode = ""  # from session.start; an ask or a plan never commits
-        # Receipt state for the done item: cost from budget.update, wall time
-        # from the first/last event ts, the last auto-commit's subject. Each
-        # degrades to absent on a journal that never carried it.
+        self._mode = ""
         self._usd = 0.0
         self._usd_partial = False
         self._first_ep: float | None = None
         self._last_ep: float | None = None
         self._commit_subject = ""
-        # Pins already shown: a pin renders once, where it enters the
-        # conversation (a /pin, a --pin at execution start), never again at a resume
-        # boundary that restates the list.
+        # A pin renders once, where it enters the conversation, never again at a resume.
         self._pins_shown: set[str] = set()
 
     def _fold_receipt(self, event: dict[str, Any], etype: str) -> bool:
-        """Track the done item's receipt pieces (wall-clock span, cost, last
-        commit subject); True when the event carried only receipt state."""
+        """Track the done item's receipt: wall-clock span, cost, last commit subject.
+
+        Args:
+            event: The raw event.
+            etype: Its type.
+
+        Returns:
+            True when the event carried only receipt state.
+        """
         if (ep := event_epoch(event.get("ts"))) is not None:
             self._last_ep = ep
             if self._first_ep is None:
                 self._first_ep = ep
         if etype in SESSION_START_EVENTS:
             self._mode = str(event.get("mode", "")) or self._mode
-            # The receipt is the execution's: a resumed execution's wall clock and counts
-            # start at its own start event, its cost included.
+            # The receipt is the execution's own.
             self._first_ep = ep
             self._tools = 0
             self._commits = 0
@@ -482,9 +487,11 @@ class TranscriptFold:
         return False
 
     def _receipt_detail(self) -> str:
-        """The done item's detail: cost · wall · counts · commit subject, each
-        piece present only when the journal carried it, so the story ends
-        inside the surface instead of as post-exit shell text."""
+        """Return the done item's detail: cost, wall time, counts and commit subject.
+
+        Returns:
+            The pieces the journal carried, joined by " · ".
+        """
         tools = f"{self._tools} tool{'' if self._tools == 1 else 's'}"
         commits = f"{self._commits} commit{'' if self._commits == 1 else 's'}"
         parts = []
@@ -492,8 +499,7 @@ class TranscriptFold:
             parts.append(format_usd(self._usd, partial=self._usd_partial))
         if self._first_ep is not None and self._last_ep is not None:
             parts.append(f"{max(0, round(self._last_ep - self._first_ep))}s")
-        # An ask or a plan never commits: "0 commits" there is noise, not a fact
-        # worth a receipt line.
+        # An ask or a plan never commits, so "0 commits" there is noise.
         counts = (
             tools if self._mode in ("ask", "plan") and not self._commits else f"{tools} · {commits}"
         )
@@ -503,8 +509,15 @@ class TranscriptFold:
         return " · ".join(parts)
 
     def _pin_items(self, event: dict[str, Any], etype: str) -> list[TranscriptItem]:
-        """The operator's pins as an operator item (the other half of the
-        dialogue, like a steer): the ones this fold has not shown yet."""
+        """Return the pins this fold has not shown yet as one operator item.
+
+        Args:
+            event: The pin event.
+            etype: Its type, `loop.pin.added` or `loop.pin.restored`.
+
+        Returns:
+            The flushed message, then the pins item; nothing when every pin was shown.
+        """
         raw = [event.get("text", "")] if etype == "loop.pin.added" else event.get("pins") or ()
         texts = [str(t).strip() for t in raw] if isinstance(raw, (list, tuple)) else []
         fresh = [t for t in texts if t and t not in self._pins_shown]
@@ -515,7 +528,15 @@ class TranscriptFold:
         out.append(TranscriptItem("operator", body="pinned: " + " | ".join(fresh)))
         return out
 
-    def feed(self, event: dict[str, Any]) -> list[TranscriptItem]:  # noqa: PLR0911, PLR0912
+    def feed(self, event: dict[str, Any]) -> list[TranscriptItem]:  # noqa: PLR0911, PLR0912, PLR0915  # one branch per event type
+        """Fold one event.
+
+        Args:
+            event: The raw event.
+
+        Returns:
+            The items the event produced, usually none or one.
+        """
         etype = event.get("type", "")
         if self._fold_receipt(event, etype):
             return []
@@ -528,18 +549,11 @@ class TranscriptFold:
             buffer.append(str(event.get("text", "")))
             return []
         if etype == "role.result":
-            # The settled text, used only when no deltas arrived: a streaming
-            # execution already has the same prose in `self._text`.
-            #
-            # Only the role driving the session speaks. agent6 makes side calls
-            # with their own roles (the verify-command inferer runs before the
-            # loop starts), and folding their results as messages would open a
-            # conversation with the inferer's bare "[]" answer for "no verify
-            # command found", looking like the agent.
+            # Only the driving role speaks: a side call's answer would read as the agent's.
             settled = "" if self._is_side_call(event) else str(event.get("text", ""))
             return self._flush_message(settled=settled)
         if etype == "tool.call":
-            out = self._flush_message()  # a turn's prose precedes its calls
+            out = self._flush_message()
             out.extend(self._start_tool(event))
             return out
         if etype in ("approval.prompt", "question.prompt"):
@@ -565,7 +579,7 @@ class TranscriptFold:
             body = build(event)
             if body is None:
                 return []
-            out = self._flush_message()  # a turn's prose precedes the marker
+            out = self._flush_message()
             out.append(TranscriptItem("marker", body=body))
             return out
         if etype in ("loop.pin.added", "loop.pin.restored"):
@@ -593,19 +607,13 @@ class TranscriptFold:
                 scoped=bool(event.get("scoped", False)),
                 gate_red=self._verify is not None and not self._verify[0],
             )
-            # Pair the finish summary with the done line only on a clean finish
-            # (a run's finish_session, a plan's finish_planning). On a
-            # failure/stop the summary is from an earlier finish call and
-            # pairing it (e.g. "provider error  Plan seeded.") misreads as success.
+            # On a failure or stop the summary is an earlier finish call's and reads as success.
             body = self._finish if reason in ("", "finish_session", "finish_planning") else ""
             out.append(
                 TranscriptItem(
                     "done",
                     body=body,
-                    # The gate's tri-state, not a bool: null (no gate ran, or
-                    # the operator ended the run) is neither pass nor fail;
-                    # flattened, `stopped` and a gateless finish would take the
-                    # failure colour of a finish over a red gate, which exits 4.
+                    # The gate's tri-state: a stop or a gateless finish is neither pass nor fail.
                     ok=all_passed if isinstance(all_passed, bool) else None,
                     detail=counts,
                     name=status_label(word, detail),
@@ -615,11 +623,18 @@ class TranscriptFold:
         return []
 
     def _is_side_call(self, event: dict[str, Any]) -> bool:
-        """Whether this result is a side call's (a streamed execution keeps its own
-        prose in the deltas anyway)."""
+        """Return whether the result is a side call's."""
         return is_side_role(str(event.get("role", "")))
 
     def _flush_message(self, *, settled: str = "") -> list[TranscriptItem]:
+        """Emit the buffered thinking and text as items.
+
+        Args:
+            settled: The result's text, used only when no deltas arrived.
+
+        Returns:
+            A thinking item and a text item, each only when non-empty.
+        """
         out: list[TranscriptItem] = []
         thinking = "".join(self._thinking).strip()
         self._thinking.clear()
@@ -627,13 +642,21 @@ class TranscriptFold:
             out.append(TranscriptItem("thinking", body=thinking))
         text = "".join(self._text).strip() or settled.strip()
         self._text.clear()
-        if text:  # only when non-empty: a blank response block renders nothing
+        if text:
             out.append(TranscriptItem("text", body=text))
         return out
 
     def _start_tool(self, event: dict[str, Any]) -> list[TranscriptItem]:
-        """A dispatched call: its in-flight item, kept until the result. A
-        finish tool's summary is the done line's, never an item."""
+        """Start a dispatched call's in-flight item, kept until its result.
+
+        Args:
+            event: The `tool.call` event.
+
+        Returns:
+            The in-flight item, after a superseded same-key call's settled item when an
+            id-less journal pairs by name; nothing for a finish tool, whose summary is
+            the done line's.
+        """
         name = str(event.get("name", ""))
         raw_args = event.get("args")
         args = raw_args if isinstance(raw_args, dict) else {}
@@ -644,8 +667,6 @@ class TranscriptFold:
         key = _pending_key(event, name)
         out: list[TranscriptItem] = []
         if key in self._pending:
-            # An id-less journal pairs by name: a second call under the name
-            # takes the key, and the first would never settle.
             first, _preview = self._pending.pop(key)
             out.append(replace(first, ok=False, detail="no result (superseded)"))
         pending = TranscriptItem("tool", name=name, arg=salient_arg(args), call_id=str(key))
@@ -655,9 +676,15 @@ class TranscriptFold:
         return out
 
     def _mark_gated_call(self, event: dict[str, Any], why: str) -> list[TranscriptItem]:
-        """The call the prompt names (its `call_id`) re-emitted with *why* it
-        waits; nothing for a prompt naming no call in flight (a question
-        before the run starts, a verify the harness runs itself)."""
+        """Re-emit the call a prompt gates, marked with why it waits.
+
+        Args:
+            event: The prompt event.
+            why: The waiting detail.
+
+        Returns:
+            The marked item; nothing for a prompt naming no call in flight.
+        """
         key = event.get("call_id")
         if not isinstance(key, int) or key not in self._pending:
             return []
@@ -665,22 +692,31 @@ class TranscriptFold:
         return [self._redetail(key, why)]
 
     def _release_gated_call(self, event: dict[str, Any]) -> list[TranscriptItem]:
-        """The answered prompt's call re-emitted as running again."""
+        """Return an answered prompt's call re-emitted as running, nothing when none is gated."""
         key = self._gated.pop(str(event.get("id", "")), None)
         if key is None or key not in self._pending:
             return []
         return [self._redetail(key, "")]
 
     def _redetail(self, key: int, detail: str) -> TranscriptItem:
+        """Return the pending call's item with a new detail, kept as the pending one."""
         pending, preview = self._pending[key]
         marked = replace(pending, detail=detail)
         self._pending[key] = (marked, preview)
         return marked
 
     def _complete_tool(self, event: dict[str, Any]) -> list[TranscriptItem]:
+        """Settle a call with its result.
+
+        Args:
+            event: The `tool.result` event.
+
+        Returns:
+            The settled item; nothing for a finish tool's result or an unmatched one.
+        """
         name = str(event.get("name", ""))
         key = _pending_key(event, name)
-        if key not in self._pending:  # a finish tool's result, or an unmatched one
+        if key not in self._pending:
             return []
         pending, call_preview = self._pending.pop(key)
         if name == "run_verify_command" and self._verify is not None:
@@ -689,10 +725,7 @@ class TranscriptFold:
         else:
             ok = tool_result_ok(event.get("ok"))
             detail = str(event.get("summary", "")).strip()
-        # A failed tool shows why (stderr, else stdout). On success the tail is
-        # the item's substance: command output (the operator ran it to see it),
-        # a read's head preview with the true line count, or the edit's hunk
-        # carried from the call side. Absent fields degrade to no tail.
+        # A failed tool's tail is why; a passed one's is its substance.
         if not ok:
             tail = str(event.get("stderr_tail") or event.get("stdout_tail") or "").strip()
         elif name in ("run_command", "run_metric_command"):
@@ -713,9 +746,15 @@ class TranscriptFold:
         ]
 
     def settle_open_calls(self, why: str) -> list[TranscriptItem]:
-        """Every call still in flight settled as one that never returned,
-        with *why* ("the run ended" at an execution boundary; "the run died" from a
-        reader whose worker probe found the worker gone)."""
+        """Settle every call still in flight as one that never returned.
+
+        Args:
+            why: The reason, "the run ended" at an execution boundary or "the run died"
+                from a reader whose probe found the worker gone.
+
+        Returns:
+            The settled items.
+        """
         out = [
             replace(pending, ok=False, detail=f"no result ({why})")
             for pending, _preview in self._pending.values()
@@ -726,8 +765,7 @@ class TranscriptFold:
 
 
 def _land(out: list[TranscriptItem], item: TranscriptItem) -> None:
-    """Append *item*; a tool item first drops the in-flight one it supersedes
-    (near the end: calls in flight are recent)."""
+    """Append an item, a tool item first dropping the in-flight one it supersedes."""
     if item.kind == "tool":
         for i in range(len(out) - 1, -1, -1):
             earlier = out[i]
@@ -740,9 +778,16 @@ def _land(out: list[TranscriptItem], item: TranscriptItem) -> None:
 def fold_transcript(
     events: list[dict[str, Any]], *, worker_dead: bool = False
 ) -> list[TranscriptItem]:
-    """Fold a whole event stream into its ordered conversation items, one per
-    tool call. *worker_dead* (the caller probed the worker and it is gone)
-    settles the calls still open at the end: nothing will."""
+    """Fold a whole event stream into its conversation items, one per tool call.
+
+    Args:
+        events: The raw events, in order.
+        worker_dead: The caller probed the worker and it is gone, so the calls still
+            open at the end are settled as never returning.
+
+    Returns:
+        The items, in landing order.
+    """
     fold = TranscriptFold()
     out: list[TranscriptItem] = []
     for event in events:
@@ -755,18 +800,26 @@ def fold_transcript(
 
 
 def _outcome_word(item: TranscriptItem) -> str:
-    """A tool item's bracket word in a restatement: its verdict, or (in
-    flight) why it waits, else "running"."""
+    """Return a tool item's bracket word: its verdict, or why it waits, else "running"."""
     if item.ok is None:
         return item.detail or "running"
     return "ok" if item.ok else "FAILED"
 
 
 def restate(events: list[dict[str, Any]], *, worker_dead: bool = False) -> str:
-    """The conversation since the operator's last prompt or steer, compacted:
-    their words, then assistant prose kept whole with tool calls and markers
-    one line each. Rendered from the journal, never a model call, so every
-    surface answers `/restate` locally and free."""
+    """Restate the conversation since the operator's last prompt or steer.
+
+    Rendered from the journal, never a model call, so every surface answers
+    `/restate` locally and free.
+
+    Args:
+        events: The raw events, in order.
+        worker_dead: The caller probed the worker and it is gone.
+
+    Returns:
+        The operator's words, then assistant prose kept whole with tool calls and
+        markers one line each; a notice when there is no operator input yet.
+    """
     last: int | None = None
     for i, event in enumerate(events):
         if str(event.get("type", "")) in _OPERATOR_TEXT:
@@ -787,7 +840,7 @@ def restate(events: list[dict[str, Any]], *, worker_dead: bool = False) -> str:
             arg = f" {item.arg}" if item.arg else ""
             detail = f": {_clip(item.detail, 80)}" if item.detail else ""
             lines.append(f"  [{_outcome_word(item)}] {item.name}{arg}{detail}")
-        else:  # commit / marker / done
+        else:
             body = (item.body or item.detail).strip()
             if body:
                 lines.append(f"  {body}")
