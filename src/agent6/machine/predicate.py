@@ -1,19 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Restricted, non-Turing-complete predicate language for `branch` states.
+"""The restricted predicate language of `branch` states.
 
-A predicate is parsed with :func:`ast.parse` in `mode="eval"` and then
-walked against a strict allow-list of node types. Anything outside the
-allow-list, function calls beyond a tiny fixed set, Python attribute
-access, comprehensions, lambdas, arithmetic, is rejected at
-`machine check` time. The evaluator never `eval`/`exec`s, never
-calls `getattr`, and never resolves arbitrary Python names: an
-`Attribute` chain is reinterpreted as *data* navigation into a record
-value (an ordered dict lookup), and a bare `Name` must be a declared
-blackboard variable.
-
-This module is intentionally dependency-free (stdlib `ast` only) so the
-security-critical allow-list can be audited in isolation.
+A predicate is parsed with `ast.parse` in eval mode and walked against an allow-list of node
+types; calls beyond `len` and `has`, attribute access, comprehensions, lambdas and
+arithmetic are rejected at `machine check`. The evaluator never evals, never calls
+`getattr` and resolves no Python name: an attribute chain is data navigation into a record
+by dict lookup, and a bare name is a declared blackboard variable. The module depends on
+the stdlib alone, so the allow-list audits in isolation.
 """
 
 from __future__ import annotations
@@ -32,10 +26,7 @@ __all__ = [
     "parse_predicate",
 ]
 
-# The only callable names a predicate may invoke. Each is a fixed-arity,
-# pure builtin re-implemented by the evaluator; it never calls the Python
-# builtin via the name. `has(ref)` is the presence guard for optional record
-# fields: True iff every segment of the reference resolves.
+# The evaluator re-implements each; `has(ref)` is the presence guard for an optional field.
 ALLOWED_FUNCTIONS = frozenset({"len", "has"})
 
 _ALLOWED_COMPARISONS = (
@@ -56,15 +47,17 @@ class PredicateError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Reference:
-    """A blackboard reference: a root variable plus zero or more record
-    field navigations. `verdict.confidence` is `Reference("verdict",
-    ("confidence",))`."""
+    """A blackboard reference: a root variable plus record field navigations.
+
+    `verdict.confidence` is `Reference("verdict", ("confidence",))`.
+    """
 
     root: str
     path: tuple[str, ...]
 
     @property
     def dotted(self) -> str:
+        """The reference as the author spells it."""
         return ".".join((self.root, *self.path))
 
 
@@ -72,9 +65,10 @@ class Reference:
 class Predicate:
     """A parsed, allow-list-validated predicate.
 
-    `references` is every blackboard reference the predicate reads, in
-    source order, so a caller can type-check each against the declared
-    variables and record schemas.
+    Attributes:
+        source: The predicate text.
+        tree: The parsed expression.
+        references: Every blackboard reference read, in source order, for type-checking.
     """
 
     source: str
@@ -83,11 +77,16 @@ class Predicate:
 
 
 def parse_predicate(source: str) -> Predicate:
-    """Parse and allow-list-validate *source*.
+    """Parse and allow-list-validate a predicate; references are type-checked by the caller.
 
-    Raises :class:`PredicateError` on a syntax error or any node outside
-    the allow-list. Does not type-check references, that is the caller's
-    job, since types live in the machine model.
+    Args:
+        source: The predicate text.
+
+    Returns:
+        The predicate.
+
+    Raises:
+        PredicateError: A syntax error, or a node outside the allow-list.
     """
     try:
         tree = ast.parse(source, mode="eval")
@@ -99,6 +98,11 @@ def parse_predicate(source: str) -> Predicate:
 
 
 def _check(node: ast.expr, references: list[Reference]) -> None:  # noqa: PLR0911, PLR0912
+    """Walk the node against the allow-list, collecting references.
+
+    Raises:
+        PredicateError: The node is outside the allow-list.
+    """
     if isinstance(node, ast.BoolOp):
         if not isinstance(node.op, (ast.And, ast.Or)):
             raise PredicateError(f"unsupported boolean operator: {type(node.op).__name__}")
@@ -143,6 +147,11 @@ def _check(node: ast.expr, references: list[Reference]) -> None:  # noqa: PLR091
 
 
 def _check_call(node: ast.Call, references: list[Reference]) -> None:
+    """Check a call: one positional argument to `len` or `has`, and `has` takes a reference.
+
+    Raises:
+        PredicateError: Any other call.
+    """
     func = node.func
     if not isinstance(func, ast.Name) or func.id not in ALLOWED_FUNCTIONS:
         name = func.id if isinstance(func, ast.Name) else type(func).__name__
@@ -160,7 +169,17 @@ def _check_call(node: ast.Call, references: list[Reference]) -> None:
 
 
 def as_reference(node: ast.expr) -> Reference:
-    """The blackboard reference a `Name` or `Attribute` chain spells."""
+    """Return the blackboard reference a `Name` or `Attribute` chain spells.
+
+    Args:
+        node: The chain.
+
+    Returns:
+        The reference.
+
+    Raises:
+        PredicateError: The chain is not a load of names.
+    """
     parts: list[str] = []
     current = node
     while isinstance(current, ast.Attribute):
@@ -178,16 +197,28 @@ def as_reference(node: ast.expr) -> Reference:
 
 
 def evaluate(predicate: Predicate, blackboard: Mapping[str, object]) -> bool:
-    """Evaluate *predicate* against *blackboard*, returning a bool.
+    """Evaluate a predicate against the blackboard.
 
-    Pure: navigates record values as ordered dict lookups, never touching
-    the host environment. Raises :class:`PredicateError` if a reference
-    cannot be resolved against the blackboard at runtime.
+    Args:
+        predicate: The parsed predicate.
+        blackboard: The variables.
+
+    Returns:
+        The truth value.
+
+    Raises:
+        PredicateError: A reference does not resolve, or an operation has no meaning for
+            the values it met.
     """
     return bool(_eval(predicate.tree.body, blackboard))
 
 
 def _eval(node: ast.expr, blackboard: Mapping[str, object]) -> object:  # noqa: PLR0911, PLR0912
+    """Return the value of an allow-listed node.
+
+    Raises:
+        PredicateError: A reference does not resolve, or `len` of a value with no length.
+    """
     if isinstance(node, ast.BoolOp):
         if isinstance(node.op, ast.And):
             result: object = True
@@ -212,7 +243,6 @@ def _eval(node: ast.expr, blackboard: Mapping[str, object]) -> object:  # noqa: 
     if isinstance(node, ast.Compare):
         return _eval_compare(node, blackboard)
     if isinstance(node, ast.Call):
-        # Allow-list guarantees one of the fixed builtins with one argument.
         assert isinstance(node.func, ast.Name)
         if node.func.id == "has":
             return _has(as_reference(node.args[0]), blackboard)
@@ -230,6 +260,7 @@ def _eval(node: ast.expr, blackboard: Mapping[str, object]) -> object:  # noqa: 
 
 
 def _eval_compare(node: ast.Compare, blackboard: Mapping[str, object]) -> bool:
+    """Return the truth of a chained comparison, evaluated left to right."""
     left = _eval(node.left, blackboard)
     for op, comparator_node in zip(node.ops, node.comparators, strict=True):
         right = _eval(comparator_node, blackboard)
@@ -240,6 +271,7 @@ def _eval_compare(node: ast.Compare, blackboard: Mapping[str, object]) -> bool:
 
 
 def _compare(op: ast.cmpop, left: object, right: object) -> bool:
+    """Return the result of one comparison operator."""
     if isinstance(op, ast.Eq):
         return left == right
     if isinstance(op, ast.NotEq):
@@ -252,11 +284,13 @@ def _compare(op: ast.cmpop, left: object, right: object) -> bool:
 
 
 def _order(op: ast.cmpop, left: object, right: object) -> bool:
-    # No numeric coercion: Python orders int/int, int/float, float/float
-    # natively and exactly. A float() coercion would collapse distinct ints
-    # above 2^53 (nanosecond epochs) to one value (`a > b` reading False for
-    # a = b + 100), making `>` lossy while `==` stays exact.
-    # Non-comparable operands still raise TypeError -> PredicateError.
+    """Return the result of an ordering operator.
+
+    No numeric coercion: float() collapses distinct ints above 2^53.
+
+    Raises:
+        PredicateError: The operands do not order.
+    """
     try:
         if isinstance(op, ast.Lt):
             return left < right  # type: ignore[operator]
@@ -270,6 +304,12 @@ def _order(op: ast.cmpop, left: object, right: object) -> bool:
 
 
 def _contains(container: object, item: object) -> bool:
+    """Return whether the item is in the container.
+
+    Raises:
+        PredicateError: The container is not one, a string container met a non-string, or
+            a dict met an unhashable item.
+    """
     if isinstance(container, str):
         if not isinstance(item, str):
             raise PredicateError(f"`in` on a string requires a string, got {item!r}")
@@ -279,17 +319,17 @@ def _contains(container: object, item: object) -> bool:
     try:
         return item in container
     except TypeError as exc:
-        # A dict container hashes the left operand, so an unhashable one (a
-        # list/record-typed var) raises a bare TypeError, which the engine does
-        # not catch: it would escape as a traceback with no journaled end.
+        # An unhashable item against a dict raises a bare TypeError the engine does not catch.
         raise PredicateError(f"cannot use `in` with {item!r} and {container!r}") from exc
 
 
 def _has(reference: Reference, blackboard: Mapping[str, object]) -> bool:
-    """Presence of *reference*: False when any segment is absent (the guard an
-    optional field needs before a read), True when the full path resolves.
-    Navigating into a non-record value stays an error, exactly as `_resolve`
-    treats it: that is a type mismatch, not absence."""
+    """Return whether every segment of the reference resolves.
+
+    Raises:
+        PredicateError: A segment navigates into a non-record value, a type mismatch rather
+            than absence, as in `_resolve`.
+    """
     if reference.root not in blackboard:
         return False
     value = blackboard[reference.root]
@@ -303,6 +343,12 @@ def _has(reference: Reference, blackboard: Mapping[str, object]) -> bool:
 
 
 def _resolve(reference: Reference, blackboard: Mapping[str, object]) -> object:
+    """Return the referenced value.
+
+    Raises:
+        PredicateError: The root is unknown, a field is missing, or a segment navigates into
+            a non-record value.
+    """
     if reference.root not in blackboard:
         raise PredicateError(f"unknown reference: {reference.root!r}")
     value = blackboard[reference.root]
@@ -316,6 +362,11 @@ def _resolve(reference: Reference, blackboard: Mapping[str, object]) -> object:
 
 
 def _as_number(value: object) -> float:
+    """Return the value as a float.
+
+    Raises:
+        PredicateError: The value is a bool or not a number.
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise PredicateError(f"expected a number, got {value!r}")
     return float(value)

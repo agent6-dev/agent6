@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Load + semantic validation for `.asm.toml` state machines.
+"""Load and semantically validate a `.asm.toml` machine.
 
-Parsing is pydantic (the shapes in `model`); this module adds the cross-
-cutting load-time rules the spec requires (global name uniqueness, the
-ownership wall, reference/field type checks, total branches, reachability)
-plus `load_machine` and `validate_record_payload`. Every violation is a
-load-time error aggregated into MachineError.
+The shapes are pydantic (`spec`); this module adds the cross-cutting load-time rules (name
+uniqueness, the ownership wall, reference and field type checks, total branches,
+reachability) plus `load_machine` and the runtime `validate_record_payload`. Every violation
+is aggregated into one MachineError.
 """
 
 from __future__ import annotations
@@ -63,10 +62,16 @@ from agent6.machine.template import (
 
 
 def load_machine(path: Path) -> MachineSpec:
-    """Load, parse, and fully validate the `.asm.toml` file at *path*.
+    """Load, parse and fully validate a `.asm.toml` file.
 
-    Raises :class:`MachineError` aggregating every diagnostic. Never
-    returns a partially-valid machine.
+    Args:
+        path: The machine file.
+
+    Returns:
+        The validated machine; never a partially valid one.
+
+    Raises:
+        MachineError: Every diagnostic, aggregated.
     """
     if not path.is_file():
         raise MachineError([f"machine file not found: {path}"])
@@ -92,6 +97,7 @@ def load_machine(path: Path) -> MachineSpec:
 
 
 def _precheck(raw: dict[str, Any]) -> list[str]:
+    """Return the problems pydantic would report less readably: a var outside an owner table."""
     problems: list[str] = []
     vars_section = raw.get("vars")
     if isinstance(vars_section, dict):
@@ -105,6 +111,7 @@ def _precheck(raw: dict[str, Any]) -> list[str]:
 
 
 def _format_validation_error(err: ValidationError) -> list[str]:
+    """Return one line per pydantic issue, located by its dotted path."""
     problems: list[str] = []
     for issue in err.errors():
         loc = ".".join(str(part) for part in issue["loc"]) or "<root>"
@@ -112,15 +119,16 @@ def _format_validation_error(err: ValidationError) -> list[str]:
     return problems
 
 
-# --------------------------------------------------------------------------
-# Semantic validation (§4.5)
-# --------------------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class _Env:
-    """The resolved declarations the state rules read: each variable's type,
-    owner subtable and declared value, plus the record schemas."""
+    """The resolved declarations the state rules read.
+
+    Attributes:
+        var_types: Each variable's type.
+        var_owner: Each variable's owner subtable.
+        var_values: Each variable's declared value or default.
+        schemas: The record schemas, fields resolved to types.
+    """
 
     var_types: dict[str, TypeRef]
     var_owner: dict[str, str]
@@ -129,6 +137,11 @@ class _Env:
 
 
 def _resolve_env(spec: MachineSpec) -> tuple[_Env, list[str]]:
+    """Resolve the schemas and variables.
+
+    Returns:
+        The env and the problems found.
+    """
     schema_names = frozenset(spec.schemas)
     schemas, problems = _resolve_schemas(spec, schema_names)
     var_types, var_owner, var_values, var_problems = _resolve_vars(spec, schema_names, schemas)
@@ -137,16 +150,21 @@ def _resolve_env(spec: MachineSpec) -> tuple[_Env, list[str]]:
 
 
 def validate_semantics(spec: MachineSpec) -> list[str]:
-    """Run every cross-cutting rule the pydantic shape cannot express."""
+    """Run every cross-cutting rule the pydantic shape cannot express.
+
+    Args:
+        spec: The parsed machine.
+
+    Returns:
+        The problems, in order; empty when the machine is valid.
+    """
     problems: list[str] = []
 
     for sname in spec.schemas:
         if not IDENT_RE.fullmatch(sname):
             problems.append(f"schema name {sname!r} is not a valid identifier (^[a-z][a-z0-9_]*$)")
         elif sname in BUILTIN_TYPE_NAMES:
-            # `parse_type` resolves the built-ins before the schema names, so a
-            # schema called `str` or `json` loads clean and can never be named
-            # by a var or an `output_schema`.
+            # `parse_type` resolves the built-ins first, so such a schema could never be named.
             problems.append(
                 f"schema name {sname!r} is a built-in type, so nothing could reference it"
             )
@@ -169,6 +187,11 @@ def validate_semantics(spec: MachineSpec) -> list[str]:
 def _resolve_schemas(
     spec: MachineSpec, schema_names: frozenset[str]
 ) -> tuple[dict[str, dict[str, TypeRef]], list[str]]:
+    """Resolve each schema's field types.
+
+    Returns:
+        The schemas and the problems found.
+    """
     problems: list[str] = []
     resolved: dict[str, dict[str, TypeRef]] = {}
     for sname, fields in spec.schemas.items():
@@ -197,11 +220,13 @@ def _resolve_schemas(
 
 
 def _detect_schema_cycles(resolved: dict[str, dict[str, TypeRef]]) -> list[str]:
+    """Return one problem per cycle among record schemas."""
     problems: list[str] = []
     visiting: set[str] = set()
     done: set[str] = set()
 
     def visit(name: str, trail: tuple[str, ...]) -> None:
+        """Depth-first visit; a name met while visiting closes a cycle."""
         if name in done or name not in resolved:
             return
         if name in visiting:
@@ -225,6 +250,11 @@ def _resolve_vars(
     schema_names: frozenset[str],
     schemas: dict[str, dict[str, TypeRef]],
 ) -> tuple[dict[str, TypeRef], dict[str, str], dict[str, Any], list[str]]:
+    """Resolve the three owner tables into one namespace.
+
+    Returns:
+        The types, the owners, the values and the problems found.
+    """
     problems: list[str] = []
     var_types: dict[str, TypeRef] = {}
     var_owner: dict[str, str] = {}
@@ -274,10 +304,18 @@ def _resolve_vars(
 
 
 def fixture_problems(spec: MachineSpec, fixture: dict[str, Any]) -> list[str]:
-    """Problems in a `--blackboard` fixture: every key must name a declared
-    var and every value must satisfy its type, the same checks the declared
-    defaults get. Unchecked, a typo'd key is silently ignored and a string
-    `"false"` replaces a bool and routes branches as truthy."""
+    """Return the problems in a `--blackboard` fixture.
+
+    Every key names a declared variable and every value satisfies its type, the checks the
+    declared defaults get.
+
+    Args:
+        spec: The machine.
+        fixture: The fixture's values by variable.
+
+    Returns:
+        The problems; empty when the fixture is valid.
+    """
     env, _ = _resolve_env(spec)
     problems: list[str] = []
     for name, value in fixture.items():
@@ -304,6 +342,11 @@ def _check_value(
     *,
     raw_schemas: dict[str, dict[str, FieldSpec]] | None = None,
 ) -> list[str]:
+    """Return the problems of a declared value against its type.
+
+    A record value is a placeholder: presence is not required, but every present field
+    must be known and well typed.
+    """
     if isinstance(t, ScalarT):
         return _check_scalar(value, t.name, label)
     if isinstance(t, ListT):
@@ -315,9 +358,6 @@ def _check_value(
         return problems
     if isinstance(t, JsonT):
         return _check_json(value, label)
-    # RecordT: a default/value is a placeholder (the example uses `{}` for a
-    # required-field record), so the check does not require presence, but any field
-    # that *is* present must be known and well-typed.
     if not isinstance(value, dict):
         return [f"{label}: expected object for record {t.name!r}, got {_py_type(value)}"]
     problems = []
@@ -336,13 +376,14 @@ def _check_value(
 
 
 def _enum_problems(value: Any, field: FieldSpec, label: str) -> list[str]:
-    """The `enum` check a spec-time record default and a runtime field value share."""
+    """Return the `enum` problem of a value, the check a default and a runtime field share."""
     if field.enum is None or value in field.enum:
         return []
     return [f"{label}: {value!r} is not one of enum {list(field.enum)}"]
 
 
 def _check_scalar(value: Any, name: str, label: str) -> list[str]:
+    """Return the problem of a value against a scalar type; a bool is never an int."""
     if name == "bool":
         ok = isinstance(value, bool)
     elif name == "int":
@@ -357,6 +398,7 @@ def _check_scalar(value: Any, name: str, label: str) -> list[str]:
 
 
 def _check_json(value: Any, label: str) -> list[str]:
+    """Return the problems of a value against `json`: serializable, string keys."""
     if value is None or isinstance(value, (bool, int, float, str)):
         return []
     if isinstance(value, list):
@@ -375,28 +417,27 @@ def _check_json(value: Any, label: str) -> list[str]:
 
 
 def _py_type(value: Any) -> str:
+    """Return the value's type name, for a problem line."""
     return type(value).__name__
-
-
-# --------------------------------------------------------------------------
-# Runtime payload validation (the agent `finish_session` trust boundary)
-# --------------------------------------------------------------------------
 
 
 def validate_record_payload(
     schemas: dict[str, dict[str, FieldSpec]], schema_name: str, payload: Any, *, where: str
 ) -> list[str]:
-    """Strictly validate a captured *payload* against a record schema.
+    """Strictly validate a captured payload against a record schema.
 
-    The one runtime capture gate for an agent `finish_session` payload (engine
-    side and the execution's in-run contract check, which receives the same schemas
-    over the AgentRequest wire) and a `tool` state's parsed stdout (*where*
-    names which, for the error text). Stricter than the load-time placeholder
-    check on variable defaults: every non-optional field must be present,
-    `enum` constraints are enforced, and nested records recurse. Presumes the
-    schemas already passed `validate_semantics`, so the graph is well-formed.
-    Returns an empty list when the payload conforms, or a list of
-    human-readable problems otherwise.
+    The one runtime capture gate, for an agent's `finish_session` payload (engine side and
+    the execution's in-run check) and a tool's parsed stdout: every required field present,
+    enums enforced, nested records recursed. The schemas have passed `validate_semantics`.
+
+    Args:
+        schemas: The machine's schema table.
+        schema_name: The schema the payload must match.
+        payload: The captured value.
+        where: Names the capture in each problem.
+
+    Returns:
+        The problems; empty when the payload conforms.
     """
     return _check_record_strict(payload, schema_name, schemas, frozenset(schemas), where)
 
@@ -408,6 +449,7 @@ def _check_record_strict(
     schema_names: frozenset[str],
     label: str,
 ) -> list[str]:
+    """Return the problems of a value against a schema, every required field present."""
     fields = raw_schemas.get(schema_name)
     if fields is None:
         return [f"{label}: unknown schema {schema_name!r}"]
@@ -435,6 +477,7 @@ def _check_field_value(
     schema_names: frozenset[str],
     label: str,
 ) -> list[str]:
+    """Return the problems of one field's value, recursing into a record."""
     try:
         ftype = parse_type(field.type, schema_names)
     except TypeParseError as exc:  # pragma: no cover - spec already validated
@@ -444,14 +487,14 @@ def _check_field_value(
     return _check_value(value, ftype, {}, label) or _enum_problems(value, field, label)
 
 
-# --------------------------------------------------------------------------
-# Reference / template resolution
-# --------------------------------------------------------------------------
-
-
 def _resolve_ref_type(
     ref: Reference, env: _Env, result_type: TypeRef | None
 ) -> tuple[TypeRef | None, str | None]:
+    """Resolve a reference's type.
+
+    Returns:
+        The type and None, or None and the problem.
+    """
     if ref.root == "result":
         if result_type is None:
             return None, f"`result` is not navigable here ({ref.dotted!r})"
@@ -479,6 +522,7 @@ def _validate_template(
     allow_splice: bool,
     where: str,
 ) -> list[str]:
+    """Return the problems of a template: every reference resolves and every filter applies."""
     try:
         template = parse_template(text)
     except TemplateError as exc:
@@ -500,8 +544,7 @@ def _validate_template(
                     f"{where}: `| len` does not apply to {type_str(ref_type)} ({part.ref.dotted!r})"
                 )
             continue
-        # Bare reference (no filter): must be a scalar, unless it is a lone
-        # list reference spliced into argv (§4.4).
+        # A bare reference must be a scalar, unless a lone list reference is spliced into argv.
         if isinstance(ref_type, ScalarT):
             continue
         if allow_splice and isinstance(ref_type, ListT) and template.is_lone_ref:
@@ -513,13 +556,8 @@ def _validate_template(
     return problems
 
 
-# --------------------------------------------------------------------------
-# State validation
-# --------------------------------------------------------------------------
-
-
 def _validate_state(name: str, state: StateSpec, env: _Env) -> list[str]:
-    # `notify` is on every kind (§4.3): validate its message template up front.
+    """Return one state's problems; every kind's `notify` template is checked first."""
     problems: list[str] = []
     if state.notify is not None:
         problems.extend(
@@ -539,10 +577,11 @@ def _validate_state(name: str, state: StateSpec, env: _Env) -> list[str]:
         problems.extend(_validate_wait(name, state, env))
     elif isinstance(state, BranchState):
         problems.extend(_validate_branch(name, state, env))
-    return problems  # TerminalState: shape is fully checked by pydantic
+    return problems  # a terminal's shape is fully checked by pydantic
 
 
 def _validate_on(name: str, on: dict[str, str], expected: frozenset[str]) -> list[str]:
+    """Return the problems of an `on` table against the kind's outcome labels."""
     got = frozenset(on)
     problems: list[str] = []
     for missing in sorted(expected - got):
@@ -555,6 +594,7 @@ def _validate_on(name: str, on: dict[str, str], expected: frozenset[str]) -> lis
 
 
 def _validate_agent(name: str, state: AgentState, env: _Env) -> list[str]:
+    """Return an agent state's problems."""
     problems = _validate_on(name, state.on, AGENT_LABELS)
     if state.output_schema not in env.schemas:
         problems.append(
@@ -588,6 +628,7 @@ def _validate_agent(name: str, state: AgentState, env: _Env) -> list[str]:
 
 
 def _validate_tool(name: str, state: ToolState, env: _Env) -> list[str]:
+    """Return a tool state's problems."""
     problems = _validate_on(name, state.on, TOOL_LABELS)
     result_type: TypeRef | None = None
     if state.output_schema is not None:
@@ -639,6 +680,7 @@ def _validate_capture(
     result_type: TypeRef | None,
     whole_type: TypeRef | None,
 ) -> list[str]:
+    """Return a capture's problems: the ownership wall and the target types."""
     problems: list[str] = []
     whole_target = capture.stdout_json if owner == "code" else capture.finish_json
     if whole_target is not None:
@@ -662,6 +704,7 @@ def _validate_capture(
 def _check_capture_target(
     name: str, target: str, owner: str, var_owner: dict[str, str]
 ) -> list[str]:
+    """Return the ownership-wall problem of a capture target."""
     actual = var_owner.get(target)
     if actual is None:
         return [
@@ -679,15 +722,13 @@ def _check_capture_target(
 def _validate_set_assignment(
     name: str, target: str, template: str, env: _Env, *, result_type: TypeRef | None
 ) -> list[str]:
+    """Return a `capture.set` assignment's problems: a lone reference keeps its type, else str."""
     where = f"state {name!r} capture.set.{target}"
     try:
         parsed = parse_template(template)
     except TemplateError as exc:
         return [f"{where}: {exc}"]
     target_type = env.var_types.get(target)
-    # A lone, filter-less interpolation captures the referenced *value* with
-    # its native type (the only way a non-string value reaches the
-    # blackboard); its type must match the target variable.
     if parsed.is_lone_ref:
         interp = parsed.parts[0]
         assert isinstance(interp, Interp)
@@ -701,7 +742,6 @@ def _validate_set_assignment(
                 f' declare it as type = "{type_decl(source_type)}"'
             ]
         return []
-    # Otherwise the assignment renders to a string, so the target must be str.
     problems = _validate_template(
         template, env, result_type=result_type, allow_splice=False, where=where
     )
@@ -715,6 +755,7 @@ def _validate_set_assignment(
 
 
 def _validate_wait(name: str, state: WaitState, env: _Env) -> list[str]:
+    """Return a wait state's problems; a timerless wait declares only `signal`."""
     timings = [
         timing
         for timing, value in (
@@ -729,9 +770,6 @@ def _validate_wait(name: str, state: WaitState, env: _Env) -> list[str]:
             f" `until` (found: {timings})"
         ]
     elif not timings:
-        # A wait with no timer parks until an operator `signal` poke (§4.3). It
-        # can never `tick`, so it declares only `signal`; declaring `tick` is a
-        # load error (an unreachable edge).
         problems = _validate_on(name, state.on, WAIT_LABELS - frozenset({"tick"}))
     else:
         problems = _validate_on(name, state.on, WAIT_LABELS)
@@ -750,9 +788,6 @@ def _validate_wait(name: str, state: WaitState, env: _Env) -> list[str]:
                 where=f"state {name!r} {timing}",
             )
         )
-    # Value-validate the timing at load so `check`/`test` catch a float/garbage
-    # `every_secs`, a busy-looping `every_secs <= 0`, or a non-ISO `until`, rather
-    # than letting them surface only when the wait is first reached at run.
     if state.every_secs is not None:
         problems.extend(_timing_problems(name, "every_secs", state.every_secs, env, kind="int"))
     if state.until is not None:
@@ -761,6 +796,7 @@ def _validate_wait(name: str, state: WaitState, env: _Env) -> list[str]:
 
 
 def _static_ref_value(ref: Reference, var_values: dict[str, Any]) -> Any:
+    """Return the declared value a reference resolves to, or None."""
     current: Any = var_values.get(ref.root)
     for key in ref.path:
         if not isinstance(current, Mapping) or key not in current:
@@ -772,8 +808,7 @@ def _static_ref_value(ref: Reference, var_values: dict[str, Any]) -> Any:
 def _timing_literal_problems(
     name: str, key: str, literal: str, kind: Literal["int", "iso"]
 ) -> list[str]:
-    """Range/format-check a constant timing literal: `every_secs` (kind="int",
-    a positive integer) or `until` (kind="iso", an ISO-8601 instant)."""
+    """Return the problems of a constant timing: a positive integer, or an ISO-8601 instant."""
     if kind == "int":
         try:
             seconds = int(literal)
@@ -801,11 +836,21 @@ def _timing_literal_problems(
 def _timing_problems(
     name: str, key: str, text: str, env: _Env, *, kind: Literal["int", "iso"]
 ) -> list[str]:
-    """Value-validate a wait timing template: `every_secs` (kind="int") or `until`
-    (kind="iso"). A literal is range/format-checked; a lone variable reference is
-    type-checked, and an operator-owned constant is checked statically. The two
-    kinds share this reference-resolution skeleton and differ only in the parser,
-    the required scalar type, and the constant check."""
+    """Return the value problems of a wait timing template.
+
+    A literal is range or format checked; a lone reference is type checked, and an
+    operator-owned constant is checked statically; a composite is the engine's to check.
+
+    Args:
+        name: The state's name.
+        key: `every_secs` or `until`.
+        text: The timing template.
+        env: The resolved declarations.
+        kind: `int` for `every_secs`, `iso` for `until`.
+
+    Returns:
+        The problems.
+    """
     problems: list[str] = []
     try:
         template = parse_template(text)
@@ -815,8 +860,7 @@ def _timing_problems(
         literal = "".join(part for part in template.parts if isinstance(part, str))
         return _timing_literal_problems(name, key, literal, kind)
     if not template.is_lone_ref:
-        # Composite: data-dependent, the engine validates the rendered value.
-        return problems
+        return problems  # composite: the engine validates the rendered value
     interp = template.parts[0]
     assert isinstance(interp, Interp)
     ref = interp.ref
@@ -849,6 +893,7 @@ def _timing_problems(
 
 
 def _validate_branch(name: str, state: BranchState, env: _Env) -> list[str]:
+    """Return a branch state's problems: each predicate, and a final `else`."""
     problems: list[str] = []
     last_index = len(state.when) - 1
     for index, clause in enumerate(state.when):
@@ -865,6 +910,7 @@ def _validate_branch(name: str, state: BranchState, env: _Env) -> list[str]:
 
 
 def _validate_predicate(name: str, source: str, env: _Env) -> list[str]:
+    """Return a predicate's problems: its grammar, its references and its `len()` arguments."""
     try:
         predicate = parse_predicate(source)
     except PredicateError as exc:
@@ -873,23 +919,19 @@ def _validate_predicate(name: str, source: str, env: _Env) -> list[str]:
     for ref in predicate.references:
         _, error = _resolve_ref_type(ref, env, None)
         if error is not None:
-            # The file is TOML, so an author naturally writes `flag == true`; but
-            # predicates are Python-parsed, so `true` reads as an undeclared name.
-            # Point at the Python literal rather than leaving a bare "unknown var".
+            # An author writes TOML's `true`, which the Python parser reads as an undeclared name.
             if not ref.path and ref.root in {"true", "false", "null", "none"}:
                 error += (
                     " (predicates use Python literals True/False/None, not TOML"
                     " true/false/null; for a bool var write the bare name, e.g. `flag`)"
                 )
             problems.append(f"state {name!r}: predicate {source!r}: {error}")
-    # Type-check `len()` arguments at load (mirrors the template `| len` filter):
-    # `len(n)` on an int/float/bool is a guaranteed runtime PredicateError, and
-    # the spec promises type mismatches are load-time errors, not run surprises.
     problems.extend(_predicate_len_problems(name, source, predicate.tree.body, env))
     return problems
 
 
 def _predicate_len_problems(name: str, source: str, body: ast.expr, env: _Env) -> list[str]:
+    """Return the `len()` calls whose argument has no length, as the `| len` filter check does."""
     problems: list[str] = []
     for node in ast.walk(body):
         if not (
@@ -917,6 +959,7 @@ def _predicate_len_problems(name: str, source: str, body: ast.expr, env: _Env) -
 
 
 def _validate_graph(spec: MachineSpec) -> list[str]:
+    """Return the graph's problems: undeclared targets and unreachable states."""
     problems: list[str] = []
     for edge in edges(spec):
         if edge.dst not in spec.states:

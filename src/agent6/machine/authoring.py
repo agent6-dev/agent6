@@ -1,17 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Prompt scaffolding for `agent6 machine create`.
+"""The prompt `agent6 machine create` hands its drafting loop.
 
-`machine create` is an ordinary jailed agent6 loop whose job is to *draft*
-a `.asm.toml` state machine from a natural-language task. This module holds
-the prompt-assembly pieces of that flow: the per-attempt draft→check→fix
-prompt, built around the grammar reference in `agent6.prompts.machine`.
-
-It deliberately imports nothing from the harness stack: the orchestration
-(running the agent loop, validating with `load_machine`, writing the draft)
-lives in `app/machine/create.py`, which already depends on both
-`agent6.machine` and `agent6.harness`. Keeping this module pure keeps the
-tach graph acyclic.
+The per-attempt prompt is built around the grammar reference in `agent6.prompts.machine`.
+The orchestration lives in `app/machine/create.py`; this module imports nothing from the
+harness, which keeps the tach graph acyclic.
 """
 
 from __future__ import annotations
@@ -27,12 +20,18 @@ def build_authoring_prompt(
     attempt: int,
     diagnostics: list[str] | None = None,
 ) -> str:
-    """Assemble the user-task prompt for one draft→check→fix attempt.
+    """Assemble the task prompt for one draft, check and fix attempt.
 
-    The first attempt carries the grammar guide, the operator's task, and the
-    production-readiness rules. On a retry only the validation diagnostics are
-    appended: the draft itself is in the workspace, where the agent reads and
-    patches the files it wrote rather than re-deriving them from a transcript.
+    A retry appends the diagnostics; the draft itself is in the workspace, where the agent
+    patches the files it wrote.
+
+    Args:
+        task: The operator's task.
+        attempt: The attempt number, named in the retry heading.
+        diagnostics: The validation problems of the previous attempt, or None.
+
+    Returns:
+        The prompt text.
     """
     parts = [
         MACHINE_AUTHOR_GUIDE,

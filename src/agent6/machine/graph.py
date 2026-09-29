@@ -2,10 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Render a validated `MachineSpec` as a state diagram.
 
-Two pure renderers over the same validated graph: `mermaid`
-(`stateDiagram-v2`, the default) and Graphviz `dot`. Both consume the
-edges already computed by `agent6.machine.spec`, so a diagram is just a
-render of a machine that has already passed `machine check`.
+Two renderers over the edges `agent6.machine.spec` computes: mermaid `stateDiagram-v2` (the
+default) and Graphviz dot.
 """
 
 from __future__ import annotations
@@ -16,14 +14,17 @@ __all__ = ["render_dot", "render_mermaid"]
 
 
 def _terminals(spec: MachineSpec) -> list[str]:
+    """Return the names of the terminal states."""
     return [name for name, state in spec.states.items() if isinstance(state, TerminalState)]
 
 
 def _clean_label(label: str) -> str:
+    """Return the label with its whitespace collapsed to single spaces."""
     return " ".join(label.split())
 
 
 def render_mermaid(spec: MachineSpec) -> str:
+    """Return the machine as a mermaid `stateDiagram-v2` diagram."""
     lines = ["stateDiagram-v2", f"    [*] --> {spec.initial}"]
     for edge in edges(spec):
         lines.append(f"    {edge.src} --> {edge.dst}: {_clean_label(edge.label)}")
@@ -33,10 +34,12 @@ def render_mermaid(spec: MachineSpec) -> str:
 
 
 def _dot_escape(text: str) -> str:
+    """Return the text escaped for a double-quoted dot string."""
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def render_dot(spec: MachineSpec) -> str:
+    """Return the machine as a Graphviz dot digraph."""
     lines = [
         f'digraph "{_dot_escape(spec.machine)}" {{',
         "    rankdir=LR;",

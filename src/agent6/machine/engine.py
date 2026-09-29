@@ -1,23 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The machine engine: a pure reducer loop driven by journaled facts (§5.1).
+"""The machine engine: a pure reducer loop driven by journaled facts.
 
-The engine executes one state at a time. Every impure step is a
-:class:`World` method (tools, agent runs, waits, the clock, poke files,
-notify); an observed result is passed through `reduce` for validation, then
-journaled before the returned blackboard replaces the current one.
-`reduce` and `next_state` are pure, so:
-
-* **Crash recovery**, on restart, recorded facts are replayed through the
-  same pure reducer to rebuild the blackboard and position, then execution
-  continues live from the last completed step.
-* **Replay**, the identical reconstruction runs with `live=False` and no
-  `World` at all, reproducing the recorded path offline for backtesting.
-
-The `agent` kind runs a normal agent6 loop through an injected
-:class:`World.run_agent` and captures the schema-validated `finish_session`
-payload into the blackboard; `tool`/`branch`/`wait`/`terminal` are
-fully deterministic.
+Every impure step is a `World` method; an observed result passes through `reduce`, then is
+journaled before the returned blackboard replaces the current one. On restart the recorded
+facts replay through the same reducer to rebuild the position (crash recovery); with
+`live=False` and no world the replay alone reproduces the recorded path offline.
 """
 
 from __future__ import annotations
@@ -93,28 +81,20 @@ __all__ = [
 
 
 class EngineError(Exception):
-    """Raised when a machine cannot be executed (bad data, unsupported kind)."""
+    """A machine cannot be executed: bad data, or a journal that does not fit it."""
 
 
 class StateRuntimeError(EngineError):
-    """Raised when a state reaches invalid data despite load-time checks."""
+    """A state met invalid data despite the load-time checks."""
 
 
-# Runtime failures from a state's predicate/template/capture. A check-passing
-# machine should not hit these (the load-time validators catch type errors), but
-# defense in depth: they are converted to a clean failed `MachineResult`, never an
-# uncaught traceback, and never journaled as a poison StepEvent that would
-# re-crash every later reduce (status/replay/resume).
+# A data-driven state failure ends the machine cleanly, never as a poison StepEvent.
 _STATE_RUNTIME_ERRORS = (StateRuntimeError, PredicateError, TemplateError)
 
 
 def _now_iso() -> str:
+    """Return the current UTC instant as an ISO-8601 timestamp."""
     return datetime.now(UTC).isoformat(timespec="microseconds")
-
-
-# --------------------------------------------------------------------------
-# The world boundary, the only impure surface.
-# --------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,45 +110,40 @@ class ToolExecResult:
 class AgentRequest(BaseModel):
     """What the engine asks the world to run for one `agent` state.
 
-    Crosses the machine-agent subprocess boundary verbatim: it is the
-    `request` block of `request.json` (envelope: `MachineAgentRequest` in
-    `app/machine_agent.py`), so it is pydantic per the IPC rule and owns that
-    wire shape. Bytes pinned by `tests/unit/test_machine_agent_ipc.py`.
+    The `request` block of `request.json` across the machine-agent subprocess boundary
+    (the envelope is `MachineAgentRequest` in `app/machine_agent.py`); bytes pinned by
+    `tests/unit/test_machine_agent_ipc.py`.
+
+    Attributes:
+        prompt: The rendered prompt.
+        timeout_s: The wall-clock cap.
+        model: The state's model, or None to inherit the operator's worker model (the
+            `machine create` authoring agent has no state).
+        provider: The `[providers.*]` entry, or None for the effective config's.
+        effort: The reasoning effort override, or None.
+        temperature: The sampling override, or None.
+        max_usd: The slice's spend cap, or None.
+        max_tokens_fallback: The unmetered token bound, or None.
+        mode: The nested loop's mode: `agent` (a read-only structured judge) or `run`.
+        state_name: The state, for its own watchable logs.jsonl; "" for the authoring agent.
+        step_seq: The transition, likewise; 0 for the authoring agent.
+        output_schema: The finish contract the execution refuses a non-conforming result by.
+        schemas: The spec's schema table verbatim, so nested records resolve execution side.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     prompt: str
     timeout_s: float
-    # Optional per-state overrides mirrored from `AgentState`. `None`
-    # means "fall back to the effective config" in the world implementation.
-    # `model` is optional too: a `machine run` agent state always sets it
-    # (AgentState.model is min_length=1), but `machine create`'s authoring
-    # agent has no state and must inherit the operator's worker model: an
-    # empty-string override there would overwrite the worker model with "" and
-    # fail min_length validation.
     model: str | None = None
     provider: str | None = None
     effort: str | None = None
     temperature: float | None = None
     max_usd: float | None = None
     max_tokens_fallback: int | None = None
-    # Harness mode for the nested loop: "agent" (default) for a machine
-    # `agent` state, a read-only structured-output judge; "run" for an agent
-    # state that opted into coding work (the `machine create` authoring agent
-    # is one). machine_agent maps anything else to "run".
     mode: str = "agent"
-    # Which state, at which transition, this agent invocation is. The live World
-    # uses them to give each agent-state execution its own watchable logs.jsonl
-    # (`<instance>/states/<seq>-<name>/`), so a running machine is followable
-    # like a run. Empty/0 for the `machine create` authoring agent (no state).
     state_name: str = ""
     step_seq: int = 0
-    # The state's finish contract: the execution refuses a non-conforming
-    # finish_session `result` in-run (the model retries with the problems),
-    # and the engine's own validation stays the authority on the recorded
-    # fact. `schemas` is the spec's schema table verbatim, so nested records
-    # resolve execution-side with the same validator.
     output_schema: str | None = None
     schemas: dict[str, dict[str, FieldSpec]] = PydanticField(default_factory=dict)
 
@@ -176,17 +151,18 @@ class AgentRequest(BaseModel):
 class AgentExecResult(BaseModel):
     """The observable result of one agent loop.
 
-    `reason` is the agent loop's stop reason (e.g. `"finish_session"`,
-    `"budget_exhausted"`, `"timeout"`, `"max_iterations"`); `payload` is
-    the structured object the agent passed to `finish_session` (`None` if it
-    never called it or passed no structured result). `usd` and the token
-    counts report the slice this agent loop spent, summed into machine-level
-    spend for `machine status` (§6).
+    `result.json` across the machine-agent subprocess boundary (written by `run_one`,
+    validated back in `app/machine_agent.py`); bytes pinned by
+    `tests/unit/test_machine_agent_ipc.py`.
 
-    Crosses the machine-agent subprocess boundary verbatim as `result.json`
-    (written by `run_one`, validated back by the host runner in
-    `app/machine_agent.py`), so it is pydantic per the IPC rule and owns that
-    file shape. Bytes pinned by `tests/unit/test_machine_agent_ipc.py`.
+    Attributes:
+        reason: The loop's stop reason: `finish_session`, `budget_exhausted`, `timeout`,
+            `max_iterations`.
+        payload: The structured object passed to `finish_session`, or None.
+        usd: The slice's spend, summed into the machine's.
+        usd_partial: `usd` is a known under-estimate (an unpriced model).
+        input_tokens: The slice's input tokens.
+        output_tokens: The slice's output tokens.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -194,9 +170,6 @@ class AgentExecResult(BaseModel):
     reason: str
     payload: dict[str, Any] | None
     usd: float = 0.0
-    # True when `usd` is a known under-estimate (an unpriced model in the
-    # loop's per-model breakdown); threaded into the AgentFact so the booked
-    # ledger keeps the '~' truth. Defaults False when the field is absent.
     usd_partial: bool = False
     input_tokens: int = 0
     output_tokens: int = 0
@@ -204,24 +177,26 @@ class AgentExecResult(BaseModel):
     @field_validator("payload")
     @classmethod
     def _scrub_payload(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
-        """The payload is the model's `finish_session` arguments, parsed by
-        `json.loads`, which accepts a lone surrogate that `model_dump_json`
-        then refuses. The subprocess writes `result.json` with exactly that
-        call, so an unscrubbed payload kills it before the write and the host
-        reads the dead subprocess as an error, routing a state whose agent
-        finished successfully to its `on.failed` edge. Scrub here, on the type
-        that owns the file shape, so every construction path is safe."""
+        """Replace lone surrogates, which `json.loads` accepts and `model_dump_json` refuses.
+
+        Unscrubbed, the subprocess dies before writing `result.json` and the host routes a
+        finished agent to its `on.failed` edge.
+
+        Returns:
+            The scrubbed payload, or None.
+        """
         return value if value is None else scrub_lone_surrogates(value)
 
 
 @dataclass(frozen=True, slots=True)
 class WaitWake:
-    """How a `wait` woke: a clock `tick`, an operator `signal` poke, or a
-    `stop` request interrupting the sleep (the wait stays armed; nothing is
-    journaled for it).
+    """How a `wait` woke.
 
-    `payload` is the JSON a poke carried (`None` for a bare poke or a tick);
-    the engine journals it in the :class:`WaitFact` so a replay re-reads it.
+    Attributes:
+        woke_by: A clock `tick`, an operator `signal` poke, or a `stop` request that
+            interrupted the sleep (the wait stays armed, nothing is journaled).
+        payload: The JSON a poke carried, journaled in the WaitFact; None for a bare poke
+            or a tick.
     """
 
     woke_by: Literal["tick", "signal", "stop"]
@@ -229,7 +204,7 @@ class WaitWake:
 
 
 class World(Protocol):
-    """Everything the engine is allowed to observe from the outside."""
+    """Everything the engine may observe from the outside."""
 
     def run_tool(
         self,
@@ -238,44 +213,50 @@ class World(Protocol):
         *,
         network: NetworkMode = "none",
         pass_env: tuple[str, ...] = (),
-    ) -> ToolExecResult: ...
+    ) -> ToolExecResult:
+        """Run one tool command."""
+        ...
 
-    def run_agent(self, request: AgentRequest) -> AgentExecResult: ...
+    def run_agent(self, request: AgentRequest) -> AgentExecResult:
+        """Run one agent loop."""
+        ...
 
-    def now(self) -> float: ...
+    def now(self) -> float:
+        """Return the clock as an epoch."""
+        ...
 
-    # `wake_epoch` is None for a wait with no timer: block until a signal poke.
-    def sleep_until(self, wake_epoch: float | None) -> WaitWake: ...
+    def sleep_until(self, wake_epoch: float | None) -> WaitWake:
+        """Block until the instant or a poke; None is a timerless wait, until a poke."""
+        ...
 
-    # Materialize a poke payload where the next tool can read it (a no-op when
-    # the world has no persistent data dir; see LiveWorld.materialize_poke).
-    def materialize_poke(self, payload: Any) -> None: ...
+    def materialize_poke(self, payload: Any) -> None:
+        """Write a poke payload where the next tool can read it."""
+        ...
 
-    # Fire the out-of-band operator notify hook on a state's `notify` message
-    # (`kind="notify"`, `level` in info/warn/error) or a terminal
-    # `machine.end` (`kind="end"`, `message` the reason, `level` the
-    # status). Presentation only; a no-op when no hook is configured.
-    def notify(self, kind: str, state: str, message: str, level: str) -> None: ...
+    def notify(self, kind: str, state: str, message: str, level: str) -> None:
+        """Fire the operator notify hook for a `notify` message or the `machine.end`."""
+        ...
 
 
-# The per-call tool-jail policy, injected by the CLI (see LiveWorld.tool_policy):
-# (argv, timeout_s, network) -> the JailPolicy the shared builder produced.
+# (argv, timeout_s, network, pass_env) -> the jail policy the shared builder produced.
 ToolPolicyFactory = Callable[[tuple[str, ...], float, NetworkMode, tuple[str, ...]], JailPolicy]
 
 
 def _state_log_seq(p: Path) -> int:
-    """The numeric transition seq from a `<seq>-<state>` per-state log dir name
-    (so the sort is by seq, not lexical, which is correct past 9999)."""
+    """Return the seq of a `<seq>-<state>` log dir name, so the sort is numeric."""
     prefix = p.name.split("-", 1)[0]
     return int(prefix) if prefix.isdigit() else -1
 
 
 def _prune_state_logs(root: Path, *, keep: int) -> None:
-    """Keep only the most recent *keep-1* per-state log dirs under *root* (leaving
-    room for the one about to be written), so a long-running machine's reasoning
-    logs stay bounded. `keep=0` prunes nothing, like `snapshot_keep`. The journal
-    (the durable audit) keeps the full transition history regardless. Best
-    effort: never let cleanup break a run."""
+    """Keep the newest per-state log dirs, leaving room for the one about to be written.
+
+    Best effort; the journal keeps the full history regardless.
+
+    Args:
+        root: The per-state log root.
+        keep: The number to keep, including the next; 0 prunes nothing.
+    """
     if keep == 0:
         return
     try:
@@ -288,60 +269,44 @@ def _prune_state_logs(root: Path, *, keep: int) -> None:
 
 @dataclass(frozen=True, slots=True)
 class LiveWorld:
-    """Production :class:`World`: tools go through the jail, waits really sleep.
+    """The production world: tools go through the jail, waits sleep.
 
-    A `wait` blocks in-process until its absolute instant (§4.3) or until an
-    operator drops a `signal` file in the machine directory, whichever comes
-    first. Because the wake instant is journaled, the persisted-wake driver
-    (`drive(exit_on_wait=True)`) replays the identical file with no format
-    change.
+    The agent runner, the tool policy and the jail runner are injected by the CLI, so this
+    module imports neither the harness nor config nor git.
 
-    `agent` states are delegated to an injected `agent_runner` so the engine
-    module need not import the provider / harness stack; the CLI wires the real
-    runner (loading the effective config, building a provider and the loop). When no
-    runner is configured, reaching an `agent` state fails loudly.
+    Attributes:
+        cwd: The workspace.
+        journal: The instance's journal.
+        agent_runner: Runs an agent state given its request and its own logs.jsonl path;
+            reaching an agent state without one fails loudly.
+        poll_interval_s: How often a blocking wait checks for a poke or a stop.
+        tool_policy: Builds each tool jail's policy from the shared builder with the machine
+            deltas (bundle protect paths, the data dir grant), so a tool is confined like a
+            run command.
+        state_log_root: Where each agent state writes `<seq>-<state>/logs.jsonl`; None
+            disables per-state logs.
+        state_log_keep: How many per-state log dirs to keep (`[machine].state_log_keep`);
+            0 keeps all.
+        notify_hook: The operator's `[machine.notify].on_event` argv, run on the host; None
+            for no hook (the front-ends still render the journaled events).
+        data_dir: The machine's persistent scratch dir, `$AGENT6_MACHINE_DATA_DIR` to a tool,
+            outside the workspace; where a tool keeps durable state.
+        jail_runner: Executes one tool policy; the CLI overrides it for `mode = "run"`
+            machines so tools run in the machine's own tree. None is the plain jail.
+        on_wait: Fired once as a wait starts to block, so the foreground run names where it
+            parked; it cannot affect the sleep.
     """
 
     cwd: Path
     journal: MachineJournal
-    # Per-call `events_log`: each agent-state execution gets its own logs.jsonl
-    # (None for the rare runner that wants no log). The World derives the path.
     agent_runner: Callable[[AgentRequest, Path | None], AgentExecResult] | None = None
     poll_interval_s: float = 0.5
-    # Builds each tool jail's policy. The CLI wires the one shared builder
-    # (tools.policy.jail_policy) with the machine deltas baked in (bundle
-    # protect paths, the data-dir RW grant + $AGENT6_MACHINE_DATA_DIR), so a
-    # machine tool is confined exactly like a run command: same operator
-    # grants, same protect_git, same hidden paths, same env. Injected so this
-    # module needs no config import, like agent_runner.
     tool_policy: ToolPolicyFactory | None = None
-    # When set, each agent-state execution writes a watchable event stream to
-    # `<state_log_root>/<seq>-<state>/logs.jsonl` (the CLI points it at
-    # `<instance>/states`), pruned to the most recent `state_log_keep` so a
-    # long-running machine's logs stay bounded. None disables per-state logs.
     state_log_root: Path | None = None
-    # From [machine].state_log_keep (the CLI wires it); 0 keeps all.
     state_log_keep: int = 50
-    # Out-of-band operator notify hook, fired on a `notify` message and on the
-    # terminal `machine.end`. The CLI wires it to the operator's configured argv
-    # (`[machine.notify].on_event`), run on the host outside the jail. None means
-    # no hook; the in-page/TUI/CLI front-ends still render the journaled events.
     notify_hook: Callable[[str, str, str, str], None] | None = None
-    # The machine's persistent, writable scratch dir, surfaced to scripts as
-    # $AGENT6_MACHINE_DATA_DIR (the tool_policy factory bakes in the RW grant
-    # and the env var). It lives out of the workspace (under the per-repo
-    # state dir) and persists across iterations, so it is where a `tool` keeps
-    # durable state (a built venv, caches). cwd is writable too, but it is the
-    # repo, not durable machine state. Set by the CLI to <instance>/data.
     data_dir: Path | None = None
-    # Executes one tool policy. The CLI overrides it for a machine with
-    # `mode = "run"` states so tools run in the machine's own tree (a fresh
-    # clone at the chain tip); None is the plain jail. Injected so this
-    # module needs no git import, like agent_runner.
     jail_runner: Callable[[JailPolicy], CommandResult] | None = None
-    # Fired once as a wait starts to block, so the foreground `machine run`
-    # says where it parked instead of reading as a hang for the whole interval.
-    # Presentation only: it cannot affect the sleep (engine contract).
     on_wait: Callable[[], None] | None = None
 
     def run_tool(
@@ -352,10 +317,23 @@ class LiveWorld:
         network: NetworkMode = "none",
         pass_env: tuple[str, ...] = (),
     ) -> ToolExecResult:
-        # `network` and `pass_env` are authoritative here: the opt-ins were
-        # gated by the CLI at startup (sandbox.network, machine.pass_env), and
-        # the factory's builder clamps the network to what the isolation level
-        # truthfully provides.
+        """Run one tool command in its jail.
+
+        The CLI gated `network` and `pass_env` at startup; the policy builder clamps the
+        network to what the isolation level provides.
+
+        Args:
+            argv: The rendered command.
+            timeout_s: The wall-clock cap.
+            network: `host` or `none`.
+            pass_env: The operator environment variables the command receives.
+
+        Returns:
+            The exit code, output and whether the command timed out.
+
+        Raises:
+            EngineError: No tool policy is wired, or the jail is unavailable.
+        """
         if self.tool_policy is None:
             raise EngineError("LiveWorld has no tool_policy factory wired")
         try:
@@ -363,11 +341,7 @@ class LiveWorld:
             result = (self.jail_runner or run_in_jail)(policy)
         except JailUnavailableError as exc:
             raise EngineError(f"jail unavailable: {exc}") from exc
-        # run_in_jail's contract is to return a rc=124 result on timeout, never
-        # raise TimeoutExpired (the Rust launcher and jail.py both collapse a
-        # timeout to rc 124). Deriving timed_out from that is what makes a tool
-        # state's on.timeout transition reachable; an `except TimeoutExpired`
-        # here would be dead code, every real timeout labelled not-timed-out.
+        # run_in_jail returns rc 124 on a timeout and never raises TimeoutExpired.
         return ToolExecResult(
             exit_code=result.returncode,
             stdout=result.stdout,
@@ -376,25 +350,38 @@ class LiveWorld:
         )
 
     def run_agent(self, request: AgentRequest) -> AgentExecResult:
+        """Run one agent loop through the injected runner.
+
+        Returns:
+            The loop's result.
+
+        Raises:
+            EngineError: No agent runner is configured.
+        """
         if self.agent_runner is None:
             raise EngineError("machine reached an `agent` state but no agent runner is configured")
         return self.agent_runner(request, self._state_log(request))
 
     def _state_log(self, request: AgentRequest) -> Path | None:
-        """The per-execution event-log path for this agent state, or None when
-        per-state logs are disabled. Prunes to the most recent `state_log_keep`
-        first so a long-running machine never accumulates them without bound."""
+        """Return the agent state's own logs.jsonl path, pruning old ones first, or None."""
         if self.state_log_root is None or not request.state_name:
             return None
         _prune_state_logs(self.state_log_root, keep=self.state_log_keep)
         return self.state_log_root / f"{request.step_seq:04d}-{request.state_name}" / LOGS_NAME
 
     def now(self) -> float:
+        """Return the wall clock as an epoch."""
         return time.time()
 
     def sleep_until(self, wake_epoch: float | None) -> WaitWake:
-        """Block until the wake instant or an operator signal poke, whichever
-        first. `wake_epoch=None` is a wait with no timer: park until a poke."""
+        """Block until the wake instant, a poke or a stop request, whichever comes first.
+
+        Args:
+            wake_epoch: The instant; None is a timerless wait, until a poke.
+
+        Returns:
+            How the wait woke.
+        """
         if self.on_wait is not None:
             with contextlib.suppress(OSError):  # a dead terminal never stops a machine
                 self.on_wait()
@@ -403,9 +390,7 @@ class LiveWorld:
             if signaled:
                 return WaitWake("signal", payload)
             if stop_requested(self.journal.root):
-                # Interrupt the sleep; the wait's PendingWait stays armed so a
-                # later `machine run` resumes the same instant.
-                return WaitWake("stop")
+                return WaitWake("stop")  # the pending wait stays armed for the next run
             if wake_epoch is None:
                 time.sleep(self.poll_interval_s)
                 continue
@@ -415,13 +400,10 @@ class LiveWorld:
             time.sleep(min(remaining, self.poll_interval_s))
 
     def materialize_poke(self, payload: Any) -> None:
-        """Write a signal poke's payload to `$AGENT6_MACHINE_DATA_DIR/poke.json`
-        so the next `tool` can read it. A no-op without a data dir.
+        """Write a poke's payload to `$AGENT6_MACHINE_DATA_DIR/poke.json` for the next tool.
 
-        Atomic and fsync'd (temp + fsync + rename, like the journal's snapshot /
-        pending-wait writers) and called BEFORE the StepEvent is fsync-appended,
-        so if the step is durable poke.json is too: crash recovery replays the
-        step and finds the identical, non-torn file without re-materializing.
+        Atomic, and called before the StepEvent is appended, so a durable step implies a
+        durable file. A no-op without a data dir.
         """
         if self.data_dir is None:
             return
@@ -429,17 +411,23 @@ class LiveWorld:
         atomic_write(self.data_dir / "poke.json", json.dumps(payload, sort_keys=True))
 
     def notify(self, kind: str, state: str, message: str, level: str) -> None:
+        """Fire the operator hook, when one is wired."""
         if self.notify_hook is not None:
             self.notify_hook(kind, state, message, level)
 
 
-# --------------------------------------------------------------------------
-# Result.
-# --------------------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class MachineResult:
+    """How a drive ended.
+
+    Attributes:
+        status: `ok` or `failed` from a journaled end; `incomplete` for a replay that ends
+            before a terminal; `waiting` for an `--exit-on-wait` park; `stopped` for a stop.
+        reason: The terminal's reason, the failure, or where the machine parked.
+        state: The state the machine is in.
+        transitions: The transitions taken.
+    """
+
     status: Literal["ok", "failed", "incomplete", "waiting", "stopped"]
     reason: str
     state: str
@@ -447,17 +435,12 @@ class MachineResult:
 
     @classmethod
     def from_end(cls, end: MachineEnd) -> MachineResult:
-        """The engine outcome for a recorded end. `waiting`/`incomplete` outcomes
-        (no journaled end) are built directly; only the end fact projects here."""
+        """Return the result a journaled end records."""
         return cls(end.status, end.reason, end.state, end.transitions)
 
 
-# --------------------------------------------------------------------------
-# Pure blackboard helpers.
-# --------------------------------------------------------------------------
-
-
 def initial_blackboard(spec: MachineSpec) -> dict[str, Any]:
+    """Return the blackboard of a fresh instance: every variable at its declared value."""
     blackboard: dict[str, Any] = {}
     for name, var in spec.vars.operator.items():
         blackboard[name] = var.value
@@ -471,6 +454,12 @@ def initial_blackboard(spec: MachineSpec) -> dict[str, Any]:
 def _apply_capture(
     spec: MachineSpec, state: ToolState, stdout: str, blackboard: dict[str, Any]
 ) -> None:
+    """Apply a tool's capture to the blackboard in place.
+
+    Raises:
+        StateRuntimeError: The stdout is not JSON, or does not match the output schema; the
+            capture gate halts the machine before a poison fact is journaled.
+    """
     capture = state.capture
     if capture is None:
         return
@@ -478,15 +467,6 @@ def _apply_capture(
         result_obj: Any = scrub_lone_surrogates(json.loads(stdout))
     except json.JSONDecodeError as exc:
         raise StateRuntimeError(f"tool stdout is not valid JSON for capture: {exc}") from exc
-    # Validate the parsed stdout against the tool's declared output_schema
-    # before it touches the blackboard: the capture gate docs/state-machines.md
-    # §5.4 promises ("a malformed output halts the machine loudly"). Without it a
-    # nonconforming value (a str where the schema says int) silently corrupts the
-    # blackboard and misroutes downstream branches. Raised as a StateRuntimeError
-    # so _step halts cleanly before journaling a poison fact, exactly like the
-    # invalid-JSON case above and the agent finish_session path. output_schema is
-    # optional on a tool (unlike an agent state); a schema-less tool declares no
-    # shape, so there is nothing to check.
     if state.output_schema is not None:
         problems = validate_record_payload(
             spec.schemas, state.output_schema, result_obj, where="tool stdout"
@@ -506,6 +486,7 @@ def _apply_capture(
 
 
 def _apply_agent_capture(state: AgentState, payload: Any, blackboard: dict[str, Any]) -> None:
+    """Apply an agent's capture of its validated payload to the blackboard in place."""
     capture = state.capture
     if capture.finish_json is not None:
         blackboard[capture.finish_json] = payload
@@ -520,7 +501,20 @@ def _apply_agent_capture(state: AgentState, payload: Any, blackboard: dict[str, 
 def reduce(
     spec: MachineSpec, state: StateSpec, fact: Fact, blackboard: dict[str, Any]
 ) -> dict[str, Any]:
-    """Apply a journaled *fact* to the blackboard, returning a new dict."""
+    """Apply a journaled fact to the blackboard.
+
+    Args:
+        spec: The machine.
+        state: The state that produced the fact.
+        fact: The fact.
+        blackboard: The blackboard before the step.
+
+    Returns:
+        A new blackboard.
+
+    Raises:
+        StateRuntimeError: The captured value does not match its schema or cannot render.
+    """
     updated = dict(blackboard)
     if (
         isinstance(state, ToolState)
@@ -541,33 +535,33 @@ def reduce(
     return updated
 
 
-# --------------------------------------------------------------------------
-# Pure branch routing.
-# --------------------------------------------------------------------------
-
-
 def _route_branch(state: BranchState, blackboard: Mapping[str, object]) -> tuple[int, str, str]:
+    """Return the (clause index, label, goto) of the first clause that fires.
+
+    Raises:
+        EngineError: No clause fired, which `validate_semantics` rules out.
+    """
     for index, clause in enumerate(state.when):
         if clause.else_ is not None:
             return index, "else", clause.goto
         assert clause.if_ is not None
         if evaluate(parse_predicate(clause.if_), blackboard):
             return index, clause.if_, clause.goto
-    # validate_semantics guarantees a final `else`, so this is unreachable.
     raise EngineError(f"branch fell through with no matching clause: {state.when!r}")
 
 
-# --------------------------------------------------------------------------
-# Wait timing.
-# --------------------------------------------------------------------------
-
-
 def _is_forever(state: WaitState) -> bool:
-    """A `wait` with no timer parks until a signal poke (§4.3), no wake instant."""
+    """Return whether the wait has no timer and parks until a poke."""
     return state.every_secs is None and state.until is None
 
 
 def _compute_wake(state: WaitState, blackboard: Mapping[str, object], now: float) -> float:
+    """Return the wait's absolute wake instant.
+
+    Raises:
+        StateRuntimeError: The rendered timing is not a positive integer or an ISO-8601
+            instant, or the wait has no timer.
+    """
     if state.every_secs is not None:
         rendered = render_string(parse_template(state.every_secs), blackboard, where="every_secs")
         try:
@@ -599,11 +593,12 @@ def _arm_pending_wait(
     state_name: str,
     seq: int,
 ) -> PendingWait:
-    """The persisted wait record for this occurrence of *state_name* (its
-    transition *seq*): the one already armed, else a fresh one whose absolute
-    wake instant is journaled before anything waits on it, so a resume
-    compares against the same instant. The seq tells a fresh visit of a wait
-    state from an earlier visit's uncleared record (§5.4)."""
+    """Return the pending wait of this visit, arming a fresh one when none is.
+
+    The absolute instant is persisted before anything waits on it, so a resume compares
+    against the same instant; the seq tells this visit from an earlier visit's uncleared
+    record.
+    """
     pending = journal.read_pending_wait()
     if pending is None or pending.state != state_name or pending.seq != seq:
         wake = None if _is_forever(state) else _compute_wake(state, blackboard, world.now())
@@ -620,15 +615,14 @@ def _block_on_wait(
     state_name: str,
     seq: int,
 ) -> tuple[str, str, Fact] | None:
-    """Foreground wait: block until the durable wake instant or a poke, or
-    None when a stop request interrupted the sleep, leaving the pending wait
-    armed, nothing journaled, and the caller parked.
+    """Block on a wait in the foreground.
 
-    A supervisor death mid-sleep resumes the armed instant instead of re-running
-    the full interval from a fresh `now()`. The driver clears the record once the
-    transition it produced is in the journal: a stale wait.json would suppress
-    this state's notify on re-entry, reuse a stale wake_epoch under a later
-    `--exit-on-wait`, and pin machine_is_parked in the web UI.
+    The driver clears the pending record once the transition is journaled: a stale one would
+    suppress the notify on re-entry and reuse its instant under a later `--exit-on-wait`.
+
+    Returns:
+        The (label, goto, fact) of the wake, or None when a stop request interrupted the
+        sleep, leaving the wait armed and nothing journaled.
     """
     pending = _arm_pending_wait(state, blackboard, journal, world, state_name, seq)
     woke = world.sleep_until(pending.wake_epoch)
@@ -649,12 +643,11 @@ def _fire_persisted_wait(
     state_name: str,
     seq: int,
 ) -> tuple[str, str, Fact] | None:
-    """Arm-or-fire a `wait` without blocking (`--exit-on-wait`, §6).
+    """Arm or fire a wait without blocking (`--exit-on-wait`).
 
-    Returns the `(label, goto, fact)` triple when the wait fires (a signal
-    arrived or the instant has passed); returns `None` when the wait is not yet
-    ready, leaving the record persisted for the caller to yield on. The record
-    is the caller's to clear, once the transition it produced is in the journal.
+    Returns:
+        The (label, goto, fact) when a poke arrived or the instant has passed, or None when
+        the wait is not ready, its record persisted for the caller to yield on.
     """
     pending = _arm_pending_wait(state, blackboard, journal, world, state_name, seq)
     signaled, payload = journal.take_signal()
@@ -669,12 +662,8 @@ def _fire_persisted_wait(
     return None
 
 
-# --------------------------------------------------------------------------
-# One impure step.
-# --------------------------------------------------------------------------
-
-
 def _tool_outcome(fact: ToolFact | ToolExecResult) -> Literal["ok", "nonzero", "timeout"]:
+    """Return the label a tool result routes on."""
     if fact.timed_out:
         return "timeout"
     if fact.exit_code != 0:
@@ -685,6 +674,7 @@ def _tool_outcome(fact: ToolFact | ToolExecResult) -> Literal["ok", "nonzero", "
 def _agent_outcome(
     spec: MachineSpec, state: AgentState, result: AgentExecResult
 ) -> Literal["ok", "failed", "budget_exhausted", "timeout"]:
+    """Return the label an agent result routes on; `ok` needs a payload matching the schema."""
     if result.reason == "budget_exhausted":
         return "budget_exhausted"
     if result.reason == "timeout":
@@ -699,10 +689,11 @@ def _agent_outcome(
 
 
 def _agent_usd_cap(state_cap: float | None, remaining: float | None) -> float | None:
-    """The request's hard spend cap: the smaller of the state's own override
-    and the machine budget still unspent. The aggregate gate only guards state
-    STARTS, so without this an agent state's cap could exceed what the
-    machine had left and the child billed past the machine's max_usd."""
+    """Return the smaller of the state's own cap and the machine's unspent budget.
+
+    The aggregate gate guards only state starts, so the child needs this cap to stay under
+    the machine's max_usd.
+    """
     if state_cap is None:
         return remaining
     if remaining is None:
@@ -720,17 +711,30 @@ def _execute(
     state_name: str = "",
     remaining_usd: float | None = None,
 ) -> tuple[str, str, Fact]:
+    """Execute one tool, branch or agent state against the world.
+
+    Args:
+        spec: The machine.
+        state: The state to execute.
+        blackboard: The current blackboard.
+        world: The world.
+        seq: The transition, for the agent state's own log.
+        state_name: The state's name, likewise.
+        remaining_usd: The machine's unspent budget, or None when uncapped.
+
+    Returns:
+        The label, the goto and the fact to journal.
+
+    Raises:
+        EngineError: The state is a terminal.
+    """
     if isinstance(state, ToolState):
         argv = render_command(state.command, blackboard, where="command")
-        # Under the explicit-only model a tool reaches the network iff it set
-        # network = "host" (the operator-set ceiling + hardened limits are
-        # enforced as machine-run startup refusals). "auto"/"none" → isolated.
+        # A tool reaches the network only when it set `host`; startup refused what the operator
+        # did not grant. `auto` is a network of its own: a state's processes die with the state.
         result = world.run_tool(
             tuple(argv),
             float(state.timeout_secs),
-            # `auto` resolves to a network of its own: a machine state's
-            # processes die with the state, so there is never a sibling to
-            # share one with (see StateSpec.network).
             network="host" if state.network == "host" else "none",
             pass_env=state.pass_env,
         )
@@ -749,8 +753,6 @@ def _execute(
         prompt = render_string(parse_template(state.prompt), blackboard, where="agent prompt")
         result = world.run_agent(
             AgentRequest(
-                # "inherit" -> no override (None), so the world uses the
-                # operator's effective worker model.
                 model=None if state.model == "inherit" else state.model,
                 prompt=prompt,
                 timeout_s=float(state.timeout_secs),
@@ -760,7 +762,6 @@ def _execute(
                 max_usd=_agent_usd_cap(state.max_usd, remaining_usd),
                 max_tokens_fallback=state.max_tokens_fallback,
                 mode=state.mode,
-                # So the live World can give this execution its own watchable log.
                 state_name=state_name,
                 step_seq=seq,
                 output_schema=state.output_schema,
@@ -785,11 +786,6 @@ def _execute(
     raise EngineError(f"cannot execute terminal state directly: {state!r}")
 
 
-# --------------------------------------------------------------------------
-# The driver.
-# --------------------------------------------------------------------------
-
-
 def _emit_notify(
     state: StateSpec,
     blackboard: Mapping[str, object],
@@ -797,10 +793,11 @@ def _emit_notify(
     world: World,
     state_name: str,
 ) -> None:
-    """Journal a state's `notify` message on entry and fire the operator hook
-    (§4.3). Presentation only: the render may raise, and the caller SWALLOWS that
-    (a notify never affects control flow, so it never flips a terminal's real
-    ok/failed status). No-op for a state with no `notify`."""
+    """Journal a state's `notify` message on entry and fire the operator hook.
+
+    Presentation only: the caller swallows a render error, so a notify never flips a
+    terminal's status.
+    """
     if state.notify is None:
         return
     message = render_string(parse_template(state.notify.message), blackboard, where="notify")
@@ -822,9 +819,18 @@ def _emit_end(
 ) -> MachineResult:
     """Journal a `machine.end` and fire the operator notify hook for it.
 
-    *unbooked* is an agent slice that ran but whose StepEvent was never written
-    (a capture that could not be reduced): its spend rides on the end event so
-    the ledger still sees the dollars actually spent.
+    Args:
+        journal: The instance's journal.
+        world: The world.
+        status: `ok` or `failed`.
+        reason: Why the machine ended.
+        state: The state it ended in.
+        transitions: The transitions taken.
+        unbooked: An agent slice whose StepEvent was never written (its capture could not be
+            reduced); its spend rides on the end event.
+
+    Returns:
+        The result the end records.
     """
     end = MachineEnd(
         ts=_now_iso(),
@@ -850,7 +856,11 @@ def _end_failed(
     exc: Exception,
     unbooked: AgentFact | None = None,
 ) -> MachineResult:
-    """Journal a clean failed `MachineEnd` for a runtime state error and return it."""
+    """Journal a failed end for a runtime state error.
+
+    Returns:
+        The failed result.
+    """
     return _emit_end(
         journal,
         world,
@@ -864,23 +874,23 @@ def _end_failed(
 
 @dataclass(slots=True)
 class _EngineState:
-    """Mutable bookkeeping threaded through the engine's two phases.
+    """The bookkeeping threaded through the replay and the live loop.
 
-    `drive` builds one, `_rebuild_from_journal` folds the recorded facts
-    into it (crash recovery when live, offline backtest when not), then, live
-    only, `_run_live_loop` continues from where the journal ends. Carrying
-    the four cross-phase values in one object (rather than a six-arg call
-    returning a four-tuple) lets each phase be a function taking `state`, per
-    the AGENTS.md decompose rule.
+    Attributes:
+        spec: The machine.
+        journal: The instance's journal.
+        world: The world; None for a replay.
+        exit_on_wait: Park at a wait that is not ready instead of blocking.
+        blackboard: The current blackboard, folded by the replay then advanced live.
+        state: The current state's name.
+        transitions: The transitions taken.
+        spent_usd: The agent spend so far, for the max_usd check.
     """
 
     spec: MachineSpec
     journal: MachineJournal
     world: World | None
     exit_on_wait: bool
-    # Blackboard + position, folded by replay then advanced by the live loop.
-    # `state` is the current state name; `spent_usd` sums agent-fact spend for
-    # the cumulative usd_limit check.
     blackboard: dict[str, Any]
     state: str
     transitions: int = 0
@@ -896,7 +906,7 @@ _STATE_FACT_KINDS: dict[type[StateSpec], type[Fact]] = {
 
 
 def _declared_gotos(state: StateSpec) -> frozenset[str]:
-    """Every destination *state* can legally journal."""
+    """Return every destination the state can legally journal."""
     if isinstance(state, BranchState):
         return frozenset(clause.goto for clause in state.when)
     if isinstance(state, ToolState | AgentState | WaitState):
@@ -910,7 +920,11 @@ def _validate_recorded_route(
     blackboard: Mapping[str, object],
     remedy: str,
 ) -> None:
-    """Hold a replayed event's route to the outcome its fact determines."""
+    """Hold a replayed event's route to the outcome its fact determines.
+
+    Raises:
+        EngineError: The recorded clause, label or goto disagrees with the fact.
+    """
     if isinstance(state, BranchState) and isinstance(event.fact, BranchFact):
         clause_index, expected_label, expected_goto = _route_branch(state, blackboard)
         if event.fact.clause_index != clause_index:
@@ -943,16 +957,19 @@ def _validate_recorded_route(
 
 
 def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
-    """Replay recorded StepEvents through the pure reducer to rebuild the
-    blackboard and position, advancing *eng* in place. Non-StepEvents
-    (begin/notify/end) are skipped.
+    """Replay the recorded steps through the reducer, advancing the engine state in place.
 
-    Every recorded field the fold consumes is held to the machine: the step's
-    state must match the replayed position, seqs must be contiguous, the fact
-    kind must fit the state, and the goto must be an edge the state declares.
-    A journal that fails any of these (corruption, hand-editing, a torn write)
-    surfaces as a clean EngineError: silently folding it would rebuild a
-    position and blackboard the machine never reached."""
+    Every recorded field is held to the machine: the step's state matches the replayed
+    position, seqs are contiguous, the fact kind fits the state and the goto is a declared
+    edge.
+
+    Args:
+        eng: The engine state at the initial position.
+        events: The journal's events.
+
+    Raises:
+        EngineError: The journal does not fit the machine, or a step cannot be reduced.
+    """
     spec = eng.spec
     blackboard = eng.blackboard
     state = eng.state
@@ -961,9 +978,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
     remedy = " Archive the instance directory to start fresh."
     for event in events:
         if isinstance(event, AttemptSpend):
-            # A crashed attempt's booked slice: real budget spent with no step
-            # to carry it. Counts against max_usd; never moves the position.
-            spent_usd += event.usd
+            spent_usd += event.usd  # a crashed attempt's slice counts; it moves no position
             continue
         if not isinstance(event, StepEvent):
             continue
@@ -999,9 +1014,6 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
             _validate_recorded_route(state_spec, event, blackboard, remedy)
             blackboard = reduce(spec, state_spec, event.fact, blackboard)
         except _STATE_RUNTIME_ERRORS as exc:
-            # An old journal can hold a fact that does not reduce. Surface it as
-            # a clean error, not a traceback, so status/replay/resume stay
-            # inspectable.
             raise EngineError(f"cannot replay journaled step at state {state!r}: {exc}") from exc
         if isinstance(event.fact, AgentFact):
             spent_usd += event.fact.usd
@@ -1014,9 +1026,21 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
 
 
 def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per state kind
-    """Continue live from where the journal ends: execute one state per
-    iteration, journal its fact, and advance, until a terminal state (or a
-    budget cap, a runtime state error, or an `--exit-on-wait` park) ends it."""
+    """Continue live from where the journal ends.
+
+    One state per iteration: execute, reduce, journal the fact, advance; until a terminal, a
+    budget cap, a runtime state error, a stop request or an `--exit-on-wait` park.
+
+    Args:
+        eng: The engine state after the replay.
+
+    Returns:
+        How the drive ended.
+
+    Raises:
+        EngineError: No world, a state the loaded machine no longer declares, or a fault a
+            state's data cannot explain.
+    """
     spec = eng.spec
     journal = eng.journal
     exit_on_wait = eng.exit_on_wait
@@ -1028,10 +1052,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
     transitions = eng.transitions
     spent_usd = eng.spent_usd
     while True:
-        # The durable stop request (`machine stop`, or any writer of the
-        # instance's stop marker) parks at this boundary: the state in flight
-        # already journaled its fact, no MachineEnd is written, and the
-        # instance resumes exactly like a parked wait.
+        # A stop request parks here: the fact in flight is journaled, no end is written.
         if stop_requested(journal.root):
             clear_stop_request(journal.root)
             return MachineResult("stopped", "stop requested by the operator", state, transitions)
@@ -1042,12 +1063,8 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
                 " longer declares (the file was edited since this instance started);"
                 f" archive the instance directory to start fresh: {journal.root}"
             )
-        # Emit a state's `notify` on entry (§4.3), before executing it. At-least-
-        # once across a crash: a resume re-enters the current state and re-emits.
-        # A wait whose PendingWait is already armed is NOT a fresh entry: every
-        # --exit-on-wait scheduler tick re-drives into the parked state, and
-        # without this guard the notify (and the operator hook: a page, an
-        # email) re-fired once per poll for one park.
+        # A notify fires on entry, at least once across a crash; an armed wait is not a fresh
+        # entry, else every --exit-on-wait tick would re-page the operator for one park.
         already_parked = False
         if isinstance(current, WaitState):
             pending = journal.read_pending_wait()
@@ -1058,9 +1075,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
             try:
                 _emit_notify(current, blackboard, journal, world, state)
             except _STATE_RUNTIME_ERRORS as exc:
-                # Non-fatal by design (presentation never flips a terminal's
-                # real status), but never silent: the failure is journaled and
-                # the hook told, so a broken notify template is visible.
+                # Non-fatal, never silent: the failure is journaled and the hook told.
                 fail = f"notify failed: {exc}"
                 with contextlib.suppress(JournalError):
                     journal.append(
@@ -1125,25 +1140,14 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
                     remaining_usd=remaining_usd,
                 )
         except _STATE_RUNTIME_ERRORS as exc:
-            # A data-driven state failure (e.g. an absent optional field, a tool
-            # command rendering a non-scalar, a dynamic wait interval of zero):
-            # halt cleanly with a journaled MachineEnd in both the blocking and
-            # the --exit-on-wait paths. Broader EngineError faults still propagate.
             return _end_failed(journal, world, state, transitions, exc)
-        # Deliver a signal poke's payload to the next tool (both wait paths).
         if isinstance(fact, WaitFact) and fact.woke_by == "signal":
             world.materialize_poke(fact.payload)
-        # Apply the capture before journaling the StepEvent. If a malformed output
-        # (non-JSON / missing field / mistyped) can't be reduced, the machine halts
-        # cleanly here instead of writing a poison fact that would re-crash every
-        # later reduce (resume/status/replay), bricking the instance. The side
-        # effect already ran; halting loudly matches the §4.2 capture contract.
+        # The capture is reduced before the step is journaled: a fact that cannot be reduced would
+        # re-crash every later replay, so the machine ends here and the spend rides on the end.
         try:
             next_blackboard = reduce(spec, current, fact, blackboard)
         except _STATE_RUNTIME_ERRORS as exc:
-            # The agent already ran and billed; the step is deliberately not
-            # journaled (a fact whose capture fails would re-crash every later
-            # replay), so hand its spend to the end event instead of dropping it.
             return _end_failed(
                 journal,
                 world,
@@ -1162,10 +1166,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
                 fact=fact,
             )
         )
-        # The wake record and the poke's claim are dropped only now that the
-        # transition they produced is durable; a death anywhere earlier
-        # re-delivers the poke and re-reads the same wake instant, rather than
-        # arming a fresh interval from a new now().
+        # The wake record and the poke's claim go only once their transition is durable.
         if isinstance(fact, WaitFact):
             journal.clear_pending_wait()
             if fact.woke_by == "signal":
@@ -1186,18 +1187,23 @@ def drive(
     live: bool,
     exit_on_wait: bool = False,
 ) -> MachineResult:
-    """Run or replay *spec* against its *journal*.
+    """Run or replay a machine against its journal.
 
-    With `live=True` (`machine run`) the engine recovers from any existing
-    journal, then continues to a terminal state, appending new facts. With
-    `live=False` (`machine replay`) it only reconstructs the recorded path
-    and reports where the journal ends; *world* is ignored.
+    Args:
+        spec: The machine.
+        journal: The instance's journal.
+        world: The world; ignored by a replay.
+        live: Recover from the journal and continue (`machine run`), or only reconstruct the
+            recorded path (`machine replay`).
+        exit_on_wait: At the first wait that is not ready, persist its instant and return
+            `waiting` for an external scheduler to re-invoke.
 
-    With `exit_on_wait=True` (`machine run --exit-on-wait`) the engine makes
-    all the progress it can, but the first time it reaches a `wait` that is
-    not yet ready it persists the absolute wake instant and returns a
-    `"waiting"` result instead of blocking, for an external scheduler
-    (systemd timer / cron) to re-invoke and resume (§6).
+    Returns:
+        How the drive ended.
+
+    Raises:
+        EngineError: The journal was started by another machine, is malformed, or disagrees
+            with its own replay.
     """
     events = journal.read()
     if events and not isinstance(events[0], MachineBegin):
@@ -1216,9 +1222,7 @@ def drive(
             f" archive the instance directory to start fresh: {journal.root}"
         )
 
-    # The instance is keyed only by the `machine` id, so a different file (or an
-    # incompatible edit) can land on the same journal. Cross-check the recorded
-    # identity so a mismatch fails loudly here, not as a KeyError mid-recovery.
+    # The instance is keyed by the machine id alone, so another file can land on the journal.
     begin = events[0] if events else None
     if isinstance(begin, MachineBegin) and (
         begin.machine != spec.machine or begin.version != spec.version

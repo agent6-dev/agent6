@@ -1,22 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Author-time dry-run for `agent6 machine test` (§5.1, §4.5).
+"""The author-time dry run behind `agent6 machine test`.
 
-Pure validation of a loaded :class:`MachineSpec` with **no** real-world I/O,
-no jail, no network, no provider calls, no clock. Two passes:
-
-- **Per-state**: synthesize the success fact each non-branch state would emit
-  (a tool's `output_schema`-shaped JSON / an agent's `finish_session` payload),
-  push it through the real :func:`agent6.machine.engine.reduce`, and confirm the
-  capture binds cleanly and the produced label routes to a declared state.
-- **Per-branch**: evaluate every `when` clause against an operator-supplied
-  blackboard fixture (overlaid on the declared defaults) and report the
-  winning `goto`.
-
-Everything reuses the engine/predicate/model code paths the live runner uses,
-so a green `machine test` means the plumbing, schemas, captures, and routing
-are sound, only the actual tool output / agent judgement / wall-clock differ
-at run time.
+No jail, network, provider call or clock. Per state, the success fact the state would
+emit is synthesized and pushed through the engine's `reduce`, so the capture binds and the
+label routes to a declared state; per branch, every `when` clause is evaluated against the
+declared defaults overlaid with the operator's fixture. A green run means the plumbing,
+schemas, captures and routing are sound.
 """
 
 from __future__ import annotations
@@ -54,6 +44,17 @@ _SCALAR_EXAMPLES: dict[str, Any] = {"str": "", "int": 0, "float": 0.0, "bool": F
 
 @dataclass(frozen=True, slots=True)
 class StateCheck:
+    """One non-branch state's dry-run result.
+
+    Attributes:
+        name: The state's name.
+        kind: The state's kind.
+        ok: The capture bound and the label routed to a declared state.
+        label: The label the synthesized fact produced, or None for a terminal.
+        goto: The state the label routes to, or None.
+        detail: The capture summary, the terminal's status, or the problem.
+    """
+
     name: str
     kind: str
     ok: bool
@@ -64,6 +65,17 @@ class StateCheck:
 
 @dataclass(frozen=True, slots=True)
 class BranchCheck:
+    """One branch state's dry-run result.
+
+    Attributes:
+        name: The state's name.
+        clause_index: The index of the clause that fired, or None on a predicate error.
+        predicate: The clause's `if` text, or "else".
+        goto: The state the clause routes to.
+        ok: The target is a declared state and every predicate evaluated.
+        detail: The problem, or "".
+    """
+
     name: str
     clause_index: int | None
     predicate: str | None
@@ -74,24 +86,31 @@ class BranchCheck:
 
 @dataclass(frozen=True, slots=True)
 class DryRunReport:
+    """The per-state and per-branch checks of one dry run."""
+
     states: tuple[StateCheck, ...]
     branches: tuple[BranchCheck, ...]
 
     @property
     def ok(self) -> bool:
+        """Every check passed."""
         return all(s.ok for s in self.states) and all(b.ok for b in self.branches)
 
 
 def synthesize_record(spec: MachineSpec, schema_name: str, _seen: tuple[str, ...] = ()) -> Any:
-    """A minimal, schema-valid example object for *schema_name*.
+    """Return a minimal schema-valid example object for a schema.
 
-    Produces exactly the required fields (so it passes the strict payload
-    check): scalars get a zero value, lists an empty list, enums their first
-    member, nested records recurse. Optional fields are omitted (the weakest
-    state the capture gate permits), so a dry-run reading one unguarded fails
-    offline exactly as the live run would, instead of routing on invented
-    data. Schema cycles (already rejected by `validate_semantics`) are guarded
-    with `_seen`.
+    Exactly the required fields: scalars zero, lists empty, enums their first member, nested
+    records recursed. An optional field is omitted, the weakest state the capture gate
+    permits, so an unguarded read of one fails offline as it would live.
+
+    Args:
+        spec: The machine.
+        schema_name: The schema to synthesize.
+        _seen: The schemas on the recursion path; a cycle yields {}.
+
+    Returns:
+        The example object.
     """
     fields = spec.schemas.get(schema_name)
     if fields is None:  # pragma: no cover - validate_semantics guarantees it exists
@@ -105,6 +124,7 @@ def synthesize_record(spec: MachineSpec, schema_name: str, _seen: tuple[str, ...
 
 
 def _synthesize_field(spec: MachineSpec, field: Any, seen: tuple[str, ...]) -> Any:
+    """Return the example value for one field."""
     if field.enum:
         return field.enum[0]
     t: str = field.type
@@ -120,7 +140,7 @@ def _synthesize_field(spec: MachineSpec, field: Any, seen: tuple[str, ...]) -> A
 
 
 def _capture_summary(capture: Any) -> str:
-    """The variables a state's capture binds (for the report; not a value diff)."""
+    """Return the variables a state's capture binds, for the report."""
     if capture is None:
         return "no capture"
     if capture.stdout_json is not None:
@@ -137,11 +157,11 @@ def _capture_summary(capture: Any) -> str:
 def _check_tool(
     spec: MachineSpec, name: str, state: ToolState, blackboard: dict[str, Any]
 ) -> StateCheck:
+    """Return the check of a tool state's success path."""
     if state.output_schema is not None:
         stdout = json.dumps(synthesize_record(spec, state.output_schema))
     else:
-        # A schema-less whole capture still requires one JSON value. JSON null
-        # is the weakest valid opaque value; an empty stdout is malformed.
+        # A schema-less capture still requires one JSON value; null is the weakest valid one.
         stdout = "null" if state.capture is not None else ""
     fact = ToolFact(exit_code=0, stdout=stdout, timed_out=False)
     reduce(spec, state, fact, blackboard)  # exercises capture rendering; raises on a bad template
@@ -154,6 +174,7 @@ def _check_tool(
 def _check_agent(
     spec: MachineSpec, name: str, state: AgentState, blackboard: dict[str, Any]
 ) -> StateCheck:
+    """Return the check of an agent state's success path."""
     payload = synthesize_record(spec, state.output_schema)
     problems = validate_record_payload(
         spec.schemas, state.output_schema, payload, where="finish_session payload"
@@ -171,14 +192,14 @@ def _check_agent(
 def _check_state(
     spec: MachineSpec, name: str, state: Any, blackboard: dict[str, Any]
 ) -> StateCheck:
+    """Return the check of one non-branch state; a runtime error is the detail."""
     try:
         if isinstance(state, ToolState):
             return _check_tool(spec, name, state, blackboard)
         if isinstance(state, AgentState):
             return _check_agent(spec, name, state, blackboard)
         if isinstance(state, WaitState):
-            # A wait with no timer parks until a signal poke (no `tick` edge);
-            # a timed wait simulates the tick path.
+            # A wait with no timer parks until a poke (no `tick` edge).
             forever = state.every_secs is None and state.until is None
             label = "signal" if forever else "tick"
             goto = state.on[label]
@@ -195,6 +216,7 @@ def _check_state(
 def _check_branch(
     spec: MachineSpec, name: str, state: BranchState, blackboard: dict[str, Any]
 ) -> BranchCheck:
+    """Return the check of a branch: the first clause that fires."""
     try:
         for index, clause in enumerate(state.when):
             if clause.else_ is not None:
@@ -217,19 +239,18 @@ def _check_branch(
 
 
 def dry_run(spec: MachineSpec, blackboard_fixture: dict[str, Any] | None = None) -> DryRunReport:
-    """Run the per-state and per-branch dry-run passes over *spec*.
+    """Run the per-state and per-branch passes over a machine.
 
-    *blackboard_fixture* (e.g. from `--blackboard`) is overlaid on the
-    declared variable defaults before each pass, letting an operator steer
-    branch predicates and capture templates without any real execution.
+    Args:
+        spec: The machine.
+        blackboard_fixture: Values overlaid on the declared defaults (`--blackboard`).
+
+    Returns:
+        The report.
     """
     base = initial_blackboard(spec)
-    # Record vars default to {} (4.2), but a branch that reads
-    # `verdict.field` cannot evaluate against an empty record, so the realistic
-    # agent-verdict -> branch machine would always fail here without a fixture.
-    # Synthesize the schema-zero record of its required fields instead (the
-    # weakest state the capture gate permits; an optional field stays absent,
-    # `has()` is its guard); the fixture below still overrides it.
+    # A record var defaults to {}, which a branch reading `verdict.field` cannot evaluate against,
+    # so it takes the schema's zero record (optional fields absent; `has()` is their guard).
     for name, var in (*spec.vars.code.items(), *spec.vars.agent.items()):
         if var.type in spec.schemas and base.get(name) == {}:
             base[name] = synthesize_record(spec, var.type)

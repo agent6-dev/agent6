@@ -74,9 +74,9 @@ Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommi
 
 [`agent6.machine.spec`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/spec.py) &middot; pydantic model + 13 nested models
 
-Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
+The parse boundary of a `.asm.toml` machine file.
 
-**MachineSpec** &mdash; A validated `.asm.toml` machine definition: budget, typed `schemas`, the named `states` graph, and an optional agent6 `[config]` overlay whose operator-only security policy is refused (see `PROTECTED_OVERLAY_*`) so an untrusted machine file cannot weaken the sandbox.
+**MachineSpec** &mdash; A parsed `.asm.toml` machine.
 
 | field | type | default |
 | --- | --- | --- |
@@ -97,7 +97,7 @@ Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
 
 [`agent6.machine.journal`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/journal.py) &middot; tagged union of 5 frozen families
 
-Append-only journal, blackboard snapshots, and the single-writer lock for one machine instance. The journal is the source of truth: the pure reducer validates each impure observation, the validated fact is appended as a JournalEvent, and the returned blackboard replaces the current one only then. Replaying the events reproduces the reducer's path exactly.
+The append-only journal, the snapshots and the single-writer lock of one machine instance.
 
 Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`, `AttemptSpend`
 

@@ -1,18 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`{{ ... }}` interpolation: the single source of truth for both the
-author-time validator (`agent6.machine.spec`) and the runtime engine
-(`agent6.machine.engine`).
+"""The `{{ ... }}` interpolation grammar, shared by the validator and the engine.
 
-The grammar is intentionally tiny (§4.4): an interpolation is exactly one
-reference (§4.5) plus an optional single zero-argument filter (`len` or
-`json`). There are no arbitrary expressions, no chained filters, and no
-method calls, anything richer belongs in a `branch` predicate, which is
-itself restricted (`agent6.machine.predicate`).
-
-Parsing is pure and dependency-free; rendering navigates a *blackboard*
-mapping as ordered dict lookups (never Python attribute access), mirroring
-the predicate evaluator's data-navigation rule.
+An interpolation is one reference plus at most one filter (`len` or `json`); anything richer
+belongs in a `branch` predicate. Rendering navigates the blackboard as dict lookups, never
+attribute access, as the predicate evaluator does.
 """
 
 from __future__ import annotations
@@ -49,17 +41,21 @@ class TemplateError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Interp:
+    """One interpolation: a reference and its filter, if any."""
+
     ref: Reference
     filt: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class Template:
+    """A parsed template: literal text and interpolations in order."""
+
     parts: tuple[str | Interp, ...]
 
     @property
     def is_lone_ref(self) -> bool:
-        """True iff the template is exactly one filter-less interpolation."""
+        """The template is exactly one filter-less interpolation."""
         return (
             len(self.parts) == 1
             and isinstance(self.parts[0], Interp)
@@ -68,6 +64,17 @@ class Template:
 
 
 def parse_template(text: str) -> Template:
+    """Parse a template string.
+
+    Args:
+        text: The template.
+
+    Returns:
+        The parsed template.
+
+    Raises:
+        TemplateError: Unbalanced braces, an unknown filter or a malformed reference.
+    """
     parts: list[str | Interp] = []
     last = 0
     for match in _INTERP_RE.finditer(text):
@@ -87,6 +94,18 @@ def parse_template(text: str) -> Template:
 
 
 def _parse_interp(body: str, whole: str) -> Interp:
+    """Parse the inside of one `{{ ... }}`.
+
+    Args:
+        body: The text between the braces.
+        whole: The whole template, named in the error.
+
+    Returns:
+        The interpolation.
+
+    Raises:
+        TemplateError: An unknown filter, more than one filter, or a malformed reference.
+    """
     pieces = [piece.strip() for piece in body.split("|")]
     if len(pieces) == 1:
         ref_text, filt = pieces[0], None
@@ -107,23 +126,23 @@ def _parse_interp(body: str, whole: str) -> Interp:
     return Interp(ref=Reference(root=segments[0], path=tuple(segments[1:])), filt=filt)
 
 
-# ---------------------------------------------------------------------------
-# Runtime rendering (engine side). The author-time validator in
-# `agent6.machine.spec` has already proven every reference resolves and
-# every filter applies, so the failures here only fire on genuinely
-# malformed blackboard data, which the renderer surfaces loudly via TemplateError.
-# ---------------------------------------------------------------------------
-
-
 class TemplateRuntimeError(TemplateError):
-    """Raised when a validated template cannot be rendered against actual data."""
+    """A validated template cannot be rendered against the blackboard's actual data."""
 
 
 def resolve_reference(ref: Reference, scope: Mapping[str, object]) -> object:
-    """Resolve *ref* against *scope* as ordered dict navigation.
+    """Resolve a reference against a scope by dict navigation, never `getattr`.
 
-    Never uses `getattr`: a record value is a `Mapping` and each path
-    segment is a key lookup, exactly like the predicate evaluator.
+    Args:
+        ref: The reference.
+        scope: The blackboard.
+
+    Returns:
+        The value.
+
+    Raises:
+        TemplateRuntimeError: The root is unknown, a segment navigates into a non-record,
+            or a field is missing.
     """
     if ref.root not in scope:
         raise TemplateRuntimeError(f"unknown reference {ref.root!r}")
@@ -138,17 +157,32 @@ def resolve_reference(ref: Reference, scope: Mapping[str, object]) -> object:
 
 
 def _apply_filter(value: object, filt: str | None, where: str) -> object:
+    """Apply the filter: `len`, or `json` (compact, keys sorted).
+
+    Returns:
+        The filtered value, or the value itself with no filter.
+
+    Raises:
+        TemplateRuntimeError: `len` of a value with no length.
+    """
     if filt is None:
         return value
     if filt == "len":
         if not isinstance(value, (str, list, tuple, dict)):
             raise TemplateRuntimeError(f"{where}: `| len` has no length for {value!r}")
         return len(value)
-    # filt == "json": compact, object keys sorted (deterministic).
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 def _scalar_str(value: object, where: str) -> str:
+    """Render a scalar as text: TOML booleans, "" for None.
+
+    Returns:
+        The text.
+
+    Raises:
+        TemplateRuntimeError: The value is not a scalar.
+    """
     if isinstance(value, bool):
         return "true" if value else "false"
     if value is None:
@@ -159,7 +193,16 @@ def _scalar_str(value: object, where: str) -> str:
 
 
 def render_string(template: Template, scope: Mapping[str, object], *, where: str) -> str:
-    """Render *template* to a string. Every interpolation becomes text."""
+    """Render a template to a string; every interpolation becomes text.
+
+    Args:
+        template: The parsed template.
+        scope: The blackboard.
+        where: The location named in an error.
+
+    Returns:
+        The rendered text.
+    """
     out: list[str] = []
     for part in template.parts:
         if isinstance(part, str):
@@ -174,9 +217,18 @@ def render_string(template: Template, scope: Mapping[str, object], *, where: str
 
 
 def render_value(template: Template, scope: Mapping[str, object], *, where: str) -> object:
-    """Render *template* to a native value when it is a lone filter-less
-    reference (the only way a non-string value reaches the blackboard);
-    otherwise render to a string (§4.5)."""
+    """Render a template to a native value when it is a lone reference, else to a string.
+
+    A lone filter-less reference is the only way a non-string value reaches the blackboard.
+
+    Args:
+        template: The parsed template.
+        scope: The blackboard.
+        where: The location named in an error.
+
+    Returns:
+        The referenced value, or the rendered text.
+    """
     if template.is_lone_ref:
         interp = template.parts[0]
         assert isinstance(interp, Interp)
@@ -187,8 +239,16 @@ def render_value(template: Template, scope: Mapping[str, object], *, where: str)
 def render_command(
     command: tuple[str, ...], scope: Mapping[str, object], *, where: str
 ) -> list[str]:
-    """Render a `tool` state's argv, splicing a lone `"{{ listvar }}"`
-    element into one argument per list item (§4.4)."""
+    """Render a tool state's argv, splicing a lone list reference into one argument per item.
+
+    Args:
+        command: The declared argv templates.
+        scope: The blackboard.
+        where: The location named in an error.
+
+    Returns:
+        The argv.
+    """
     argv: list[str] = []
     for index, element in enumerate(command):
         loc = f"{where}[{index}]"

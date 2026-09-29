@@ -1,28 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Append-only journal, blackboard snapshots, and the single-writer lock for one
-machine instance. The journal is the source of truth: the pure reducer validates
-each impure observation, the validated fact is appended as a JournalEvent, and
-the returned blackboard replaces the current one only then. Replaying the events
-reproduces the reducer's path exactly.
+"""The append-only journal, the snapshots and the single-writer lock of one machine instance.
 
-The recorded observations are a tool's exit code and stdout, a wait's resolved
-wake instant, and a branch's chosen clause (§5.1); the reducer reads them back
-instead of re-touching the world.
+The journal is the source of truth: each validated fact is appended, then the reduced
+blackboard replaces the current one, and replaying the events reproduces the path. Events
+re-enter through pydantic (`extra="forbid", frozen=True`). Snapshots serve inspection and
+status only.
 
-Events are read back from disk, so they re-enter at a trust boundary and are
-re-validated by pydantic (`extra="forbid", frozen=True`), exactly like the
-machine spec itself. Snapshots are an optimisation for human inspection and
-fast status; correctness depends only on the journal.
+Layout under the per-repo state dir, `machines/<id>/`::
 
-Layout under the per-repo state dir (`machines/<id>/`) (§5.3)::
-
-    machine.asm.toml     # the exact source the run was started from (for replay)
+    machine.asm.toml     # the source the run started from, for replay
     journal.jsonl        # append-only, fsync'd, one event per line
-    snapshots/<n>.json   # blackboard + current state, atomic temp+rename
-    machine.lock         # flock single-writer guard
-    signal               # optional operator poke consumed by a `wait` state
-    wait.json            # persisted next-wake instant for --exit-on-wait mode
+    snapshots/<n>.json   # blackboard and current state, written atomically
+    machine.lock         # the flock single-writer guard
+    signal               # an operator poke, consumed by a `wait` state
+    wait.json            # the persisted next wake, for --exit-on-wait
 """
 
 from __future__ import annotations
@@ -67,12 +59,10 @@ _MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)
 
 
 class JournalError(MachineError):
-    """Raised when on-disk journal state (journal, pending wait, source, lock) is
-    missing, corrupt, or unusable.
+    """On-disk journal state (the journal, a pending wait, the source, the lock) is unusable.
 
-    A `MachineError` subclass so every surface that degrades on a
-    broken machine file (hub listing, machine page, SSE stream) degrades the
-    same way on a broken journal instead of crashing.
+    A `MachineError`, so every surface degrades on a broken journal as on a broken machine
+    file.
     """
 
     def __init__(self, message: str) -> None:
@@ -80,42 +70,53 @@ class JournalError(MachineError):
 
 
 def _now_iso() -> str:
+    """Return the current UTC instant as an ISO-8601 timestamp."""
     return datetime.now(UTC).isoformat(timespec="microseconds")
 
 
-# --------------------------------------------------------------------------
-# Facts, the impure observation a single state execution produced.
-# --------------------------------------------------------------------------
-
-
 class ToolFact(BaseModel):
+    """The observation one tool state produced.
+
+    Attributes:
+        kind: The discriminator.
+        exit_code: The command's exit code.
+        stdout: The captured stdout.
+        timed_out: The command hit its timeout.
+        stderr: The captured stderr, for debugging; routing never reads it. Defaulted, so a
+            journal line without it still parses.
+    """
+
     model_config = _MODEL_CONFIG
 
     kind: Literal["tool"] = "tool"
     exit_code: int
     stdout: str
     timed_out: bool
-    # The tool's captured stderr, so a failing machine tool is debuggable from
-    # the journal (routing keys off exit_code/stdout only, so this never affects
-    # the reducer). Additive with a default: a journal line without it still
-    # parses (extra="forbid" rejects unknown keys, not a missing defaulted one),
-    # so old instances stay replayable.
     stderr: str = ""
 
 
 class WaitFact(BaseModel):
+    """The observation one wait state produced.
+
+    Attributes:
+        kind: The discriminator.
+        wake_epoch: The instant the wait was armed for; None for a timerless wait.
+        woke_by: A clock tick or an operator poke.
+        payload: The poke's payload, so a replay re-reads the identical input; None for a
+            bare poke or a tick.
+    """
+
     model_config = _MODEL_CONFIG
 
     kind: Literal["wait"] = "wait"
-    # `None` for a wait with no timer (parks until a `signal` poke, §4.3).
     wake_epoch: float | None = None
     woke_by: Literal["tick", "signal"]
-    # The poke payload delivered by a `signal` wake, journaled so a replay
-    # re-reads the identical input. `None` for a bare poke or a `tick`.
     payload: Any = None
 
 
 class BranchFact(BaseModel):
+    """The observation one branch state produced: the index of the clause that fired."""
+
     model_config = _MODEL_CONFIG
 
     kind: Literal["branch"] = "branch"
@@ -123,6 +124,20 @@ class BranchFact(BaseModel):
 
 
 class AgentFact(BaseModel):
+    """The observation one agent state produced.
+
+    Attributes:
+        kind: The discriminator.
+        outcome: The label the state routed on.
+        reason: The loop's stop reason.
+        payload: The validated `finish_session` payload, or None.
+        usd: The slice's spend.
+        usd_partial: `usd` is a known under-estimate (an unpriced model); status renders it
+            with the `~` marker.
+        input_tokens: The slice's input tokens.
+        output_tokens: The slice's output tokens.
+    """
+
     model_config = _MODEL_CONFIG
 
     kind: Literal["agent"] = "agent"
@@ -130,9 +145,6 @@ class AgentFact(BaseModel):
     reason: str
     payload: dict[str, Any] | None = None
     usd: float = 0.0
-    # True when `usd` is a known under-estimate (an unpriced model contributed
-    # $0); machine status renders it with the shared '~' marker. Defaults False
-    # so old journals parse unchanged.
     usd_partial: bool = False
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
@@ -141,12 +153,9 @@ class AgentFact(BaseModel):
 Fact = Annotated[ToolFact | WaitFact | BranchFact | AgentFact, Field(discriminator="kind")]
 
 
-# --------------------------------------------------------------------------
-# Events, one journal line each.
-# --------------------------------------------------------------------------
-
-
 class MachineBegin(BaseModel):
+    """The journal's first event: which machine, at which version, started the instance."""
+
     model_config = _MODEL_CONFIG
 
     type: Literal["machine.begin"] = "machine.begin"
@@ -156,6 +165,18 @@ class MachineBegin(BaseModel):
 
 
 class StepEvent(BaseModel):
+    """One transition: the state, the fact it produced, the label and the destination.
+
+    Attributes:
+        type: The discriminator.
+        ts: When the step was journaled.
+        seq: The transition's index, contiguous from 0.
+        state: The state that ran.
+        label: The outcome label.
+        goto: The destination state.
+        fact: The observation.
+    """
+
     model_config = _MODEL_CONFIG
 
     type: Literal["step"] = "step"
@@ -168,11 +189,9 @@ class StepEvent(BaseModel):
 
 
 class MachineNotify(BaseModel):
-    """A state's `notify` message, journaled on entry (§4.3).
+    """A state's `notify` message, journaled on entry.
 
-    Presentation only: it adds no edge and does not affect the reducer or
-    routing. Front-ends render it as an ephemeral notification; the operator
-    notify hook fires on it out-of-band.
+    Presentation only: it adds no edge and never moves the reducer.
     """
 
     model_config = _MODEL_CONFIG
@@ -185,6 +204,22 @@ class MachineNotify(BaseModel):
 
 
 class MachineEnd(BaseModel):
+    """The journal's terminal event.
+
+    Attributes:
+        type: The discriminator.
+        ts: When the machine ended.
+        status: The terminal's status, or `failed` for a cap or a runtime error.
+        reason: Why the machine ended.
+        state: The state it ended in.
+        transitions: The transitions taken.
+        usd: The spend of an agent slice that ended with no StepEvent to book it (a capture
+            that could not be reduced).
+        usd_partial: That spend is a known under-estimate.
+        input_tokens: That slice's input tokens.
+        output_tokens: That slice's output tokens.
+    """
+
     model_config = _MODEL_CONFIG
 
     type: Literal["machine.end"] = "machine.end"
@@ -193,10 +228,6 @@ class MachineEnd(BaseModel):
     reason: str
     state: str
     transitions: int = Field(ge=0)
-    # Spend of a slice that ended without a StepEvent to book it. A capture that
-    # cannot be reduced halts before journaling the step (a poison fact would
-    # re-crash every later replay), which also discards the agent's real usd and
-    # tokens, so `machine run` would report $0.0000 for a state that burned money.
     usd: float = 0.0
     usd_partial: bool = False
     input_tokens: int = 0
@@ -204,14 +235,11 @@ class MachineEnd(BaseModel):
 
 
 class AttemptSpend(BaseModel):
-    """Metered spend of a state attempt the crash window orphaned.
+    """The metered spend of a state attempt a supervisor death orphaned.
 
-    A supervisor death mid-agent-state leaves real provider spend with no
-    StepEvent to book it and no MachineEnd to carry it; the per-state log
-    still holds the totals. The RESUMING supervisor journals this before
-    re-running the state, so the budget and every spend surface keep the
-    billed slice. Bookkeeping only: it adds no edge and never moves the
-    reducer."""
+    The resuming supervisor journals it from the per-state log before re-running the state,
+    so the budget keeps the billed slice. Bookkeeping only: it never moves the reducer.
+    """
 
     model_config = _MODEL_CONFIG
 
@@ -233,12 +261,9 @@ JournalEvent = Annotated[
 _EVENT_ADAPTER: TypeAdapter[Any] = TypeAdapter(JournalEvent)
 
 
-# --------------------------------------------------------------------------
-# Snapshot, blackboard + position, written after every transition.
-# --------------------------------------------------------------------------
-
-
 class Snapshot(BaseModel):
+    """The blackboard and position after a transition, for inspection and status."""
+
     model_config = _MODEL_CONFIG
 
     seq: int = Field(ge=0)
@@ -247,54 +272,43 @@ class Snapshot(BaseModel):
 
 
 class PendingWait(BaseModel):
-    """A `wait` armed by `--exit-on-wait` but not yet fired (§6).
+    """A wait that is armed but has not fired.
 
-    The absolute `wake_epoch` is computed once, when the wait is first
-    reached, and persisted so that re-invocations by an external scheduler
-    compare against the *same* instant rather than re-arming `every_secs`
-    from a fresh `now` each tick. Deleted once the wait fires.
+    The instant is computed once and persisted, so a resume or a scheduler tick compares
+    against the same instant; the record goes once the wait fires.
+
+    Attributes:
+        state: The wait state.
+        wake_epoch: The instant; None for a timerless wait, which fires only on a poke.
+        seq: The transition this visit of the state belongs to, telling it from an earlier
+            visit's uncleared record; 0 parses a record written before the field existed.
     """
 
     model_config = _MODEL_CONFIG
 
     state: str
-    # `None` for a wait with no timer: it fires only on a `signal` poke, never
-    # on a wake instant, so `--exit-on-wait` parks it until the operator pokes.
     wake_epoch: float | None = None
-    # The transition this occurrence of `state` belongs to (the seq its
-    # StepEvent carries once it fires): a wait state reached again on a loop
-    # shares its name with an earlier visit whose record a death between its
-    # StepEvent and the clear left behind. 0 parses a record written before
-    # the field existed, the value a wait reached from a fresh journal has.
     seq: int = Field(default=0, ge=0)
 
     @property
     def wake_at(self) -> str:
-        """The wake instant as an ISO-8601 UTC timestamp, "" when there is none.
-
-        Every surface that shows an operator when a parked machine wakes reads
-        this, so `machine run --exit-on-wait` and `machine status` cannot render
-        the same instant differently.
-        """
+        """The wake instant as an ISO-8601 UTC timestamp, or "" for a timerless wait."""
         if self.wake_epoch is None:
             return ""
         return datetime.fromtimestamp(self.wake_epoch, tz=UTC).isoformat()
 
 
-# --------------------------------------------------------------------------
-# The journal directory.
-# --------------------------------------------------------------------------
-
-
 def scrub_lone_surrogates(value: Any) -> Any:
-    """A parsed-JSON value with any lone surrogate replaced.
+    """Return a parsed JSON value with every lone surrogate replaced.
 
-    Applied at the two trust boundaries that produce them (a tool's captured
-    stdout and a `machine poke` payload), so the blackboard never holds one.
-    Sanitizing only the journal writers would move the crash one step
-    downstream: the next agent state serializes the blackboard into
-    its request payload, and `model_dump_json` raises a
-    `PydanticSerializationError` that no handler on that path catches.
+    Applied where they enter (a tool's stdout, a poke payload), so the blackboard never
+    holds one; the next agent request's `model_dump_json` would raise on it.
+
+    Args:
+        value: The parsed value.
+
+    Returns:
+        The value, scrubbed when it held one.
     """
     try:
         json.dumps(value, ensure_ascii=False).encode("utf-8")
@@ -305,14 +319,18 @@ def scrub_lone_surrogates(value: Any) -> Any:
 
 
 def dump_json(model: BaseModel, *, indent: int | None = None) -> str:
-    """One journal/snapshot record as JSON, lone-surrogate safe.
+    """Serialize one journal or snapshot record, replacing lone surrogates.
 
-    `json.loads` legally yields lone surrogates from `\\udXXX` escapes, and
-    they reach these writers from a tool's captured stdout and a `machine poke`
-    payload. `model_dump_json` raises on them, which crashed the run before it
-    could journal a MachineEnd and re-crashed on every restart. Replace them
-    (the same call EventSink makes for logs.jsonl) so the audit trail is written
-    and stays valid UTF-8 for every reader."""
+    `model_dump_json` raises on a lone surrogate; the fallback writes valid UTF-8 so the
+    audit trail is always written.
+
+    Args:
+        model: The record.
+        indent: The JSON indent, or None for compact.
+
+    Returns:
+        The JSON text.
+    """
     try:
         return model.model_dump_json(indent=indent)
     except PydanticSerializationError:
@@ -326,18 +344,25 @@ def dump_json(model: BaseModel, *, indent: int | None = None) -> str:
         return raw.encode("utf-8", "replace").decode("utf-8")
 
 
-# How far back a torn-tail heal looks for the last committed newline before it
-# falls back to reading the file. A journal line is one event; a tool fact
-# carrying a command's output is the long case.
+# How far back a torn-tail heal looks for the last newline before reading the whole file.
 _TAIL_WINDOW = 1 << 20
 
 
 class MachineJournal:
-    """Append-only event log plus snapshots for one machine instance."""
+    """The append-only event log plus the snapshots of one machine instance.
+
+    Attributes:
+        snapshot_keep: How many recent snapshots to keep (`[machine].snapshot_keep`); 0 keeps
+            all.
+        root: The instance directory.
+        journal_path: The journal file.
+        snapshots_dir: The snapshots directory.
+        source_path: The recorded machine source.
+        signal_path: The operator poke file.
+        wait_path: The pending wait record.
+    """
 
     def __init__(self, root: Path, *, snapshot_keep: int = 5) -> None:
-        # Number of recent snapshots to retain (0 = keep all); see
-        # `[machine] snapshot_keep` in the config.
         self.snapshot_keep = snapshot_keep
         self.root = root
         self.journal_path = root / "journal.jsonl"
@@ -347,21 +372,22 @@ class MachineJournal:
         self.wait_path = root / "wait.json"
 
     def ensure_dirs(self) -> None:
+        """Create the instance directories."""
         mkdir_for_real_user(self.snapshots_dir)
 
     def exists(self) -> bool:
+        """Return whether the instance has a journal."""
         return self.journal_path.is_file()
 
     def begin(self, *, machine: str, version: int) -> None:
+        """Append the `machine.begin` event."""
         self.append(MachineBegin(ts=_now_iso(), machine=machine, version=version))
 
     def append(self, event: BaseModel) -> None:
         """Append one event as a JSON line, fsync'd.
 
-        Heals a torn previous append first: a committed line always ends in
-        `\\n`, so a file that does not is a crash mid-write. Truncating the
-        partial line off keeps this event on its own line instead of
-        concatenating onto the fragment (which `read` would then reject).
+        A torn previous append (a file not ending in a newline) is truncated off first, so
+        this event lands on its own line.
         """
         self._heal_torn_tail()
         line = dump_json(event)
@@ -371,19 +397,17 @@ class MachineJournal:
             os.fsync(fh.fileno())
 
     def _heal_torn_tail(self) -> None:
+        """Truncate a torn final line off the journal, in place."""
         if not self.journal_path.is_file():
             return
-        # Cheap common path: peek the last byte only.
         with self.journal_path.open("rb") as fh:
             if fh.seek(0, os.SEEK_END) == 0:
                 return
             fh.seek(-1, os.SEEK_END)
             if fh.read(1) == b"\n":
                 return
-        # Truncate in place: reading the whole journal and writing it back
-        # opens a window where a kill (or a concurrent reader) sees an empty
-        # journal, the file every machine's correctness rests on. `truncate`
-        # leaves it at either the old length or the new one.
+        # `truncate` leaves the file at the old length or the new one; a rewrite would open a
+        # window where a kill or a reader sees an empty journal.
         with self.journal_path.open("rb") as fh:
             size = fh.seek(0, os.SEEK_END)
             window = min(size, _TAIL_WINDOW)
@@ -391,8 +415,6 @@ class MachineJournal:
             tail = fh.read(window)
         cut = tail.rfind(b"\n")
         if cut < 0:
-            # No newline in the tail window: fall back to the whole file, which
-            # is the only way to find the last committed line.
             cut = self.journal_path.read_bytes().rfind(b"\n")
             if cut < 0:
                 os.truncate(self.journal_path, 0)  # one torn line, nothing committed
@@ -402,18 +424,19 @@ class MachineJournal:
         os.truncate(self.journal_path, size - window + cut + 1)
 
     def read(self) -> list[Any]:
-        """Parse and validate every journal line in order."""
+        """Parse and validate every journal line in order.
+
+        Returns:
+            The events; empty when there is no journal.
+
+        Raises:
+            JournalError: A line does not validate.
+        """
         if not self.journal_path.is_file():
             return []
         raw_lines = self.journal_path.read_bytes().split(b"\n")
-        # split(b"\n"), NOT splitlines(): splitlines() also breaks on U+2028 /
-        # U+2029 / U+0085 after decode, which `model_dump_json` writes literally
-        # inside JSON strings, so a captured value containing one would shred a
-        # single line into unparseable fragments and brick the instance.
-        #
-        # Split bytes before decoding: a crash can tear the final line in the
-        # middle of a multibyte UTF-8 sequence. Dropping that byte tail first
-        # keeps the committed prefix readable.
+        # Bytes, not splitlines(): a crash can tear a multibyte sequence, and splitlines() breaks
+        # on U+2028, U+2029 and U+0085, which `model_dump_json` writes literally inside strings.
         if raw_lines and raw_lines[-1] != b"":
             raw_lines.pop()
         events: list[Any] = []
@@ -429,10 +452,14 @@ class MachineJournal:
         return events
 
     def end_event(self) -> MachineEnd | None:
-        """The terminal event, or None while the instance can still take a
-        verb. Reads the journal's tail, not all of it: a verb's gate asks only
-        whether the machine ended, and every instance dir is asked on one
-        tab-completion."""
+        """Return the terminal event, reading only the journal's tail.
+
+        Returns:
+            The end, or None while the instance can still take a verb.
+
+        Raises:
+            JournalError: The tail does not validate.
+        """
         if not self.journal_path.is_file():
             return None
         with self.journal_path.open("rb") as fh:
@@ -446,7 +473,6 @@ class MachineJournal:
             lines.pop()  # a torn final line was never committed
         whole = [raw for raw in lines if raw.strip()]
         if not whole:
-            # A record longer than the window: the full read decides.
             events = self.read()
             end = events[-1] if events else None
             return end if isinstance(end, MachineEnd) else None
@@ -457,12 +483,10 @@ class MachineJournal:
         return event if isinstance(event, MachineEnd) else None
 
     def write_snapshot(self, snapshot: Snapshot) -> None:
-        """Write a snapshot atomically (temp file + rename), pruning old ones.
+        """Write a snapshot atomically, keeping only the newest `snapshot_keep`.
 
-        Only `machine status` reads `latest_snapshot`; recovery and replay
-        fold the journal, so old snapshots are dead weight: a 10-minute-loop
-        machine would otherwise accumulate ~150k files a year. Keep a short
-        fixed tail (a fallback for a corrupt latest) and delete the rest.
+        Recovery and replay fold the journal; the retained tail is a fallback for a corrupt
+        latest.
         """
         mkdir_for_real_user(self.snapshots_dir)
         dest = self.snapshots_dir / f"{snapshot.seq}.json"
@@ -480,13 +504,10 @@ class MachineJournal:
                         entry.unlink()
 
     def latest_snapshot(self) -> Snapshot | None:
-        """The newest readable snapshot, falling back through the retained tail.
+        """Return the newest readable snapshot, or None when none is.
 
-        Snapshots are an inspection optimization (the journal is authoritative),
-        and `write_snapshot` keeps a short tail expressly "against a corrupt
-        latest". So a torn newest snapshot falls back to the next-older one, and
-        only when none are readable do we return None instead of raising: a
-        single bad snapshot must not make `machine status` fail.
+        A torn newest snapshot falls back to the next older one, so one bad snapshot never
+        fails `machine status`.
         """
         if not self.snapshots_dir.is_dir():
             return None
@@ -507,24 +528,15 @@ class MachineJournal:
         return None
 
     def take_signal(self) -> tuple[bool, Any]:
-        """Consume a pending operator poke, if any.
+        """Claim a pending operator poke, if any.
 
-        Returns `(present, payload)`: `present` is True when a signal file was
-        consumed; `payload` is the JSON the poke carried (`None` for a bare
-        poke, an empty file, or an unparseable one: a hand-touched signal is a
-        valid bare wake).
+        The signal is renamed to a claim file, so a poke landing between a read and an unlink
+        is never lost; the claim outlives this call until `ack_signal`, so a death before the
+        ack re-delivers the poke (at least once, which a wake tolerates).
 
-        Claims the signal by renaming it to a private consume path first: `poke`
-        renames a fresh signal into place from another process, so a
-        read-then-unlink would destroy a poke that landed in between.
-
-        The claim file outlives this call: it is deleted by `ack_signal` once
-        the wake's StepEvent is durable, never here. A consume path already
-        present is therefore an unacked claim (machine_lock guarantees no live
-        second consumer): read it rather than renaming over it, so a death
-        anywhere before the ack re-delivers the same poke on restart.
-        Delivery is at-least-once across the whole claim-to-step window, which
-        a wake tolerates (a bare poke is a valid wake).
+        Returns:
+            Whether a poke was present, and the JSON it carried (None for a bare, empty or
+            unparseable poke, each a valid wake).
         """
         consume = self.signal_path.with_suffix(".consuming")
         if not consume.exists():
@@ -544,18 +556,15 @@ class MachineJournal:
             return True, None
 
     def ack_signal(self) -> None:
-        """Discard the claimed poke once its wake's StepEvent is durable.
-
-        Deleting on take would make the poke's only remaining trace an
-        un-fsynced return value, so a death between the take and the step
-        append would lose it with nothing to re-deliver."""
+        """Discard the claimed poke once its wake's StepEvent is durable."""
         self.signal_path.with_suffix(".consuming").unlink(missing_ok=True)
 
     def read_pending_poke(self) -> tuple[bool, Any]:
-        """A poke not yet acked, without consuming it: `(present, payload)`.
+        """Read a poke the machine has still to act on, without consuming it.
 
-        Reads the signal file, or the claim file of a take whose step is not
-        yet durable; both are a poke the machine has still to act on."""
+        Returns:
+            Whether one is present (the signal file, or an unacked claim), and its payload.
+        """
         for path in (self.signal_path.with_suffix(".consuming"), self.signal_path):
             try:
                 raw = path.read_text(encoding="utf-8")
@@ -570,29 +579,32 @@ class MachineJournal:
         return False, None
 
     def poke(self, payload: Any = None) -> None:
-        """Drop a signal file so a blocked or armed `wait` wakes (§6 signal-poke).
+        """Drop a signal file so a blocked or armed wait wakes.
 
-        The optional *payload* travels to the waking `wait` as its `signal`
-        payload (journaled, replay-safe) for the next tool to read.
+        Atomic, since `take_signal` polls from another process and would consume a partial
+        file as a bare poke.
 
-        Atomic (temp + fsync + rename) like every other journal write: the
-        engine's `take_signal` polls from another process, and a plain write
-        exposes an empty/partial file it would consume as a bare poke,
-        dropping the payload.
+        Args:
+            payload: Travels to the waking wait as its `signal` payload, journaled.
         """
         mkdir_for_real_user(self.root)
         atomic_write(self.signal_path, json.dumps(payload))
 
     def read_pending_wait(self) -> PendingWait | None:
+        """Read the armed wait, if any.
+
+        Returns:
+            The record, or None when no wait is armed.
+
+        Raises:
+            JournalError: The record is unreadable; the message names the remedy, since firing
+                early or skipping the wait would both be worse than refusing.
+        """
         if not self.wait_path.is_file():
             return None
         try:
             return PendingWait.model_validate_json(self.wait_path.read_bytes())
         except (ValidationError, OSError) as exc:
-            # The engine cannot guess a wake instant from this: firing early or
-            # skipping the wait are both worse than refusing. Name the remedy,
-            # like every other refusal: deleting the file re-arms the wait from
-            # the state itself on the next run.
             raise JournalError(
                 f"corrupt pending wait {self.wait_path}: {exc}\n"
                 f"  delete it to re-arm the wait from the machine's own state:"
@@ -600,17 +612,28 @@ class MachineJournal:
             ) from exc
 
     def write_pending_wait(self, pending: PendingWait) -> None:
-        """Persist the armed next-wake instant atomically (temp file + rename)."""
+        """Persist the armed wait atomically."""
         mkdir_for_real_user(self.root)
         atomic_write(self.wait_path, dump_json(pending, indent=2) + "\n")
 
     def clear_pending_wait(self) -> None:
+        """Drop the armed wait's record."""
         self.wait_path.unlink(missing_ok=True)
 
 
 @contextmanager
 def machine_lock(root: Path) -> Generator[None]:
-    """Single-writer guard for one machine id (§6). Refuses a second runner."""
+    """Hold the single-writer lock of one machine instance.
+
+    Args:
+        root: The instance directory.
+
+    Yields:
+        Nothing; the lock is held for the block.
+
+    Raises:
+        JournalError: Another runner holds the lock.
+    """
     mkdir_for_real_user(root)
     lock_path = root / "machine.lock"
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
@@ -628,12 +651,23 @@ def machine_lock(root: Path) -> Generator[None]:
 
 
 def write_source(root: Path, text: str) -> None:
-    """Persist the exact `.asm.toml` source the run started from (for replay)."""
+    """Persist the machine source the run started from, for replay."""
     mkdir_for_real_user(root)
     atomic_write(root / "machine.asm.toml", text)
 
 
 def read_source(root: Path) -> str:
+    """Read the persisted machine source.
+
+    Args:
+        root: The instance directory.
+
+    Returns:
+        The source text.
+
+    Raises:
+        JournalError: No source is persisted, or it cannot be read.
+    """
     path = root / "machine.asm.toml"
     if not path.is_file():
         raise JournalError(f"no persisted machine source at {path}")
@@ -646,26 +680,29 @@ def read_source(root: Path) -> str:
 def write_stop_request(root: Path) -> None:
     """Ask the live machine to park at its next transition boundary.
 
-    A marker, not a kill (the `stop --after-step` semantics): the state in flight
-    finishes and journals its fact, then the engine returns a "stopped" result
-    without a MachineEnd, so the instance stays resumable."""
+    A marker, not a kill: the state in flight finishes and journals its fact, then the
+    engine returns `stopped` with no end, so the instance stays resumable.
+    """
     mkdir_for_real_user(root)
     (root / "stop").touch()
 
 
 def stop_requested(root: Path) -> bool:
+    """Return whether a stop marker is present."""
     return (root / "stop").is_file()
 
 
 def clear_stop_request(root: Path) -> None:
+    """Remove the stop marker."""
     with suppress(FileNotFoundError):
         (root / "stop").unlink()
 
 
 def write_bundle(root: Path, machine_path: Path) -> None:
-    """Persist the exact executable bundle the instance starts from: the
-    `.asm.toml` source plus its `scripts/` tree. Replay evidence, and the
-    baseline `bundle_drift` holds every continuation to."""
+    """Persist the bundle the instance starts from: the source plus its `scripts/` tree.
+
+    Replay evidence, and the baseline `bundle_drift` holds every continuation to.
+    """
     write_source(root, machine_path.read_text(encoding="utf-8"))
     dst = root / "scripts"
     shutil.rmtree(dst, ignore_errors=True)
@@ -675,12 +712,17 @@ def write_bundle(root: Path, machine_path: Path) -> None:
 
 
 def bundle_drift(root: Path, machine_path: Path) -> str | None:
-    """The first difference between the working bundle and the instance's
-    recorded one, or None when they match byte for byte.
+    """Return the first difference between the working bundle and the recorded one.
 
-    A live instance runs the logic it recorded; an edit takes effect on a new
-    instance. Byte comparison against the recorded copy keeps that copy the
-    single source of truth: no digest to go stale, no mtime heuristics."""
+    A live instance runs the logic it recorded; an edit takes effect on a new instance.
+
+    Args:
+        root: The instance directory.
+        machine_path: The working machine file.
+
+    Returns:
+        One line naming the difference, or None when the bundles match byte for byte.
+    """
     recorded_asm = root / "machine.asm.toml"
     if not recorded_asm.is_file():
         return f"no recorded machine source at {recorded_asm}"
@@ -699,6 +741,7 @@ def bundle_drift(root: Path, machine_path: Path) -> str | None:
 
 
 def _tree_files(base: Path) -> dict[str, bytes]:
+    """Return every file under the directory by relative path, or {} when it is not one."""
     if not base.is_dir():
         return {}
     return {

@@ -1,15 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
+"""The parse boundary of a `.asm.toml` machine file.
 
-The parse boundary is pydantic v2 (`extra="forbid", frozen=True`),
-exactly like `agent6.config`. Structural shape is caught by pydantic;
-the cross-cutting rules from the spec (§4.5), global name uniqueness
-across owner subtables, the ownership wall, reference/field type-checking,
-total branches, reachability, are enforced by :func:`validate_semantics`.
-
-Every violation is a *load-time* error, aggregated into
-:class:`MachineError` so `agent6 machine check` can print them all at once.
+Pydantic (`extra="forbid", frozen=True, strict=True`) catches the shape; `_semantics` enforces
+the cross-cutting rules. Every violation is a load-time error aggregated into MachineError,
+so `agent6 machine check` prints them all at once.
 """
 
 from __future__ import annotations
@@ -47,9 +42,7 @@ __all__ = [
     "type_str",
 ]
 
-# TOML already supplies native scalar types. Refuse quoted numbers/bools rather
-# than silently changing an author's malformed file; only TOML array -> frozen
-# tuple conversion is enabled explicitly on tuple fields below.
+# Strict: TOML supplies native scalars, so a quoted number is refused; tuple fields opt out.
 _MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
 _StrTuple = Annotated[tuple[str, ...], Field(strict=False)]
 _NonEmptyStrTuple = Annotated[tuple[str, ...], Field(strict=False, min_length=1)]
@@ -58,8 +51,7 @@ IDENT_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _LIST_RE = re.compile(r"^list\[([a-z0-9_]+)\]$")
 
 _SCALARS = ("str", "int", "float", "bool")
-# What `parse_type` resolves before it looks at a machine's declared schemas,
-# so a schema of one of these names could never be referenced.
+# `parse_type` resolves these before the declared schemas, so a schema so named is unreachable.
 BUILTIN_TYPE_NAMES = frozenset({*_SCALARS, "json"})
 RESERVED_NAMES = frozenset({"vars", "operator", "code", "agent", "result"})
 
@@ -69,9 +61,10 @@ WAIT_LABELS = frozenset({"tick", "signal"})
 
 
 class MachineError(Exception):
-    """Raised when a machine file does not load and validate cleanly.
+    """A machine file does not load and validate cleanly.
 
-    `problems` is the full, ordered list of diagnostics.
+    Attributes:
+        problems: Every diagnostic, in order.
     """
 
     def __init__(self, problems: list[str]) -> None:
@@ -79,28 +72,29 @@ class MachineError(Exception):
         super().__init__("\n".join(problems))
 
 
-# --------------------------------------------------------------------------
-# Type system
-# --------------------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class ScalarT:
-    name: str  # one of _SCALARS
+    """A scalar type: one of `str`, `int`, `float`, `bool`."""
+
+    name: str
 
 
 @dataclass(frozen=True, slots=True)
 class ListT:
-    elem: str  # one of _SCALARS
+    """A list of one scalar type."""
+
+    elem: str
 
 
 @dataclass(frozen=True, slots=True)
 class JsonT:
-    pass
+    """Any JSON value."""
 
 
 @dataclass(frozen=True, slots=True)
 class RecordT:
+    """A record of a declared schema."""
+
     name: str
 
 
@@ -108,10 +102,22 @@ TypeRef = ScalarT | ListT | JsonT | RecordT
 
 
 class TypeParseError(Exception):
-    pass
+    """A type declaration names no scalar, list, `json` or declared schema."""
 
 
 def parse_type(text: str, schema_names: frozenset[str]) -> TypeRef:
+    """Parse a type declaration.
+
+    Args:
+        text: The declaration: a scalar, `json`, `list[<scalar>]` or a schema name.
+        schema_names: The declared schemas.
+
+    Returns:
+        The type.
+
+    Raises:
+        TypeParseError: The text names none of those.
+    """
     if text in _SCALARS:
         return ScalarT(text)
     if text == "json":
@@ -130,6 +136,7 @@ def parse_type(text: str, schema_names: frozenset[str]) -> TypeRef:
 
 
 def type_str(t: TypeRef) -> str:
+    """Return the type as a problem line names it."""
     if isinstance(t, ScalarT):
         return t.name
     if isinstance(t, ListT):
@@ -140,22 +147,20 @@ def type_str(t: TypeRef) -> str:
 
 
 def type_decl(t: TypeRef) -> str:
-    """The value an author writes in a type = "..." declaration."""
+    """Return the value an author writes in a `type = "..."` declaration."""
     return t.name if isinstance(t, RecordT) else type_str(t)
 
 
-# --------------------------------------------------------------------------
-# Pydantic parse models (trust boundary)
-# --------------------------------------------------------------------------
-
-
 def _normalize_field(value: Any) -> Any:
+    """Return a bare type string as `{type = ...}`; anything else unchanged."""
     if isinstance(value, str):
         return {"type": value}
     return value
 
 
 class FieldSpec(BaseModel):
+    """One schema field: its type, whether it is optional, and an enum for a `str`."""
+
     model_config = _MODEL_CONFIG
 
     type: str = Field(min_length=1)
@@ -167,17 +172,16 @@ _FieldSpecT = Annotated[FieldSpec, BeforeValidator(_normalize_field)]
 
 
 def _normalize_notify(value: Any) -> Any:
+    """Return a bare message string as `{message = ...}`; anything else unchanged."""
     if isinstance(value, str):
         return {"message": value}
     return value
 
 
 class NotifySpec(BaseModel):
-    """A state's optional `notify`: a templated message emitted on entry.
+    """A state's `notify`: a templated message journaled on entry and sent to the hook.
 
-    Presentation only (§4.3): entering the state journals a `machine.notify`
-    event and fires the operator notify hook; it adds no edge and no control
-    flow. Authors write `notify = "msg"` (level defaults to "info") or
+    Presentation only; it adds no edge. Authors write `notify = "msg"` or
     `notify = { message = "msg", level = "warn" }`.
     """
 
@@ -191,6 +195,8 @@ _NotifySpecT = Annotated[NotifySpec, BeforeValidator(_normalize_notify)]
 
 
 class OperatorVar(BaseModel):
+    """A `[vars.operator]` variable: a typed constant."""
+
     model_config = _MODEL_CONFIG
 
     type: str = Field(min_length=1)
@@ -198,6 +204,8 @@ class OperatorVar(BaseModel):
 
 
 class MutableVar(BaseModel):
+    """A `[vars.code]` or `[vars.agent]` variable: a typed default its owner's states write."""
+
     model_config = _MODEL_CONFIG
 
     type: str = Field(min_length=1)
@@ -205,6 +213,8 @@ class MutableVar(BaseModel):
 
 
 class VarsSection(BaseModel):
+    """The three owner tables of the blackboard, one read namespace."""
+
     model_config = _MODEL_CONFIG
 
     operator: dict[str, OperatorVar] = Field(default_factory=dict)
@@ -213,7 +223,11 @@ class VarsSection(BaseModel):
 
 
 def _finite_usd(v: float) -> float:
-    # inf passes gt=0.0 and then can never bind, silently disabling the cap.
+    """Return the cap, refusing an infinite one, which passes `gt=0.0` and never binds.
+
+    Raises:
+        ValueError: The cap is not finite.
+    """
     if not math.isfinite(v):
         raise ValueError("max_usd must be a finite cap")
     return v
@@ -223,12 +237,12 @@ _FiniteUsd = Annotated[float, AfterValidator(_finite_usd)]
 
 
 class BudgetSpec(BaseModel):
-    """Whole-machine spend bounds. `max_transitions` always binds.
+    """The machine's spend bounds.
 
-    `max_usd` (optional) caps the machine's cumulative METERED spend
-    (reported cost, else price x tokens); a state whose model has no price
-    data is bounded per state by `[budget].max_tokens_fallback` in the
-    effective config instead (0 there refuses unmetered models outright).
+    Attributes:
+        max_usd: The cap on cumulative metered spend, or None; an unpriced model is bounded
+            per state by `[budget].max_tokens_fallback` instead.
+        max_transitions: The cap on state hops; always binds.
     """
 
     model_config = _MODEL_CONFIG
@@ -238,6 +252,8 @@ class BudgetSpec(BaseModel):
 
 
 class Capture(BaseModel):
+    """How a state writes its result: one whole-value target, or `set` templates per target."""
+
     model_config = _MODEL_CONFIG
 
     stdout_json: str | None = None
@@ -246,6 +262,11 @@ class Capture(BaseModel):
 
     @model_validator(mode="after")
     def _exactly_one(self) -> Capture:
+        """Return the capture, requiring exactly one of its three modes.
+
+        Raises:
+            ValueError: None or several modes are set.
+        """
         present = [
             name
             for name, value in (
@@ -264,6 +285,8 @@ class Capture(BaseModel):
 
 
 class WhenClause(BaseModel):
+    """One branch clause: an `if` predicate or the final `else`, and its `goto`."""
+
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
     if_: str | None = Field(default=None, alias="if")
@@ -272,6 +295,11 @@ class WhenClause(BaseModel):
 
     @model_validator(mode="after")
     def _exactly_one(self) -> WhenClause:
+        """Return the clause, requiring exactly one of `if` and `else`, and `else = true`.
+
+        Raises:
+            ValueError: The clause declares both, neither, or `else = false`.
+        """
         if (self.if_ is None) == (self.else_ is None):
             raise ValueError("a `when` clause must declare exactly one of `if` or `else`")
         if self.else_ is not None and self.else_ is not True:
@@ -280,43 +308,65 @@ class WhenClause(BaseModel):
 
 
 class AgentState(BaseModel):
+    """An `agent` state: one agent6 loop whose `finish_session` payload is captured.
+
+    Attributes:
+        kind: The discriminator.
+        notify: The message journaled on entry, or None.
+        model: The model, or `inherit` for the operator's worker model (a hardcoded model
+            passes `machine check` and can die at run time).
+        mode: `agent`, a read-only structured judge; or `run`, with the coding tools.
+        prompt: The prompt template.
+        output_schema: The schema the payload must match.
+        capture: How the payload is written to the blackboard.
+        timeout_secs: The wall-clock cap.
+        on: The destination per outcome label.
+        provider: The `[providers.*]` entry by name (never a secret), or None to inherit.
+        effort: The reasoning effort override, or None to inherit.
+        temperature: The sampling override, or None to inherit.
+        max_usd: The slice's spend cap, or None to inherit the config's.
+        max_tokens_fallback: The unmetered token bound (-1 unlimited, 0 refuse), or None to
+            inherit.
+    """
+
     model_config = _MODEL_CONFIG
 
     kind: Literal["agent"]
-    # Optional templated message emitted on entry (§4.3); presentation only.
     notify: _NotifySpecT | None = None
-    # "inherit" (the default) uses the operator's effective worker model, so a
-    # machine need not hardcode a model the operator may not have configured,
-    # which passes `machine check` and then dies at run time. Set an explicit
-    # provider/model only to pin a specific one.
     model: str = Field(default="inherit", min_length=1)
-    # "agent" (default): a read-only structured-output judge, classify/score/
-    # decide and return a finish_session result; cannot edit the repo. Set "run" for
-    # an agent state that must do real coding work (edit/verify/commit tools).
     mode: Literal["agent", "run"] = "agent"
     prompt: str = Field(min_length=1)
     output_schema: str = Field(min_length=1)
     capture: Capture
     timeout_secs: int = Field(gt=0)
     on: dict[str, str]
-    # Optional per-state overrides for how this agent loop is driven. When
-    # unset each falls back through the effective config (machine `[config]`
-    # overlay, then repo, then global, then the built-in default). `provider` selects which
-    # `[providers.*]` entry backs the call; `effort` and `temperature`
-    # tune reasoning/sampling; the budget caps bound this single agent slice.
-    # Secrets/connection keys are never expressed here, only the provider
-    # *name*, which must already exist in the effective config.
     provider: str | None = None
     effort: Literal["off", "low", "medium", "high", "xhigh", "max"] | None = None
     temperature: float | None = None
-    # Per-state overrides of the effective config's [budget] ledgers: metered
-    # spend (max_usd) and the unmetered input+output token bound
-    # (max_tokens_fallback, -1 unlimited / 0 refuse). Unset inherits.
     max_usd: _FiniteUsd | None = Field(default=None, gt=0.0)
     max_tokens_fallback: int | None = Field(default=None, ge=-1)
 
 
 class ToolState(BaseModel):
+    """A `tool` state: one jailed command whose JSON stdout may be captured.
+
+    Attributes:
+        kind: The discriminator.
+        notify: The message journaled on entry, or None.
+        command: The argv templates.
+        output_schema: The schema the stdout must match, or None for no shape.
+        capture: How the stdout is written to the blackboard, or None.
+        timeout_secs: The wall-clock cap.
+        on: The destination per outcome label.
+        network: What the jail joins. `auto`: a network of its own where the isolation
+            level can give one, else the host's with a warning. `host`: the machine's,
+            granted only by the operator's `sandbox.network`, else the run is refused
+            naming this state. `none`: a network of its own, or the run is refused. No
+            `session`: a state's processes die with the state.
+        pass_env: The operator environment variables the command receives, each of which
+            `[machine].pass_env` must allow or the run is refused at startup.
+    """
+
     model_config = _MODEL_CONFIG
 
     kind: Literal["tool"]
@@ -326,36 +376,17 @@ class ToolState(BaseModel):
     capture: Capture | None = None
     timeout_secs: int = Field(gt=0)
     on: dict[str, str]
-    # Which network this tool's jailed subprocess joins, in the vocabulary the
-    # sandbox and MCP servers use:
-    #  - `auto` (default): one of its own, where the isolation level can give
-    #    one (`strict`); where it cannot (`hardened` has no namespaces) the
-    #    tool shares the host's and a warning says so. Runs anywhere.
-    #  - `host`: the machine's network. Granted only if the operator permits
-    #    it via `sandbox.network` (`only_explicit_states` or `host`);
-    #    otherwise the run is refused naming this state. Enforceable because the
-    #    machine engine is a host-netns supervisor: this tool's jail can reach
-    #    the network while everything else stays off it.
-    #  - `none`: one of its own, required: refuse on `hardened` rather than
-    #    run connected, which `auto` tolerates.
-    # There is no `session` here: a machine state's processes die with the
-    # state (no background commands, no MCP servers, escapees swept), so a
-    # shared network would never have a second member. Add it if machines ever
-    # get a run-scoped jail session.
-    # The tool only *declares*; whether `host` is granted is the operator's
-    # call (`sandbox.network`, read from global/repo config, never a machine
-    # overlay).
     network: Literal["auto", "host", "none"] = "auto"
-    # Env var names this tool's jailed command receives from the operator's
-    # environment: only those the operator lists in `[machine].pass_env`
-    # (global/repo config, never a machine overlay); a name the operator has
-    # not allowed refuses the run at startup, naming every such state and var.
-    # A tool jail otherwise gets the fixed passthrough environment alone.
     pass_env: _StrTuple = ()
 
     @field_validator("pass_env")
     @classmethod
     def _env_names(cls, names: tuple[str, ...]) -> tuple[str, ...]:
+        """Return the names, each a valid environment variable name.
+
+        Raises:
+            ValueError: A name is not one.
+        """
         for name in names:
             if not _ENV_NAME_RE.fullmatch(name):
                 raise ValueError(f"pass_env names an invalid environment variable name {name!r}")
@@ -366,17 +397,15 @@ _ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _seconds_as_str(value: object) -> object:
-    # The field is a string because it may be a template ("{{ config.poll }}"),
-    # but a bare TOML integer is the natural spelling; refusing `every_secs =
-    # 30` with "Input should be a valid string" trips machine authors (model
-    # and human alike). Floats stay refused: sub-second waits are not a thing
-    # here, and silently truncating one would lie.
+    """Return a bare integer `every_secs` as its template string; a float stays refused."""
     if isinstance(value, int) and not isinstance(value, bool):
         return str(value)
     return value
 
 
 class WaitState(BaseModel):
+    """A `wait` state: parks until an interval, an instant, or a poke."""
+
     model_config = _MODEL_CONFIG
 
     kind: Literal["wait"]
@@ -387,6 +416,8 @@ class WaitState(BaseModel):
 
 
 class BranchState(BaseModel):
+    """A `branch` state: routes on the first `when` clause that fires; the last is `else`."""
+
     model_config = _MODEL_CONFIG
 
     kind: Literal["branch"]
@@ -395,6 +426,8 @@ class BranchState(BaseModel):
 
 
 class TerminalState(BaseModel):
+    """A `terminal` state: ends the machine with a status and a reason."""
+
     model_config = _MODEL_CONFIG
 
     kind: Literal["terminal"]
@@ -409,9 +442,8 @@ StateSpec = Annotated[
 ]
 
 
-# Operator-only security policy an untrusted machine `[config]` overlay may never
-# carry. The loader enforces it and `config set --machine-file` refuses the same
-# keys, both off this one set; each entry says why.
+# The operator-only policy a machine `[config]` overlay may never carry; the loader and
+# `config set --machine-file` both refuse off this one set, and each leaf says why.
 PROTECTED_OVERLAY_TABLES: tuple[str, ...] = ("providers", "sandbox", "presets", "mcp")
 PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "machine.notify": "the notify hook runs an operator argv on the host outside the jail",
@@ -432,7 +464,7 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
 
 
 def protected_overlay_key_error(key: str) -> str | None:
-    """Explain why a dotted machine-overlay key is operator-only."""
+    """Return why a dotted machine-overlay key is operator-only, or None when it is allowed."""
     for table in PROTECTED_OVERLAY_TABLES:
         if key == table or key.startswith(f"{table}."):
             return (
@@ -447,7 +479,7 @@ def protected_overlay_key_error(key: str) -> str | None:
 
 
 def protected_overlay_error(config: dict[str, Any]) -> str | None:
-    """The refusal for the first operator-only key in a parsed machine overlay."""
+    """Return the refusal for the first operator-only key in a machine overlay, or None."""
     for head, value in config.items():
         if problem := protected_overlay_key_error(head):
             return problem
@@ -459,10 +491,19 @@ def protected_overlay_error(config: dict[str, Any]) -> str | None:
 
 
 class MachineSpec(BaseModel):
-    """A validated `.asm.toml` machine definition: budget, typed `schemas`, the
-    named `states` graph, and an optional agent6 `[config]` overlay whose
-    operator-only security policy is refused (see `PROTECTED_OVERLAY_*`) so an
-    untrusted machine file cannot weaken the sandbox."""
+    """A parsed `.asm.toml` machine.
+
+    Attributes:
+        machine: The machine's id.
+        version: The file format version.
+        initial: The entry state.
+        budget: The spend bounds.
+        vars: The blackboard's owner tables.
+        schemas: The record schemas.
+        states: The named states.
+        config: The run's highest-precedence config layer, an ordinary config fragment minus
+            the operator-only policy `PROTECTED_OVERLAY_*` refuses.
+    """
 
     model_config = _MODEL_CONFIG
 
@@ -473,32 +514,31 @@ class MachineSpec(BaseModel):
     vars: VarsSection = Field(default_factory=VarsSection)
     schemas: dict[str, dict[str, _FieldSpecT]] = Field(default_factory=dict)
     states: dict[str, StateSpec]
-    # Highest-precedence config layer for the machine run: an ordinary agent6
-    # config fragment (most `agent6 config show` knobs), minus the operator-only
-    # security policy PROTECTED_OVERLAY_* refuses. Unset keys read through.
     config: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _forbid_protected_overlay_tables(self) -> MachineSpec:
+        """Return the machine, refusing an overlay that carries operator-only policy.
+
+        Raises:
+            ValueError: The overlay sets a protected table or leaf.
+        """
         if problem := protected_overlay_error(self.config):
             raise ValueError(problem)
         return self
 
 
-# --------------------------------------------------------------------------
-# Graph edges
-# --------------------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class Edge:
+    """One labelled transition of the machine graph."""
+
     src: str
     dst: str
     label: str
 
 
 def edges(spec: MachineSpec) -> tuple[Edge, ...]:
-    """Every directed, labelled edge in the machine graph."""
+    """Return every labelled edge of the machine graph."""
     out: list[Edge] = []
     for name, state in spec.states.items():
         if isinstance(state, BranchState):
@@ -512,7 +552,7 @@ def edges(spec: MachineSpec) -> tuple[Edge, ...]:
 
 
 def reachable_states(spec: MachineSpec) -> frozenset[str]:
-    """States reachable from `initial` following declared edges."""
+    """Return the states reachable from `initial` along declared edges."""
     adjacency: dict[str, list[str]] = {name: [] for name in spec.states}
     for edge in edges(spec):
         if edge.dst in adjacency:
