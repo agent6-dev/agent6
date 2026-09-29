@@ -1,19 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""What a composer line does when it is not a steer.
+"""Act on a composer line that is not a steer.
 
-`/btw`, `/task`, `/standing` and `/compact` act beside a live run: they open a
-side session, add to or re-aim the task graph, or ask for a compaction, and
-none of them reaches the model as a message. Every entry point that takes a
-typed line routes it through here (the TUI composer, the web composer, the CLI
-pause menu, `agent6 steer`), so the same words do the same thing wherever they
-are typed.
-
-`/now` is the fourth thing a line can be: an ordinary steer that interrupts the
-call in flight, so `submit_steer` takes it here too and every surface reports
-the same outcome.
-
-`/pin` and `/parallel` are not here: they are steers the loop parses itself.
+`/btw`, `/task`, `/standing`, `/retire` and `/compact` act beside a live run and
+never reach the model as a message; `/now` is a steer that interrupts the call
+in flight. Every entry point that takes a typed line routes it through here, so
+the same words do the same thing wherever they are typed. `/pin` and
+`/parallel` are steers the loop parses itself.
 """
 
 from __future__ import annotations
@@ -41,8 +34,13 @@ from agent6.viewmodel.format import short_task_id
 
 @dataclass(frozen=True, slots=True)
 class _Directive:
-    """One directive: how to recognize it, what to say when it arrives bare
-    (`""` when it is complete on its own, as `/compact` is), and what it does."""
+    """One directive.
+
+    Attributes:
+        parse: Recognizes it, returning its argument or None.
+        empty: What to say when it arrives bare; "" when it is complete on its own.
+        act: Does it, reporting whether it did and what to say.
+    """
 
     parse: Callable[[str], str | None]
     empty: str
@@ -50,22 +48,41 @@ class _Directive:
 
 
 def _btw(session_dir: Path, question: str) -> tuple[bool, str]:
+    """Open a side question beside the run.
+
+    Returns:
+        Whether it opened, and what to say.
+    """
     opened, line = open_btw(session_dir, question)
     return opened, line.removeprefix("[agent6] ")
 
 
 def _task(session_dir: Path, text: str) -> tuple[bool, str]:
+    """Queue work into the task graph.
+
+    Returns:
+        True, and what to say.
+    """
     queue_request(session_dir, "task", text)
     return True, "task queued; it runs once the open tasks drain"
 
 
 def _standing(session_dir: Path, goal: str) -> tuple[bool, str]:
+    """Set the run's standing goal.
+
+    Returns:
+        True, and what to say.
+    """
     queue_request(session_dir, "standing", goal)
     return True, "standing goal set; it replaces any the run had, at the next step"
 
 
 def _retire(session_dir: Path, named: str) -> tuple[bool, str]:
-    """Retire the task *named* names, by the id `/tasks` prints."""
+    """Retire a task, by the id the task tree prints.
+
+    Returns:
+        Whether the task was found, and what to say.
+    """
     wanted = named.strip().upper()
     nodes = load_graph(layout_of(session_dir))
     matches = [nid for nid in nodes if short_task_id(nid) == wanted or nid == wanted]
@@ -82,6 +99,11 @@ def _retire(session_dir: Path, named: str) -> tuple[bool, str]:
 
 
 def _compact(session_dir: Path, focus: str) -> tuple[bool, str]:
+    """Ask for a compaction before the next model call.
+
+    Returns:
+        Whether the request was written, and what to say.
+    """
     if not request_compact(session_dir, focus=focus):
         return False, "could not write the compaction request"
     return True, "compaction requested; it applies before the next model call"
@@ -105,9 +127,16 @@ _DIRECTIVES: tuple[_Directive, ...] = (
 
 
 def submit_composer_line(session_dir: Path, text: str, *, now: bool = False) -> tuple[bool, str]:
-    """Act on *text* and report `(did_it, what_to_say)`: a directive if it is
-    one, else the steer it is. *now* forces the urgency `/now` spells, for the
-    flag that says the same thing (`agent6 steer --now`)."""
+    """Act on a composer line: a directive when it is one, else the steer it is.
+
+    Args:
+        session_dir: The live session.
+        text: The line.
+        now: Force the urgency `/now` spells, for `agent6 steer --now`.
+
+    Returns:
+        Whether it acted, and what to say.
+    """
     handled = act_on_directive(session_dir, text)
     if handled is not None:
         return handled
@@ -119,19 +148,22 @@ def submit_composer_line(session_dir: Path, text: str, *, now: bool = False) -> 
     if not submit_steer(session_dir, sent, now=now):
         return False, "could not write the steer request"
     said = "steering now, interrupting the call in flight" if now else "steering"
-    # The hint reads what was sent, so a directive that acted is never named as
-    # text. A token inside it travelled as words, in case it was meant as one.
+    # A token inside the sent text travelled as words, in case it was meant as a directive.
     if (stray := stray_directive(sent)) is not None:
         said += f" (`{stray}` mid-line is text; a directive has to start the line)"
     return True, said
 
 
 def act_on_directive(session_dir: Path, text: str) -> tuple[bool, str] | None:
-    """Act on *text* when it is a directive that works beside the run, and
-    report `(did_it, what_to_say)`. None means *text* is an ordinary steer.
+    """Act on the line when it is a directive that works beside the run.
 
-    The message is bare prose: a caller prefixes or styles it as its surface
-    does."""
+    Args:
+        session_dir: The live session.
+        text: The line.
+
+    Returns:
+        Whether it acted and what to say, as bare prose; None for an ordinary steer.
+    """
     for directive in _DIRECTIVES:
         arg = directive.parse(text)
         if arg is None:

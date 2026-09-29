@@ -482,8 +482,8 @@ banned-from = [
 # Until a package's docstring and import passes land, its docstring, annotation and
 # import-style rules stay off; each pass removes its own line.
 # `*` crosses `/` here, so a package's own modules are listed by name.
-"src/agent6/{__init__,budget,child_env,commit_message,directive,errors,events,git_ops,init,kinds,memory,paths,portable,secrets,skills,task_text,verify_infer}.py" = ["ANN", "D", "DOC", "ICN003"]
-"src/agent6/_data/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/{__init__,budget,child_env,commit_message,directive,errors,events,git_ops,init,kinds,memory,paths,portable,secrets,skills,task_text,verify_infer}.py" = ["ICN003"]
+"src/agent6/_data/**" = ["ICN003"]
 "src/agent6/app/**" = ["ICN003"]
 "src/agent6/config/**" = ["ICN003"]
 "src/agent6/graph/**" = ["ICN003"]
@@ -495,13 +495,13 @@ banned-from = [
 "src/agent6/sandbox/**" = ["ICN003"]
 "src/agent6/sessions/**" = ["ICN003"]
 "src/agent6/tools/**" = ["ICN003"]
-"src/agent6/ui/{__init__,btw,directives,keymap,mcp_server,notify,spawn,steer}.py" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/ui/{__init__,btw,directives,keymap,mcp_server,notify,spawn,steer}.py" = ["ICN003"]
 "src/agent6/ui/acp/**" = ["ICN003"]
 "src/agent6/ui/cli/**" = ["ICN003"]
 "src/agent6/ui/tui/**" = ["ICN003"]
 "src/agent6/ui/web/**" = ["ICN003"]
 "src/agent6/viewmodel/**" = ["ICN003"]
-"docs/{gen_config,gen_contracts,gen_diagrams}.py" = ["ANN", "D", "DOC", "ICN003"]
+"docs/{gen_config,gen_contracts,gen_diagrams}.py" = ["ICN003"]
 "docs/screenshots/{build_fixtures,keystroke_overlay,llm_proxy,make_cover,seed,tui_snapshot,web_demo}.py" = ["ANN", "D", "DOC", "ICN003"]
 # gen_contracts.py embeds the artifact's CSS/SVG/HTML as strings; line length is moot there.
 "docs/gen_contracts.py" = ["E501"]

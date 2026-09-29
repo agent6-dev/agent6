@@ -1,13 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Cross-platform primitives for the few places agent6 touches POSIX-only APIs.
+"""Keep the platform split in one place: file locks, durable renames, TOML strings.
 
-Pure stdlib, no agent6 imports. Keeps the platform split contained in one
-spot instead of scattering `sys.platform` checks through the graph and
-machine journals. The sandbox itself remains Linux-only (see
-`agent6.sandbox.detect.sandbox_available`), and native Windows is unsupported
-(use WSL); this module keeps the platform-neutral plumbing (file locks,
-durable renames) working so the agent can run unsandboxed on macOS.
+Pure stdlib, no agent6 imports. The sandbox is Linux-only and native Windows is
+unsupported; this plumbing lets the agent run unsandboxed on macOS.
 """
 
 from __future__ import annotations
@@ -28,13 +24,15 @@ else:
 
 
 def lock_shared_nonblocking(fd: int) -> None:
-    """Take a shared lock on an open file descriptor, or raise OSError when an
-    exclusive holder has it. A probe that only asks "is someone writing?" takes
-    this one: an exclusive probe excludes the very writer it is asking about,
-    so a run acquiring in that window would park as if the checkout were busy.
+    """Take a shared lock on an open descriptor without waiting.
 
-    Windows has no shared range lock, so the probe there takes the exclusive
-    one."""
+    A probe asking whether someone is writing takes this one: an exclusive probe
+    would exclude the very writer it asks about. Windows has no shared range lock,
+    so the probe there takes the exclusive one.
+
+    Raises:
+        OSError: An exclusive holder has the lock.
+    """
     if sys.platform == "win32":
         lock_exclusive(fd, blocking=False)
         return
@@ -42,12 +40,17 @@ def lock_shared_nonblocking(fd: int) -> None:
 
 
 def lock_exclusive(fd: int, *, blocking: bool) -> None:
-    """Take an exclusive lock on an open file descriptor.
+    """Take an exclusive lock on an open descriptor.
 
-    When `blocking` is False and another process already holds the lock this
-    raises `OSError` immediately. On POSIX this is an advisory whole-file lock
-    via `flock(2)`; on Windows it is a mandatory one-byte range lock via
-    `msvcrt.locking` (offset 0, which the OS happily locks past EOF).
+    An advisory whole-file `flock` on POSIX; a mandatory one-byte range lock at offset 0
+    on Windows.
+
+    Args:
+        fd: The descriptor.
+        blocking: Wait for the lock.
+
+    Raises:
+        OSError: Another process holds the lock and the call does not block.
     """
     if sys.platform == "win32":
         os.lseek(fd, 0, os.SEEK_SET)
@@ -59,7 +62,7 @@ def lock_exclusive(fd: int, *, blocking: bool) -> None:
 
 
 def unlock(fd: int) -> None:
-    """Release a lock previously taken by :func:`lock_exclusive`."""
+    """Release a lock taken by `lock_exclusive`."""
     if sys.platform == "win32":
         os.lseek(fd, 0, os.SEEK_SET)
         msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
@@ -68,6 +71,7 @@ def unlock(fd: int) -> None:
 
 
 def _same_file(fd: int, path: Path) -> bool:
+    """Return whether the descriptor and the path name the same inode."""
     try:
         a = os.fstat(fd)
         b = path.stat()
@@ -76,23 +80,26 @@ def _same_file(fd: int, path: Path) -> bool:
     return (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino)
 
 
-# Lock paths the current thread holds via locked_file, for reentrancy.
+# The lock paths the current thread holds, for reentrancy.
 _HELD_LOCKS = threading.local()
 
 
 def _acquire_lock(lock_path: Path) -> int | None:
-    """Open + flock *lock_path*, returning the held fd, or None when the lock
-    cannot be taken (see :func:`locked_file`'s fail-open contract).
+    """Open and lock the lock file.
 
-    `O_NOFOLLOW` refuses a planted symlink at the predictable lock path
-    outright, never opening, chowning, or writing the thing it points at. Any other
-    open/lock failure (a stale root-owned lock a non-root process can't
-    reopen) also returns None: the lock is an optimization, never a
-    correctness barrier, so a broken one is skipped, not followed or waited
-    on."""
+    `O_NOFOLLOW` refuses a planted symlink at the predictable lock path outright. Any
+    other failure (a stale root-owned lock a non-root process cannot reopen) also
+    fails open: the lock is never a correctness barrier.
+
+    Args:
+        lock_path: The lock file.
+
+    Returns:
+        The held descriptor, or None when the lock cannot be taken.
+    """
     flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0)
     if sys.platform != "win32":
-        flags |= os.O_NOFOLLOW  # a symlinked lock path -> ELOOP -> fail open
+        flags |= os.O_NOFOLLOW
     while True:
         try:
             fd = os.open(lock_path, flags, 0o600)
@@ -102,8 +109,7 @@ def _acquire_lock(lock_path: Path) -> int | None:
             lock_exclusive(fd, blocking=True)
             if sys.platform == "win32" or _same_file(fd, lock_path):
                 return fd
-            # The previous holder unlinked this inode after this open; a fresh
-            # lock file may already be held by someone else, so retry.
+            # The previous holder unlinked this inode after the open; retry on the fresh file.
             unlock(fd)
         except OSError:
             os.close(fd)
@@ -116,50 +122,31 @@ def _acquire_lock(lock_path: Path) -> int | None:
 
 @contextlib.contextmanager
 def locked_file(target: Path) -> Generator[bool]:
-    """Serialize read-modify-write cycles on *target* across processes.
+    """Serialize read-modify-write cycles on a file across processes.
 
-    Yields whether the lock is actually held, for the one caller class that
-    must not act on a fiction of serialization: a transaction that would restore a
-    whole-file snapshot on failure can erase a concurrent writer's
-    just-validated update when the cycle never was serialized, so it degrades
-    to keep-and-warn instead (see `config.write.keep_or_rollback`).
+    The lock is a sibling `<name>.lock` file, never the target: `atomic_write`
+    replaces the target's inode, and a lock on it would let a waiter on the orphaned
+    inode run beside a fresh locker. It fails open, since `atomic_write` already
+    keeps each publish all-or-nothing: a lock that cannot be opened or taken runs
+    the body unserialized, never wedging or following a symlink. The file is
+    unlinked on release and a concurrent unlink is detected by inode and retried;
+    on Windows it stays in place. Same-thread reentrant, keyed on the lock path
+    with its parent resolved, since a second flock on the same file would
+    self-deadlock; other threads block.
 
-    Blocks on a sibling `<name>.lock` file, never the target: atomic_write
-    replaces the target's inode on publish, so a lock taken on the target
-    itself would let a waiter queued on the orphaned old inode run
-    concurrently with a fresh locker, exactly the lost update this guards
-    against.
+    Args:
+        target: The file the cycle rewrites.
 
-    The lock is a concurrency optimization, never a correctness barrier
-    (atomic_write already makes each publish all-or-nothing), so it fails
-    open. If the lock cannot be opened or locked (a planted symlink
-    refused by `O_NOFOLLOW`, or a stale root-owned lock a killed `sudo`
-    writer left that a later non-root process can't reopen) the body runs
-    unserialized rather than wedging or following the symlink. Worst case is
-    an unserialized write, which atomic_write already keeps all-or-nothing; a
-    lock failure is never a way to redirect or block a write.
-
-    The lock file is unlinked on release (no residue in a config dir or repo
-    worktree); the fstat/stat identity check after acquire detects a
-    concurrent unlink and retries on the fresh file. Crash-safe: flock dies
-    with the process. On Windows the lock file is left in place (an open
-    locked file cannot be unlinked), so no identity check needed.
-
-    Same-thread reentrant: a transaction (write + revalidate + rollback)
-    holds the lock across its whole cycle while the per-write helpers it
-    calls skip re-acquiring: flock on a second fd of the same file would
-    self-deadlock the process. Other threads still block. The reentrancy key
-    is the lock path with its parent resolved: the parent dir survives an
-    atomic_write of the target, but the target's own inode does not, so a
-    symlinked config that a write replaces with a regular file does not shift
-    the key mid-transaction.
+    Yields:
+        Whether the lock is held; a transaction that would restore a whole-file
+        snapshot on failure must not do so over an unserialized cycle.
     """
     _ensure_parent_dirs(target.parent)
     lock_path = target.with_name(target.name + ".lock")
     key = str(target.parent.resolve() / lock_path.name)
     held: dict[str, bool] = getattr(_HELD_LOCKS, "paths", {})
     if key in held:
-        yield held[key]  # reentrant: the outer acquisition's truth applies
+        yield held[key]
         return
     fd = _acquire_lock(lock_path)
     held[key] = fd is not None
@@ -169,10 +156,7 @@ def locked_file(target: Path) -> Generator[bool]:
     finally:
         held.pop(key, None)
         if fd is not None:
-            # Unlink before unlock, while still the holder: waiters queued on
-            # this inode then fail the identity check and requeue on the fresh
-            # file. Unlock-first would let one win the orphaned inode while a
-            # newcomer locks a recreated file, two concurrent "holders".
+            # Unlink before unlock: unlock first would let a waiter win the orphaned inode.
             if sys.platform != "win32":
                 with contextlib.suppress(OSError):
                     lock_path.unlink()
@@ -182,12 +166,7 @@ def locked_file(target: Path) -> Generator[bool]:
 
 
 def fsync_dir(path: Path) -> None:
-    """fsync a directory so a rename into it is durable.
-
-    No-op on Windows, which has no directory file descriptors to fsync; the
-    `MoveFileEx`/`ReplaceFile` semantics behind `Path.replace` already
-    make the rename durable there.
-    """
+    """Fsync a directory so a rename into it is durable; a no-op on Windows."""
     if sys.platform == "win32":
         return
     fd = os.open(path, os.O_DIRECTORY)
@@ -198,23 +177,21 @@ def fsync_dir(path: Path) -> None:
 
 
 def atomic_write(path: Path, data: str | bytes) -> None:
-    """Write data via temp file + durable rename.
+    """Write a file through a temp file beside it and a durable rename.
 
-    The temp file lives beside the target, is fsync'd before the rename, and the
-    parent directory is fsync'd after the rename so a crash cannot lose the new
-    directory entry on POSIX filesystems.
+    The temp file is fsynced before the rename and the parent after it, so a crash
+    cannot lose the new entry. An existing target keeps its mode; a new file keeps
+    mkstemp's owner-only 0600.
+
+    Args:
+        path: The file.
+        data: Its content.
     """
     _ensure_parent_dirs(path.parent)
     fd = -1
     tmp_name = ""
     try:
         fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-        # Preserve an existing target's mode across a re-publish; a new file
-        # keeps mkstemp's owner-only 0o600 (a hardcoded wider mode would bypass
-        # the umask). These are per-user run/machine state files; owner-only is
-        # the secure default.
-        # chmod the fd before writing (the two mode-specific branches below only
-        # differ in text vs binary, which pyright needs narrowed for `fh.write`).
         mode = _existing_mode(path)
         if sys.platform != "win32" and mode is not None:
             os.fchmod(fd, mode)
@@ -252,14 +229,10 @@ _TOML_BASIC_ESCAPES = {
 
 
 def toml_basic_string(value: str) -> str:
-    """*value* as a TOML basic (double-quoted) string literal, quotes included.
+    """Return the value as a TOML basic string literal, quotes included.
 
-    Escapes backslash, quote, the named control escapes, and `\\uXXXX` for any
-    other control char. TOML basic strings forbid literal control chars, so an
-    unescaped one (a newline in a pasted key, say) writes a file that fails to
-    parse on read while the write reported success. The single owner of this
-    escaping: config serialization, `config fill`, and secrets all share it so
-    none can drift back to escaping only `\\` and `"`.
+    The one owner of the escaping: an unescaped control character writes a file
+    that fails to parse on read while the write reported success.
     """
     out: list[str] = []
     for ch in value:
@@ -273,6 +246,7 @@ def toml_basic_string(value: str) -> str:
 
 
 def _ensure_parent_dirs(parent: Path) -> None:
+    """Create the directory and its missing ancestors, fsyncing each new entry."""
     missing: list[Path] = []
     cur = parent
     while not cur.exists():
@@ -286,29 +260,29 @@ def _ensure_parent_dirs(parent: Path) -> None:
 
 
 def _existing_mode(path: Path) -> int | None:
-    """The target's current permission bits, or None if it does not exist yet
-    (the caller then leaves the temp file at mkstemp's owner-only 0o600)."""
+    """Return the target's permission bits, or None when it does not exist yet."""
     try:
         return path.stat().st_mode & 0o777
     except OSError:
         return None
 
 
-# A child's stderr, bounded because the writer is third-party code: capturing
-# it to a file let a hostile MCP server write 1.8 GB in three seconds.
+# A child's stderr is bounded: unbounded capture let a hostile MCP server write 1.8 GB in 3 s.
 STDERR_KEEP_BYTES = 8192
 
 
 def drain_stderr(pipe: IO[bytes], keep: list[bytes], *, close: bool = False) -> None:
-    """Read a child's stderr forever, keeping only the tail.
+    """Read a child's stderr to EOF, keeping only the tail.
 
-    Forever, because a pipe nobody reads stops the writer at 64 KB (a child
-    that logs would wedge itself). The last STDERR_KEEP_BYTES, because the
-    writer has no reason to be polite about volume. Read at the descriptor: a
-    buffered pipe's read(4096) returns only at 4 KB or EOF, so what a live
-    child said would reach a failure message only after it died. The drain is
-    the pipe's only reader: bytes another reader had buffered would be
-    skipped."""
+    A pipe nobody reads stops the writer at 64 KB. Read at the descriptor: a buffered
+    read returns only at 4 KB or EOF, so a live child's words would reach a failure
+    message only after it died. The drain must be the pipe's only reader.
+
+    Args:
+        pipe: The child's stderr.
+        keep: Receives the tail, at most `STDERR_KEEP_BYTES`.
+        close: Close the pipe at EOF.
+    """
     with contextlib.suppress(OSError, ValueError):
         while chunk := os.read(pipe.fileno(), 4096):
             keep.append(chunk)
@@ -319,10 +293,7 @@ def drain_stderr(pipe: IO[bytes], keep: list[bytes], *, close: bool = False) -> 
 
 
 def stderr_tail(keep: list[bytes], limit: int = 400) -> str:
-    """The last of what a child said, for a failure message: at most *limit*
-    chars, cut at a line start, and marked when anything was dropped, so a
-    partial diagnostic never reads as a complete one. Best-effort: a
-    diagnostic must never raise over the failure it is describing."""
+    """Return the last of what a child said, cut at a line start and marked when cut."""
     text = b"".join(keep)[-STDERR_KEEP_BYTES:].decode(errors="replace").strip()
     if len(text) <= limit:
         return text
@@ -334,9 +305,7 @@ def stderr_tail(keep: list[bytes], limit: int = 400) -> str:
 
 
 def has_controlling_tty() -> bool:
-    """True iff a controlling terminal exists: the operator can be prompted.
-    A foreground run has one; a web/hub-spawned or fully headless run does not
-    and waits for a front-end instead."""
+    """Return whether a controlling terminal exists, so the operator can be prompted."""
     try:
         fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
     except OSError:

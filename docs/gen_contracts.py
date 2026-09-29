@@ -1,27 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Derive the data-contract reference from the source tree (dev tool, not CI).
+"""Derive the data-contract reference from the source tree.
 
-Each registered contract (typed shapes, plus the run/machine wire snapshot
-builders) gets a card: name, home module, kind, invariant, who writes it, who
-reads it, what pins guard it. The cards are DERIVED, not hand-curated -- the
-invariant prose is lifted from the module and class docstrings, the kind and
-type counts from the AST, the reader set from an import scan of ``src/agent6``,
-and the guarding tests from an import/golden scan of ``tests/``. Only two things
-are declared per contract (the ``CONTRACTS`` registry below): the module and the
-pins/writers, which are judgement calls a scan cannot make honestly.
-
-The gentle-pressure lever: a card that reads badly has a bad docstring. Fix the
-docstring (or the registry), never this script's output.
-
-Two outputs:
-
-- ``docs/data-contracts.md`` -- the mkdocs page, pinned byte-for-byte by
-  ``tests/unit/test_data_contracts_doc.py``. Regenerate with:
-      uv run python docs/gen_contracts.py
-- a self-contained HTML artifact (the tach.toml module graph + the cards) under
-  the gitignored ``docs/screenshots/out/``, which the operator publishes by hand.
+Each registered contract gets a card: its module, kind, invariant, writers,
+readers and pins. The invariant comes from the module and class docstrings, the
+kind from the AST, the readers from an import scan and the guards from a test
+scan; only the module, writers and pins are declared, in `CONTRACTS`. A card
+that reads badly has a bad docstring. Two outputs: `docs/data-contracts.md`,
+pinned by tests/unit/test_data_contracts_doc.py, and an HTML artifact with the
+tach.toml module graph under the gitignored docs/screenshots/out/. Regenerate
+with `uv run python docs/gen_contracts.py`.
 """
 
 from __future__ import annotations
@@ -42,8 +31,7 @@ _MD_OUT = _ROOT / "docs" / "data-contracts.md"
 _HTML_OUT = _ROOT / "docs" / "screenshots" / "out" / "data-contracts.html"
 REGEN_CMD = "uv run python docs/gen_contracts.py"
 
-# Source links point at the repo the docs site names (mkdocs repo_url), so the
-# cards never drift from where the site says the code lives.
+# Source links point at the repo the docs site names.
 _REPO_URL = re.search(
     r"^repo_url:\s*(\S+)", (_ROOT / "docs" / "mkdocs.yml").read_text(encoding="utf-8"), re.M
 )
@@ -51,31 +39,31 @@ _BLOB = (_REPO_URL.group(1).rstrip("/") if _REPO_URL else "") + "/blob/master"
 
 
 def _module_href(dotted: str) -> str:
+    """Return a module's source link."""
     return f"{_BLOB}/src/{dotted.replace('.', '/')}.py"
 
 
-# Inline the primary shape's own field table when it fits a glance; a bigger
-# shape gets only the source link (the module IS the reference).
+# A bigger primary shape gets only the source link.
 _MAX_INLINE_FIELDS = 24
-
-
-# --- the registry: the only declared inputs (everything else is derived) -----
 
 
 @dataclass(frozen=True)
 class Contract:
-    """One data contract. ``module`` and ``pins``/``writers`` are the judgement
-    inputs a scan cannot honestly derive; ``title`` and ``primary`` name the card
-    and which classes' docstrings drive the invariant. Adding another contract is
-    one more entry."""
+    """One registered data contract: the declared inputs a scan cannot derive.
+
+    Attributes:
+        title: The card's name.
+        module: The home module, dotted.
+        primary: The classes or aliases whose docstrings drive the invariant.
+        writers: The src-relative modules that construct it.
+        pins: The repo-relative test files and golden fixtures that guard it.
+    """
 
     title: str
-    module: str  # dotted, e.g. "agent6.sessions.manifest"
-    primary: tuple[str, ...]  # contract class/alias name(s) whose docstrings are lifted
-    writers: tuple[str, ...]  # who CONSTRUCTS it (not import-derivable), src-relative posix
-    pins: tuple[
-        str, ...
-    ]  # byte/behaviour guards (test files and/or golden fixtures), repo-relative
+    module: str
+    primary: tuple[str, ...]
+    writers: tuple[str, ...]
+    pins: tuple[str, ...]
 
 
 CONTRACTS: tuple[Contract, ...] = (
@@ -119,8 +107,7 @@ CONTRACTS: tuple[Contract, ...] = (
         title="Event union",
         module="agent6.viewmodel.events",
         primary=("Event",),
-        # parse_event constructs the union (the raw EventSink writes dicts;
-        # the typed shape exists only on the read side).
+        # The typed shape exists only on the read side; the sink writes dicts.
         writers=("viewmodel/events.py",),
         pins=("tests/unit/data/golden_session_logs.jsonl",),
     ),
@@ -176,30 +163,29 @@ COLS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )  # fmt: skip
 
 
-# --- AST + prose helpers -----------------------------------------------------
-
-_ROLE = re.compile(
-    r":[a-z]+:`([^`]+)`"
-)  # RST role, e.g. :class:`SessionManifest` -> SessionManifest
+# An RST role such as :class:`Name`.
+_ROLE = re.compile(r":[a-z]+:`([^`]+)`")
 
 
 def _norm(text: str) -> str:
-    """A docstring fragment as one line of markdown-inline prose: collapse
-    whitespace, strip RST roles, fold ``code`` to `code`."""
+    """Return a docstring fragment as one line of inline markdown, RST roles stripped."""
     return _ROLE.sub(r"\1", " ".join(text.split())).replace("``", "`")
 
 
 def _first_para(doc: str | None) -> str:
+    """Return a docstring's first paragraph as one line; "" for none."""
     return _norm(doc.strip().split("\n\n", 1)[0]) if doc else ""
 
 
 def _first_sentence(doc: str | None) -> str:
+    """Return a docstring's first sentence; "" for none."""
     para = _first_para(doc)
     cut = para.find(". ")
     return para[: cut + 1] if cut != -1 else para
 
 
 def _base_name(node: ast.expr) -> str:
+    """Return the bare name of a name or attribute node; "" for anything else."""
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Attribute):
@@ -208,6 +194,7 @@ def _base_name(node: ast.expr) -> str:
 
 
 def _is_frozen_dataclass(node: ast.ClassDef) -> bool:
+    """Return whether a class is decorated as a frozen dataclass."""
     for dec in node.decorator_list:
         if not (isinstance(dec, ast.Call) and _base_name(dec.func) == "dataclass"):
             continue
@@ -219,15 +206,14 @@ def _is_frozen_dataclass(node: ast.ClassDef) -> bool:
 
 
 def _flatten_bitor(node: ast.expr) -> list[str]:
+    """Return the names an `A | B | C` expression joins."""
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _flatten_bitor(node.left) + _flatten_bitor(node.right)
     return [node.id] if isinstance(node, ast.Name) else []
 
 
 def _union_members(node: ast.expr) -> list[str]:
-    """Member names of a module-level union alias, unwrapping the pydantic
-    tagged-union form ``Annotated[A | B, Field(discriminator=...)]`` to the
-    ``A | B`` inside (a bare ``A | B`` alias flows straight through)."""
+    """Return a union alias's member names, unwrapping the pydantic `Annotated` form."""
     if (
         isinstance(node, ast.Subscript)
         and _base_name(node.value) == "Annotated"
@@ -240,18 +226,29 @@ def _union_members(node: ast.expr) -> list[str]:
 
 @dataclass(frozen=True)
 class ModuleFacts:
+    """What the AST says about one module.
+
+    Attributes:
+        module_doc: The module docstring.
+        class_docs: Each class's docstring; a wire-form builder's counts too.
+        frozen: The frozen dataclasses.
+        pydantic: The pydantic models.
+        subclasses: Each base's subclasses in the module.
+        unions: Each union alias's member names.
+        class_fields: Each class's own (field, type, default) rows.
+    """
+
     module_doc: str
     class_docs: dict[str, str | None]
     frozen: tuple[str, ...]
     pydantic: tuple[str, ...]
-    subclasses: dict[str, tuple[str, ...]]  # base name -> its subclasses in this module
-    unions: dict[str, tuple[str, ...]]  # alias name -> union member names
-    class_fields: dict[str, tuple[tuple[str, str, str], ...]]  # name -> (field, type, default)
+    subclasses: dict[str, tuple[str, ...]]
+    unions: dict[str, tuple[str, ...]]
+    class_fields: dict[str, tuple[tuple[str, str, str], ...]]
 
 
 def _field_default(node: ast.AnnAssign) -> str:
-    """The field's default as short source text: a pydantic ``Field(...)``
-    unwraps to its ``default=`` (or ``factory``); no value means required."""
+    """Return a field's default as short source text; a pydantic `Field` unwraps to its default."""
     value = node.value
     if value is None:
         return "required"
@@ -266,8 +263,7 @@ def _field_default(node: ast.AnnAssign) -> str:
 
 
 def _class_fields(node: ast.ClassDef) -> tuple[tuple[str, str, str], ...]:
-    """The class's own ``(name, type, default)`` rows: annotated assignments,
-    minus config/private/ClassVar machinery."""
+    """Return a class's own (name, type, default) rows, minus config, private and ClassVar entries."""
     rows: list[tuple[str, str, str]] = []
     for stmt in node.body:
         if not isinstance(stmt, ast.AnnAssign) or not isinstance(stmt.target, ast.Name):
@@ -281,6 +277,7 @@ def _class_fields(node: ast.ClassDef) -> tuple[tuple[str, str, str], ...]:
 
 
 def _module_facts(dotted: str) -> ModuleFacts:
+    """Return one module's facts, read from its AST."""
     path = _SRC.joinpath(*dotted.split(".")[1:]).with_suffix(".py")
     tree = ast.parse(path.read_text(encoding="utf-8"))
     class_docs: dict[str, str | None] = {}
@@ -291,9 +288,7 @@ def _module_facts(dotted: str) -> ModuleFacts:
     class_fields: dict[str, tuple[tuple[str, str, str], ...]] = {}
     for node in tree.body:
         if isinstance(node, ast.FunctionDef):
-            # A wire-form BUILDER (session_state_as_dict) can be a primary too: its
-            # docstring states the payload contract a class cannot (the dict it
-            # returns IS the frozen shape).
+            # A wire-form builder can be a primary too: its docstring states the payload contract.
             class_docs[node.name] = ast.get_docstring(node)
         if isinstance(node, ast.ClassDef):
             class_docs[node.name] = ast.get_docstring(node)
@@ -322,7 +317,7 @@ def _module_facts(dotted: str) -> ModuleFacts:
 
 
 def _kind(facts: ModuleFacts, primary: str) -> str:
-    """A one-line, AST-derived description of the contract's shape and size."""
+    """Return a one-line description of the contract's shape and size."""
     subs = facts.subclasses.get(primary, ())
     if subs:
         return f"abstract base + {len(subs)} frozen result types"
@@ -333,17 +328,13 @@ def _kind(facts: ModuleFacts, primary: str) -> str:
         return "pydantic model" + (f" + {nested} nested models" if nested else "")
     if primary in facts.frozen:
         return "frozen dataclass"
-    if facts.frozen:  # a plain container over frozen parts, e.g. Conversation over its turns
+    if facts.frozen:
         return f"mutable container + {len(facts.frozen)} frozen turn types"
     return "plain class"
 
 
-# --- import / test scans -----------------------------------------------------
-
-
 def _imported_dotted(tree: ast.Module) -> set[str]:
-    """Every dotted module a file imports, including the ``from PKG import NAME``
-    form as ``PKG.NAME`` (how viewmodel.events is pulled in)."""
+    """Return every dotted module a file imports, a `from PKG import NAME` as `PKG.NAME` too."""
     out: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
@@ -355,10 +346,10 @@ def _imported_dotted(tree: ast.Module) -> set[str]:
 
 
 def _reexports(root: Path) -> dict[str, str]:
-    """``package.Name -> the module that defines it``, read off each package's
-    ``__init__``. Most of the tree reads a contract through its facade
-    (``from agent6.viewmodel import SessionSummary``), so without this the
-    reader set is only the modules that name the defining module directly."""
+    """Return each package facade name to the module that defines it, from the `__init__` files.
+
+    Most of the tree reads a contract through its facade.
+    """
     out: dict[str, str] = {}
     for init in sorted(root.rglob("__init__.py")):
         rel = init.parent.relative_to(root).as_posix()
@@ -381,6 +372,7 @@ _REEXPORTS = _reexports(_SRC)
 
 
 def _scan(root: Path) -> dict[str, set[str]]:
+    """Return every file's imported modules under a root, facades resolved."""
     scanned: dict[str, set[str]] = {}
     for p in sorted(root.rglob("*.py")):
         dotted = _imported_dotted(ast.parse(p.read_text(encoding="utf-8")))
@@ -394,12 +386,12 @@ _TEST_IMPORTS = _scan(_TESTS)
 
 
 def _importers(dotted: str, imports: dict[str, set[str]]) -> list[str]:
+    """Return the files that import a module, sorted."""
     return sorted(rel for rel, mods in imports.items() if dotted in mods)
 
 
 def _guard_tests(contract: Contract) -> list[str]:
-    """Tests that import the contract module, reference a declared golden fixture,
-    or are a declared pin test -- the full guarding set, byte pins included."""
+    """Return the tests that import the module, reference a golden fixture, or are a declared pin."""
     guards = {Path(p).name for p in contract.pins if p.endswith(".py")}
     goldens = [Path(p).name for p in contract.pins if not p.endswith(".py")]
     for rel, mods in _TEST_IMPORTS.items():
@@ -410,27 +402,39 @@ def _guard_tests(contract: Contract) -> list[str]:
     return sorted(guards)
 
 
-# --- derived model per contract ----------------------------------------------
-
-
 @dataclass(frozen=True)
 class Card:
+    """One derived card.
+
+    Attributes:
+        title: The card's name.
+        module: The home module, dotted.
+        kind: The shape's one-line description.
+        invariant: The module docstring's first paragraph.
+        shapes: Each documented primary's name and first sentence.
+        fields: The primary's own (name, type, default) rows.
+        members: The union members or result subclasses, when the primary is a family.
+        writers: The src-relative modules that construct it.
+        readers: The src-relative modules that import it.
+        pins: Each pin's basename and repo-relative path.
+        guard_count: How many tests guard it.
+    """
+
     title: str
     module: str
     kind: str
     invariant: str
-    shapes: tuple[
-        tuple[str, str], ...
-    ]  # (primary name, first-sentence) pairs that have a docstring
-    fields: tuple[tuple[str, str, str], ...]  # the primary's own (name, type, default) rows
-    members: tuple[str, ...]  # union members / result subclasses, when the primary is a family
-    writers: tuple[str, ...]  # src-relative posix
-    readers: tuple[str, ...]  # src-relative posix
-    pins: tuple[tuple[str, str], ...]  # (display basename, repo-relative path)
+    shapes: tuple[tuple[str, str], ...]
+    fields: tuple[tuple[str, str, str], ...]
+    members: tuple[str, ...]
+    writers: tuple[str, ...]
+    readers: tuple[str, ...]
+    pins: tuple[tuple[str, str], ...]
     guard_count: int
 
 
 def _derive(contract: Contract) -> Card:
+    """Return one contract's card, derived from the source tree."""
     facts = _module_facts(contract.module)
     importers = _importers(contract.module, _SRC_IMPORTS)
     readers = tuple(r for r in importers if r not in contract.writers)
@@ -443,7 +447,7 @@ def _derive(contract: Contract) -> Card:
     fields = facts.class_fields.get(primary, ())
     members = facts.unions.get(primary, ()) or facts.subclasses.get(primary, ())
     if len(fields) > _MAX_INLINE_FIELDS or members:
-        fields = ()  # a family's shape is its member list, not one field table
+        fields = ()  # a family's shape is its member list
     return Card(
         title=contract.title,
         module=contract.module,
@@ -460,8 +464,7 @@ def _derive(contract: Contract) -> Card:
 
 
 def _group(paths: tuple[str, ...]) -> str:
-    """`harness/loop.py`, `app/merge.py`, `app/run.py` -> `app/{merge, run},
-    harness/loop`: one package per part, braces only where they group."""
+    """Return module paths grouped by package: `app/{merge, run}, harness/loop`."""
     by_dir: dict[str, list[str]] = defaultdict(list)
     for p in paths:
         parent = str(Path(p).parent)
@@ -541,14 +544,13 @@ def _md_card(card: Card) -> str:
 
 
 def build_markdown() -> str:
+    """Return the markdown page."""
     body = "\n\n".join(_md_card(_derive(c)) for c in CONTRACTS)
     return f"{_MD_HEADER}\n{body}\n"
 
 
-# --- the module graph (derived from tach.toml) ---------------------------------
-
-
 def _tach_modules() -> dict[str, tuple[str, ...]]:
+    """Return each tach.toml module's dependencies."""
     data = tomllib.loads((_ROOT / "tach.toml").read_text(encoding="utf-8"))
     return {
         m["path"]: tuple(d if isinstance(d, str) else d["path"] for d in m.get("depends_on", ()))
@@ -557,15 +559,19 @@ def _tach_modules() -> dict[str, tuple[str, ...]]:
 
 
 def _col_of(module: str) -> int:
+    """Return the graph column a module sits in."""
     root = module.removeprefix("agent6.").split(".")[0]
     return next((i for i, (_, roots) in enumerate(COLS) if root in roots), 0)
 
 
 def _module_graph_svg() -> tuple[str, int, int, int]:
-    """The tach.toml dependency graph as a layered SVG: columns from COLS, rows
-    ordered by six barycenter passes (each column sorts by the mean position of
-    its neighbours) to minimize edge crossings. Returns the svg plus the derived
-    (modules, edges, upward-edge) counts for the header line."""
+    """Render the tach.toml graph as a layered SVG.
+
+    Rows are ordered by six barycenter passes to reduce edge crossings.
+
+    Returns:
+        The SVG, and the module, edge and upward-edge counts for the header line.
+    """
     mods = _tach_modules()
     colidx = {m: _col_of(m) for m in mods}
     edges = [(s, d) for s, deps in mods.items() for d in deps if d in mods]
@@ -715,11 +721,12 @@ _HTML_SCRIPT = """
 
 
 def _inline(text: str) -> str:
-    """Markdown-inline prose -> safe HTML: escape, then `code` -> <code>."""
+    """Return inline markdown as safe HTML: escaped, with code spans as `<code>`."""
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", html.escape(text))
 
 
 def _html_card(card: Card) -> str:
+    """Return one card as HTML."""
     shapes = "".join(
         f'<div class="cshape"><b>{html.escape(name)}</b> &mdash; {_inline(sentence)}</div>'
         for name, sentence in card.shapes
@@ -758,6 +765,7 @@ def _html_card(card: Card) -> str:
 
 
 def build_html() -> str:
+    """Return the HTML artifact: the module graph and the cards."""
     cards = "".join(_html_card(_derive(c)) for c in CONTRACTS)
     graph, n_modules, n_edges, n_upward = _module_graph_svg()
     return (
@@ -782,6 +790,7 @@ def build_html() -> str:
 
 
 def main() -> None:
+    """Write both outputs."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--md", type=Path, default=_MD_OUT)
     ap.add_argument("--html", type=Path, default=_HTML_OUT)

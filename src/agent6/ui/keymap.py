@@ -1,14 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The keys agent6 answers to, in one table.
+"""Hold every key agent6 answers to, in one table.
 
-A shortcut belongs to a surface, but the same key often means the same thing on
-several: the approval letters are the CLI prompt's and the TUI row's.
-Spelling them once keeps them from drifting apart, and makes a collision
-visible by reading one file instead of thirty.
-
-A leaf: no agent6 imports, no textual, so every front-end can read it. Textual
-bindings are built from these tuples where they are used.
+The same key often means the same thing on several surfaces; spelling them
+once keeps them from drifting and makes a collision visible in one file. A
+leaf with no agent6 or textual imports, so every front-end can read it.
 """
 
 from __future__ import annotations
@@ -18,11 +14,16 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class Answer:
-    """One answer to an approval: the letter, the value written to the answer
-    bridge, the word every surface shows for it, and the words the CLI prompt
-    also takes. `standing` marks the two an approval offers only when the
-    operator may answer for the whole session; `grants` the two that allow
-    the call (the bridge's rule, pinned to this table by test_keymap)."""
+    """One answer to an approval.
+
+    Attributes:
+        key: The letter.
+        answer: The value written to the answer bridge.
+        label: The word every surface shows for it.
+        aliases: The words the CLI prompt also takes.
+        standing: Offered only when the operator may answer for the whole session.
+        grants: Allows the call; the bridge's rule, pinned to this table.
+    """
 
     key: str
     answer: str
@@ -32,8 +33,7 @@ class Answer:
     grants: bool = False
 
 
-# The order is the order they are offered in, everywhere: allow, allow all,
-# deny, deny all. The CLI prompt's letters, so one keymap is learned once.
+# The order they are offered in, everywhere.
 APPROVAL_ANSWERS: tuple[Answer, ...] = (
     Answer("y", "yes", "allow", ("yes",), grants=True),
     Answer("a", "session", "allow all", ("all", "always", "session"), standing=True, grants=True),
@@ -43,15 +43,15 @@ APPROVAL_ANSWERS: tuple[Answer, ...] = (
 
 
 def answer_entry(answer: str) -> Answer:
-    """The table's row for a bridge value; a value outside the table is a
-    programming error, not an operator's."""
+    """Return the table's row for a bridge value; one outside the table is a programming error."""
     return next(entry for entry in APPROVAL_ANSWERS if entry.answer == answer)
 
 
 def answer_for(typed: str, *, standing: bool) -> str:
-    """The answer a typed line means: the letter or any of its aliases, else
-    "no". A session answer needs a standing prompt; on any other it is the
-    letter it is, which denies, as `[y/N]` says."""
+    """Return the answer a typed line means: the letter or an alias, else "no".
+
+    A session answer needs a standing prompt; on any other it denies, as `[y/N]` says.
+    """
     word = typed.strip().lower()
     for entry in APPROVAL_ANSWERS:
         if word in (entry.key, *entry.aliases) and (standing or not entry.standing):
@@ -60,12 +60,10 @@ def answer_for(typed: str, *, standing: bool) -> str:
 
 
 def approval_prompt_suffix(*, standing: bool) -> str:
-    """The `[y/N/a/d]` line the CLI prompt ends with, built from the table so a
-    new answer cannot appear in one place and not the other."""
+    """Return the `[y/N/a/d]` suffix the CLI prompt ends with, built from the table."""
     if not standing:
         return "[y/N]: "
-    # The two plain answers first, then the scoped pair the line goes on to
-    # explain: `[y/N/a/d]`, not the table's own allow/allow-all order.
+    # The two plain answers first, then the scoped pair the line goes on to explain.
     ordered = [e for e in APPROVAL_ANSWERS if not e.standing] + [
         e for e in APPROVAL_ANSWERS if e.standing
     ]
@@ -74,16 +72,9 @@ def approval_prompt_suffix(*, standing: bool) -> str:
     return f"[{letters}]  ({scoped}, this session): "
 
 
-# Every key a TUI screen binds to one of its menu actions, by screen: the
-# one place a key is chosen, so a collision is read here before a key is
-# taken (letters are scarce and actions are not: `d` deletes a run on the hub,
-# unsets a setting on the config page and denies an approval for the session
-# in a run view; a destructive letter is confirmed before it acts). A screen
-# builds its bindings from its menus and this table (`menu_bindings`); an
-# action absent here is reachable from the menu and the palette only. Commas
-# join the aliases of one action: the first key carries the footer entry.
-# The approval letters (`APPROVAL_ANSWERS`) are bound beside these on every
-# view of a session.
+# Every key a TUI screen binds to a menu action, by screen; an action absent here is reachable
+# from the menu and the palette only. Commas join one action's aliases; the first carries the
+# footer entry. A destructive letter is confirmed before it acts.
 SCREEN_KEYS: dict[str, dict[str, str]] = {
     "hub": {
         "new_work": "n",
@@ -99,8 +90,7 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "help": "question_mark",
         "command_palette": "ctrl+p",
     },
-    # The two run views carry no letters of their own: the composer has the
-    # keyboard, so their keys are modified keys and Esc.
+    # The run views carry no bare letters: the composer has the keyboard.
     "conversation": {
         "close": "escape",
         "quit_hub": "ctrl+q",
@@ -136,8 +126,7 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "help": "question_mark",
         "command_palette": "ctrl+p",
     },
-    # `l` closes the log too: the key that opened it (the hub's, the
-    # dashboard's) toggles it shut.
+    # `l` closes the log too: the key that opened it toggles it shut.
     "event log": {
         "close": "escape,q,l",
         "page_up": "pageup",
@@ -160,8 +149,7 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "help": "question_mark",
         "command_palette": "ctrl+p",
     },
-    # `r` refreshes on every screen that refreshes, so running a machine takes
-    # the shifted letter, as `M` does for the machines screen itself.
+    # `r` refreshes on every screen that refreshes, so running a machine takes the shifted letter.
     "machines": {
         "close": "escape,q",
         "quit": "ctrl+q",

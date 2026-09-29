@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The operator-error boundary.
+"""Define the operator-error boundary.
 
-A bad value or unreadable file from the operator raises :class:`OperatorError`;
-`cli_main` turns that into a one-line `ERROR:` refusal at exit 2, and
-any other fault into a crash report (Ctrl-C exits 130 with a plain line;
-argparse exits pass through). Subsystem error types for operator-owned
-input (`ConfigError`) subclass it, so no reader needs its own except arm to
-keep an operator mistake out of the crash reporter.
+An `OperatorError` becomes a one-line `ERROR:` refusal at exit 2; any other
+fault becomes a crash report. Subsystem errors for operator-owned input
+subclass it.
 """
 
 from __future__ import annotations
@@ -24,10 +21,13 @@ class OperatorError(Exception):
 
 
 def read_operator_file(path: Path) -> str:
-    """Read a file the operator named, refusing when it cannot be read.
+    """Read a file the operator named, the one reader for operator-supplied files.
 
-    The one reader for operator-supplied files: an unreadable or undecodable
-    one is a refusal naming the file, never a crash report.
+    Returns:
+        The text.
+
+    Raises:
+        OperatorError: The file cannot be read or decoded; a refusal, never a crash.
     """
     try:
         return path.read_text(encoding="utf-8")

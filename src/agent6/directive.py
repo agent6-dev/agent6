@@ -1,82 +1,66 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The steer-directive grammars (`/parallel`, `/pin`, `/compact`, `/btw`,
-`/task`, `/standing`, `/retire`), shared by the coordinator steer parser
-(`harness/loop.py`) and the web + TUI composers.
+"""Parse the steer directives the harness and the composers share.
 
     /parallel [spec] <task text> [/parallel [spec] <task text>]...
     /pin <instruction that must survive context compaction>
     /compact [focus text for the summary]
 
-- `spec` is a positive int (lane count) or a comma-separated list of
-  `[provider/]model` entries, and is optional: omitted means one lane on the
-  configured worker model. A segment's first token counts as a spec when it
-  contains a comma or a slash (`anthropic/claude-x`, `moonshotai/kimi-k2.6`);
-  a bare comma-less slash-less model name (`opus`) intentionally stays task
-  text, being indistinguishable from a task word. Conversely, a task whose
-  first word is a path (`src/foo.py`) parses as a bogus model spec, refused
-  pre-spawn with a did-you-mean (`models.validate`) when a model cache exists
-  to check against, else it runs and fails at the provider call; start with a verb.
-- The exact token `/parallel`, whitespace-delimited, separates tasks. A
-  message is a directive only when it starts with the exact `/parallel` token;
-  `/parallelfoo ...` stays ordinary text, byte-for-byte. A mid-task
-  `/parallel` inside a word or path (not whitespace-delimited) is ordinary text
-  too.
-- Newlines are ordinary task characters, so a task can span multiple lines.
-
-One parser per directive, imported by `harness` (the coordinator) and
-`ui` (the composers, and the CLI `--parallel` value via
-:func:`parse_spec`). Pure stdlib string parsing, no agent6 imports: a leaf
-both layers sit above."""
+A message is a directive only when it starts with the exact token; a token
+glued to a word or sitting mid-text is ordinary text, and newlines are task
+characters. A `/parallel` spec is a positive lane count or a comma-separated
+list of `[provider/]model` entries; a segment's first token counts as a spec
+when it holds a comma or a slash, so a task starting with a path parses as a
+model spec (start with a verb). Pure stdlib parsing with no agent6 imports: a
+leaf both layers sit above.
+"""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
-# A `/parallel` token that is whitespace-delimited: preceded by string start or
-# whitespace, followed by whitespace or string end. Not re.MULTILINE: a newline
-# is task text; `\s` already covers it, so a bare whitespace-delimited /parallel
-# is a separator while `foo/parallel/bar` (in a path) is not. `\A`/`\Z` anchor to
-# the whole string, never to line boundaries.
+# A whitespace-delimited `/parallel` token; not MULTILINE, so the anchors are the whole string's.
 _SEPARATOR = re.compile(r"(?:\A|(?<=\s))/parallel(?=\s|\Z)", re.IGNORECASE)
 
 
 class DirectiveError(ValueError):
-    """A `/parallel` directive or spec was malformed: a bare token, a segment
-    with no task, a non-positive or over-`max_lanes` lane count, or an empty
-    model list."""
+    """A directive or spec is malformed: a bare token, a missing task, a bad lane count."""
 
 
 @dataclass(frozen=True, slots=True)
 class Segment:
-    """One parsed `/parallel` task: its optional `spec` (`""` = one default
-    lane) and the `task` text (internal whitespace and newlines preserved)."""
+    """One parsed `/parallel` task.
+
+    Attributes:
+        spec: The lane spec; "" is one default lane.
+        task: The task text, internal whitespace and newlines preserved.
+    """
 
     spec: str
     task: str
 
 
 def parse_spec(spec: str, *, limit: int) -> list[str | None]:
-    """A spec string -> one entry per lane: `None` = the configured worker
-    model, else the lane's `[provider/]model` text, resolved by the caller
-    against its config. `""` (omitted) is one default lane.
+    """Parse a lane spec into one entry per lane, the grammar the directive and the CLI share.
 
-    A positive integer `N` is N default lanes; a comma-separated list is one
-    lane per entry (a single `provider/model` is a one-lane list). *limit* is
-    the caller's `[parallel].max_lanes`; an
-    over-limit count refuses before the lane list is built, so a mistyped huge
-    count cannot allocate it. Raises DirectiveError on a non-positive or
-    over-limit count or a list that names no models. Single source for the
-    directive spec and the CLI `run --parallel <spec>` value grammar."""
+    Args:
+        spec: A positive lane count, a comma-separated `[provider/]model` list, or "".
+        limit: The caller's `[parallel].max_lanes`; an over-limit count refuses before
+            the list is built.
+
+    Returns:
+        One entry per lane: None for the configured worker model, else the lane's
+        model text for the caller to resolve. "" is one default lane.
+
+    Raises:
+        DirectiveError: The count is not positive or over the limit, or the list
+            names no models.
+    """
     s = spec.strip()
     if not s:
         return [None]
-    # isdecimal, not isdigit: isdigit() is True for superscripts/circled
-    # digits ('\u00b2') that int() rejects, so the guard would raise a bare
-    # ValueError past every DirectiveError-catching caller (the coordinator's
-    # never-end-the-run contract included). isdecimal() is exactly the set
-    # int() parses for a stripped, sign-less string.
+    # isdecimal is exactly the set int() parses; isdigit accepts superscripts int() rejects.
     if s.isdecimal():
         n = int(s)
         if n < 1:
@@ -93,23 +77,29 @@ def parse_spec(spec: str, *, limit: int) -> list[str | None]:
 
 
 def _over_limit(requested: int, limit: int) -> str:
+    """Return the refusal for a lane count over the limit."""
     return (
         f"parallel spec requests {requested} lanes but [parallel].max_lanes = {limit}."
         " Request fewer, or raise [parallel].max_lanes."
     )
 
 
-# A leading `/pin` token, whitespace-delimited: optional leading whitespace,
-# then the exact token, then whitespace or end. Same discipline as _SEPARATOR
-# (mid-text or glued tokens are ordinary steer text), but /pin never splits a
-# message: everything after the token is one pinned instruction.
+# A leading `/pin` token; everything after it is one pinned instruction.
 _PIN_TOKEN = re.compile(r"\A\s*/pin(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_pin(text: str) -> str | None:
-    """The instruction a `/pin` steer carries, or `None` when *text* is not a
-    pin directive (does not start with the exact `/pin` token). Internal
-    newlines are instruction text. Raises DirectiveError on a bare `/pin`."""
+    """Parse a `/pin` steer.
+
+    Args:
+        text: The steer text.
+
+    Returns:
+        The instruction, or None when the text is not a pin directive.
+
+    Raises:
+        DirectiveError: The `/pin` is bare.
+    """
     m = _PIN_TOKEN.match(text)
     if m is None:
         return None
@@ -119,60 +109,48 @@ def parse_pin(text: str) -> str | None:
     return instruction
 
 
-# A leading `/compact` token, same discipline as _PIN_TOKEN. Parsed by the
-# composers (web/TUI) and the CLI pause menu, never by the loop: a compact
-# request is an out-of-band marker, not steer text.
+# Parsed by the composers and the pause menu, never by the loop: a compact request is a marker.
 _COMPACT_TOKEN = re.compile(r"\A\s*/compact(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_compact(text: str) -> str | None:
-    """The summary focus a `/compact` composer message carries ("" for a bare
-    /compact), or `None` when *text* is not a compact directive."""
+    """Return the focus a `/compact` message carries ("" when bare), or None when it is not one."""
     m = _COMPACT_TOKEN.match(text)
     if m is None:
         return None
     return text[m.end() :].strip()
 
 
-# A leading `/btw` token, same discipline as the two above. A btw is a
-# question asked beside the run, never steer text: it must not reach the loop.
+# A question asked beside the run, never steer text.
 _BTW_TOKEN = re.compile(r"\A\s*/btw(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_btw(text: str) -> str | None:
-    """The question a `/btw` composer message carries, or `None` when *text*
-    is not a btw directive. A bare `/btw` carries "": there is nothing to ask,
-    and the caller says so rather than opening an empty session."""
+    """Return the question a `/btw` message carries ("" when bare), or None when it is not one."""
     m = _BTW_TOKEN.match(text)
     if m is None:
         return None
     return text[m.end() :].strip()
 
 
-# A task queued into the run's graph, never steer text: it must not reach the
-# loop as a message, which is the whole point of queueing rather than steering.
+# A task queued into the run's graph, never steer text.
 _TASK_TOKEN = re.compile(r"\A\s*/task(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_task(text: str) -> str | None:
-    """The task a `/task` composer message carries, or `None` when *text* is not
-    a task directive. A bare `/task` carries "": there is nothing to queue, and
-    the caller says so rather than queueing an empty node."""
+    """Return the task a `/task` message carries ("" when bare), or None when it is not one."""
     m = _TASK_TOKEN.match(text)
     if m is None:
         return None
     return text[m.end() :].strip()
 
 
-# The run's standing goal, set by the operator alone: `--standing` at an execution's
-# start, this directive while it runs. Never steer text.
+# The run's standing goal, set by the operator alone; never steer text.
 _STANDING_TOKEN = re.compile(r"\A\s*/standing(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_standing(text: str) -> str | None:
-    """The goal a `/standing` composer message carries, or `None` when *text*
-    is not the directive. A bare `/standing` carries "": the caller says what
-    the run's goal is rather than setting an empty one."""
+    """Return the goal a `/standing` message carries ("" when bare), or None when it is not one."""
     m = _STANDING_TOKEN.match(text)
     if m is None:
         return None
@@ -184,41 +162,39 @@ _RETIRE_TOKEN = re.compile(r"\A\s*/retire(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_retire(text: str) -> str | None:
-    """The task id a `/retire` composer message names, or `None` when *text* is
-    not the directive. A bare `/retire` carries ""."""
+    """Return the task id a `/retire` message names ("" when bare), or None when it is not one."""
     m = _RETIRE_TOKEN.match(text)
     if m is None:
         return None
     return text[m.end() :].strip()
 
 
-# A leading `/now` token: the urgency the CLI spells `steer --now`. Parsed by
-# the composers (web/TUI), never by the loop: the request marker carries it.
+# The urgency the CLI spells `steer --now`; parsed by the composers, carried by the request marker.
 _NOW_TOKEN = re.compile(r"\A\s*/now(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_now(text: str) -> str | None:
-    """The steer a `/now` composer message carries, to be taken by aborting the
-    in-flight model call, or `None` when *text* is not a now directive. A bare
-    `/now` carries "": there is nothing to steer with, and the caller says so."""
+    """Return the steer a `/now` message carries ("" when bare), or None when it is not one."""
     m = _NOW_TOKEN.match(text)
     if m is None:
         return None
     return text[m.end() :].strip()
 
 
-# The spec token of the LAST `/parallel` segment still being typed: that
-# segment is `/parallel <token>` with nothing after it yet (a following space
-# = task text has begun, so stop suggesting).
+# The spec token of the last `/parallel` segment still being typed; a following space ends it.
 _SPEC_TAIL = re.compile(r"[^\S\n]+(\S*)\Z")
 
 
 def spec_fragment(text: str) -> str | None:
-    """The comma-separated model fragment under construction at the end of a
-    `/parallel` spec (a composer's autocomplete key), or None when *text* is
-    not a directive, the caret has left the spec, or the token is a bare lane
-    count. A later segment's spec (after a repeated `/parallel`) is under
-    construction the same way the first one is."""
+    """Return the model fragment being typed at the end of a `/parallel` spec, a completion key.
+
+    Args:
+        text: The composer text.
+
+    Returns:
+        The fragment after the last comma, or None when the text is not a directive,
+        the caret has left the spec, or the token is a lane count.
+    """
     matches = list(_SEPARATOR.finditer(text))
     if not matches or matches[0].start() != 0:
         return None
@@ -231,12 +207,7 @@ def spec_fragment(text: str) -> str | None:
     return token.rsplit(",", 1)[-1]
 
 
-# The steer directives a front-end acts on itself, so none can start an execution:
-# `/compact`, `/btw`, `/now` and `/stop` need a live run (a composer or the
-# pause menu takes them, and a resume composer does not offer them);
-# `/restate` and `/shells` act in the composer that typed them, live or not.
-# The loop parses none of these, so an execution started on one would hand the token
-# to the model.
+# Directives a front-end acts on itself; the loop parses none, so none can start an execution.
 LIVE_RUN_COMMANDS: frozenset[str] = frozenset(
     {"/compact", "/btw", "/now", "/retire", "/standing", "/stop", "/task"}
 )
@@ -247,24 +218,25 @@ _FRONT_END_TOKEN = re.compile(
 
 
 def stray_directive(text: str) -> str | None:
-    """The first directive token *text* carries somewhere other than its start.
+    """Return the first directive token sitting somewhere other than the start, or None.
 
-    A line is a directive only when it starts with one, so a token further in
-    travels to the model as ordinary text. Naming it tells a mistyped command
-    from a sentence that happens to mention one."""
+    A token further in travels to the model as ordinary text; naming it tells a
+    mistyped command from a sentence that mentions one.
+    """
     m = _STRAY.search(text)
     return m.group(1) if m is not None else None
 
 
 def steer_problem(text: str) -> str | None:
-    """Why *text* cannot start an execution as its steer: a malformed directive (a
-    bare `/pin`, a `/parallel` with no task) or one of `_FRONT_END_COMMANDS`.
-    None for ordinary text and a well-formed directive. An execution spent on a
-    directive the loop can only decline reads as a silent finish and flips a
-    passed run to failed."""
+    """Explain why the text cannot start an execution as its steer.
+
+    A malformed directive or a front-end command refuses: an execution spent on a
+    directive the loop can only decline reads as a silent finish.
+
+    Returns:
+        The refusal, or None for ordinary text and a well-formed directive.
+    """
     if (m := _FRONT_END_TOKEN.match(text)) is not None:
-        # The operator reading this is often typing into a composer already,
-        # so the refusal names the category mistake rather than the surface.
         return (
             f"{m.group(1)} is a composer command, not an instruction;"
             " start this execution, then type it in the composer"
@@ -278,15 +250,17 @@ def steer_problem(text: str) -> str | None:
 
 
 def parse_directive(text: str) -> list[Segment] | None:
-    """Split a `/parallel` message into its task segments, or `None` when *text*
-    is not a directive (does not start with the exact `/parallel` token).
+    """Split a `/parallel` message into its task segments.
 
-    Each whitespace-delimited `/parallel` token starts a new segment. Within a
-    segment, the first whitespace-delimited token is the spec when it is a
-    positive int or contains a comma or slash (a model list / model id), else
-    the whole segment is the task. Raises DirectiveError on a segment with no
-    task (a bare `/parallel`, or a spec with nothing after it): the parse is
-    all-or-nothing, so a later empty segment fails the whole of it."""
+    Args:
+        text: The steer text.
+
+    Returns:
+        One segment per `/parallel` token, or None when the text is not a directive.
+
+    Raises:
+        DirectiveError: A segment has no task; the parse is all or nothing.
+    """
     body = text.lstrip()
     matches = list(_SEPARATOR.finditer(body))
     if not matches or matches[0].start() != 0:
@@ -299,15 +273,19 @@ def parse_directive(text: str) -> list[Segment] | None:
 
 
 def _is_spec_token(token: str) -> bool:
-    """A leading token is a spec iff it is a positive integer, a comma list, or
-    contains a slash (a provider/model id; no natural task starts with a
-    slash-containing word, see the module docstring for the path caveat). A
-    bare word (`fix`, a single model name with no comma or slash) is task
-    text."""
+    """Return whether a segment's first token is a spec: a count, a comma list or a slash."""
     return token.isdecimal() or "," in token or "/" in token
 
 
 def _parse_segment(raw: str) -> Segment:
+    """Parse one segment's spec and task.
+
+    Returns:
+        The segment.
+
+    Raises:
+        DirectiveError: The segment has no task.
+    """
     body = raw.strip()
     if not body:
         raise DirectiveError(
@@ -325,15 +303,10 @@ def _parse_segment(raw: str) -> Segment:
     return Segment(spec=spec, task=task)
 
 
-# The directives a composer can complete, with one-line help: exactly what the
-# TUI/web composers and the loop parse out of steer text (the CLI pause menu
-# adds its own menu-only commands). The web client mirrors these strings
-# verbatim, drift-pinned by tests/web.
-# The words a view acts on itself (its transcript, its shells, its undo): a
-# steer from a script has no view, so `agent6 steer` refuses them and names
-# the surfaces that take them.
+# The words a view acts on itself; a scripted steer has no view, so `agent6 steer` refuses them.
 VIEW_COMMANDS: frozenset[str] = frozenset({"/restate", "/shells", "/undo"})
 
+# The directives a composer completes, with their help; the web client mirrors the strings verbatim.
 STEER_COMMANDS: dict[str, str] = {
     "/pin": "pin an instruction that survives compaction: /pin <text>",
     "/compact": "compact the context now; /compact <focus> steers the summary",
@@ -350,8 +323,7 @@ STEER_COMMANDS: dict[str, str] = {
 }
 
 
-# A directive token sitting inside a line rather than starting it. `/parallel`
-# is excluded: it separates tasks by design, so a later one is meant.
+# A directive token inside a line; `/parallel` is excluded, since a later one separates tasks.
 _STRAY = re.compile(
     r"(?<=\s)("
     + "|".join(re.escape(c) for c in sorted(STEER_COMMANDS) if c != "/parallel")

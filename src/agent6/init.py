@@ -1,20 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 init`: a granular, idempotent setup wizard.
+"""Run the `agent6 init` setup wizard: granular, idempotent, optional.
 
-init is optional: agent6 runs with a global config + secure defaults, and
-`agent6 run` infers a verify command on its own. This wizard just makes the
-per-repo niceties easy and explicit. It is safe to run on a fresh repo or one
-already using agent6: each step says what it will do, warns before overriding
-anything you already set, and you can skip any of them. It never writes a
-blanket `.suggested` file or clobbers an existing AGENTS.md / config.
-
-Steps, in order:
-  1. create the per-repo config file if it's missing (else leave it);
-  2. set `harness.verify_command` if unset, inferred from the repo
-     (AGENTS.md / package.json / Makefile / pyproject / Cargo / go.mod);
-  3. add secret + build-artifact entries to `.gitignore` (idempotent);
-  4. create AGENTS.md, or append a `## Verify command` section if missing.
+Each step says what it will do, warns before overriding anything set, and can
+be skipped; nothing existing is overwritten. In order: the per-repo config
+file, `harness.verify_command` inferred from the repo, the secret and
+build-artifact `.gitignore` entries, and AGENTS.md or its verify section.
 """
 
 from __future__ import annotations
@@ -91,8 +82,7 @@ to infer its verify_command when one is not configured).
 
 _GITIGNORE_ENTRIES = (".env", ".env.*", ".envrc", "secrets/", "*.pem", "*.key")
 
-# Per-ecosystem build artifacts to ignore so a verify run's bytecode/output is
-# not swept into agent6's per-step commits.
+# Build artifacts a verify run leaves, kept out of the per-step commits.
 _ECOSYSTEM_GITIGNORE: dict[str, tuple[str, ...]] = {
     "py": ("__pycache__/", "*.pyc", ".pytest_cache/"),
     "rust": ("target/",),
@@ -103,7 +93,7 @@ _VERIFY_HEADING = re.compile(r"^#{1,6}\s*verify\b", re.IGNORECASE | re.MULTILINE
 
 
 def _detect_ecosystem(root: Path) -> str:
-    """Best-effort ecosystem guess for the .gitignore artifacts ("" if unknown)."""
+    """Return the ecosystem the repo's manifests suggest; "" when unknown."""
     if any((root / f).is_file() for f in ("pyproject.toml", "setup.py", "setup.cfg")):
         return "py"
     if (root / "Cargo.toml").is_file():
@@ -113,13 +103,16 @@ def _detect_ecosystem(root: Path) -> str:
     return ""
 
 
-# A yes/no prompter: (prompt, default) -> bool. `_ask` prompts; `_accept_default`
-# is the non-interactive stand-in that just takes each step's default.
+# A yes/no prompter; `_accept_default` is the non-interactive stand-in.
 _Ask = Callable[[str, bool], bool]
 
 
 def _ask(prompt: str, default: bool) -> bool:
-    """Yes/no prompt. Returns *default* on EOF or empty input."""
+    """Ask a yes/no question.
+
+    Returns:
+        The answer; the default on EOF or empty input.
+    """
     suffix = "[Y/n]" if default else "[y/N]"
     try:
         ans = input(f"{prompt} {suffix}: ").strip().lower()
@@ -129,10 +122,12 @@ def _ask(prompt: str, default: bool) -> bool:
 
 
 def _accept_default(_prompt: str, default: bool) -> bool:
+    """Return the default without asking."""
     return default
 
 
 def _read_agents_md(root: Path) -> str:
+    """Return the AGENTS.md text; "" when absent or unreadable."""
     p = root / "AGENTS.md"
     if not p.is_file():
         return ""
@@ -143,9 +138,12 @@ def _read_agents_md(root: Path) -> str:
 
 
 def _missing_gitignore_entries(root: Path, *, ecosystem: str) -> list[str]:
-    """The secret + build-artifact entries `.gitignore` lacks (a line-equal
-    match, after strip, counts as present). Raises when the file cannot be
-    read."""
+    """Return the secret and build-artifact entries `.gitignore` lacks.
+
+    Raises:
+        OSError: The file cannot be read.
+        UnicodeDecodeError: The file is not UTF-8.
+    """
     entries = (*_GITIGNORE_ENTRIES, *_ECOSYSTEM_GITIGNORE.get(ecosystem, ()))
     gi = root / ".gitignore"
     existing_text = gi.read_text(encoding="utf-8") if gi.is_file() else ""
@@ -154,8 +152,11 @@ def _missing_gitignore_entries(root: Path, *, ecosystem: str) -> list[str]:
 
 
 def _append_gitignore(root: Path, missing: list[str]) -> str:
-    """Append *missing* to `.gitignore` under an agent6 comment; existing
-    content is never reordered or removed."""
+    """Append the missing entries to `.gitignore` under an agent6 comment.
+
+    Returns:
+        The line to print.
+    """
     gi = root / ".gitignore"
     existing_text = gi.read_text(encoding="utf-8") if gi.is_file() else ""
     verb = "appended to" if existing_text else "created"
@@ -171,8 +172,7 @@ def _append_gitignore(root: Path, missing: list[str]) -> str:
 def _setup_verify_command(
     root: Path, *, ecosystem: str, ask: _Ask, config_path: Path | None = None
 ) -> None:
-    """Set harness.verify_command if unset, inferring it from the repo. Warns
-    (and asks) before overriding a command already set in any layer."""
+    """Set `harness.verify_command` from the repo when unset, asking before an override."""
     leaf = effective_leaf(load_effective(root, config_path), "harness.verify_command")
     value, source = leaf or ((), "default")
     already = bool(value)
@@ -206,8 +206,7 @@ def _setup_verify_command(
 
 
 def _setup_agents_md(root: Path, *, ecosystem: str, ask: _Ask) -> None:
-    """Create a starter AGENTS.md, or append a Verify-command section if the
-    existing one lacks it. Never overwrites existing content."""
+    """Create a starter AGENTS.md, or append a verify section when the existing one lacks it."""
     agents = root / "AGENTS.md"
     inferred = infer_verify_command(root, _read_agents_md(root))
     verify_hint = " ".join(inferred.argv) if inferred else "# EDIT: your verify pipeline"
@@ -219,9 +218,7 @@ def _setup_agents_md(root: Path, *, ecosystem: str, ask: _Ask) -> None:
             print("  skipped AGENTS.md")
         return
     try:
-        # Not errors="replace": this text is written back, so a lossy decode
-        # rewrites every non-ASCII byte as U+FFFD. The inference read above may
-        # be lossy because it only scans.
+        # A strict read: the text is written back, and a lossy decode would rewrite bytes.
         text = agents.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         print(f"  AGENTS.md could not be read ({exc}); leaving it alone.")
@@ -245,16 +242,21 @@ def init_workspace(
     interactive: bool = False,
     config_path: Path | None = None,
 ) -> int:
-    """Run the granular setup wizard. Returns a CLI exit code.
+    """Run the setup wizard.
 
-    `interactive` prompts each step; otherwise every step takes its default.
-    Either way nothing existing is overwritten. `ecosystem` overrides ecosystem
-    auto-detection.
+    Args:
+        root: The repository.
+        ecosystem: Overrides the detected ecosystem.
+        repo_config_target: Overrides the per-repo config path.
+        interactive: Prompt each step; otherwise every step takes its default.
+        config_path: The explicit config the effective config is read under.
+
+    Returns:
+        The CLI exit code.
     """
     root = root.resolve()
     cfg_path = repo_config_target or repo_config_path(root)
     detected = ecosystem or _detect_ecosystem(root)
-    # Non-interactive: take every step's default answer.
     ask: _Ask = _ask if interactive else _accept_default
 
     print(f"agent6 setup: {root}")
@@ -274,8 +276,7 @@ def init_workspace(
     # 2. verify_command (optional; inferred).
     _setup_verify_command(root, ecosystem=detected, ask=ask, config_path=config_path)
 
-    # 3. .gitignore (idempotent): the question names the entries it would add
-    # (the secret ones; the build artifacts only for a detected --ecosystem).
+    # 3. .gitignore: the question names the entries it would add.
     try:
         missing = _missing_gitignore_entries(root, ecosystem=detected)
     except (OSError, UnicodeDecodeError) as exc:
@@ -290,6 +291,4 @@ def init_workspace(
 
     # 4. AGENTS.md.
     _setup_agents_md(root, ecosystem=detected, ask=ask)
-    # The CLI wrapper (`cli.init_cmds`) prints the "Next:" pointers after its
-    # git-setup offer, so the advertised commands come last and actually work.
     return 0

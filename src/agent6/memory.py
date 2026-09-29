@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Per-repo agent memory under `<state_dir>/memory/`.
+"""Keep the per-repo agent memory under `<state_dir>/memory/`.
 
-One fact per markdown file plus a `MEMORY.md` index (one line per entry).
-The index is injected into every run's system prompt; the files are read and
-edited with the ordinary in-process tools through a narrow path grant, so
-recording or correcting a memory is a normal file edit. Model-authored
-context: never instructions, never secrets. Repo-only by design; sharing a
-memory across repos is the operator copying it.
+One fact per markdown file plus a `MEMORY.md` index, one line per entry. The
+index is injected into every run's system prompt; the model reads and edits the
+files with the ordinary tools through a narrow path grant. Model-authored
+context, never instructions or secrets; sharing a memory across repos is the
+operator copying it.
 """
 
 from __future__ import annotations
@@ -28,40 +27,39 @@ from agent6.portable import atomic_write, locked_file
 
 MEMORY_DIR_NAME = "memory"
 INDEX_NAME = "MEMORY.md"
-# Operator rulings, harness-written and append-only: each distinct ask_user
-# answer and each steer that answered a question, verbatim, once. The model
-# reads it (it is shown first, like the index) and never writes it.
+# Operator rulings, harness-written and append-only; the model reads it and never writes it.
 DECISIONS_NAME = "DECISIONS.md"
 DECISIONS_INJECT_CAP = 4_096
-# The index is injected whole; past the cap it is clipped with a pointer so
-# a runaway index cannot flood every prompt in the repo.
+# Past the cap the index is clipped with a pointer, so a runaway index cannot flood every prompt.
 INDEX_INJECT_CAP = 4_096
-# Beside a lane's store: the sha256 of every file `seed_store` copied in, by
-# name, so the import can tell an untouched copy from a lane's edit.
+# Beside a lane's store: the sha256 of every file `seed_store` copied in, by name.
 SEED_NAME = "memory-seed.json"
-# Beside the store, harness-written: per fact, who wrote it and which runs
-# read it (`record_use`), the record `agent6 memory list` prints. Outside the
-# model's write grant, so it says what the harness saw.
+# Beside the store, outside the model's write grant: who wrote each fact and which runs read it.
 USE_NAME = "memory-use.json"
 
 _NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 
 
 class MemoryStoreError(OperatorError):
-    """Memory-store operation failed (bad name, unreadable store)."""
+    """A memory-store operation failed: a bad name, an unreadable store."""
 
 
 def memory_dir(state_dir: Path) -> Path:
+    """Return the repo's memory directory."""
     return state_dir / MEMORY_DIR_NAME
 
 
 def index_path(state_dir: Path) -> Path:
+    """Return the index file's path."""
     return memory_dir(state_dir) / INDEX_NAME
 
 
 def seed_digests(state_dir: Path) -> dict[str, str]:
-    """The seed manifest's `name -> sha256` map; a missing, unreadable or
-    misshapen manifest reads as empty (every file then reads as the lane's)."""
+    """Return the seed manifest's name to sha256 map.
+
+    A missing, unreadable or misshapen manifest reads as empty, so every file then
+    reads as the lane's own.
+    """
     try:
         raw = json.loads(seed_path(state_dir).read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -72,16 +70,23 @@ def seed_digests(state_dir: Path) -> dict[str, str]:
 
 
 def seed_path(state_dir: Path) -> Path:
+    """Return the seed manifest's path."""
     return state_dir / SEED_NAME
 
 
 def use_path(state_dir: Path) -> Path:
+    """Return the use record's path."""
     return state_dir / USE_NAME
 
 
 @dataclass(frozen=True, slots=True)
 class Touch:
-    """One session's touch of a fact: who, and when (UTC, to the minute)."""
+    """One session's touch of a fact.
+
+    Attributes:
+        session: The session's id.
+        at: When, UTC to the minute.
+    """
 
     session: str
     at: str
@@ -89,10 +94,14 @@ class Touch:
 
 @dataclass(frozen=True, slots=True)
 class MemoryUse:
-    """One fact's provenance and use: the write that created it (None when
-    the record never saw it made: a hand-written file, or one older than the
-    record), every recorded write in order, its read count and its last
-    read."""
+    """One fact's provenance and use.
+
+    Attributes:
+        created: The write that created it; None when the record never saw it made.
+        writes: Every recorded write, in order.
+        reads: How many times it was read.
+        last_read: The last read.
+    """
 
     created: Touch | None = None
     writes: tuple[Touch, ...] = ()
@@ -101,6 +110,7 @@ class MemoryUse:
 
     @property
     def updated(self) -> Touch | None:
+        """The last write, or None."""
         return self.writes[-1] if self.writes else None
 
     @property
@@ -110,9 +120,11 @@ class MemoryUse:
 
 
 def read_use(state_dir: Path) -> dict[str, MemoryUse]:
-    """The use record by fact name; a missing, unreadable or misshapen file
-    reads as empty, and a misshapen entry is dropped (the record is a
-    surface, never a gate)."""
+    """Return the use record by fact name.
+
+    A missing, unreadable or misshapen file reads as empty and a misshapen entry is
+    dropped: the record is a surface, never a gate.
+    """
     try:
         raw: Any = json.loads(use_path(state_dir).read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -130,8 +142,7 @@ def read_use(state_dir: Path) -> dict[str, MemoryUse]:
 
 
 def _touch(value: Any) -> Touch | None:
-    """A `{"session", "at"}` object as a Touch, None when it is not one
-    (both non-empty strings)."""
+    """Return a `{"session", "at"}` object as a Touch, or None when it is not one."""
     if not isinstance(value, dict):
         return None
     session, at = value.get("session"), value.get("at")  # pyright: ignore[reportUnknownMemberType]
@@ -141,8 +152,7 @@ def _touch(value: Any) -> Touch | None:
 
 
 def _use_from_entry(entry: dict[Any, Any]) -> MemoryUse | None:
-    """One entry's fields (`created`, `writes`, `reads`, `last_read`), None
-    when misshapen."""
+    """Return one record entry as a MemoryUse, or None when misshapen."""
     reads, raw_writes = entry.get("reads", 0), entry.get("writes")
     if type(reads) is not int or not isinstance(raw_writes, list):
         return None
@@ -167,11 +177,19 @@ def record_use(
     deleted: Collection[str] = (),
     when: float | None = None,
 ) -> None:
-    """Fold one session's memory writes and reads into the use record: a fact
-    in *deleted* leaves it first (as `memory rm` drops it), every write
-    appends a touch, a write of a fact in *created* is its creation (the
-    first stands), reads accumulate with the last reader. Nothing to record
-    leaves the file alone."""
+    """Fold one session's memory writes and reads into the use record.
+
+    Nothing to record leaves the file alone.
+
+    Args:
+        state_dir: The repo's state dir.
+        session: The session's id.
+        wrote: The facts written; each write appends a touch.
+        read: Read counts by fact; they accumulate with the last reader.
+        created: The facts the session created; the first creation stands.
+        deleted: The facts deleted; each leaves the record first.
+        when: The touch time; None is now.
+    """
     if not wrote and not read and not deleted:
         return
     with _locked_memory(state_dir):
@@ -196,6 +214,7 @@ def _record_use_unlocked(
     deleted: Collection[str] = (),
     when: float | None = None,
 ) -> None:
+    """Fold a session's writes and reads into the record, with the store lock held."""
     touch = Touch(session, time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(when)))
     use = read_use(state_dir)
     for name in deleted:
@@ -215,11 +234,16 @@ def _record_use_unlocked(
 def merge_use(
     src_state_dir: Path, dst_state_dir: Path, *, written: Collection[str]
 ) -> tuple[int, int]:
-    """Carry a lane's use record into the origin's at import, before the
-    lane's state dir goes: its writes of the facts *written* (the names
-    `merge_memory` carried or updated) and its reads of facts the origin
-    holds. Returns (entries whose writes were carried, entries whose reads
-    were folded)."""
+    """Carry a lane's use record into the origin's at import, before the lane's state dir goes.
+
+    Args:
+        src_state_dir: The lane's state dir.
+        dst_state_dir: The origin's state dir.
+        written: The facts `merge_memory` carried or updated; their writes travel.
+
+    Returns:
+        How many entries had writes carried, and how many had reads folded.
+    """
     theirs_all = read_use(src_state_dir)
     if not theirs_all:
         return 0, 0
@@ -250,6 +274,7 @@ def merge_use(
 
 
 def _write_use(state_dir: Path, use: Mapping[str, MemoryUse]) -> None:
+    """Write the use record, sorted by name."""
     body = {
         name: {
             "created": None if entry.created is None else asdict(entry.created),
@@ -263,6 +288,7 @@ def _write_use(state_dir: Path, use: Mapping[str, MemoryUse]) -> None:
 
 
 def _drop_use(state_dir: Path, name: str) -> None:
+    """Remove one fact from the use record."""
     use = read_use(state_dir)
     if name in use:
         del use[name]
@@ -270,13 +296,19 @@ def _drop_use(state_dir: Path, name: str) -> None:
 
 
 def decisions_path(state_dir: Path) -> Path:
+    """Return the decisions file's path."""
     return memory_dir(state_dir) / DECISIONS_NAME
 
 
 @contextmanager
 def _locked_memory(state_dir: Path) -> Generator[None]:
-    """Serialize the harness's mutations of one repo's store; the model's own
-    edits under its write grant take no lock."""
+    """Serialize the harness's mutations of one repo's store.
+
+    The model's own edits under its write grant take no lock.
+
+    Yields:
+        With the store locked.
+    """
     mkdir_for_real_user(memory_dir(state_dir))
     with locked_file(memory_dir(state_dir)):
         yield
@@ -285,10 +317,19 @@ def _locked_memory(state_dir: Path) -> Generator[None]:
 def record_decision(
     state_dir: Path, *, question: str, answer: str, session: str, when: float | None = None
 ) -> str:
-    """Record one operator ruling and return its persisted entry.
+    """Record one operator ruling.
 
-    An identical question and answer already on disk returns that entry. New
-    rulings carry the question as asked, answer verbatim, session and UTC time."""
+    Args:
+        state_dir: The repo's state dir.
+        question: The question as asked.
+        answer: The answer, verbatim.
+        session: The session's id.
+        when: The ruling's time; None is now.
+
+    Returns:
+        The persisted entry; an identical question and answer already on disk returns
+        that entry.
+    """
     stamp = time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(when))
     q = question.strip().replace("\n", "\n  ")
     a = answer.strip().replace("\n", "\n  ")
@@ -308,7 +349,7 @@ def record_decision(
 
 
 def _entries(text: str) -> list[str]:
-    """A decisions file as its `- ` entries, each with its continuation lines."""
+    """Return a decisions file's `- ` entries, each with its continuation lines."""
     entries: list[str] = []
     for line in text.splitlines():
         if line.startswith("- ") or not entries:
@@ -319,17 +360,23 @@ def _entries(text: str) -> list[str]:
 
 
 def _ruling(entry: str) -> str:
-    """The question and answer of an entry, without its stamp and session tag:
-    two lanes answering alike record the same ruling under different tags."""
+    """Return an entry's question and answer without its stamp and session tag."""
     return entry.split("] ", 1)[-1]
 
 
 def merge_decisions(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]:
-    """Append the rulings recorded under *src_state_dir* to *dst_state_dir*'s
-    decisions file (a fan-out lane's answers outlive its state dir). A
-    ruling is its question and answer: one the destination already holds,
-    however long ago and under whatever session tag, is skipped, and so is a
-    repeat within the source. Returns (appended, skipped)."""
+    """Append a lane's rulings to the origin's decisions file.
+
+    A ruling the destination already holds under any tag is skipped, as is a repeat
+    within the source.
+
+    Args:
+        src_state_dir: The lane's state dir.
+        dst_state_dir: The origin's state dir.
+
+    Returns:
+        How many entries were appended and how many skipped.
+    """
     try:
         text = decisions_path(src_state_dir).read_text(encoding="utf-8")
     except OSError:
@@ -354,31 +401,44 @@ def merge_decisions(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]
 
 
 def _sha256(path: Path) -> str:
+    """Return a file's sha256 hex digest."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
 class MemoryMerge:
-    """What a lane's memory left in the origin's store at import, by name."""
+    """What a lane's memory left in the origin's store at import, by name.
 
-    carried: tuple[str, ...] = ()  # new names, landed with their index lines
-    updated: tuple[str, ...] = ()  # the lane's edit replaced a copy unchanged since seeding
-    deleted: tuple[str, ...] = ()  # the lane's deletion removed such a copy
-    held: tuple[str, ...] = ()  # changed on both sides, or a name already taken: kept aside
+    Attributes:
+        carried: New names, landed with their index lines.
+        updated: Names whose lane edit replaced a copy unchanged since seeding.
+        deleted: Names whose lane deletion removed such a copy.
+        held: Names changed on both sides, or already taken; the lane's version is kept aside.
+    """
+
+    carried: tuple[str, ...] = ()
+    updated: tuple[str, ...] = ()
+    deleted: tuple[str, ...] = ()
+    held: tuple[str, ...] = ()
 
 
 def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) -> MemoryMerge:
-    """Carry a lane's memory into the origin's store the way its branch comes
-    back. A copy unchanged since seeding is nothing. A change over a copy the
-    origin has not touched since seeding lands: an edit replaces the file and
-    its index line, a deletion removes both. A change on both sides is held
-    back (the lane's version kept under *held_dir*) and named. A new name
-    lands with its index line, or is held when the origin holds that name with
-    other content (two lanes invented it); a file the lane's own index does
-    not list is left where it is. The index line follows the file: an edit
-    lands with the lane's line when it has one and keeps the origin's
-    otherwise, and a hook edited alone does not travel. The rulings have
-    `merge_decisions`."""
+    """Carry a lane's memory into the origin's store the way its branch comes back.
+
+    A copy unchanged since seeding is nothing. A change over a copy the origin has not
+    touched lands: an edit replaces the file and its index line, a deletion removes
+    both. A change on both sides is held. A new name lands with its index line, or is
+    held when the origin holds that name with other content; a file the lane's own
+    index does not list stays where it is. A hook edited alone does not travel.
+
+    Args:
+        src_state_dir: The lane's state dir.
+        dst_state_dir: The origin's state dir.
+        held_dir: Where a held lane version is kept.
+
+    Returns:
+        What landed, by name.
+    """
     src = memory_dir(src_state_dir)
     if not src.is_dir():
         return MemoryMerge()
@@ -427,9 +487,18 @@ def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) ->
 def _fate(
     seed: str | None, theirs: str | None, ours: str | None, *, hook: str | None, indexed: bool
 ) -> Literal["skip", "carried", "updated", "deleted", "held"]:
-    """One name's fate at import, from the digests of the seeded copy, the
-    lane's file and the origin's file (None: absent), whether the lane's index
-    lists it (*hook*) and whether the origin's index names it."""
+    """Return one name's fate at import.
+
+    Args:
+        seed: The seeded copy's digest; None when the name is new in the lane.
+        theirs: The lane's file digest; None when absent.
+        ours: The origin's file digest; None when absent.
+        hook: The lane's index line hook; None when its index does not list the name.
+        indexed: Whether the origin's index names it.
+
+    Returns:
+        The fate.
+    """
     if seed is None:  # new in the lane
         if hook is None or theirs is None:
             return "skip"  # unindexed there: invisible there, and stays so
@@ -444,15 +513,17 @@ def _fate(
 
 
 def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:
-    """Copy the repo's memory (index, facts, recorded rulings) into a fresh
-    state dir, leaving anything already there, and record each copied fact's
-    digest in `seed_path` for the import. Returns the files copied.
+    """Copy the repo's memory into a fresh state dir, recording each copied fact's digest.
 
-    A `--parallel` lane clones the repo into a workspace of its own, so its
-    state dir is new and its memory empty; without this the lanes run blind to
-    the rulings every other run on that repo is given. Copies, never a link: a lane
-    must not write the origin's store mid-run; `merge_memory` and
-    `merge_decisions` carry what it wrote back at import.
+    A lane's clone has an empty store; copies, never links, so a lane cannot write
+    the origin's store mid-run. Anything already there stays.
+
+    Args:
+        src_state_dir: The origin's state dir.
+        dst_state_dir: The lane's state dir.
+
+    Returns:
+        How many files were copied.
     """
     src = memory_dir(src_state_dir)
     if not src.is_dir():
@@ -486,8 +557,7 @@ def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:
 
 
 def decisions_text(state_dir: Path) -> str:
-    """The decisions file for injection: whole when it fits the cap, else
-    its newest tail behind a pointer; "" when nothing is recorded."""
+    """Return the decisions text for injection: whole under the cap, else its newest tail."""
     try:
         text = decisions_path(state_dir).read_text(encoding="utf-8").strip()
     except OSError:
@@ -511,9 +581,7 @@ def decisions_text(state_dir: Path) -> str:
 
 
 def clipped_index(index: str) -> str:
-    """*index* as a prompt or a review carries it: whole under
-    `INDEX_INJECT_CAP`, else its head to a line boundary and a marker, so a
-    runaway index cannot flood every call on the repo."""
+    """Return the index as a prompt carries it: whole under the cap, else its head and a marker."""
     body = index.strip()
     if len(body) <= INDEX_INJECT_CAP:
         return body
@@ -524,13 +592,11 @@ def clipped_index(index: str) -> str:
 
 
 def index_text(state_dir: Path) -> str:
-    """The index body for prompt injection; "" when absent or unreadable
-    (memory is context, one stray byte must not kill every run).
+    """Return the index body for injection; "" when absent or unreadable.
 
-    A byte that is not UTF-8 is replaced rather than fatal: read strictly, one
-    of them would empty the whole index for every run, and the next `memory
-    add` would rebuild the file from that empty read. An unreadable file (a
-    permission, a directory) is still ""."""
+    A byte that is not UTF-8 is replaced: read strictly, one would empty the index for
+    every run, and the next `memory add` would rebuild the file from that empty read.
+    """
     try:
         return index_path(state_dir).read_text(encoding="utf-8", errors="replace").strip()
     except OSError:
@@ -538,13 +604,16 @@ def index_text(state_dir: Path) -> str:
 
 
 def is_memory_name(name: str) -> bool:
-    """Whether *name* is a fact name the store accepts (lowercase letters,
-    digits and dashes), the one rule `memory add`, the loop's use count and
-    the orphan list share."""
+    """Return whether the name is one the store accepts: lowercase letters, digits and dashes."""
     return _NAME_RE.fullmatch(name) is not None
 
 
 def _check_name(name: str) -> str:
+    """Return the name when the store accepts it.
+
+    Raises:
+        MemoryStoreError: The name is not one the store accepts.
+    """
     if _NAME_RE.fullmatch(name) is None:
         raise MemoryStoreError(
             f"bad memory name {name!r}: lowercase letters, digits, and dashes only"
@@ -553,27 +622,25 @@ def _check_name(name: str) -> str:
 
 
 def _index_has(state_dir: Path, name: str) -> bool:
+    """Return whether the index has a `- name:` line."""
     pattern = re.compile(rf"^\s*[-*]\s*{re.escape(name)}\s*:")
     return any(pattern.match(ln) for ln in index_text(state_dir).splitlines())
 
 
-# `- name: summary` (what `memory add` writes) or a link line
-# `- [title](name.md) ...` (the shape models raised on other agents' memory
-# indexes write): either names the fact.
+# `- name: summary` (what `memory add` writes) or a link line `- [title](name.md)`.
 _INDEX_LINE_RE = re.compile(
     r"^\s*[-*]\s*(?:\[[^\]]*\]\(([a-z0-9][a-z0-9-]{0,63})\.md\)|([a-z0-9][a-z0-9-]{0,63})\s*:)"
 )
 
 
 def index_name(line: str) -> str | None:
-    """The fact an index line names, None for a line that is not an entry."""
+    """Return the fact an index line names, or None for a line that is not an entry."""
     match = _INDEX_LINE_RE.match(line)
     return None if match is None else (match.group(1) or match.group(2))
 
 
 def unindexed_names(state_dir: Path) -> tuple[str, ...]:
-    """Fact files the index does not list: invisible to every run (only the
-    index reaches a prompt), left behind when a run drops a line. Sorted."""
+    """Return the fact files the index does not list, sorted; only the index reaches a prompt."""
     named = {n for n in (index_name(ln) for ln in index_text(state_dir).splitlines()) if n}
     try:
         files = sorted(p.stem for p in memory_dir(state_dir).glob("*.md"))
@@ -583,32 +650,34 @@ def unindexed_names(state_dir: Path) -> tuple[str, ...]:
 
 
 def _index_hook(index_lines: list[str], name: str) -> str | None:
-    """The hook text an index line carries for *name*, None when it has none."""
+    """Return the hook text the index line for the name carries, or None when there is none."""
     pattern = re.compile(rf"^\s*[-*]\s*{re.escape(name)}\s*:")
     line = next((ln for ln in index_lines if pattern.match(ln)), None)
     return None if line is None else line.split(":", 1)[1].strip()
 
 
 def _index_pattern(name: str) -> re.Pattern[bytes]:
+    """Return the byte pattern matching the index line for the name."""
     return re.compile(rb"^\s*[-*]\s*" + re.escape(name.encode("utf-8")) + rb"\s*:")
 
 
 def _drop_index_line(state_dir: Path, name: str) -> None:
-    """Remove the index line naming *name*, over bytes: a rewrite through the
-    replacing reader would turn every byte that is not UTF-8 into U+FFFD, in
-    lines the operator wrote."""
+    """Remove the index line naming the fact.
+
+    Over bytes: a rewrite through the replacing reader would turn every byte that is
+    not UTF-8 into U+FFFD in lines the operator wrote.
+    """
     idx = index_path(state_dir)
     pattern = _index_pattern(name)
     try:
         lines = idx.read_bytes().split(b"\n")
     except OSError:
-        return  # no index, nothing to drop
+        return
     atomic_write(idx, b"\n".join(ln for ln in lines if not pattern.match(ln)))
 
 
 def _replace_index_line(state_dir: Path, name: str, hook: str) -> None:
-    """Rewrite the index line naming *name* in place (over bytes, like
-    `_drop_index_line`), appending one when there is none."""
+    """Rewrite the index line naming the fact in place, over bytes, appending one when none."""
     idx = index_path(state_dir)
     pattern = _index_pattern(name)
     try:
@@ -634,12 +703,22 @@ def _append_index_line(state_dir: Path, name: str, hook: str) -> None:
 
 
 def add(state_dir: Path, name: str, body: str) -> Path:
-    """Operator CLI helper: write `<name>.md` and append its index line.
+    """Write a fact file and append its index line, for `agent6 memory add`.
 
-    The file is written first: an unindexed file is invisible to runs and
-    harmless, while an index line without its file is a prompt that lies. A
-    fault between the two writes heals on retry: an existing file with no
-    index line is re-indexed from its own first line, named loudly.
+    The file is written first: an unindexed file is invisible and harmless, while an
+    index line without its file is a prompt that lies.
+
+    Args:
+        state_dir: The repo's state dir.
+        name: The fact's name.
+        body: The fact's text; its first line is the index hook.
+
+    Returns:
+        The fact file's path.
+
+    Raises:
+        MemoryStoreError: The body is empty, the name is taken, or the file existed
+            unindexed and was re-indexed from its own first line instead.
     """
     body = body.strip()
     if not body:
@@ -663,12 +742,13 @@ def add(state_dir: Path, name: str, body: str) -> Path:
 
 
 def remove(state_dir: Path, name: str) -> None:
-    """Operator CLI helper: delete `<name>.md` and its index line.
+    """Delete a fact file and its index line, for `agent6 memory rm`.
 
-    The index line goes first: a file with no line is invisible and a retry
-    can still delete it, while a line with no file is a prompt naming a
-    memory that will not open. Either remnant alone is removable, so a fault
-    between the two writes heals on retry; only a name with neither refuses.
+    The index line goes first: a file with no line is invisible and a retry can still
+    delete it. Either remnant alone is removable.
+
+    Raises:
+        MemoryStoreError: The name has neither a file nor an index line.
     """
     _check_name(name)
     path = memory_dir(state_dir) / f"{name}.md"
@@ -684,6 +764,11 @@ def remove(state_dir: Path, name: str) -> None:
 
 
 def show(state_dir: Path, name: str) -> str:
+    """Return a fact's text.
+
+    Raises:
+        MemoryStoreError: The name is bad or the file cannot be read.
+    """
     _check_name(name)
     path = memory_dir(state_dir) / f"{name}.md"
     try:

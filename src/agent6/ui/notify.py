@@ -1,14 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Best-effort desktop notification via `notify-send` (device-present channel).
+"""Send a desktop notification through `notify-send`, best-effort.
 
-Used by the CLI (`agent6 attach`) and the TUI to surface a machine's
-`machine.notify`/end while an operator is at the machine. Fire-and-forget with a
-fixed argv (`notify-send -- <title> <body>`): the `--` end-of-options terminator
-and positional-only data arguments that never reach a shell keep a
-model-authored notify message inert, even when it begins with `-`. A missing
-`notify-send` is a silent no-op (the caller also rings the terminal bell / uses
-the in-app toast).
+A fixed argv with `--` before the data keeps a model-authored message inert,
+even one starting with `-`. A missing `notify-send` is a silent no-op.
 """
 
 from __future__ import annotations
@@ -18,8 +13,11 @@ import subprocess
 
 
 def desktop_notify(title: str, body: str = "") -> bool:
-    """Fire a desktop notification if `notify-send` is on PATH. Returns True when
-    it was launched, False when unavailable (so a caller can fall back to a bell)."""
+    """Send a desktop notification when `notify-send` is on PATH.
+
+    Returns:
+        True when launched, False when unavailable, so a caller can ring a bell instead.
+    """
     exe = shutil.which("notify-send")
     if exe is None:
         return False

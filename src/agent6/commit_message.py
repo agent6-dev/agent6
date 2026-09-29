@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Commit message composition: the trailer line, the condensed message a
-squash carries, and a checkpoint's subject in the agent6 or the Conventional
-Commits style. Pure string work; `git_ops` runs git.
+"""Compose commit messages.
+
+The trailer line, the condensed message a squash carries, and a checkpoint's
+subject in the agent6 or the Conventional Commits style. Pure string work;
+`git_ops` runs git.
 """
 
 from __future__ import annotations
@@ -16,11 +18,16 @@ from agent6.task_text import task_headline
 
 
 def render_commit_trailer(fmt: str, *, models: Sequence[str]) -> str | None:
-    """The `[git.commit].trailer` format string as a concrete trailer line, or
-    None when unset. {model} names the model(s) that wrote the code, first-seen
-    order (the primary worker first), ", "-joined and deduplicated; the model
-    that wrote a commit message never appears. The config validator pins the
-    placeholder set and the "Key: value" shape."""
+    """Render the `[git.commit].trailer` format as a trailer line.
+
+    Args:
+        fmt: The format; the config validator pins its placeholders and shape.
+        models: The models that wrote the code, first seen first; the model that wrote
+            a commit message never appears.
+
+    Returns:
+        The line, or None when the format is unset.
+    """
     if not fmt:
         return None
     return fmt.format(model=", ".join(dict.fromkeys(m for m in models if m)))
@@ -28,25 +35,33 @@ def render_commit_trailer(fmt: str, *, models: Sequence[str]) -> str | None:
 
 @dataclass(frozen=True, slots=True)
 class CommitRow:
-    """One commit on a run branch (oldest-first), for listing + squash-condensing."""
+    """One commit on a run branch.
+
+    Attributes:
+        sha: The commit.
+        subject: Its subject line.
+        message: Its whole message.
+    """
 
     sha: str
     subject: str
-    message: str  # full %B
+    message: str
 
 
 _ITER_SUBJECT_RE = re.compile(r"^agent6 iter \d+:\s*", re.IGNORECASE)
 
 
 def condense_commit_message(rows: tuple[CommitRow, ...], *, subject: str) -> str:
-    """Fold per-step commits into one readable message, so a squash reads as a
-    single authored commit, not a squashed series.
+    """Fold per-step commits into one message that reads as a single authored commit.
 
-    *subject* is the run's task, headlined to its first clause. The body lists
-    the distinct, de-noised per-step subjects (the `agent6 iter N:` prefix and
-    checkpoint noise stripped); the task itself is session prose and stays out
-    of history. The provenance trailer is the commit emitter's job
-    (identity.trailer), not this message's."""
+    Args:
+        rows: The commits, oldest first.
+        subject: The run's task, headlined to its first clause.
+
+    Returns:
+        The headline, then the distinct per-step subjects as bullets with the
+        `agent6 iter N:` prefix and checkpoint noise stripped.
+    """
     bullets: list[str] = []
     seen: set[str] = set()
     for row in rows:
@@ -63,12 +78,11 @@ def condense_commit_message(rows: tuple[CommitRow, ...], *, subject: str) -> str
     return "\n".join(parts)
 
 
-_SUBJECT_LIMIT = 72  # git's soft subject cap; conventional tooling truncates past it
+_SUBJECT_LIMIT = 72  # git's soft subject cap
 
 
 def first_prose_line(text: str, *, fallback: str) -> str:
-    """The agent's first prose line (leading `<thinking>` blocks dropped,
-    heading/bullet markers stripped), or *fallback* on a pure tool-call turn."""
+    """Return the agent's first prose line, thinking blocks and markers dropped, or the fallback."""
     cleaned = text
     while cleaned.lstrip().startswith("<thinking>"):
         end = cleaned.find("</thinking>")
@@ -84,26 +98,29 @@ def first_prose_line(text: str, *, fallback: str) -> str:
 
 
 def agent6_subject(text: str, iteration: int, *, fallback: str = "verify passed") -> str:
-    """`agent6 iter N: <first line>`, the first line truncated to the subject
-    limit. Free: `resp.text` is already in hand."""
+    """Return `agent6 iter N: <first line>`, the line cut at the subject limit."""
     return f"agent6 iter {iteration}: {first_prose_line(text, fallback=fallback)[:_SUBJECT_LIMIT]}"
 
 
 def _is_testish(p: str) -> bool:
+    """Return whether a path is a test file."""
     parts = PurePosixPath(p).parts
     name = parts[-1] if parts else ""
     return parts[:1] == ("tests",) or name.startswith("test_") or name == "conftest.py"
 
 
 def _is_docish(p: str) -> bool:
+    """Return whether a path is documentation."""
     pp = PurePosixPath(p)
     return pp.suffix.lower() in (".md", ".rst") or pp.parts[:1] == ("docs",)
 
 
 def _conventional_scope(paths: Sequence[str]) -> str:
-    """The one common area the change touches, or "" when there is none: the
-    package dir under `src/<pkg>/` (the module stem for a file directly under
-    the package), else a second-level dir every path shares."""
+    """Return the one area every path shares, or "".
+
+    The package dir under `src/<pkg>/`, the module stem for a file directly under the
+    package, else a second-level dir every path shares.
+    """
     parts = [PurePosixPath(p).parts for p in paths if p]
     if not parts:
         return ""
@@ -119,11 +136,18 @@ def _conventional_scope(paths: Sequence[str]) -> str:
 
 
 def conventional_commit_subject(changes: Sequence[tuple[str, str]], *, summary: str) -> str:
-    """A Conventional Commits subject from `(status, path)` pairs, without a
-    model call: all-tests -> `test`, all-docs -> `docs`, any added file ->
-    `feat`, else `fix` (`chore` when nothing changed). Scope is the one
-    common area (:func:`_conventional_scope`); the subject is *summary* with
-    its head lowercased and any trailing period stripped, capped at 72."""
+    """Derive a Conventional Commits subject from status and path pairs, with no model call.
+
+    All tests is `test`, all docs is `docs`, any added file is `feat`, else `fix`;
+    `chore` when nothing changed.
+
+    Args:
+        changes: The (status, path) pairs.
+        summary: The change's summary; its head is lowercased and a trailing period dropped.
+
+    Returns:
+        The subject, capped at the subject limit.
+    """
     paths = [p for _, p in changes]
     if not paths:
         ctype = "chore"
@@ -143,11 +167,7 @@ def conventional_commit_subject(changes: Sequence[tuple[str, str]], *, summary: 
 
 
 def _headline_subject(task: str, *, limit: int = _SUBJECT_LIMIT) -> str:
-    """A short commit subject derived from the task's first clause: its first
-    line, up to the first sentence end, whitespace-collapsed, capped at *limit*
-    (an ellipsis marks a truncation). A run's whole task text as the subject
-    reads as one unwrapped 180-char line that every git tool clips; the full
-    task is wrapped into the body by the caller when this truncates it."""
+    """Return a subject from the task's first clause, capped at the limit with an ellipsis."""
     first_line = _ITER_SUBJECT_RE.sub("", task_headline(task)).strip()
     match = re.search(r"[.!?](?:\s|$)", first_line)
     clause = first_line[: match.start()] if match else first_line

@@ -1,26 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Secret storage for agent6 (provider API keys, OAuth tokens).
+"""Store provider API keys and OAuth tokens in `secrets.toml`.
 
-Secrets live in `<global-config-dir>/secrets.toml`, separate from the
-config so the config can be shared/committed while keys never are. The
-file is treated like an SSH private key:
-
-- it must be a regular file owned by the operator,
-- it must be `0600` (no group/other bits) or agent6 refuses to read it,
-- it is written atomically with `0600` and `chown`-ed back to the real
-  user when agent6 is running through sudo.
-
-Key resolution order for a provider (most explicit first):
-
-1. the environment variable named by `[providers.<name>].api_key_env`
-   (when set and non-empty), keeps CI/secret-manager workflows working,
-2. `[providers.<name>].api_key` in `secrets.toml`,
-3. nothing (the caller raises a "run `agent6 connect`" error).
-
-Secrets are never written to transcripts, never printed by ``config
-show`` (always redacted), and never mounted into the jail, provider
-calls happen in agent6's own process, outside the sandbox.
+The file sits beside the config and is treated like an SSH private key: a
+regular file owned by the operator, `0600` or refused, written atomically at
+`0600` and chowned back to the real user under `sudo`. A provider's key comes
+from its `api_key_env` variable first, then `secrets.toml`, else nothing.
+Secrets never reach transcripts, `config show` or the jail.
 """
 
 from __future__ import annotations
@@ -43,11 +29,15 @@ from agent6.portable import atomic_write, locked_file, toml_basic_string
 
 
 class SecretsError(Exception):
-    """Raised when the secrets file is malformed or has unsafe permissions."""
+    """The secrets file is malformed, unreadable or unsafely permitted."""
 
 
 def _require_safe_perms(path: Path, user: RealUser) -> None:
-    """Refuse to read a secrets file that others can read or that is not ours."""
+    """Refuse a secrets file that others can read or that the operator does not own.
+
+    Raises:
+        SecretsError: The file is not regular, has group or other bits, or has another owner.
+    """
     st = path.lstat()
     if not stat.S_ISREG(st.st_mode):
         raise SecretsError(f"{path} is not a regular file; refusing to read secrets from it.")
@@ -56,8 +46,7 @@ def _require_safe_perms(path: Path, user: RealUser) -> None:
             f"{path} has unsafe permissions {stat.S_IMODE(st.st_mode):#o}"
             f" (group/other accessible). Run: chmod 600 {path}"
         )
-    # When running as the operator (not sudo), the file must be ours. Under
-    # sudo the read takes the real user's file as root, which is expected.
+    # Under sudo the read takes the real user's file as root.
     if os.geteuid() != 0 and st.st_uid != user.uid:
         raise SecretsError(
             f"{path} is owned by uid {st.st_uid}, not you (uid {user.uid});"
@@ -66,11 +55,15 @@ def _require_safe_perms(path: Path, user: RealUser) -> None:
 
 
 def _read_secrets_toml(path: Path) -> dict[str, Any]:
-    """Parse `secrets.toml`, as a SecretsError for anything that stops it.
+    """Parse the secrets file, the one reader.
 
-    The one reader: an unreadable file (root-owned after a `sudo connect`, a
-    chmod 000) is the operator's environment and not a bug in agent6, so it
-    raises SecretsError naming the path, never an unhandled PermissionError."""
+    Returns:
+        The parsed TOML.
+
+    Raises:
+        SecretsError: The file cannot be read or is not valid TOML; an unreadable file
+            is the operator's environment, never a crash.
+    """
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -82,7 +75,7 @@ def _read_secrets_toml(path: Path) -> dict[str, Any]:
 
 
 def load_secrets(user: RealUser | None = None) -> dict[str, Any]:
-    """Load and validate `secrets.toml`. Returns `{}` when absent."""
+    """Return the validated secrets; empty when the file is absent."""
     user = user or effective_user()
     path = secrets_path(user)
     if not path.exists():
@@ -98,7 +91,7 @@ def resolve_api_key(
     secrets: dict[str, Any] | None = None,
     user: RealUser | None = None,
 ) -> str | None:
-    """Resolve the API key for one provider, env first then secrets.toml."""
+    """Return one provider's API key, the env variable first, then the secrets file, else None."""
     if api_key_env:
         env_val = os.environ.get(api_key_env, "").strip()
         if env_val:
@@ -121,24 +114,27 @@ def save_secret(
     extra: dict[str, str] | None = None,
     user: RealUser | None = None,
 ) -> Path:
-    """Persist `[providers.<name>].api_key` (and any *extra* string fields)."""
+    """Write a provider's `api_key` and any extra string fields, replacing its entry.
+
+    Returns:
+        The secrets file's path.
+    """
     return _save_provider_entry(provider_name, {"api_key": api_key, **(extra or {})}, user)
 
 
 def _save_provider_entry(provider_name: str, entry: dict[str, str], user: RealUser | None) -> Path:
-    """Replace `[providers.<name>]` with *entry*.
+    """Replace one provider's entry, rewriting the whole file under the lock.
 
-    Rewrites the whole file atomically, preserving other providers'
-    entries, then forces `0600` and chowns back to the real user. The
-    read-merge-publish cycle runs under `locked_file`: two concurrent
-    writers (an `agent6 connect` beside a run refreshing OAuth tokens)
-    would otherwise read the same base file and the later publish would
-    drop the earlier one's credential.
+    Two concurrent writers (a `connect` beside a run refreshing tokens) would
+    otherwise read the same base file and the later publish drop the earlier
+    credential.
+
+    Returns:
+        The secrets file's path.
     """
     user = user or effective_user()
     path = secrets_path(user)
-    # The config dir is created here, 0700 and handed back, before the lock
-    # file's own parent walk would create it at the umask.
+    # Created 0700 and handed back here, before the lock's parent walk creates it at the umask.
     mkdir_for_real_user(path.parent, user)
     path.parent.chmod(0o700)
     with locked_file(path):
@@ -153,13 +149,7 @@ def _save_provider_entry(provider_name: str, entry: dict[str, str], user: RealUs
         data["providers"] = providers
 
         text = _render_secrets_toml(data)
-        # atomic_write uses tempfile.mkstemp: an unpredictable name opened O_EXCL
-        # at 0600, so a pre-planted `secrets.toml.tmp` symlink cannot redirect this
-        # write. (A fixed `.tmp` opened O_CREAT|O_TRUNC would follow such a
-        # symlink: an unprivileged user retargeting a root write under
-        # `sudo connect`.)
-        # A new file inherits mkstemp's 0600; an existing one keeps its mode. Force
-        # 0600 anyway so a pre-existing wider-mode file is tightened.
+        # mkstemp opens an unpredictable name O_EXCL, so a planted `.tmp` symlink cannot redirect.
         atomic_write(path, text)
         path.chmod(0o600)
     chown_to_real_user(path.parent, user)
@@ -168,11 +158,15 @@ def _save_provider_entry(provider_name: str, entry: dict[str, str], user: RealUs
 
 
 def delete_provider_secrets(provider_name: str, *, user: RealUser | None = None) -> bool:
-    """Remove `[providers.<name>]` from `secrets.toml`. True when it existed."""
+    """Remove one provider's entry.
+
+    Returns:
+        True when it existed.
+    """
     user = user or effective_user()
     path = secrets_path(user)
     if not path.exists():
-        return False  # before the lock: its parent walk would create the config dir
+        return False  # before the lock, whose parent walk would create the config dir
     with locked_file(path):
         if not path.exists():
             return False
@@ -190,11 +184,13 @@ def delete_provider_secrets(provider_name: str, *, user: RealUser | None = None)
 
 @dataclass(frozen=True, slots=True)
 class OAuthTokens:
-    """One provider's OAuth grant as stored in `secrets.toml`.
+    """One provider's OAuth grant as stored.
 
-    `expires_at` is a unix timestamp for the access token; `account_id` is
-    the backend account the tokens are bound to ("" when the identity token
-    carried none).
+    Attributes:
+        access_token: The access token.
+        refresh_token: The refresh token.
+        expires_at: When the access token expires, as a Unix time.
+        account_id: The backend account the tokens are bound to; "" when unknown.
     """
 
     access_token: str
@@ -206,7 +202,11 @@ class OAuthTokens:
 def save_oauth_tokens(
     provider_name: str, tokens: OAuthTokens, *, user: RealUser | None = None
 ) -> Path:
-    """Persist `[providers.<name>]` OAuth tokens (replacing the entry)."""
+    """Write a provider's OAuth tokens, replacing its entry.
+
+    Returns:
+        The secrets file's path.
+    """
     return _save_provider_entry(
         provider_name,
         {
@@ -225,11 +225,10 @@ def load_oauth_tokens(
     secrets: dict[str, Any] | None = None,
     user: RealUser | None = None,
 ) -> OAuthTokens | None:
-    """The stored OAuth tokens for one provider, or None when absent.
+    """Return one provider's stored OAuth tokens, or None when absent or mangled.
 
-    A present-but-mangled entry (missing token, unparseable expiry) reads as
-    absent: every caller's None path already says "run `agent6 connect`",
-    which is also the repair.
+    A mangled entry reads as absent: every caller's None path says to run
+    `agent6 connect`, which is also the repair.
     """
     data = secrets if secrets is not None else load_secrets(user)
     providers = data.get("providers")
@@ -253,11 +252,7 @@ def load_oauth_tokens(
 
 
 def _render_secrets_toml(data: dict[str, Any]) -> str:
-    """Render the secrets dict back to TOML.
-
-    Hand-rolled (no tomli-w dependency) and intentionally narrow: secrets
-    are a flat `[providers.<name>]` table of string fields.
-    """
+    """Return the secrets as TOML: a flat `[providers.<name>]` table of strings each."""
     lines = [
         "# agent6 secrets. Written by `agent6 connect`.",
         "# Keep this file private: it is enforced 0600 and owner-only.",

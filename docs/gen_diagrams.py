@@ -2,21 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """Generate docs/architecture.md from docs/architecture_template.md.
 
-Two marker kinds expand from the current source, so the page cannot drift
-from the code:
-
-- ``<!-- diagram: NAME -->`` becomes a mermaid block.
-- ``<!-- generated: NAME -->`` becomes a line of text (the package and tool
-  name lists, which read better as prose than as boxes).
-
-A diagram carries the SHAPE: the layer chain, the stage order, the gate
-chain. Names that only need listing are listed. Drawing every module and
-every tool as a node produced a page-wide hairball at a tenth the legible
-type size.
-
-Run by the pages workflow before ``mkdocs build``; ``docs/architecture.md`` is
-committed generated output, pinned by tests/unit/test_gen_diagrams.py.
-Regenerate with ``uv run python docs/gen_diagrams.py``.
+Two markers expand from the current source: `<!-- diagram: NAME -->` becomes a
+mermaid block and `<!-- generated: NAME -->` becomes a line of text. A diagram
+carries a shape (the layer chain, the stage order, the gate chain); names that
+only need listing are listed. Regenerate with `uv run python
+docs/gen_diagrams.py`; pinned by tests/unit/test_gen_diagrams.py.
 """
 
 from __future__ import annotations
@@ -32,29 +22,23 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 _TEMPLATE = _ROOT / "docs" / "architecture_template.md"
 _OUT = _ROOT / "docs" / "architecture.md"
-# A diagram owns its line and expands to a fenced block; a generated name
-# list substitutes in place, so it can sit inside a sentence.
+# A diagram owns its line; a generated list substitutes in place, so it can sit in a sentence.
 _DIAGRAM = re.compile(r"^<!-- diagram: ([a-z-]+) -->$")
 _GENERATED = re.compile(r"<!-- generated: ([a-z-]+) -->")
 
-# The documented layering, top to bottom. Every other top-level package is
-# shared substrate.
+# The documented layering, top to bottom; every other top-level package is substrate.
 _CORE_LAYERS = ("ui", "app", "harness", "tools", "sandbox")
 
 
 def _nid(name: str) -> str:
-    """Mermaid-safe node id for *name*. Ids are DATA (package, method, and
-    tool names), and mermaid claims bare words like ``graph``, ``call`` and
-    ``end`` anywhere in a flowchart body; the prefix keeps every id off that
-    list, and the raw name rides only inside a quoted label."""
+    """Return a mermaid-safe node id; the prefix keeps a name such as `end` off mermaid's words."""
     return "n_" + re.sub(r"\W", "_", name)
 
 
 @functools.cache
 def _tach_graph() -> str:
-    # tach runs from the current interpreter's environment, never via
-    # `uv run`: a uv spawn re-syncs the project, which would uninstall a
-    # wheel-installed agent6 from the venv under a suite testing that wheel.
+    """Return tach's module graph as mermaid text."""
+    # From this interpreter, never `uv run`: a uv spawn re-syncs, uninstalling a tested wheel.
     proc = subprocess.run(
         [sys.executable, "-m", "tach", "show", "--mermaid", "-o", "/dev/stdout"],
         capture_output=True,
@@ -66,7 +50,7 @@ def _tach_graph() -> str:
 
 
 def _package_edges(mermaid_graph: str) -> tuple[set[tuple[str, str]], set[str]]:
-    """`tach show`'s module graph as (top-level edges, substrate packages)."""
+    """Return the graph's top-level package edges and the substrate packages."""
     edges: set[tuple[str, str]] = set()
     substrate: set[str] = set()
     for line in mermaid_graph.splitlines():
@@ -82,13 +66,10 @@ def _package_edges(mermaid_graph: str) -> tuple[set[tuple[str, str]], set[str]]:
 
 
 def _layering_mermaid() -> str:
-    """The layer chain, plus any import that climbs it.
+    """Return the layer chain, with any import that climbs it drawn dashed.
 
-    Every layer may import every layer below it, so drawing all the real
-    edges draws a fully-connected five-node mesh that says nothing the chain
-    does not. What the chain cannot show is a violation, so an edge running
-    upward is drawn dashed and labelled: tach checks the same rule, and
-    seeing one here means the map is stale.
+    Every layer may import every layer below it, so the real edges would draw a mesh
+    the chain already says; an upward edge means the map is stale.
     """
     edges, _ = _package_edges(_tach_graph())
     rank = {name: i for i, name in enumerate(_CORE_LAYERS)}
@@ -104,14 +85,13 @@ def _layering_mermaid() -> str:
 
 
 def _substrate_names() -> str:
-    """The substrate packages, as a sorted inline list."""
+    """Return the substrate packages as a sorted inline list."""
     _, substrate = _package_edges(_tach_graph())
     return ", ".join(f"`{name}`" for name in sorted(substrate))
 
 
 def _tier_callgraph(rel_path: str, tier: tuple[str, ...]) -> str:
-    """Mermaid callgraph of the named tier in one file: edges are direct
-    calls (``self.X(...)`` or bare ``X(...)``) between tier members."""
+    """Return the mermaid call graph of one file's tier: direct calls between its members."""
     tree = ast.parse((_ROOT / rel_path).read_text(encoding="utf-8"))
     members = set(tier)
     edges: set[tuple[str, str]] = set()
@@ -156,12 +136,19 @@ def _tier_callgraph(rel_path: str, tier: tuple[str, ...]) -> str:
 def _calls_in_order(
     rel_path: str, func: str, tier: tuple[str, ...], *, own_body_only: bool = False
 ) -> list[str]:
-    """The *tier* functions *func* calls, in source order, first call only.
+    """Return the tier functions a function calls, in source order, each once.
 
-    A composition function's information is its ORDER; a star of edges from
-    the caller carries none of it. *own_body_only* leaves the bodies of nested
-    functions out (a closure's calls happen when it is called, not where it
-    is defined).
+    A composition function's information is its order.
+
+    Args:
+        rel_path: The file.
+        func: The calling function.
+        tier: The functions that count.
+        own_body_only: Leave nested functions' bodies out; a closure's calls happen
+            when it is called.
+
+    Returns:
+        The names.
     """
     tree = ast.parse((_ROOT / rel_path).read_text(encoding="utf-8"))
     target = next(
@@ -189,9 +176,7 @@ def _calls_in_order(
     return seen
 
 
-# The run lifecycle's stage functions, in the order run_task composes them
-# (the extractor reads the order out of the source; this list decides which
-# calls are stages worth drawing).
+# The run lifecycle's stages worth drawing; the extractor reads their order from the source.
 _RUN_LIFECYCLE_TIER = (
     "session_config",
     "headless_approval_refusal",
@@ -219,9 +204,7 @@ _DISPATCH_TIER = (
 
 
 def _run_lifecycle_mermaid() -> str:
-    """`run_task`'s stages as one chain, in the order it calls them; the execution
-    body it hands off to (`_execution.run_execution`, shared with resume) is spliced in
-    where the hand-off happens."""
+    """Return `run_task`'s stages as one chain, the execution body spliced in at the hand-off."""
     outer = _calls_in_order(
         "src/agent6/app/run.py",
         "run_task",
@@ -244,7 +227,7 @@ def _run_lifecycle_mermaid() -> str:
 
 
 def _tool_name_constants() -> dict[str, str]:
-    """`{input class: TOOL_NAME}` from tools/schema.py."""
+    """Return each input class's `TOOL_NAME` from tools/schema.py."""
     tree = ast.parse((_ROOT / "src/agent6/tools/schema.py").read_text(encoding="utf-8"))
     out: dict[str, str] = {}
     for node in tree.body:
@@ -264,12 +247,13 @@ def _tool_name_constants() -> dict[str, str]:
 
 
 def _handler_names() -> list[str]:
-    """The tool names the dispatcher's handler table routes, in table order.
+    """Return the tool names the handler table routes, in table order.
 
-    Resolved through the schema's `TOOL_NAME` constants, never the handler
-    METHOD names: `RunVerifyInput` routes `run_verify_command` while its
-    method is `_run_verify`, so the method name advertises a tool the model
-    cannot call. An unresolvable key is a loud failure, not a guess.
+    Resolved through the schema's `TOOL_NAME` constants, never the method names,
+    which advertise tools the model cannot call.
+
+    Raises:
+        SystemExit: A table key is not a known `TOOL_NAME`.
     """
     constants = _tool_name_constants()
     tree = ast.parse((_ROOT / "src/agent6/tools/dispatch.py").read_text(encoding="utf-8"))
@@ -298,12 +282,7 @@ def _handler_names() -> list[str]:
 
 
 def _dispatch_mermaid() -> str:
-    """The gate chain every tool call passes, ending at the handler table.
-
-    The table's entries are a SET reached by name, not a call sequence:
-    drawing one node per tool fanned twenty-odd dead-end boxes across the
-    page. The count rides on the node and the names are listed below it.
-    """
+    """Return the gate chain every tool call passes, ending at the handler table as one node."""
     graph = _tier_callgraph("src/agent6/tools/dispatch.py", _DISPATCH_TIER)
     table = f'    n_table["handler table: {len(_handler_names())} tools"]'
     edge = f"    {_nid('run_handler')} -.->|by name| n_table"
@@ -311,7 +290,7 @@ def _dispatch_mermaid() -> str:
 
 
 def _tool_names() -> str:
-    """The dispatch table's tools, as an inline list in table order."""
+    """Return the dispatch table's tools as an inline list."""
     return ", ".join(f"`{name}`" for name in _handler_names())
 
 
@@ -325,6 +304,7 @@ _BLOCKS = {
 
 
 def render(template: str) -> str:
+    """Return the page rendered from the template."""
     out: list[str] = [
         "<!-- Generated from docs/architecture_template.md by docs/gen_diagrams.py;"
         " edit that, then regenerate. -->",
@@ -339,6 +319,7 @@ def render(template: str) -> str:
 
 
 def main() -> None:
+    """Write the page."""
     page = render(_TEMPLATE.read_text(encoding="utf-8"))
     _OUT.write_text(page, encoding="utf-8")
     print(f"wrote {_OUT.relative_to(_ROOT)} ({len(page.splitlines())} lines)")

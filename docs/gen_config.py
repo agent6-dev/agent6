@@ -1,26 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Render docs/config.md from config_template.md + the config model (dev tool).
+"""Render docs/config.md from config_template.md and the config model.
 
-The template is the page: headings, prose, the preset/env/directory tables and
-the TOML examples, all hand-written. Where a FIELD table belongs it carries one
-marker naming the sections whose leaves fill it:
+The template is the page. Where a field table belongs it carries one marker
+naming the sections whose leaves fill it:
 
     <!-- config-table: git.commit.checkpoint git.commit.squash -->
 
-Each row is built from the model -- the key, the default, and
-``Field(description=...)`` -- so a renamed field moves its row, a removed one
-takes its row with it, and a wrong default is not expressible. The rendered
-page carries no markers, so it reads the same on GitHub and on the site.
-
-The gentle-pressure lever: a row that reads badly has a bad description. Fix
-the description (or the template), never this script's output.
-
-Regenerate with:
-    uv run python docs/gen_config.py
-
-Pinned byte-for-byte by tests/unit/test_config_doc.py.
+Each row comes from the model, so a renamed field moves its row and a wrong
+default is not expressible; a row that reads badly has a bad description.
+Regenerate with `uv run python docs/gen_config.py`; pinned byte for byte by
+tests/unit/test_config_doc.py.
 """
 
 from __future__ import annotations
@@ -45,9 +36,7 @@ REGEN_CMD = "uv run python docs/gen_config.py"
 _MARKER = re.compile(r"^<!-- config-table:\s*(.+?)\s*-->$")
 _PRESETS_MARKER = "<!-- presets-table -->"
 
-# Fields whose default is resolved at RUNTIME, so the model holds None and only
-# the page can say what it becomes. The one hand-declared thing here, for the
-# same reason gen_contracts.py declares its registry: a scan cannot know it.
+# Fields whose default is resolved at runtime, so only the page can say what it becomes.
 _RUNTIME_DEFAULTS = {
     "context.drop_at_chars": "_adaptive_",
     "context.summarise_at_chars": "_adaptive_",
@@ -58,8 +47,7 @@ _RUNTIME_DEFAULTS = {
 
 
 def _sections_of(annotation: object) -> list[type[BaseModel]]:
-    """Every BaseModel class an annotation can hold, through `Annotated` and
-    unions alike -- a discriminated provider entry is both."""
+    """Return every model class an annotation can hold, through `Annotated` and unions alike."""
     if isinstance(annotation, type):
         return [annotation] if issubclass(annotation, BaseModel) else []
     found: list[type[BaseModel]] = []
@@ -69,10 +57,9 @@ def _sections_of(annotation: object) -> list[type[BaseModel]]:
 
 
 def leaves() -> dict[str, tuple[str, str]]:
-    """Dotted leaf path -> (rendered default, description), in model order.
+    """Return every leaf's rendered default and description by dotted path, in model order.
 
-    A ``dict[str, Section]`` field is one section spelled ``<name>``: the
-    config takes any number of them and the page documents the shape once.
+    A `dict[str, Section]` field is one section spelled `<name>`, documented once.
     """
     out: dict[str, tuple[str, str]] = {}
 
@@ -81,8 +68,7 @@ def leaves() -> dict[str, tuple[str, str]]:
             path = f"{prefix}{name}"
             if typing.get_origin(field.annotation) is dict:
                 entries = _sections_of(typing.get_args(field.annotation)[1])
-                # `dict[str, Section]` is a section map; `dict[str, str]` (extra
-                # headers, the skills state) is one leaf holding a table.
+                # `dict[str, Section]` is a section map; `dict[str, str]` is one leaf with a table.
                 if entries:
                     for entry in entries:
                         walk(entry, f"{path}.<name>.")
@@ -98,6 +84,7 @@ def leaves() -> dict[str, tuple[str, str]]:
 
 
 def _default_cell(path: str, field: object) -> str:
+    """Return a leaf's default as the table shows it."""
     if path in _RUNTIME_DEFAULTS:
         return _RUNTIME_DEFAULTS[path]
     default = getattr(field, "default", PydanticUndefined)
@@ -111,9 +98,10 @@ def _default_cell(path: str, field: object) -> str:
 
 
 def _common_parent(sections: list[str]) -> str:
-    """The deepest section prefix every section in a table shares. A table over
-    one section keys its rows by the bare field name; a table over siblings
-    keeps enough of the path to tell them apart (``checkpoint.message``)."""
+    """Return the deepest section prefix every section in a table shares.
+
+    A table over siblings keeps enough of the path to tell them apart.
+    """
     parts = [s.split(".") for s in sections]
     shared: list[str] = []
     for piece in zip(*parts, strict=False):
@@ -124,6 +112,11 @@ def _common_parent(sections: list[str]) -> str:
 
 
 def render_table(sections: list[str], all_leaves: dict[str, tuple[str, str]]) -> list[str]:
+    """Return one field table's lines.
+
+    Raises:
+        SystemExit: The marker matched no fields.
+    """
     parent = _common_parent(sections) if len(sections) > 1 else sections[0]
     rows = ["| Field | Default | Meaning |", "|---|---|---|"]
     seen = 0
@@ -143,6 +136,7 @@ def render_table(sections: list[str], all_leaves: dict[str, tuple[str, str]]) ->
 
 
 def _flatten(prefix: str, node: dict[str, Any]) -> list[str]:
+    """Return a preset's overrides as `path = value` code spans."""
     out: list[str] = []
     for key, value in node.items():
         path = f"{prefix}.{key}" if prefix else key
@@ -154,8 +148,7 @@ def _flatten(prefix: str, node: dict[str, Any]) -> list[str]:
 
 
 def render_presets_table() -> list[str]:
-    """The built-in presets from `BUILTIN_PRESETS` + `BUILTIN_PRESET_NOTES`:
-    a renamed or re-tuned preset moves its row."""
+    """Return the built-in presets table's lines."""
     rows = ["| Preset | For | Sets |", "|---|---|---|"]
     for name, overrides in BUILTIN_PRESETS.items():
         sets = ", ".join(_flatten("", overrides)) or "nothing (the defaults)"
@@ -164,10 +157,9 @@ def render_presets_table() -> list[str]:
 
 
 def render(template: str) -> str:
+    """Return the page rendered from the template."""
     all_leaves = leaves()
     out: list[str] = [
-        # The output must say it is output: a hand edit here is overwritten by
-        # the next regeneration and fails the drift test.
         "<!-- Generated from docs/config_template.md by docs/gen_config.py;"
         " edit those, then regenerate. -->",
     ]
@@ -184,6 +176,7 @@ def render(template: str) -> str:
 
 
 def main() -> None:
+    """Write the page."""
     page = render(_TEMPLATE.read_text(encoding="utf-8"))
     _OUT.write_text(page, encoding="utf-8")
     print(f"wrote {_OUT.relative_to(_ROOT)} ({len(page.splitlines())} lines)")

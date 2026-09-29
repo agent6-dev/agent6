@@ -1,18 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Adjective + noun wordlists for friendly run IDs.
+"""Hold the adjective and noun lists friendly session ids draw from.
 
-Hand-curated, deliberately bland. Avoids:
-  - anything pejorative, political, or culturally loaded;
-  - homophones and easily-misspelt words (lose vs loose, etc.);
-  - words that prefix another list word (ambiguous to complete).
-
-Combined space: len(ADJECTIVES) * len(NOUNS) pairs, multiplied by a 6-char
-random base32 suffix per run, so collisions are not a concern even on a
-busy laptop.
-
-If you add words, keep the lists sorted, lowercase ASCII, and prefix-free;
-tests/unit/test_words.py holds you to it.
+Bland by choice: nothing pejorative or loaded, no homophones, no word that
+prefixes another (ambiguous to complete). The lists stay sorted, lowercase
+ASCII and prefix-free, pinned by tests/unit/test_words.py.
 """
 
 from __future__ import annotations

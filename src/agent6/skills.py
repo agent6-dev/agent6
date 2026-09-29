@@ -1,18 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Skill discovery: the SKILL.md format (agentskills.io) read from operator dirs.
+"""Discover skills in the SKILL.md format from the operator's directories.
 
-A skill is a directory holding a `SKILL.md` whose YAML frontmatter carries
-`name` and `description`. This package is a pure leaf: it scans
-operator-chosen directories, parses the two required fields, and applies the
-operator's per-skill state map. Where the content goes (system-prompt index,
-`use_skill` tool, `--skill` flag) is the consumers' business.
-
-The frontmatter parser is deliberately minimal, not a YAML implementation: it
-covers the scalar, quoted, folded (`>`) and literal (`|`) forms the two
-required fields use in the wild. Unknown keys are surfaced and ignored so
-ecosystem skills with extra fields load fine; anything unparseable is a
-warning, never a crash.
+A skill is a directory holding a `SKILL.md` whose frontmatter carries `name`
+and `description`. A leaf: it scans, parses the two fields and applies the
+operator's state map; where the content goes is the consumers' business. The
+frontmatter parser covers the scalar, quoted, folded and literal forms the two
+fields use, not YAML; anything unparseable is a warning, never a crash.
 """
 
 from __future__ import annotations
@@ -23,22 +17,30 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-# letters/digits/hyphens, starting alphanumeric (agentskills.io name rule)
+# The agentskills.io name rule.
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
 _KEY_RE = re.compile(r"^([A-Za-z0-9_-]+):\s*(.*)$")
 
 
 def is_valid_skill_name(name: str) -> bool:
-    """True iff *name* is a valid skill name: alphanumeric-plus-hyphen, so it is
-    also a single safe path component. Discovery and install both gate on this;
-    an install path built from an unvalidated name would let `../` or an absolute
-    path in untrusted SKILL.md frontmatter escape the skills dir."""
+    """Return whether the name is valid: alphanumeric plus hyphens, so one safe path component.
+
+    Discovery and install both gate on this; an unvalidated name from untrusted
+    frontmatter could escape the skills dir.
+    """
     return bool(_NAME_RE.match(name))
 
 
 @dataclass(frozen=True, slots=True)
 class Skill:
-    """One discovered skill: identity plus the full SKILL.md text."""
+    """One discovered skill.
+
+    Attributes:
+        name: The frontmatter name.
+        description: The frontmatter description.
+        dir: The skill's directory.
+        text: The whole SKILL.md.
+    """
 
     name: str
     description: str
@@ -50,9 +52,10 @@ class Skill:
 class ResolvedSkills:
     """Discovery output after the operator's state map is applied.
 
-    `enabled` feeds the system-prompt index (on-demand loading);
-    `always` skills get their full text injected instead. A skill is in
-    at most one of the two.
+    Attributes:
+        enabled: The skills the system-prompt index offers on demand.
+        always: The skills whose full text is injected instead.
+        warnings: What discovery could not load or resolve.
     """
 
     enabled: tuple[Skill, ...]
@@ -61,11 +64,11 @@ class ResolvedSkills:
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, str], list[str]]:
-    """Parse a SKILL.md's leading `---` frontmatter block.
+    """Parse a SKILL.md's leading frontmatter block.
 
-    Returns (fields, warnings). Missing or unclosed frontmatter yields no
-    fields and a warning; the caller decides whether that disqualifies the
-    file.
+    Returns:
+        The fields and the warnings; a missing or unclosed block yields no fields and
+        a warning.
     """
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
@@ -110,13 +113,16 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str], list[str]]:
 
 
 def _load_skill(skill_dir: Path) -> tuple[Skill | None, list[str]]:
+    """Load one skill directory.
+
+    Returns:
+        The skill, or None when it does not load, and the warnings.
+    """
     path = skill_dir / "SKILL.md"
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        # Discovery runs at startup, so one unreadable or non-UTF-8 SKILL.md
-        # would take down every run with a bare decode error naming no file.
-        # Degrade to the warning every other malformed skill gets.
+        # Discovery runs at startup; one unreadable file must not take down every run.
         return None, [f"{path}: unreadable ({exc})"]
     fields, warnings = parse_frontmatter(text)
     name = fields.get("name", "")
@@ -132,9 +138,11 @@ def _load_skill(skill_dir: Path) -> tuple[Skill | None, list[str]]:
 
 
 def _mode(path: Path) -> int | None:
-    """*path*'s mode, None when it does not exist. A path the process may not
-    reach raises, where `Path.is_dir()` and `is_file()` report it absent from
-    Python 3.13 on, and discovery would skip a skill it cannot read silently."""
+    """Return the path's mode, or None when it does not exist.
+
+    A path the process may not reach raises, where `Path.is_dir` reports it absent
+    from Python 3.13 on and discovery would skip it silently.
+    """
     try:
         return path.stat().st_mode
     except (FileNotFoundError, NotADirectoryError):
@@ -142,19 +150,26 @@ def _mode(path: Path) -> int | None:
 
 
 def _is_dir(path: Path) -> bool:
+    """Return whether the path is a directory, raising when it cannot be reached."""
     return (mode := _mode(path)) is not None and stat.S_ISDIR(mode)
 
 
 def _is_file(path: Path) -> bool:
+    """Return whether the path is a regular file, raising when it cannot be reached."""
     return (mode := _mode(path)) is not None and stat.S_ISREG(mode)
 
 
 def discover_skills(dirs: Sequence[Path]) -> tuple[tuple[Skill, ...], tuple[str, ...]]:
-    """Scan directories for skills, in precedence order (first dir wins dupes).
+    """Scan directories for skills, the first directory winning a duplicate name.
 
-    Each directory may hold skill subdirectories (`<dir>/<name>/SKILL.md`)
-    or be a single skill itself (`<dir>/SKILL.md`). Dotted entries are
-    ignored. Missing directories are fine (nothing installed yet).
+    A directory holds skill subdirectories or is a single skill itself; dotted
+    entries are ignored and a missing directory is fine.
+
+    Args:
+        dirs: The directories, in precedence order.
+
+    Returns:
+        The skills and the warnings.
     """
     found: dict[str, Skill] = {}
     warnings: list[str] = []
@@ -171,9 +186,7 @@ def discover_skills(dirs: Sequence[Path]) -> tuple[tuple[Skill, ...], tuple[str,
                     if not p.name.startswith(".") and _is_dir(p) and _is_file(p / "SKILL.md")
                 )
         except OSError as exc:
-            # A dir that exists but cannot be listed (permission denied) is the
-            # same failure class as an unreadable SKILL.md: discovery runs at
-            # startup, so a bare crash here would take down every run.
+            # Discovery runs at startup; one unlistable dir must not take down every run.
             warnings.append(f"{base}: unreadable ({exc})")
             continue
         for skill_dir in candidates:
@@ -192,13 +205,16 @@ def discover_skills(dirs: Sequence[Path]) -> tuple[tuple[Skill, ...], tuple[str,
 
 
 def skill_search_dirs(extra_dirs: Sequence[str], installed_dir: Path) -> tuple[Path, ...]:
-    """Search order: `extra_dirs` first, so a local checkout under active
-    development wins over an installed copy of the same skill."""
+    """Return the search order: the extra dirs first, so a local checkout wins over an install."""
     return (*(Path(d).expanduser() for d in extra_dirs), installed_dir)
 
 
 def resolve_states(skills: Sequence[Skill], state: Mapping[str, str]) -> ResolvedSkills:
-    """Apply the operator's `[skills.state]` map (absent name = enabled)."""
+    """Apply the operator's `[skills.state]` map; an absent name is enabled.
+
+    Returns:
+        The resolved skills, with a warning per name the map has and the skills lack.
+    """
     warnings = [
         f"[skills.state] names an unknown skill: {name!r}"
         for name in state
@@ -212,11 +228,19 @@ def resolve_states(skills: Sequence[Skill], state: Mapping[str, str]) -> Resolve
 def operator_skills(
     enabled: bool, extra_dirs: Sequence[str], state: Mapping[str, str], installed_dir: Path
 ) -> ResolvedSkills:
-    """The skills a run has, from `[skills]`: discovery over `extra_dirs` then
-    the installed dir, with the operator's per-skill states applied.
+    """Return the skills a run has, from `[skills]`.
 
-    The one owner of the master switch, asked by `--skill` and the pause menu
-    alike: off means no skills anywhere, not "off for the model only"."""
+    The one owner of the master switch: off means no skills anywhere.
+
+    Args:
+        enabled: The `[skills].enabled` switch.
+        extra_dirs: The `[skills].extra_dirs` search paths.
+        state: The `[skills.state]` map.
+        installed_dir: Where `agent6 skills install` puts skills.
+
+    Returns:
+        The resolved skills.
+    """
     if not enabled:
         return ResolvedSkills(enabled=(), always=(), warnings=())
     found, warns = discover_skills(skill_search_dirs(extra_dirs, installed_dir))
@@ -229,8 +253,7 @@ def operator_skills(
 
 
 def skill_steer_payload(name: str, text: str, args: str) -> str:
-    """The instruction a `/<skill> [args]` steer injects: the skill applied
-    for the rest of the run, its full text inline, the arguments named."""
+    """Return the instruction a `/<skill> [args]` steer injects, the skill's text inline."""
     args_line = f"\nSkill arguments: {args}" if args else ""
     return (
         f"Apply the operator-installed skill {name!r} for the rest of this run."
@@ -240,9 +263,7 @@ def skill_steer_payload(name: str, text: str, args: str) -> str:
 
 
 def skill_command(text: str, skills: ResolvedSkills | None) -> tuple[Skill, str] | None:
-    """The skill a `/<name> [args]` steer names and its arguments, or None
-    when *text* is not a skill command (no leading slash, or a name that is
-    not an enabled or always-on skill)."""
+    """Return the skill a `/<name> [args]` steer names and its arguments, or None."""
     stripped = text.strip()
     if not stripped.startswith("/") or skills is None:
         return None

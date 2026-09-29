@@ -1,13 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The environment a process agent6 spawns outside the jail inherits.
+"""Build the environment a process spawned outside the jail inherits.
 
-A leaf, because its callers sit on opposite sides of the layering: the
-operator's notify hooks (`app`), the MCP servers (`tools` and the app
-setup). One owner, so their env-scope claims cannot drift apart.
-
-Jailed commands do not come here: `sandbox.jail` builds their env from the
-policy, which is narrower still.
+A leaf, since its callers sit on both sides of the layering; one owner, so
+their claims cannot drift. Jailed commands get a narrower env from the policy.
 """
 
 from __future__ import annotations
@@ -15,10 +11,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable
 
-# Enough to execute a program. Never the whole environment: it carries the
-# provider API keys resolved via `[providers.*].api_key_env`, and a child that
-# logs or forwards its env (a shell wrapper, a webhook poster, an MCP server)
-# would carry the key with it.
+# Enough to execute a program; the whole environment carries the provider keys.
 _KEEP = (
     "PATH",
     "HOME",
@@ -30,12 +23,9 @@ _KEEP = (
     "TMPDIR",
 )
 
-# How to reach the operator's desktop session. A notify hook needs these:
-# `notify-send` talks to the session bus. A confined child must not have them,
-# because the session bus reaches `systemd --user`, which is not confined and will
-# gladly run a command on the caller's behalf. Landlock gates filesystem
-# paths, not `connect()` to a unix socket, so a server denied `/etc/passwd`
-# directly could still have systemd read it and write the result anywhere.
+# The operator's desktop session. A confined child must not have these: the session bus reaches
+# `systemd --user`, which is unconfined and runs commands on the caller's behalf, and Landlock
+# does not gate `connect()` to a unix socket.
 _DESKTOP = (
     "DISPLAY",
     "WAYLAND_DISPLAY",
@@ -44,25 +34,18 @@ _DESKTOP = (
 )
 
 
-# The `[providers.*].api_key_env` names this run resolves keys from, registered
-# once at startup. agent6's own credentials: no child it spawns needs one, and
-# a child that logs or forwards its environment would carry it. Mutated, not
-# rebound, so importers hold the one set.
+# The `api_key_env` names this run resolves keys from; no child needs one. Mutated, never rebound.
 _provider_key_env: set[str] = set()
 
 
 def set_provider_key_env(names: Iterable[str]) -> None:
-    """Register the provider-key env var names agent6 keeps out of the children
-    it spawns (git subprocesses, an unconfined command)."""
+    """Register the provider-key variable names agent6 keeps out of every child."""
     _provider_key_env.clear()
     _provider_key_env.update(n for n in names if n)
 
 
 def without_provider_keys(env: dict[str, str]) -> dict[str, str]:
-    """*env* minus the registered provider-key names. For a child that inherits
-    the operator's environment: at `isolation = "none"` a model-chosen command
-    runs unconfined, and a key that lives only in the shell (never on disk) has
-    no business in it."""
+    """Return the environment minus the registered provider-key names."""
     return {k: v for k, v in env.items() if k not in _provider_key_env}
 
 
@@ -72,15 +55,17 @@ def curated_env(
     extra: dict[str, str] | None = None,
     desktop: bool = True,
 ) -> dict[str, str]:
-    """The base environment, plus *passthrough* names and *extra* values.
+    """Return the base environment, plus passed-through names and extra values.
 
-    `passthrough` is how an operator hands one child a variable it genuinely
-    needs (an MCP server's API token). Named one at a time in config, so a
-    provider key reaches a child only when the operator writes it down.
+    Args:
+        passthrough: Variables the operator named in config for this child, one at a
+            time, so a provider key reaches a child only when written down.
+        extra: Values set outright.
+        desktop: Keep the session-bus and display addresses; a confined child gets
+            none, since they reach unconfined processes.
 
-    `desktop=False` also drops the session-bus and display addresses. Pass it
-    for a child that is meant to be confined: those addresses reach processes
-    that are not, and delegating to one walks straight out of any sandbox.
+    Returns:
+        The environment.
     """
     keep = (*_KEEP, *_DESKTOP) if desktop else _KEEP
     env = {k: v for k in keep if (v := os.environ.get(k)) is not None}

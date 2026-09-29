@@ -1,26 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Per-invocation token budget tracker with hard-stop enforcement.
+"""Meter one execution's spend and stop it hard at a cap.
 
-A tracker is created fresh per invocation and never persists, so `resume`
-gets a FULL ceiling again: across N resumes real spend can reach N x the cap
-(the CLI notes this on resume). Deliberate -- a per-invocation circuit breaker
-against runaway spend, not a ledger across a multi-day task.
+A tracker is created per execution and never persists, so a resume gets a full
+ceiling again: a circuit breaker against runaway spend, not a ledger across a
+task. Once a ledger crosses its cap the next provider call raises
+`BudgetExceededError`, and the process exits with its own exit code.
 
-Budget enforcement is a HARD STOP (not a warning): once a ledger
-crosses its cap, the next provider call raises `BudgetExceededError`; the
-harness drains and the process exits with a distinct exit code so
-resume tooling can recognise the condition.
-
-Every call is bounded in exactly ONE currency. A call the meter can
-price -- provider-reported cost when available, else price x tokens at
-the model's fetched rates, cache_read/cache_creation included -- counts
-against `max_usd`. A call with neither counts its input+output tokens
-against `max_tokens_fallback`. Both caps: -1 unlimited, 0 refuse that
-ledger, > 0 the cap (see `[budget]` in config).
-
-This module is import-light (stdlib + agent6.models.pricing, which is itself
-stdlib + cache-file reads); every provider wires it in via constructor.
+Every call is bounded in one currency. A call the meter can price (a reported
+cost, else price times tokens at the model's fetched rates, cache tokens
+included) counts against `max_usd`; a call carrying a plan reading counts
+percentage points against `max_percent`; a call with neither counts its tokens
+against `max_tokens_fallback`. Each cap: -1 unlimited, 0 refuse that ledger, >
+0 the cap.
 """
 
 from __future__ import annotations
@@ -33,22 +25,23 @@ from typing import Any
 
 from agent6.models.pricing import lookup_price
 
-# There is NO static price table. Prices come from the provider's own models
-# endpoint, fetched + cached by agent6.models.cache and read back through
-# agent6.models.pricing.lookup_price. A model without a published price is reported
-# as "$? (unknown price)" and the runtime USD ceiling does not bind for it:
-# an unknown price is honest, an outdated hardcoded one is wrong.
+# No static price table: an unknown price is honest, an outdated hardcoded one is wrong.
 
 
 class BudgetExceededError(Exception):
-    """Raised by `BudgetTracker.check()` once a configured limit is exceeded."""
+    """A configured limit is exceeded; raised by `BudgetTracker.check`."""
 
 
 @dataclass(frozen=True, slots=True)
 class PlanWindow:
-    """One rate-limit window of a subscription plan, as the backend labels
-    it (`primary`, `secondary`, a per-model family), in percent of its
-    included allowance."""
+    """One rate-limit window of a subscription plan.
+
+    Attributes:
+        name: The backend's label: `primary`, `secondary`, a per-model family.
+        used_percent: Percent of the included allowance used.
+        window_minutes: The window's length; 0 when the backend gave none.
+        resets_at: When the window resets, as a Unix time.
+    """
 
     name: str
     used_percent: float
@@ -56,28 +49,29 @@ class PlanWindow:
     resets_at: float
 
 
-# The backend sells purchased credits in 1,000-credit packs at $40: a bare
-# credit count divides by this to become dollars.
+# Purchased credits sell in 1,000-credit packs at $40.
 _CREDITS_PER_USD = 25.0
 
 
 @dataclass(frozen=True, slots=True)
 class PlanUsage:
-    """One provider-reported plan-usage reading (subscription providers).
+    """One plan-usage reading from a subscription provider.
 
-    `windows` holds every window the backend reported, the primary first;
-    the BINDING window is the one closest to its cap, and it is what every
-    percent-of-plan reading means. Provider specifics (which headers, which
-    names) stay in the provider; this shape is the generic N-window meter.
+    Every percent-of-plan reading means the binding window, the one closest to its cap.
+
+    Attributes:
+        windows: Every window the backend reported, the primary first.
+        has_credits: The account holds purchased credits, drawn on past the included
+            window: real money.
+        credits_unlimited: The credits are unlimited.
+        credits_balance: The balance as the backend sent it.
+        limit_reached: The backend's own verdict that a window is exhausted.
     """
 
     windows: tuple[PlanWindow, ...]
-    # The account's purchased-credit state (the x-codex credits family):
-    # after the included window, calls draw on these, which is real money.
     has_credits: bool = False
     credits_unlimited: bool = False
     credits_balance: str = ""
-    # The backend's own verdict that a window is exhausted.
     limit_reached: bool = False
 
     @classmethod
@@ -90,9 +84,18 @@ class PlanUsage:
         secondary_used_percent: float | None = None,
         **rest: Any,
     ) -> PlanUsage:
-        """A reading with one primary window (and an optional secondary),
-        the shape the backend reports for an account with no per-model
-        families."""
+        """Return a reading with one primary window and an optional secondary.
+
+        Args:
+            used_percent: The primary window's used percent.
+            window_minutes: The primary window's length.
+            resets_at: When the primary window resets.
+            secondary_used_percent: The secondary window's used percent, when reported.
+            **rest: The remaining fields.
+
+        Returns:
+            The reading.
+        """
         windows = [PlanWindow("primary", used_percent, window_minutes, resets_at)]
         if secondary_used_percent is not None:
             windows.append(PlanWindow("secondary", secondary_used_percent, 0, resets_at))
@@ -105,28 +108,27 @@ class PlanUsage:
 
     @property
     def used_percent(self) -> float:
+        """The binding window's used percent."""
         return self.binding.used_percent
 
     @property
     def window_minutes(self) -> int:
+        """The binding window's length."""
         return self.binding.window_minutes
 
     @property
     def resets_at(self) -> float:
+        """When the binding window resets."""
         return self.binding.resets_at
 
     @property
     def window_exhausted(self) -> bool:
-        """Whether the next plan-metered call draws past the included
-        allowance: any window at 100, or the backend says so."""
+        """Whether the next call draws past the included allowance."""
         return self.limit_reached or self.used_percent >= 100.0
 
     @property
     def credits_usd(self) -> float | None:
-        """The purchased-credit balance in dollars: a "$"-prefixed balance is
-        already dollars; a bare number is CREDITS, converted at the backend's
-        rate (credits sell in 1,000-credit packs at $40, so 25 credits per
-        dollar). None when the backend sent none or a non-number."""
+        """The purchased-credit balance in dollars; a bare number is credits, converted."""
         raw = self.credits_balance.strip()
         if not raw:
             return None
@@ -142,21 +144,32 @@ class PlanUsage:
 
 @dataclass(slots=True)
 class ModelUsage:
-    """Per-model usage totals: the tracker's live counters for one model, and,
-    copied, a :class:`BudgetSnapshot` row."""
+    """One model's usage totals: the tracker's live counters, and a snapshot row when copied.
+
+    Attributes:
+        input_tokens: Input tokens over every call.
+        output_tokens: Output tokens over every call.
+        cache_read_tokens: Cache-read tokens over every call.
+        cache_creation_tokens: Cache-creation tokens over every call.
+        calls: How many calls.
+        reported_cost_usd: The sum of provider-reported per-call cost, authoritative
+            for the calls that carried one.
+        reported_calls: How many calls carried a reported cost or a plan reading.
+        unreported_input_tokens: Input tokens of the calls with no reported cost; the
+            price table covers exactly this bucket, so no call is priced twice.
+        unreported_output_tokens: Output tokens of those calls.
+        unreported_cache_read_tokens: Cache-read tokens of those calls.
+        unreported_cache_creation_tokens: Cache-creation tokens of those calls.
+        percent_metered: A plan reading metered a call under this model.
+    """
 
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_creation_tokens: int = 0
     calls: int = 0
-    # Sum of provider-reported per-call USD cost, authoritative for the calls
-    # that carried `usage.cost` in the response body (today: OpenRouter).
     reported_cost_usd: float = 0.0
     reported_calls: int = 0
-    # Token counts for ONLY the calls that reported no cost, banked per call in
-    # record(): the price table covers exactly this bucket, so mixed reporting
-    # never discards reported dollars and never prices a call twice.
     unreported_input_tokens: int = 0
     unreported_output_tokens: int = 0
     unreported_cache_read_tokens: int = 0
@@ -166,34 +179,43 @@ class ModelUsage:
 
 @dataclass(frozen=True, slots=True)
 class _ModelCost:
-    """One model's resolved cost: the USD figure, which sources fed it
-    (provider-reported dollars, price-table estimate, or both), and whether it
-    is a known under-estimate (some calls priced by neither)."""
+    """One model's resolved cost.
+
+    Attributes:
+        usd: The figure.
+        reported: Provider-reported dollars fed it.
+        estimated: A price-table estimate fed it.
+        partial: Some calls were priced by neither, so the figure is a lower bound.
+        cache_assumed: Cache tokens were priced by the multipliers, not a listed rate.
+    """
 
     usd: float
     reported: bool
     estimated: bool
     partial: bool = False
-    cache_assumed: bool = False  # cache tokens priced by the multipliers, not a listed rate
+    cache_assumed: bool = False
 
 
 def format_usd(usd: float, *, partial: bool = False) -> str:
-    """A dollar figure as every surface prints it: cents from one cent up,
-    four decimals below it (a sub-cent cap or spend is never "$0.00"), led by
-    "~" when the figure is a known under-estimate (a model without price
-    data). The web shows this string; it keeps no formatter of its own."""
+    """Return a dollar figure as every surface prints it.
+
+    Args:
+        usd: The figure.
+        partial: The figure is a known under-estimate, marked with a leading "~".
+
+    Returns:
+        Cents from one cent up, four decimals below it, so a sub-cent spend is never $0.00.
+    """
     mark = "~" if partial else ""
     return f"{mark}${usd:.2f}" if usd >= 0.01 else f"{mark}${usd:.4f}"
 
 
 def _billed_apart_from_plan(t: ModelUsage) -> bool:
-    """Whether the bucket also holds calls that cost money.
+    """Return whether a plan-metered bucket also holds calls that cost money.
 
-    One model id reaches both a subscription provider and a paid API (a review
-    seat, a machine pin, `--from` on another route), and the bucket is keyed by
-    the id, so the plan call's authoritative $0 must not stand for the whole
-    bucket: the API dollars under that id stay in the estimate, the receipt
-    and the USD ceiling."""
+    One model id can reach both a subscription provider and a paid API, and the bucket
+    is keyed by the id, so the plan's $0 must not stand for the API dollars.
+    """
     return bool(
         t.reported_cost_usd
         or t.unreported_input_tokens
@@ -204,39 +226,29 @@ def _billed_apart_from_plan(t: ModelUsage) -> bool:
 
 
 def _model_cost_usd(model: str, t: ModelUsage, provider: str = "") -> _ModelCost | None:
-    """Per-model USD cost: the ONE owner of the pricing arithmetic, shared by
-    `_estimate_usd_locked` (the enforced USD ceiling) and `format_summary`
-    (the printed figure) so a drifted copy can never misreport spend.
+    """Return one model's cost, the one owner of the pricing arithmetic.
 
-    Provider-reported `usage.cost` is authoritative for the calls that
-    carried it; the price table prices ONLY the unreported calls' tokens (the
-    `unreported_*` bucket), so the figure is reported + estimated with
-    nothing dropped and nothing priced twice. With no table price the reported
-    subset still counts, flagged partial (a known lower bound). Returns None
-    only when the model has no cached price and reported nothing: the caller
-    reports it as unknown.
+    The enforced ceiling and the printed summary both read this. Reported cost is
+    authoritative for the calls that carried it; the price table prices only the
+    unreported calls' tokens. Cache creation is priced at the listed rate, else 1.25
+    times input; cache reads at the listed rate, else 0.1 times input.
 
-    Pricing model:
-      fresh input:      price.input        (already excludes cached portion)
-      cache_creation:   price.cache_write, else price.input * 1.25 (Anthropic's
-                        5-min cache write surcharge)
-      cache_read:       price.cache_read, else price.input * 0.10 (Anthropic's
-                        cache hit discount)
-      output:           price.output
-    A listing that publishes its cache rates (OpenRouter) prices them; one
-    that does not gets Anthropic's multipliers, and the receipt says so.
+    Args:
+        model: The model id.
+        t: Its usage totals.
+        provider: The provider entry it is routed through.
+
+    Returns:
+        The cost, or None when the model has no cached price and reported nothing.
     """
     if t.percent_metered and not _billed_apart_from_plan(t):
-        # Included-plan subscription calls: not billed per token, so the figure is
-        # an authoritative $0 -- never "unknown", never table-priced.
+        # Included-plan calls are an authoritative $0, never table-priced.
         return _ModelCost(0.0, reported=True, estimated=False)
     reported = t.reported_cost_usd > 0.0
     price = lookup_price(model, provider)
     if price is None:
         if reported:
-            # Dropping the reported dollars here would zero real spend out of
-            # the estimate and the USD cap; keep them, flagged partial when
-            # some calls carried no figure at all.
+            # Dropping the reported dollars would zero real spend out of the USD cap.
             return _ModelCost(
                 t.reported_cost_usd,
                 reported=True,
@@ -262,8 +274,12 @@ def _model_cost_usd(model: str, t: ModelUsage, provider: str = "") -> _ModelCost
 
 @dataclass(frozen=True, slots=True)
 class PlanSpend:
-    """One subscription plan's latest reading and this run's consumption on
-    its binding window, in percentage points."""
+    """One subscription plan's latest reading and this run's consumption.
+
+    Attributes:
+        usage: The latest reading.
+        consumed: This run's consumption on the binding window, in percentage points.
+    """
 
     usage: PlanUsage
     consumed: float
@@ -271,10 +287,22 @@ class PlanSpend:
 
 @dataclass(frozen=True, slots=True)
 class BudgetSnapshot:
-    """A point-in-time copy of a BudgetTracker's counters.
+    """A point-in-time copy of a tracker's counters.
 
-    `plans` holds one entry per provider entry that reported a subscription
-    plan, the most recently reported last."""
+    Attributes:
+        input_total: Input tokens over every call.
+        output_total: Output tokens over every call.
+        cache_read_total: Cache-read tokens over every call.
+        cache_creation_total: Cache-creation tokens over every call.
+        unmetered_tokens: Tokens of the calls the fallback ledger counts.
+        max_usd: The USD cap.
+        max_tokens_fallback: The fallback token cap.
+        max_percent: The plan percentage-point cap.
+        plans: One entry per provider entry that reported a plan, the latest last.
+        exhausted: A ledger crossed its cap.
+        exhausted_reason: Why, or "".
+        per_model: The usage totals by model id.
+    """
 
     input_total: int
     output_total: int
@@ -296,41 +324,32 @@ class BudgetSnapshot:
 
     @property
     def plan_consumed(self) -> float:
-        """This run's consumption on the plan that moved most: what
-        `max_percent` caps."""
+        """This run's consumption on the plan that moved most, what `max_percent` caps."""
         return max((spend.consumed for spend in self.plans.values()), default=0.0)
 
 
 @dataclass(slots=True)
 class BudgetTracker:
-    """Thread-safe spend accumulator: every call is bounded in ONE currency.
+    """The thread-safe spend accumulator; every call is bounded in one currency.
 
-    A call the meter can price (provider-reported cost, else a table price for
-    its model) counts against `max_usd`; a call carrying a plan-usage reading
-    (subscription providers) counts the run's consumed percentage points
-    against `max_percent`; a call with neither counts its input+output tokens
-    against `max_tokens_fallback`. All caps share one rule: `-1` = unlimited,
-    `0` = refuse calls in that ledger, `> 0` = an exclusive ceiling -- the
-    call that brings a ledger to or over its cap triggers `BudgetExceededError` on
-    the *next* `check()`, so a single call may cross the line but no further
-    call is issued.
+    The call that brings a ledger to or over its cap trips `BudgetExceededError` on
+    the next `check`, so one call may cross the line and no further call is issued.
+    `max_percent` meters consumption: the rise in the account's reported used percent
+    across this run's readings, accumulated across window resets. The reading is
+    account-global, so a concurrent run's spend lands in whichever run reads it next:
+    over-counting, never under.
 
-    `max_percent` meters CONSUMPTION: the rise in the account's reported
-    used-percent across this run's observations, accumulated across window
-    resets (so a cap above 100 is meaningful for a run spanning windows).
-    The reading is account-global, so a concurrent run's spend lands in
-    whichever run observes it next -- over-counting, never under.
-
-    The caps are REQUIRED constructor arguments: `[budget]` is where the
-    defaults live, and a tracker carrying its own copy could silently meter
-    against a different number than the operator set.
+    Attributes:
+        max_usd: The USD cap; required, so the tracker never carries its own default.
+        max_tokens_fallback: The fallback token cap.
+        max_percent: The plan percentage-point cap.
+        allow_paid_credits: Whether a call may draw on purchased credits; an omitted
+            value is the safe one.
     """
 
     max_usd: float
     max_tokens_fallback: int
     max_percent: float
-    # False forgets SAFE (credits refused): unlike the metering caps above,
-    # an omitted value can never widen spend, so sites may rely on it.
     allow_paid_credits: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _per_model: dict[str, ModelUsage] = field(default_factory=dict)
@@ -340,22 +359,19 @@ class BudgetTracker:
     _cache_creation_total: int = 0
     _unmetered_tokens: int = 0
     _exceeded_reason: str = ""
-    # Provider entry -> its latest plan reading, most recently reported last.
+    # Provider entry to its latest plan reading, the most recently reported last.
     _plans: dict[str, PlanUsage] = field(default_factory=dict)
-    # Per (provider entry, window): the last reading, and this run's
-    # consumption sawtooth.
+    # Per (provider entry, window): the last reading, and this run's consumption sawtooth.
     _plan_last_percent: dict[tuple[str, str], float] = field(default_factory=dict)
     _plan_consumed_by_window: dict[tuple[str, str], float] = field(default_factory=dict)
-    # Purchased credits observed leaving each account during this run, in
-    # dollars (the balance header read as dollars); folds into the USD meter.
+    # Purchased credits seen leaving each account this run, in dollars; folds into the USD meter.
     _credits_last_usd: dict[str, float] = field(default_factory=dict)
     _credits_spent_usd: float = 0.0
-    # model id -> the provider entry it is routed through, so a model id two
-    # providers list at different prices is priced by the route that bills.
+    # Model id to the provider entry that bills it, so a model two providers list is priced right.
     _routes: dict[str, str] = field(default_factory=dict)
 
     def note_route(self, model: str, provider: str) -> None:
-        """Record that *model* is called through provider entry *provider*."""
+        """Record which provider entry a model is called through."""
         with self._lock:
             self._routes[model] = provider
 
@@ -370,23 +386,22 @@ class BudgetTracker:
         cost_usd: float = 0.0,
         plan_usage: PlanUsage | None = None,
     ) -> None:
-        """Add the usage from a single provider response to the running totals.
+        """Add one provider response's usage to the running totals.
 
-        `cost_usd` is the provider-reported USD figure for this single
-        call when available (OpenRouter surfaces it as `usage.cost`).
-        Pass 0.0 (the default) when no authoritative figure is supplied;
-        a table price meters the call instead, and a call with neither
-        lands in the fallback token ledger. `plan_usage` marks a
-        percent-metered call (subscription providers): it feeds the
-        `max_percent` ledger, reports an authoritative $0 for included-plan
-        usage, and never drains the fallback ledger; a call that would draw
-        on PURCHASED credits refuses unless `allow_paid_credits` is set.
+        Args:
+            model: The model id.
+            input_tokens: The call's input tokens.
+            output_tokens: The call's output tokens.
+            cache_read_tokens: The call's cache-read tokens.
+            cache_creation_tokens: The call's cache-creation tokens.
+            cost_usd: The provider-reported cost; 0.0 leaves the call to a table price,
+                or to the fallback ledger when there is none.
+            plan_usage: A plan reading, which meters the call in percentage points at an
+                authoritative $0; a call that would draw on purchased credits refuses
+                unless `allow_paid_credits` is set.
         """
         with self._lock:
-            # A gateway is third-party arithmetic: a negative count (malformed
-            # or hostile) would SUBTRACT from the ledger and un-exhaust a cap,
-            # so the one sink clamps signs. Missing/zero input is the provider
-            # layer's fail-closed check; signs are this ledger's.
+            # A negative count from a gateway would subtract from the ledger, so signs are clamped.
             input_tokens = max(input_tokens, 0)
             output_tokens = max(output_tokens, 0)
             cache_read_tokens = max(cache_read_tokens, 0)
@@ -399,8 +414,6 @@ class BudgetTracker:
             totals.cache_creation_tokens += cache_creation_tokens
             totals.calls += 1
             if plan_usage is not None:
-                # Percent-metered: an authoritative $0 (subscription), so the
-                # price table never invents API-rate dollars for these calls.
                 totals.reported_calls += 1
                 totals.percent_metered = True
                 self._note_plan_usage(self._routes.get(model, model), plan_usage)
@@ -448,13 +461,11 @@ class BudgetTracker:
                 )
 
     def _plan_consumed(self, route: str = "") -> float:
-        """This run's consumption on its binding window: the most any one
-        window moved, since the cap is "no more than N points of the plan".
-        *route* narrows it to one provider entry's plan."""
+        """Return this run's consumption on its binding window, narrowed to one route when given."""
         return self._plan_consumption_binding(route)[2]
 
     def _plan_consumption_binding(self, route: str = "") -> tuple[str, str, float]:
-        """The provider entry, window, and consumed points nearest the cap."""
+        """Return the provider entry, window and consumed points nearest the cap."""
         return max(
             (
                 (entry, window, points)
@@ -466,16 +477,16 @@ class BudgetTracker:
         )
 
     def _note_plan_usage(self, route: str, plan: PlanUsage) -> None:
-        """Fold one reading from provider entry *route* into the per-window
-        consumption sawtooth (lock held), and the credit balance into the USD
-        meter.
+        """Fold one reading into the consumption sawtooth and the credit balance into the USD meter.
 
-        A rise since the last reading is this run's consumption (plus any
-        concurrent run's -- account-global, over-counting is the safe side);
-        a DROP is a window reset, and everything observed after it counts
-        from zero. The first reading of a window is its baseline and
-        contributes 0. A credit balance that fell since the last reading is
-        money this run (or a concurrent one) spent."""
+        A rise since the last reading is consumption; a drop is a window reset, counted
+        from zero after it. A window's first reading is its baseline. A credit balance
+        that fell is money spent. The lock is held.
+
+        Args:
+            route: The provider entry the reading came from.
+            plan: The reading.
+        """
         for w in plan.windows:
             key = (route, w.name)
             last = self._plan_last_percent.get(key)
@@ -495,8 +506,7 @@ class BudgetTracker:
         self._plans[route] = plan
 
     def _check_plan_ceilings(self, model: str, plan_usage: PlanUsage) -> None:
-        """The plan-metered ceilings, most binding first: the paid-credit
-        guard (real money), then the zero refusals, then this run's cap."""
+        """Apply the plan-metered ceilings, most binding first: credits, zero refusals, the cap."""
         would_spend_credits = (
             plan_usage.has_credits
             and not plan_usage.credits_unlimited
@@ -531,48 +541,50 @@ class BudgetTracker:
                 f" ({route}: account at {used_percent:g}% on its {window} window)"
             )
         elif self.max_usd > 0.0 and self._credits_spent_usd >= self.max_usd:
-            # Purchased credits are dollars: they meter against max_usd like
-            # any priced call once allow_paid_credits lets them be spent.
             self._exceeded_reason = (
                 f"USD budget exhausted: ~{format_usd(self._credits_spent_usd)} of purchased"
                 f" credits spent >= {format_usd(self.max_usd)}"
             )
 
     def record_plan_preflight(self, model: str, plan: PlanUsage) -> None:
-        """A usage reading taken BEFORE the first plan-metered call: the
-        baseline every later delta counts from, and the paid-credit guard's
-        first look, so a run that would draw on purchased credits refuses at
-        its first call instead of after it."""
+        """Record a reading taken before the first plan-metered call.
+
+        It is the baseline every later delta counts from, and the credit guard's first
+        look, so a run that would draw on purchased credits refuses before its first call.
+
+        Args:
+            model: The model id.
+            plan: The reading.
+        """
         with self._lock:
             self._note_plan_usage(self._routes.get(model, model), plan)
             self._check_plan_ceilings(model, plan)
 
     def check(self) -> None:
-        """Raise `BudgetExceededError` if a prior `record()` crossed a ceiling."""
+        """Stop the next call when a prior `record` crossed a ceiling.
+
+        Raises:
+            BudgetExceededError: A ledger is over its cap.
+        """
         with self._lock:
             reason = self._exceeded_reason
         if reason:
             raise BudgetExceededError(reason)
 
     def is_exhausted(self) -> bool:
+        """Return whether a ledger crossed its cap."""
         with self._lock:
             return bool(self._exceeded_reason)
 
     def fraction_remaining(self) -> float:
-        """Fraction of the budget still available, in `[0.0, 1.0]`.
+        """Return the fraction of the budget still available, against the nearest ceiling.
 
-        Computed against whichever ceiling is closest to exhaustion, so a run
-        that has burned 90% of one ceiling but only 10% of another reports 0.10,
-        the conservative, decision-relevant figure. Used by the harness to
-        decide whether a metric plateau is worth quitting on, whether enough
-        budget remains to keep pivoting, and when to nudge a graceful wind-down
-        (verify + finish_session) before the hard stop.
+        A run that burned 90% of one ceiling and 10% of another reports 0.10, the
+        figure the harness winds down on. An unlimited or refuse cap contributes
+        nothing.
 
-        Each ledger contributes its own used-fraction (spent/cap for the USD
-        meter, unmetered-tokens/cap for the fallback, consumed-points/cap for
-        the plan percent); an unlimited (-1) or
-        refuse (0) cap contributes nothing -- 0 either never engaged (nothing
-        recorded in that ledger) or already tripped `_exceeded_reason`.
+        Returns:
+            A number in [0.0, 1.0].
         """
         with self._lock:
             if self._exceeded_reason:
@@ -588,7 +600,7 @@ class BudgetTracker:
         return max(0.0, 1.0 - used)
 
     def snapshot(self) -> BudgetSnapshot:
-        """A point-in-time copy of all counters."""
+        """Return a point-in-time copy of every counter."""
         with self._lock:
             per_model = {model: replace(t) for model, t in sorted(self._per_model.items())}
             return BudgetSnapshot(
@@ -610,26 +622,22 @@ class BudgetTracker:
             )
 
     def estimate_usd(self) -> tuple[float, bool]:
-        """Estimate cumulative USD spend across all recorded calls.
+        """Estimate the cumulative USD spend over every recorded call.
 
-        Returns `(usd_total, any_unknown)` where `any_unknown` is True
-        when any recorded call could not be priced: a model absent from the
-        pricing table, or a priced model with unpriced calls. Either way the
-        figure is a lower bound.
+        The live cost meter, the enforced ceiling and the summary's total all read this.
 
-        The live TUI cost meter, the in-record USD ceiling and the end-of-run
-        summary's TOTAL all read this, so the figure the operator sees is the
-        figure the ceiling enforces; the summary's per-model lines call
-        `_model_cost_usd` for their own share.
+        Returns:
+            The total, and whether any call could not be priced, which makes it a lower
+            bound.
         """
         with self._lock:
             return self._estimate_usd_locked()
 
     def _estimate_usd_locked(self) -> tuple[float, bool]:
-        """Cost estimate computed directly from `self._per_model`.
+        """Estimate the USD spend with the lock held.
 
-        Assumes `self._lock` is already held (called from both `record` --
-        under the lock -- and `estimate_usd`), so it never re-acquires it.
+        Returns:
+            The total, and whether any call could not be priced.
         """
         total_usd = self._credits_spent_usd
         any_unknown = False
@@ -643,10 +651,15 @@ class BudgetTracker:
         return total_usd, any_unknown
 
     def _model_lines(self, snap: BudgetSnapshot) -> tuple[list[str], int, int, bool]:
-        """One line per model, with how many priced, how many the USD ledger
-        actually meters (a plan's calls cost dollars nowhere) and whether any
-        figure is an estimate. The TOTAL is the tracker's own
-        (`estimate_usd`)."""
+        """Return one summary line per model.
+
+        Args:
+            snap: The counters to print.
+
+        Returns:
+            The lines, how many models were priced, how many the USD ledger meters (a
+            plan's calls cost dollars nowhere), and whether any figure is an estimate.
+        """
         lines: list[str] = []
         priced = 0
         metered = 0
@@ -683,25 +696,17 @@ class BudgetTracker:
         return lines, priced, metered, any_estimated
 
     def format_summary(self) -> str:
-        """Human-facing end-of-run summary with USD estimate where known."""
+        """Return the end-of-run token and cost summary."""
         snap = self.snapshot()
         lines = ["Token + cost summary:"]
-        # The TOTAL is the figure the USD ceiling enforces, so it carries the
-        # purchased credits a plan-metered run spent; the per-model lines below
-        # report the authoritative $0 those calls cost.
+        # The total is the figure the ceiling enforces, so it carries purchased credits spent.
         total_usd, any_unknown = self.estimate_usd()
         model_lines, priced, metered, any_estimated = self._model_lines(snap)
         lines.extend(model_lines)
         any_unknown = any_unknown or priced < len(snap.per_model)
         approx = "~" if any_unknown or any_estimated else "="
-        # The lower-bound mark belongs to the figure it qualifies: at least one
-        # model has no cached provider price (agent6.models.pricing keeps no
-        # static fallback), so it sits on the figure, not after the unmetered
-        # parenthetical.
         total = format_usd(total_usd) + ("+" if any_unknown else "")
-        # `of <cap>` states what meters this spend. With every model unpriced,
-        # or every one drawing on a subscription plan, max_usd meters none of it
-        # (the preflight says so too), so naming it here would contradict that.
+        # `of <cap>` names what meters this spend; with nothing USD-metered, max_usd meters none.
         cap = ""
         if metered or not snap.per_model:
             usd_cap = "unlimited" if snap.max_usd == -1 else format_usd(snap.max_usd)
@@ -727,11 +732,16 @@ class BudgetTracker:
 
 
 def format_plan_usage(route: str, spend: PlanSpend, max_percent: float) -> str:
-    """The one plan-usage line every surface prints for subscription spend,
-    one per provider entry.
+    """Return the plan-usage line every surface prints for one provider entry.
 
-    Names the provider entry, the account's reported percent, the window,
-    this run's consumed points against *max_percent*, and the reset."""
+    Args:
+        route: The provider entry.
+        spend: Its latest reading and this run's consumption.
+        max_percent: The cap the consumption is printed against; -1 prints none.
+
+    Returns:
+        The line.
+    """
     plan = spend.usage
     minutes = plan.window_minutes
     if minutes >= 1440:
@@ -741,7 +751,7 @@ def format_plan_usage(route: str, spend: PlanSpend, max_percent: float) -> str:
     elif minutes > 0:
         window = f"{minutes}-minute "
     else:
-        window = ""  # the backend reported the window with no length
+        window = ""
     cap = "" if max_percent == -1 else f" of max_percent {max_percent:g}"
     resets_h = max(0.0, (plan.resets_at - time.time()) / 3600)
     which = "" if plan.binding.name == "primary" else f" ({plan.binding.name})"

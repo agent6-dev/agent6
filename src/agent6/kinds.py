@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Internal value types, frozen dataclasses, constructed by us only.
+"""Hold the internal value types: frozen dataclasses agent6 constructs itself.
 
-Compare with the pydantic models at the trust boundaries: `agent6.config.model`
-(config), `agent6.tools.schema` (tool inputs), `agent6.machine.spec` (machine
-files). `agent6.providers.types` is the provider-neutral wire vocabulary,
-plain dataclasses like these.
+The pydantic models sit at the trust boundaries instead: `config.model`,
+`tools.schema`, `machine.spec`.
 """
 
 from __future__ import annotations
@@ -15,47 +13,38 @@ from pathlib import Path
 from typing import Literal
 
 TernaryMode = Literal["no", "ask", "yes"]
-# `none` is the unsandboxed isolation: child commands run as plain subprocesses
-# with no kernel-enforced confinement. Reached when the host has no confinement
-# mechanism at all (non-Linux, or a Linux kernel offering neither userns nor
-# Landlock), or as a deliberate operator opt-out on any host via
-# `sandbox.isolation = "none"`, `--dangerously-disable-sandbox`, or
-# `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` (self-authorizing, with a loud warning;
-# see `detect.resolve_isolation`).
+# `none` runs commands as plain subprocesses: a host with no confinement, or an operator opt-out.
 IsolationLevel = Literal["strict", "hardened", "none"]
 NetworkMode = Literal["host", "session", "none"]
-# The model roles a session can be driven by.
 RoleName = Literal["worker", "reviewer", "planner"]
-# The modes `agent6 resume` accepts. A narrower question than "is this a
-# known mode", which is what `session_kind` answers.
+# The modes `agent6 resume` accepts; `session_kind` answers the wider "is this a known mode".
 ResumableMode = Literal["run", "plan", "ask"]
-# What the after-auto-commit hook (`run -i`'s REPL) tells the loop to do next;
-# `exit` is /exit: stop and leave (no follow-up prompt).
+# What the REPL's after-commit hook tells the loop to do next; `exit` stops with no prompt.
 AutoCommitDirective = Literal["continue", "stop", "undo", "exit"]
 
 
 @dataclass(frozen=True, slots=True)
 class SessionKind:
-    """What a mode means, in one record.
+    """What a mode may do, in one record.
 
-    One owner for "is this session allowed to X", so no surface re-derives it
-    from a bare string and disagrees with another. The string stays the key and
-    stays what is persisted; this is derived from it at read time, never
-    written, so an agent6 that changes what "plan" may do reinterprets old
-    sessions correctly, which storing the capabilities would prevent.
+    The one owner, derived from the persisted mode string at read time and never
+    written, so a change to what a mode may do reinterprets old sessions.
+
+    Attributes:
+        name: The mode string.
+        role: The model role that drives it.
+        edits: May mutate the workspace in-process and own a background command.
+        runs_commands: May execute commands at all.
+        clamps_commands: Forces approval even where config says "yes".
+        resumable: `agent6 resume` can pick it up; a machine's states are driven by the
+            machine agent instead.
     """
 
     name: str
     role: RoleName
-    # May mutate the workspace in-process (apply_edit / apply_patch), and owns
-    # a background command's lifetime.
     edits: bool
-    # May execute commands at all.
     runs_commands: bool
-    # Forces approval even where config says "yes".
     clamps_commands: bool
-    # `agent6 resume` can pick this up. A machine's states are driven by the
-    # machine agent, not by the run lifecycle.
     resumable: bool
 
 
@@ -70,7 +59,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
             clamps_commands=False,
             resumable=True,
         ),
-        # Operator-present like ask, so it clamps run_commands yes->ask.
+        # Operator-present like ask, so it clamps commands to ask.
         SessionKind(
             name="plan",
             role="planner",
@@ -79,9 +68,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
             clamps_commands=True,
             resumable=True,
         ),
-        # `agent6 ask`, kept out of the run history: investigates and answers
-        # with no edit/DAG tools. run_command runs jailed and may write the
-        # workspace, so its writes are approval-gated (clamps_commands).
+        # No edit or graph tools; a jailed command may write the workspace, so it is approval-gated.
         SessionKind(
             name="ask",
             role="worker",
@@ -90,9 +77,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
             clamps_commands=True,
             resumable=True,
         ),
-        # A read-only machine agent state: the deliverable is the
-        # finish_session payload, and command tools only tempt a weak model
-        # into spelunking.
+        # A read-only machine state: the deliverable is the finish payload.
         SessionKind(
             name="machine",
             role="worker",
@@ -113,20 +98,18 @@ SESSION_KINDS: dict[str, SessionKind] = {
 }
 
 
-# The modes an operator starts from a hub or the CLI and resumes; machine and
-# agent executions are driven by the machine agent.
+# The modes an operator starts and resumes; machine and agent executions are the machine agent's.
 OPERATOR_MODES: tuple[str, ...] = tuple(k.name for k in SESSION_KINDS.values() if k.resumable)
 
-# The roles whose output is the session talking; everything else is a side
-# call made during the session onto the same journal (a review seat, the
-# verify-command inferer, a squash or compaction pass, the prompt reviser).
+# The roles whose output is the session talking; every other role is a side call on the journal.
 DRIVING_ROLES: frozenset[str] = frozenset(k.role for k in SESSION_KINDS.values())
 
 
 def is_side_role(role: str) -> bool:
-    """Whether a `role.*` event's answer is a side call's, not the session's own.
-    Allowlisted from the SessionKind table, so a new side call is silent by
-    default. An unnamed role is not a side call: older events carry none."""
+    """Return whether a `role.*` event's answer is a side call's, not the session's own.
+
+    An unnamed role is not a side call: older events carry none.
+    """
     return bool(role) and role not in DRIVING_ROLES
 
 
@@ -135,10 +118,11 @@ class UnknownSessionKindError(ValueError):
 
 
 def session_kind(name: str) -> SessionKind:
-    """The record for *name*, refusing anything this agent6 does not know.
+    """Return the record for a mode string.
 
-    Refusing rather than defaulting: a damaged manifest must never silently
-    escalate a read-only session to the privileged write tools.
+    Raises:
+        UnknownSessionKindError: The mode is unknown; a damaged manifest must never
+            escalate a read-only session to the write tools.
     """
     kind = SESSION_KINDS.get(name)
     if kind is None:
@@ -147,13 +131,11 @@ def session_kind(name: str) -> SessionKind:
 
 
 def session_bucket(name: str) -> str:
-    """The bucket a session of mode *name* gets its own directory in.
+    """Return the bucket a mode's sessions get their directories in, derived and never stored.
 
-    Derived, never stored, so a record cannot disagree with where its sessions
-    actually go. The buckets sit under one `sessions/` root, which
-    is what leaves the state dir's own `machines/` to live machine instances.
-    An `agent` execution lives inside its machine instance's directory and has no
-    bucket.
+    Raises:
+        UnknownSessionKindError: The mode is unknown, or is `agent`, whose executions
+            live under their machine instance.
     """
     kind = session_kind(name)
     if kind.name == "agent":
@@ -165,30 +147,39 @@ def session_bucket(name: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class CommandResult:
-    """Result of running a command (in or out of the jail)."""
+    """The result of running a command, in or out of the jail.
+
+    Attributes:
+        argv: The command.
+        returncode: Its exit code.
+        stdout: Its stdout, decoded.
+        stderr: Its stderr, decoded.
+        duration_s: How long it ran.
+        exec_failed: The binary could not be executed at all, as distinct from a
+            non-zero exit: an operator command that cannot execute is surfaced loudly.
+    """
 
     argv: tuple[str, ...]
     returncode: int
     stdout: str
     stderr: str
     duration_s: float
-    # True when the launcher could not execute the binary at all (bad path, not
-    # on the jail PATH, missing interpreter, or a symlink that escapes the
-    # sandbox roots). Distinct from "ran and exited non-zero": a
-    # model can fix its own argv, but an operator verify/metric command that
-    # cannot execute is a config/sandbox problem the run must surface loudly.
     exec_failed: bool = False
 
     @property
     def ok(self) -> bool:
+        """Whether the command exited 0."""
         return self.returncode == 0
 
 
 @dataclass(frozen=True, slots=True)
 class ChildSnapshot:
-    """The agent's children when a command started. `seq` orders the session's
-    commands by start, so a stop can tell what appeared after its own command
-    started and before the next one did."""
+    """The agent's children when a command started.
+
+    Attributes:
+        seq: The command's start order in the session, so a stop can bound its sweep.
+        pids: The children's pids.
+    """
 
     seq: int
     pids: frozenset[int]
@@ -198,73 +189,77 @@ class ChildSnapshot:
 class BackgroundHandoff:
     """A command that outlived its check-in and is still running.
 
-    Its own type rather than a CommandResult with a hole in it: a completed
-    command and a running one answer different questions, and a returncode
-    invented for the second would be a lie every caller has to remember to
-    ignore. The tool result the model sees is still one shape (see
-    `ExecResult`).
+    Its own type: a return code invented for a running command would be a lie every
+    caller has to ignore.
+
+    Attributes:
+        argv: The command.
+        pid: Its pid.
+        log: Where its output goes.
+        stdout: What it printed before the hand-off.
+        stderr: What it printed to stderr before the hand-off.
+        duration_s: How long it had run at the hand-off.
+        before: The agent's children when it started, its stop's baseline.
     """
 
     argv: tuple[str, ...]
     pid: int
     log: str
-    # What the command printed before the hand-off, still split by stream.
     stdout: str
     stderr: str
     duration_s: float
-    # The children the agent had when the command started: its stop's baseline.
     before: ChildSnapshot
 
 
 @dataclass(frozen=True, slots=True)
 class JailPolicy:
-    """What the jail is allowed to do for a single child invocation."""
+    """What the jail allows one child invocation.
+
+    Attributes:
+        cwd: The child's working directory, the workspace.
+        argv: The command.
+        isolation: The isolation level.
+        env: The child's environment.
+        network: The network the child joins: the machine's, the run's own shared
+            with its siblings, or an empty one of its own.
+        extra_ro_paths: Trees bound read-only under `/ro`.
+        extra_rw_paths: Trees bound read-write.
+        extra_device_paths: Device nodes bound into the jail's `/dev`; each must be a
+            char or block device on the host or the launcher refuses.
+        extra_protect_paths: Paths inside the workspace made read-only from the child's
+            view, so a model-driven command cannot rewrite `.git`.
+        tool_paths: Operator tools outside the system dirs, bound read-only and
+            executable at their real paths, since `/ro` remapping breaks symlinks.
+        hide_paths: The operator's additions to the hidden set, masked last, after
+            every bind; agent6's own private dirs are unioned in at serialization.
+        timeout_s: The command's deadline.
+        memory_limit_mb: The per-process RLIMIT_DATA cap, inherited by every
+            descendant; 0 disables, since capping costs real builds more than it buys.
+    """
 
     cwd: Path
     argv: tuple[str, ...]
     isolation: IsolationLevel = "strict"
     env: tuple[tuple[str, str], ...] = ()
-    # Which network this child joins: the machine's, the run's own (shared with
-    # its siblings, no route off the box), or one of its own with nothing else
-    # in it. "session" needs the run's SessionNetwork handed to the transport.
     network: NetworkMode = "none"
     extra_ro_paths: tuple[Path, ...] = ()
     extra_rw_paths: tuple[Path, ...] = ()
-    # Device nodes under /dev the launcher binds into the jail's /dev without
-    # the nodev floor ([sandbox].extra_device_paths); each must be a char or
-    # block device on the host or the launcher refuses loudly.
     extra_device_paths: tuple[Path, ...] = ()
-    # Paths inside `cwd` that the launcher must make read-only from the
-    # child's view. Strict re-binds them RO on top of the workspace mount;
-    # hardened switches its Landlock rules from "RW on cwd" to "R on cwd
-    # + RW on each top-level entry except these". Used to keep an
-    # LLM-driven `run_command` from rewriting `.git` even though it
-    # lives inside the project root.
     extra_protect_paths: tuple[Path, ...] = ()
-    # Real-location RO+exec bind mounts for operator-installed tools that live
-    # outside the system dirs (uv in ~/.local/bin or the /opt target a
-    # /usr/local/bin symlink resolves to), so a verify/run command finds them.
-    # Distinct from `extra_ro_paths` (remapped under /ro, which breaks symlinks);
-    # these keep their real paths. Read+execute only, never writable.
     tool_paths: tuple[Path, ...] = ()
-    # Operator additions to the hidden set ([sandbox].hide_paths): masked from
-    # the jail even under a broader grant. The launcher masks last, after every
-    # bind, and agent6's own private dirs are always unioned in at
-    # serialization, so no constructor can forget them.
     hide_paths: tuple[Path, ...] = ()
     timeout_s: float = 600.0
-    # Per-process memory cap in MiB (RLIMIT_DATA, set by the launcher in the
-    # child before exec and inherited by every descendant); 0 disables, which
-    # is the default here and in `[sandbox].memory_limit_mb`: capping costs
-    # real builds more than it buys, and the kernel already handles a memory
-    # bomb.
     memory_limit_mb: int = 0
 
 
 @dataclass(frozen=True, slots=True)
 class ModelRoute:
-    """A provider and a model on it: the pair every per-run model choice (a
-    `--model` flag, a hub's picker, a recorded run) resolves to."""
+    """A provider and a model on it, the pair every model choice resolves to.
+
+    Attributes:
+        provider: The provider entry.
+        model: The model id.
+    """
 
     provider: str
     model: str
@@ -277,7 +272,21 @@ class ModelRoute:
 
 @dataclass(frozen=True, slots=True)
 class RepoSummary:
-    """Compact view of a repository handed to the planner."""
+    """The compact view of a repository the prompt carries.
+
+    Attributes:
+        root: The repository root.
+        branch: The checked-out branch; "" outside git.
+        head_sha: HEAD's sha; "" outside git.
+        file_count: How many tracked files.
+        top_level: The top-level entries.
+        agents_md: The AGENTS.md text.
+        recent_log: The recent one-line log; "" outside git.
+        repo_map: A directory map of `path/  (N files: a, b, ...)` rows, capped to a
+            few KB; "" outside git.
+        is_git: The root is a repository; `agent6 ask` runs anywhere, and the prompt
+            names the situation instead of a fake repo header.
+    """
 
     root: Path
     branch: str
@@ -286,20 +295,19 @@ class RepoSummary:
     top_level: tuple[str, ...]
     agents_md: str
     recent_log: str
-    # Compact directory map built from `git ls-files`. Multi-line
-    # string of `path/  (N files: a, b, ...)` rows, capped so it stays
-    # within a few KB. Empty outside a git repo or when ls-files fails.
     repo_map: str = ""
-    # False when root is not a git repository (`agent6 ask` runs anywhere;
-    # run/plan require git up front). branch/head_sha/recent_log/repo_map
-    # are then empty and the prompt names the situation instead of
-    # rendering a fake repo header.
     is_git: bool = True
 
 
 @dataclass(frozen=True, slots=True)
 class SandboxReport:
-    """Result of one sandbox self-test."""
+    """The result of one sandbox self-test.
+
+    Attributes:
+        name: The test's name.
+        ok: Whether it passed.
+        detail: What it found.
+    """
 
     name: str
     ok: bool

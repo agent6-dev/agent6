@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `/btw` runner every composer shares (CLI menu, TUI, web): spawn the
-side question, deliver the answer.
+"""Run a `/btw` side question for every composer: spawn it, deliver the answer.
 
-The menu owns the grammar and `app.btw` owns the session; this owns what only
-a front-end can do: spawning through whatever escape the run has from its
-namespace, and landing the finished answer in the run's journal, which each
-surface renders at its next turn boundary.
+`app.btw` owns the session; this owns what only a front-end can do: spawning
+through the run's escape from its namespace, and landing the answer in the
+run's journal.
 """
 
 from __future__ import annotations
@@ -24,8 +22,7 @@ from agent6.sandbox.jail import keep_out_of_the_sweep
 from agent6.sessions.layout import LOGS_NAME, bucket_dir, layout_of
 from agent6.ui.spawn import agent6_exe
 
-# How often the watcher looks for the answer. A btw is a short question, and
-# the cost of a poll is one status fold off the session dir.
+# A poll costs one status fold off the session dir.
 _POLL_S = 1.0
 _GIVE_UP_S = 900.0
 
@@ -33,8 +30,8 @@ _GIVE_UP_S = 900.0
 def direct_launch(cwd: Path, argv: list[str], env_extra: dict[str, str]) -> str:
     """Spawn `agent6 <argv>` detached, for a run with no namespace to escape.
 
-    Fire-and-forget: the session dir appearing is the confirmation, exactly as
-    for a `/parallel` lane.
+    Returns:
+        "" once spawned, else why not; the session dir appearing is the confirmation.
     """
     try:
         proc = subprocess.Popen(
@@ -48,8 +45,7 @@ def direct_launch(cwd: Path, argv: list[str], env_extra: dict[str, str]) -> str:
         )
     except OSError as exc:
         return f"could not start the btw: {exc}"
-    # Our child, its own session: the escapee sweep would SIGKILL it at the
-    # next background command's teardown otherwise.
+    # Unregistered, the escapee sweep would kill it at the next background command's teardown.
     keep_out_of_the_sweep(proc.pid)
     return ""
 
@@ -61,11 +57,17 @@ def make_btw_runner(
     list_asks: Callable[[], list[Path]],
     events: EventSink,
 ) -> Callable[[str, Path], tuple[bool, str]]:
-    """The `/btw <question>` handler the pause menu and the composers call.
+    """Build the `/btw <question>` handler the pause menu and the composers call.
 
-    Returns immediately with (opened, the line to show); the answer lands
-    later as a `btw.answered` event on the run's journal. A btw never blocks
-    the run.
+    Args:
+        parent_id: The run the question sits beside.
+        launch: Spawns the side session.
+        list_asks: Lists the ask sessions, to find the new one.
+        events: The run's journal, where the answer lands as `btw.answered`.
+
+    Returns:
+        The handler; it returns at once with whether the question opened and the line
+        to show, and never blocks the run.
     """
 
     def run_btw(question: str, _session_dir: Path) -> tuple[bool, str]:
@@ -82,16 +84,10 @@ def make_btw_runner(
 
 
 def _watch(session: BtwSession, events: EventSink) -> None:
-    """Poll until the btw answers, then put the block on the run's journal.
+    """Poll until the side question answers, then put the block on the run's journal.
 
-    The journal, not the console view: under --tui or the web there is no
-    console view to hand it to. Every surface folds the same log, and a parent
-    that exits first leaves the answer on disk to read afterwards.
-
-    Daemon thread: a btw must never hold the run open. One that is still
-    thinking (or parked on a question nobody answers) after `_GIVE_UP_S` gets
-    a block saying so, where silence would read as a btw still coming; an
-    unanswered one at exit is an ask the operator can resume.
+    Runs on a daemon thread, so it never holds the run open. Past the give-up time
+    the block says so, where silence would read as an answer still coming.
     """
     deadline = time.monotonic() + _GIVE_UP_S
     while time.monotonic() < deadline:
@@ -108,19 +104,19 @@ def _watch(session: BtwSession, events: EventSink) -> None:
 
 
 def asks_dir(session_dir: Path) -> Path:
-    """The asks bucket beside *session_dir*'s own, for `/btw`'s roster.
-
-    Derived from the running session's dir rather than re-resolving the state
-    base: the two must agree even when `XDG_STATE_HOME` relocates it.
-    """
+    """Return the asks bucket beside the session's own, derived so the two agree under any XDG."""
     return bucket_dir(layout_of(session_dir).state_dir, "asks")
 
 
 def open_btw(session_dir: Path, question: str) -> tuple[bool, str]:
-    """`/btw <question>` from any composer: open the side ask beside the live
-    run at *session_dir*. Returns (opened, the line to show); the answer lands
-    later as a `btw.answered` event on the run's journal, which every surface
-    folds. The flag carries the outcome, so no caller parses the line.
+    """Open a side question beside a live run, from any composer.
+
+    Args:
+        session_dir: The live session.
+        question: The question; an empty one is refused.
+
+    Returns:
+        Whether it opened, and the line to show; the answer lands later on the journal.
     """
     if not question.strip():
         return False, "[agent6] ask something: `/btw <question>`"
