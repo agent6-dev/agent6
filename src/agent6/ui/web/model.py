@@ -10,41 +10,25 @@ machine snapshots are the same dicts `agent6 attach --json` prints.
 from __future__ import annotations
 
 import json
+import pathlib
 import re
-from pathlib import Path
 from typing import Any
 
-from agent6.app.confine import resolved_config_values
-from agent6.app.parallel import subordinate_workdir_root
-from agent6.config import ConfigError
-from agent6.config.io import format_toml_value
-from agent6.config.layer import available_preset_names, load_effective
-from agent6.git_ops import EMPTY_TREE, commit_diff, diff_range, run_ref_tips
-from agent6.models.choices import (
-    available_routes,
-    config_value_choices,
-    default_label,
-    default_preset,
-    default_route,
-    resume_defaults,
-)
-from agent6.paths import state_dir
-from agent6.sessions.ipc import worker_is_alive
-from agent6.sessions.layout import (
-    HUB_BUCKETS,
-    LOGS_NAME,
-    bucket_dir,
-    is_safe_session_id,
-    machines_root,
-)
-from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6 import git_ops, paths
+from agent6.app import confine, parallel
+from agent6.config import ConfigError, io, layer
+from agent6.models import choices
+from agent6.sessions import ipc, layout, manifest
 from agent6.viewmodel import (
     MachineSummary,
     NewestExecutionFold,
+    config_view,
     fold_session,
     fold_transcript,
+    format,
     is_session_husk,
     is_winner,
+    listing,
     machine_files,
     machine_instance_dirs,
     newest_state_log,
@@ -56,14 +40,11 @@ from agent6.viewmodel import (
     summarize_session_dir,
     summary_row,
     tail_events,
+    transcript_style,
 )
-from agent6.viewmodel.config_view import render_show
-from agent6.viewmodel.format import format_when, status_label, status_level
-from agent6.viewmodel.listing import nested_rows, row_json
-from agent6.viewmodel.transcript_style import item_lines
 
 
-def session_dir_for(cwd: Path, session_id: str) -> Path | None:
+def session_dir_for(cwd: pathlib.Path, session_id: str) -> pathlib.Path | None:
     """Locate a session dir by its exact id across the hub buckets.
 
     Husks are skipped so an orphaned dir cannot shadow a real session of the same id.
@@ -75,11 +56,11 @@ def session_dir_for(cwd: Path, session_id: str) -> Path | None:
     Returns:
         The session dir, or None for an unsafe id, a missing session or an id in two buckets.
     """
-    if not is_safe_session_id(session_id):
+    if not layout.is_safe_session_id(session_id):
         return None
-    found: Path | None = None
-    for sub in HUB_BUCKETS:
-        d = bucket_dir(state_dir(cwd), sub) / session_id
+    found: pathlib.Path | None = None
+    for sub in layout.HUB_BUCKETS:
+        d = layout.bucket_dir(paths.state_dir(cwd), sub) / session_id
         if d.is_dir() and not is_session_husk(d):
             if found is not None:
                 return None
@@ -87,42 +68,44 @@ def session_dir_for(cwd: Path, session_id: str) -> Path | None:
     return found
 
 
-def machine_dir_for(cwd: Path, name: str) -> Path | None:
+def machine_dir_for(cwd: pathlib.Path, name: str) -> pathlib.Path | None:
     """Return a machine instance's dir by name, or None for an unsafe or unknown name."""
-    if not is_safe_session_id(name):
+    if not layout.is_safe_session_id(name):
         return None
-    d = machines_root(state_dir(cwd)) / name
+    d = layout.machines_root(paths.state_dir(cwd)) / name
     return d if d.is_dir() else None
 
 
-def draft_dir_for(cwd: Path, name: str) -> Path | None:
+def draft_dir_for(cwd: pathlib.Path, name: str) -> pathlib.Path | None:
     """Return a `machine create` draft's dir by name, or None when there is none.
 
     The draft's logs.jsonl is the authoring agent's run-style log, watched through
     the run endpoints.
     """
-    if not is_safe_session_id(name):
+    if not layout.is_safe_session_id(name):
         return None
-    d = bucket_dir(state_dir(cwd), "machines") / name
+    d = layout.bucket_dir(paths.state_dir(cwd), "machines") / name
     return d if d.is_dir() and not is_session_husk(d) else None
 
 
-def draft_workspace(cwd: Path, name: str, config_path: Path | None) -> Path | None:
+def draft_workspace(
+    cwd: pathlib.Path, name: str, config_path: pathlib.Path | None
+) -> pathlib.Path | None:
     """Return the workspace a `machine create` draft commits in, or None once it is gone.
 
     The workspace is a repository of its own beside the other subordinate working
     trees; publishing the draft removes it.
     """
     try:
-        cfg = load_effective(cwd, config_path).config
+        cfg = layer.load_effective(cwd, config_path).config
     except ConfigError:
         return None
-    workspace = subordinate_workdir_root(cfg, cwd, name)
+    workspace = parallel.subordinate_workdir_root(cfg, cwd, name)
     return workspace if (workspace / ".git").exists() else None
 
 
 def draft_step_diff_payload(
-    workspace: Path, sha: str, *, cumulative: bool
+    workspace: pathlib.Path, sha: str, *, cumulative: bool
 ) -> tuple[dict[str, Any] | None, str]:
     """Return the patch one draft step introduced, or the whole bundle as of that step.
 
@@ -137,12 +120,16 @@ def draft_step_diff_payload(
         The payload and "", or None and the reason.
     """
     return _diff_payload(
-        workspace, sha, base=EMPTY_TREE, cumulative=cumulative, miss="not a commit of this draft"
+        workspace,
+        sha,
+        base=git_ops.EMPTY_TREE,
+        cumulative=cumulative,
+        miss="not a commit of this draft",
     )
 
 
 def _diff_payload(
-    repo: Path, sha: str, *, base: str, cumulative: bool, miss: str
+    repo: pathlib.Path, sha: str, *, base: str, cumulative: bool, miss: str
 ) -> tuple[dict[str, Any] | None, str]:
     """Return one step's patch, or the chain `base..sha` when cumulative and a base is known.
 
@@ -159,28 +146,28 @@ def _diff_payload(
     if not re.fullmatch(r"[0-9a-f]{7,40}", sha):
         return None, f"not a commit sha: {sha!r}"
     whole = cumulative and bool(base)
-    patch = diff_range(repo, base, sha) if whole else commit_diff(repo, sha)
+    patch = git_ops.diff_range(repo, base, sha) if whole else git_ops.commit_diff(repo, sha)
     if not patch:
         return None, f"no diff for {sha[:12]} ({miss})"
     return {"cumulative": whole, "patch": patch}, ""
 
 
-def draft_dir_paths(cwd: Path) -> list[Path]:
+def draft_dir_paths(cwd: pathlib.Path) -> list[pathlib.Path]:
     """Return every `machine create` draft directory."""
-    d = bucket_dir(state_dir(cwd), "machines")
+    d = layout.bucket_dir(paths.state_dir(cwd), "machines")
     return [p for p in d.iterdir() if p.is_dir()] if d.is_dir() else []
 
 
 # --- hub listing -------------------------------------------------------------
 
 
-def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
+def _list_sessions(cwd: pathlib.Path) -> list[dict[str, Any]]:
     """Return every session the hub lists, newest first, a fan-out's lanes under its row."""
-    tips = run_ref_tips(cwd)
-    dirs = session_dirs(state_dir(cwd))
+    tips = git_ops.run_ref_tips(cwd)
+    dirs = session_dirs(paths.state_dir(cwd))
     winners = {p.name for p in dirs if is_winner(p)}
-    rows = nested_rows(summarize_session_dir(p, branch_tips=tips) for p in dirs)
-    return [row_json(r, winners=winners) for r in rows]
+    rows = listing.nested_rows(summarize_session_dir(p, branch_tips=tips) for p in dirs)
+    return [listing.row_json(r, winners=winners) for r in rows]
 
 
 def _machine_row(s: MachineSummary) -> dict[str, Any]:
@@ -188,26 +175,26 @@ def _machine_row(s: MachineSummary) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "name": s.name,
         "mtime": s.mtime,
-        "when": format_when(s.mtime) if s.mtime else "",
+        "when": format.format_when(s.mtime) if s.mtime else "",
         "status": s.status,
-        "level": status_level(s.status),
+        "level": format.status_level(s.status),
     }
     if s.status != "unreadable":
         entry["machine"] = s.machine
         entry["current"] = s.current
     if s.reason:
         # A live machine blocked on an operator prompt carries a reason too.
-        entry["label"] = status_label(s.status, s.reason)
+        entry["label"] = format.status_label(s.status, s.reason)
     return entry
 
 
-def _list_machines(cwd: Path) -> list[dict[str, Any]]:
+def _list_machines(cwd: pathlib.Path) -> list[dict[str, Any]]:
     """Return the machine instances, newest first, summarized by the shared fold."""
-    dirs = machine_instance_dirs(state_dir(cwd))
+    dirs = machine_instance_dirs(paths.state_dir(cwd))
     return [_machine_row(summarize_machine_dir(d)) for d in dirs]
 
 
-def _list_drafts(cwd: Path) -> list[dict[str, Any]]:
+def _list_drafts(cwd: pathlib.Path) -> list[dict[str, Any]]:
     """Return the `machine create` drafts summarized like runs, newest first."""
     summaries: list[dict[str, Any]] = [
         summary_row(summarize_session_dir(p, branch_tips={}), winner=is_winner(p))
@@ -218,13 +205,13 @@ def _list_drafts(cwd: Path) -> list[dict[str, Any]]:
     return summaries
 
 
-def list_machine_files(cwd: Path) -> list[dict[str, str]]:
+def list_machine_files(cwd: pathlib.Path) -> list[dict[str, str]]:
     """Return the hub's machine-file rows."""
     return [{"path": str(p), "name": p.name} for p in machine_files(cwd)]
 
 
 def routes_payload(
-    cwd: Path, config_path: Path | None, *, mode: str, preset: str
+    cwd: pathlib.Path, config_path: pathlib.Path | None, *, mode: str, preset: str
 ) -> dict[str, Any]:
     """Return the new-work composer's model picker.
 
@@ -238,28 +225,32 @@ def routes_payload(
         Every `provider/model` the config can run, and the label of the no-flag entry.
     """
     return {
-        "routes": available_routes(cwd, config_path),
-        "default_label": default_label(default_route(cwd, config_path, mode, preset)),
+        "routes": choices.available_routes(cwd, config_path),
+        "default_label": choices.default_label(
+            choices.default_route(cwd, config_path, mode, preset)
+        ),
     }
 
 
 def resume_defaults_payload(
-    cwd: Path, config_path: Path | None, session_dir: Path, *, preset: str
+    cwd: pathlib.Path, config_path: pathlib.Path | None, session_dir: pathlib.Path, *, preset: str
 ) -> dict[str, str]:
     """Return the resume row's no-flag preset and model labels under a picked preset."""
-    preset_label, model_label = resume_defaults(cwd, config_path, session_dir, preset=preset)
+    preset_label, model_label = choices.resume_defaults(
+        cwd, config_path, session_dir, preset=preset
+    )
     return {"preset_label": preset_label, "model_label": model_label}
 
 
-def hub_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:
+def hub_payload(cwd: pathlib.Path, config_path: pathlib.Path | None = None) -> dict[str, Any]:
     """Return the hub: sessions, machines, drafts, machine files and the preset choices."""
     return {
         "sessions": _list_sessions(cwd),
         "machines": _list_machines(cwd),
         "machine_files": list_machine_files(cwd),
         "drafts": _list_drafts(cwd),
-        "presets": available_preset_names(cwd, config_path),
-        "preset_default_label": default_label(default_preset(cwd, config_path)),
+        "presets": layer.available_preset_names(cwd, config_path),
+        "preset_default_label": choices.default_label(choices.default_preset(cwd, config_path)),
     }
 
 
@@ -283,8 +274,8 @@ def conversation_items(
     """
     out: list[dict[str, Any]] = []
     for item in fold_transcript(events, worker_dead=worker_dead):
-        collapsed = item_lines(item, detail="collapsed")
-        expanded = item_lines(item, detail="expanded")
+        collapsed = transcript_style.item_lines(item, detail="collapsed")
+        expanded = transcript_style.item_lines(item, detail="expanded")
         entry: dict[str, Any] = {"kind": item.kind, "lines": collapsed}
         if expanded != collapsed:
             entry["full"] = expanded
@@ -292,29 +283,29 @@ def conversation_items(
     return out
 
 
-def conversation_payload(session_dir: Path) -> dict[str, Any]:
+def conversation_payload(session_dir: pathlib.Path) -> dict[str, Any]:
     """Return a run's conversation and the operator's past inputs, from one read of the log."""
-    events = list(tail_events(session_dir / LOGS_NAME, follow=False))
+    events = list(tail_events(session_dir / layout.LOGS_NAME, follow=False))
     return {
-        "items": conversation_items(events, worker_dead=not worker_is_alive(session_dir)),
+        "items": conversation_items(events, worker_dead=not ipc.worker_is_alive(session_dir)),
         "operator_inputs": operator_inputs(events),
     }
 
 
-def restate_payload(session_dir: Path) -> dict[str, Any]:
+def restate_payload(session_dir: pathlib.Path) -> dict[str, Any]:
     """Return `/restate` for the web composer, over the session's whole journal."""
-    events = list(tail_events(session_dir / LOGS_NAME, follow=False))
-    return {"text": restate(events, worker_dead=not worker_is_alive(session_dir))}
+    events = list(tail_events(session_dir / layout.LOGS_NAME, follow=False))
+    return {"text": restate(events, worker_dead=not ipc.worker_is_alive(session_dir))}
 
 
-def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
+def machine_conversation_payload(machine_dir: pathlib.Path) -> dict[str, Any]:
     """Return the conversation of the machine's newest agent-state execution, or no items."""
     log = newest_state_log(machine_dir)
     if log is None:
         return {"items": []}
     events = list(tail_events(log, follow=False))
     # The machine's worker (one pid for every state) is the one to probe.
-    items = conversation_items(events, worker_dead=not worker_is_alive(machine_dir))
+    items = conversation_items(events, worker_dead=not ipc.worker_is_alive(machine_dir))
     return {"items": items}
 
 
@@ -322,7 +313,7 @@ def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
 
 
 def machine_reasoning_snapshot(
-    machine_dir: Path, *, fold: NewestExecutionFold | None = None
+    machine_dir: pathlib.Path, *, fold: NewestExecutionFold | None = None
 ) -> dict[str, Any]:
     """Return the session state of the machine's newest agent-state execution.
 
@@ -354,40 +345,48 @@ def machine_reasoning_snapshot(
 # --- config ------------------------------------------------------------------
 
 
-def config_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:
+def config_payload(cwd: pathlib.Path, config_path: pathlib.Path | None = None) -> dict[str, Any]:
     """Return the effective config per leaf, keyed by dotted key.
 
     The shared fields are what `agent6 config show --json` prints; `input` is each
     value's round-trippable editor text. No secret is included.
     """
-    eff = load_effective(cwd, config_path)
-    resolved = resolved_config_values(eff.config)
-    payload: dict[str, Any] = json.loads(render_show(eff, as_json=True, resolved=resolved))
+    eff = layer.load_effective(cwd, config_path)
+    resolved = confine.resolved_config_values(eff.config)
+    payload: dict[str, Any] = json.loads(
+        config_view.render_show(eff, as_json=True, resolved=resolved)
+    )
     for setting in payload.values():
         value = setting["value"]
         setting["input"] = (
-            "" if value is None else value if isinstance(value, str) else format_toml_value(value)
+            ""
+            if value is None
+            else value
+            if isinstance(value, str)
+            else io.format_toml_value(value)
         )
     return payload
 
 
-def config_suggestions(cwd: Path, key: str, config_path: Path | None = None) -> list[str]:
+def config_suggestions(
+    cwd: pathlib.Path, key: str, config_path: pathlib.Path | None = None
+) -> list[str]:
     """Return value suggestions for one open-text config leaf.
 
     `preset` offers the preset names; every other key what `config_value_choices`
     offers. A config error suggests nothing.
     """
     if key == "preset":
-        return available_preset_names(cwd, config_path)
+        return layer.available_preset_names(cwd, config_path)
     try:
-        eff = load_effective(cwd, config_path)
+        eff = layer.load_effective(cwd, config_path)
     except ConfigError:
         return []
-    return config_value_choices(eff, key)
+    return choices.config_value_choices(eff, key)
 
 
 def step_diff_payload(
-    repo: Path, session_dir: Path, sha: str, *, cumulative: bool
+    repo: pathlib.Path, session_dir: pathlib.Path, sha: str, *, cumulative: bool
 ) -> tuple[dict[str, Any] | None, str]:
     """Return the patch one run step introduced, or the whole chain up to it.
 
@@ -401,8 +400,8 @@ def step_diff_payload(
         The payload and "", or None and the reason; a model-controlled run has no chain.
     """
     try:
-        m = read_manifest(session_dir)
-    except ManifestError as exc:
+        m = manifest.read_manifest(session_dir)
+    except manifest.ManifestError as exc:
         return None, f"unreadable manifest: {exc}"
     if m.git_control == "model":
         return None, "the model owns git in this run: no step chain to select from"

@@ -11,6 +11,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import ipc, layout
+from agent6.ui import spawn
 from agent6.ui.cli import parser
 from agent6.ui.web import actions
 
@@ -53,7 +54,7 @@ def test_spawn_machine_create_argv_ends_options_before_task(
         captured.append(list(argv))
         return None, "not started"
 
-    monkeypatch.setattr(actions, "spawn_and_locate", _fake_locate)
+    monkeypatch.setattr(spawn, "spawn_and_locate", _fake_locate)
     actions.spawn_machine_create(tmp_path, "-dashy task")
     assert captured[-1][1:] == ["machine", "create", "--", "-dashy task"]
 
@@ -67,7 +68,7 @@ def test_merge_and_config_argv_end_options_before_values(
         captured.append(list(argv))
         return True, "ok"
 
-    monkeypatch.setattr(actions, "run_cli_capture", _fake_capture)
+    monkeypatch.setattr(spawn, "run_cli_capture", _fake_capture)
     actions.merge_run(tmp_path, "-rid", "squash")
     assert captured[-1][1:] == ["sessions", "merge", "--strategy", "squash", "--", "-rid"]
     actions.set_config(tmp_path, "sandbox.protect_git", "-1", repo=True)
@@ -106,7 +107,7 @@ def test_spawn_machine_run_propagates_refusal(
     def _refuse(*_a: object, **_k: object) -> str:
         return "agent6 machine exited (1):\nlock held"
 
-    monkeypatch.setattr(actions, "spawn_and_confirm", _refuse)
+    monkeypatch.setattr(spawn, "spawn_and_confirm", _refuse)
     ok, msg = actions.spawn_machine_run(tmp_path, str(mf))
     assert ok is False
     assert "lock held" in msg
@@ -133,7 +134,7 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
         started_fns.append(started)
         return ""
 
-    monkeypatch.setattr(actions, "spawn_and_confirm", _fake_confirm)
+    monkeypatch.setattr(spawn, "spawn_and_confirm", _fake_confirm)
     ok, msg = actions.spawn_machine_run(tmp_path, str(mf))
     assert ok is True and msg == "started"
     assert captured_argv[-1][1:] == ["machine", "run", str(mf)]
@@ -533,7 +534,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
         spawned.append(steer)
         return ""
 
-    monkeypatch.setattr(actions, "spawn_detached_resume", _spawn)
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _spawn)
 
     ok, msg = actions.resume_run(tmp_path, "done-WEB111")
     assert ok is False
@@ -608,7 +609,7 @@ def test_run_plan_spawns_from_plan_and_refuses_non_plans(
         child.mkdir(parents=True, exist_ok=True)
         return child, ""
 
-    monkeypatch.setattr(actions, "spawn_and_locate", _fake_spawn)
+    monkeypatch.setattr(spawn, "spawn_and_locate", _fake_spawn)
     # No plan.md yet: still planning (or never finished) -> refuse, no spawn.
     payload, err = actions.run_plan(tmp_path, "planny-one-AAAAAA")
     assert payload is None and "no plan.md" in err and not seen
@@ -644,7 +645,7 @@ def test_spawn_machine_run_takes_the_listed_name_or_path(
         spawned.append(argv)
         return ""
 
-    monkeypatch.setattr(actions, "spawn_and_confirm", _record)
+    monkeypatch.setattr(spawn, "spawn_and_confirm", _record)
     assert actions.spawn_machine_run(tmp_path, "tiny.asm.toml") == (True, "started")
     assert spawned[-1][-1] == str(mf)
     ok, msg = actions.spawn_machine_run(tmp_path, "/elsewhere/tiny.asm.toml")
@@ -664,7 +665,7 @@ def test_prune_carries_the_squash_opt_in_only_when_asked(
         captured.append(list(argv))
         return True, "ok"
 
-    monkeypatch.setattr(actions, "run_cli_capture", _fake_capture)
+    monkeypatch.setattr(spawn, "run_cli_capture", _fake_capture)
 
     actions.prune_sessions(tmp_path)
     assert captured[-1][1:] == ["sessions", "prune"]

@@ -19,6 +19,6 @@ access expected behind `tailscale serve`. No secret is ever served.
 
 from __future__ import annotations
 
-from agent6.ui.web.server import run_web
+from agent6.ui.web.server import run_web  # noqa: ICN003  # re-export
 
 __all__ = ["run_web"]

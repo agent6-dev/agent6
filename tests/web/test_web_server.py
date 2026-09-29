@@ -25,8 +25,10 @@ from typing import Any, cast
 import pytest
 
 from agent6 import paths
+from agent6.app import fork
 from agent6.machine import journal as machine_journal
 from agent6.sessions import ipc
+from agent6.ui import spawn
 from agent6.ui.cli import main
 from agent6.ui.web import server as web_server
 
@@ -257,7 +259,6 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from agent6.ui.web import actions
 
     _srv, port = server
     _make_run(tmp_path, "run-r", [{"type": "session.start"}, {"type": "session.end"}])
@@ -275,7 +276,7 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
         calls.append((cwd, session_id, steer, preset, model))
         return ""
 
-    monkeypatch.setattr(actions, "spawn_detached_resume", fake_resume)
+    monkeypatch.setattr(spawn, "spawn_detached_resume", fake_resume)
     status, data = _post(
         port,
         "/api/session/run-r/resume",
@@ -290,7 +291,6 @@ def test_run_plan_http_returns_the_child_and_leaves_the_plan_unchanged(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from agent6.ui.web import actions
 
     _srv, port = server
     plan = paths.state_dir(tmp_path) / "sessions" / "plans" / "plan-http-AAAAAA"
@@ -310,7 +310,7 @@ def test_run_plan_http_returns_the_child_and_leaves_the_plan_unchanged(
         child.mkdir(parents=True)
         return child, ""
 
-    monkeypatch.setattr(actions, "spawn_and_locate", fake_spawn)
+    monkeypatch.setattr(spawn, "spawn_and_locate", fake_spawn)
 
     status, data = _post(port, f"/api/session/{plan.name}/run_plan", {})
 
@@ -1742,8 +1742,6 @@ def test_a_failed_frontend_claim_does_not_consume_the_first_viewer(
 
     The next connection then retries registration instead of silently skipping it.
     """
-    import agent6.ui.web.server as server_mod
-
     session_dir = tmp_path / "run"
     session_dir.mkdir()
     attempts = 0
@@ -1754,7 +1752,7 @@ def test_a_failed_frontend_claim_does_not_consume_the_first_viewer(
         if attempts == 1:
             raise OSError("disk was briefly read-only")
 
-    monkeypatch.setattr(server_mod, "register_frontend", register)
+    monkeypatch.setattr(ipc, "register_frontend", register)
     srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "")
     try:
         with pytest.raises(OSError, match="read-only"):
@@ -2214,8 +2212,6 @@ def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
     The verb forks through the same lifecycle call and answers with the new session's id, which the
     page opens so its composer can start it.
     """
-    from agent6.ui.web import actions
-
     _srv, port = server
     _make_run(tmp_path, "run-f", [{"type": "session.start"}])
     calls: list[tuple[str, pathlib.Path]] = []
@@ -2226,7 +2222,7 @@ def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
         calls.append((source, cwd))
         return "run-f-child", 0
 
-    monkeypatch.setattr(actions, "create_fork", _fake_fork)
+    monkeypatch.setattr(fork, "create_fork", _fake_fork)
     status, data = _post(port, "/api/session/run-f/fork", {})
     assert status == 200 and data["ok"] is True
     assert data["new_session_id"] == "run-f-child"
@@ -2337,8 +2333,6 @@ def test_new_work_carries_the_picked_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The composer's model pick reaches the one spawn every hub makes."""
-    import agent6.ui.web.server as server_mod
-
     _srv, port = server
     seen: list[tuple[str, str, str, str]] = []
 
@@ -2354,7 +2348,7 @@ def test_new_work_carries_the_picked_model(
         seen.append((mode, task, preset, model))
         return tmp_path / "sid", ""
 
-    monkeypatch.setattr(server_mod, "spawn_new_work", _spawn)
+    monkeypatch.setattr(spawn, "spawn_new_work", _spawn)
     status, body = _post(
         port, "/api/new", {"mode": "plan", "task": "t", "preset": "fast", "model": "o/f"}
     )
@@ -2368,8 +2362,6 @@ def test_review_answers_with_the_cli_review_of_a_finished_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The web review verb runs `sessions review` and answers with its markdown or refusal."""
-    from agent6.ui.web import actions
-
     _srv, port = server
     _make_run(
         tmp_path,
@@ -2387,7 +2379,7 @@ def test_review_answers_with_the_cli_review_of_a_finished_run(
         calls.append((argv[-3:], cwd))
         return True, "## Outcome\nfinished green"
 
-    monkeypatch.setattr(actions, "run_cli_output", _fake_output)
+    monkeypatch.setattr(spawn, "run_cli_output", _fake_output)
     status, data = _post(port, "/api/session/run-r/review", {})
     assert status == 200 and data["ok"] is True
     assert data["review"] == "## Outcome\nfinished green"
@@ -2398,7 +2390,7 @@ def test_review_answers_with_the_cli_review_of_a_finished_run(
     ) -> tuple[bool, str]:
         return False, "run-r is live; its record is not complete."
 
-    monkeypatch.setattr(actions, "run_cli_output", _refused)
+    monkeypatch.setattr(spawn, "run_cli_output", _refused)
     status, data = _post(port, "/api/session/run-r/review", {})
     assert status == 422 and data["error"] == "run-r is live; its record is not complete."
     status, _data = _post(port, "/api/session/run-nope/review", {})

@@ -11,17 +11,17 @@ exercise.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
+import pathlib
 import queue
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from agent6.machine import MachineError
-from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions import layout
 from agent6.ui.web import model
 from agent6.viewmodel import (
     NewestExecutionFold,
@@ -42,7 +42,7 @@ MACHINE_POLL_S = 0.5
 STREAMING_DELTAS = frozenset({"role.text_delta", "role.thinking_delta"})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SseChannel:
     """The two writes a stream makes, bound to one client's socket.
 
@@ -76,7 +76,7 @@ def _with_idle_age(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _late_merge_header(
-    session_dir: Path, repo: Path, header: dict[str, Any], *, finished: bool
+    session_dir: pathlib.Path, repo: pathlib.Path, header: dict[str, Any], *, finished: bool
 ) -> dict[str, Any] | None:
     """Re-read the manifest header on a finished run's heartbeat.
 
@@ -98,7 +98,7 @@ def _late_merge_header(
     return refreshed if refreshed != header else None
 
 
-def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None:  # noqa: PLR0915
+def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib.Path) -> None:  # noqa: PLR0915
     """Stream one run until it ends, the worker dies, or the client leaves.
 
     A tailer thread feeds a queue; the loop folds every queued event into one frame,
@@ -113,7 +113,7 @@ def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None: 
     stop = threading.Event()
 
     def tail() -> None:
-        src = session_dir / LOGS_NAME
+        src = session_dir / layout.LOGS_NAME
         try:
             # A resumed run logs into this same file, so the stream outlives session.end.
             for ev in tail_events(
@@ -201,7 +201,7 @@ def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None: 
         stop.set()
 
 
-def stream_machine(chan: SseChannel, machine_dir: Path) -> None:
+def stream_machine(chan: SseChannel, machine_dir: pathlib.Path) -> None:
     """Stream one machine until it ends or the client leaves.
 
     Each poll folds the journal and pushes the snapshot when it changed, heartbeats

@@ -10,38 +10,25 @@ non-loopback bind is opt-in under `[web]`), renders folded read state, drives th
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import pathlib
 import socket
 import sys
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from ipaddress import ip_address
-from pathlib import Path
+from http import server as http_server
 from typing import Any, Literal
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib import parse
 
-from pydantic import BaseModel, ConfigDict, StrictBool, ValidationError
+import pydantic
 
-from agent6 import __version__
-from agent6.config import is_loopback_host
-from agent6.config.write import PROVIDER_DEFAULTS, provider_choices
-from agent6.kinds import OPERATOR_MODES
+from agent6 import __version__, kinds
+from agent6.config import is_loopback_host, write
 from agent6.machine import MachineError
-from agent6.sessions.ipc import (
-    register_frontend,
-    unregister_frontend,
-)
-from agent6.ui.spawn import spawn_new_work
-from agent6.ui.web import actions, model
-from agent6.ui.web._sse import SseChannel, stream_machine, stream_session
-from agent6.ui.web.page import (
-    FAVICON_SVG,
-    ICON_SVG,
-    MANIFEST_JSON,
-    PAGE_HTML,
-    SERVICE_WORKER_JS,
-)
+from agent6.sessions import ipc
+from agent6.ui import spawn
+from agent6.ui.web import _sse, actions, model, page
 from agent6.viewmodel import (
     UnknownStepError,
     machine_snapshot,
@@ -52,10 +39,10 @@ from agent6.viewmodel import (
 _MAX_BODY_BYTES = 1 << 20
 
 
-class _Body(BaseModel):
+class _Body(pydantic.BaseModel):
     """A typed POST body; an extra key is refused so a misspelled field fails loudly."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = pydantic.ConfigDict(extra="forbid")
 
 
 class NewWorkBody(_Body):
@@ -117,7 +104,7 @@ class PruneBody(_Body):
 class StopBody(_Body):
     """A stop body; `after_step` lets the current step's results and auto-commit land."""
 
-    after_step: StrictBool = False
+    after_step: pydantic.StrictBool = False
 
 
 class ResumeBody(_Body):
@@ -167,7 +154,7 @@ class ConfigSetBody(_Body):
     unset: bool = False
 
 
-def _validation_message(exc: ValidationError) -> str:
+def _validation_message(exc: pydantic.ValidationError) -> str:
     """Return the failed fields as one line (`task: field required`)."""
     clauses: list[str] = []
     for err in exc.errors():
@@ -177,7 +164,7 @@ def _validation_message(exc: ValidationError) -> str:
     return "; ".join(clauses)
 
 
-class WebServer(ThreadingHTTPServer):
+class WebServer(http_server.ThreadingHTTPServer):
     """The threading server, carrying the repo its handlers read from.
 
     It counts the browsers watching each run so the process registers as an
@@ -188,7 +175,11 @@ class WebServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def __init__(
-        self, addr: tuple[str, int], cwd: Path, target: str, config_path: Path | None = None
+        self,
+        addr: tuple[str, int],
+        cwd: pathlib.Path,
+        target: str,
+        config_path: pathlib.Path | None = None,
     ) -> None:
         super().__init__(addr, _Handler)
         self.cwd = cwd
@@ -204,7 +195,7 @@ class WebServer(ThreadingHTTPServer):
             return
         super().handle_error(request, client_address)
 
-    def claim_session(self, session_dir: Path) -> None:
+    def claim_session(self, session_dir: pathlib.Path) -> None:
         """Register as the run's answer front-end on its first viewer.
 
         The claim file is per process, so other front-ends are never displaced.
@@ -213,10 +204,10 @@ class WebServer(ThreadingHTTPServer):
         with self._pid_lock:
             n = self._watch_counts.get(key, 0)
             if n == 0:
-                register_frontend(session_dir, os.getpid())
+                ipc.register_frontend(session_dir, os.getpid())
             self._watch_counts[key] = n + 1
 
-    def release_session(self, session_dir: Path) -> None:
+    def release_session(self, session_dir: pathlib.Path) -> None:
         """Drop the claim when the run's last viewer leaves.
 
         The count and the claim change under one lock, so a concurrent claim cannot
@@ -229,7 +220,7 @@ class WebServer(ThreadingHTTPServer):
                 self._watch_counts[key] = n
                 return
             self._watch_counts.pop(key, None)
-            unregister_frontend(session_dir, os.getpid())
+            ipc.unregister_frontend(session_dir, os.getpid())
 
 
 class _IPv6WebServer(WebServer):
@@ -249,7 +240,7 @@ def _bind_host(host: str) -> str:
 def _is_ipv6_literal(host: str) -> bool:
     """Return whether the host is an IPv6 literal."""
     try:
-        return ip_address(_bind_host(host)).version == 6
+        return ipaddress.ip_address(_bind_host(host)).version == 6
     except ValueError:
         return False
 
@@ -264,7 +255,7 @@ def _display_host(host: str) -> str:
 
 
 def _create_web_server(
-    host: str, port: int, cwd: Path, target: str, config_path: Path | None = None
+    host: str, port: int, cwd: pathlib.Path, target: str, config_path: pathlib.Path | None = None
 ) -> WebServer:
     """Return a server bound to the host and port, IPv6 when the host is an IPv6 literal."""
     bind_host = _bind_host(host)
@@ -272,7 +263,7 @@ def _create_web_server(
     return server_cls((bind_host, port), cwd, target, config_path)
 
 
-class _Handler(BaseHTTPRequestHandler):
+class _Handler(http_server.BaseHTTPRequestHandler):
     """One request's handler."""
 
     _streaming = False  # the SSE headers went out; an error is a frame now
@@ -284,12 +275,12 @@ class _Handler(BaseHTTPRequestHandler):
         """Log nothing; the signature is the stdlib's."""
 
     @property
-    def cwd(self) -> Path:
+    def cwd(self) -> pathlib.Path:
         """The repository the server reads."""
         return self.server.cwd
 
     @property
-    def config_path(self) -> Path | None:
+    def config_path(self) -> pathlib.Path | None:
         """The explicit config file, or None."""
         return self.server.config_path
 
@@ -315,7 +306,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         """Route a GET; the method name is the stdlib's dispatch contract."""
-        path = unquote(urlsplit(self.path).path)
+        path = parse.unquote(parse.urlsplit(self.path).path)
         if not self._parse_body_length():
             return
         if self._body_length:
@@ -336,7 +327,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         """Route a POST; the method name is the stdlib's dispatch contract."""
-        path = unquote(urlsplit(self.path).path)
+        path = parse.unquote(parse.urlsplit(self.path).path)
         # Parsed first: a bad header meets one refusal before anything is read.
         if not self._parse_body_length():
             return
@@ -359,7 +350,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._route_post(path)
         except (BrokenPipeError, ConnectionResetError):
             pass
-        except ValidationError as exc:
+        except pydantic.ValidationError as exc:
             # The body was read, so the framing is intact and the connection may stay open.
             self._send_json({"error": _validation_message(exc)}, status=400)
         except ValueError as exc:
@@ -388,7 +379,7 @@ class _Handler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         if origin:
             host = self.headers.get("Host", "")
-            if urlsplit(origin).netloc != host:
+            if parse.urlsplit(origin).netloc != host:
                 return f"cross-origin POST refused (Origin {origin!r} != Host {host!r})"
         return None
 
@@ -415,7 +406,7 @@ class _Handler(BaseHTTPRequestHandler):
         parts = path.strip("/").split("/")
         if path == "/api/new":
             body = NewWorkBody.model_validate(self._read_body())
-            session_dir, err = spawn_new_work(
+            session_dir, err = spawn.spawn_new_work(
                 self.cwd,
                 body.mode,
                 body.task,
@@ -578,9 +569,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _send_routes(self) -> None:
         """Send `/api/routes?mode=&preset=`, the composer's model box; an unknown mode is 422."""
-        q = parse_qs(urlsplit(self.path).query)
+        q = parse.parse_qs(parse.urlsplit(self.path).query)
         mode = (q.get("mode") or ["run"])[0]
-        if mode not in OPERATOR_MODES:
+        if mode not in kinds.OPERATOR_MODES:
             self._send_json({"error": f"unknown mode {mode!r}"}, status=422)
             return
         self._send_json(
@@ -592,19 +583,21 @@ class _Handler(BaseHTTPRequestHandler):
     def _route(self, path: str) -> None:  # noqa: PLR0911, PLR0912
         """Dispatch a GET by path."""
         if path == "/":
-            self._send_bytes(PAGE_HTML.encode("utf-8"), "text/html; charset=utf-8")
+            self._send_bytes(page.PAGE_HTML.encode("utf-8"), "text/html; charset=utf-8")
             return
         if path == "/manifest.webmanifest":
-            self._send_bytes(MANIFEST_JSON.encode("utf-8"), "application/manifest+json")
+            self._send_bytes(page.MANIFEST_JSON.encode("utf-8"), "application/manifest+json")
             return
         if path == "/sw.js":
-            self._send_bytes(SERVICE_WORKER_JS.encode("utf-8"), "text/javascript; charset=utf-8")
+            self._send_bytes(
+                page.SERVICE_WORKER_JS.encode("utf-8"), "text/javascript; charset=utf-8"
+            )
             return
         if path == "/icon.svg":
-            self._send_bytes(ICON_SVG.encode("utf-8"), "image/svg+xml")
+            self._send_bytes(page.ICON_SVG.encode("utf-8"), "image/svg+xml")
             return
         if path == "/favicon.svg":
-            self._send_bytes(FAVICON_SVG.encode("utf-8"), "image/svg+xml")
+            self._send_bytes(page.FAVICON_SVG.encode("utf-8"), "image/svg+xml")
             return
         if path == "/api/meta":
             self._send_json(
@@ -626,7 +619,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(
                 model.config_payload(self.cwd, self.config_path)
                 if path == "/api/config"
-                else {**provider_choices(), "defaults": PROVIDER_DEFAULTS}
+                else {**write.provider_choices(), "defaults": write.PROVIDER_DEFAULTS}
             )
             return
         if path.startswith("/api/config/suggest/"):
@@ -669,7 +662,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"error": f"no draft {name!r}"}, status=404)
             return
         if sub == "":
-            step = (parse_qs(urlsplit(self.path).query).get("step") or [""])[0]
+            step = (parse.parse_qs(parse.urlsplit(self.path).query).get("step") or [""])[0]
             try:
                 self._send_json(session_snapshot(draft_dir, step=step))
             except UnknownStepError as e:
@@ -677,7 +670,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif sub == "conversation":
             self._send_json(model.conversation_payload(draft_dir))
         elif sub == "diff":
-            q = parse_qs(urlsplit(self.path).query)
+            q = parse.parse_qs(parse.urlsplit(self.path).query)
             workspace = model.draft_workspace(self.cwd, name, self.config_path)
             if workspace is None:
                 gone = "the drafting workspace is gone (removed with a published draft)"
@@ -704,7 +697,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"error": f"no session {session_id!r}"}, status=404)
             return
         if sub == "":
-            step = (parse_qs(urlsplit(self.path).query).get("step") or [""])[0]
+            step = (parse.parse_qs(parse.urlsplit(self.path).query).get("step") or [""])[0]
             try:
                 self._send_json(session_snapshot(session_dir, repo=self.cwd, step=step))
             except UnknownStepError as e:
@@ -714,7 +707,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif sub == "restate":
             self._send_json(model.restate_payload(session_dir))
         elif sub == "diff":
-            q = parse_qs(urlsplit(self.path).query)
+            q = parse.parse_qs(parse.urlsplit(self.path).query)
             payload, why = model.step_diff_payload(
                 self.cwd,
                 session_dir,
@@ -726,7 +719,7 @@ class _Handler(BaseHTTPRequestHandler):
             else:
                 self._send_json(payload)
         elif sub == "resume_defaults":
-            preset = (parse_qs(urlsplit(self.path).query).get("preset") or [""])[0]
+            preset = (parse.parse_qs(parse.urlsplit(self.path).query).get("preset") or [""])[0]
             self._send_json(
                 model.resume_defaults_payload(
                     self.cwd, self.config_path, session_dir, preset=preset
@@ -816,16 +809,16 @@ class _Handler(BaseHTTPRequestHandler):
             return False
         return True
 
-    def _sse_session(self, session_dir: Path) -> None:
+    def _sse_session(self, session_dir: pathlib.Path) -> None:
         """Stream a run, registered as its answer front-end while connected."""
         self._begin_sse()
         self.server.claim_session(session_dir)
         try:
-            stream_session(self._channel(), session_dir, repo=self.cwd)
+            _sse.stream_session(self._channel(), session_dir, repo=self.cwd)
         finally:
             self.server.release_session(session_dir)
 
-    def _sse_machine(self, machine_dir: Path) -> None:
+    def _sse_machine(self, machine_dir: pathlib.Path) -> None:
         """Stream a machine, registered as the answer front-end on its instance dir.
 
         A state's answer files live in its per-state dir; the liveness gate probes
@@ -834,13 +827,13 @@ class _Handler(BaseHTTPRequestHandler):
         self._begin_sse()
         self.server.claim_session(machine_dir)
         try:
-            stream_machine(self._channel(), machine_dir)
+            _sse.stream_machine(self._channel(), machine_dir)
         finally:
             self.server.release_session(machine_dir)
 
-    def _channel(self) -> SseChannel:
+    def _channel(self) -> _sse.SseChannel:
         """Return this handler's socket writes as a channel."""
-        return SseChannel(send=self._sse_send, ping=self._sse_ping)
+        return _sse.SseChannel(send=self._sse_send, ping=self._sse_ping)
 
 
 def run_web(
@@ -848,8 +841,8 @@ def run_web(
     *,
     host: str,
     port: int,
-    cwd: Path | None = None,
-    config_path: Path | None = None,
+    cwd: pathlib.Path | None = None,
+    config_path: pathlib.Path | None = None,
 ) -> int:
     """Serve the web UI until interrupted.
 
@@ -863,7 +856,7 @@ def run_web(
     Returns:
         The exit code: 2 when the bind failed.
     """
-    workdir = cwd or Path.cwd()
+    workdir = cwd or pathlib.Path.cwd()
     bind_host = _bind_host(host)
     try:
         server = _create_web_server(bind_host, port, workdir, target, config_path)
