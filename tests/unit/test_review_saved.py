@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -122,9 +122,19 @@ def test_the_panel_verdict_is_saved_too(
 
 
 def test_two_reviews_in_one_second_keep_both(tmp_path: Path) -> None:
+    """Two reviews of one repo in the same second (a CLI review beside a
+    TUI one) chose the same name by check-then-write; the name is claimed
+    with an exclusive create, so a file that appears between the check and
+    the write is never replaced."""
     first = review_cmds.save_review(tmp_path, label="a", body="one")
     second = review_cmds.save_review(tmp_path, label="b", body="two")
     assert first != second
+    taken = tmp_path / "20260101T000000Z-review.md"
+    taken.write_text("# review: theirs\n\nkept\n", encoding="utf-8")
+    with patch("agent6.ui.cli.review_cmds.time.strftime", return_value="20260101T000000Z"):
+        mine = review_cmds.save_review(tmp_path, label="c", body="three")
+    assert mine == tmp_path / "20260101T000000Z-2-review.md"
+    assert taken.read_text(encoding="utf-8") == "# review: theirs\n\nkept\n"
     assert {p.read_text(encoding="utf-8") for p in (first, second)} == {
         "# review: a\n\none\n",
         "# review: b\n\ntwo\n",

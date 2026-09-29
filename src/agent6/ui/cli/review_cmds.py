@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -22,7 +23,6 @@ from agent6.config import (
 from agent6.config.layer import load_effective
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, chain_tip, git_hardening_flags
 from agent6.paths import mkdir_for_real_user, state_dir
-from agent6.portable import atomic_write
 from agent6.providers import (
     ProviderError,
     TranscriptSink,
@@ -102,13 +102,20 @@ def save_review(reviews_dir: Path, *, label: str, body: str) -> Path:
     its review by searching the directory for the path."""
     mkdir_for_real_user(reviews_dir)
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    path = reviews_dir / f"{stamp}-review.md"
+    content = f"# review: {label}\n\n{body.rstrip()}\n".encode()
     n = 1
-    while path.exists():
-        n += 1
-        path = reviews_dir / f"{stamp}-{n}-review.md"
-    atomic_write(path, f"# review: {label}\n\n{body.rstrip()}\n".encode())
-    return path
+    while True:
+        path = reviews_dir / (f"{stamp}-review.md" if n == 1 else f"{stamp}-{n}-review.md")
+        # An exclusive create claims the name: two reviews in one second
+        # (a CLI review beside a TUI one) never replace each other.
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            n += 1
+            continue
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(content)
+        return path
 
 
 def _is_checked_out(git: str, root: Path, rev: str) -> bool:
