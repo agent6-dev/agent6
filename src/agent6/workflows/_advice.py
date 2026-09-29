@@ -118,15 +118,11 @@ BeforeCallAdvisor = Callable[["LoopState", TurnContext], Nudge | None]
 
 
 @dataclass(frozen=True, slots=True)
-class Refusal:
-    """A finish gate's answer: the finish call is revoked and the model gets
-    `text` (or nothing, when the findings reach it another way), with the
-    event and the log line recorded."""
-
-    text: str = ""
-    event: str = ""
-    fields: Mapping[str, object] = field(default_factory=dict)
-    log: str = ""
+class Refusal(Nudge):
+    """A finish gate's answer, the same record as a nudge: the loop revokes
+    the end it answers and the model gets `text` (or nothing, when the
+    findings reach it another way), with the event and the log line
+    recorded."""
 
 
 # A finish gate: one rule a finish_session must satisfy, judged over a turn

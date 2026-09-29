@@ -14,14 +14,19 @@ adding a field cannot silently miss the reset site.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from agent6.workflows._guards import Rung, climb
+from agent6.workflows._guards import Ladder, Rung
 from agent6.workflows._nudges import (
     TOOL_ERROR_ESCALATE_AFTER,
     TOOL_ERROR_NUDGE_AFTER,
     TOOL_ERROR_STOP_AFTER,
 )
+
+
+def tool_error_ladder() -> Ladder:
+    """The ladder over a streak of tool errors sharing one signature."""
+    return Ladder(TOOL_ERROR_NUDGE_AFTER, TOOL_ERROR_ESCALATE_AFTER, TOOL_ERROR_STOP_AFTER)
 
 
 @dataclass(slots=True)
@@ -36,7 +41,7 @@ class SpiralGuard:
     warned_at_iteration: int = 0
     error_sig: str | None = None
     error_streak: int = 0
-    error_nudges_used: int = 0
+    error_ladder: Ladder = field(default_factory=tool_error_ladder)
     last_error_was_denial: bool = False
 
     def note_call(self, sig: str, *, polling: bool = False) -> None:
@@ -69,7 +74,7 @@ class SpiralGuard:
         self.last_served_content = content
         self.error_sig = None
         self.error_streak = 0
-        self.error_nudges_used = 0
+        self.error_ladder.rearm()
         self.last_error_was_denial = False
 
     def note_error(self, sig: str, *, denial: bool, content: str) -> None:
@@ -82,19 +87,8 @@ class SpiralGuard:
         else:
             self.error_sig = sig
             self.error_streak = 1
-            self.error_nudges_used = 0
+            self.error_ladder.rearm()
 
     def climb_error(self) -> Rung | None:
         """The rung the error streak reaches on the tool-error ladder."""
-        rung = climb(
-            self.error_streak,
-            self.error_nudges_used,
-            nudge_after=TOOL_ERROR_NUDGE_AFTER,
-            escalate_after=TOOL_ERROR_ESCALATE_AFTER,
-            stop_after=TOOL_ERROR_STOP_AFTER,
-        )
-        if rung == "nudge":
-            self.error_nudges_used = 1
-        elif rung == "escalate":
-            self.error_nudges_used = 2
-        return rung
+        return self.error_ladder.climb(self.error_streak)

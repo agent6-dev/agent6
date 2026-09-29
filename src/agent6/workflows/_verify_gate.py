@@ -249,13 +249,13 @@ class VerifyGate:
         verdict.last_tail = tail.strip()[-2000:]
         if rc == 0:
             verdict.note_pass()
-            state.no_progress.nudges_used = 0
+            state.no_progress.rearm()
             return
         verdict.note_fail(verify_failure_signature(result.stdout, result.stderr))
         verdict.red_tree = self.chain.tree_sha()
         if verdict.fail_streak == 1:
             # A NEW stuck point: the nudge allowance starts over with it.
-            state.no_progress.nudges_used = 0
+            state.no_progress.rearm()
 
     def maybe_adopt(self, state: LoopState, turn: TurnState) -> None:
         """A gateless run that commits has just materialized project files the

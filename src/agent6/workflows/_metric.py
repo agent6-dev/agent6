@@ -331,6 +331,10 @@ class MetricGuard:
     plateau_nudges_used: int = 0
     finish_nudges_used: int = 0
 
+    def rearm(self) -> None:
+        """A standing goal absorbed the plateau stop: its patience starts over."""
+        self.plateau_nudges_used = 0
+
     def at_ceiling(self) -> bool:
         """Whether any verified sample reached the metric's provable ceiling
         (`SCORE: 27/27`): a metric that cannot improve, so an early finish is

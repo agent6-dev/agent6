@@ -1431,10 +1431,7 @@ class Workflow:
         turn.end_returned = True
         if refusal.text:
             turn.tool_results.append(Notice(refusal.text))
-        if refusal.event:
-            self._emit(refusal.event, **refusal.fields)
-        if refusal.log:
-            self._log(refusal.log)
+        self._record(refusal)
         state.settled.restart()
         return True
 
@@ -1492,12 +1489,10 @@ class Workflow:
             return None
         if isinstance(outcome, Nudge):
             turn.tool_results.append(Notice(outcome.text))
+            self._record(outcome)
+            return None
         if outcome.event:
             self._emit(outcome.event, **outcome.fields)
-        if isinstance(outcome, Nudge):
-            if outcome.log:
-                self._log(outcome.log)
-            return None
         if outcome.declared and turn.finish_signal is None:
             aborted = self._end_gates(state, turn, ctx, ending=outcome.declared, gates=END_GATES)
             if aborted is not None:
@@ -1628,8 +1623,8 @@ class Workflow:
         turn.stops = [stop for stop in turn.stops if not stop.soft]
         state.settled.restart()
         state.verify.fail_streak = 0
-        state.no_progress.nudges_used = 0
-        state.metric.plateau_nudges_used = 0
+        state.no_progress.rearm()
+        state.metric.rearm()
         conversation.notice(nudge)
 
     # ---- stop checks, silent finish, went-quiet --------------------------------
@@ -1734,10 +1729,15 @@ class Workflow:
         if nudge is None:
             return
         conversation.notice(nudge.text)
-        if nudge.event:
-            self._emit(nudge.event, **nudge.fields)
-        if nudge.log:
-            self._log(nudge.log)
+        self._record(nudge)
+
+    def _record(self, answer: Nudge) -> None:
+        """Record an advisor's or a gate's answer: its event emitted, its
+        line logged (each skipped when empty)."""
+        if answer.event:
+            self._emit(answer.event, **answer.fields)
+        if answer.log:
+            self._log(answer.log)
 
     def _take_operator_requests(self, state: LoopState) -> bool:
         """Apply what the operator asked of the run since its last turn

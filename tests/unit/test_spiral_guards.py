@@ -34,16 +34,16 @@ def test_success_clears_the_whole_error_spiral() -> None:
     g.note_error("boom", denial=True, content="{}")
     g.note_error("boom", denial=False, content="{}")
     assert g.error_streak == 2
-    g.error_nudges_used = 1
+    g.error_ladder.used = 1
     g.note_success("ok")
     assert g.error_streak == 0 and g.error_sig is None
-    assert g.error_nudges_used == 0 and g.last_error_was_denial is False
+    assert g.error_ladder.used == 0 and g.last_error_was_denial is False
     assert g.last_served_content == "ok"
 
 
 def test_a_new_error_signature_rearms_the_nudge_allowance() -> None:
     g = SpiralGuard()
     g.note_error("sig-a", denial=False, content="{}")
-    g.error_nudges_used = 2
+    g.error_ladder.used = 2
     g.note_error("sig-b", denial=False, content="{}")
-    assert g.error_streak == 1 and g.error_nudges_used == 0
+    assert g.error_streak == 1 and g.error_ladder.used == 0

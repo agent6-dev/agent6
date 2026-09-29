@@ -69,44 +69,42 @@ if TYPE_CHECKING:
 Rung = Literal["nudge", "escalate", "stop"]
 
 
-def climb(
-    streak: int, used: int, *, nudge_after: int, escalate_after: int, stop_after: int
-) -> Rung | None:
-    """The rung a streak reaches on a nudge, escalate, stop ladder: the first
-    nudge at `nudge_after`, the escalation at `escalate_after` once the nudge
-    went out, the stop at `stop_after` once both did; None between rungs.
-    `used` is how many rungs went out already."""
-    if streak >= stop_after and used >= 2:
-        return "stop"
-    if streak >= escalate_after and used == 1:
-        return "escalate"
-    if streak >= nudge_after and used == 0:
-        return "nudge"
-    return None
-
-
 @dataclass(slots=True)
-class NoProgressGuard:
-    """N consecutive verify failures sharing one signature (run mode, no
-    metric): nudge, escalate, then stop the run as no_progress. A green
-    verify or a different failure resets the streak (`VerifyVerdict`); a new
-    stuck point re-arms the ladder."""
+class Ladder:
+    """A nudge, escalate, stop ladder over a streak: the first nudge at
+    `nudge_after`, the escalation at `escalate_after` once the nudge went
+    out, the stop at `stop_after` once both did. `used` counts the rungs
+    that went out; a new stuck point re-arms it."""
 
-    nudges_used: int = 0
+    nudge_after: int
+    escalate_after: int
+    stop_after: int
+    used: int = 0
 
     def climb(self, streak: int) -> Rung | None:
-        rung = climb(
-            streak,
-            self.nudges_used,
-            nudge_after=NO_PROGRESS_NUDGE_AFTER,
-            escalate_after=NO_PROGRESS_ESCALATE_AFTER,
-            stop_after=NO_PROGRESS_STOP_AFTER,
-        )
-        if rung == "nudge":
-            self.nudges_used = 1
-        elif rung == "escalate":
-            self.nudges_used = 2
-        return rung
+        """The rung *streak* reaches now, None between rungs."""
+        if streak >= self.stop_after and self.used >= 2:
+            return "stop"
+        if streak >= self.escalate_after and self.used == 1:
+            self.used = 2
+            return "escalate"
+        if streak >= self.nudge_after and self.used == 0:
+            self.used = 1
+            return "nudge"
+        return None
+
+    def rearm(self) -> None:
+        self.used = 0
+
+    @staticmethod
+    def level(rung: Rung) -> int:
+        """The level a nudge event carries: 1 for the nudge, 2 for the escalation."""
+        return 2 if rung == "escalate" else 1
+
+
+def no_progress_ladder() -> Ladder:
+    """The ladder over a plain run's streak of identical verify failures."""
+    return Ladder(NO_PROGRESS_NUDGE_AFTER, NO_PROGRESS_ESCALATE_AFTER, NO_PROGRESS_STOP_AFTER)
 
 
 def no_progress(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | Stop | None:
@@ -132,11 +130,10 @@ def no_progress(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | 
             soft="no_progress",
             log=f"LOOP: no_progress stop at iter {turn.iteration} (streak {streak})",
         )
-    level = 2 if rung == "escalate" else 1
     return Nudge(
         NO_PROGRESS_ESCALATION if rung == "escalate" else NO_PROGRESS_NUDGE,
         event="loop.no_progress.nudge",
-        fields={"iteration": turn.iteration, "streak": streak, "level": level},
+        fields={"iteration": turn.iteration, "streak": streak, "level": Ladder.level(rung)},
     )
 
 
@@ -288,11 +285,10 @@ def tool_error_ladder(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nu
         text = TOOL_DENIED_NUDGE
     else:
         text = TOOL_ERROR_ESCALATION if rung == "escalate" else TOOL_ERROR_NUDGE
-    level = 2 if rung == "escalate" else 1
     return Nudge(
         text,
         event="loop.tool_error.nudge",
-        fields={"iteration": turn.iteration, "streak": streak, "level": level},
+        fields={"iteration": turn.iteration, "streak": streak, "level": Ladder.level(rung)},
     )
 
 

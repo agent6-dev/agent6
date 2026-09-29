@@ -20,13 +20,14 @@ from agent6.workflows._finish_gates import FinishGates
 from agent6.workflows._guards import (
     BudgetNudges,
     FocusGuard,
+    Ladder,
     MemoryState,
-    NoProgressGuard,
     ReachabilityGuard,
     SettledGuard,
     StagnationGuard,
     StandingGoal,
     Stop,
+    no_progress_ladder,
 )
 from agent6.workflows._metric import MetricGuard, MetricSample
 from agent6.workflows._quiet_turns import QuietGuard
@@ -75,7 +76,7 @@ class LoopState:
     pins: list[str] = field(default_factory=list)
     # The guards (`_guards`; the spiral one in `_spiral_guards`).
     spiral: SpiralGuard = field(default_factory=SpiralGuard)
-    no_progress: NoProgressGuard = field(default_factory=NoProgressGuard)
+    no_progress: Ladder = field(default_factory=no_progress_ladder)
     settled: SettledGuard = field(default_factory=SettledGuard)
     metric: MetricGuard = field(default_factory=MetricGuard)
     quiet: QuietGuard = field(default_factory=QuietGuard)
