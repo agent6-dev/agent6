@@ -129,15 +129,8 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     wf = _wf(root=repo, config=config, resume_state_path=snap, curator=curator)
     state = LoopState(original_task="t", tool_calls=0)
 
-    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s",
-        messages=[],
-        tool_calls=0,
-        next_iteration=3,
-        root_task_id=None,
-        state=state,
-        write_checkpoint=True,
-    )
+    state.system, state.tool_calls, state.root_task_id = "s", 0, None
+    wf._save_resume_snapshot(state, [], next_iteration=3, write_checkpoint=True)  # pyright: ignore[reportPrivateUsage]
 
     # checkpoints live next to loop_state.json (the run dir).
     cp = session_dir / "checkpoints" / "0003.json"
@@ -176,13 +169,11 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
     wf = _wf(root=repo, config=config, resume_state_path=snap)
     state = LoopState(original_task="t", tool_calls=0)
     for turn in (1, 2, 3):
+        state.system, state.tool_calls, state.root_task_id = "s", 0, None
         wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-            system="s",
-            messages=[{"role": "user", "content": f"turn {turn}"}],
-            tool_calls=0,
+            state,
+            [{"role": "user", "content": f"turn {turn}"}],
             next_iteration=turn,
-            root_task_id=None,
-            state=state,
             write_checkpoint=True,
         )
     cp_dir = session_dir / "checkpoints"
@@ -220,13 +211,11 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: Path) -
     state = LoopState(original_task="t", tool_calls=0)
 
     def save(content: str, turn: int, *, checkpoint: bool) -> None:
+        state.system, state.tool_calls, state.root_task_id = "s", 0, None
         wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-            system="s",
-            messages=[{"role": "user", "content": content}],
-            tool_calls=0,
+            state,
+            [{"role": "user", "content": content}],
             next_iteration=turn,
-            root_task_id=None,
-            state=state,
             write_checkpoint=checkpoint,
         )
 

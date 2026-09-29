@@ -138,9 +138,8 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     state.verify.scoped = True
     state.settled.gateless_ever_edited = True
     state.metric.history.append(_MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True))
-    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=2, next_iteration=4, root_task_id=None, state=state
-    )
+    state.system, state.tool_calls, state.root_task_id = "s", 2, None
+    wf._save_resume_snapshot(state, [], next_iteration=4)  # pyright: ignore[reportPrivateUsage]
     loaded = load_session_snapshot(snap)
     assert loaded.verify_ever_passed is True
     assert loaded.verify_scoped is True
@@ -177,9 +176,8 @@ def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: Path) -> 
     state.memory.written = True
     state.memory.flip_nudged = True
     state.memory.finish_nudged = True
-    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=3, root_task_id=None, state=state
-    )
+    state.system, state.tool_calls, state.root_task_id = "s", 0, None
+    wf._save_resume_snapshot(state, [], next_iteration=3)  # pyright: ignore[reportPrivateUsage]
 
     loaded = load_session_snapshot(snap)
     fresh = LoopState(original_task="t", tool_calls=0)
@@ -269,9 +267,8 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
     wf = _wf(resume_state_path=snap, config=config)
     state = LoopState(original_task="t", tool_calls=0)
     state.parallel_groups_dispatched = 2
-    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=4, root_task_id=None, state=state
-    )
+    state.system, state.tool_calls, state.root_task_id = "s", 0, None
+    wf._save_resume_snapshot(state, [], next_iteration=4)  # pyright: ignore[reportPrivateUsage]
     loaded = load_session_snapshot(snap)
     assert loaded.parallel_groups_dispatched == 2
 
@@ -309,9 +306,8 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
     wf = _wf(resume_state_path=snap, config=config)
     state = LoopState(original_task="t", tool_calls=0)
     state.pins.extend(["never touch schema files", "goal:\nship X"])
-    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=4, root_task_id=None, state=state
-    )
+    state.system, state.tool_calls, state.root_task_id = "s", 0, None
+    wf._save_resume_snapshot(state, [], next_iteration=4)  # pyright: ignore[reportPrivateUsage]
     loaded = load_session_snapshot(snap)
     assert loaded.pins == ("never touch schema files", "goal:\nship X")
 
@@ -771,13 +767,13 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
     orig_call = provider.call
     orig_compact = Compactor.compact
 
-    def _spy_save(**kw: Any) -> None:
-        orig_save(**kw)
+    def _spy_save(state: Any, messages: list[dict[str, Any]], **kw: Any) -> None:
+        orig_save(state, messages, **kw)
         events.append(
             {
                 "kind": "save",
                 "next_iteration": kw["next_iteration"],
-                "messages": json.loads(json.dumps(kw["messages"])),
+                "messages": json.loads(json.dumps(messages)),
             }
         )
 

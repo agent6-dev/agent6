@@ -4631,7 +4631,7 @@ def test_save_resume_snapshot_noop_when_path_unset(tmp_path: Path) -> None:
     """resume_state_path=None -> no file written, no exception."""
     wf = _wf()
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
+        _state(system="s", tool_calls=0, root_task_id=None), [], next_iteration=1
     )
     # tmp_path should still be empty.
     assert list(tmp_path.iterdir()) == []
@@ -4648,12 +4648,9 @@ def test_save_and_load_run_snapshot_round_trip(tmp_path: Path) -> None:
         {"role": "assistant", "content": [{"type": "text", "text": "hi back"}]},
     ]
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="SYSTEM PROMPT",
-        messages=msgs,
-        tool_calls=3,
+        _state(tool_calls=3, system="SYSTEM PROMPT", root_task_id="task-abc"),
+        msgs,
         next_iteration=7,
-        root_task_id="task-abc",
-        state=_state(tool_calls=3),
     )
     assert snap_path.is_file()
     loaded = load_session_snapshot(snap_path)
@@ -4670,12 +4667,9 @@ def test_save_resume_snapshot_atomic_no_partial_tmp(tmp_path: Path) -> None:
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s",
-        messages=[],
-        tool_calls=0,
+        _state(system="s", tool_calls=0, root_task_id=None),
+        [],
         next_iteration=1,
-        root_task_id=None,
-        state=_state(),
         write_checkpoint=True,
     )
     assert snap_path.is_file()
@@ -4706,12 +4700,9 @@ def test_save_resume_snapshot_uses_durable_atomic_writer(
     wf = _wf(resume_state_path=snap_path)
 
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s",
-        messages=[],
-        tool_calls=0,
+        _state(system="s", tool_calls=0, root_task_id=None),
+        [],
         next_iteration=9,
-        root_task_id=None,
-        state=_state(),
         write_checkpoint=True,
     )
 
@@ -5189,14 +5180,14 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     )
     wf = _wf(resume_state_path=snap, config=config)
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
+        _state(system="s", tool_calls=0, root_task_id=None), [], next_iteration=1
     )
     assert load_session_snapshot(snap).verify_command == ("pytest", "-q")
 
     config.workflow.verify_command = ()  # gateless run -> stored as [] -> loads as ()
     wf = _wf(resume_state_path=snap, config=config)
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
+        _state(system="s", tool_calls=0, root_task_id=None), [], next_iteration=1
     )
     assert load_session_snapshot(snap).verify_command == ()
 
@@ -5244,12 +5235,7 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -
     # Must not raise, twice (the second call must not re-warn).
     for _ in range(2):
         wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-            system="s",
-            messages=[],
-            tool_calls=0,
-            next_iteration=1,
-            root_task_id=None,
-            state=_state(),
+            _state(system="s", tool_calls=0, root_task_id=None), [], next_iteration=1
         )
     warnings = [m for m in logs if "could not persist resume snapshot" in m]
     assert len(warnings) == 1, "warn exactly once, then stay quiet"

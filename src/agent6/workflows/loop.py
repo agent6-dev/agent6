@@ -630,11 +630,9 @@ class Workflow:
             tools = tool_definitions(self.dispatcher, mode=self.mode)
             ctx = self._turn_context(state, iteration=iteration, leg_start=start_iteration)
             wire = self._turn_pre_call(
-                system=system,
                 conversation=conversation,
                 state=state,
                 ctx=ctx,
-                root_task_id=root_task_id,
                 prefix_chars=request_prefix_chars(system, tools),
             )
             if isinstance(wire, SessionResult):
@@ -662,12 +660,7 @@ class Workflow:
                 # operator stop at the boundary below resumes from AFTER the
                 # prose + nudge instead of re-paying the provider call.
                 self._save_resume_snapshot(
-                    system=system,
-                    messages=conversation.to_wire(),
-                    tool_calls=state.tool_calls,
-                    next_iteration=iteration + 1,
-                    root_task_id=root_task_id,
-                    state=state,
+                    state, conversation.to_wire(), next_iteration=iteration + 1
                 )
                 # A prose turn is a completed iteration too: without this
                 # boundary a model answering in prose could never be stopped
@@ -712,14 +705,7 @@ class Workflow:
             # where replay may repeat a non-idempotent effect and asks. Marker
             # deletion comes AFTER this write: a crash mid-snapshot then leaves
             # a stale marker resume clears silently, never a missed one.
-            self._save_resume_snapshot(
-                system=system,
-                messages=conversation.to_wire(),
-                tool_calls=state.tool_calls,
-                next_iteration=iteration + 1,
-                root_task_id=root_task_id,
-                state=state,
-            )
+            self._save_resume_snapshot(state, conversation.to_wire(), next_iteration=iteration + 1)
             if self.resume_state_path is not None:
                 clear_turn_marker(self.resume_state_path.parent / TURN_IN_FLIGHT_NAME)
             result = self._turn_stop_checks(state, turn, conversation)
@@ -758,11 +744,9 @@ class Workflow:
     def _turn_pre_call(
         self,
         *,
-        system: str,
         conversation: Conversation,
         state: LoopState,
         ctx: TurnContext,
-        root_task_id: str | None,
         prefix_chars: int = 0,
     ) -> list[dict[str, Any]] | SessionResult:
         """Prepare the context for this turn's provider call: budget heartbeat,
@@ -788,17 +772,9 @@ class Workflow:
         self._turn_before_call(conversation, state, ctx)
         conversation.roll_cache_marks()
         wire = conversation.to_wire()
-        self._save_resume_snapshot(
-            system=system,
-            messages=wire,
-            tool_calls=state.tool_calls,
-            next_iteration=ctx.iteration,
-            root_task_id=root_task_id,
-            state=state,
-            # The one numbered-checkpoint writer: this state is what turn
-            # `iteration`'s provider call consumes.
-            write_checkpoint=True,
-        )
+        # The one numbered-checkpoint writer: this state is what turn
+        # `iteration`'s provider call consumes.
+        self._save_resume_snapshot(state, wire, next_iteration=ctx.iteration, write_checkpoint=True)
         return wire
 
     def _turn_provider_call(
@@ -2197,13 +2173,10 @@ class Workflow:
 
     def _save_resume_snapshot(
         self,
-        *,
-        system: str,
-        messages: list[dict[str, Any]],
-        tool_calls: int,
-        next_iteration: int,
-        root_task_id: str | None,
         state: LoopState,
+        messages: list[dict[str, Any]],
+        *,
+        next_iteration: int,
         write_checkpoint: bool = False,
     ) -> None:
         """Write loop state to disk for resume.
@@ -2224,11 +2197,11 @@ class Workflow:
         goal = metric_goal(self.config.workflow.metric)
         best = best_metric_sample(state.metric.history, goal=goal) if goal is not None else None
         snapshot = SessionSnapshot(
-            system=system,
+            system=state.system,
             messages=messages,
-            tool_calls=tool_calls,
+            tool_calls=state.tool_calls,
             next_iteration=next_iteration,
-            root_task_id=root_task_id,
+            root_task_id=state.root_task_id,
             original_task=state.original_task,
             verify_command=self.gate.command(state.verify),
             review_rejections_total=state.gates.review_total,

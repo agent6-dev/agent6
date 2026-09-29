@@ -281,14 +281,7 @@ class ParallelDispatcher:
         # the entire group: a crash there would resume with the stale count
         # and the next /parallel would re-use this group's id, colliding with
         # its lane clones and branches.
-        self.save_snapshot(
-            system=state.system,
-            messages=conversation.to_wire(),
-            tool_calls=state.tool_calls,
-            next_iteration=iteration + 1,
-            root_task_id=state.root_task_id,
-            state=state,
-        )
+        self.save_snapshot(state, conversation.to_wire(), next_iteration=iteration + 1)
         self.log(
             f"PARALLEL: dispatching group {group} "
             f"({len(lanes)} lane(s) across {len(segments)} task(s))"
