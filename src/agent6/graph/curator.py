@@ -1,36 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Authoritative in-process graph mutator.
+"""The one in-process mutator of a session's task graph.
 
-`GraphCurator` is the single source of truth for one run's task graph. It runs
-in-process in the agent (`app/_session.py` constructs it for run and resume),
-inheriting that process's confinement and writing the run's graph under the
-out-of-tree per-repo state dir. Unit tests instantiate it the same way.
-
-Mutations are validated structurally, then applied as:
-
-  1. mutate in-memory graph state
-  2. atomically write the affected node `.md` files, each stamped with the
-     version this mutation will journal (nodes are the content authority)
-  3. append the entry to `graph.jsonl` (the journal, append-only audit log)
-     and commit the `graph_version` bump
-
-The flock around every mutation prevents interleaved file writes from
-accidental parallel curator instances (which we explicitly forbid). It does
-not merge their in-memory state: each instance caches the graph at
-construction, so a second live instance would still lose updates. One curator
-per run is the invariant; the lock only bounds the damage if it is broken. The
-CLI upholds the invariant with a run-level single-writer flock
-(`sessions.lock.acquire_single_writer` on `<session-dir>/worker.lock`, the analogue
-of `machine_lock`): a second `agent6 run`/`resume` on the same run dir
-refuses rather than constructing a second curator (`fork` copies under the
-graph flock and never constructs one).
-
-Fail-safe: a mutation updates `self._nodes` in memory before writing to disk,
-so a write-path fault (ENOSPC, a serialization error, a cycle surfacing from
-`write_node`) can leave in-memory state ahead of disk. `_mutating` reloads
-from disk (the source of truth) before surfacing such a fault, so a later read
-never observes a node that was never persisted.
+A mutation is validated, applied in memory, written as the affected node files stamped
+with the version it will journal, then appended to `graph.jsonl` with the version bump.
+One curator per run is the invariant, upheld by the session's `worker.lock`; the flock
+around each mutation only bounds the damage if it is broken, since each instance caches
+the graph at construction. On a write-path fault `_mutating` reloads from disk before
+re-raising, so a later read never sees a node that was never persisted.
 """
 
 from __future__ import annotations
@@ -67,17 +44,17 @@ from agent6.graph.storage import (
 
 
 class CuratorError(Exception):
-    """A curator intent was rejected (validation, not I/O)."""
+    """A curator intent was rejected by validation, before anything was applied."""
 
 
 class _JournalBase(BaseModel):
-    """Base of the typed graph.jsonl entries: what each mutation appends to the
-    append-only audit log. The node `.md` files are the source of truth; the
-    fields read back are `graph_version` (`_compute_graph_version`) and,
-    by `graph.replay` for `fork --at-turn`, each entry's mutation fields,
-    stamped by `_post_mutation` after the bump (0 only pre-stamp). The
-    `ts` timestamp is added by `storage.write_journal`, which also sorts
-    keys, so field order here is presentational only.
+    """The base of the typed journal entries.
+
+    The node files are the source of truth; the journal is read back for `graph_version`
+    and by `graph.replay`. `storage.write_journal` adds the timestamp and sorts the keys.
+
+    Attributes:
+        graph_version: The version the mutation produced, stamped by `_post_mutation`.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -86,31 +63,48 @@ class _JournalBase(BaseModel):
 
 
 class AddSubtaskJournal(_JournalBase):
+    """A node was added.
+
+    Attributes:
+        op: The intent name.
+        id: The assigned id.
+        parent_id: The parent, or None.
+        by: The actor.
+    """
+
     op: Literal["add_subtask"] = "add_subtask"
-    id: str  # the ASSIGNED id (the intent has none yet)
+    id: str
     parent_id: str | None
     by: NodeActor
 
 
 class UpdateStatusJournal(_JournalBase):
+    """A node's status changed."""
+
     op: Literal["update_status"] = "update_status"
     id: str
     new_status: NodeStatus
 
 
 class AddDependencyJournal(_JournalBase):
+    """A node gained a dependency."""
+
     op: Literal["add_dependency"] = "add_dependency"
     id: str
     depends_on: str
 
 
 class RecordCommitJournal(_JournalBase):
+    """A node's commit was recorded."""
+
     op: Literal["record_commit"] = "record_commit"
     id: str
     sha: str
 
 
 class SetCursorJournal(_JournalBase):
+    """The focus moved."""
+
     op: Literal["set_cursor"] = "set_cursor"
     id: str | None
 
@@ -127,12 +121,20 @@ JournalEntry = (
 def _place(
     children: tuple[str, ...], new_id: str, after: str | None, *, standing_at: int | None = None
 ) -> tuple[str, ...]:
-    """*children* with *new_id* inserted just after *after*, else last.
+    """Insert a child after a named sibling, else last, ahead of a standing sibling.
 
-    "Last" stops short of a standing sibling (*standing_at*, its index): the
-    standing goal is the run's last resort, and the tree says so by keeping it
-    at the end. A named position still wins, so the caller can place a task
-    anywhere it can name."""
+    The standing goal is the run's last resort and the tree keeps it at the end; a named
+    position still wins.
+
+    Args:
+        children: The parent's children.
+        new_id: The child to insert.
+        after: The sibling to follow, or None for last.
+        standing_at: The standing sibling's index, or None.
+
+    Returns:
+        The new children.
+    """
     if after is not None:
         at = children.index(after) + 1
         return (*children[:at], new_id, *children[at:])
@@ -141,42 +143,53 @@ def _place(
     return (*children[:standing_at], new_id, *children[standing_at:])
 
 
-# Task ids are the run's own count, zero-padded so a listing lines up. Four
-# digits covers any run we have seen (the busiest recorded graph held 24
-# tasks); a run past 9999 keeps working, since `graph.order.id_order` sorts on
-# the number rather than the string.
+# Zero-padded so a listing lines up; a run past 9999 keeps working, since id_order sorts on
+# the number. The busiest recorded graph held 24 tasks.
 TASK_ID_WIDTH = 4
 
 
 def _next_task_id(nodes: dict[str, TaskNode]) -> str:
-    """The next task number for this graph.
+    """Return the next task id: the highest number plus one, zero-padded.
 
-    A count rather than a ULID: the graph belongs to one run, the curator
-    serialises every mutation behind its flock, and nothing deletes a node, so
-    the highest number plus one is free and never reused. A graph carried in
-    from before (its ids opaque) simply starts the count at one.
+    Nothing deletes a node and the flock serialises every mutation, so the number is free
+    and never reused; a graph whose ids are opaque starts the count at one.
+
+    Args:
+        nodes: The graph by id.
+
+    Returns:
+        The id.
     """
     highest = max((int(nid) for nid in nodes if nid.isdigit()), default=0)
     return f"{highest + 1:0{TASK_ID_WIDTH}d}"
 
 
 def _now() -> datetime:
+    """Return the current UTC time.
+
+    Returns:
+        An aware datetime.
+    """
     return datetime.now(tz=UTC)
 
 
 class GraphCurator:
-    """Owns one run's graph, in-memory and on-disk."""
+    """One session's graph, in memory and on disk."""
 
     def __init__(self, layout: SessionLayout) -> None:
+        """Load the graph and resync the version counter to a journal that lost its tail.
+
+        A node stamped newer than the journal's max version is a death between the node
+        write and its journal append; the counter continues from the node's stamp so the
+        lost number is never reused, and the change stays out of historical replay.
+
+        Args:
+            layout: The session layout, whose dirs are created.
+        """
         self._layout = layout
         layout.ensure()
         self._nodes: dict[str, TaskNode] = load_graph(layout)
         self._graph_version = self._compute_graph_version()
-        # A node stamped newer than the journal's max version is a death
-        # between the node write and its journal append: the entry is gone.
-        # Resync the counter so the lost number is never reused (two ops
-        # sharing a version corrupts fork-at-version undo) and say so; the
-        # change stays current but is invisible to historical replay.
         node_max = max((n.graph_version for n in self._nodes.values()), default=0)
         if node_max > self._graph_version:
             sys.stderr.write(
@@ -188,6 +201,11 @@ class GraphCurator:
             self._graph_version = node_max
 
     def _compute_graph_version(self) -> int:
+        """Return the journal's highest version, else the node count.
+
+        Returns:
+            The version.
+        """
         return max(
             (
                 int(gv)
@@ -197,39 +215,62 @@ class GraphCurator:
             default=len(self._nodes),
         )
 
-    # ---- accessors --------------------------------------------------------
-
     @property
     def layout(self) -> SessionLayout:
+        """The session layout."""
         return self._layout
 
     @property
     def graph_version(self) -> int:
+        """The version of the last mutation."""
         return self._graph_version
 
     def nodes(self) -> dict[str, TaskNode]:
+        """Return a copy of the graph.
+
+        Returns:
+            The nodes by id.
+        """
         return dict(self._nodes)
 
     def get(self, node_id: str) -> TaskNode:
+        """Return one node.
+
+        Args:
+            node_id: The id.
+
+        Returns:
+            The node.
+
+        Raises:
+            CuratorError: No such node.
+        """
         if node_id not in self._nodes:
             raise CuratorError(f"unknown node: {node_id}")
         return self._nodes[node_id]
 
     def cursor(self) -> str | None:
-        return read_cursor(self._layout)
+        """Read the focused node's id from disk.
 
-    # ---- mutations --------------------------------------------------------
+        Returns:
+            The id, or None.
+        """
+        return read_cursor(self._layout)
 
     @contextmanager
     def _mutating(self) -> Generator[None]:
-        """Flock the run dir for one mutation, with the disk-fault fail-safe.
+        """Hold the graph flock for one mutation, reloading from disk on a write fault.
 
-        A `CuratorError` is a pre-mutation validation reject (nothing was
-        applied), so it propagates untouched. Any other fault escapes after the
-        in-memory graph was already updated, so reload from disk (the source of
-        truth) before re-raising: a later read then never sees a node the write
-        path failed to persist. The reload runs under the same flock so a
-        concurrent operator read can't observe the skewed state."""
+        A `CuratorError` rejected the intent before anything was applied and propagates
+        untouched. Any other fault escapes after the in-memory graph was updated, so the
+        reload, under the same flock, keeps a later read from seeing an unpersisted node.
+
+        Yields:
+            Nothing; the lock is held for the block.
+
+        Raises:
+            CuratorError: The block rejected its intent; re-raised without a reload.
+        """
         with flock(self._layout.lock_path):
             try:
                 yield
@@ -241,17 +282,37 @@ class GraphCurator:
                 raise
 
     def _write(self, node: TaskNode) -> TaskNode:
-        """Stamp *node* with the version this mutation will journal, cache it,
-        write its file, and return the stamped copy. Every write inside one
-        mutation carries the same number `_post_mutation` then records, so a
-        journal that lost its tail is detectable at load (the resync in
-        __init__)."""
+        """Stamp a node with the version this mutation will journal, cache it and write it.
+
+        Every write inside one mutation carries the number `_post_mutation` then records.
+
+        Args:
+            node: The node.
+
+        Returns:
+            The stamped copy.
+        """
         stamped = node.model_copy(update={"graph_version": self._graph_version + 1})
         self._nodes[stamped.id] = stamped
         write_node(self._layout, self._nodes, stamped)
         return stamped
 
     def add_subtask(self, intent: AddSubtaskIntent) -> TaskNode:
+        """Add a node under a parent.
+
+        The child is written before the parent's link, so a crash between leaves at worst an
+        orphan rather than a dangling reference. Only the operator's steering may set the
+        standing flag: a model asking for one keeps its task and loses the flag.
+
+        Args:
+            intent: The intent.
+
+        Returns:
+            The new node.
+
+        Raises:
+            CuratorError: The parent, the `after` sibling, or a dependency is unknown.
+        """
         with self._mutating():
             parent = self._nodes.get(intent.parent_id) if intent.parent_id else None
             if intent.parent_id is not None and parent is None:
@@ -273,10 +334,6 @@ class GraphCurator:
                 acceptance=intent.draft.acceptance,
                 relevant_paths=intent.draft.relevant_paths,
                 depends_on=intent.draft.depends_on,
-                # The standing slot is the operator's: `--standing` seeds one
-                # (created_by "steering") and it is the run's last resort. A
-                # model asking for another keeps its task and loses the flag,
-                # so there is exactly one and nobody can evict it.
                 standing=intent.draft.standing and intent.draft.created_by == "steering",
                 children=(),
                 status="pending",
@@ -284,10 +341,6 @@ class GraphCurator:
                 updated_at=now,
                 created_by=intent.draft.created_by,
             )
-            # Write the child node before the parent->child link so a crash in
-            # between can at worst leave an orphan node (parent_id set, not yet
-            # listed in parent.children) rather than a dangling reference to a
-            # child whose .md never made it to disk.
             node = self._write(node)
             if parent is not None:
                 updated_parent = parent.model_copy(
@@ -310,8 +363,14 @@ class GraphCurator:
             return node
 
     def _standing_at(self, parent: TaskNode) -> int | None:
-        """Where *parent*'s standing child sits, so a new sibling lands before
-        it; None when this parent has none."""
+        """Return the index of the parent's standing child, so a new sibling lands before it.
+
+        Args:
+            parent: The parent.
+
+        Returns:
+            The index, or None when the parent has no standing child.
+        """
         for i, cid in enumerate(parent.children):
             child = self._nodes.get(cid)
             if child is not None and child.standing:
@@ -319,12 +378,24 @@ class GraphCurator:
         return None
 
     def update_status(self, intent: UpdateStatusIntent) -> TaskNode:
+        """Set a node's status, appending the note.
+
+        An end is final: a passed task may only be retired, and a retired one stays retired,
+        or `passed -> obsolete -> pending` would re-open work every dependent was told had
+        passed. Claiming a task in progress also moves the cursor to it.
+
+        Args:
+            intent: The intent.
+
+        Returns:
+            The updated node.
+
+        Raises:
+            CuratorError: The node is unknown, the transition re-opens an end, a standing
+                task would pass, or a non-root parent would pass over unresolved children.
+        """
         with self._mutating():
             node = self.get(intent.id)
-            # An end is final: a passed task may only be retired, and a retired
-            # one stays retired, or `passed -> obsolete -> pending` would walk
-            # around the first rule and re-open work every dependent was told
-            # had passed. Needed again means a new task.
             if node.status == "passed" and intent.new_status != "obsolete":
                 raise CuratorError(
                     f"cannot transition passed node {intent.id} to {intent.new_status}"
@@ -344,12 +415,7 @@ class GraphCurator:
                 and node.parent_id is not None
                 and (unresolved := unresolved_children(self._nodes, node))
             ):
-                # Passing a parent over an open or failed child would satisfy
-                # every dependency on it while the work they name goes undone;
-                # the children are named, so the retry or retirement is one
-                # call away. The root is exempt: nothing depends on it, and a
-                # run that ends with a standing goal or a subtask left open
-                # still completed it.
+                # The root is exempt: nothing depends on it.
                 raise CuratorError(
                     f"{intent.id} has unresolved children ({', '.join(unresolved)}), so it is"
                     " not finished; mark them passed, skipped or obsolete first"
@@ -365,16 +431,23 @@ class GraphCurator:
             )
             updated = self._write(updated)
             if intent.new_status == "in_progress":
-                # Claiming a task is how the worker picks what it works next:
-                # the frontier honours the cursor while it points at a
-                # focusable subtask, so the claim holds until that task is
-                # settled. The harness marks the task it has just focused,
-                # where this writes the cursor it was about to write anyway.
+                # The frontier honours the cursor while it points at a focusable subtask.
                 write_cursor(self._layout, updated.id)
             self._post_mutation(UpdateStatusJournal(id=updated.id, new_status=intent.new_status))
             return updated
 
     def add_dependency(self, intent: AddDependencyIntent) -> TaskNode:
+        """Make a node wait on another; a dependency already present is a no-op.
+
+        Args:
+            intent: The intent.
+
+        Returns:
+            The updated node.
+
+        Raises:
+            CuratorError: A node is unknown, or the edge would make a cycle.
+        """
         with self._mutating():
             node = self.get(intent.id)
             if intent.depends_on not in self._nodes:
@@ -396,6 +469,17 @@ class GraphCurator:
             return updated
 
     def record_commit(self, intent: RecordCommitIntent) -> TaskNode:
+        """Record the commit that landed a node.
+
+        Args:
+            intent: The intent.
+
+        Returns:
+            The updated node.
+
+        Raises:
+            CuratorError: The node is unknown.
+        """
         with self._mutating():
             node = self.get(intent.id)
             updated = node.model_copy(update={"commit_sha": intent.sha, "updated_at": _now()})
@@ -404,20 +488,39 @@ class GraphCurator:
             return updated
 
     def set_cursor(self, intent: SetCursorIntent) -> None:
+        """Move the focus.
+
+        Args:
+            intent: The intent.
+
+        Raises:
+            CuratorError: The node is unknown.
+        """
         with self._mutating():
             if intent.id is not None and intent.id not in self._nodes:
                 raise CuratorError(f"set_cursor: unknown node {intent.id!r}")
             write_cursor(self._layout, intent.id)
             self._post_mutation(SetCursorJournal(id=intent.id))
 
-    # ---- internals --------------------------------------------------------
-
     def _post_mutation(self, entry: JournalEntry) -> None:
+        """Bump the version and journal the entry stamped with it.
+
+        Args:
+            entry: The mutation's entry.
+        """
         self._graph_version += 1
         stamped = entry.model_copy(update={"graph_version": self._graph_version})
         write_journal(self._layout, stamped.model_dump(mode="json"))
 
     def _iter_recent_journal(self) -> list[dict[str, object]]:
+        """Read the journal, skipping a torn line with a note on stderr.
+
+        The node files are the source of truth and the version counter self-heals, so a
+        torn final line must not make the run unresumable.
+
+        Returns:
+            The entries in file order.
+        """
         path = self._layout.journal_path
         if not path.is_file():
             return []
@@ -429,17 +532,19 @@ class GraphCurator:
             try:
                 entries.append(json.loads(stripped))
             except json.JSONDecodeError:
-                # A crash mid-append can leave a torn final line. The node .md
-                # files are the source of truth (read atomically by load_graph)
-                # and graph_version is a self-healing monotonic counter, so skip
-                # the corrupt line rather than crashing curator startup, which
-                # would make the whole run unresumable.
                 sys.stderr.write(f"agent6: skipping malformed journal line: {stripped[:80]!r}\n")
         return entries
 
     def _would_introduce_cycle(self, src: str, new_dep: str) -> bool:
-        """True iff adding src→new_dep would create a cycle in the dep DAG."""
-        # Walk dep transitively from new_dep; if the walk reaches src, it's a cycle.
+        """Return whether a new dependency edge would make a cycle.
+
+        Args:
+            src: The node gaining the dependency.
+            new_dep: The node it would wait on.
+
+        Returns:
+            True when the walk from the dependency reaches the node.
+        """
         stack = [new_dep]
         seen: set[str] = set()
         while stack:

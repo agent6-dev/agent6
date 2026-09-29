@@ -1,14 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tiny ULID generator, Crockford-base32 26-char sortable IDs.
+"""A ULID generator: 26-character Crockford base32 ids that sort by creation time.
 
-We use ULIDs (rather than uuid4) because they are time-sortable in lexicographic
-order, which makes the on-disk graph trivially diff-friendly: nodes created
-earlier sort earlier in `ls` output, and `first_ready_subtask` falls back
-to id sort as creation order. Ids created in the same millisecond are made monotonic
-by incrementing the previous random part (the standard ULID monotonicity rule);
-without that, same-ms ids sort randomly. Implementing this here avoids a
-runtime dependency on `python-ulid`.
+Ids minted in the same millisecond stay monotonic by incrementing the previous random part,
+the standard ULID rule. In-tree, so no runtime dependency on `python-ulid`.
 """
 
 from __future__ import annotations
@@ -18,13 +13,20 @@ import threading
 import time
 from dataclasses import dataclass
 
-# Public: the ULID alphabet. TaskNode's id validator enforces it at the
-# graph-reload trust boundary (an id becomes a filesystem path component).
+# TaskNode's id validator enforces the alphabet where an id becomes a path component.
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
 @dataclass
 class _Monotonic:
+    """The last id minted, under a lock.
+
+    Attributes:
+        lock: Serializes minting.
+        last_ms: The last id's millisecond; -1 before the first.
+        last_rand: The last id's random part.
+    """
+
     lock: threading.Lock
     last_ms: int = -1
     last_rand: int = 0
@@ -34,22 +36,20 @@ _state = _Monotonic(lock=threading.Lock())
 
 
 def new_ulid() -> str:
-    """Return a fresh 26-character Crockford-base32 ULID.
+    """Mint a fresh ULID.
 
-    Format: 48-bit ms timestamp (10 chars) || 80-bit random (16 chars).
-    Strictly increasing within a process, including across same-millisecond
-    calls and small clock steps backward.
+    Returns:
+        A 48-bit millisecond timestamp and 80 random bits as 26 Crockford base32 characters,
+        strictly increasing within the process, across same-millisecond calls and small
+        clock steps backward.
     """
     with _state.lock:
         now_ms = int(time.time() * 1000) & ((1 << 48) - 1)
         if now_ms <= _state.last_ms:
-            # Same millisecond (or the clock stepped back): bump the previous
-            # random part so the new id still sorts after it.
+            # The same millisecond, or the clock stepped back: bump the random part.
             _state.last_rand += 1
             if _state.last_rand >= 1 << 80:
-                # Counting cannot reach 2^80 in one ms; only a start value at
-                # the very top of the range can overflow. Borrow the next
-                # millisecond instead of failing.
+                # Only a start value at the top of the range can overflow: borrow the next ms.
                 _state.last_ms += 1
                 _state.last_rand = 0
         else:

@@ -1,17 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The persistent task-graph models: nodes plus the LLM-emitted curator intents
-that mutate them, a doubly-linked tree keyed by the run's own task count.
+"""The task-graph nodes and the intents that mutate them.
 
-Every node carries an `id` (the run's count, zero-padded) and a `parent_id`; the
-tree is doubly linked (a parent lists each child's id in `children`, each child
-names its `parent_id`), a symmetry the curator maintains on every mutation.
-`status` ranges over the fixed `NodeStatus` vocabulary (pending, in_progress,
-passed, failed, skipped, obsolete).
-
-These cross trust boundaries (LLM-emitted intents, disk reload), so they are
-pydantic per project convention. Internal-only value types remain frozen
-dataclasses in `agent6.kinds`.
+The tree is doubly linked: a parent lists each child in `children` and each child names its
+`parent_id`, a symmetry the curator keeps on every mutation. These cross trust boundaries
+(model-emitted intents, disk reload), so they are pydantic.
 """
 
 from __future__ import annotations
@@ -24,8 +17,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from agent6.graph.ulid import CROCKFORD
 
 _MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)
-
-# ---- domain types ---------------------------------------------------------
 
 NodeStatus = Literal[
     "pending",
@@ -47,10 +38,17 @@ NodeActor = Literal[
 
 
 def owner_note(*, created_by: str, parent_id: str | None, standing: bool) -> str:
-    """What every surface says beside a task the operator owns: "queued by
-    you" for an ordinary task they added to a live run, "standing goal" for
-    the goal `--standing` or `/standing` set (the curator lets only the
-    operator's steering set the flag); "" for the model's own and the root."""
+    """Return what every surface says beside a task the operator owns.
+
+    Args:
+        created_by: The node's actor.
+        parent_id: The node's parent; None for the root.
+        standing: The node is the standing goal, which only the operator's steering sets.
+
+    Returns:
+        `standing goal`, `queued by you` for a task the operator added to a live run, or ""
+        for the model's own tasks and the root.
+    """
     if standing:
         return "standing goal"
     if created_by == "user" and parent_id is not None:
@@ -59,13 +57,32 @@ def owner_note(*, created_by: str, parent_id: str | None, standing: bool) -> str
 
 
 def queued_by_operator(node: TaskNode) -> bool:
-    """A task the operator added to a live run: theirs to withdraw, so the
-    model may pass it or leave it open but never retire it."""
+    """Return whether the operator added the task to a live run.
+
+    Such a task is theirs to withdraw: the model may pass it or leave it open, never retire it.
+
+    Args:
+        node: The node.
+
+    Returns:
+        True for an operator-queued task.
+    """
     return owner_note(created_by=node.created_by, parent_id=node.parent_id, standing=False) != ""
 
 
 class TaskNodeDraft(BaseModel):
-    """A new-node payload, id is assigned by the curator on insert."""
+    """A new node before the curator assigns its id.
+
+    Attributes:
+        title: The task, one line.
+        rationale: Why it exists.
+        acceptance: What done looks like.
+        relevant_paths: The files it touches.
+        depends_on: The ids that must be done first.
+        created_by: The actor adding it.
+        standing: The run's fallback: it never passes, and the frontier selects it only when
+            no ordinary subtask is ready.
+    """
 
     model_config = _MODEL_CONFIG
 
@@ -75,15 +92,32 @@ class TaskNodeDraft(BaseModel):
     relevant_paths: tuple[str, ...] = ()
     depends_on: tuple[str, ...] = ()
     created_by: NodeActor
-    # A standing task is the run's fallback: it never passes, and the focus
-    # frontier selects it only when no ordinary subtask is ready.
     standing: bool = False
 
 
 class TaskNode(BaseModel):
-    """A persisted task-graph node: an `id` counting up within the run, a
-    `parent_id`/`children` pair the curator keeps mutually consistent, and a
-    `status` drawn from the fixed `NodeStatus` vocabulary."""
+    """A persisted task-graph node.
+
+    Attributes:
+        id: The run's task count, zero-padded.
+        parent_id: The parent's id; None for the root.
+        title: The task, one line.
+        rationale: Why it exists.
+        acceptance: What done looks like.
+        relevant_paths: The files it touches.
+        depends_on: The ids that must be done first.
+        children: The child ids, in execution order.
+        status: The node's status.
+        created_at: When it was added.
+        updated_at: When it was last written.
+        created_by: The actor that added it.
+        commit_sha: The commit that landed it, or "".
+        notes: Appended prose.
+        standing: The never-passing fallback node.
+        graph_version: The version of the mutation that last wrote the node, the number its
+            journal entry carries; 0 unstamped. A node stamped newer than the journal's max
+            version is a journal that lost its tail.
+    """
 
     model_config = _MODEL_CONFIG
 
@@ -101,45 +135,54 @@ class TaskNode(BaseModel):
     created_by: NodeActor
     commit_sha: str = ""
     notes: str = ""
-    # See TaskNodeDraft.standing: the never-passing fallback node.
     standing: bool = False
-    # The graph_version of the mutation that last wrote this node (the same
-    # number its journal entry carries). 0 = unstamped.
-    # Lets the curator detect a journal that lost its tail: a node stamped
-    # newer than the journal's max version is exactly that crash.
     graph_version: int = 0
 
     @field_validator("id")
     @classmethod
     def _id_is_crockford(cls, v: str) -> str:
-        # The id becomes a filesystem path component (node_md_path builds the
-        # on-disk path from the ancestor id chain), so the reload trust
-        # boundary must reject a crafted 26-char id carrying separators
-        # ('../zzz...') that would make the next write_node escape graph_dir.
-        # A bad-id file then fails validation -> load_graph skips it with a
-        # warning, exactly like every other corrupt node file. Digits are
-        # Crockford, so the ids the curator assigns always pass.
+        """Refuse an id outside the Crockford alphabet at the reload trust boundary.
+
+        The id becomes a path component under graph_dir, so a crafted id carrying separators
+        would let the next write escape it; a bad-id file fails validation and `load_graph`
+        skips it with a warning.
+
+        Args:
+            v: The id.
+
+        Returns:
+            The id unchanged.
+
+        Raises:
+            ValueError: A character is outside the alphabet.
+        """
         if any(ch not in CROCKFORD for ch in v):
             raise ValueError(f"node id is not Crockford base32: {v!r}")
         return v
 
 
-# ---- curator intent payloads ---------------------------------------------
-
-
 class AddSubtaskIntent(BaseModel):
+    """Add a node under a parent.
+
+    Attributes:
+        op: The intent name.
+        parent_id: The parent; None for the root.
+        draft: The new node.
+        after: A sibling to place the child directly after, instead of appending; the
+            children list is the order the frontier executes.
+    """
+
     model_config = _MODEL_CONFIG
 
     op: Literal["add_subtask"] = "add_subtask"
     parent_id: str | None
     draft: TaskNodeDraft
-    # Place the new child directly after this sibling instead of appending.
-    # The children list is the order the frontier executes, so this is how
-    # work is inserted between two steps rather than re-planned around.
     after: str | None = None
 
 
 class UpdateStatusIntent(BaseModel):
+    """Set a node's status, with an optional note."""
+
     model_config = _MODEL_CONFIG
 
     op: Literal["update_status"] = "update_status"
@@ -149,6 +192,8 @@ class UpdateStatusIntent(BaseModel):
 
 
 class AddDependencyIntent(BaseModel):
+    """Make a node wait on another."""
+
     model_config = _MODEL_CONFIG
 
     op: Literal["add_dependency"] = "add_dependency"
@@ -157,6 +202,8 @@ class AddDependencyIntent(BaseModel):
 
 
 class RecordCommitIntent(BaseModel):
+    """Record the commit that landed a node."""
+
     model_config = _MODEL_CONFIG
 
     op: Literal["record_commit"] = "record_commit"
@@ -165,6 +212,8 @@ class RecordCommitIntent(BaseModel):
 
 
 class SetCursorIntent(BaseModel):
+    """Focus a node, or clear the focus with None."""
+
     model_config = _MODEL_CONFIG
 
     op: Literal["set_cursor"] = "set_cursor"
