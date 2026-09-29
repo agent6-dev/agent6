@@ -121,9 +121,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "review",
         help=(
             "Print a read-only review of a finished session's record on the reviewer model:"
-            " how it ended, what went wrong and why, what you corrected, and candidate memory"
-            " facts and AGENTS.md lines with their evidence. Saved under the state dir's"
-            " reviews/. Nothing is written to the repo or the memory."
+            " how it ended, what went wrong and why, what you corrected, candidate memory"
+            " facts and AGENTS.md lines with their evidence, and the memory entries the record"
+            " contradicts. Saved under the state dir's reviews/. Nothing is written to the repo"
+            " or the memory."
         ),
     )
     _add_session_id(sessions_review, _complete_session_ids)
