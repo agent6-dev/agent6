@@ -376,15 +376,12 @@ class Workflow:
         self.bridge.steer_reset()  # a leg starts with no armed Ctrl-C
         if self.mode == "plan" and self.plan_output_path is None:
             raise ValueError("Workflow(mode='plan') requires plan_output_path to be set")
-        # The run dir name is the authoritative run id; stamped into session.start so
-        # every fold reports it without re-deriving it from the path.
-        session_id = self.events.path.parent.name if self.events is not None else ""
         # The event carries the operator's own words (a seed digest or skill
         # block prepended by `run --from`/`--skill` is context, not the task),
         # clipped: every headline reads this field.
         self._emit_start(
             "session.start",
-            session_id=session_id,
+            session_id=self.session_id,
             user_task=operator_task_text(user_task)[:200],
             mode=self.mode,
         )
@@ -481,7 +478,7 @@ class Workflow:
         # session.start so the log identifies itself (the manifest owns the task).
         self._emit_start(
             "loop.resume.start",
-            session_id=self.events.path.parent.name if self.events is not None else "",
+            session_id=self.session_id,
             mode=self.mode,
             iteration=snapshot.next_iteration,
             messages=len(snapshot.messages),
@@ -1133,11 +1130,10 @@ class Workflow:
         a write fault must not break the end."""
         if self.state_dir is None or not (state.memory.wrote or state.memory.read):
             return
-        session_id = self.events.path.parent.name if self.events is not None else ""
         try:
             record_use(
                 self.state_dir,
-                session=session_id or "?",
+                session=self.session_id or "?",
                 wrote=tuple(state.memory.wrote),
                 read=dict(state.memory.read),
             )
@@ -1694,7 +1690,7 @@ class Workflow:
         except FileNotFoundError:
             return None  # no plan yet; the first finish_planning creates it
         except (OSError, UnicodeDecodeError) as exc:
-            session_id = self.events.path.parent.name if self.events is not None else "<session-id>"
+            session_id = self.session_id or "<session-id>"
             remedy = f"plan.md unreadable: {exc}; fix it and `agent6 resume {session_id}`"
             self._log(f"LOOP: {remedy}")
             self._emit("loop.plan_read.failed", path=str(self.plan_output_path), error=str(exc))
@@ -2294,10 +2290,9 @@ class Workflow:
         model), remembered for the finish-time check."""
         if self.state_dir is None or not answer.strip():
             return
-        session = self.events.path.parent.name if self.events is not None else ""
         try:
             entry = record_decision(
-                self.state_dir, question=question, answer=answer, session=session
+                self.state_dir, question=question, answer=answer, session=self.session_id
             )
         except OSError as exc:
             self._log(f"LOOP: decision not recorded: {exc}")
@@ -3106,6 +3101,12 @@ class Workflow:
         """Answer a `/parallel` steer with a one-line notice and continue."""
         self._log(f"PARALLEL: {msg}")
         conversation.notice(f"[parallel] {msg}")
+
+    @property
+    def session_id(self) -> str:
+        """The run dir's name, the authoritative run id (stamped into the
+        start events so every fold reads it from there); empty without a log."""
+        return self.events.path.parent.name if self.events is not None else ""
 
     def _log(self, msg: str) -> None:
         self.logger(f"[agent6] {msg}")
