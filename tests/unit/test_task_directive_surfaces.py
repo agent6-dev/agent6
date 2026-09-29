@@ -18,7 +18,7 @@ import pytest
 
 from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS, parse_task
 from agent6.paths import state_dir
-from agent6.sessions.ipc import drain_queued_tasks, steer_request_pending, write_worker_pid
+from agent6.sessions.ipc import drain_requests, steer_request_pending, write_worker_pid
 from agent6.ui.cli import main
 from agent6.ui.web import actions
 
@@ -55,7 +55,7 @@ def test_the_web_composer_queues_instead_of_steering(
     ok, msg = actions.steer(tmp_path, "live-one-AAAAAA", "/task add a --json flag")
 
     assert ok and msg.startswith("task queued")
-    assert drain_queued_tasks(d) == ["add a --json flag"]
+    assert [r.text for r in drain_requests(d)] == ["add a --json flag"]
     assert not steer_request_pending(d)
 
 
@@ -69,7 +69,7 @@ def test_the_web_composer_refuses_a_bare_directive(
 
     assert not ok
     assert "/task needs the work" in msg
-    assert drain_queued_tasks(d) == []
+    assert [r.text for r in drain_requests(d)] == []
 
 
 def _paused(tmp_path: Path) -> Path:
@@ -99,7 +99,7 @@ def test_the_pause_menu_queues_and_re_prompts(
     assert pause_menu(d, input_fn=_feed(["/task ship the changelog", "/continue"])) == ""
 
     assert "task queued" in capsys.readouterr().out
-    assert drain_queued_tasks(d) == ["ship the changelog"]
+    assert [r.text for r in drain_requests(d)] == ["ship the changelog"]
 
 
 def test_the_pause_menu_refuses_a_bare_directive(
@@ -112,7 +112,7 @@ def test_the_pause_menu_refuses_a_bare_directive(
     assert pause_menu(d, input_fn=_feed(["/task", "/continue"])) == ""
 
     assert "/task needs the work" in capsys.readouterr().out
-    assert drain_queued_tasks(d) == []
+    assert [r.text for r in drain_requests(d)] == []
 
 
 def test_a_partial_command_never_fires(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -143,7 +143,7 @@ def test_agent6_steer_acts_on_the_directive_instead_of_sending_it(
     assert main(["steer", "tiny-run", "/task add a --json flag"]) == 0
 
     assert "task queued" in capsys.readouterr().out
-    assert drain_queued_tasks(d) == ["add a --json flag"]
+    assert [r.text for r in drain_requests(d)] == ["add a --json flag"]
     assert not steer_request_pending(d)
 
 

@@ -9,17 +9,19 @@ An id this run does not hold is refused with the ids it does.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS, parse_retire
 from agent6.graph.curator import GraphCurator
 from agent6.graph.models import AddSubtaskIntent, NodeActor, TaskNodeDraft
-from agent6.sessions.ipc import take_retired_tasks
+from agent6.sessions.ipc import drain_requests, queue_request
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.directives import act_on_directive
 from agent6.viewmodel.format import short_task_id
 from agent6.workflows.loop import Workflow
 from tests.unit.test_task_queue_drain import (
+    _state,  # pyright: ignore[reportPrivateUsage]
     _workflow,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -63,7 +65,7 @@ def test_a_full_id_retires_at_the_next_turn(tmp_path: Path) -> None:
     did, said = act_on_directive(session_dir, f"/retire {kids[0]}") or (False, "")
 
     assert did and "the model's own" in said
-    assert take_retired_tasks(session_dir) == [kids[0]]
+    assert [r.text for r in drain_requests(session_dir)] == [kids[0]]
     del curator, root, wf
 
 
@@ -77,7 +79,7 @@ def test_the_id_is_the_runs_own_count(tmp_path: Path) -> None:
     did, said = act_on_directive(session_dir, "/retire 2") or (False, "")
 
     assert did and "the model's own" in said
-    assert take_retired_tasks(session_dir) == [kids[0]]
+    assert [r.text for r in drain_requests(session_dir)] == [kids[0]]
 
 
 def test_the_padded_id_works_too(tmp_path: Path) -> None:
@@ -86,7 +88,7 @@ def test_the_padded_id_works_too(tmp_path: Path) -> None:
 
     did, _said = act_on_directive(session_dir, f"/retire {kids[1]}") or (False, "")
 
-    assert did and take_retired_tasks(session_dir) == [kids[1]]
+    assert did and [r.text for r in drain_requests(session_dir)] == [kids[1]]
 
 
 def test_an_unknown_id_is_refused_with_the_ones_that_exist(tmp_path: Path) -> None:
@@ -97,7 +99,7 @@ def test_an_unknown_id_is_refused_with_the_ones_that_exist(tmp_path: Path) -> No
     assert not did
     assert "no task '9' here" in said
     assert "1 the run" in said and "2 the model's own" in said
-    assert take_retired_tasks(session_dir) == []
+    assert [r.text for r in drain_requests(session_dir)] == []
 
 
 def test_a_bare_directive_retires_nothing(tmp_path: Path) -> None:
@@ -115,20 +117,24 @@ def test_the_loop_retires_what_the_operator_named(tmp_path: Path) -> None:
     for task_id in kids:
         act_on_directive(session_dir, f"/retire {task_id}")
 
-    wf._drain_retired_tasks()  # pyright: ignore[reportPrivateUsage]
+    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
 
     assert [curator.nodes()[k].status for k in kids] == ["obsolete", "obsolete"]
-    assert take_retired_tasks(session_dir) == []
-    del root
+    assert [r.text for r in drain_requests(session_dir)] == []
 
 
 def test_an_id_that_vanished_is_logged_and_skipped(tmp_path: Path) -> None:
     curator, session_dir, root, kids, wf = _graph(tmp_path)
-    from agent6.sessions.ipc import retire_task
+    queue_request(session_dir, "retire", "01MISSINGMISSINGMISSINGMIS")
 
-    retire_task(session_dir, "01MISSINGMISSINGMISSINGMIS")
-
-    wf._drain_retired_tasks()  # pyright: ignore[reportPrivateUsage]
+    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
 
     assert [curator.nodes()[k].status for k in kids] == ["pending", "pending"]
-    del root
+    # The composer said "retiring"; the refusal is the event that takes it back.
+    events = [
+        json.loads(line)
+        for line in (session_dir / "logs.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    refused = [e for e in events if e.get("type") == "loop.request.refused"]
+    assert [(e["kind"], e["text"]) for e in refused] == [("retire", "01MISSINGMISSINGMISSINGMIS")]
+    assert refused[0]["error"]

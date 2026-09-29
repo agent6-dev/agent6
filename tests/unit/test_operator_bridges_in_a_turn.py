@@ -21,10 +21,11 @@ from unittest.mock import MagicMock
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.providers.types import ProviderResponse
-from agent6.sessions.ipc import queue_task, retire_task, set_standing_goal
+from agent6.sessions.ipc import drain_requests, queue_request
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.results import RawResult
 from agent6.workflows._chain import RunChain
+from agent6.workflows._steer import OperatorBridge
 from agent6.workflows.loop import Workflow
 
 
@@ -75,11 +76,11 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: Pat
     def _turn(*_args: Any, **_kwargs: Any) -> ProviderResponse:
         """Between the turns the operator writes to all three bridges."""
         if provider.call.call_count == 1:
-            queue_task(session_dir, "Add a --json flag to the stats report")
-            set_standing_goal(session_dir, "keep the suite green")
+            queue_request(session_dir, "task", "Add a --json flag to the stats report")
+            queue_request(session_dir, "standing", "keep the suite green")
         elif provider.call.call_count == 2:
             # The task queued above is 0002, the run's second node.
-            retire_task(session_dir, "0002")
+            queue_request(session_dir, "retire", "0002")
         return _tool_call("read_file", {"path": "README.md"}, f"t{provider.call.call_count}")
 
     provider.call.side_effect = _turn
@@ -97,6 +98,7 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: Pat
         logger=lambda _m: None,
         events=events,
         curator=curator,
+        bridge=OperatorBridge(take_requests=lambda: drain_requests(session_dir)),
         max_iterations=3,
     )
 

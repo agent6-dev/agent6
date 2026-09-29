@@ -83,6 +83,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             salient = f"{len(str(event.get('patch', '')).splitlines())} lines"
         case "loop.task.queued" | "loop.task.retired" | "loop.standing.set":
             salient = str(event.get("title", ""))
+        case "loop.request.refused":
+            salient = f"{event.get('kind', '')} {event.get('text', '')}: {event.get('error', '')}"
         case "loop.auto_commit":
             salient = f"{str(event.get('sha', ''))[:12]} {event.get('subject', '')}".strip()
         case "tool.call":

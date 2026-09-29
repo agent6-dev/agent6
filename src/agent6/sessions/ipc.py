@@ -36,8 +36,9 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from agent6.events import EventSink
 from agent6.paths import mkdir_for_real_user
@@ -45,9 +46,10 @@ from agent6.portable import atomic_write, fsync_dir
 
 APPROVAL_DIR_NAME = "approvals"
 QUESTION_DIR_NAME = "questions"
-# Tasks the operator queued into the run's graph, one file each, named so they
-# sort oldest first. Unlike the answer and steer bridges this one survives a leg
-# boundary: a task queued while the run was between legs is still wanted.
+# What the operator asked of the run (`/task`, `/standing`, `/retire`), one
+# file each, named so they sort oldest first. Unlike the answer and steer
+# bridges this one survives a leg boundary: a request written while the run
+# was between legs is still wanted.
 QUEUE_DIR_NAME = "queue"
 FRONTENDS_DIR = "frontends"
 WORKER_PID_FILE = "worker.pid"  # the run's worker process, for `agent6 sessions show` liveness
@@ -88,27 +90,42 @@ def queue_dir(session_dir: Path) -> Path:
 
 
 def queue_path(session_dir: Path) -> Path:
-    """Where the queued-task dir would be; never created."""
+    """Where the request dir would be; never created."""
     return session_dir / QUEUE_DIR_NAME
 
 
-def queue_task(session_dir: Path, text: str) -> None:
-    """Queue *text* as a task for the run to add to its graph at its next turn
-    boundary. The name carries the clock, so the drain takes them in the order
-    they were written; the curator assigns the real id on insert."""
-    target = queue_dir(session_dir) / f"{time.time_ns():020d}-{os.getpid()}.task"
+RequestKind = Literal["task", "standing", "retire"]
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorRequest:
+    """One thing the operator asked of a live run from a composer or
+    `agent6 steer`: a task for its graph (the text), a standing goal (the
+    goal), or a task to retire (its id)."""
+
+    kind: RequestKind
+    text: str
+
+
+def queue_request(session_dir: Path, kind: RequestKind, text: str) -> None:
+    """Queue one request for the run to apply at its next turn boundary. One
+    file per request, its name carrying the clock so the drain takes them in
+    the order asked; two standing goals in a row both land, the later one
+    replacing the earlier when the run adopts it."""
+    target = queue_dir(session_dir) / f"{time.time_ns():020d}-{os.getpid()}.{kind}"
     atomic_write(target, text)
 
 
-def drain_queued_tasks(session_dir: Path) -> list[str]:
-    """Every queued task, oldest first, removed as it is read. A file that
+def drain_requests(session_dir: Path) -> list[OperatorRequest]:
+    """Every queued request, oldest first, removed as it is read. A file that
     vanishes under the read was drained by someone else; one that cannot be
-    read is dropped rather than left to be re-read forever."""
+    read, or holds only whitespace, is dropped rather than left to be re-read
+    forever."""
     directory = queue_path(session_dir)
     if not directory.is_dir():
         return []
-    out: list[str] = []
-    for path in sorted(directory.glob("*.task")):
+    out: list[OperatorRequest] = []
+    for path in sorted(p for p in directory.iterdir() if p.suffix[1:] in _REQUEST_KINDS):
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
@@ -116,54 +133,11 @@ def drain_queued_tasks(session_dir: Path) -> list[str]:
         with contextlib.suppress(OSError):
             path.unlink()
         if text.strip():
-            out.append(text)
+            out.append(OperatorRequest(cast("RequestKind", path.suffix[1:]), text.strip()))
     return out
 
 
-# The goal `/standing` sets, for the run to adopt at its next turn. One slot,
-# not a queue: a second goal replaces the first, which is what the operator
-# typing it means.
-STANDING_FILE = "standing.goal"
-
-
-def set_standing_goal(session_dir: Path, goal: str) -> None:
-    """Ask the run to make *goal* its standing goal at its next turn."""
-    atomic_write(session_dir / STANDING_FILE, goal)
-
-
-def take_standing_goal(session_dir: Path) -> str | None:
-    """The goal the operator set, removed as it is read; None when none waits."""
-    path = session_dir / STANDING_FILE
-    try:
-        goal = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    with contextlib.suppress(OSError):
-        path.unlink()
-    return goal.strip() or None
-
-
-# Task ids the operator retired, one per line, drained with the queue.
-RETIRE_FILE = "retire.tasks"
-
-
-def retire_task(session_dir: Path, task_id: str) -> None:
-    """Ask the run to retire *task_id* at its next turn."""
-    path = session_dir / RETIRE_FILE
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(task_id + "\n")
-
-
-def take_retired_tasks(session_dir: Path) -> list[str]:
-    """The ids the operator retired, removed as they are read."""
-    path = session_dir / RETIRE_FILE
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-    with contextlib.suppress(OSError):
-        path.unlink()
-    return [line.strip() for line in lines if line.strip()]
+_REQUEST_KINDS: frozenset[str] = frozenset({"task", "standing", "retire"})
 
 
 def _contained(directory: Path, filename: str, *, untrusted: str, what: str) -> Path:

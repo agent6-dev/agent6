@@ -19,7 +19,7 @@ from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS, parse_standing
 from agent6.graph.curator import GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
 from agent6.paths import state_dir
-from agent6.sessions.ipc import set_standing_goal, take_standing_goal, write_worker_pid
+from agent6.sessions.ipc import drain_requests, queue_request, write_worker_pid
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
 from agent6.ui.directives import act_on_directive
@@ -47,14 +47,14 @@ def test_a_bare_directive_sets_nothing(tmp_path: Path) -> None:
 
     assert not did
     assert "/standing needs the goal" in said
-    assert take_standing_goal(tmp_path) is None
+    assert next((r.text for r in drain_requests(tmp_path)), None) is None
 
 
 def test_the_directive_writes_the_goal(tmp_path: Path) -> None:
     did, said = act_on_directive(tmp_path, "/standing keep the suite green") or (False, "")
 
     assert did and "standing goal set" in said
-    assert take_standing_goal(tmp_path) == "keep the suite green"
+    assert next((r.text for r in drain_requests(tmp_path)), None) == "keep the suite green"
 
 
 def test_agent6_steer_takes_it_too(
@@ -70,7 +70,7 @@ def test_agent6_steer_takes_it_too(
     assert main(["steer", "tiny-run", "/standing keep hunting defects"]) == 0
 
     assert "standing goal set" in capsys.readouterr().out
-    assert take_standing_goal(d) == "keep hunting defects"
+    assert next((r.text for r in drain_requests(d)), None) == "keep hunting defects"
 
 
 def _run(tmp_path: Path) -> tuple[GraphCurator, str, Workflow]:
@@ -86,9 +86,9 @@ def _run(tmp_path: Path) -> tuple[GraphCurator, str, Workflow]:
 
 def test_the_loop_adopts_the_goal(tmp_path: Path) -> None:
     curator, root, wf = _run(tmp_path)
-    set_standing_goal(curator.layout.session_dir, "keep the suite green")
+    queue_request(curator.layout.session_dir, "standing", "keep the suite green")
 
-    wf._adopt_standing_goal(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
 
     standing = [n for n in curator.nodes().values() if n.standing]
     assert [(n.title, n.created_by) for n in standing] == [("keep the suite green", "steering")]
@@ -100,8 +100,8 @@ def test_a_new_goal_retires_the_old_one(tmp_path: Path) -> None:
     task of that shape is worked once and marked passed."""
     curator, root, wf = _run(tmp_path)
     for goal in ("first goal", "second goal"):
-        set_standing_goal(curator.layout.session_dir, goal)
-        wf._adopt_standing_goal(_state(root))  # pyright: ignore[reportPrivateUsage]
+        queue_request(curator.layout.session_dir, "standing", goal)
+        wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
 
     by_title = {n.title: n for n in curator.nodes().values()}
     assert by_title["first goal"].status == "obsolete"
@@ -115,6 +115,6 @@ def test_a_new_goal_retires_the_old_one(tmp_path: Path) -> None:
 def test_no_goal_waiting_changes_nothing(tmp_path: Path) -> None:
     curator, root, wf = _run(tmp_path)
 
-    wf._adopt_standing_goal(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
 
     assert not [n for n in curator.nodes().values() if n.standing]

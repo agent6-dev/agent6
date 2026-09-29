@@ -386,6 +386,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `loop.task.queued` | a task the operator added to a live run (`/task`): `id`, `title` |
 | `loop.standing.set` | the standing goal the operator set mid-run (`/standing`): `id`, `title` |
 | `loop.task.retired` | a task the operator dropped from the graph (`/retire`): `id`, `title` |
+| `loop.request.refused` | a `/task`, `/standing` or `/retire` the run could not apply: `kind`, `text`, `error` |
 | `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.metric.*`, `loop.parallel.dispatched` / `.joined` / `.failed` / `.compared`, `loop.review.*`, `loop.steer.*` |
 | `loop.budget` | per-iteration usage heartbeat; the fold keeps only its timestamp (the idle anchor) and reads totals from `budget.update` |
 | `loop.review.*` | the panel: `start` (trigger, seats), `seat` (seat, model, verdict, findings), `panel` (blocked, decision, disarmed), `skipped`, and the finish gate's rejections |

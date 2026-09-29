@@ -33,13 +33,7 @@ from agent6.directive import (
 )
 from agent6.graph.order import id_order
 from agent6.graph.storage import load_graph
-from agent6.sessions.ipc import (
-    queue_task,
-    request_compact,
-    retire_task,
-    set_standing_goal,
-    submit_steer,
-)
+from agent6.sessions.ipc import queue_request, request_compact, submit_steer
 from agent6.sessions.layout import layout_of
 from agent6.ui.btw import open_btw
 from agent6.viewmodel.format import short_task_id
@@ -61,12 +55,12 @@ def _btw(session_dir: Path, question: str) -> tuple[bool, str]:
 
 
 def _task(session_dir: Path, text: str) -> tuple[bool, str]:
-    queue_task(session_dir, text)
+    queue_request(session_dir, "task", text)
     return True, "task queued; it runs once the open tasks drain"
 
 
 def _standing(session_dir: Path, goal: str) -> tuple[bool, str]:
-    set_standing_goal(session_dir, goal)
+    queue_request(session_dir, "standing", goal)
     return True, "standing goal set; it replaces any the run had, at the next step"
 
 
@@ -83,7 +77,7 @@ def _retire(session_dir: Path, named: str) -> tuple[bool, str]:
         )
         return False, f"no task {named!r} here. This run has: {shown}"
     task_id = matches[0]
-    retire_task(session_dir, task_id)
+    queue_request(session_dir, "retire", task_id)
     return True, f"retiring {nodes[task_id].title[:60]!r} at the next step"
 
 

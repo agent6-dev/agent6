@@ -63,10 +63,7 @@ from agent6.providers import (
     call_for_text,
 )
 from agent6.sessions.ipc import (
-    drain_queued_tasks,
     emit_session_start,
-    take_retired_tasks,
-    take_standing_goal,
 )
 from agent6.skills import ResolvedSkills, skill_command, skill_steer_payload
 from agent6.task_text import operator_task_text, task_headline
@@ -1748,9 +1745,7 @@ class Workflow:
         graph, then the focus banner, then the before-call advisors, so a
         finish directive a low budget draws is the most recent message, not the
         banner."""
-        self._drain_queued_tasks(state)
-        self._drain_retired_tasks()
-        self._adopt_standing_goal(state)
+        self._take_operator_requests(state)
         self._maybe_surface_current_task(conversation, state)
         for advisor in BEFORE_CALL:
             self._tell(conversation, advisor(state, ctx))
@@ -1766,97 +1761,98 @@ class Workflow:
         if nudge.log:
             self._log(nudge.log)
 
-    def _drain_queued_tasks(self, state: LoopState) -> None:
-        """Add what the operator queued (`agent6 task`, a composer's `/task`)
-        to the graph, before this turn's focus is computed.
-
-        Each lands as the root's last ordinary child, so the run reaches it
-        once the open work drains. Nothing enters the conversation: the point
-        of queueing rather than steering is that the turn in flight never sees
-        it. The title is the operator's first line, the whole text their
-        rationale, so a long spec survives whole."""
-        if self.curator is None or self.events is None or state.root_task_id is None:
-            return
-        for text in drain_queued_tasks(self.events.path.parent):
-            # The title stays the operator's own first line even when the
-            # revision below rewrites the body, so the task tree reads in their
-            # words.
-            title = task_headline(text)[:200] or text.strip()[:200]
-            spec = self._revised_queued_task(text)
+    def _take_operator_requests(self, state: LoopState) -> bool:
+        """Apply what the operator asked of the run since its last turn
+        boundary (`/task`, `/standing`, `/retire`, or `agent6 steer` with the
+        same words), in the order asked; True when anything landed. Nothing
+        enters the conversation: the point of queueing rather than steering
+        is that the turn in flight never sees it, and the next turn's focus
+        banner names the work. A refused request is logged and emitted."""
+        if self.curator is None or state.root_task_id is None:
+            return False
+        landed = False
+        for request in self.bridge.take_requests():
             try:
-                node = self.curator.add_subtask(
-                    AddSubtaskIntent(
-                        parent_id=state.root_task_id,
-                        draft=TaskNodeDraft(
-                            title=title,
-                            rationale=spec if spec.strip() != title else "",
-                            created_by="user",
-                        ),
-                    )
-                )
+                if request.kind == "task":
+                    self._queue_task(state.root_task_id, request.text)
+                elif request.kind == "standing":
+                    self._set_standing_goal(state.root_task_id, request.text)
+                else:
+                    self._retire_task(request.text)
             except (CuratorError, OSError, ValidationError) as exc:
-                self._log(f"LOOP: queued task refused: {exc}")
-                continue
-            self._log(f"LOOP: operator queued task {node.id}: {title}")
-            self._emit("loop.task.queued", id=node.id, title=title)
-            self._emit_graph_snapshot()
-
-    def _drain_retired_tasks(self) -> None:
-        """Drop the tasks the operator retired (`/retire`).
-
-        Obsolete rather than skipped: the operator decided the work no longer
-        applies. Their route is the curator itself, so a task they queued is
-        retirable here even though `update_task` refuses it to the model."""
-        if self.curator is None or self.events is None:
-            return
-        for task_id in take_retired_tasks(self.events.path.parent):
-            try:
-                node = self.curator.update_status(
-                    UpdateStatusIntent(
-                        id=task_id, new_status="obsolete", note="retired by the operator"
-                    )
+                self._log(f"LOOP: {request.kind} request refused: {exc}")
+                self._emit(
+                    "loop.request.refused",
+                    kind=request.kind,
+                    text=request.text[:200],
+                    error=str(exc),
                 )
-            except (CuratorError, OSError, ValidationError) as exc:
-                self._log(f"LOOP: task not retired: {exc}")
                 continue
-            self._log(f"LOOP: operator retired task {node.id}")
-            self._emit("loop.task.retired", id=node.id, title=node.title)
+            landed = True
+        if landed:
             self._emit_graph_snapshot()
+        return landed
 
-    def _adopt_standing_goal(self, state: LoopState) -> None:
-        """Take the goal `/standing` set, replacing any the run already has.
-
-        The operator is the only writer, and typing a goal means "this is the
-        goal now", so the one it replaces is retired rather than kept beside
-        it. Retired, not made ordinary: a goal reads as an activity ("keep
-        hunting for defects"), and an ordinary task of that shape is worked
-        once and marked passed."""
-        if self.curator is None or self.events is None or state.root_task_id is None:
-            return
-        goal = take_standing_goal(self.events.path.parent)
-        if goal is None:
-            return
-        try:
-            for node in self.curator.nodes().values():
-                if node.standing and node.status in OPEN_STATUSES:
-                    self.curator.update_status(
-                        UpdateStatusIntent(
-                            id=node.id, new_status="obsolete", note="replaced by the operator"
-                        )
-                    )
-                    self._log(f"LOOP: standing goal {node.id} retired for a new one")
-            node = self.curator.add_subtask(
-                AddSubtaskIntent(
-                    parent_id=state.root_task_id,
-                    draft=TaskNodeDraft(title=goal, standing=True, created_by="steering"),
-                )
+    def _queue_task(self, root_id: str, text: str) -> None:
+        """A queued task lands as the root's last ordinary child, so the run
+        reaches it once the open work drains. The title stays the operator's
+        own first line even when the revision rewrites the body, so the task
+        tree reads in their words; the whole text is the rationale, so a long
+        spec survives whole."""
+        title = task_headline(text)[:200] or text.strip()[:200]
+        spec = self._revised_queued_task(text)
+        node = self.curator_or_raise.add_subtask(
+            AddSubtaskIntent(
+                parent_id=root_id,
+                draft=TaskNodeDraft(
+                    title=title,
+                    rationale=spec if spec.strip() != title else "",
+                    created_by="user",
+                ),
             )
-        except (CuratorError, OSError, ValidationError) as exc:
-            self._log(f"LOOP: standing goal not set: {exc}")
-            return
+        )
+        self._log(f"LOOP: operator queued task {node.id}: {title}")
+        self._emit("loop.task.queued", id=node.id, title=title)
+
+    def _retire_task(self, task_id: str) -> None:
+        """Obsolete rather than skipped: the operator decided the work no
+        longer applies. Their route is the curator itself, so a task they
+        queued is retirable here even though `update_task` refuses it to the
+        model."""
+        node = self.curator_or_raise.update_status(
+            UpdateStatusIntent(id=task_id, new_status="obsolete", note="retired by the operator")
+        )
+        self._log(f"LOOP: operator retired task {node.id}")
+        self._emit("loop.task.retired", id=node.id, title=node.title)
+
+    def _set_standing_goal(self, root_id: str, goal: str) -> None:
+        """Typing a goal means "this is the goal now", so the one it replaces
+        is retired rather than kept beside it. Retired, not made ordinary: a
+        goal reads as an activity ("keep hunting for defects"), and an ordinary
+        task of that shape is worked once and marked passed."""
+        curator = self.curator_or_raise
+        for node in curator.nodes().values():
+            if node.standing and node.status in OPEN_STATUSES:
+                curator.update_status(
+                    UpdateStatusIntent(
+                        id=node.id, new_status="obsolete", note="replaced by the operator"
+                    )
+                )
+                self._log(f"LOOP: standing goal {node.id} retired for a new one")
+        node = curator.add_subtask(
+            AddSubtaskIntent(
+                parent_id=root_id,
+                draft=TaskNodeDraft(title=goal, standing=True, created_by="steering"),
+            )
+        )
         self._log(f"LOOP: standing goal set: {node.id}")
         self._emit("loop.standing.set", id=node.id, title=goal)
-        self._emit_graph_snapshot()
+
+    @property
+    def curator_or_raise(self) -> GraphCurator:
+        if self.curator is None:
+            raise CuratorError("this run has no task graph")
+        return self.curator
 
     def _revised_queued_task(self, text: str) -> str:
         """A queued task through `[prompt].revise_prompt`, when the operator
@@ -2760,6 +2756,11 @@ class Workflow:
                 if verb is not None:
                     return self._steer_outcome(verb, iteration, state)
                 # Injected (or a bare poke): the run continues where it parked.
+                self._emit("loop.parked.resumed", iteration=iteration)
+                return None
+            if self._take_operator_requests(state):
+                # A queued task, goal or retirement is work: the run continues
+                # and the next turn's focus banner names it.
                 self._emit("loop.parked.resumed", iteration=iteration)
                 return None
             time.sleep(0.5)

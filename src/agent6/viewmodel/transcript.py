@@ -357,6 +357,14 @@ def _compact_done_body(event: dict[str, Any]) -> str:
     return f"context compacted: {chars:,}-char summary, {kept} recent turns kept verbatim"
 
 
+def _request_refused_body(event: dict[str, Any]) -> str:
+    """The composer said "task queued" or "retiring"; the run's refusal is the
+    line that takes it back."""
+    kind, text = str(event.get("kind", "")), str(event.get("text", "")).strip()
+    error = str(event.get("error", "")).strip()
+    return f"{kind} request refused ({text[:60]}): {error}"
+
+
 def _compact_failed_body(event: dict[str, Any]) -> str:
     error = str(event.get("error", "")).strip()
     return f"compaction failed: {error}" if error else "compaction failed"
@@ -387,6 +395,7 @@ _MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     "loop.task.queued": _task_queued_body,
     "loop.task.retired": _task_retired_body,
     "loop.standing.set": _standing_set_body,
+    "loop.request.refused": _request_refused_body,
     "loop.compact.requested": _compact_requested_body,
     "loop.compact.summarise.done": _compact_done_body,
     "loop.compact.summarise.failed": _compact_failed_body,

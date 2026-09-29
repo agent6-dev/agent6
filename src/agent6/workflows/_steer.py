@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from agent6.sessions.ipc import OperatorRequest
 from agent6.types import AutoCommitDirective
 from agent6.workflows.subrun import GroupLaneSpawner
 
@@ -58,6 +59,10 @@ class OperatorBridge:
     # (Ctrl-C, the TUI's `s`), so the watchdog ends the turn and the loop
     # reaches its steer boundary at once instead of waiting the turn out.
     should_interrupt: Callable[[], bool] = field(default=lambda: False)
+    # What the operator queued for the graph (`/task`, `/standing`, `/retire`),
+    # taken at each pre-call boundary and while the run is parked; each call
+    # returns what arrived since the last, oldest first.
+    take_requests: Callable[[], list[OperatorRequest]] = field(default=list)
     # Called once per landed auto-commit. "stop" ends the loop cleanly as
     # interactive_stop; "undo" takes the steer's /undo path; "continue" (the
     # default) runs the next iteration. `agent6 run -i` installs its REPL

@@ -59,6 +59,7 @@ from agent6.sessions.ipc import (
     clear_session_netns_pid,
     clear_stop_request,
     clear_worker_pid,
+    drain_requests,
     read_compact_request,
     session_allow_set,
     stop_request_pending,
@@ -348,6 +349,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
                 stop_clear=lambda: clear_stop_request(layout.session_dir),
                 should_abort=steer_state.abort_pending,
                 should_interrupt=steer_state.interrupt,
+                take_requests=lambda: drain_requests(layout.session_dir),
                 after_auto_commit=after_auto_commit,
                 undo_forker=_undo_forker,
                 # `/parallel` steer dispatch: the coordinator's group spawner

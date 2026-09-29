@@ -20,11 +20,12 @@ from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNode, TaskNodeDraft
 from agent6.providers.types import ProviderError
-from agent6.sessions.ipc import queue_task
+from agent6.sessions.ipc import OperatorRequest, drain_requests, queue_request
 from agent6.sessions.layout import SessionLayout
 from agent6.workflows._chain import RunChain
 from agent6.workflows._dag_focus import current_task_banner
 from agent6.workflows._prompt_revision import RevisionSettings
+from agent6.workflows._steer import OperatorBridge
 from agent6.workflows.loop import LoopState, Workflow
 
 _NOW = datetime(2026, 9, 16, tzinfo=UTC)
@@ -41,6 +42,7 @@ def _workflow(curator: GraphCurator, sink: EventSink) -> Workflow:
         logger=lambda _msg: None,
         curator=curator,
         events=sink,
+        bridge=OperatorBridge(take_requests=lambda: drain_requests(sink.path.parent)),
     )
 
 
@@ -65,11 +67,11 @@ def _events(sink: EventSink) -> list[dict[str, Any]]:
 
 def test_a_queued_task_lands_under_the_root_whole(tmp_path: Path) -> None:
     curator, sink, root = _run_dir(tmp_path)
-    queue_task(sink.path.parent, SPEC)
-    queue_task(sink.path.parent, "second thing")
+    queue_request(sink.path.parent, "task", SPEC)
+    queue_request(sink.path.parent, "task", "second thing")
     wf = _workflow(curator, sink)
 
-    wf._drain_queued_tasks(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
 
     children = [curator.nodes()[cid] for cid in curator.get(root).children]
     assert [c.title for c in children] == ["Add a --json flag", "second thing"]
@@ -81,12 +83,12 @@ def test_a_queued_task_lands_under_the_root_whole(tmp_path: Path) -> None:
 
 def test_the_drain_takes_each_task_once(tmp_path: Path) -> None:
     curator, sink, root = _run_dir(tmp_path)
-    queue_task(sink.path.parent, "only once")
+    queue_request(sink.path.parent, "task", "only once")
     wf = _workflow(curator, sink)
     state = _state(root)
 
-    wf._drain_queued_tasks(state)  # pyright: ignore[reportPrivateUsage]
-    wf._drain_queued_tasks(state)  # pyright: ignore[reportPrivateUsage]
+    wf._take_operator_requests(state)  # pyright: ignore[reportPrivateUsage]
+    wf._take_operator_requests(state)  # pyright: ignore[reportPrivateUsage]
 
     assert len(curator.get(root).children) == 1
 
@@ -95,10 +97,10 @@ def test_a_queued_task_is_journalled_for_the_surfaces(tmp_path: Path) -> None:
     """The operator sees it arrive without the model having read anything: one
     line in the transcript and the graph snapshot every viewer folds."""
     curator, sink, root = _run_dir(tmp_path)
-    queue_task(sink.path.parent, "note it")
+    queue_request(sink.path.parent, "task", "note it")
     wf = _workflow(curator, sink)
 
-    wf._drain_queued_tasks(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
 
     kinds = [e["type"] for e in _events(sink)]
     assert "loop.task.queued" in kinds
@@ -111,7 +113,7 @@ def test_an_empty_queue_journals_nothing(tmp_path: Path) -> None:
     curator, sink, root = _run_dir(tmp_path)
     wf = _workflow(curator, sink)
 
-    wf._drain_queued_tasks(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
 
     assert _events(sink) == []
 
@@ -150,7 +152,7 @@ def test_a_queued_task_inherits_prompt_revision(tmp_path: Path) -> None:
     """`[prompt].revise_prompt` covers a queued task too, and the revision
     folds in the operator's words as the authoritative version."""
     curator, sink, root = _run_dir(tmp_path)
-    queue_task(sink.path.parent, SPEC)
+    queue_request(sink.path.parent, "task", SPEC)
     reviser = MagicMock()
     reviser.call.return_value = SimpleNamespace(
         text="<revised_task>Add --json to `stats`, same fields as the table.</revised_task>"
@@ -158,7 +160,7 @@ def test_a_queued_task_inherits_prompt_revision(tmp_path: Path) -> None:
     wf = _workflow(curator, sink)
     wf.revision = RevisionSettings(reviser=reviser, mode="interactive")
 
-    wf._drain_queued_tasks(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
 
     node = curator.nodes()[curator.get(root).children[0]]
     assert node.title == "Add a --json flag"  # the tree keeps the operator's words
@@ -170,13 +172,39 @@ def test_a_queued_task_inherits_prompt_revision(tmp_path: Path) -> None:
 def test_a_failed_revision_keeps_the_task_as_written(tmp_path: Path) -> None:
     """A queued task is never lost to a reviser that could not answer."""
     curator, sink, root = _run_dir(tmp_path)
-    queue_task(sink.path.parent, SPEC)
+    queue_request(sink.path.parent, "task", SPEC)
     reviser = MagicMock()
     reviser.call.side_effect = ProviderError("reviser down")
     wf = _workflow(curator, sink)
     wf.revision = RevisionSettings(reviser=reviser, mode="auto")
 
-    wf._drain_queued_tasks(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
 
     node = curator.nodes()[curator.get(root).children[0]]
     assert node.rationale == SPEC
+
+
+def test_a_parked_run_takes_a_queued_task_and_continues(tmp_path: Path) -> None:
+    """An interactive run that went quiet parks until a steer: a `/task` typed
+    then was acknowledged and sat in the queue until some steer arrived."""
+    curator, sink, root = _run_dir(tmp_path)
+    wf = _workflow(curator, sink)
+    taken: list[int] = []
+
+    def _take() -> list[OperatorRequest]:
+        taken.append(1)
+        return [OperatorRequest("task", "add a --json flag")] if len(taken) == 1 else []
+
+    wf.bridge = OperatorBridge(take_requests=_take)
+
+    result = wf._park_for_steer(  # pyright: ignore[reportPrivateUsage]
+        MagicMock(), _state(root), iteration=2, reason="quiet"
+    )
+
+    assert result is None
+    assert [n.title for n in curator.nodes().values() if n.created_by == "user"] == [
+        "the run",
+        "add a --json flag",
+    ]
+    types = [e["type"] for e in _events(sink)]
+    assert types[-3:] == ["loop.task.queued", "graph.update", "loop.parked.resumed"]

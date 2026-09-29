@@ -13,7 +13,7 @@ import json
 import os
 from pathlib import Path
 
-from agent6.sessions.ipc import drain_queued_tasks, steer_request_pending, write_worker_pid
+from agent6.sessions.ipc import drain_requests, steer_request_pending, write_worker_pid
 from agent6.ui.tui.app import Agent6TUI
 
 
@@ -37,7 +37,9 @@ def test_the_composer_queues_a_task_without_steering(tmp_path: Path) -> None:
             await pilot.pause()
             app.submit_instruction("/task add a --json flag to the stats report")
             await pilot.pause()
-            assert drain_queued_tasks(run) == ["add a --json flag to the stats report"]
+            assert [r.text for r in drain_requests(run)] == [
+                "add a --json flag to the stats report"
+            ]
             assert not steer_request_pending(run)
 
     asyncio.run(scenario())
@@ -53,6 +55,6 @@ def test_a_bare_directive_queues_nothing(tmp_path: Path) -> None:
             await pilot.pause()
             app.submit_instruction("/task")
             await pilot.pause()
-            assert drain_queued_tasks(run) == []
+            assert [r.text for r in drain_requests(run)] == []
 
     asyncio.run(scenario())
