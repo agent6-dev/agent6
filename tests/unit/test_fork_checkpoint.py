@@ -497,8 +497,6 @@ def test_fork_snapshots_the_dag_under_the_source_curator_lock(
     A live source atomic-renames and prunes node files, so an unlocked copy could hit a vanishing
     file or produce a torn DAG.
     """
-    from agent6.app import fork as fork_mod
-
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -506,7 +504,7 @@ def test_fork_snapshots_the_dag_under_the_source_curator_lock(
     src = _seed_source_run(state, "src-LOCK11", head_sha=head, turns=(1,))
 
     locked: list[pathlib.Path] = []
-    real_flock = fork_mod.flock
+    real_flock = storage.flock
 
     @contextlib.contextmanager
     def recording_flock(path: pathlib.Path) -> Generator[None]:
@@ -514,7 +512,7 @@ def test_fork_snapshots_the_dag_under_the_source_curator_lock(
         with real_flock(path):
             yield
 
-    monkeypatch.setattr(fork_mod, "flock", recording_flock)
+    monkeypatch.setattr(storage, "flock", recording_flock)
     rc = fork._cmd_fork(None, "src-LOCK11", new_session_id="child-LOCK22", no_run=True)
     assert rc == 0
     assert locked == [src.lock_path]  # the copy held the source curator lock

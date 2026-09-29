@@ -10,23 +10,15 @@ uses, over a drafting workspace of its own; agent6 validates what is on disk bet
 from __future__ import annotations
 
 import contextlib
+import pathlib
 import shutil
-from pathlib import Path
 
-from agent6.app._session import select_isolation
-from agent6.app._setup import check_provider_keys
-from agent6.app.machine._bundle import validate_bundle
-from agent6.app.machine._frontend import MachineFrontend
-from agent6.app.machine._scriptcheck import lint_and_typecheck, run_offline_tests
-from agent6.app.machine_agent import build_machine_agent_runner
-from agent6.app.parallel import subordinate_workdir_root
-from agent6.app.preflight import SessionRefusedError
-from agent6.app.reporter import Reporter
-from agent6.config import ConfigError
-from agent6.config.layer import load_effective
-from agent6.events import EventSink
-from agent6.git_ops import CommitIdentity, GitError, init_repo, verify_git_identity
-from agent6.kinds import session_bucket
+from agent6 import events as agent6_events
+from agent6 import git_ops, kinds, paths, portable
+from agent6.app import _session, _setup, machine_agent, parallel, preflight
+from agent6.app import reporter as app_reporter
+from agent6.app.machine import _bundle, _frontend, _scriptcheck
+from agent6.config import ConfigError, layer
 from agent6.machine import (
     AgentRequest,
     MachineError,
@@ -35,11 +27,7 @@ from agent6.machine import (
     dry_run,
     load_machine,
 )
-from agent6.paths import mkdir_for_real_user, state_dir
-from agent6.portable import atomic_write
-from agent6.sessions.id import unused_session_id
-from agent6.sessions.ipc import emit_session_start
-from agent6.sessions.layout import LOGS_NAME, bucket_dir
+from agent6.sessions import id, ipc, layout
 
 _CREATE_TIMEOUT_S = 900.0
 
@@ -48,7 +36,7 @@ _CREATE_STOP_REASONS = frozenset(
 )
 
 
-def _write_scripts(base_dir: Path, scripts: dict[str, str]) -> None:
+def _write_scripts(base_dir: pathlib.Path, scripts: dict[str, str]) -> None:
     """Write the bundle's scripts, keyed by bundle-relative path.
 
     A pre-existing symlink at a target is unlinked first, so a planted link cannot redirect the
@@ -59,10 +47,10 @@ def _write_scripts(base_dir: Path, scripts: dict[str, str]) -> None:
         p.parent.mkdir(parents=True, exist_ok=True)
         if p.is_symlink():
             p.unlink()
-        atomic_write(p, content if content.endswith("\n") else content + "\n")
+        portable.atomic_write(p, content if content.endswith("\n") else content + "\n")
 
 
-def _machine_file(workspace: Path) -> tuple[Path | None, str]:
+def _machine_file(workspace: pathlib.Path) -> tuple[pathlib.Path | None, str]:
     """Return the one `.asm.toml` the agent wrote and "", or None and the problem."""
     found = sorted(workspace.glob("*.asm.toml"))
     if not found:
@@ -76,19 +64,19 @@ def _machine_file(workspace: Path) -> tuple[Path | None, str]:
     return found[0], ""
 
 
-def _check_bundle(path: Path) -> tuple[MachineSpec | None, list[str]]:
+def _check_bundle(path: pathlib.Path) -> tuple[MachineSpec | None, list[str]]:
     """Return the parsed machine and no problems, or None and why the file or bundle is invalid."""
     try:
         spec = load_machine(path)
     except MachineError as exc:
         return None, list(exc.problems)
-    bundle_problems = validate_bundle(spec, path)
+    bundle_problems = _bundle.validate_bundle(spec, path)
     if bundle_problems:
         return None, bundle_problems
     return spec, []
 
 
-def _read_scripts(workspace: Path) -> dict[str, str]:
+def _read_scripts(workspace: pathlib.Path) -> dict[str, str]:
     """Return the bundle's whole `scripts/` tree as {bundle-relative path: source}.
 
     The whole tree is what the validators passed: a script may import a module or read a data
@@ -127,13 +115,13 @@ def _attempt_reason(problems: list[str]) -> str:
     return f"{head}{extra}"
 
 
-def _discard_workspace(workspace: Path, reporter: Reporter) -> None:
+def _discard_workspace(workspace: pathlib.Path, reporter: app_reporter.Reporter) -> None:
     """Remove a drafting workspace whose bundle is published, with its per-repo state dir.
 
     The prune sweep knows fan-out clones and fork worktrees; a drafting workspace is neither.
     """
     errors: list[str] = []
-    for path in (state_dir(workspace), workspace):
+    for path in (paths.state_dir(workspace), workspace):
         # A workspace that never ran has no state dir; rmtree reports a missing path through onexc.
         if path.exists():
             shutil.rmtree(path, onexc=lambda _fn, target, exc: errors.append(f"{target}: {exc}"))
@@ -144,19 +132,19 @@ def _discard_workspace(workspace: Path, reporter: Reporter) -> None:
         reporter.err(f"machine create: the drafting workspace stays ({errors[0]})")
 
 
-def new_draft_dir(state: Path) -> Path:
+def new_draft_dir(state: pathlib.Path) -> pathlib.Path:
     """Return a new draft's directory: an unused session id under the machine bucket."""
-    bucket = session_bucket("machine")
-    return bucket_dir(state, bucket) / unused_session_id(state, bucket)
+    bucket = kinds.session_bucket("machine")
+    return layout.bucket_dir(state, bucket) / id.unused_session_id(state, bucket)
 
 
 def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop's attempts and refusals, in order
     task: str,
-    frontend: MachineFrontend,
+    frontend: _frontend.MachineFrontend,
     *,
-    output: Path | None,
+    output: pathlib.Path | None,
     max_attempts: int,
-    config_path: Path | None = None,
+    config_path: pathlib.Path | None = None,
 ) -> int:
     """Draft, validate and write a machine.
 
@@ -175,49 +163,49 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     if max_attempts < 1:
         reporter.error("--max-attempts must be >= 1.")
         return 2
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     try:
-        eff = load_effective(cwd, config_path)
+        eff = layer.load_effective(cwd, config_path)
         cfg = eff.config
         cfg.require_runnable("worker")
     except ConfigError as exc:
         reporter.error(str(exc))
         return 2
-    missing = check_provider_keys(cfg)
+    missing = _setup.check_provider_keys(cfg)
     if missing is not None:
         reporter.err(missing)
         return 2
     try:
         # A create session withholds the command tools: an unconfined autorun needs no confirmation.
-        isolation = select_isolation(
+        isolation = _session.select_isolation(
             cfg,
             cwd=cwd,
             confirm_unconfined=lambda _isolation, _cfg: True,
             reporter=reporter,
             explicit_leaves=eff.explicit_leaves,
         )
-    except SessionRefusedError as refusal:
+    except preflight.SessionRefusedError as refusal:
         return refusal.rc
 
-    scratch = new_draft_dir(state_dir(cwd))
-    mkdir_for_real_user(scratch.parent)
+    scratch = new_draft_dir(paths.state_dir(cwd))
+    paths.mkdir_for_real_user(scratch.parent)
     scratch.mkdir(mode=0o700)
     (scratch / "prompt.txt").write_text(task, encoding="utf-8")
     # The draft's watchable log: this process owns session.start, the attempt markers and
     # session.end; each attempt's subprocess appends its own events to the same file.
-    events_log = scratch / LOGS_NAME
-    events = EventSink(events_log)
+    events_log = scratch / layout.LOGS_NAME
+    events = agent6_events.EventSink(events_log)
     # A terminal draft has its own session.end, which the status reads first: no clearing.
-    emit_session_start(events, scratch, "session.start", user_task=task, mode="machine")
+    ipc.emit_session_start(events, scratch, "session.start", user_task=task, mode="machine")
     reporter.err(
         f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
     )
     # An empty repo of its own beside the other subordinate trees: the jail masks the state dir.
-    workspace = subordinate_workdir_root(cfg, cwd, scratch.name)
+    workspace = parallel.subordinate_workdir_root(cfg, cwd, scratch.name)
     try:
         workspace.mkdir(parents=True)
-        init_repo(workspace)
-    except (OSError, GitError) as exc:
+        git_ops.init_repo(workspace)
+    except (OSError, git_ops.GitError) as exc:
         reporter.error(f"could not prepare the drafting workspace {workspace}: {exc}")
         events.emit("session.end", reason="workspace_failed", iterations=0, all_passed=False)
         return 1
@@ -230,24 +218,24 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     overlay["harness"] = {**overlay.get("harness", {}), "metric": None}
     # Resolved on the host: the confined execution cannot read ~/.gitconfig.
     try:
-        name, email = verify_git_identity(
-            workspace, CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
+        name, email = git_ops.verify_git_identity(
+            workspace, git_ops.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
         )
-    except GitError as exc:
+    except git_ops.GitError as exc:
         reporter.error(str(exc))
         events.emit("session.end", reason="no_git_identity", iterations=0, all_passed=False)
         return 2
-    runner = build_machine_agent_runner(
+    runner = machine_agent.build_machine_agent_runner(
         overlay,
         workspace,
         isolation,
         scratch / "agent_transcripts",
-        commit_identity=CommitIdentity(name=name, email=email),
+        commit_identity=git_ops.CommitIdentity(name=name, email=email),
     )
 
     diagnostics: list[str] | None = None
     spec: MachineSpec | None = None
-    valid_path: Path | None = None
+    valid_path: pathlib.Path | None = None
     valid_scripts: dict[str, str] = {}
     total_usd = 0.0
     total_in = 0
@@ -296,7 +284,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                 # Lint the scripts now, so one attempt reveals every problem class.
                 problems = [
                     *problems,
-                    *lint_and_typecheck(
+                    *_scriptcheck.lint_and_typecheck(
                         workspace / "scripts",
                         fix=True,
                         ruff_config_from=output.parent if output is not None else cwd,
@@ -306,14 +294,14 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
             # Lint, type-check, offline-test and dry-run; a failure is the next attempt's input.
             reporter.err("machine create: linting + offline-testing scripts...")
             events.emit("loop.note", text="linting + offline-testing the draft")
-            problems = lint_and_typecheck(
+            problems = _scriptcheck.lint_and_typecheck(
                 workspace / "scripts",
                 fix=True,
                 ruff_config_from=output.parent if output is not None else cwd,
             )
             # ruff --fix rewrote the workspace copies: publish what validated.
             candidate_scripts = _read_scripts(workspace)
-            offline = run_offline_tests(workspace, isolation)
+            offline = _scriptcheck.run_offline_tests(workspace, isolation)
             problems.extend(offline.problems)
             if offline.skipped:
                 reporter.err(
@@ -380,7 +368,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         target.parent.mkdir(parents=True, exist_ok=True)
         # Scripts first, the machine file last: a death mid-publish leaves inert scripts.
         _write_scripts(target.parent, valid_scripts)
-        atomic_write(target, payload)
+        portable.atomic_write(target, payload)
     except OSError as exc:
         events.emit("session.end", reason="write_failed", iterations=attempt, all_passed=False)
         reporter.err(f"FAILED: could not write the bundle to {target.parent}: {exc}")
@@ -388,7 +376,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         reporter.out(payload.removesuffix("\n"))
         return 1
     # A pre-existing symlink under scripts/ can make the published bundle differ: check it.
-    out_problems = validate_bundle(spec, target)
+    out_problems = _bundle.validate_bundle(spec, target)
     if out_problems:
         events.emit("session.end", reason="bundle_invalid", iterations=attempt, all_passed=False)
         reporter.err(f"FAILED: the bundle written to {target.parent} does not validate:")

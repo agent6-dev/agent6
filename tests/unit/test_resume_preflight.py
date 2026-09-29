@@ -22,6 +22,7 @@ import agent6.app.preflight as preflight_mod
 import agent6.app.resume as resume_mod
 from agent6 import paths
 from agent6.harness import _snapshot
+from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import resume as cli_resume  # pyright: ignore[reportPrivateUsage]
 
@@ -122,7 +123,7 @@ def _stub_start_of_run(
         captured.update(k)
         return 0
 
-    monkeypatch.setattr(resume, "run_task", _capture_run_task)
+    monkeypatch.setattr(run, "run_task", _capture_run_task)
     return captured
 
 
@@ -353,13 +354,13 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")  # run_commands="ask" with no tty refuses
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "plan-PIDORDER"
     order: list[str] = []
-    real_write = resume_mod.write_worker_pid
+    real_write = ipc.write_worker_pid
 
     def _write(session_dir: pathlib.Path, pid: int) -> None:
         order.append("pid")
         real_write(session_dir, pid)
 
-    monkeypatch.setattr(resume_mod, "write_worker_pid", _write)
+    monkeypatch.setattr(ipc, "write_worker_pid", _write)
 
     def _refuse(*_a: object, **_k: object) -> str:
         order.append("isolation")
@@ -816,8 +817,10 @@ def test_plan_resume_builds_the_planner_provider(
     def _yes(*_a: object) -> bool:
         return True
 
+    real_frontend = run.session_frontend
+
     def _frontend(_cp: object = None) -> object:
-        return dataclasses.replace(run.session_frontend(), confirm_unconfined_autorun=_yes)
+        return dataclasses.replace(real_frontend(), confirm_unconfined_autorun=_yes)
 
     def _none(*_a: object, **_k: object) -> None:
         return None

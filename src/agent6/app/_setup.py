@@ -9,15 +9,17 @@ sandbox overrides, and MCP server startup.
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import pathlib
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
-from pathlib import Path
 
-from pydantic import ValidationError
+import pydantic
 
-from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.budget import BudgetTracker
-from agent6.child_env import curated_env, set_provider_key_env
+from agent6 import budget as agent6_budget
+from agent6 import child_env, git_ops, kinds
+from agent6 import events as agent6_events
+from agent6 import secrets as agent6_secrets
+from agent6.app import reporter as app_reporter
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -26,25 +28,17 @@ from agent6.config import (
     ConfigError,
     MCPServerEntry,
     ProviderEntry,
+    layer,
     parse_seat_spec,
     plan_metered,
 )
-from agent6.config.layer import EffectiveConfig, load_effective
-from agent6.events import EventSink
-from agent6.git_ops import set_repo_filter_policy, set_repo_hook_policy
-from agent6.kinds import IsolationLevel, JailPolicy, ModelRoute, NetworkMode, session_kind
-from agent6.models.cache import list_models, refresh_pricing_catalog
-from agent6.providers.claude_code import login_status
-from agent6.sandbox import strict_namespaces_work
-from agent6.sandbox.detect import Environment, degrade_reason, detect, sandbox_disabled_by_env
-from agent6.sandbox.jail import SessionNetwork
-from agent6.secrets import SecretsError, load_oauth_tokens, load_secrets, resolve_api_key
-from agent6.tools.mcp_client import MCPManager, MCPServerSpec
-from agent6.tools.mcp_http import HttpTransport
-from agent6.tools.policy import jail_policy
+from agent6.models import cache
+from agent6.providers import claude_code
+from agent6.sandbox import detect, jail, strict_namespaces_work
+from agent6.tools import mcp_client, mcp_http, policy
 
 
-def detect_env() -> Environment:
+def detect_env() -> detect.Environment:
     """Detect the host environment, with the jail binary settling whether strict works.
 
     The `unshare -U -r true` probe is wrong in both directions: an AppArmor profile can grant
@@ -58,18 +52,18 @@ def detect_env() -> Environment:
     Raises:
         JailBinaryError: The jail binary cannot be executed on this host.
     """
-    env = detect()
+    env = detect.detect()
     if not env.sandbox_available:
         return env
     works = strict_namespaces_work()
     if works != env.userns_supported:
-        return replace(env, userns_supported=works)
+        return dataclasses.replace(env, userns_supported=works)
     return env
 
 
-def budget_tracker(cfg: Config, *, max_usd: float | None = None) -> BudgetTracker:
+def budget_tracker(cfg: Config, *, max_usd: float | None = None) -> agent6_budget.BudgetTracker:
     """Return a run's meter from `[budget]`; a `--max-usd` flag overrides the cap."""
-    return BudgetTracker(
+    return agent6_budget.BudgetTracker(
         max_usd=cfg.budget.max_usd if max_usd is None else max_usd,
         max_percent=cfg.budget.max_percent,
         allow_paid_credits=cfg.budget.allow_paid_credits,
@@ -77,7 +71,7 @@ def budget_tracker(cfg: Config, *, max_usd: float | None = None) -> BudgetTracke
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class BudgetOverrides:
     """Hold the per-run budget overrides the `--max-*` flags set.
 
@@ -112,7 +106,7 @@ class BudgetOverrides:
                 max_tokens_fallback=self.max_tokens_fallback,
                 max_percent=self.max_percent,
             )
-        except ValidationError as exc:
+        except pydantic.ValidationError as exc:
             raise ConfigError(self._flag_error(exc)) from exc
 
     def argv(self) -> list[str]:
@@ -126,7 +120,7 @@ class BudgetOverrides:
             out += ["--max-percent", str(self.max_percent)]
         return out
 
-    def _flag_error(self, exc: ValidationError) -> str:
+    def _flag_error(self, exc: pydantic.ValidationError) -> str:
         """Return the validation errors worded by flag."""
         flags = {
             "max_usd": "--max-usd",
@@ -141,7 +135,7 @@ class BudgetOverrides:
 
 
 def override_flags(
-    budget: BudgetOverrides | None, sandbox: SandboxOverrides | None, route: ModelRoute | None
+    budget: BudgetOverrides | None, sandbox: SandboxOverrides | None, route: kinds.ModelRoute | None
 ) -> list[str]:
     """Return the flags a detached resume carries so it runs under this invocation's overrides."""
     return [
@@ -151,20 +145,22 @@ def override_flags(
     ]
 
 
-def route_text(model: str | ModelRoute | None) -> str:
+def route_text(model: str | kinds.ModelRoute | None) -> str:
     """Return a `--model` as typed, or a recorded pair as `provider/model`; "" for no flag."""
-    return model.spec if isinstance(model, ModelRoute) else (model or "")
+    return model.spec if isinstance(model, kinds.ModelRoute) else (model or "")
 
 
-def flag_route(cfg: Config, mode: str, model: str | ModelRoute | None) -> ModelRoute | None:
+def flag_route(
+    cfg: Config, mode: str, model: str | kinds.ModelRoute | None
+) -> kinds.ModelRoute | None:
     """Return the pair the mode's role runs on when a `--model` set it, else None."""
     if not model:
         return None
-    rm = cfg.models.resolve(session_kind(mode).role)
-    return ModelRoute(rm.provider, rm.model) if rm is not None else None
+    rm = cfg.models.resolve(kinds.session_kind(mode).role)
+    return kinds.ModelRoute(rm.provider, rm.model) if rm is not None else None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SandboxOverrides:
     """Hold the per-invocation sandbox and approval overrides the flags set.
 
@@ -215,9 +211,9 @@ def apply_git_ops_policy(cfg: Config) -> None:
     drivers are repo-controlled host code, off by default; the provider-key env vars are
     stripped from git's environment, since a credential helper must not inherit one.
     """
-    set_repo_hook_policy(cfg.git.run_repo_hooks)
-    set_repo_filter_policy(cfg.git.run_repo_filters)
-    set_provider_key_env(
+    git_ops.set_repo_hook_policy(cfg.git.run_repo_hooks)
+    git_ops.set_repo_filter_policy(cfg.git.run_repo_filters)
+    child_env.set_provider_key_env(
         p.api_key_env
         for p in cfg.providers.values()
         if not isinstance(p, ClaudeCodeProviderEntry) and p.api_key_env
@@ -231,20 +227,20 @@ def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = 
     the operator's flags land last, so an explicit `--auto-approve` stays in force and
     `--no-commands` still pins "no".
     """
-    clamped = cfg.with_run_commands_clamped() if session_kind(mode).clamps_commands else cfg
+    clamped = cfg.with_run_commands_clamped() if kinds.session_kind(mode).clamps_commands else cfg
     return clamped if overrides is None else overrides.apply(clamped)
 
 
 def load_session_config(
-    cwd: Path,
-    config_path: Path | None,
+    cwd: pathlib.Path,
+    config_path: pathlib.Path | None,
     *,
     mode: str,
     preset: str = "",
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
-    model: str | ModelRoute | None = None,
-) -> EffectiveConfig:
+    model: str | kinds.ModelRoute | None = None,
+) -> layer.EffectiveConfig:
     """Load the config a session starts or resumes under, the same way at every entry point.
 
     Args:
@@ -262,18 +258,18 @@ def load_session_config(
     Raises:
         ConfigError: The layers do not load, a flag fails validation, or the role cannot run.
     """
-    effective = load_effective(cwd, config_path, preset=preset)
+    effective = layer.load_effective(cwd, config_path, preset=preset)
     cfg = effective.config
     apply_git_ops_policy(cfg)
     if budget_overrides is not None:
         cfg = budget_overrides.apply(cfg)
     if model:
-        role = session_kind(mode).role
+        role = kinds.session_kind(mode).role
         route = cfg.model_route(role, model) if isinstance(model, str) else model
         cfg = cfg.with_model_route(role, route)
     cfg = session_config(cfg, mode, sandbox_overrides)
-    cfg.require_runnable(session_kind(mode).role)
-    return replace(effective, config=cfg)
+    cfg.require_runnable(kinds.session_kind(mode).role)
+    return dataclasses.replace(effective, config=cfg)
 
 
 def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str | None:
@@ -291,8 +287,8 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
         The refusal, or None when every provider can run.
     """
     try:
-        secrets = load_secrets()
-    except SecretsError as exc:
+        secrets = agent6_secrets.load_secrets()
+    except agent6_secrets.SecretsError as exc:
         return str(exc)
     needed = {rm.provider for rm in cfg.models.configured().values()}
     for spec in cfg.review.seats:
@@ -316,7 +312,7 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
         for rm in cfg.models.configured().values()
     ):
         # Bare claude-* ids price through the OpenRouter catalog, which nothing above fetched.
-        refresh_pricing_catalog()
+        cache.refresh_pricing_catalog()
     return None
 
 
@@ -327,16 +323,16 @@ def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, str]) 
     about 1.5 s): that cache feeds completion, context sizing and the prices the budget meters.
     """
     if isinstance(entry, ClaudeCodeProviderEntry):
-        err = login_status(entry.binary)
+        err = claude_code.login_status(entry.binary)
         return f"[providers.{name}]: {err}" if err is not None else None
     if isinstance(entry, ChatGPTProviderEntry):
-        if load_oauth_tokens(name, secrets=secrets) is None:
+        if agent6_secrets.load_oauth_tokens(name, secrets=secrets) is None:
             return f"no ChatGPT sign-in stored for [providers.{name}]; run `agent6 connect {name}`."
-        list_models(name, entry, None)
+        cache.list_models(name, entry, None)
         return None
-    key = resolve_api_key(name, entry.api_key_env, secrets=secrets)
+    key = agent6_secrets.resolve_api_key(name, entry.api_key_env, secrets=secrets)
     if key:
-        list_models(name, entry, key)
+        cache.list_models(name, entry, key)
         return None
     if (
         isinstance(entry, AnthropicProviderEntry)
@@ -351,7 +347,7 @@ def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, str]) 
     return None
 
 
-def wants_session_network(cfg: Config, isolation: IsolationLevel) -> bool:
+def wants_session_network(cfg: Config, isolation: kinds.IsolationLevel) -> bool:
     """Return whether the run needs its own network: any child would join one.
 
     Asked once before anything spawns, since the network exists before its first member. Only
@@ -368,12 +364,12 @@ def wants_session_network(cfg: Config, isolation: IsolationLevel) -> bool:
 
 def mcp_server_policy(
     cfg: Config,
-    root: Path,
-    isolation: IsolationLevel,
+    root: pathlib.Path,
+    isolation: kinds.IsolationLevel,
     srv: MCPServerEntry,
     *,
     readonly: bool = False,
-) -> JailPolicy | None:
+) -> kinds.JailPolicy | None:
     """Return the sandbox for one spawned server, or None when it opted out as unconfined.
 
     The `jail_policy` a command gets plus the server's additive grants. Its env is the curated
@@ -396,29 +392,29 @@ def mcp_server_policy(
     write_paths = sandbox.write_paths if sandbox else ()
     # auto and none both mean a network of its own; preflight owns the warn-or-refuse difference.
     configured = srv.effective_network
-    network: NetworkMode = "none" if configured == "auto" else configured
-    return jail_policy(
+    network: kinds.NetworkMode = "none" if configured == "auto" else configured
+    return policy.jail_policy(
         root,
         cfg,
         isolation,
         srv.command,
-        extra_ro_paths=tuple(Path(p).expanduser() for p in read_paths),
-        extra_rw_paths=tuple(Path(p).expanduser() for p in write_paths),
+        extra_ro_paths=tuple(pathlib.Path(p).expanduser() for p in read_paths),
+        extra_rw_paths=tuple(pathlib.Path(p).expanduser() for p in write_paths),
         extra_protect_paths=(root,) if readonly else (),
         network=network,
-        env_base=curated_env(passthrough=srv.pass_env, desktop=False),
+        env_base=child_env.curated_env(passthrough=srv.pass_env, desktop=False),
     )
 
 
 def mcp_server_spec(
     cfg: Config,
-    root: Path,
-    isolation: IsolationLevel,
+    root: pathlib.Path,
+    isolation: kinds.IsolationLevel,
     name: str,
     srv: MCPServerEntry,
     *,
     readonly: bool = False,
-) -> MCPServerSpec:
+) -> mcp_client.MCPServerSpec:
     """Return what starting the server takes; every surface spawns it the same way.
 
     Args:
@@ -432,7 +428,7 @@ def mcp_server_spec(
     Returns:
         The spec the manager starts the server from.
     """
-    return MCPServerSpec(
+    return mcp_client.MCPServerSpec(
         name=name,
         command=srv.command,
         startup_timeout_s=srv.startup_timeout_s,
@@ -443,7 +439,7 @@ def mcp_server_spec(
             None if srv.url else mcp_server_policy(cfg, root, isolation, srv, readonly=readonly)
         ),
         http=(
-            HttpTransport(
+            mcp_http.HttpTransport(
                 name=name,
                 url=srv.url,
                 token_env=srv.token_env,
@@ -455,24 +451,24 @@ def mcp_server_spec(
     )
 
 
-def no_jail_cause(cfg: Config, env: Environment) -> str:
+def no_jail_cause(cfg: Config, env: detect.Environment) -> str:
     """Return why this host resolved to isolation `none`."""
-    if sandbox_disabled_by_env():
+    if detect.sandbox_disabled_by_env():
         return "AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1 is set"
     if cfg.sandbox.isolation == "none":
         return "sandbox.isolation = none"
-    return degrade_reason(env) or "this host has no jail"
+    return detect.degrade_reason(env) or "this host has no jail"
 
 
 def start_mcp_manager_if_enabled(
     cfg: Config,
-    root: Path,
-    isolation: IsolationLevel,
+    root: pathlib.Path,
+    isolation: kinds.IsolationLevel,
     *,
-    reporter: Reporter = STDIO_REPORTER,
-    events: EventSink | None = None,
-    session_net: SessionNetwork | None = None,
-) -> MCPManager | None:
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
+    events: agent6_events.EventSink | None = None,
+    session_net: jail.SessionNetwork | None = None,
+) -> mcp_client.MCPManager | None:
     """Spawn every enabled MCP server; a server that fails is skipped and its tools absent.
 
     Args:
@@ -497,7 +493,7 @@ def start_mcp_manager_if_enabled(
     if not configs:
         return None
     _warn_servers_that_keep_the_network(cfg, isolation, reporter=reporter)
-    manager = MCPManager.start(configs, logger=reporter.err, session_net=session_net)
+    manager = mcp_client.MCPManager.start(configs, logger=reporter.err, session_net=session_net)
     if events is not None:
         for failure in manager.failures:
             events.emit("mcp.server_unavailable", server=failure.name, error=failure.error)
@@ -505,7 +501,7 @@ def start_mcp_manager_if_enabled(
 
 
 def _warn_servers_that_keep_the_network(
-    cfg: Config, isolation: IsolationLevel, *, reporter: Reporter
+    cfg: Config, isolation: kinds.IsolationLevel, *, reporter: app_reporter.Reporter
 ) -> None:
     """Warn per server whose `network = "auto"` degrades to the host's network.
 

@@ -13,24 +13,23 @@ subprocess under `strict` (it would inherit the run's empty netns). It spawns th
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import pathlib
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.sessions.layout import LOGS_NAME
-from agent6.viewmodel import summarize_session_dir
-from agent6.viewmodel.format import status_label
+from agent6.sessions import layout
+from agent6.viewmodel import format, summarize_session_dir
 
 # Starts a btw: (cwd, agent6 argv without the exe, env extras) -> "" or an error.
-BtwLaunch = Callable[[Path, list[str], dict[str, str]], str]
+BtwLaunch = Callable[[pathlib.Path, list[str], dict[str, str]], str]
 
 # The child pays a cold Python start plus config load before its session dir appears.
 _START_TIMEOUT_S = 30.0
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class BtwSession:
     """Identify a started btw.
 
@@ -41,7 +40,7 @@ class BtwSession:
     """
 
     id: str
-    dir: Path
+    dir: pathlib.Path
     question: str
 
 
@@ -49,9 +48,9 @@ def start_btw(
     question: str,
     parent_id: str,
     *,
-    cwd: Path,
+    cwd: pathlib.Path,
     launch: BtwLaunch,
-    list_asks: Callable[[], list[Path]],
+    list_asks: Callable[[], list[pathlib.Path]],
 ) -> tuple[BtwSession | None, str]:
     """Open the btw and return as soon as its session dir exists.
 
@@ -112,14 +111,14 @@ def btw_answer(session: BtwSession) -> str | None:
     summary = summarize_session_dir(session.dir)
     if summary.status in {"created", "running", "starting", "waiting"}:
         return None
-    label = status_label(summary.status, summary.reason)
+    label = format.status_label(summary.status, summary.reason)
     return _final_prose(session.dir) or f"(the btw ended without an answer: {label})"
 
 
-def _final_prose(session_dir: Path) -> str:
+def _final_prose(session_dir: pathlib.Path) -> str:
     """Return the last assistant message in the session's journal, "" without one."""
     try:
-        raw = (session_dir / LOGS_NAME).read_text(errors="replace")
+        raw = (session_dir / layout.LOGS_NAME).read_text(errors="replace")
     except OSError:
         return ""
     answer = ""

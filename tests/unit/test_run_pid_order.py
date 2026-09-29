@@ -19,8 +19,11 @@ from unittest import mock
 import pytest
 
 from agent6 import paths
+from agent6.app import _execution as app__execution
+from agent6.app import _session
 from agent6.app import run as run_mod
 from agent6.config import Config
+from agent6.sessions import ipc
 from agent6.tools import operator_prompts
 
 
@@ -49,14 +52,14 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
     def _isolation(*_a: object, **_k: object) -> str:
         return "none"
 
-    monkeypatch.setattr(run_mod, "write_worker_pid", _pid)
-    monkeypatch.setattr(run_mod, "select_isolation", _isolation)
+    monkeypatch.setattr(ipc, "write_worker_pid", _pid)
+    monkeypatch.setattr(_session, "select_isolation", _isolation)
 
     def _execution(*_a: object, **_k: object) -> object:
         order.append("execution")
         raise RuntimeError("stop here")
 
-    monkeypatch.setattr(run_mod, "run_execution", _execution)
+    monkeypatch.setattr(app__execution, "run_execution", _execution)
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
 
     def _cancel(_request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
@@ -98,7 +101,7 @@ def test_a_cancelled_start_question_leaves_no_pid_behind(
     def _isolation(*_a: object, **_k: object) -> str:
         return "none"
 
-    monkeypatch.setattr(run_mod, "select_isolation", _isolation)
+    monkeypatch.setattr(_session, "select_isolation", _isolation)
 
     def _cancel(_request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         return operator_prompts.QuestionAnswer(("cancel",), "stdin")
@@ -146,8 +149,8 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
     def _finished(*_args: object, **_kwargs: object) -> app__execution.ExecutionEnd:
         return app__execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(run_mod, "select_isolation", _strict)
-    monkeypatch.setattr(run_mod, "run_execution", _finished)
+    monkeypatch.setattr(_session, "select_isolation", _strict)
+    monkeypatch.setattr(app__execution, "run_execution", _finished)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
 
@@ -187,8 +190,8 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
     def _finished(*_args: object, **_kwargs: object) -> app__execution.ExecutionEnd:
         return app__execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(run_mod, "select_isolation", _strict)
-    monkeypatch.setattr(run_mod, "run_execution", _finished)
+    monkeypatch.setattr(_session, "select_isolation", _strict)
+    monkeypatch.setattr(app__execution, "run_execution", _finished)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
     cfg = Config.model_validate(

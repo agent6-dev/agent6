@@ -18,6 +18,7 @@ import pytest
 from agent6 import git_ops
 from agent6.app import machine_agent as ma
 from agent6.machine import AgentRequest
+from agent6.sandbox import jail as sandbox_jail
 
 BRANCH = "agent6/machine-m1"
 CHAIN = git_ops.chain_ref_for("machine-m1")
@@ -209,7 +210,7 @@ def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
             argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0
         )
 
-    monkeypatch.setattr(machine_run, "run_in_jail", fake_jail)
+    monkeypatch.setattr(sandbox_jail, "run_in_jail", fake_jail)
     runner = machine_run.machine_tool_runner(origin, "m1", tmp_path / "clones")
     policy = kinds.JailPolicy(cwd=origin, argv=("x",), extra_protect_paths=(origin / "scripts",))
     assert runner(policy).returncode == 0
@@ -275,7 +276,7 @@ def test_import_failure_keeps_the_clone_and_routes_failed(
     def _boom(*_a: object, **_k: object) -> None:
         raise git_ops.GitError("refs locked")
 
-    monkeypatch.setattr(ma, "fetch_branch", _boom)
+    monkeypatch.setattr(git_ops, "fetch_branch", _boom)
     runner = _runner(origin, tmp_path)
     r = runner(_req(0), None)
     assert r.reason.startswith("import of")

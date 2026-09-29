@@ -16,9 +16,10 @@ import pytest
 
 import agent6.app._execution as execution_mod
 from agent6 import events
-from agent6.app import frontend, reporter
+from agent6.app import _session, _setup, frontend, providers, reporter
 from agent6.config import Config
 from agent6.harness import _snapshot
+from agent6.harness import loop as harness_loop
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
@@ -229,13 +230,13 @@ def _stub_execution_internals(
         keep_recent_chars=1,
         cfg=Config(),
     )
-    monkeypatch.setattr(execution_mod, "build_session_providers", _returning(session))
-    monkeypatch.setattr(execution_mod, "build_prompt_reviser_provider", _returning(None))
-    monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
-    monkeypatch.setattr(execution_mod, "start_mcp_manager_if_enabled", _returning(None))
-    monkeypatch.setattr(execution_mod, "build_session_tools", _returning(tools))
-    monkeypatch.setattr(execution_mod, "Harness", _Workflow)
-    monkeypatch.setattr(execution_mod, "session_facts_provider", _returning(lambda: None))
+    monkeypatch.setattr(_session, "build_session_providers", _returning(session))
+    monkeypatch.setattr(providers, "build_prompt_reviser_provider", _returning(None))
+    monkeypatch.setattr(_setup, "wants_session_network", _returning(False))
+    monkeypatch.setattr(_setup, "start_mcp_manager_if_enabled", _returning(None))
+    monkeypatch.setattr(_session, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(harness_loop, "Harness", _Workflow)
+    monkeypatch.setattr(_session, "session_facts_provider", _returning(lambda: None))
 
 
 def test_a_loop_crash_prints_the_end_that_it_journals(

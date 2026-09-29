@@ -12,71 +12,35 @@ from the other.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
+import pathlib
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.app._session import (
-    SessionProviders,
-    build_session_providers,
-    build_session_tools,
-    session_facts_provider,
-    tool_result_cap_bytes,
-)
-from agent6.app._setup import (
-    BudgetOverrides,
-    SandboxOverrides,
-    start_mcp_manager_if_enabled,
-    wants_session_network,
-)
-from agent6.app.finalize import (
-    auto_merge_eligible,
-    finalize_auto_merge,
-    fire_notify_hook,
-    print_interrupt_end,
-    print_session_end,
-    session_exit_code,
-    stranded_edits,
-)
-from agent6.app.frontend import SessionFrontend, approval_scopes
-from agent6.app.manifest import parked_stamp, unpark
-from agent6.app.providers import build_prompt_reviser_provider, close_provider, role_temperature
-from agent6.app.reporter import Reporter
-from agent6.budget import BudgetTracker
-from agent6.commit_message import render_commit_trailer
+from agent6 import budget as agent6_budget
+from agent6 import commit_message, git_ops, kinds, paths
+from agent6 import events as agent6_events
+from agent6.app import _session, _setup, finalize, manifest, providers
+from agent6.app import frontend as app_frontend
+from agent6.app import reporter as app_reporter
 from agent6.config import Config, RoleName
-from agent6.events import EventSink, EventWriteError
-from agent6.git_ops import chain_ref_for
-from agent6.harness._chain import RunChain, commit_identity
-from agent6.harness._compaction import CompactionSettings
-from agent6.harness._operator import OperatorBridge
-from agent6.harness._prompt_revision import RevisionSettings
-from agent6.harness._provider_call import CallSettings
-from agent6.harness._reviewer import ReviewSettings
-from agent6.harness._snapshot import SessionEndReason
-from agent6.harness.loop import Harness, ResumeError, SessionResult
-from agent6.kinds import AutoCommitDirective, IsolationLevel, ResumableMode
-from agent6.paths import chown_to_real_user
-from agent6.providers import Provider, TranscriptSink
-from agent6.sandbox.jail import SessionNetwork, survivors_message
-from agent6.sessions.ipc import (
-    COMMAND_SCOPE,
-    clear_compact_request,
-    clear_session_netns_pid,
-    clear_stop_request,
-    clear_worker_pid,
-    drain_requests,
-    read_compact_request,
-    session_allow_set,
-    stop_request_pending,
-    write_session_netns_pid,
+from agent6.harness import (
+    _chain,
+    _compaction,
+    _operator,
+    _prompt_revision,
+    _provider_call,
+    _reviewer,
+    _snapshot,
+    loop,
 )
-from agent6.sessions.layout import SessionLayout
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.operator_prompts import OperatorPrompts
+from agent6.providers import Provider, TranscriptSink
+from agent6.sandbox import jail
+from agent6.sessions import ipc
+from agent6.sessions import layout as sessions_layout
+from agent6.tools import dispatch, operator_prompts
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ExecutionInputs:
     """Hold what a fresh execution and a resumed one hand the body differently.
 
@@ -109,29 +73,29 @@ class ExecutionInputs:
     """
 
     session_id: str
-    mode: ResumableMode
+    mode: kinds.ResumableMode
     role: RoleName
-    isolation: IsolationLevel
+    isolation: kinds.IsolationLevel
     tui_enabled: bool
     interactive: bool
     task: str | None
-    gate: Callable[[Config, BudgetTracker], Config]
+    gate: Callable[[Config, agent6_budget.BudgetTracker], Config]
     chain_branch: str | None
     base_sha: str
     untracked_at_start: frozenset[str]
-    resume_state_path: Path
+    resume_state_path: pathlib.Path
     undo_forker: Callable[[], tuple[str, str] | None]
-    prompts: OperatorPrompts
+    prompts: operator_prompts.OperatorPrompts
     ask_transcript_task: str | None
-    budget_overrides: BudgetOverrides | None = None
-    sandbox_overrides: SandboxOverrides | None = None
+    budget_overrides: _setup.BudgetOverrides | None = None
+    sandbox_overrides: _setup.SandboxOverrides | None = None
     standing_goal: str = ""
     pins: tuple[str, ...] = ()
     resuming: bool = False
-    worktree_git_dir: Path | None = None
+    worktree_git_dir: pathlib.Path | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ExecutionEnd:
     """Record how the execution ended.
 
@@ -147,12 +111,12 @@ class ExecutionEnd:
 
 def detach_to_background(
     *,
-    frontend: SessionFrontend,
+    frontend: app_frontend.SessionFrontend,
     cfg: Config,
-    layout: SessionLayout,
-    cwd: Path,
+    layout: sessions_layout.SessionLayout,
+    cwd: pathlib.Path,
     flags: Sequence[str],
-    reporter: Reporter,
+    reporter: app_reporter.Reporter,
 ) -> None:
     """Hand a detached execution to a background `resume` under this invocation's flags.
 
@@ -167,26 +131,28 @@ def detach_to_background(
         flags: This invocation's overrides as CLI options.
         reporter: Where the reattach line goes.
     """
-    if cfg.sandbox.run_commands == "ask" and not session_allow_set(
-        layout.session_dir, COMMAND_SCOPE
+    if cfg.sandbox.run_commands == "ask" and not ipc.session_allow_set(
+        layout.session_dir, ipc.COMMAND_SCOPE
     ):
-        frontend.prompt_detach_away_mode(layout.session_dir, approval_scopes(cfg))
+        frontend.prompt_detach_away_mode(layout.session_dir, app_frontend.approval_scopes(cfg))
     err = frontend.spawn_detached_resume(cwd, layout.session_id, flags)
     if err:
         # The handoff failed, so the pid this process kept through the spawn goes now.
-        clear_worker_pid(layout.session_dir)
+        ipc.clear_worker_pid(layout.session_dir)
         reporter.note(err)
         return
     reporter.out(f"\n[agent6] detached: {layout.session_id} continues in the background.")
     reporter.out(f"          reattach:  agent6 attach {layout.session_id}")
 
 
-def _escape_reason(exc: BaseException) -> SessionEndReason:
+def _escape_reason(exc: BaseException) -> _snapshot.SessionEndReason:
     """Return the end reason an escaping exception stands for."""
     return "interrupted" if isinstance(exc, KeyboardInterrupt) else "crashed"
 
 
-def _journal_escape(events: EventSink, exc: BaseException, *, iterations: int) -> SessionEndReason:
+def _journal_escape(
+    events: agent6_events.EventSink, exc: BaseException, *, iterations: int
+) -> _snapshot.SessionEndReason:
     """Journal the end an escape leaves.
 
     Without one every surface reads the dead run as running until the silence window expires;
@@ -201,22 +167,22 @@ def _journal_escape(events: EventSink, exc: BaseException, *, iterations: int) -
         The reason journaled.
     """
     reason = _escape_reason(exc)
-    with contextlib.suppress(EventWriteError):
+    with contextlib.suppress(agent6_events.EventWriteError):
         events.emit("session.end", reason=reason, iterations=iterations, all_passed=False)
     return reason
 
 
 def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and teardown in reading order
     cfg: Config,
-    layout: SessionLayout,
+    layout: sessions_layout.SessionLayout,
     inputs: ExecutionInputs,
     *,
-    frontend: SessionFrontend,
-    reporter: Reporter,
-    events: EventSink,
+    frontend: app_frontend.SessionFrontend,
+    reporter: app_reporter.Reporter,
+    events: agent6_events.EventSink,
     transcript_sink: TranscriptSink,
-    cwd: Path,
-    state_dir: Path,
+    cwd: pathlib.Path,
+    state_dir: pathlib.Path,
 ) -> ExecutionEnd:
     """Drive one execution to its end block.
 
@@ -240,7 +206,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     """
     mode, role = inputs.mode, inputs.role
     label = "resume" if inputs.resuming else "run"
-    session: SessionProviders | None = None
+    session: _session.SessionProviders | None = None
     prompt_reviser_provider: Provider | None = None
     try:
         # The interactive revision prompt reads the terminal, which the TUI may own.
@@ -257,7 +223,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         stream_text, console_stream = frontend.stream_modes(inputs.tui_enabled)
         if console_stream:
             frontend.attach_console_view(events)
-        session = build_session_providers(
+        session = _session.build_session_providers(
             cfg,
             role=role,
             events=events,
@@ -266,7 +232,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             reporter=reporter,
         )
         budget = session.budget
-        prompt_reviser_provider = build_prompt_reviser_provider(
+        prompt_reviser_provider = providers.build_prompt_reviser_provider(
             cfg, transcript_sink=transcript_sink, budget=budget, events=events
         )
         cfg = inputs.gate(cfg, budget)
@@ -274,45 +240,45 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         steer_state = frontend.make_steer_state(
             events,
             layout.session_dir,
-            session_facts_provider(
+            _session.session_facts_provider(
                 budget, session.rm_role.model, cfg.sandbox.run_commands, inputs.isolation
             ),
         )
     except (KeyboardInterrupt, Exception) as exc:
         # A parked run whose start crashes here never ran: it stays parked with no session.end.
-        if parked_stamp(layout.session_dir) is not None:
+        if manifest.parked_stamp(layout.session_dir) is not None:
             reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
         else:
             reporter.err(f"\n[agent6] {label} {_journal_escape(events, exc, iterations=0)}")
         with contextlib.ExitStack() as cleanup:
             if prompt_reviser_provider is not None:
-                cleanup.callback(close_provider, prompt_reviser_provider)
+                cleanup.callback(providers.close_provider, prompt_reviser_provider)
             if session is not None:
                 cleanup.callback(session.close)
         raise
 
     interrupted = False
-    result: SessionResult | None = None
-    wf: Harness | None = None
+    result: _snapshot.SessionResult | None = None
+    wf: loop.Harness | None = None
     escape_handled = False
     undo_outcome: list[tuple[str, str]] = []
-    dispatcher: ToolDispatcher | None = None
+    dispatcher: dispatch.ToolDispatcher | None = None
     mcp_manager = None
-    session_net: SessionNetwork | None = None
+    session_net: jail.SessionNetwork | None = None
     try:
         reporter.note(f"{'resume ' if inputs.resuming else ''}session id: {inputs.session_id}")
 
         # The session network before its first member; the MCP servers before the harness.
-        if wants_session_network(cfg, inputs.isolation):
-            session_net = SessionNetwork.open()
+        if _setup.wants_session_network(cfg, inputs.isolation):
+            session_net = jail.SessionNetwork.open()
             # Published so `agent6 exec` can join it: a namespace is named through a /proc entry.
-            write_session_netns_pid(layout.session_dir, session_net.holder_pid)
-        mcp_manager = start_mcp_manager_if_enabled(
+            ipc.write_session_netns_pid(layout.session_dir, session_net.holder_pid)
+        mcp_manager = _setup.start_mcp_manager_if_enabled(
             cfg, cwd, inputs.isolation, reporter=reporter, events=events, session_net=session_net
         )
 
         loop_log = frontend.loop_logger(mode)
-        tools = build_session_tools(
+        tools = _session.build_session_tools(
             cfg,
             cwd=cwd,
             state_dir=state_dir,
@@ -338,24 +304,26 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 undo_outcome.append(got)
             return got
 
-        after_auto_commit: Callable[[int, str], AutoCommitDirective] = (
+        after_auto_commit: Callable[[int, str], kinds.AutoCommitDirective] = (
             frontend.build_repl_hook(cwd, budget, inputs.session_id, mcp_manager)
             if inputs.interactive and mode == "run"
             else (lambda _i, _s: "continue")
         )
-        wf = Harness(
-            chain=RunChain(
+        wf = loop.Harness(
+            chain=_chain.RunChain(
                 cwd,
                 # `git.control = "model"` suspends the chain: the model's commits are the record.
-                ref=chain_ref_for(inputs.session_id)
+                ref=git_ops.chain_ref_for(inputs.session_id)
                 if mode == "run" and cfg.git.control != "model"
                 else None,
                 branch=inputs.chain_branch,
                 fallback_parent=inputs.base_sha or None,
                 untracked_at_start=inputs.untracked_at_start,
-                identity=commit_identity(
+                identity=_chain.commit_identity(
                     cfg.git.commit,
-                    render_commit_trailer(cfg.git.commit.trailer, models=(session.rm_role.model,)),
+                    commit_message.render_commit_trailer(
+                        cfg.git.commit.trailer, models=(session.rm_role.model,)
+                    ),
                 ),
                 per_step=cfg.git.commit_per_step,
                 base_sha=inputs.base_sha,
@@ -370,18 +338,18 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             logger=loop_log,
             events=events,
             curator=curator,
-            bridge=OperatorBridge(
+            bridge=_operator.OperatorBridge(
                 steer_requested=steer_state.requested,
                 steer_clear=steer_state.clear,
                 steer_prompt=steer_state.prompt,
                 steer_reset=steer_state.reset_stage,
-                compact_requested=lambda: read_compact_request(layout.session_dir),
-                compact_clear=lambda: clear_compact_request(layout.session_dir),
-                stop_requested=lambda: stop_request_pending(layout.session_dir),
-                stop_clear=lambda: clear_stop_request(layout.session_dir),
+                compact_requested=lambda: ipc.read_compact_request(layout.session_dir),
+                compact_clear=lambda: ipc.clear_compact_request(layout.session_dir),
+                stop_requested=lambda: ipc.stop_request_pending(layout.session_dir),
+                stop_clear=lambda: ipc.clear_stop_request(layout.session_dir),
                 should_abort=steer_state.abort_pending,
                 should_interrupt=steer_state.interrupt,
-                take_requests=lambda: drain_requests(layout.session_dir),
+                take_requests=lambda: ipc.drain_requests(layout.session_dir),
                 after_auto_commit=after_auto_commit,
                 undo_forker=_undo_forker,
                 # None in plan and ask, and inside a lane.
@@ -404,7 +372,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             resume_state_path=inputs.resume_state_path,
             mode=mode,
             plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
-            review=ReviewSettings(
+            review=_reviewer.ReviewSettings(
                 trigger=cfg.review.trigger,
                 period=cfg.review.period,
                 seats=session.review_seats,
@@ -414,21 +382,21 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 budget_fraction=cfg.review.budget_fraction,
                 concurrency=cfg.review.concurrency,
             ),
-            revision=RevisionSettings(
+            revision=_prompt_revision.RevisionSettings(
                 reviser=prompt_reviser_provider,
                 mode=effective_revise_prompt,
-                temperature=role_temperature(cfg, "reviewer"),
+                temperature=providers.role_temperature(cfg, "reviewer"),
                 selector=(
                     frontend.select_revised_prompt
                     if effective_revise_prompt == "interactive"
                     else None
                 ),
             ),
-            call=CallSettings(temperature=role_temperature(cfg, role)),
-            compaction=CompactionSettings(
+            call=_provider_call.CallSettings(temperature=providers.role_temperature(cfg, role)),
+            compaction=_compaction.CompactionSettings(
                 drop_at_chars=tools.compact_drop_at_chars,
                 summarise_at_chars=tools.compact_summarise_at_chars,
-                tool_result_cap_bytes=tool_result_cap_bytes(cfg, role),
+                tool_result_cap_bytes=_session.tool_result_cap_bytes(cfg, role),
                 keep_recent_chars=tools.keep_recent_chars,
                 keep_thinking_turns=cfg.context.keep_thinking_turns,
                 elision_gists=cfg.context.elision_gists,
@@ -437,7 +405,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             ),
         )
         if inputs.task is not None:
-            unpark(layout.session_dir, run_branch=inputs.chain_branch)
+            manifest.unpark(layout.session_dir, run_branch=inputs.chain_branch)
         try:
             with frontend.tui_session(layout.session_dir, inputs.tui_enabled):
                 try:
@@ -455,7 +423,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     if result is None:
                         _journal_escape(events, exc, iterations=wf.iterations_reached)
                     raise
-        except ResumeError as exc:
+        except _snapshot.ResumeError as exc:
             reporter.error(str(exc))
             reporter.err(f"\n[agent6] {label} crashed")
             return ExecutionEnd(1)
@@ -468,7 +436,11 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 reporter.err(f"\n[agent6] {label} interrupted")
     except (KeyboardInterrupt, Exception) as exc:
         # An escape after the run ended is the execution's failure: the run's end stays its last.
-        if not escape_handled and result is None and parked_stamp(layout.session_dir) is None:
+        if (
+            not escape_handled
+            and result is None
+            and manifest.parked_stamp(layout.session_dir) is None
+        ):
             _journal_escape(events, exc, iterations=wf.iterations_reached if wf else 0)
         reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
         raise
@@ -477,40 +449,42 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         def _close_mcp() -> None:
             """Close the MCP servers and journal any that survived."""
             if mcp_manager is not None and (survivors := mcp_manager.close()):
-                with contextlib.suppress(EventWriteError):  # a dead journal must not skip cleanup
-                    events.emit("jail.degraded", detail=survivors_message(survivors))
+                with contextlib.suppress(
+                    agent6_events.EventWriteError
+                ):  # a dead journal must not skip cleanup
+                    events.emit("jail.degraded", detail=jail.survivors_message(survivors))
 
         # ExitStack runs every close even when one raises, and re-raises after: no merge lands
         # on an execution whose teardown failed.
         try:
             with contextlib.ExitStack() as cleanup:
                 if session_net is not None:
-                    cleanup.callback(clear_session_netns_pid, layout.session_dir)
+                    cleanup.callback(ipc.clear_session_netns_pid, layout.session_dir)
                     cleanup.callback(session_net.close)
                 cleanup.callback(_close_mcp)
                 if dispatcher is not None:
                     cleanup.callback(dispatcher.close)
                 if prompt_reviser_provider is not None:
-                    cleanup.callback(close_provider, prompt_reviser_provider)
+                    cleanup.callback(providers.close_provider, prompt_reviser_provider)
                 cleanup.callback(session.close)
                 cleanup.callback(steer_state.restore)
                 # A stop never read at a boundary would stop the next execution at its first.
-                cleanup.callback(clear_stop_request, layout.session_dir)
+                cleanup.callback(ipc.clear_stop_request, layout.session_dir)
             if (
                 not interrupted
                 and result is not None
-                and auto_merge_eligible(result)
+                and finalize.auto_merge_eligible(result)
                 and cfg.git.auto_merge
             ):
-                finalize_auto_merge(
+                finalize.finalize_auto_merge(
                     cwd, layout=layout, cfg=cfg, reporter=reporter, budget=budget, events=events
                 )
         finally:
             # Never leave root-owned run state in the user's repo (the sudo case).
-            chown_to_real_user(state_dir)
+            paths.chown_to_real_user(state_dir)
 
     if interrupted:
-        print_interrupt_end(layout=layout, cwd=cwd, budget=budget, reporter=reporter)
+        finalize.print_interrupt_end(layout=layout, cwd=cwd, budget=budget, reporter=reporter)
         return ExecutionEnd(130)
     if result is None:
         return ExecutionEnd(1)
@@ -532,9 +506,9 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             frontend.save_ask_transcript(layout, inputs.ask_transcript_task, result.summary)
             reporter.err(f"\n[agent6] answer saved to {layout.session_dir / 'transcript.md'}")
         reporter.err(budget.format_summary())
-        return ExecutionEnd(session_exit_code(result))
+        return ExecutionEnd(finalize.session_exit_code(result))
 
-    print_session_end(
+    finalize.print_session_end(
         result,
         layout=layout,
         cwd=cwd,
@@ -542,7 +516,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         console_stream=console_stream,
         reporter=reporter,
     )
-    fire_notify_hook(
+    finalize.fire_notify_hook(
         cfg.notify,
         session_id=layout.session_id,
         session_dir=layout.session_dir,
@@ -551,4 +525,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         verified=result.verified,
         reporter=reporter,
     )
-    return ExecutionEnd(session_exit_code(result, stranded=stranded_edits(result, layout, cwd)))
+    return ExecutionEnd(
+        finalize.session_exit_code(result, stranded=finalize.stranded_edits(result, layout, cwd))
+    )

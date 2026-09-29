@@ -9,28 +9,27 @@ the in-flight status (`contextlib.nullcontext` shows nothing), so `app` never im
 
 from __future__ import annotations
 
+import contextlib
+import dataclasses
+import pathlib
 from collections.abc import Callable, Mapping
-from contextlib import AbstractContextManager
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
-from agent6.app._setup import budget_tracker
-from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.budget import BudgetTracker
+from agent6 import budget as agent6_budget
+from agent6.app import _setup
+from agent6.app import reporter as app_reporter
 from agent6.config import Config
-from agent6.harness.judge import CandidateBrief, JudgeError, compare, mechanical_ranking
+from agent6.harness import judge as harness_judge
 from agent6.providers import Provider, ProviderError, TranscriptSink
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.viewmodel.format import format_usd
+from agent6.sessions import manifest as sessions_manifest
 
 # Builds the reviewer provider the judge call uses.
-BuildProvider = Callable[[Config, TranscriptSink, BudgetTracker], Provider]
+BuildProvider = Callable[[Config, TranscriptSink, agent6_budget.BudgetTracker], Provider]
 # Shown around the judge call, which is silent for 50 to 60 seconds.
-JudgingStatus = Callable[[], AbstractContextManager[None]]
+JudgingStatus = Callable[[], contextlib.AbstractContextManager[None]]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RankOutcome:
     """Hold a ranking and which path produced it.
 
@@ -49,24 +48,24 @@ class RankOutcome:
     judge_cost_partial: bool = False
 
 
-def manifest_task(session_dir: Path, fallback: str) -> str:
+def manifest_task(session_dir: pathlib.Path, fallback: str) -> str:
     """Return the run's recorded `user_task`, else the fallback."""
     try:
-        manifest = read_manifest(session_dir)
-    except ManifestError:
+        manifest = sessions_manifest.read_manifest(session_dir)
+    except sessions_manifest.ManifestError:
         return fallback
     return manifest.user_task or fallback
 
 
 def rank(
     cfg: Config,
-    candidates: list[CandidateBrief],
+    candidates: list[harness_judge.CandidateBrief],
     *,
-    transcript_dir: Path,
+    transcript_dir: pathlib.Path,
     build_provider: BuildProvider,
     judging_status: JudgingStatus,
     max_usd: float | None = None,
-    reporter: Reporter = STDIO_REPORTER,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> RankOutcome:
     """Rank candidates best first.
 
@@ -88,25 +87,27 @@ def rank(
     reviewer = cfg.models.resolve("reviewer")
     if len(candidates) > 1 and reviewer is not None:
         sink = TranscriptSink(transcript_dir)
-        budget = budget_tracker(cfg, max_usd=max_usd)
+        budget = _setup.budget_tracker(cfg, max_usd=max_usd)
         try:
             provider: Provider = build_provider(cfg, sink, budget)
             with judging_status():
-                verdict = compare(provider, reviewer.model, candidates)
+                verdict = harness_judge.compare(provider, reviewer.model, candidates)
             spent, unknown = budget.estimate_usd()
             return RankOutcome(verdict.ranking, verdict.rationale, "judge", spent, unknown)
-        except (ProviderError, JudgeError) as exc:
+        except (ProviderError, harness_judge.JudgeError) as exc:
             # A failed judge is reported, with its spend: the table must not read as judged.
             detail = str(exc).splitlines()[0] if str(exc).strip() else exc.__class__.__name__
             spent, unknown = budget.estimate_usd()
             spent_s = (
-                f"; judge spend {format_usd(spent, partial=unknown)}"
+                f"; judge spend {agent6_budget.format_usd(spent, partial=unknown)}"
                 if spent > 0 or unknown
                 else ""
             )
             reporter.err(f"judge failed ({detail}); ranked mechanically{spent_s}")
-            return RankOutcome(mechanical_ranking(candidates), "", "mechanical", spent, unknown)
-    return RankOutcome(mechanical_ranking(candidates), "", "mechanical")
+            return RankOutcome(
+                harness_judge.mechanical_ranking(candidates), "", "mechanical", spent, unknown
+            )
+    return RankOutcome(harness_judge.mechanical_ranking(candidates), "", "mechanical")
 
 
 def verify_word(verify_ok: bool | None) -> str:
@@ -115,11 +116,11 @@ def verify_word(verify_ok: bool | None) -> str:
 
 
 def print_ranked_candidates(
-    candidates: list[CandidateBrief],
+    candidates: list[harness_judge.CandidateBrief],
     outcome: RankOutcome,
     *,
     merged_into: Mapping[str, str] | None = None,
-    reporter: Reporter = STDIO_REPORTER,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
     """Print the ranked table, the total spend and the judge's rationale.
 
@@ -140,18 +141,20 @@ def print_ranked_candidates(
         verify = verify_word(c.verify_ok)
         into = (merged_into or {}).get(rid, "")
         landing = f"merged into {into}" if into else f"merge with: agent6 sessions merge {rid}"
-        reporter.out(f"  {rnk}. {rid}  {verify:<9} {format_usd(c.cost_usd)}   {landing}")
+        reporter.out(
+            f"  {rnk}. {rid}  {verify:<9} {agent6_budget.format_usd(c.cost_usd)}   {landing}"
+        )
     if len(candidates) > 1:
         cand_total = sum(c.cost_usd for c in candidates)
         judge = outcome.judge_cost_usd
         partial = outcome.judge_cost_partial
         if judge > 0 or partial:
             reporter.out(
-                f"total: candidates {format_usd(cand_total)}"
-                f" + judge {format_usd(judge, partial=partial)}"
-                f" = {format_usd(cand_total + judge, partial=partial)}"
+                f"total: candidates {agent6_budget.format_usd(cand_total)}"
+                f" + judge {agent6_budget.format_usd(judge, partial=partial)}"
+                f" = {agent6_budget.format_usd(cand_total + judge, partial=partial)}"
             )
         else:
-            reporter.out(f"total: candidates {format_usd(cand_total)}")
+            reporter.out(f"total: candidates {agent6_budget.format_usd(cand_total)}")
     if outcome.rationale:
         reporter.out(f"\njudge: {outcome.rationale}")

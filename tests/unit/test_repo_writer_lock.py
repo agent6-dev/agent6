@@ -21,7 +21,10 @@ from unittest import mock
 import pytest
 
 from agent6 import git_ops, paths
-from agent6.app import preflight as preflight_mod
+from agent6.app import _execution as app__execution
+from agent6.app import _session, _setup
+from agent6.app import manifest as app_manifest
+from agent6.app import run as app_run
 from agent6.config import Config
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, manifest
@@ -113,9 +116,8 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     # No provider key here: the lifecycle's route preflight passes.
-    from agent6.app import preflight as preflight_mod
 
-    monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_missing_keys)
+    monkeypatch.setattr(_setup, "check_provider_keys", _no_missing_keys)
     repo = tmp_path / "repo"
     _init_repo(repo)
     monkeypatch.chdir(repo)
@@ -209,8 +211,8 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
         called["mode"] = kw.get("mode")
         return 0
 
-    monkeypatch.setattr(resume_mod, "run_task", fake_run_task)
-    monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_missing_keys)
+    monkeypatch.setattr(app_run, "run_task", fake_run_task)
+    monkeypatch.setattr(_setup, "check_provider_keys", _no_missing_keys)
     rc = resume_mod.resume_task(
         None, "run-PARKED2", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
@@ -432,8 +434,8 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
         called["initial_steer"] = kw.get("initial_steer")
         return 0
 
-    monkeypatch.setattr(resume_mod, "run_task", fake_run_task)
-    monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_missing_keys)
+    monkeypatch.setattr(app_run, "run_task", fake_run_task)
+    monkeypatch.setattr(_setup, "check_provider_keys", _no_missing_keys)
     rc = resume_mod.resume_task(
         None,
         "run-PSTEER",
@@ -489,7 +491,7 @@ def test_teardown_raise_still_releases_both_writer_locks(
         raise RuntimeError("fail with both writer locks held")
 
     # The first call past BOTH lock acquisitions on the clean-tree path.
-    monkeypatch.setattr(run_mod, "write_session_manifest", boom)
+    monkeypatch.setattr(app_manifest, "write_session_manifest", boom)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("teardown raise")
     with pytest.raises(OSError, match="teardown raise"):
@@ -565,9 +567,9 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     def _execution(*_a: object, **_k: object) -> app__execution.ExecutionEnd:
         return app__execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)
-    monkeypatch.setattr(resume_mod, "select_isolation", _strict)
-    monkeypatch.setattr(resume_mod, "run_execution", _execution)
+    monkeypatch.setattr(_setup, "check_provider_keys", _none)
+    monkeypatch.setattr(_session, "select_isolation", _strict)
+    monkeypatch.setattr(app__execution, "run_execution", _execution)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("resume teardown raise")
     with pytest.raises(OSError, match="resume teardown raise"):
@@ -676,7 +678,7 @@ def test_a_reused_ask_dir_drops_the_previous_executions_markers_and_keeps_this_e
         seen.append((ipc.steer_request_pending(d), ipc.stop_request_pending(d)))
         return app__execution.ExecutionEnd(rc=0)
 
-    monkeypatch.setattr(run_mod, "run_execution", _execution)
+    monkeypatch.setattr(app__execution, "run_execution", _execution)
     rc = run_mod.run_task(
         _load_cfg(),
         "again?",
@@ -759,7 +761,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
         seen.append(inputs.untracked_at_start)
         return app__execution.ExecutionEnd(rc=0)
 
-    monkeypatch.setattr(resume_mod, "run_execution", _execution)
+    monkeypatch.setattr(app__execution, "run_execution", _execution)
     monkeypatch.setattr(execution_mod, "run_execution", _execution)
     rc = resume_mod.resume_task(
         None, "run-U", started_at=time.time(), frontend=mock.MagicMock(), force=False
@@ -779,7 +781,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     def _broken(_cwd: pathlib.Path) -> frozenset[str]:
         raise git_ops.GitError("git status failed: index.lock exists")
 
-    monkeypatch.setattr(resume_mod, "untracked_paths", _broken)
+    monkeypatch.setattr(git_ops, "untracked_paths", _broken)
     seen.clear()
     rc = resume_mod.resume_task(
         None, "run-U", started_at=time.time(), frontend=mock.MagicMock(), force=False

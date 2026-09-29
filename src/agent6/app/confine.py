@@ -9,34 +9,26 @@ A partial block reads as a guarantee it cannot keep, so these checks warn or ref
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Callable
-from pathlib import Path
 
-from agent6.app._setup import detect_env, mcp_server_policy
-from agent6.app.reporter import STDIO_REPORTER, Reporter
+from agent6 import kinds, paths
+from agent6.app import _setup
+from agent6.app import reporter as app_reporter
 from agent6.config import Config, MCPServerEntry
-from agent6.kinds import IsolationLevel
-from agent6.models.registry import resolved_adaptive_values
-from agent6.paths import hidden_paths, is_root, jail_cache_home, private_dirs
-from agent6.sandbox.detect import Environment, degrade_reason, resolve_isolation
-from agent6.sandbox.jail import JailBinaryError, JailUnavailableError
-from agent6.sandbox.tool_paths import tool_mount_notes
-from agent6.tools.policy import (
-    jail_home_refusal,
-    jail_policy,
-    persistent_jail_home,
-    resolve_network,
-)
+from agent6.models import registry
+from agent6.sandbox import detect, jail, tool_paths
+from agent6.tools import policy as tools_policy
 
 
 def warn_sandbox_gaps(
-    isolation: IsolationLevel,
-    env: Environment,
+    isolation: kinds.IsolationLevel,
+    env: detect.Environment,
     cfg: Config,
     *,
-    root: Path,
-    worktree_git_dir: Path | None = None,
-    reporter: Reporter = STDIO_REPORTER,
+    root: pathlib.Path,
+    worktree_git_dir: pathlib.Path | None = None,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
     """Warn once per run about each way the isolation confines less than it promises.
 
@@ -54,7 +46,7 @@ def warn_sandbox_gaps(
         reporter: Where the warnings go.
     """
     if cfg.sandbox.isolation == "auto":
-        reason = degrade_reason(env)
+        reason = detect.degrade_reason(env)
         if reason is not None:
             # 'auto' landing under strict is never silent; the same line `check sandbox` prints.
             reporter.warn(f"'auto' selected '{isolation}', not 'strict': {reason}.")
@@ -82,7 +74,7 @@ def warn_sandbox_gaps(
             "and seccomp still confine commands; the in-jail Landlock "
             "defense-in-depth is absent."
         )
-    if isolation == "hardened" and is_root():
+    if isolation == "hardened" and paths.is_root():
         # The root banner names running as root; this names what it costs at this level.
         reporter.warn(
             "running as root under 'hardened': file permissions "
@@ -99,7 +91,7 @@ def warn_sandbox_gaps(
             "reason /tmp is the host's shared /tmp. Use 'strict' for a private /tmp "
             "and a protected .git."
         )
-    persistent = persistent_jail_home(cfg, isolation)
+    persistent = tools_policy.persistent_jail_home(cfg, isolation)
     if persistent is not None and isolation != "none":
         cause, fix = (
             (
@@ -144,7 +136,7 @@ def warn_sandbox_gaps(
             " Use 'strict' to keep them masked under the same grant."
         )
     if isolation in ("strict", "hardened"):
-        notes = tool_mount_notes()
+        notes = tool_paths.tool_mount_notes()
         for tool in notes.unreachable:
             reporter.warn(
                 f"tool {tool} resolves into a dir that is never"
@@ -156,7 +148,7 @@ def warn_sandbox_gaps(
 
 
 def warn_cleartext_credential_endpoints(
-    cfg: Config, *, reporter: Reporter = STDIO_REPORTER
+    cfg: Config, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
 ) -> None:
     """Warn once per endpoint sending its credential over plaintext http to a non-loopback host.
 
@@ -171,14 +163,14 @@ def warn_cleartext_credential_endpoints(
         )
 
 
-def check_workspace_outside_private_dirs(root: Path) -> str | None:
+def check_workspace_outside_private_dirs(root: pathlib.Path) -> str | None:
     """Return the refusal when the workspace and a private dir overlap either way, else None.
 
     A workspace inside a private dir cannot read its own files; a private dir inside the
     workspace has its transcripts and keys readable by jailed commands and staged into commits.
     """
     resolved = root.resolve()
-    for private in private_dirs():
+    for private in paths.private_dirs():
         p = private.resolve()
         if resolved == p or resolved.is_relative_to(p):
             return (
@@ -198,7 +190,7 @@ def check_workspace_outside_private_dirs(root: Path) -> str | None:
 
 
 def check_protect_git_support(
-    cfg: Config, isolation: IsolationLevel, *, explicitly_set: bool
+    cfg: Config, isolation: kinds.IsolationLevel, *, explicitly_set: bool
 ) -> str | None:
     """Return the refusal when an explicit `protect_git` cannot be honored here, else None.
 
@@ -217,7 +209,9 @@ def check_protect_git_support(
     )
 
 
-def check_jail_home(cfg: Config, isolation: IsolationLevel, *, explicitly_set: bool) -> str | None:
+def check_jail_home(
+    cfg: Config, isolation: kinds.IsolationLevel, *, explicitly_set: bool
+) -> str | None:
     """Return the refusal when the jail's HOME cannot be what the config says, else None.
 
     `home = "tmp"` is a private tmpfs, which only strict has: the default degrades to the cache
@@ -228,57 +222,66 @@ def check_jail_home(cfg: Config, isolation: IsolationLevel, *, explicitly_set: b
         return (
             "sandbox.home = 'tmp' requires the strict isolation (a private /tmp tmpfs),"
             f" but this run resolved to {isolation!r}, where HOME is the persistent"
-            f" cache dir {str(jail_cache_home())!r}. Set sandbox.home = 'cache' to"
+            f" cache dir {str(paths.jail_cache_home())!r}. Set sandbox.home = 'cache' to"
             " run here, or use strict."
         )
-    persistent = persistent_jail_home(cfg, isolation)
-    return None if persistent is None else jail_home_refusal(persistent)
+    persistent = tools_policy.persistent_jail_home(cfg, isolation)
+    return None if persistent is None else tools_policy.jail_home_refusal(persistent)
 
 
 def _hardened_grant_regions(
-    cfg: Config, root: Path, worktree_git_dir: Path | None = None
-) -> tuple[tuple[Path, str], ...]:
+    cfg: Config, root: pathlib.Path, worktree_git_dir: pathlib.Path | None = None
+) -> tuple[tuple[pathlib.Path, str], ...]:
     """Return every region the hardened launcher grants a command, labeled by its source.
 
     Derived from the builders the run uses, so preflight and enforcement cannot drift; the
     fixed sets mirror the launcher's hardened ruleset in jail/src/main.rs.
     """
-    policy = jail_policy(root, cfg, "hardened", ("true",), worktree_git_dir=worktree_git_dir)
-    regions: list[tuple[Path, str]] = [
+    policy = tools_policy.jail_policy(
+        root, cfg, "hardened", ("true",), worktree_git_dir=worktree_git_dir
+    )
+    regions: list[tuple[pathlib.Path, str]] = [
         (root, "the workspace"),
-        (Path("/tmp"), "the host's shared /tmp (hardened has no private tmpfs)"),  # noqa: S108
+        (pathlib.Path("/tmp"), "the host's shared /tmp (hardened has no private tmpfs)"),  # noqa: S108
     ]
     for sysdir in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"):
-        regions.append((Path(sysdir), "a system dir every command is granted"))
+        regions.append((pathlib.Path(sysdir), "a system dir every command is granted"))
     for p in policy.extra_ro_paths:
-        if Path(p) == worktree_git_dir:
+        if pathlib.Path(p) == worktree_git_dir:
             regions.append(
-                (Path(p), "the repository's .git, which this linked worktree points into")
+                (pathlib.Path(p), "the repository's .git, which this linked worktree points into")
             )
         else:
-            regions.append((Path(p), "sandbox.extra_read_paths"))
-    home = persistent_jail_home(cfg, "hardened")
+            regions.append((pathlib.Path(p), "sandbox.extra_read_paths"))
+    home = tools_policy.persistent_jail_home(cfg, "hardened")
     regions += [
-        (Path(p), "the jail's HOME" if p == home else "sandbox.extra_write_paths")
+        (pathlib.Path(p), "the jail's HOME" if p == home else "sandbox.extra_write_paths")
         for p in policy.extra_rw_paths
     ]
-    regions += [(Path(p), "an operator tool dir (PATH mount)") for p in policy.tool_paths]
+    regions += [(pathlib.Path(p), "an operator tool dir (PATH mount)") for p in policy.tool_paths]
     if cfg.mcp.enabled:
         for name, srv in cfg.mcp.servers.items():
             if not srv.enabled:
                 continue
-            spol = mcp_server_policy(cfg, root, "hardened", srv)
+            spol = _setup.mcp_server_policy(cfg, root, "hardened", srv)
             if spol is None:
                 continue  # unconfined by explicit opt-out; its own loud path
-            regions += [(Path(p), f"[mcp.servers.{name}] read_paths") for p in spol.extra_ro_paths]
-            regions += [(Path(p), f"[mcp.servers.{name}] write_paths") for p in spol.extra_rw_paths]
-            regions.append((Path(spol.cwd), f"[mcp.servers.{name}]'s working dir"))
+            regions += [
+                (pathlib.Path(p), f"[mcp.servers.{name}] read_paths") for p in spol.extra_ro_paths
+            ]
+            regions += [
+                (pathlib.Path(p), f"[mcp.servers.{name}] write_paths") for p in spol.extra_rw_paths
+            ]
+            regions.append((pathlib.Path(spol.cwd), f"[mcp.servers.{name}]'s working dir"))
     return tuple(regions)
 
 
 def unmaskable_exposures(
-    cfg: Config, isolation: IsolationLevel, root: Path, worktree_git_dir: Path | None = None
-) -> tuple[tuple[Path, Path, str], ...]:
+    cfg: Config,
+    isolation: kinds.IsolationLevel,
+    root: pathlib.Path,
+    worktree_git_dir: pathlib.Path | None = None,
+) -> tuple[tuple[pathlib.Path, pathlib.Path, str], ...]:
     """Return the (hidden path, granted region, region source) triples the isolation cannot mask.
 
     Empty on strict, which masks, and on `none`, which has no jail. Under hardened a hidden
@@ -288,8 +291,8 @@ def unmaskable_exposures(
     if isolation != "hardened":
         return ()
     regions = _hardened_grant_regions(cfg, root, worktree_git_dir)
-    out: list[tuple[Path, Path, str]] = []
-    for h in hidden_paths(Path(p) for p in cfg.sandbox.hide_paths):
+    out: list[tuple[pathlib.Path, pathlib.Path, str]] = []
+    for h in paths.hidden_paths(pathlib.Path(p) for p in cfg.sandbox.hide_paths):
         hr = h.resolve()
         for region, source in regions:
             rr = region.resolve()
@@ -300,7 +303,10 @@ def unmaskable_exposures(
 
 
 def check_hide_paths_support(
-    cfg: Config, isolation: IsolationLevel, root: Path, worktree_git_dir: Path | None = None
+    cfg: Config,
+    isolation: kinds.IsolationLevel,
+    root: pathlib.Path,
+    worktree_git_dir: pathlib.Path | None = None,
 ) -> str | None:
     """Return the refusal when a `[sandbox].hide_paths` entry cannot be masked here, else None.
 
@@ -309,7 +315,7 @@ def check_hide_paths_support(
     """
     if isolation != "hardened":
         return None  # before reading config: every other level masks
-    listed = {Path(p) for p in cfg.sandbox.hide_paths}
+    listed = {pathlib.Path(p) for p in cfg.sandbox.hide_paths}
     for hidden, region, source in unmaskable_exposures(cfg, isolation, root, worktree_git_dir):
         if hidden in listed:
             return (
@@ -321,7 +327,9 @@ def check_hide_paths_support(
     return None
 
 
-def mcp_network_refusal(name: str, srv: MCPServerEntry, isolation: IsolationLevel) -> str | None:
+def mcp_network_refusal(
+    name: str, srv: MCPServerEntry, isolation: kinds.IsolationLevel
+) -> str | None:
     """Return the refusal when the server named a network this host cannot give it, else None.
 
     The `[sandbox].network` rule: `none` and `session` need a network namespace, which only
@@ -340,7 +348,7 @@ def mcp_network_refusal(name: str, srv: MCPServerEntry, isolation: IsolationLeve
     )
 
 
-def check_mcp_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
+def check_mcp_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str | None:
     """Return the first server's network refusal, else None."""
     for name, srv in sorted(cfg.mcp.servers.items()):
         if (refusal := mcp_network_refusal(name, srv, isolation)) is not None:
@@ -350,11 +358,11 @@ def check_mcp_network_support(cfg: Config, isolation: IsolationLevel) -> str | N
 
 def config_refusal(
     cfg: Config,
-    isolation: IsolationLevel,
-    workspace: Path,
+    isolation: kinds.IsolationLevel,
+    workspace: pathlib.Path,
     *,
     explicit_leaves: frozenset[str] = frozenset(),
-    worktree_git_dir: Path | None = None,
+    worktree_git_dir: pathlib.Path | None = None,
 ) -> str | None:
     """Return the first refusal for a config this host cannot honor, else None.
 
@@ -384,14 +392,14 @@ def config_refusal(
     for check in checks:
         try:
             err = check()
-        except JailUnavailableError as exc:
+        except jail.JailUnavailableError as exc:
             return str(exc)
         if err is not None:
             return err
     return None
 
 
-def check_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
+def check_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str | None:
     """Return the refusal when the network config needs what the isolation cannot give, else None.
 
     `only_explicit_states` and `session` both need a network namespace, which only strict has;
@@ -422,14 +430,14 @@ def resolved_config_values(cfg: Config) -> dict[str, object]:
     The adaptive model settings and the two `auto` sandbox knobs as this host resolves them.
     With no jail binary to probe, the two stay `auto`.
     """
-    out = resolved_adaptive_values(cfg)
+    out = registry.resolved_adaptive_values(cfg)
     if cfg.sandbox.isolation == "auto" or cfg.sandbox.network == "auto":
         try:
-            selected = resolve_isolation(cfg.sandbox.isolation, detect_env())
-        except JailBinaryError:
+            selected = detect.resolve_isolation(cfg.sandbox.isolation, _setup.detect_env())
+        except jail.JailBinaryError:
             return out
         if cfg.sandbox.isolation == "auto":
             out["sandbox.isolation"] = selected
         if cfg.sandbox.network == "auto":
-            out["sandbox.network"] = resolve_network(cfg, selected)
+            out["sandbox.network"] = tools_policy.resolve_network(cfg, selected)
     return out

@@ -16,25 +16,16 @@ the lanes landed before it ends; that drain gets a longer wait.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import os
+import pathlib
 import signal
 import time
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.sandbox.jail import signal_group
-from agent6.sessions.ipc import (
-    ProcessIdentity,
-    process_is_alive,
-    read_live_worker_identity,
-    request_stop,
-    submit_steer,
-)
-from agent6.sessions.layout import layout_of
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.tools.background import SHELLS_DIR, shell_host_processes
-from agent6.viewmodel import session_is_live, summarize_session_dir
-from agent6.viewmodel.listing import lanes_of, produced_result
+from agent6.sandbox import jail
+from agent6.sessions import ipc, layout, manifest
+from agent6.tools import background
+from agent6.viewmodel import listing, session_is_live, summarize_session_dir
 
 STOP_WAIT_S = 5.0  # a run that reads its requests ends within this
 FANOUT_WAIT_S = 30.0  # a coordinator drains its ended lanes and imports what landed within this
@@ -42,7 +33,7 @@ KILL_GRACE_S = 3.0  # SIGTERM to SIGKILL
 _POLL_S = 0.1
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class StopOutcome:
     """Record what a stop did.
 
@@ -63,7 +54,7 @@ class StopOutcome:
 
 
 def stop_session(
-    session_dir: Path,
+    session_dir: pathlib.Path,
     *,
     after_step: bool = False,
     wait_s: float | None = None,
@@ -92,15 +83,15 @@ def stop_session(
     for lane in lanes:
         stop_session(lane, after_step=after_step, wait_s=wait_s, grace_s=grace_s)
     with_lanes = f" with its {len(lanes)} live lane{'s' if len(lanes) > 1 else ''}" if lanes else ""
-    worker = read_live_worker_identity(session_dir)
+    worker = ipc.read_live_worker_identity(session_dir)
     if after_step:
-        if not request_stop(session_dir):
+        if not ipc.request_stop(session_dir):
             return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
         when = "their current steps" if lanes else "its current step"
         return StopOutcome(
             rid, True, "after_step", f"{rid} stops{with_lanes} after {when}", resumable=not fanout
         )
-    if not (submit_steer(session_dir, "abort", now=True) and request_stop(session_dir)):
+    if not (ipc.submit_steer(session_dir, "abort", now=True) and ipc.request_stop(session_dir)):
         return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
     return _ended(
         session_dir,
@@ -113,8 +104,8 @@ def stop_session(
 
 
 def _ended(
-    session_dir: Path,
-    worker: ProcessIdentity | None,
+    session_dir: pathlib.Path,
+    worker: ipc.ProcessIdentity | None,
     *,
     wait_s: float,
     grace_s: float,
@@ -152,38 +143,40 @@ def _ended(
     )
 
 
-def _not_live_state(session_dir: Path) -> str:
+def _not_live_state(session_dir: pathlib.Path) -> str:
     """Return the phrase for a session that is not running."""
     summary = summarize_session_dir(session_dir)
     if summary.status == "parked":
         return "is parked and has not started"
-    if produced_result(summary.status):
+    if listing.produced_result(summary.status):
         return f"is already {summary.status}"
     return f"is not running ({summary.status})"
 
 
-def _is_fanout(session_dir: Path) -> bool:
+def _is_fanout(session_dir: pathlib.Path) -> bool:
     """Return whether the session is a fan-out coordinator."""
-    with contextlib.suppress(ManifestError):
-        return read_manifest(session_dir).fanout is not None
+    with contextlib.suppress(manifest.ManifestError):
+        return manifest.read_manifest(session_dir).fanout is not None
     return False
 
 
-def _live_lanes(session_dir: Path) -> list[Path]:
+def _live_lanes(session_dir: pathlib.Path) -> list[pathlib.Path]:
     """Return a fan-out's live lanes, in lane order."""
-    state = layout_of(session_dir).state_dir
+    state = layout.layout_of(session_dir).state_dir
     return [
         lane_dir
-        for lane in lanes_of(state, session_dir.name)
+        for lane in listing.lanes_of(state, session_dir.name)
         if (lane_dir := session_dir.parent / lane.session_id).is_dir() and session_is_live(lane_dir)
     ]
 
 
-def _ended_within(session_dir: Path, worker: ProcessIdentity | None, wait_s: float) -> bool:
+def _ended_within(
+    session_dir: pathlib.Path, worker: ipc.ProcessIdentity | None, wait_s: float
+) -> bool:
     """Return whether the run ended, or its worker changed, within the wait."""
     deadline = time.monotonic() + wait_s
     while session_is_live(session_dir):
-        if read_live_worker_identity(session_dir) != worker:
+        if ipc.read_live_worker_identity(session_dir) != worker:
             return True
         if time.monotonic() >= deadline:
             return False
@@ -191,7 +184,9 @@ def _ended_within(session_dir: Path, worker: ProcessIdentity | None, wait_s: flo
     return True
 
 
-def _kill(session_dir: Path, worker: ProcessIdentity | None, grace_s: float) -> tuple[bool, int]:
+def _kill(
+    session_dir: pathlib.Path, worker: ipc.ProcessIdentity | None, grace_s: float
+) -> tuple[bool, int]:
     """SIGTERM the live worker and its host-side background commands, then SIGKILL the rest.
 
     Never this process: a front-end that is the worker stops through the bridges alone.
@@ -205,22 +200,24 @@ def _kill(session_dir: Path, worker: ProcessIdentity | None, grace_s: float) -> 
         Whether the worker was signalled, and how many commands were.
     """
     me = os.getpid()
-    targets: list[ProcessIdentity] = []
-    worker_live = worker is not None and worker[0] != me and process_is_alive(worker)
+    targets: list[ipc.ProcessIdentity] = []
+    worker_live = worker is not None and worker[0] != me and ipc.process_is_alive(worker)
     if worker is not None and worker_live:
         targets.append(worker)
     commands = [
         identity
-        for identity in shell_host_processes(session_dir / SHELLS_DIR)
-        if identity[0] != me and process_is_alive(identity)
+        for identity in background.shell_host_processes(session_dir / background.SHELLS_DIR)
+        if identity[0] != me and ipc.process_is_alive(identity)
     ]
     targets.extend(commands)
     for identity in targets:
-        signal_group(identity[0], signal.SIGTERM)
+        jail.signal_group(identity[0], signal.SIGTERM)
     deadline = time.monotonic() + grace_s
-    while any(process_is_alive(identity) for identity in targets) and time.monotonic() < deadline:
+    while (
+        any(ipc.process_is_alive(identity) for identity in targets) and time.monotonic() < deadline
+    ):
         time.sleep(_POLL_S)
     for identity in targets:
-        if process_is_alive(identity):
-            signal_group(identity[0], signal.SIGKILL)
+        if ipc.process_is_alive(identity):
+            jail.signal_group(identity[0], signal.SIGKILL)
     return worker_live, len(commands)

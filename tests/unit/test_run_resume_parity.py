@@ -27,7 +27,11 @@ def _calls(module: types.ModuleType, name: str) -> int:
     return sum(
         1
         for node in ast.walk(ast.parse(src))
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == name
+        if isinstance(node, ast.Call)
+        and (
+            (isinstance(node.func, ast.Name) and node.func.id == name)
+            or (isinstance(node.func, ast.Attribute) and node.func.attr == name)
+        )
     )
 
 

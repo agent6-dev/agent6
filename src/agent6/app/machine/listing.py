@@ -8,14 +8,14 @@ the authored files no instance has run.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+import dataclasses
+import pathlib
 
-from agent6.app.machine._bundle import summarize_machine_file
+from agent6.app.machine import _bundle
 from agent6.viewmodel import machine_files, machine_instance_dirs, summarize_machine_dir
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MachineRow:
     """One listing row: an instance, an authored file, or both.
 
@@ -31,7 +31,7 @@ class MachineRow:
     """
 
     name: str
-    file: Path | None
+    file: pathlib.Path | None
     states: str
     spec: str
     status: str
@@ -40,7 +40,7 @@ class MachineRow:
     mtime: float
 
 
-def machine_rows(cwd: Path, state_dir: Path) -> list[MachineRow]:
+def machine_rows(cwd: pathlib.Path, state_dir: pathlib.Path) -> list[MachineRow]:
     """List instances newest first, then the authored files no instance ran.
 
     An instance joins the first authored file declaring its name; a second file with the same
@@ -53,9 +53,9 @@ def machine_rows(cwd: Path, state_dir: Path) -> list[MachineRow]:
     Returns:
         The rows in listing order.
     """
-    files = [(p, summarize_machine_file(p)) for p in machine_files(cwd)]
+    files = [(p, _bundle.summarize_machine_file(p)) for p in machine_files(cwd)]
     rows: list[MachineRow] = []
-    joined: set[Path] = set()
+    joined: set[pathlib.Path] = set()
     for inst in (summarize_machine_dir(d) for d in machine_instance_dirs(state_dir)):
         own = next(((p, f) for p, f in files if f.name == inst.name and p not in joined), None)
         if own is not None:

@@ -20,10 +20,13 @@ import pytest
 
 import agent6.app._execution as execution_mod
 from agent6 import events as agent6_events
+from agent6 import paths
+from agent6.app import _session, _setup, finalize, reporter
 from agent6.app import frontend as app_frontend
-from agent6.app import reporter
+from agent6.app import providers as app_providers
 from agent6.config import Config
 from agent6.harness import _snapshot
+from agent6.harness import loop as harness_loop
 from agent6.sessions import layout as sessions_layout
 from agent6.ui import steer
 from agent6.ui.acp import frontend as acp_frontend
@@ -69,7 +72,7 @@ def test_provider_setup_failure_journals_session_end(
     def _fail(*_args: object, **_kwargs: object) -> object:
         raise RuntimeError("provider setup failed")
 
-    monkeypatch.setattr(execution_mod, "build_session_providers", _fail)
+    monkeypatch.setattr(_session, "build_session_providers", _fail)
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
     inputs = execution_mod.ExecutionInputs(
@@ -133,8 +136,8 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
     def _fail_gate(_cfg: Config, _budget: object) -> Config:
         raise RuntimeError("gate setup failed")
 
-    monkeypatch.setattr(execution_mod, "build_session_providers", _returning(session))
-    monkeypatch.setattr(execution_mod, "build_prompt_reviser_provider", _returning(reviser))
+    monkeypatch.setattr(_session, "build_session_providers", _returning(session))
+    monkeypatch.setattr(app_providers, "build_prompt_reviser_provider", _returning(reviser))
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
     inputs = execution_mod.ExecutionInputs(
@@ -202,11 +205,11 @@ def test_mcp_setup_failure_journals_session_end(
             reset_stage=lambda: None,
         )
 
-    monkeypatch.setattr(execution_mod, "build_session_providers", _returning(session))
-    monkeypatch.setattr(execution_mod, "build_prompt_reviser_provider", _returning(None))
-    monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
-    monkeypatch.setattr(execution_mod, "start_mcp_manager_if_enabled", _fail)
-    monkeypatch.setattr(execution_mod, "chown_to_real_user", _returning(None))
+    monkeypatch.setattr(_session, "build_session_providers", _returning(session))
+    monkeypatch.setattr(app_providers, "build_prompt_reviser_provider", _returning(None))
+    monkeypatch.setattr(_setup, "wants_session_network", _returning(False))
+    monkeypatch.setattr(_setup, "start_mcp_manager_if_enabled", _fail)
+    monkeypatch.setattr(paths, "chown_to_real_user", _returning(None))
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
     frontend.make_steer_state.side_effect = _steer_state
@@ -311,17 +314,17 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
             reset_stage=lambda: None,
         )
 
-    monkeypatch.setattr(execution_mod, "build_session_providers", _returning(session))
-    monkeypatch.setattr(execution_mod, "build_prompt_reviser_provider", _returning(reviser))
-    monkeypatch.setattr(execution_mod, "build_session_tools", _returning(tools))
-    monkeypatch.setattr(execution_mod, "start_mcp_manager_if_enabled", _returning(mcp))
-    monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
-    monkeypatch.setattr(execution_mod, "Harness", _Workflow)
+    monkeypatch.setattr(_session, "build_session_providers", _returning(session))
+    monkeypatch.setattr(app_providers, "build_prompt_reviser_provider", _returning(reviser))
+    monkeypatch.setattr(_session, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(_setup, "start_mcp_manager_if_enabled", _returning(mcp))
+    monkeypatch.setattr(_setup, "wants_session_network", _returning(False))
+    monkeypatch.setattr(harness_loop, "Harness", _Workflow)
 
     def _chown(_path: pathlib.Path) -> None:
         closed.append("chown")
 
-    monkeypatch.setattr(execution_mod, "chown_to_real_user", _chown)
+    monkeypatch.setattr(paths, "chown_to_real_user", _chown)
     frontend = dataclasses.replace(
         acp_frontend.acp_frontend(
             ask=lambda _p, _o, _s, _c, _u=None: None,
@@ -436,12 +439,12 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         keep_recent_chars=1,
         cfg=Config(),
     )
-    monkeypatch.setattr(execution_mod, "build_session_providers", _returning(session))
-    monkeypatch.setattr(execution_mod, "build_prompt_reviser_provider", _returning(None))
-    monkeypatch.setattr(execution_mod, "build_session_tools", _returning(tools))
-    monkeypatch.setattr(execution_mod, "start_mcp_manager_if_enabled", _returning(None))
-    monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
-    monkeypatch.setattr(execution_mod, "chown_to_real_user", _returning(None))
+    monkeypatch.setattr(_session, "build_session_providers", _returning(session))
+    monkeypatch.setattr(app_providers, "build_prompt_reviser_provider", _returning(None))
+    monkeypatch.setattr(_session, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(_setup, "start_mcp_manager_if_enabled", _returning(None))
+    monkeypatch.setattr(_setup, "wants_session_network", _returning(False))
+    monkeypatch.setattr(paths, "chown_to_real_user", _returning(None))
 
     inputs = execution_mod.ExecutionInputs(
         session_id=layout.session_id,
@@ -508,11 +511,11 @@ def _wired_frontend(
         keep_recent_chars=1,
         cfg=cfg,
     )
-    monkeypatch.setattr(execution_mod, "build_session_providers", _returning(session))
-    monkeypatch.setattr(execution_mod, "build_prompt_reviser_provider", _returning(None))
-    monkeypatch.setattr(execution_mod, "build_session_tools", _returning(tools))
-    monkeypatch.setattr(execution_mod, "start_mcp_manager_if_enabled", _returning(None))
-    monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
+    monkeypatch.setattr(_session, "build_session_providers", _returning(session))
+    monkeypatch.setattr(app_providers, "build_prompt_reviser_provider", _returning(None))
+    monkeypatch.setattr(_session, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(_setup, "start_mcp_manager_if_enabled", _returning(None))
+    monkeypatch.setattr(_setup, "wants_session_network", _returning(False))
 
     def _chown(_path: pathlib.Path) -> None:
         order.append("chown")
@@ -520,9 +523,9 @@ def _wired_frontend(
     def _merge(*_args: object, **_kwargs: object) -> None:
         order.append("auto_merge")
 
-    monkeypatch.setattr(execution_mod, "chown_to_real_user", _chown)
-    monkeypatch.setattr(execution_mod, "finalize_auto_merge", _merge)
-    monkeypatch.setattr(execution_mod, "Harness", harness)
+    monkeypatch.setattr(paths, "chown_to_real_user", _chown)
+    monkeypatch.setattr(finalize, "finalize_auto_merge", _merge)
+    monkeypatch.setattr(harness_loop, "Harness", harness)
 
     def _steer_state(*_args: object) -> steer.SteerState:
         return steer.SteerState(
@@ -718,7 +721,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
             )
 
     frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=Config())
-    stubbed_build = execution_mod.build_session_tools
+    stubbed_build = _session.build_session_tools
 
     def _boom() -> None:
         raise KeyboardInterrupt
@@ -728,7 +731,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
         tools.dispatcher.settle_background = _boom
         return tools
 
-    monkeypatch.setattr(execution_mod, "build_session_tools", _tools)
+    monkeypatch.setattr(_session, "build_session_tools", _tools)
     said: list[str] = []
     end = execution_mod.run_execution(
         Config(),

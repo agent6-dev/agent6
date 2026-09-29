@@ -66,7 +66,7 @@ def test_strict_without_landlock_warns(
 def test_strict_with_landlock_is_silent(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
     confine.warn_sandbox_gaps("strict", _env(2), _cfg(), root=tmp_path)
     assert capsys.readouterr().err == ""
 
@@ -81,7 +81,7 @@ def test_unreachable_tool_is_named_once(
     warning is the explanation.
     """
     monkeypatch.setattr(
-        "agent6.app.confine.tool_mount_notes",
+        "agent6.sandbox.tool_paths.tool_mount_notes",
         lambda: tool_paths.ToolMountNotes(unreachable=("/home/op/.local/bin/x -> /home/op/x.sh",)),
     )
     confine.warn_sandbox_gaps("strict", _env(2), _cfg(), root=tmp_path)
@@ -102,7 +102,7 @@ def test_a_tool_dragging_a_home_dir_into_the_jail_is_not_a_per_run_warning(
     where someone is asking.
     """
     monkeypatch.setattr(
-        "agent6.app.confine.tool_mount_notes",
+        "agent6.sandbox.tool_paths.tool_mount_notes",
         lambda: tool_paths.ToolMountNotes(
             exposes_home_dir=("/home/op/.local/bin/x -> /home/op/.ssh/helper",)
         ),
@@ -281,7 +281,7 @@ def test_hardened_warns_loudly_when_a_grant_exposes_the_private_dirs(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_dir))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
     cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(home),)))
 
     confine.warn_sandbox_gaps("hardened", _env(4), cfg, root=tmp_path)
@@ -309,7 +309,7 @@ def test_the_workspace_itself_counts_as_a_granted_region(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_dir))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
 
     confine.warn_sandbox_gaps("hardened", _env(4), Config(), root=tmp_path)
     assert str(cfg_dir) in capsys.readouterr().err
@@ -348,7 +348,7 @@ def test_a_plain_hardened_run_neither_warns_nor_refuses(
     ws = tmp_path / "ws"
     ws.mkdir()
     monkeypatch.chdir(ws)
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
     cfg = Config(sandbox=SandboxConfig(network="host", protect_git=False))
     confine.warn_sandbox_gaps("hardened", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err
@@ -372,7 +372,7 @@ def test_hardened_warns_when_private_state_sits_in_a_granted_region(
     ws = tmp_path / "ws"
     ws.mkdir()
     monkeypatch.chdir(ws)
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
     cfg = Config(sandbox=SandboxConfig(network="host", protect_git=False))
     confine.warn_sandbox_gaps("hardened", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err
@@ -391,8 +391,8 @@ def test_root_on_hardened_names_what_it_costs(
     the documented read-only system set and root stops file permissions narrowing it. The root
     banner names running as root; it does not name this.
     """
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
-    monkeypatch.setattr("agent6.app.confine.is_root", lambda: True)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
+    monkeypatch.setattr("agent6.paths.is_root", lambda: True)
     confine.warn_sandbox_gaps(
         "hardened", _env(4), Config(sandbox=SandboxConfig(protect_git=False)), root=tmp_path
     )
@@ -409,8 +409,8 @@ def test_root_on_strict_says_nothing_about_it(
     Strict pivots into a minimal rootfs: verified as real uid 0, its /etc holds a single entry and
     none of those files exist. A warning there would name a cost the operator is not paying.
     """
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
-    monkeypatch.setattr("agent6.app.confine.is_root", lambda: True)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
+    monkeypatch.setattr("agent6.paths.is_root", lambda: True)
     confine.warn_sandbox_gaps("strict", _env(4), Config(), root=tmp_path)
     assert capsys.readouterr().err == ""
 
@@ -418,8 +418,8 @@ def test_root_on_strict_says_nothing_about_it(
 def test_a_normal_user_on_hardened_is_not_told_about_root(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
-    monkeypatch.setattr("agent6.app.confine.is_root", lambda: False)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
+    monkeypatch.setattr("agent6.paths.is_root", lambda: False)
     confine.warn_sandbox_gaps(
         "hardened", _env(4), Config(sandbox=SandboxConfig(protect_git=False)), root=tmp_path
     )
@@ -434,12 +434,12 @@ def test_auto_degrade_warns_with_the_reason(
     Auto landing on hardened printed the network/protect_git consequences but never why strict was
     skipped. One owner (detect.degrade_reason) feeds this line, check sandbox, and check config.
     """
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
 
     def _why(_env: object) -> str:
         return "userns blocked (test)"
 
-    monkeypatch.setattr("agent6.app.confine.degrade_reason", _why)
+    monkeypatch.setattr("agent6.sandbox.detect.degrade_reason", _why)
     confine.warn_sandbox_gaps("hardened", _env(4), _cfg(), root=tmp_path)
     err = capsys.readouterr().err
     assert "'auto' selected 'hardened', not 'strict': userns blocked (test)" in err
@@ -449,12 +449,12 @@ def test_explicit_hardened_has_no_degrade_line(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An operator who WROTE hardened chose it; nothing degraded."""
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
 
     def _why(_env: object) -> str:
         return "userns blocked (test)"
 
-    monkeypatch.setattr("agent6.app.confine.degrade_reason", _why)
+    monkeypatch.setattr("agent6.sandbox.detect.degrade_reason", _why)
     confine.warn_sandbox_gaps("hardened", _env(4), _cfg(isolation="hardened"), root=tmp_path)
     err = capsys.readouterr().err
     assert "not 'strict'" not in err
@@ -468,12 +468,12 @@ def test_unsandboxed_origin_says_auto_or_the_operator(
     `auto` resolves there on a host with no confinement mechanism; that is not the operator's
     choice.
     """
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
 
     def _why(_env: object) -> str:
         return "nothing here (test)"
 
-    monkeypatch.setattr("agent6.app.confine.degrade_reason", _why)
+    monkeypatch.setattr("agent6.sandbox.detect.degrade_reason", _why)
     confine.warn_sandbox_gaps("none", _env(0), _cfg(), root=tmp_path)
     err = capsys.readouterr().err
     assert "'auto' found no confinement mechanism" in err

@@ -1593,7 +1593,7 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
     origin_state = paths.state_dir(origin)
     lock = threading.Lock()
     held: list[bool] = []
-    real_import_run = parallel.import_run
+    real_import_run = subrun.import_run
 
     def observe(
         origin: pathlib.Path,
@@ -1605,7 +1605,7 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
         held.append(lock.locked())
         return real_import_run(origin, lane_repo, branch, lane_session_dir, origin_state)
 
-    monkeypatch.setattr(parallel, "import_run", observe)
+    monkeypatch.setattr(subrun, "import_run", observe)
     spec = subrun.LaneSpec(
         lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", route=None
     )

@@ -4,11 +4,13 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
-from agent6.budget import BudgetTracker
+from agent6 import budget as agent6_budget
+from agent6 import events as agent6_events
+from agent6 import secrets
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -19,8 +21,7 @@ from agent6.config import (
     RoleName,
     parse_seat_spec,
 )
-from agent6.events import EventSink
-from agent6.harness._reviewer import ReviewSeat
+from agent6.harness import _reviewer
 from agent6.models import registry as models_registry
 from agent6.providers import (
     AnthropicProvider,
@@ -36,7 +37,6 @@ from agent6.providers import (
     TranscriptRecorder,
     TranscriptSink,
 )
-from agent6.secrets import resolve_api_key
 
 
 def resolve_compaction_thresholds(
@@ -117,7 +117,7 @@ def build_role_provider(
     role: RoleName,
     *,
     transcript_sink: TranscriptSink,
-    budget: BudgetTracker,
+    budget: agent6_budget.BudgetTracker,
     seat: str = "",
 ) -> Provider:
     """Construct the configured provider for a role.
@@ -165,7 +165,7 @@ def _provider_from_entry(
     effort: EffortLevel | None,
     *,
     transcript_sink: TranscriptRecorder,
-    budget: BudgetTracker,
+    budget: agent6_budget.BudgetTracker,
 ) -> Provider:
     """Build the provider for one `[providers.<name>]` entry, model and effort.
 
@@ -223,7 +223,7 @@ def _provider_from_entry(
             budget=budget,
             reasoning_effort=effort,
         )
-    key = resolve_api_key(provider_name, entry.api_key_env)
+    key = secrets.resolve_api_key(provider_name, entry.api_key_env)
     credential = (
         CommandToken(entry.token_command, ttl_s=entry.token_command_ttl_s)
         if entry.token_command
@@ -282,7 +282,7 @@ def role_temperature(cfg: Config, role: RoleName) -> float | None:
     return rm.temperature if rm is not None else None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class InstrumentedProvider:
     """Wrap a provider with `role.call`, `role.result` and `budget.update` emission.
 
@@ -301,8 +301,8 @@ class InstrumentedProvider:
     role: str
     model: str
     provider_name: str
-    events: EventSink | None
-    budget: BudgetTracker
+    events: agent6_events.EventSink | None
+    budget: agent6_budget.BudgetTracker
     stream_text: bool = False
 
     def call(
@@ -457,8 +457,8 @@ def reviewer_seat_provider(
     seat: str,
     *,
     transcript_sink: TranscriptSink,
-    budget: BudgetTracker,
-    events: EventSink | None,
+    budget: agent6_budget.BudgetTracker,
+    events: agent6_events.EventSink | None,
 ) -> Provider:
     """Build the reviewer route under a seat's label, instrumented.
 
@@ -495,11 +495,11 @@ def build_review_seats(
     cfg: Config,
     *,
     transcript_sink: TranscriptSink,
-    budget: BudgetTracker,
+    budget: agent6_budget.BudgetTracker,
     n: int,
     personas: tuple[str, ...] = (),
-    events: EventSink | None = None,
-) -> list[ReviewSeat]:
+    events: agent6_events.EventSink | None = None,
+) -> list[_reviewer.ReviewSeat]:
     """Build the review-panel seats, one per roster entry.
 
     An entry is `persona[@provider/model]`: a pinned seat uses that route, a bare
@@ -557,7 +557,7 @@ def build_review_seats(
     if any(not (provider_name and model) for _, provider_name, model in parsed_specs):
         cfg.require_runnable("reviewer")
     rm = cfg.models.resolve("reviewer")
-    seats: list[ReviewSeat] = []
+    seats: list[_reviewer.ReviewSeat] = []
     for persona, provider_name, model in parsed_specs:
         if provider_name and model:
             entry = cfg.providers[provider_name]
@@ -587,7 +587,9 @@ def build_review_seats(
                 provider, persona, seat_model, rm.provider if rm is not None else ""
             )
         seats.append(
-            ReviewSeat(persona=persona, model=label, provider=provider, tier=cfg.review.tier)
+            _reviewer.ReviewSeat(
+                persona=persona, model=label, provider=provider, tier=cfg.review.tier
+            )
         )
     return seats
 
@@ -596,8 +598,8 @@ def build_prompt_reviser_provider(
     cfg: Config,
     *,
     transcript_sink: TranscriptSink,
-    budget: BudgetTracker,
-    events: EventSink,
+    budget: agent6_budget.BudgetTracker,
+    events: agent6_events.EventSink,
 ) -> Provider | None:
     """Route the reviewer role as a one-shot prompt reviser.
 

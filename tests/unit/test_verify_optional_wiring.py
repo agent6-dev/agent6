@@ -15,9 +15,15 @@ from unittest import mock
 import pytest
 
 import agent6.app.preflight as preflight_mod
-from agent6 import kinds, paths
+from agent6 import git_ops, kinds, paths
+from agent6.app import _execution as app__execution
+from agent6.app import _session as app__session
+from agent6.app import _setup as app__setup
+from agent6.app import confine, manifest
+from agent6.app import providers as app_providers
 from agent6.config import Config, layer
 from agent6.harness import _chain, _prompt_blocks, _snapshot, _verify_verdict
+from agent6.sandbox import detect
 from agent6.tools import dispatch
 
 
@@ -293,7 +299,6 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     A crash in that window leaves the snapshot's gate stale in either direction; resume must keep
     the newer pin rather than undoing adoption or un-adoption.
     """
-    import agent6.app._setup as setup_mod
     import agent6.app.resume as resume_mod
     from agent6.app import _execution as app__execution
 
@@ -342,10 +347,10 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     def _none(*_a: object, **_k: object) -> None:
         return None
 
-    monkeypatch.setattr(setup_mod, "load_effective", _effective)
-    monkeypatch.setattr(resume_mod, "select_isolation", _strict)
-    monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)
-    monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
+    monkeypatch.setattr(layer, "load_effective", _effective)
+    monkeypatch.setattr(app__session, "select_isolation", _strict)
+    monkeypatch.setattr(app__setup, "check_provider_keys", _none)
+    monkeypatch.setattr(git_ops, "verify_git_identity", _none)
     used: list[tuple[str, ...]] = []
 
     def _execution(
@@ -354,7 +359,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
         used.append(inputs.gate(_cfg, mock.MagicMock()).harness.verify_command)
         return app__execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(resume_mod, "run_execution", _execution)
+    monkeypatch.setattr(app__execution, "run_execution", _execution)
     assert (
         resume_mod.resume_task(
             None, "crashed-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
@@ -376,8 +381,6 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     contradictory preamble lines, committed nothing all execution, and exited 4 over a gate that
     never ran.
     """
-    import agent6.app._session as session_mod
-    import agent6.app._setup as setup_mod
     import agent6.app.resume as resume_mod
     from agent6.app import reporter as app_reporter
     from agent6.ui.cli import run as cli_run
@@ -430,16 +433,16 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
         return True
 
     pinned: list[tuple[tuple[str, ...], str]] = []
-    monkeypatch.setattr(setup_mod, "load_effective", _load)
-    monkeypatch.setattr(session_mod, "detect_env", object)
-    monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
-    monkeypatch.setattr(session_mod, "warn_sandbox_gaps", _none)
-    monkeypatch.setattr(session_mod, "check_network_support", _none)
-    monkeypatch.setattr(session_mod, "budget_preflight", _none)
-    monkeypatch.setattr(session_mod, "build_role_provider", _provider)
-    monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)
-    monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
-    monkeypatch.setattr(resume_mod, "pin_gate", _capture_pin(pinned))
+    monkeypatch.setattr(layer, "load_effective", _load)
+    monkeypatch.setattr(app__setup, "detect_env", object)
+    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
+    monkeypatch.setattr(confine, "check_network_support", _none)
+    monkeypatch.setattr(preflight_mod, "budget_preflight", _none)
+    monkeypatch.setattr(app_providers, "build_role_provider", _provider)
+    monkeypatch.setattr(app__setup, "check_provider_keys", _none)
+    monkeypatch.setattr(git_ops, "verify_git_identity", _none)
+    monkeypatch.setattr(manifest, "pin_gate", _capture_pin(pinned))
 
     said: list[str] = []
     frontend = dataclasses.replace(cli_run.session_frontend(), confirm_unconfined_autorun=_yes)
@@ -463,7 +466,6 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
 
     The pin labelled the inferred command "configured".
     """
-    import agent6.app._session as session_mod
     import agent6.app.preflight as preflight_mod
     import agent6.app.run as run_mod
     from agent6.app import reporter as app_reporter
@@ -492,14 +494,14 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
         return mock.MagicMock()
 
     pinned: list[tuple[tuple[str, ...], str]] = []
-    monkeypatch.setattr(session_mod, "detect_env", object)
-    monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
-    monkeypatch.setattr(session_mod, "warn_sandbox_gaps", _none)
-    monkeypatch.setattr(session_mod, "check_network_support", _none)
-    monkeypatch.setattr(session_mod, "budget_preflight", _none)
-    monkeypatch.setattr(session_mod, "build_role_provider", _provider)
-    monkeypatch.setattr(preflight_mod, "verify_git_identity", _none)
-    monkeypatch.setattr(run_mod, "pin_gate", _capture_pin(pinned))
+    monkeypatch.setattr(app__setup, "detect_env", object)
+    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
+    monkeypatch.setattr(confine, "check_network_support", _none)
+    monkeypatch.setattr(preflight_mod, "budget_preflight", _none)
+    monkeypatch.setattr(app_providers, "build_role_provider", _provider)
+    monkeypatch.setattr(git_ops, "verify_git_identity", _none)
+    monkeypatch.setattr(manifest, "pin_gate", _capture_pin(pinned))
 
     said: list[str] = []
     frontend = mock.MagicMock()
@@ -810,7 +812,6 @@ def test_a_resumes_key_check_precedes_isolation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A resume runs the fresh run's preflight in the same place, pricing the model too."""
-    import agent6.app._setup as setup_mod
     import agent6.app.resume as resume_mod
 
     repo = tmp_path / "repo"
@@ -855,9 +856,9 @@ def test_a_resumes_key_check_precedes_isolation(
         seen.append("select_isolation")
         raise _Stop
 
-    monkeypatch.setattr(setup_mod, "load_effective", _effective)
-    monkeypatch.setattr(resume_mod, "route_preflight", _route)
-    monkeypatch.setattr(resume_mod, "select_isolation", _isolation)
+    monkeypatch.setattr(layer, "load_effective", _effective)
+    monkeypatch.setattr(preflight_mod, "route_preflight", _route)
+    monkeypatch.setattr(app__session, "select_isolation", _isolation)
     with pytest.raises(_Stop):
         resume_mod.resume_task(
             None, "order-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
@@ -876,7 +877,6 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
 
     One cause was reported up to three times, kilobytes of argv each time.
     """
-    import agent6.app._setup as setup_mod
     import agent6.app.resume as resume_mod
     from agent6.app import _execution as app__execution
 
@@ -928,10 +928,10 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     def _none(*_a: object, **_k: object) -> None:
         return None
 
-    monkeypatch.setattr(setup_mod, "load_effective", _effective)
-    monkeypatch.setattr(resume_mod, "select_isolation", _strict)
-    monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)
-    monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
+    monkeypatch.setattr(layer, "load_effective", _effective)
+    monkeypatch.setattr(app__session, "select_isolation", _strict)
+    monkeypatch.setattr(app__setup, "check_provider_keys", _none)
+    monkeypatch.setattr(git_ops, "verify_git_identity", _none)
 
     def _execution(
         _cfg: Config, _layout: object, inputs: app__execution.ExecutionInputs, **_kw: object
@@ -939,7 +939,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
         inputs.gate(_cfg, mock.MagicMock())
         return app__execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(resume_mod, "run_execution", _execution)
+    monkeypatch.setattr(app__execution, "run_execution", _execution)
     rc = resume_mod.resume_task(
         None, "withheld-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )

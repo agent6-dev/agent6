@@ -10,42 +10,28 @@ from __future__ import annotations
 
 import contextlib
 import json
+import pathlib
 import shlex
 import subprocess
 from collections.abc import Callable, Collection, Sequence
-from pathlib import Path
 
-from agent6.app.merge import execute_merge, left_behind_line, noop_merge_line
-from agent6.app.reporter import Reporter
-from agent6.budget import BudgetTracker
-from agent6.child_env import curated_env
-from agent6.commit_message import render_commit_trailer
+from agent6 import budget as agent6_budget
+from agent6 import child_env, commit_message, git_ops, verify_infer
+from agent6 import events as agent6_events
+from agent6.app import merge
+from agent6.app import reporter as app_reporter
 from agent6.config import Config, NotifyConfig
-from agent6.events import EventSink
-from agent6.git_ops import (
-    CommitIdentity,
-    GitError,
-    auto_stash_message,
-    branch_exists,
-    chain_ref_for,
-    chain_tip,
-    create_branch,
-    delete_branch_if_merged,
-    find_stash,
-    merge_stamp_holds,
-    restore_stash,
-    verify_git_identity,
+from agent6.harness import _snapshot
+from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
+from agent6.viewmodel import (
+    format,
+    scan_session_log,
+    summarize_session_dir,
+    tail_events,
+    wire,
+    worker_models,
 )
-from agent6.git_ops import (
-    status as git_status,
-)
-from agent6.harness.loop import SessionResult
-from agent6.sessions.layout import LOGS_NAME, SessionLayout, read_untracked_at_start
-from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
-from agent6.verify_infer import line_to_argv
-from agent6.viewmodel import scan_session_log, summarize_session_dir, tail_events, worker_models
-from agent6.viewmodel.format import format_usd, status_label
-from agent6.viewmodel.wire import commits_ref
 
 # The run stopped at its budget; resumable from its snapshot once the cap is raised.
 _EXIT_BUDGET_EXHAUSTED = 3
@@ -55,7 +41,7 @@ EXIT_VERIFY_FAILED = 4
 EXIT_NO_COMMIT_LANDED = 5
 
 
-def session_exit_code(result: SessionResult, *, stranded: bool = False) -> int:
+def session_exit_code(result: _snapshot.SessionResult, *, stranded: bool = False) -> int:
     """Map a finished run to its process exit code.
 
     An unverified finish exits 4 like a red one, so a worker cannot pass by never
@@ -77,7 +63,9 @@ def session_exit_code(result: SessionResult, *, stranded: bool = False) -> int:
     return 1
 
 
-def stranded_edits(result: SessionResult, layout: SessionLayout, cwd: Path) -> bool:
+def stranded_edits(
+    result: _snapshot.SessionResult, layout: sessions_layout.SessionLayout, cwd: pathlib.Path
+) -> bool:
     """Tell whether a completed run left its edits uncommitted with no commit landed.
 
     A run with no chain to commit to, or one configured never to commit, leaves the
@@ -94,26 +82,26 @@ def stranded_edits(result: SessionResult, layout: SessionLayout, cwd: Path) -> b
     if not result.completed:
         return False
     try:
-        manifest = read_manifest(layout.session_dir)
-    except ManifestError:
+        manifest = sessions_manifest.read_manifest(layout.session_dir)
+    except sessions_manifest.ManifestError:
         return False
     if manifest.mode != "run" or manifest.git_control == "model":
         return False
     if not manifest.policy.commit_per_step:
         return False
-    merged = manifest.merged is not None and merge_stamp_holds(
+    merged = manifest.merged is not None and git_ops.merge_stamp_holds(
         cwd, manifest.session_id, manifest.run_branch or "", manifest.merged.tip
     )
-    if merged or commits_ref(manifest, cwd):
+    if merged or wire.commits_ref(manifest, cwd):
         return False
     dirty = False
-    with contextlib.suppress(GitError):
-        exclude = read_untracked_at_start(layout.session_dir)
-        dirty = not git_status(cwd, exclude=exclude).is_clean
+    with contextlib.suppress(git_ops.GitError):
+        exclude = sessions_layout.read_untracked_at_start(layout.session_dir)
+        dirty = not git_ops.status(cwd, exclude=exclude).is_clean
     return dirty
 
 
-def auto_merge_eligible(result: SessionResult) -> bool:
+def auto_merge_eligible(result: _snapshot.SessionResult) -> bool:
     """Tell whether auto_merge may land the run.
 
     Args:
@@ -125,7 +113,7 @@ def auto_merge_eligible(result: SessionResult) -> bool:
     return result.completed and result.verified in ("passed", "not_applicable")
 
 
-def _sandbox_unreachable_tools(layout: SessionLayout) -> list[str]:
+def _sandbox_unreachable_tools(layout: sessions_layout.SessionLayout) -> list[str]:
     """List the binaries the run flagged as present on the host but unreachable in the jail.
 
     Args:
@@ -150,7 +138,9 @@ def _sandbox_unreachable_tools(layout: SessionLayout) -> list[str]:
     return out
 
 
-def _print_next_session(layout: SessionLayout, *, completed: bool, reporter: Reporter) -> None:
+def _print_next_session(
+    layout: sessions_layout.SessionLayout, *, completed: bool, reporter: app_reporter.Reporter
+) -> None:
     """Print the next step after a plan or ask that produced something to act on.
 
     A plan's hints follow its plan.md, which only `finish_planning` writes; an ask's
@@ -161,8 +151,8 @@ def _print_next_session(layout: SessionLayout, *, completed: bool, reporter: Rep
         completed: Whether the session finished deliberately.
         reporter: Receives the lines.
     """
-    with contextlib.suppress(ManifestError):
-        mode = read_manifest(layout.session_dir).mode
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        mode = sessions_manifest.read_manifest(layout.session_dir).mode
         session_id = layout.session_id
         if mode == "plan":
             # The plan is the deliverable, printed like an ask prints its answer.
@@ -178,7 +168,10 @@ def _print_next_session(layout: SessionLayout, *, completed: bool, reporter: Rep
 
 
 def _print_unknown_baseline(
-    result: SessionResult, *, layout: SessionLayout, reporter: Reporter
+    result: _snapshot.SessionResult,
+    *,
+    layout: sessions_layout.SessionLayout,
+    reporter: app_reporter.Reporter,
 ) -> None:
     """Say when a red gate was never observed at the base, and name the check.
 
@@ -194,8 +187,8 @@ def _print_unknown_baseline(
         return
     gate = ()
     base = ""
-    with contextlib.suppress(ManifestError):
-        m = read_manifest(layout.session_dir)
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        m = sessions_manifest.read_manifest(layout.session_dir)
         gate, base = m.harness.verify_command, (m.forked_from_sha or m.base_sha)
     if not (gate and base):
         return
@@ -208,7 +201,12 @@ def _print_unknown_baseline(
     reporter.out(f"      && (cd /tmp/agent6-base && {shlex.join(gate)})")
 
 
-def _print_unverified(result: SessionResult, *, layout: SessionLayout, reporter: Reporter) -> None:
+def _print_unverified(
+    result: _snapshot.SessionResult,
+    *,
+    layout: sessions_layout.SessionLayout,
+    reporter: app_reporter.Reporter,
+) -> None:
     """Say what is missing after a gated end nothing observed.
 
     Args:
@@ -225,7 +223,7 @@ def _print_unverified(result: SessionResult, *, layout: SessionLayout, reporter:
     reporter.out(f'  resume and run the gate:  agent6 resume {layout.session_id} --steer "verify"')
 
 
-def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
+def _print_stale_gate(result: _snapshot.SessionResult, *, reporter: app_reporter.Reporter) -> None:
     """Print the worker's proposed gate replacement, and that nothing moved.
 
     Applying the proposal is the operator's call. A proposal over a green gate is
@@ -241,18 +239,18 @@ def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
     reporter.out(f"  it proposes: {result.stale_gate}")
     reporter.out("  nothing changed. To adopt it:")
     # `config set` takes argv as a JSON array; the inference's tokeniser wraps a pipeline.
-    argv = json.dumps(list(line_to_argv(result.stale_gate) or ()))
+    argv = json.dumps(list(verify_infer.line_to_argv(result.stale_gate) or ()))
     reporter.out(f"    agent6 config set harness.verify_command {shlex.quote(argv)}")
 
 
 def print_session_end(
-    result: SessionResult,
+    result: _snapshot.SessionResult,
     *,
-    layout: SessionLayout,
-    cwd: Path,
-    budget: BudgetTracker,
+    layout: sessions_layout.SessionLayout,
+    cwd: pathlib.Path,
+    budget: agent6_budget.BudgetTracker,
     console_stream: bool,
-    reporter: Reporter,
+    reporter: app_reporter.Reporter,
 ) -> None:
     """Print the composed end-of-run block: outcome, summary, cost and the next step.
 
@@ -270,7 +268,7 @@ def print_session_end(
     word, reason = summary.status, summary.reason
     if not console_stream:
         # Headless: this block is the only end output.
-        headline = status_label(word, reason)
+        headline = format.status_label(word, reason)
         reporter.out(f"\n{headline}")
         if result.summary:
             reporter.out(f"  {result.summary}")
@@ -305,7 +303,11 @@ def print_session_end(
 
 
 def _print_run_branch_footer(
-    result: SessionResult, *, layout: SessionLayout, cwd: Path, reporter: Reporter
+    result: _snapshot.SessionResult,
+    *,
+    layout: sessions_layout.SessionLayout,
+    cwd: pathlib.Path,
+    reporter: app_reporter.Reporter,
 ) -> None:
     """Print where the run's changes are, every claim checked against git.
 
@@ -318,12 +320,12 @@ def _print_run_branch_footer(
     run_branch = ""
     base_branch = ""
     merged_into = ""
-    manifest: SessionManifest | None = None
-    with contextlib.suppress(ManifestError):
-        manifest = read_manifest(layout.session_dir)
+    manifest: sessions_manifest.SessionManifest | None = None
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        manifest = sessions_manifest.read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
         base_branch = manifest.base_branch
-        if manifest.merged is not None and merge_stamp_holds(
+        if manifest.merged is not None and git_ops.merge_stamp_holds(
             cwd, manifest.session_id, run_branch, manifest.merged.tip
         ):
             merged_into = manifest.merged.into or base_branch
@@ -331,8 +333,8 @@ def _print_run_branch_footer(
         # The model managed git: there is no agent6 branch to merge or diff.
         current = ""
         head = ""
-        with contextlib.suppress(GitError):
-            st = git_status(cwd)
+        with contextlib.suppress(git_ops.GitError):
+            st = git_ops.status(cwd)
             current = st.branch
             head = st.head_sha[:12]
         where = current or head or "the current checkout"
@@ -344,15 +346,15 @@ def _print_run_branch_footer(
         # auto_merge landed it, and auto_prune may have deleted the branch.
         reporter.out(f"\nchanges merged into {merged_into}")
         reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
-    elif result.completed and manifest is not None and (where := commits_ref(manifest, cwd)):
+    elif result.completed and manifest is not None and (where := wire.commits_ref(manifest, cwd)):
         # The run branch, or the chain ref a branchless run commits to.
         reporter.out(f"\nchanges are on {where}")
         reporter.out(f"  merge with:  agent6 sessions merge {layout.session_id}")
         reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
         # An operator who checked the run branch out should know how to leave it.
         current = ""
-        with contextlib.suppress(GitError):
-            current = git_status(cwd).branch
+        with contextlib.suppress(git_ops.GitError):
+            current = git_ops.status(cwd).branch
         if run_branch and current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
     elif result.completed and manifest is not None and not manifest.policy.commit_per_step:
@@ -370,12 +372,12 @@ def _print_run_branch_footer(
 
 
 def _print_no_commit_footer(
-    result: SessionResult,
+    result: _snapshot.SessionResult,
     *,
-    layout: SessionLayout,
-    cwd: Path,
+    layout: sessions_layout.SessionLayout,
+    cwd: pathlib.Path,
     run_branch: str,
-    reporter: Reporter,
+    reporter: app_reporter.Reporter,
 ) -> None:
     """Print the footer for a run whose commit never landed.
 
@@ -390,9 +392,9 @@ def _print_no_commit_footer(
         reporter: Receives the lines.
     """
     try:
-        exclude = read_untracked_at_start(layout.session_dir)
-        tree_clean: bool | None = git_status(cwd, exclude=exclude).is_clean
-    except GitError as exc:
+        exclude = sessions_layout.read_untracked_at_start(layout.session_dir)
+        tree_clean: bool | None = git_ops.status(cwd, exclude=exclude).is_clean
+    except git_ops.GitError as exc:
         tree_clean = None
         reporter.out(
             f"\ncould not check the working tree (git failed: {exc}); inspect it manually."
@@ -408,21 +410,27 @@ def _print_no_commit_footer(
         reporter.out("\nno changes were committed")
 
 
-def _print_run_total_across_executions(layout: SessionLayout, *, reporter: Reporter) -> None:
+def _print_run_total_across_executions(
+    layout: sessions_layout.SessionLayout, *, reporter: app_reporter.Reporter
+) -> None:
     """Print the run's cumulative spend when earlier executions precede this one.
 
     Args:
         layout: The session's layout.
         reporter: Receives the line.
     """
-    scan = scan_session_log(layout.session_dir / LOGS_NAME)
+    scan = scan_session_log(layout.session_dir / sessions_layout.LOGS_NAME)
     if scan.executions > 1 and scan.cost_usd is not None:
-        cost = format_usd(scan.cost_usd, partial=scan.usd_partial)
+        cost = agent6_budget.format_usd(scan.cost_usd, partial=scan.usd_partial)
         reporter.cost(f"  RUN TOTAL (all {scan.executions} executions): {cost}")
 
 
 def print_interrupt_end(
-    *, layout: SessionLayout, cwd: Path, budget: BudgetTracker, reporter: Reporter
+    *,
+    layout: sessions_layout.SessionLayout,
+    cwd: pathlib.Path,
+    budget: agent6_budget.BudgetTracker,
+    reporter: app_reporter.Reporter,
 ) -> None:
     """Print the cost so far and the resume and branch-return hints after an interrupt.
 
@@ -438,26 +446,26 @@ def print_interrupt_end(
     reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
     run_branch = ""
     base_branch = ""
-    with contextlib.suppress(ManifestError):
-        manifest = read_manifest(layout.session_dir)
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        manifest = sessions_manifest.read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
         base_branch = manifest.base_branch
     if run_branch:
         current = ""
-        with contextlib.suppress(GitError):
-            current = git_status(cwd).branch
+        with contextlib.suppress(git_ops.GitError):
+            current = git_ops.status(cwd).branch
         if current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
 
 
 def finalize_auto_merge(
-    cwd: Path,
+    cwd: pathlib.Path,
     *,
-    layout: SessionLayout,
+    layout: sessions_layout.SessionLayout,
     cfg: Config,
-    reporter: Reporter,
-    budget: BudgetTracker | None = None,
-    events: EventSink | None = None,
+    reporter: app_reporter.Reporter,
+    budget: agent6_budget.BudgetTracker | None = None,
+    events: agent6_events.EventSink | None = None,
 ) -> None:
     """Land the run branch on its base with `git.merge_strategy`, best-effort.
 
@@ -473,31 +481,33 @@ def finalize_auto_merge(
         events: The sink the merge's events go to.
     """
     try:
-        manifest = read_manifest(layout.session_dir)
-    except ManifestError:
+        manifest = sessions_manifest.read_manifest(layout.session_dir)
+    except sessions_manifest.ManifestError:
         return
     base_branch = manifest.base_branch
     # The visible branch, else the chain ref; an unborn ref has nothing to land.
-    run_branch = manifest.run_branch or chain_ref_for(manifest.session_id)
-    if not base_branch or chain_tip(cwd, run_branch) is None:
+    run_branch = manifest.run_branch or git_ops.chain_ref_for(manifest.session_id)
+    if not base_branch or git_ops.chain_tip(cwd, run_branch) is None:
         return
-    identity = CommitIdentity(
+    identity = git_ops.CommitIdentity(
         name=cfg.git.commit.name,
         email=cfg.git.commit.email,
-        trailer=render_commit_trailer(
+        trailer=commit_message.render_commit_trailer(
             cfg.git.commit.trailer,
-            models=worker_models(tail_events(layout.session_dir / LOGS_NAME, follow=False))
+            models=worker_models(
+                tail_events(layout.session_dir / sessions_layout.LOGS_NAME, follow=False)
+            )
             or ((manifest.models.driver.model,) if manifest.models.driver else ()),
         ),
     )
     try:
-        verify_git_identity(cwd, identity)
-    except GitError as exc:
+        git_ops.verify_git_identity(cwd, identity)
+    except git_ops.GitError as exc:
         reporter.note(
             f"auto_merge skipped: {exc}",
         )
         return
-    outcome = execute_merge(
+    outcome = merge.execute_merge(
         cwd,
         layout=layout,
         manifest=manifest,
@@ -517,10 +527,10 @@ def finalize_auto_merge(
             f"auto_merged {run_branch} into {base_branch} "
             f"({cfg.git.merge_strategy}) -> {outcome.merged_sha[:12]}"
         )
-        if kept := left_behind_line(base_branch, outcome):
+        if kept := merge.left_behind_line(base_branch, outcome):
             reporter.note(kept)
     elif outcome.status == "noop":
-        reporter.note(f"{noop_merge_line(run_branch, base_branch, outcome)}.")
+        reporter.note(f"{merge.noop_merge_line(run_branch, base_branch, outcome)}.")
     elif outcome.status == "conflict":
         reporter.note(
             f"auto_merge into {base_branch} hit conflicts "
@@ -539,7 +549,7 @@ def finalize_auto_merge(
     # auto_prune is a branch verb: the chain ref stays as the run's record.
     landed = outcome.status == "merged" or outcome.recorded
     if landed and cfg.git.auto_prune and manifest.run_branch:
-        if delete_branch_if_merged(cwd, run_branch):
+        if git_ops.delete_branch_if_merged(cwd, run_branch):
             reporter.note(f"auto_pruned {run_branch}")
         else:
             reporter.note(
@@ -548,7 +558,7 @@ def finalize_auto_merge(
             )
 
 
-def _stash_apply_cmd(cwd: Path, sha: str, base_branch: str) -> str:
+def _stash_apply_cmd(cwd: pathlib.Path, sha: str, base_branch: str) -> str:
     """Word the manual-recovery command for a stash, by sha since a position rots.
 
     Args:
@@ -562,12 +572,12 @@ def _stash_apply_cmd(cwd: Path, sha: str, base_branch: str) -> str:
     """
     apply = f"git stash apply {sha}"
     current = ""
-    with contextlib.suppress(GitError):
-        current = git_status(cwd).branch
+    with contextlib.suppress(git_ops.GitError):
+        current = git_ops.status(cwd).branch
     return f"git checkout {base_branch} && {apply}" if current != base_branch else apply
 
 
-def stash_recovery_hint(cwd: Path, *, session_id: str, base_branch: str) -> str | None:
+def stash_recovery_hint(cwd: pathlib.Path, *, session_id: str, base_branch: str) -> str | None:
     """Word how to restore the run's pre-run auto-stash by hand.
 
     Args:
@@ -578,21 +588,21 @@ def stash_recovery_hint(cwd: Path, *, session_id: str, base_branch: str) -> str 
     Returns:
         The command, or None when the run pushed no stash.
     """
-    entry = find_stash(cwd, auto_stash_message(session_id))
+    entry = git_ops.find_stash(cwd, git_ops.auto_stash_message(session_id))
     if entry is None:
         return None
     return _stash_apply_cmd(cwd, entry.sha, base_branch)
 
 
 def finalize_auto_stash(
-    cwd: Path,
+    cwd: pathlib.Path,
     *,
     base_branch: str,
     run_branch: str | None,
     auto_pop: bool,
     session_id: str,
     exclude: Collection[str] = (),
-    reporter: Reporter,
+    reporter: app_reporter.Reporter,
 ) -> None:
     """Restore the pre-run auto-stash when that is safe, else say how to.
 
@@ -608,8 +618,8 @@ def finalize_auto_stash(
         exclude: The operator's untracked files, which do not make the tree unclean.
         reporter: Receives the notes.
     """
-    message = auto_stash_message(session_id)
-    entry = find_stash(cwd, message)
+    message = git_ops.auto_stash_message(session_id)
+    entry = git_ops.find_stash(cwd, message)
     if entry is None:
         reporter.note("pre-run auto-stash not found (already restored?); nothing to pop")
         return
@@ -620,30 +630,30 @@ def finalize_auto_stash(
         reporter.note(f"pre-run changes are stashed; restore them with: {recover}")
         return
     try:
-        st = git_status(cwd, exclude=exclude)
-    except GitError:
+        st = git_ops.status(cwd, exclude=exclude)
+    except git_ops.GitError:
         st = None
     if st is None or not st.is_clean:
         reporter.note(f"pre-run changes left stashed (worktree not clean); restore with: {recover}")
         return
     if run_branch and st.branch == run_branch:
-        if not branch_exists(cwd, base_branch):
+        if not git_ops.branch_exists(cwd, base_branch):
             reporter.note(
                 f"base branch {base_branch} no longer exists; pre-run changes left "
                 f"stashed (recover with: {apply})"
             )
             return
         try:
-            create_branch(cwd, base_branch)  # checks out the existing base branch
-        except GitError as exc:
+            git_ops.create_branch(cwd, base_branch)  # checks out the existing base branch
+        except git_ops.GitError as exc:
             reporter.note(
                 f"could not switch to {base_branch} to restore the stash ({exc}); "
                 f"restore with: {recover}"
             )
             return
     try:
-        restored = restore_stash(cwd, entry)
-    except GitError as exc:
+        restored = git_ops.restore_stash(cwd, entry)
+    except git_ops.GitError as exc:
         # The apply landed; putting back a concurrent stash the drop displaced failed.
         reporter.note(f"restored your pre-run changes onto {base_branch}, but {exc}")
         return
@@ -667,7 +677,7 @@ def hook_env(**agent6_vars: str) -> dict[str, str]:
     Returns:
         The curated base environment plus those facts.
     """
-    return curated_env(extra=agent6_vars)
+    return child_env.curated_env(extra=agent6_vars)
 
 
 def run_notify_hook(
@@ -710,11 +720,11 @@ def fire_notify_hook(
     notify: NotifyConfig,
     *,
     session_id: str,
-    session_dir: Path,
+    session_dir: pathlib.Path,
     ok: bool,
     reason: str,
     verified: str,
-    reporter: Reporter,
+    reporter: app_reporter.Reporter,
 ) -> None:
     """Run the `[notify].on_complete` hook, when one is configured.
 

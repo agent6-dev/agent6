@@ -87,7 +87,7 @@ def test_machine_agent_child_dies_with_its_parent(tmp_path: pathlib.Path) -> Non
     parent_src = textwrap.dedent(
         """
         import os, subprocess, sys, time
-        from agent6.app.machine_agent import die_with_parent
+        from agent6.sandbox.jail import die_with_parent
 
         child = subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(60)"],

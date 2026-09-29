@@ -8,12 +8,12 @@ capturing pair. Each channel takes one formatted line and writes it as `print` w
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Reporter:
     """Write status and results through two channels with one wording per kind.
 

@@ -38,13 +38,13 @@ def test_detect_env_does_not_probe_where_there_is_no_sandbox(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A non-Linux host has no jail to ask."""
-    monkeypatch.setattr(_setup, "detect", lambda: _env(False, sandbox=False))
+    monkeypatch.setattr(detect, "detect", lambda: _env(False, sandbox=False))
     monkeypatch.setattr(_setup, "strict_namespaces_work", _fail_probe)
     assert _setup.detect_env().detected_isolation == "none"
 
 
 def test_detect_env_keeps_userns_when_the_jail_agrees(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_setup, "detect", lambda: _env(True))
+    monkeypatch.setattr(detect, "detect", lambda: _env(True))
     monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: True)
     assert _setup.detect_env().userns_supported is True
 
@@ -57,7 +57,7 @@ def test_detect_env_drops_to_hardened_when_the_jail_cannot_do_strict(
     The Docker case: `unshare` succeeds under a relaxed seccomp profile and AppArmor then denies the
     jail's `mount`.
     """
-    monkeypatch.setattr(_setup, "detect", lambda: _env(True))
+    monkeypatch.setattr(detect, "detect", lambda: _env(True))
     monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: False)
     env = _setup.detect_env()
     assert env.userns_supported is False
@@ -66,7 +66,7 @@ def test_detect_env_drops_to_hardened_when_the_jail_cannot_do_strict(
 
 def test_detect_env_upgrades_to_strict_via_jail_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     # The AppArmor-isolation case: unshare blocked, but the jail binary can userns.
-    monkeypatch.setattr(_setup, "detect", lambda: _env(False))
+    monkeypatch.setattr(detect, "detect", lambda: _env(False))
     monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: True)
     assert _setup.detect_env().userns_supported is True
 
@@ -106,13 +106,13 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
 
 
 def test_detect_env_stays_hardened_when_jail_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_setup, "detect", lambda: _env(False))
+    monkeypatch.setattr(detect, "detect", lambda: _env(False))
     monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: False)
     assert _setup.detect_env().userns_supported is False
 
 
 def test_detect_env_skips_probe_off_linux(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_setup, "detect", lambda: _env(False, sandbox=False))
+    monkeypatch.setattr(detect, "detect", lambda: _env(False, sandbox=False))
     monkeypatch.setattr(_setup, "strict_namespaces_work", _fail_probe)  # not consulted
     assert _setup.detect_env().userns_supported is False
 

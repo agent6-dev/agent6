@@ -12,6 +12,7 @@ import subprocess
 import pytest
 
 from agent6 import git_ops, paths
+from agent6.app import providers as app_providers
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
 
@@ -905,7 +906,6 @@ def test_merge_squash_model_style_degrades_on_a_budget_fault(
     escape.
     """
     from agent6 import budget as agent6_budget
-    from agent6.app import merge as merge_mod
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
@@ -917,7 +917,7 @@ def test_merge_squash_model_style_degrades_on_a_budget_fault(
     def over(*_a: object, **_k: object) -> object:
         raise agent6_budget.BudgetExceededError("the ceiling was crossed on the last call")
 
-    monkeypatch.setattr(merge_mod, "build_role_provider", over)
+    monkeypatch.setattr(app_providers, "build_role_provider", over)
     _setup_run(tmp_path, "run-BDG111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     assert main(["sessions", "merge", "run-BDG111", "--strategy", "squash"]) == 0
     assert "model squash message failed (the ceiling was crossed" in capsys.readouterr().err
@@ -1031,8 +1031,8 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
     def _no_files(*_a: Any) -> list[tuple[str, str]]:
         return []
 
-    monkeypatch.setattr(merge_mod, "build_role_provider", _brp)
-    monkeypatch.setattr(merge_mod, "range_name_status", _no_files)
+    monkeypatch.setattr(app_providers, "build_role_provider", _brp)
+    monkeypatch.setattr(git_ops, "range_name_status", _no_files)
     sink = _Sink()
     tracker = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     msg = merge_mod._model_squash_message(  # pyright: ignore[reportPrivateUsage]

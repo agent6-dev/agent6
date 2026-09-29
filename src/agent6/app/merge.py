@@ -9,44 +9,24 @@ strategy dispatch and the manifest record.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as _dt
+import pathlib
 from collections.abc import Callable
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
-from agent6.app._setup import apply_git_ops_policy, budget_tracker
-from agent6.app.manifest import write_manifest
-from agent6.app.providers import InstrumentedProvider, build_role_provider
-from agent6.budget import BudgetExceededError, BudgetTracker
-from agent6.commit_message import CommitRow, condense_commit_message, conventional_commit_subject
+from agent6 import budget as agent6_budget
+from agent6 import commit_message, git_ops, secrets
+from agent6 import events as agent6_events
+from agent6.app import _setup, providers
+from agent6.app import manifest as app_manifest
 from agent6.config import Config, ConfigError
-from agent6.events import EventSink
-from agent6.git_ops import (
-    CommitIdentity,
-    GitError,
-    MergeResult,
-    branch_exists,
-    branch_tip_sha,
-    chain_tip,
-    is_ancestor,
-    list_run_commits,
-    plumb_merge,
-    range_name_status,
-)
 from agent6.providers import ProviderError, TranscriptSink, call_for_text
-from agent6.secrets import SecretsError
-from agent6.sessions.layout import SessionLayout
-from agent6.sessions.manifest import (
-    NO_MERGE_COMMIT,
-    ManifestError,
-    MergeStamp,
-    SessionManifest,
-    read_manifest,
-)
+from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MergeOutcome:
     """Record what `execute_merge` did.
 
@@ -74,7 +54,7 @@ class MergeOutcome:
 
 
 def record_merge_in_manifest(
-    layout: SessionLayout,
+    layout: sessions_layout.SessionLayout,
     *,
     merged_into: str,
     merged_sha: str,
@@ -97,12 +77,12 @@ def record_merge_in_manifest(
         "" when the stamp landed, else why it did not.
     """
     try:
-        m = read_manifest(layout.session_dir)
-    except ManifestError as exc:
+        m = sessions_manifest.read_manifest(layout.session_dir)
+    except sessions_manifest.ManifestError as exc:
         return str(exc)
     stamped = m.model_copy(
         update={
-            "merged": MergeStamp(
+            "merged": sessions_manifest.MergeStamp(
                 into=merged_into,
                 sha=merged_sha,
                 tip=merged_tip,
@@ -113,29 +93,29 @@ def record_merge_in_manifest(
     )
     # ManifestError: a manifest newer than this binary is left alone rather than downgraded.
     try:
-        write_manifest(layout.manifest_path, stamped)
-    except (OSError, ManifestError) as exc:
+        app_manifest.write_manifest(layout.manifest_path, stamped)
+    except (OSError, sessions_manifest.ManifestError) as exc:
         return str(exc)
     return ""
 
 
 def dispatch_merge(
-    cwd: Path,
+    cwd: pathlib.Path,
     strategy: str,
     target: str,
     run_branch: str,
     base_sha: str,
-    manifest: SessionManifest,
+    manifest: sessions_manifest.SessionManifest,
     message: str | None,
     cfg: Config,
-    identity: CommitIdentity,
+    identity: git_ops.CommitIdentity,
     *,
-    transcript_dir: Path | None = None,
-    budget: BudgetTracker | None = None,
-    events: EventSink | None = None,
+    transcript_dir: pathlib.Path | None = None,
+    budget: agent6_budget.BudgetTracker | None = None,
+    events: agent6_events.EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
     merge_base: str | None = None,
-) -> MergeResult:
+) -> git_ops.MergeResult:
     """Run the strategy on the target through `plumb_merge`.
 
     A squash builds its message per `[git.commit.squash].message`; an operator message
@@ -174,7 +154,7 @@ def dispatch_merge(
         )
     if message is None and strategy == "merge":
         message = f"Merge {run_branch}"
-    return plumb_merge(
+    return git_ops.plumb_merge(
         cwd,
         target,
         run_branch,
@@ -186,7 +166,11 @@ def dispatch_merge(
 
 
 def landed_base(
-    cwd: Path, layout: SessionLayout, manifest: SessionManifest, target: str, tip: str
+    cwd: pathlib.Path,
+    layout: sessions_layout.SessionLayout,
+    manifest: sessions_manifest.SessionManifest,
+    target: str,
+    tip: str,
 ) -> str | None:
     """Return the merge base for a run the target already holds as a squash, else None.
 
@@ -208,38 +192,40 @@ def landed_base(
     for _ in range(64):  # a lineage deeper than this is not a fork chain
         stamp = node.merged
         if stamp is not None and stamp.into == target and stamp.tip:
-            if is_ancestor(cwd, stamp.tip, target):
+            if git_ops.is_ancestor(cwd, stamp.tip, target):
                 break  # a real merge: git relates the two histories itself
-            if is_ancestor(cwd, stamp.tip, tip):
+            if git_ops.is_ancestor(cwd, stamp.tip, tip):
                 return stamp.tip
-            if fork_point and is_ancestor(cwd, fork_point, stamp.tip):
+            if fork_point and git_ops.is_ancestor(cwd, fork_point, stamp.tip):
                 return fork_point
             break
         fork_point = node.forked_from_sha
         if not node.parent_session_id:
             break
         try:
-            node = read_manifest(layout.session_dir.parent / node.parent_session_id)
-        except (ManifestError, OSError):
+            node = sessions_manifest.read_manifest(
+                layout.session_dir.parent / node.parent_session_id
+            )
+        except (sessions_manifest.ManifestError, OSError):
             break
     return None
 
 
 def _squash_message(
-    cwd: Path,
+    cwd: pathlib.Path,
     cfg: Config,
-    manifest: SessionManifest,
+    manifest: sessions_manifest.SessionManifest,
     *,
     base_sha: str,
     run_branch: str,
-    transcript_dir: Path | None,
-    budget: BudgetTracker | None,
-    events: EventSink | None,
+    transcript_dir: pathlib.Path | None,
+    budget: agent6_budget.BudgetTracker | None,
+    events: agent6_events.EventSink | None,
     warn: Callable[[str], None],
 ) -> str | None:
     """Return the squash message per `[git.commit.squash].message`; None lets git combine."""
     style = cfg.git.commit.squash.message
-    rows = list_run_commits(cwd, base_sha, run_branch)
+    rows = git_ops.list_run_commits(cwd, base_sha, run_branch)
     if style == "combine":
         # Git's own SQUASH_MSG shape; the plumbing merge never runs `merge --squash`.
         parts = ["Squashed commit of the following:\n"]
@@ -248,10 +234,12 @@ def _squash_message(
             for r in rows
         ]
         return "\n".join(parts) if rows else None
-    base_msg = condense_commit_message(rows, subject=manifest.user_task or "agent6 run")
+    base_msg = commit_message.condense_commit_message(
+        rows, subject=manifest.user_task or "agent6 run"
+    )
     if style == "conventional":
-        subject = conventional_commit_subject(
-            range_name_status(cwd, base_sha, run_branch), summary=base_msg.splitlines()[0]
+        subject = commit_message.conventional_commit_subject(
+            git_ops.range_name_status(cwd, base_sha, run_branch), summary=base_msg.splitlines()[0]
         )
         return "\n".join([subject, *base_msg.splitlines()[1:]])
     if style == "model":
@@ -273,16 +261,16 @@ def _squash_message(
 
 
 def _model_squash_message(
-    cwd: Path,
+    cwd: pathlib.Path,
     cfg: Config,
-    rows: tuple[CommitRow, ...],
+    rows: tuple[commit_message.CommitRow, ...],
     *,
     base_sha: str,
     run_branch: str,
     task: str,
-    transcript_dir: Path | None,
-    budget: BudgetTracker | None,
-    events: EventSink | None,
+    transcript_dir: pathlib.Path | None,
+    budget: agent6_budget.BudgetTracker | None,
+    events: agent6_events.EventSink | None,
     warn: Callable[[str], None] = lambda _m: None,
 ) -> str | None:
     """Write the squash message with one provider call from git facts only.
@@ -306,8 +294,8 @@ def _model_squash_message(
     if transcript_dir is None:
         return None
     try:
-        tracker = budget if budget is not None else budget_tracker(cfg)
-        provider = build_role_provider(
+        tracker = budget if budget is not None else _setup.budget_tracker(cfg)
+        provider = providers.build_role_provider(
             cfg,
             "worker",
             transcript_sink=TranscriptSink(transcript_dir),
@@ -315,7 +303,7 @@ def _model_squash_message(
         )
         if events is not None:
             rm = cfg.models.resolve("worker")
-            provider = InstrumentedProvider(
+            provider = providers.InstrumentedProvider(
                 inner=provider,
                 role="squash",
                 model=rm.model if rm is not None else "",
@@ -325,7 +313,7 @@ def _model_squash_message(
             )
         steps = "\n".join(f"- {r.subject}" for r in rows[:100])
         files = "\n".join(
-            f"{s}\t{p}" for s, p in range_name_status(cwd, base_sha, run_branch)[:200]
+            f"{s}\t{p}" for s, p in git_ops.range_name_status(cwd, base_sha, run_branch)[:200]
         )
         msg = call_for_text(
             provider,
@@ -341,12 +329,12 @@ def _model_squash_message(
             max_tokens=500,
         )
     except (
-        BudgetExceededError,
+        agent6_budget.BudgetExceededError,
         ConfigError,
-        GitError,
+        git_ops.GitError,
         OSError,
         ProviderError,
-        SecretsError,
+        secrets.SecretsError,
     ) as exc:
         # auto_merge runs the draft in a finished run's teardown, which must not crash on it.
         warn(f"model squash message failed ({exc}); using the agent6 style")
@@ -360,19 +348,19 @@ NO_BASE_SHA = "the manifest records no base_sha; nothing to merge from"
 
 
 def execute_merge(
-    cwd: Path,
+    cwd: pathlib.Path,
     *,
-    layout: SessionLayout,
-    manifest: SessionManifest,
+    layout: sessions_layout.SessionLayout,
+    manifest: sessions_manifest.SessionManifest,
     run_branch: str,
     target: str,
     base_sha: str,
     strategy: str,
     message: str | None,
     cfg: Config,
-    identity: CommitIdentity,
-    budget: BudgetTracker | None = None,
-    events: EventSink | None = None,
+    identity: git_ops.CommitIdentity,
+    budget: agent6_budget.BudgetTracker | None = None,
+    events: agent6_events.EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
 ) -> MergeOutcome:
     """Land the run's branch on the target and record the merge.
@@ -398,21 +386,21 @@ def execute_merge(
     Returns:
         What the merge did.
     """
-    apply_git_ops_policy(cfg)
+    _setup.apply_git_ops_policy(cfg)
     # Without base_sha `git log ..<branch>` counts from HEAD: a wrong list with a clean exit.
     refusal = (
         NO_BASE_SHA
         if not base_sha
         else f"target branch {target!r} does not exist"
-        if not branch_exists(cwd, target)
+        if not git_ops.branch_exists(cwd, target)
         else None
     )
     if refusal is not None:
         return MergeOutcome("error", error=refusal)
     if (
         strategy == "ff"
-        and not is_ancestor(cwd, target, run_branch)
-        and not is_ancestor(cwd, run_branch, target)
+        and not git_ops.is_ancestor(cwd, target, run_branch)
+        and not git_ops.is_ancestor(cwd, run_branch, target)
     ):
         # A run the target already contains is not refused: that is a clean noop below.
         return MergeOutcome(
@@ -424,9 +412,11 @@ def execute_merge(
             ),
         )
     # Every strategy that merges something moves the target; unmoved means nothing to merge.
-    target_tip_before = branch_tip_sha(cwd, target) or ""
+    target_tip_before = git_ops.branch_tip_sha(cwd, target) or ""
     try:
-        merge_base = landed_base(cwd, layout, manifest, target, chain_tip(cwd, run_branch) or "")
+        merge_base = landed_base(
+            cwd, layout, manifest, target, git_ops.chain_tip(cwd, run_branch) or ""
+        )
         result = dispatch_merge(
             cwd,
             strategy,
@@ -443,12 +433,12 @@ def execute_merge(
             warn=warn,
             merge_base=merge_base,
         )
-    except GitError as exc:
+    except git_ops.GitError as exc:
         return MergeOutcome("error", error=f"merge failed: {exc}")
     if result.conflicted:
         return MergeOutcome("conflict", conflicts=result.conflicts)
     noop = bool(result.merged_sha) and result.merged_sha == target_tip_before
-    merged_tip = chain_tip(cwd, run_branch) or ""
+    merged_tip = git_ops.chain_tip(cwd, run_branch) or ""
     if noop and manifest.merged is not None and manifest.merged.tip == merged_tip:
         # Stamping the target's tip over the record would credit the run with later commits.
         return MergeOutcome("noop", merged_sha=result.merged_sha)
@@ -456,7 +446,7 @@ def execute_merge(
     stamp_error = record_merge_in_manifest(
         layout,
         merged_into=target,
-        merged_sha=NO_MERGE_COMMIT if noop else result.merged_sha,
+        merged_sha=sessions_manifest.NO_MERGE_COMMIT if noop else result.merged_sha,
         merged_tip=merged_tip,
         into_tip=target_tip_before if noop else "",
     )

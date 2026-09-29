@@ -17,8 +17,10 @@ import pytest
 
 from agent6 import events as agent6_events
 from agent6.app import machine_agent as app_machine_agent
+from agent6.app import providers
+from agent6.harness import loop
 from agent6.sessions import ipc
-from agent6.tools import schema
+from agent6.tools import dispatch, schema
 
 
 def _dirs(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, agent6_events.EventSink]:
@@ -110,18 +112,17 @@ def test_machine_approval_ignores_a_premature_answer(tmp_path: pathlib.Path) -> 
     b = app_machine_agent._build_machine_bridges(instance, state, events)
     ipc.write_answer(state, "approval-1", "yes")  # premature: no prompt yet
     # No writer thread, so the approver falls through to the deny; a short timeout keeps it quick.
-    from agent6.app import machine_agent
 
-    orig = machine_agent.read_answer
+    orig = ipc.read_answer
 
     def _fast_read(rd: pathlib.Path, pid: str, **kw: object) -> bool | None:
         return orig(rd, pid, timeout_s=0.3, poll_s=0.05, live_dir=kw.get("live_dir"))  # type: ignore[arg-type]
 
-    machine_agent.read_answer = _fast_read  # type: ignore[assignment]
+    ipc.read_answer = _fast_read  # type: ignore[assignment]
     try:
         assert b.prompts.approve("run rm -rf?") is False
     finally:
-        machine_agent.read_answer = orig
+        ipc.read_answer = orig
 
 
 def test_steer_request_and_answer_bridge(tmp_path: pathlib.Path) -> None:
@@ -181,14 +182,14 @@ def test_machine_agent_wires_the_summariser_seat(
         sinks["summariser"] = k.get("transcript_sink")
         return summariser
 
-    monkeypatch.setattr(machine_agent, "Harness", _FakeWf)
-    monkeypatch.setattr(machine_agent, "build_role_provider", _fake_role)
-    monkeypatch.setattr(machine_agent, "reviewer_seat_provider", _fake_summariser)
+    monkeypatch.setattr(loop, "Harness", _FakeWf)
+    monkeypatch.setattr(providers, "build_role_provider", _fake_role)
+    monkeypatch.setattr(providers, "reviewer_seat_provider", _fake_summariser)
 
     def _fake_dispatcher(**_k: Any) -> object:
         return object()
 
-    monkeypatch.setattr(machine_agent, "ToolDispatcher", _fake_dispatcher)
+    monkeypatch.setattr(dispatch, "ToolDispatcher", _fake_dispatcher)
 
     req = machine_agent.MachineAgentRequest(
         cwd=tmp_path,
@@ -267,8 +268,8 @@ def test_the_agent_seat_journals_under_a_driving_role(
     def stub_provider(*_args: object, **_kwargs: object) -> mock.MagicMock:
         return mock.MagicMock()
 
-    monkeypatch.setattr(machine_agent, "build_role_provider", stub_provider)
-    monkeypatch.setattr(machine_agent, "reviewer_seat_provider", stub_provider)
+    monkeypatch.setattr(providers, "build_role_provider", stub_provider)
+    monkeypatch.setattr(providers, "reviewer_seat_provider", stub_provider)
     req = machine_agent.MachineAgentRequest(
         cwd=tmp_path,
         root=tmp_path,

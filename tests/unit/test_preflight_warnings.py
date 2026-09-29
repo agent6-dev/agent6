@@ -9,6 +9,7 @@ import time
 
 import pytest
 
+from agent6.app import _session, _setup
 from agent6.app import preflight as app_preflight
 from agent6.config import Config
 
@@ -78,7 +79,6 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
     show` reports can go ignored on one surface unnoticed.
     """
     from agent6.app import frontend
-    from agent6.app import preflight as preflight_mod
     from agent6.app import run as lifecycle
 
     seen: list[bool] = []
@@ -86,7 +86,7 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
     def _capture(captured: Config) -> None:
         seen.append(captured.git.run_repo_hooks)
 
-    monkeypatch.setattr(preflight_mod, "apply_git_ops_policy", _capture)
+    monkeypatch.setattr(_setup, "apply_git_ops_policy", _capture)
     monkeypatch.chdir(tmp_path)
     cfg = Config.model_validate({"git": {"run_repo_hooks": True}})
     # It refuses immediately after (no git identity here); the policy is set
@@ -232,8 +232,8 @@ def test_the_route_preflight_precedes_isolation(
         seen.append("select_isolation")
         raise _Stop
 
-    monkeypatch.setattr(lifecycle, "route_preflight", _route)
-    monkeypatch.setattr(lifecycle, "select_isolation", _isolation)
+    monkeypatch.setattr(app_preflight, "route_preflight", _route)
+    monkeypatch.setattr(_session, "select_isolation", _isolation)
     monkeypatch.chdir(tmp_path)
     front = acp_frontend.acp_frontend(
         ask=lambda _p, _o, _s, _c, _u=None: None,

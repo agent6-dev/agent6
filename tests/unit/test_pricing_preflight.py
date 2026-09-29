@@ -13,8 +13,11 @@ import pathlib
 
 import pytest
 
+from agent6 import secrets
 from agent6.app import _setup
 from agent6.config import Config
+from agent6.models import cache
+from agent6.providers import claude_code as providers_claude_code
 
 
 def _cfg(model: str, provider_block: dict[str, object]) -> Config:
@@ -35,10 +38,10 @@ def test_claude_only_config_refreshes_the_catalog(monkeypatch: pytest.MonkeyPatc
     def _models(*_a: object, **_k: object) -> list[str]:
         return []
 
-    monkeypatch.setattr(_setup, "refresh_pricing_catalog", lambda: called.append(True))
-    monkeypatch.setattr(_setup, "load_secrets", dict)
-    monkeypatch.setattr(_setup, "resolve_api_key", _key)
-    monkeypatch.setattr(_setup, "list_models", _models)
+    monkeypatch.setattr(cache, "refresh_pricing_catalog", lambda: called.append(True))
+    monkeypatch.setattr(secrets, "load_secrets", dict)
+    monkeypatch.setattr(secrets, "resolve_api_key", _key)
+    monkeypatch.setattr(cache, "list_models", _models)
     cfg = _cfg(
         "claude-opus-5",
         {"anthropic": {"api_format": "anthropic", "api_key_env": "X_KEY"}},
@@ -56,10 +59,10 @@ def test_openrouter_config_does_not_double_refresh(monkeypatch: pytest.MonkeyPat
     def _models(*_a: object, **_k: object) -> list[str]:
         return []
 
-    monkeypatch.setattr(_setup, "refresh_pricing_catalog", lambda: called.append(True))
-    monkeypatch.setattr(_setup, "load_secrets", dict)
-    monkeypatch.setattr(_setup, "resolve_api_key", _key)
-    monkeypatch.setattr(_setup, "list_models", _models)
+    monkeypatch.setattr(cache, "refresh_pricing_catalog", lambda: called.append(True))
+    monkeypatch.setattr(secrets, "load_secrets", dict)
+    monkeypatch.setattr(secrets, "resolve_api_key", _key)
+    monkeypatch.setattr(cache, "list_models", _models)
     # A BARE claude-* id through openrouter: the one shape where the guard
     # decides (a non-claude model skips the refresh before the guard is read).
     cfg = _cfg(
@@ -85,8 +88,8 @@ def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) 
     def _no_key(*_a: object, **_k: object) -> str:
         return ""
 
-    monkeypatch.setattr(_setup, "load_secrets", dict)
-    monkeypatch.setattr(_setup, "resolve_api_key", _no_key)
+    monkeypatch.setattr(secrets, "load_secrets", dict)
+    monkeypatch.setattr(secrets, "resolve_api_key", _no_key)
     cfg = Config.model_validate(
         {
             "providers": {
@@ -105,7 +108,7 @@ def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_a_seat_naming_an_absent_provider_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_setup, "load_secrets", dict)
+    monkeypatch.setattr(secrets, "load_secrets", dict)
     cfg = Config.model_validate(
         {
             "providers": {"main": {"api_format": "anthropic", "auth_style": "none"}},
@@ -123,7 +126,7 @@ def test_machine_state_pins_ride_the_same_preflight(monkeypatch: pytest.MonkeyPa
     The machine call site passes per-state provider pins as extras; an absent pinned provider
     refuses before any state runs.
     """
-    monkeypatch.setattr(_setup, "load_secrets", dict)
+    monkeypatch.setattr(secrets, "load_secrets", dict)
     cfg = Config.model_validate(
         {
             "providers": {"main": {"api_format": "anthropic", "auth_style": "none"}},
@@ -163,7 +166,7 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
     connect chatgpt`), not mid-setup after state exists; with tokens stored it passes without any
     key lookup.
     """
-    monkeypatch.setattr(_setup, "load_secrets", dict)
+    monkeypatch.setattr(secrets, "load_secrets", dict)
     cfg = _cfg("gpt-5-codex", {"chatgpt": {"api_format": "chatgpt"}})
     err = _setup.check_provider_keys(cfg)
     assert err is not None and "agent6 connect chatgpt" in err
@@ -171,14 +174,14 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
     def stored(*_a: object, **_k: object) -> object:
         return object()
 
-    monkeypatch.setattr(_setup, "load_oauth_tokens", stored)
+    monkeypatch.setattr(secrets, "load_oauth_tokens", stored)
     listed: list[str] = []
 
     def fake_list(name: str, *_a: object, **_k: object) -> list[str]:
         listed.append(name)
         return []
 
-    monkeypatch.setattr(_setup, "list_models", fake_list)
+    monkeypatch.setattr(cache, "list_models", fake_list)
     assert _setup.check_provider_keys(cfg) is None
     assert listed == ["chatgpt"]  # the signed-in path refreshes the listing
 
@@ -268,10 +271,10 @@ def test_claude_code_routes_are_plan_metered(
     assert err is not None and "max_percent is 0" in err and "claude-haiku-4-5" in err
 
     called: list[bool] = []
-    monkeypatch.setattr(_setup, "refresh_pricing_catalog", lambda: called.append(True))
-    monkeypatch.setattr(_setup, "load_secrets", dict)
+    monkeypatch.setattr(cache, "refresh_pricing_catalog", lambda: called.append(True))
+    monkeypatch.setattr(secrets, "load_secrets", dict)
     # The sign-in probe is the next test's subject; here the binary need not exist.
-    monkeypatch.setattr(_setup, "login_status", _signed_in)
+    monkeypatch.setattr(providers_claude_code, "login_status", _signed_in)
     assert _setup.check_provider_keys(cfg) is None
     assert called == []
 
@@ -289,12 +292,12 @@ def test_claude_code_route_needs_a_signed_in_binary(monkeypatch: pytest.MonkeyPa
     def signed_in(binary: str) -> str | None:
         return None
 
-    monkeypatch.setattr(_setup, "load_secrets", dict)
-    monkeypatch.setattr(_setup, "login_status", signed_out)
+    monkeypatch.setattr(secrets, "load_secrets", dict)
+    monkeypatch.setattr(providers_claude_code, "login_status", signed_out)
     cfg = _cfg("claude-haiku-4-5", {"claude": {"api_format": "claude_code", "binary": "/opt/cc"}})
     err = _setup.check_provider_keys(cfg)
     assert err is not None and "[providers.claude]" in err and "/opt/cc says" in err
-    monkeypatch.setattr(_setup, "login_status", signed_in)
+    monkeypatch.setattr(providers_claude_code, "login_status", signed_in)
     assert _setup.check_provider_keys(cfg) is None
 
 

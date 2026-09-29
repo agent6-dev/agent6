@@ -9,6 +9,7 @@ import pathlib
 
 import pytest
 
+from agent6.app import _setup
 from agent6.config import Config, layer
 from agent6.models import registry
 from agent6.viewmodel import config_view
@@ -249,7 +250,7 @@ def test_the_resolved_values_leave_the_sandbox_leaves_auto_without_a_jail_binary
     def no_binary() -> NoReturn:
         raise jail.JailBinaryError("agent6-jail binary not found")
 
-    monkeypatch.setattr(confine, "detect_env", no_binary)
+    monkeypatch.setattr(_setup, "detect_env", no_binary)
     cfg = Config()
     assert (cfg.sandbox.isolation, cfg.sandbox.network) == ("auto", "auto")
     resolved = confine.resolved_config_values(cfg)

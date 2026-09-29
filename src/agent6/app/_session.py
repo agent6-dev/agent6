@@ -8,53 +8,28 @@ their own workspace steps and their Harness wiring.
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 from collections.abc import Callable
-from dataclasses import dataclass
-from pathlib import Path
 
 import agent6
-from agent6.app._setup import budget_tracker, detect_env
-from agent6.app.confine import (
-    check_network_support,
-    config_refusal,
-    warn_cleartext_credential_endpoints,
-    warn_sandbox_gaps,
-)
-from agent6.app.frontend import SessionFacts
-from agent6.app.preflight import (
-    SessionRefusedError,
-    budget_preflight,
-    warn_if_prompt_override_incomplete,
-)
-from agent6.app.providers import (
-    InstrumentedProvider,
-    build_review_seats,
-    build_role_provider,
-    close_provider,
-    resolve_compaction_thresholds,
-    resolve_decompose,
-    reviewer_seat_provider,
-)
-from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.budget import BudgetTracker
+from agent6 import budget as agent6_budget
+from agent6 import events as agent6_events
+from agent6 import kinds
+from agent6.app import _setup, confine, frontend, preflight, providers
+from agent6.app import reporter as app_reporter
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
-from agent6.events import EventSink
-from agent6.graph.curator import GraphCurator
-from agent6.harness._compaction import CLAUDE_CODE_RESULT_CAP_BYTES, TOOL_RESULT_CAP_BYTES
-from agent6.harness._reviewer import ReviewSeat
-from agent6.kinds import IsolationLevel, ResumableMode
+from agent6.graph import curator as graph_curator
+from agent6.harness import _compaction, _reviewer
 from agent6.providers import Provider, TranscriptSink
-from agent6.sandbox.detect import Environment, IsolationUnavailableError, resolve_isolation
-from agent6.sandbox.jail import JailUnavailableError, SessionNetwork
-from agent6.sessions.layout import SessionLayout
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.mcp_client import MCPManager
-from agent6.tools.operator_prompts import OperatorPrompts
+from agent6.sandbox import detect, jail
+from agent6.sessions import layout as sessions_layout
+from agent6.tools import dispatch, mcp_client, operator_prompts
 
 
 def resolve_isolation_or_refuse(
-    cfg: Config, env: Environment, *, reporter: Reporter
-) -> IsolationLevel:
+    cfg: Config, env: detect.Environment, *, reporter: app_reporter.Reporter
+) -> kinds.IsolationLevel:
     """Return the isolation level the config resolves to on this host.
 
     An `auto` degrades inside `resolve_isolation`.
@@ -71,10 +46,10 @@ def resolve_isolation_or_refuse(
         SessionRefusedError: An explicit level is unavailable on this host.
     """
     try:
-        return resolve_isolation(cfg.sandbox.isolation, env)
-    except IsolationUnavailableError as exc:
+        return detect.resolve_isolation(cfg.sandbox.isolation, env)
+    except detect.IsolationUnavailableError as exc:
         reporter.refuse(str(exc))
-        raise SessionRefusedError(2) from exc
+        raise preflight.SessionRefusedError(2) from exc
 
 
 def tool_result_cap_bytes(cfg: Config, role: RoleName) -> int:
@@ -86,19 +61,19 @@ def tool_result_cap_bytes(cfg: Config, role: RoleName) -> int:
     rm = cfg.models.resolve(role)
     entry = cfg.providers.get(rm.provider) if rm is not None else None
     if isinstance(entry, ClaudeCodeProviderEntry):
-        return CLAUDE_CODE_RESULT_CAP_BYTES
-    return TOOL_RESULT_CAP_BYTES
+        return _compaction.CLAUDE_CODE_RESULT_CAP_BYTES
+    return _compaction.TOOL_RESULT_CAP_BYTES
 
 
 def select_isolation(
     cfg: Config,
     *,
-    cwd: Path,
-    confirm_unconfined: Callable[[IsolationLevel, Config], bool],
-    reporter: Reporter,
+    cwd: pathlib.Path,
+    confirm_unconfined: Callable[[kinds.IsolationLevel, Config], bool],
+    reporter: app_reporter.Reporter,
     explicit_leaves: frozenset[str] = frozenset(),
-    worktree_git_dir: Path | None = None,
-) -> IsolationLevel:
+    worktree_git_dir: pathlib.Path | None = None,
+) -> kinds.IsolationLevel:
     """Pick the sandbox isolation and refuse what it cannot honor.
 
     Confirms an unconfined autorun; refuses a network mode, egress or budget the isolation
@@ -119,53 +94,53 @@ def select_isolation(
         SessionRefusedError: The host, the config or the operator refused the run.
     """
     try:
-        env = detect_env()
-    except JailUnavailableError as exc:
+        env = _setup.detect_env()
+    except jail.JailUnavailableError as exc:
         # The strict probe could not run the jail binary; no command will run under it either.
         reporter.refuse(str(exc))
-        raise SessionRefusedError(2) from exc
+        raise preflight.SessionRefusedError(2) from exc
     selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
     try:
-        warn_sandbox_gaps(
+        confine.warn_sandbox_gaps(
             selected, env, cfg, root=cwd, worktree_git_dir=worktree_git_dir, reporter=reporter
         )
-    except JailUnavailableError as exc:
+    except jail.JailUnavailableError as exc:
         # The hardened exposure scan builds the run's policy, which creates the jail's HOME.
         reporter.refuse(str(exc))
-        raise SessionRefusedError(2) from exc
-    warn_cleartext_credential_endpoints(cfg, reporter=reporter)
+        raise preflight.SessionRefusedError(2) from exc
+    confine.warn_cleartext_credential_endpoints(cfg, reporter=reporter)
     if not confirm_unconfined(selected, cfg):
         reporter.note("aborted.")
-        raise SessionRefusedError(2)
-    net_err = check_network_support(cfg, selected)
+        raise preflight.SessionRefusedError(2)
+    net_err = confine.check_network_support(cfg, selected)
     if net_err is not None:
         reporter.refuse(net_err)
-        raise SessionRefusedError(2)
+        raise preflight.SessionRefusedError(2)
     # A default this host cannot honour degraded with a warning above; a written value refuses.
-    cfg_err = config_refusal(
+    cfg_err = confine.config_refusal(
         cfg, selected, cwd, explicit_leaves=explicit_leaves, worktree_git_dir=worktree_git_dir
     )
     if cfg_err is not None:
         reporter.refuse(cfg_err)
-        raise SessionRefusedError(2)
-    budget_err = budget_preflight(cfg, reporter=reporter)
+        raise preflight.SessionRefusedError(2)
+    budget_err = preflight.budget_preflight(cfg, reporter=reporter)
     if budget_err is not None:
         reporter.refuse(budget_err)
-        raise SessionRefusedError(2)
+        raise preflight.SessionRefusedError(2)
     return selected
 
 
-def install_inside_workspace(cwd: Path) -> Path | None:
+def install_inside_workspace(cwd: pathlib.Path) -> pathlib.Path | None:
     """Return agent6's install root when it sits inside the workspace, else None.
 
     An in-tree install is inside the jail's writable workspace, so a jailed command can
     rewrite the running agent.
     """
-    root = Path(agent6.__file__).resolve().parent
+    root = pathlib.Path(agent6.__file__).resolve().parent
     return root if root.is_relative_to(cwd.resolve()) else None
 
 
-def warn_install_inside_workspace(cwd: Path, *, reporter: Reporter) -> None:
+def warn_install_inside_workspace(cwd: pathlib.Path, *, reporter: app_reporter.Reporter) -> None:
     """Warn when agent6 is installed inside the workspace; agent6 developing agent6 is that."""
     if (root := install_inside_workspace(cwd)) is not None:
         reporter.warn(
@@ -175,7 +150,7 @@ def warn_install_inside_workspace(cwd: Path, *, reporter: Reporter) -> None:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionProviders:
     """Hold the run's providers, all metering into one tracker.
 
@@ -187,29 +162,29 @@ class SessionProviders:
         review_seats: The in-loop review panel.
     """
 
-    budget: BudgetTracker
+    budget: agent6_budget.BudgetTracker
     rm_role: RoleModel
     provider: Provider
     summariser_provider: Provider | None
-    review_seats: list[ReviewSeat]
+    review_seats: list[_reviewer.ReviewSeat]
 
     def close(self) -> None:
         """Release every provider's held process (a `claude_code` session)."""
-        close_provider(self.provider)
+        providers.close_provider(self.provider)
         if self.summariser_provider is not None:
-            close_provider(self.summariser_provider)
+            providers.close_provider(self.summariser_provider)
         for seat in self.review_seats:
-            close_provider(seat.provider)
+            providers.close_provider(seat.provider)
 
 
 def build_session_providers(
     cfg: Config,
     *,
     role: RoleName,
-    events: EventSink,
+    events: agent6_events.EventSink,
     transcript_sink: TranscriptSink,
     stream_text: bool,
-    reporter: Reporter = STDIO_REPORTER,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> SessionProviders:
     """Build the driving role's provider and the summariser and review seats.
 
@@ -224,12 +199,12 @@ def build_session_providers(
     Returns:
         The providers, metering into one tracker.
     """
-    budget = budget_tracker(cfg)
-    inner = build_role_provider(cfg, role, transcript_sink=transcript_sink, budget=budget)
+    budget = _setup.budget_tracker(cfg)
+    inner = providers.build_role_provider(cfg, role, transcript_sink=transcript_sink, budget=budget)
     rm_role = cfg.models.resolve(role)
     assert rm_role is not None  # require_runnable validated this
-    warn_if_prompt_override_incomplete(cfg, reporter=reporter)
-    provider: Provider = InstrumentedProvider(
+    preflight.warn_if_prompt_override_incomplete(cfg, reporter=reporter)
+    provider: Provider = providers.InstrumentedProvider(
         inner=inner,
         role=role,
         model=rm_role.model,
@@ -238,12 +213,14 @@ def build_session_providers(
         budget=budget,
         stream_text=stream_text,
     )
-    summariser_provider = reviewer_seat_provider(
+    summariser_provider = providers.reviewer_seat_provider(
         cfg, "summariser", transcript_sink=transcript_sink, budget=budget, events=events
     )
     # The panel is the in-loop review: a trigger with no seats builds one seat on the reviewer.
     review_seats = (
-        build_review_seats(cfg, transcript_sink=transcript_sink, budget=budget, n=1, events=events)
+        providers.build_review_seats(
+            cfg, transcript_sink=transcript_sink, budget=budget, n=1, events=events
+        )
         if cfg.review.trigger != "off"
         else []
     )
@@ -256,7 +233,7 @@ def build_session_providers(
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionTools:
     """Hold the curator and dispatcher pair and the model-derived loop knobs.
 
@@ -269,8 +246,8 @@ class SessionTools:
         cfg: The decompose-resolved config the Harness is built with.
     """
 
-    curator: GraphCurator
-    dispatcher: ToolDispatcher
+    curator: graph_curator.GraphCurator
+    dispatcher: dispatch.ToolDispatcher
     compact_drop_at_chars: int
     compact_summarise_at_chars: int
     keep_recent_chars: int
@@ -280,18 +257,18 @@ class SessionTools:
 def build_session_tools(
     cfg: Config,
     *,
-    cwd: Path,
-    state_dir: Path,
-    layout: SessionLayout,
-    isolation: IsolationLevel,
-    mode: ResumableMode,
-    events: EventSink,
-    prompts: OperatorPrompts,
+    cwd: pathlib.Path,
+    state_dir: pathlib.Path,
+    layout: sessions_layout.SessionLayout,
+    isolation: kinds.IsolationLevel,
+    mode: kinds.ResumableMode,
+    events: agent6_events.EventSink,
+    prompts: operator_prompts.OperatorPrompts,
     loop_log: Callable[[str], None],
-    mcp_manager: MCPManager | None,
+    mcp_manager: mcp_client.MCPManager | None,
     rm_role: RoleModel,
-    session_net: SessionNetwork | None = None,
-    worktree_git_dir: Path | None = None,
+    session_net: jail.SessionNetwork | None = None,
+    worktree_git_dir: pathlib.Path | None = None,
 ) -> SessionTools:
     """Build the curator, the dispatcher and the model-derived loop knobs.
 
@@ -314,8 +291,8 @@ def build_session_tools(
         The tools and the decompose-resolved config.
     """
     # The curator runs in-process: the run's worker.lock already makes this the sole writer.
-    curator = GraphCurator(layout)
-    dispatcher = ToolDispatcher(
+    curator = graph_curator.GraphCurator(layout)
+    dispatcher = dispatch.ToolDispatcher(
         root=cwd,
         config=cfg,
         isolation=isolation,
@@ -331,10 +308,10 @@ def build_session_tools(
         use_jail_session=True,
         session_net=session_net,
     )
-    compact_drop, compact_summarise, keep_recent = resolve_compaction_thresholds(
+    compact_drop, compact_summarise, keep_recent = providers.resolve_compaction_thresholds(
         cfg, rm_role, log=loop_log
     )
-    cfg = resolve_decompose(cfg, rm_role, log=loop_log)
+    cfg = providers.resolve_decompose(cfg, rm_role, log=loop_log)
     return SessionTools(
         curator=curator,
         dispatcher=dispatcher,
@@ -346,13 +323,13 @@ def build_session_tools(
 
 
 def session_facts_provider(
-    budget: BudgetTracker, model: str, run_commands: str, isolation: str
-) -> Callable[[], SessionFacts]:
+    budget: agent6_budget.BudgetTracker, model: str, run_commands: str, isolation: str
+) -> Callable[[], frontend.SessionFacts]:
     """Return the live-facts thunk the pause banner reads; spend reads live, the rest binds."""
 
-    def facts() -> SessionFacts:
+    def facts() -> frontend.SessionFacts:
         spend, partial = budget.estimate_usd()
-        return SessionFacts(
+        return frontend.SessionFacts(
             spend_usd=spend,
             spend_partial=partial,
             model=model,

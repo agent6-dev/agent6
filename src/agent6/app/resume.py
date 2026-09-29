@@ -11,103 +11,32 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import pathlib
 from collections.abc import Callable
-from pathlib import Path
 
-from agent6.app._execution import ExecutionInputs, detach_to_background, run_execution
-from agent6.app._session import (
-    select_isolation,
-    warn_install_inside_workspace,
-)
-from agent6.app._setup import (
-    BudgetOverrides,
-    SandboxOverrides,
-    flag_route,
-    load_session_config,
-    override_flags,
-    route_text,
-)
-from agent6.app.frontend import (
-    SessionFrontend,
-    settle_away_mode,
-)
-from agent6.app.manifest import (
-    pin_gate,
-    stamp_execution,
-    stamp_fork_task,
-    stamp_model,
-    stamp_preset,
-    stamp_task,
-)
-from agent6.app.preflight import (
-    SessionRefusedError,
-    drop_gate_if_unrunnable,
-    gate_text,
-    headless_approval_refusal,
-    headless_parking_note,
-    require_git_repo,
-    route_preflight,
-)
-from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.app.run import run_task
-from agent6.budget import BudgetTracker
+from agent6 import budget, directive, git_ops, kinds
+from agent6 import events as agent6_events
+from agent6 import paths as agent6_paths
+from agent6.app import _execution, _session, _setup, preflight, run
+from agent6.app import frontend as app_frontend
+from agent6.app import manifest as app_manifest
+from agent6.app import reporter as app_reporter
 from agent6.config import (
     Config,
     ConfigError,
 )
-from agent6.directive import steer_problem
-from agent6.events import EventSink
-from agent6.git_ops import (
-    CommitIdentity,
-    GitError,
-    branch_exists,
-    chain_dirty_paths,
-    chain_ref_for,
-    chain_tip,
-    is_ancestor,
-    merge_stamp_holds,
-    tree_paths,
-    untracked_paths,
-    verify_git_identity,
-)
-from agent6.harness._context import agents_md_notices
-from agent6.harness._snapshot import (
-    TURN_IN_FLIGHT_NAME,
-    clear_turn_marker,
-    load_session_snapshot,
-    read_turn_marker,
-)
-from agent6.kinds import SESSION_KINDS, ModelRoute, session_bucket, session_kind
-from agent6.paths import state_dir
+from agent6.harness import _context, _snapshot
 from agent6.providers import (
     TranscriptSink,
 )
-from agent6.sessions.id import SessionIdError, resolve_session
-from agent6.sessions.ipc import (
-    clear_pending_answers,
-    clear_worker_pid,
-    effective_away,
-    submit_steer,
-    write_worker_pid,
-)
-from agent6.sessions.layout import (
-    bucket_dir,
-    read_untracked_at_start,
-    write_untracked_at_start,
-)
-from agent6.sessions.lock import (
-    SINGLE_WRITER_BUSY,
-    acquire_repo_writer,
-    acquire_single_writer,
-    release_single_writer,
-    repo_writer_holder,
-)
-from agent6.sessions.manifest import ManifestError, MergeStamp, SessionManifest, read_manifest
-from agent6.tools.operator_prompts import OperatorPrompts
-from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
+from agent6.sessions import id, ipc, lock
+from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
+from agent6.tools import operator_prompts
+from agent6.viewmodel import listing
 
 
-def resumable_bucket_dirs(state_dir: Path) -> list[Path]:
+def resumable_bucket_dirs(state_dir: pathlib.Path) -> list[pathlib.Path]:
     """List the bucket dirs holding sessions `agent6 resume` can pick up.
 
     Args:
@@ -117,13 +46,13 @@ def resumable_bucket_dirs(state_dir: Path) -> list[Path]:
         One dir per resumable session kind.
     """
     return [
-        bucket_dir(state_dir, session_bucket(kind.name))
-        for kind in SESSION_KINDS.values()
+        sessions_layout.bucket_dir(state_dir, kinds.session_bucket(kind.name))
+        for kind in kinds.SESSION_KINDS.values()
         if kind.resumable
     ]
 
 
-def _paths_the_run_wrote(logs_path: Path) -> frozenset[str]:
+def _paths_the_run_wrote(logs_path: pathlib.Path) -> frozenset[str]:
     """Collect every path a `tool.result` of the run names as written.
 
     Args:
@@ -149,7 +78,9 @@ def _paths_the_run_wrote(logs_path: Path) -> frozenset[str]:
     return frozenset(paths)
 
 
-def covering_stamp(repo: Path, manifest: SessionManifest) -> MergeStamp | None:
+def covering_stamp(
+    repo: pathlib.Path, manifest: sessions_manifest.SessionManifest
+) -> sessions_manifest.MergeStamp | None:
     """Return the merge stamp when it covers every commit the run made.
 
     A resumed run commits past its stamp, and no merge covers those commits.
@@ -164,11 +95,13 @@ def covering_stamp(repo: Path, manifest: SessionManifest) -> MergeStamp | None:
     stamp = manifest.merged
     if stamp is None or not stamp.into:
         return None
-    holds = merge_stamp_holds(repo, manifest.session_id, manifest.run_branch or "", stamp.tip)
+    holds = git_ops.merge_stamp_holds(
+        repo, manifest.session_id, manifest.run_branch or "", stamp.tip
+    )
     return stamp if holds else None
 
 
-def commits_note(repo: Path, manifest: SessionManifest) -> str:
+def commits_note(repo: pathlib.Path, manifest: sessions_manifest.SessionManifest) -> str:
     """Say where a session's commits are, for a refusal that points at them.
 
     Args:
@@ -179,19 +112,19 @@ def commits_note(repo: Path, manifest: SessionManifest) -> str:
         The run branch, the merge that landed them, the chain ref, or "it recorded
         no commits".
     """
-    if manifest.run_branch and branch_exists(repo, manifest.run_branch):
+    if manifest.run_branch and git_ops.branch_exists(repo, manifest.run_branch):
         return f"its commits are on {manifest.run_branch}"
     stamp = covering_stamp(repo, manifest)
     if stamp is not None:
         return f"its commits are {stamp.landed()}"
-    chain = chain_ref_for(manifest.session_id)
-    if chain_tip(repo, chain) is not None:
+    chain = git_ops.chain_ref_for(manifest.session_id)
+    if git_ops.chain_tip(repo, chain) is not None:
         return f"its commits are on {chain}"
     return "it recorded no commits"
 
 
 def turn_replay_allowed(
-    session_dir: Path,
+    session_dir: pathlib.Path,
     next_iteration: int,
     confirm: Callable[[int, tuple[str, ...]], bool],
 ) -> bool:
@@ -210,19 +143,19 @@ def turn_replay_allowed(
     Returns:
         Whether to proceed.
     """
-    marker_path = session_dir / TURN_IN_FLIGHT_NAME
-    marker = read_turn_marker(marker_path)
+    marker_path = session_dir / _snapshot.TURN_IN_FLIGHT_NAME
+    marker = _snapshot.read_turn_marker(marker_path)
     if marker is None:
         return True
     iteration, tools = marker
     if iteration < next_iteration:
-        clear_turn_marker(marker_path)  # stale: the turn completed, never ask
+        _snapshot.clear_turn_marker(marker_path)  # stale: the turn completed, never ask
         return True
     return confirm(iteration, tools)
 
 
 def snapshot_head_mismatch(
-    snapshot_path: Path, repo_root: Path, *, chain_ref: str
+    snapshot_path: pathlib.Path, repo_root: pathlib.Path, *, chain_ref: str
 ) -> tuple[str, str] | None:
     """Detect a chain tip that diverged from the run's last snapshot.
 
@@ -248,12 +181,12 @@ def snapshot_head_mismatch(
     if not snap_head:
         return None
     try:
-        current_head = chain_tip(repo_root, chain_ref)
-    except GitError:
+        current_head = git_ops.chain_tip(repo_root, chain_ref)
+    except git_ops.GitError:
         return None
     if current_head is None or current_head == snap_head:
         return None
-    if is_ancestor(repo_root, snap_head, current_head):
+    if git_ops.is_ancestor(repo_root, snap_head, current_head):
         # The tip moved forward on the same line: the run's own commits.
         return None
     return (snap_head, current_head)
@@ -281,20 +214,20 @@ def execution_gate_origin(*, configured: bool, has_gate: bool, pinned: str) -> s
 
 
 def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume is refused, in preflight order
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
     session_id: str,
     *,
-    frontend: SessionFrontend,
+    frontend: app_frontend.SessionFrontend,
     force: bool,
     started_at: float,
     tui: bool = False,
-    budget_overrides: BudgetOverrides | None = None,
-    sandbox_overrides: SandboxOverrides | None = None,
+    budget_overrides: _setup.BudgetOverrides | None = None,
+    sandbox_overrides: _setup.SandboxOverrides | None = None,
     preset: str = "",
     steer: str = "",
     interactive: bool = False,
     model: str = "",
-    reporter: Reporter = STDIO_REPORTER,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> int:
     """Resume a paused or crashed session from its snapshot.
 
@@ -320,28 +253,28 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     Returns:
         The process exit code.
     """
-    repo = Path.cwd()
-    state = state_dir(repo)
-    if steer.strip() and (problem := steer_problem(steer)) is not None:
+    repo = pathlib.Path.cwd()
+    state = agent6_paths.state_dir(repo)
+    if steer.strip() and (problem := directive.steer_problem(steer)) is not None:
         reporter.error(f"--steer: {problem}")
         return 2
     # One resolver across buckets: a runs/-only fallback would pick a run over an ask.
     try:
-        layout = resolve_session(state, session_id)
-    except SessionIdError as exc:
+        layout = id.resolve_session(state, session_id)
+    except id.SessionIdError as exc:
         reporter.error(str(exc))
         return 2
     session_id = layout.session_id
     # The manifest first: clearing state before it would clobber a session resume refuses.
     try:
-        manifest = read_manifest(layout.session_dir)
+        manifest = sessions_manifest.read_manifest(layout.session_dir)
         # A `--model` set on the run replays unless this resume sets its own.
         recorded = manifest.models.replay_driver
-        route: str | ModelRoute | None = model or (
-            ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
+        route: str | kinds.ModelRoute | None = model or (
+            kinds.ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
         )
         mode = manifest.session_mode()
-    except ManifestError as exc:
+    except sessions_manifest.ManifestError as exc:
         reporter.error(f"cannot resume {session_id}: {exc}")
         return 2
     if manifest.fanout is not None:
@@ -366,22 +299,22 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         )
         return 2
     # One writer per session dir, taken before any shared state is touched.
-    worker_lock_fd = acquire_single_writer(layout.session_dir)
+    worker_lock_fd = lock.acquire_single_writer(layout.session_dir)
     if worker_lock_fd is None:
-        reporter.err(SINGLE_WRITER_BUSY.format(rid=session_id))
+        reporter.err(lock.SINGLE_WRITER_BUSY.format(rid=session_id))
         return 2
     # A finished run has nothing to continue without --steer; every other ending resumes.
-    new_work = finished_needs_new_work(layout.session_dir)
+    new_work = listing.finished_needs_new_work(layout.session_dir)
     if not steer.strip() and new_work:
-        reporter.refuse(needs_new_work_refusal(session_id))
-        release_single_writer(worker_lock_fd)
+        reporter.refuse(listing.needs_new_work_refusal(session_id))
+        lock.release_single_writer(worker_lock_fd)
         return 2
     # The prompt ids reset on resume, so stale answers go; markers since this start stay.
-    clear_pending_answers(layout.session_dir, started_at=started_at)
+    ipc.clear_pending_answers(layout.session_dir, started_at=started_at)
     # Seeded after the clear, which drops steer files.
-    if steer.strip() and not submit_steer(layout.session_dir, steer.strip()):
+    if steer.strip() and not ipc.submit_steer(layout.session_dir, steer.strip()):
         reporter.error("could not write the initial steer request")
-        release_single_writer(worker_lock_fd)
+        lock.release_single_writer(worker_lock_fd)
         return 2
 
     detach_requested = False
@@ -389,14 +322,14 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     cfg: Config | None = None  # the finally reads it for a detach
     repo_lock_fd: int | None = None
     try:
-        role = session_kind(mode).role
+        role = kinds.session_kind(mode).role
 
         if manifest.parked_task:
             # Nothing ever ran: run_task starts it fresh under the same id and takes both
             # locks itself, so ours is released first.
             try:
                 # replay_preset: a config-selected preset re-resolves rather than ranking as a flag.
-                effective = load_session_config(
+                effective = _setup.load_session_config(
                     repo,
                     config_path,
                     mode=mode,
@@ -410,10 +343,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 reporter.error(str(exc))
                 return 2
             saved_task = manifest.parked_task
-            release_single_writer(worker_lock_fd)
+            lock.release_single_writer(worker_lock_fd)
             worker_lock_fd = None
             handed_to_run_task = True
-            return run_task(
+            return run.run_task(
                 cfg,
                 saved_task,
                 frontend=frontend,
@@ -439,9 +372,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 
         # One run-mode worker per checkout; a fork's worktree never contends with the repo's.
         if mode == "run":
-            repo_lock_fd = acquire_repo_writer(state, cwd, session_id)
+            repo_lock_fd = lock.acquire_repo_writer(state, cwd, session_id)
             if repo_lock_fd is None:
-                holder = repo_writer_holder(state, cwd) or "another run"
+                holder = lock.repo_writer_holder(state, cwd) or "another run"
                 reporter.refuse(
                     f"run {holder!r} is already driving this checkout; a"
                     " second run-mode worker would interleave auto-commits on the"
@@ -458,12 +391,12 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         # An ask is read-only and may run outside a git repo, so it skips the git preflight.
         writes_code = mode != "ask"
         # The no-repo guard runs before any git-touching check.
-        if writes_code and not require_git_repo(cwd, reporter=reporter):
+        if writes_code and not preflight.require_git_repo(cwd, reporter=reporter):
             return 2
 
         # An unreadable or outdated snapshot refuses here, before anything is touched.
         try:
-            snapshot = load_session_snapshot(snapshot_path)
+            snapshot = _snapshot.load_session_snapshot(snapshot_path)
         except (ValueError, OSError) as exc:
             reporter.error(str(exc))
             return 1
@@ -481,7 +414,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 
         # A rewritten chain ref would leave the model reasoning about a changed record.
         mismatch = (
-            snapshot_head_mismatch(snapshot_path, cwd, chain_ref=chain_ref_for(session_id))
+            snapshot_head_mismatch(snapshot_path, cwd, chain_ref=git_ops.chain_ref_for(session_id))
             if writes_code
             else None
         )
@@ -497,7 +430,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 return 2
 
         try:
-            effective = load_session_config(
+            effective = _setup.load_session_config(
                 repo,
                 config_path,
                 mode=mode,
@@ -512,13 +445,15 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         cfg, explicit_leaves = effective.config, effective.explicit_leaves
 
         # Needs the config: the away grant is per scope, one per configured MCP server.
-        settle_away_mode(layout.session_dir, cfg)
+        app_frontend.settle_away_mode(layout.session_dir, cfg)
 
-        if not route_preflight(cfg, role, reporter=reporter, model_flag=route_text(route)):
+        if not preflight.route_preflight(
+            cfg, role, reporter=reporter, model_flag=_setup.route_text(route)
+        ):
             return 2
 
         try:
-            isolation = select_isolation(
+            isolation = _session.select_isolation(
                 cfg,
                 cwd=cwd,
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
@@ -526,59 +461,60 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 explicit_leaves=explicit_leaves,
                 worktree_git_dir=manifest.worktree_git_dir,
             )
-        except SessionRefusedError as refusal:
+        except preflight.SessionRefusedError as refusal:
             return refusal.rc
 
-        identity = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
+        identity = git_ops.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
         # The no-repo guard ran above.
         if writes_code:
             try:
-                verify_git_identity(cwd, identity)
-            except GitError as exc:
+                git_ops.verify_git_identity(cwd, identity)
+            except git_ops.GitError as exc:
                 reporter.error(str(exc))
                 return 2
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
-        events = EventSink(layout.logs_path)
+        events = agent6_events.EventSink(layout.logs_path)
         # The execution's one gate to the operator, whichever front-end answers.
-        prompts = OperatorPrompts(
+        prompts = operator_prompts.OperatorPrompts(
             approver=frontend.build_approver(layout.session_dir),
             questioner=frontend.build_questioner(layout.session_dir),
             journal=events.emit,
             session_dir=layout.session_dir,
         )
 
-        warn_install_inside_workspace(cwd, reporter=reporter)
-        for line in agents_md_notices(cwd):
+        _session.warn_install_inside_workspace(cwd, reporter=reporter)
+        for line in _context.agents_md_notices(cwd):
             reporter.note(line)
 
         tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
-        refusal = headless_approval_refusal(
+        refusal = preflight.headless_approval_refusal(
             cfg,
             tui_enabled=tui_enabled,
             # The raw env first, so a typo refuses here as on run; else the recorded choice.
-            away=os.environ.get("AGENT6_DETACHED_AWAY", "") or effective_away(layout.session_dir),
+            away=os.environ.get("AGENT6_DETACHED_AWAY", "")
+            or ipc.effective_away(layout.session_dir),
             can_ask=frontend.capabilities.can_ask,
-            clamped=session_kind(mode).clamps_commands,
+            clamped=kinds.session_kind(mode).clamps_commands,
         )
         if refusal is not None:
             reporter.refuse(refusal)
             return 2
-        parking = headless_parking_note(
+        parking = preflight.headless_parking_note(
             cfg,
             tui_enabled=tui_enabled,
-            away=effective_away(layout.session_dir),
+            away=ipc.effective_away(layout.session_dir),
             can_ask=frontend.capabilities.can_ask,
         )
         if parking is not None:
             reporter.note(parking)
 
-        def _gate(cfg: Config, _budget: BudgetTracker) -> Config:
+        def _gate(cfg: Config, _budget: budget.BudgetTracker) -> Config:
             # The run's resolved gate is reused, not re-inferred: the snapshot's, unless a
             # newer adopted or unadopted pin outranks it; config outranks both.
             pinned_origin, pinned_gate = "", ()
-            with contextlib.suppress(ManifestError, OSError):
-                pinned = read_manifest(layout.session_dir).harness
+            with contextlib.suppress(sessions_manifest.ManifestError, OSError):
+                pinned = sessions_manifest.read_manifest(layout.session_dir).harness
                 pinned_origin, pinned_gate = pinned.verify_origin, pinned.verify_command
             replay_gate = (
                 pinned_gate
@@ -591,20 +527,24 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 cfg = cfg.with_verify_command(replay_gate)
             # Dropped last when commands are withheld, so nothing hands the gate back.
             gate_before = cfg.harness.verify_command
-            cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
+            cfg = preflight.drop_gate_if_unrunnable(
+                cfg, session_dir=layout.session_dir, reporter=reporter
+            )
             # A withheld gate is neither a reuse nor a change.
             withheld = bool(gate_before) and not cfg.harness.verify_command
             if reused and not withheld:
-                reporter.note(f"reusing this run's verify command: {gate_text(replay_gate)}")
+                reporter.note(
+                    f"reusing this run's verify command: {preflight.gate_text(replay_gate)}"
+                )
             # The manifest says which gate this execution used.
             if tuple(pinned_gate) != cfg.harness.verify_command and not withheld:
                 # Both directions: the frozen system prompt names the old gate either way.
                 reporter.note(
                     "this run's verify gate changed:"
-                    f" was {gate_text(tuple(pinned_gate))},"
-                    f" now {gate_text(cfg.harness.verify_command)}"
+                    f" was {preflight.gate_text(tuple(pinned_gate))},"
+                    f" now {preflight.gate_text(cfg.harness.verify_command)}"
                 )
-            pin_gate(
+            app_manifest.pin_gate(
                 layout.session_dir,
                 cfg.harness.verify_command,
                 execution_gate_origin(
@@ -619,25 +559,25 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 
         def _undo_forker() -> tuple[str, str] | None:
             # Lazy: app.fork imports this module.
-            from agent6.app.undo import undo_fork  # noqa: PLC0415
+            from agent6.app import undo  # noqa: PLC0415  # noqa: PLC0415
 
-            return undo_fork(config_path, session_id, cwd=repo, reporter=reporter)
+            return undo.undo_fork(config_path, session_id, cwd=repo, reporter=reporter)
 
-        untracked_at_start = read_untracked_at_start(layout.session_dir)
+        untracked_at_start = sessions_layout.read_untracked_at_start(layout.session_dir)
         if mode == "run":
             # An untracked file the chain does not hold and no tool wrote arrived between
             # executions, so it is the operator's; a git failure refuses, since this decides
             # what the run may commit.
             try:
                 arrived = (
-                    untracked_paths(cwd)
+                    git_ops.untracked_paths(cwd)
                     - untracked_at_start
-                    - tree_paths(cwd, chain_ref_for(session_id))
+                    - git_ops.tree_paths(cwd, git_ops.chain_ref_for(session_id))
                     - _paths_the_run_wrote(layout.logs_path)
                 )
                 if arrived:
                     untracked_at_start = untracked_at_start | arrived
-                    write_untracked_at_start(layout.session_dir, untracked_at_start)
+                    sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
                     named = sorted(arrived)
                     shown = ", ".join(named[:4])
                     if len(named) > 4:
@@ -646,36 +586,36 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                         f"left out of this run's commits as yours: {shown} (arrived"
                         " between executions, unwritten by any tool of the run)"
                     )
-            except (GitError, OSError) as exc:
+            except (git_ops.GitError, OSError) as exc:
                 reporter.error(f"cannot tell the run's files from the operator's: {exc}")
                 return 2
         # Every preflight passed: the operator's new choices are recorded from here.
         if preset:
-            stamp_preset(layout.session_dir, preset)
-        if (flagged := flag_route(cfg, mode, model)) is not None:
-            stamp_model(layout.session_dir, flagged)
+            app_manifest.stamp_preset(layout.session_dir, preset)
+        if (flagged := _setup.flag_route(cfg, mode, model)) is not None:
+            app_manifest.stamp_model(layout.session_dir, flagged)
         if steer.strip():
             # A steer that is the work names the run, for a finished run or a fork still
             # carrying its source's task.
             if new_work:
-                stamp_task(layout.session_dir, steer.strip())
+                app_manifest.stamp_task(layout.session_dir, steer.strip())
             elif manifest.parent_session_id:
-                stamp_fork_task(
+                app_manifest.stamp_fork_task(
                     layout.session_dir,
                     steer.strip(),
                     source_dir=layout.session_dir.parent / manifest.parent_session_id,
                 )
         # Written once the preflight passed: a refused resume never had a live worker.
-        write_worker_pid(layout.session_dir, os.getpid())
+        ipc.write_worker_pid(layout.session_dir, os.getpid())
         # This execution's models and policy, for `agent6 exec` and the policy surfaces.
-        stamp_execution(layout.session_dir, cfg, mode, isolation)
+        app_manifest.stamp_execution(layout.session_dir, cfg, mode, isolation)
         if mode == "run":
             # The next auto-commit takes the previous execution's tail and any operator edit
             # since; the operator's untracked files stay out.
-            with contextlib.suppress(GitError, OSError):
-                dirty = chain_dirty_paths(
+            with contextlib.suppress(git_ops.GitError, OSError):
+                dirty = git_ops.chain_dirty_paths(
                     cwd,
-                    chain_ref_for(session_id),
+                    git_ops.chain_ref_for(session_id),
                     resume_base_sha,
                     5,
                     exclude=untracked_at_start,
@@ -686,10 +626,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                         f"the tree holds changes no commit has ({named});"
                         " this execution's next commit takes them"
                     )
-        end = run_execution(
+        end = _execution.run_execution(
             cfg,
             layout,
-            ExecutionInputs(
+            _execution.ExecutionInputs(
                 session_id=session_id,
                 mode=mode,
                 role=role,
@@ -729,18 +669,18 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             finally:
                 if not detach_requested and not handed_to_run_task:
                     # run_task's own teardown owns the pid when it ran.
-                    clear_worker_pid(layout.session_dir)
+                    ipc.clear_worker_pid(layout.session_dir)
         finally:
-            release_single_writer(repo_lock_fd)
-            release_single_writer(worker_lock_fd)
+            lock.release_single_writer(repo_lock_fd)
+            lock.release_single_writer(worker_lock_fd)
         if detach_requested and cfg is not None:
-            detach_to_background(
+            _execution.detach_to_background(
                 frontend=frontend,
                 cfg=cfg,
                 layout=layout,
                 cwd=repo,
-                flags=override_flags(
-                    budget_overrides, sandbox_overrides, flag_route(cfg, mode, route)
+                flags=_setup.override_flags(
+                    budget_overrides, sandbox_overrides, _setup.flag_route(cfg, mode, route)
                 ),
                 reporter=reporter,
             )

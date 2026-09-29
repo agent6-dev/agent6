@@ -19,12 +19,10 @@ import subprocess
 
 import pytest
 
-import agent6.app._execution as execution_mod
 import agent6.app._setup as setup_mod
-import agent6.app.preflight as preflight_mod
-import agent6.app.run as app_run_mod
 import agent6.ui.cli.run as run_mod
-from agent6 import git_ops
+from agent6 import git_ops, paths
+from agent6.app import _session
 from agent6.config import (
     Config,
     GitConfig,
@@ -34,6 +32,7 @@ from agent6.config import (
     SandboxConfig,
     layer,
 )
+from agent6.models import validate
 from agent6.sessions import layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts, schema
@@ -97,14 +96,14 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_po
         _seen_at_stop.append(git_ops.status(pathlib.Path.cwd()).modified_count == 0)
         raise _Stop
 
-    monkeypatch.setattr(setup_mod, "load_effective", _load_effective)
-    monkeypatch.setattr(preflight_mod, "apply_git_ops_policy", _noop)
-    monkeypatch.setattr(preflight_mod, "validate_configured_model", _model_ok)
-    monkeypatch.setattr(preflight_mod, "verify_git_identity", _noop)
+    monkeypatch.setattr(layer, "load_effective", _load_effective)
+    monkeypatch.setattr(setup_mod, "apply_git_ops_policy", _noop)
+    monkeypatch.setattr(validate, "validate_configured_model", _model_ok)
+    monkeypatch.setattr(git_ops, "verify_git_identity", _noop)
     if stop_after_policy:
         # The first step after the tree policy and the untracked snapshot: the
         # execution body's provider session.
-        monkeypatch.setattr(execution_mod, "build_session_providers", _stop)
+        monkeypatch.setattr(_session, "build_session_providers", _stop)
 
 
 def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[schema.UserQuestion]:
@@ -159,7 +158,7 @@ def test_untracked_files_are_not_dirt_and_are_recorded(
     err = capsys.readouterr().err
     assert "REFUSING" not in err and "PARKED" not in err
     assert (repo / "notes.txt").read_text(encoding="utf-8") == "mine\n"
-    (session_dir,) = _session_dirs(app_run_mod.state_dir(repo))
+    (session_dir,) = _session_dirs(paths.state_dir(repo))
     assert layout.read_untracked_at_start(session_dir) == {"notes.txt"}
     assert not sessions_manifest.read_manifest(session_dir).parked_task
 
@@ -184,7 +183,7 @@ def test_modified_tracked_files_refuse_when_nobody_can_answer(
     assert '[git].dirty_tree = "stash"' in err and '"include"' in err
     # The operator's edit is untouched and no session dir survives the refusal.
     assert (repo / "seed.txt").read_text(encoding="utf-8") == "edited\n"
-    assert _session_dirs(app_run_mod.state_dir(repo)) == []
+    assert _session_dirs(paths.state_dir(repo)) == []
 
 
 @pytest.mark.parametrize("answer", ["stash", "stash: set them aside", "STASH"])
@@ -212,7 +211,7 @@ def test_answer_stash_stashes_tracked_changes_only(
     assert (repo / "seed.txt").read_text(encoding="utf-8") == "edited\n"
     assert (repo / "notes.txt").read_text(encoding="utf-8") == "mine\n"
     assert _git(repo, "stash", "list") == ""
-    (session_dir,) = _session_dirs(app_run_mod.state_dir(repo))
+    (session_dir,) = _session_dirs(paths.state_dir(repo))
     assert layout.read_untracked_at_start(session_dir) == {"notes.txt"}
 
 
@@ -254,7 +253,7 @@ def test_answer_cancel_parks_the_run_with_its_task(
     assert rc == 2
     err = capsys.readouterr().err
     assert "PARKED: the working tree has uncommitted changes to tracked files" in err
-    (session_dir,) = _session_dirs(app_run_mod.state_dir(repo))
+    (session_dir,) = _session_dirs(paths.state_dir(repo))
     assert f"agent6 resume {session_dir.name}" in err
     manifest = sessions_manifest.read_manifest(session_dir)
     assert manifest.parked_task == "do a thing"
@@ -315,7 +314,7 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
     repo.mkdir()
     _init_repo(repo)
     monkeypatch.chdir(repo)
-    state = app_run_mod.state_dir(repo)
+    state = paths.state_dir(repo)
     prior = layout.bucket_dir(state, "runs") / "prior-run-AAAAAA"
     prior.mkdir(parents=True)
     (prior / "logs.jsonl").write_text('{"type": "session.start", "user_task": "t"}\n')

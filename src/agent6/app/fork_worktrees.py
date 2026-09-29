@@ -9,32 +9,18 @@ The dirt check before one is removed, the sessions that still own one, and the s
 from __future__ import annotations
 
 import contextlib
+import pathlib
 from collections.abc import Sequence
-from pathlib import Path
 
-from agent6.git_ops import (
-    GitError,
-    chain_dirty,
-    chain_dirty_paths,
-    chain_ref_for,
-    chain_tip,
-    merge_stamp_holds,
-    remove_worktree,
-)
-from agent6.paths import state_dir
-from agent6.sessions.ipc import worker_is_alive
-from agent6.sessions.lock import (
-    checkout_lock_path,
-)
-from agent6.sessions.manifest import (
-    ManifestError,
-    SessionManifest,
-    read_manifest,
-)
+from agent6 import git_ops, paths
+from agent6.sessions import ipc, lock
+from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import session_dirs
 
 
-def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> tuple[bool, str]:
+def remove_fork_worktree(
+    repo: pathlib.Path, worktree: pathlib.Path, tips: tuple[str, ...]
+) -> tuple[bool, str]:
     """Delete a fork's worktree and its checkout lock unless it holds unlanded work.
 
     The dirt check is git's own rule for `worktree remove`: a merged fork's tree can still
@@ -51,8 +37,8 @@ def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> t
     dirt = uncommitted_in_worktree(worktree, tips)
     if dirt:
         return False, dirt
-    lock_path = checkout_lock_path(state_dir(worktree), worktree)
-    if not remove_worktree(repo, worktree):
+    lock_path = lock.checkout_lock_path(paths.state_dir(worktree), worktree)
+    if not git_ops.remove_worktree(repo, worktree):
         return False, (
             "could not be removed: not a linked worktree of this repository,"
             " or a file in it would not delete"
@@ -61,7 +47,7 @@ def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> t
     return True, ""
 
 
-def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:
+def uncommitted_in_worktree(worktree: pathlib.Path, tips: tuple[str, ...]) -> str:
     """Return what the worktree holds that none of the tips does, as one phrase.
 
     A fork's worktree stays detached at its fork point while its run commits to the chain,
@@ -80,10 +66,10 @@ def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:
     tips = tips or ("HEAD",)
     try:
         for tip in tips:
-            if not chain_dirty(worktree, tip, None):
+            if not git_ops.chain_dirty(worktree, tip, None):
                 return ""
-        held = chain_dirty_paths(worktree, tips[-1], None, 5)
-    except (GitError, OSError):
+        held = git_ops.chain_dirty_paths(worktree, tips[-1], None, 5)
+    except (git_ops.GitError, OSError):
         # git runs with cwd=worktree, so a directory that vanished is an OSError: not dirt.
         return ""
     if not held:
@@ -92,47 +78,55 @@ def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:
     return f"holds work no commit has: {named}"
 
 
-def worktree_owners(state_dir: Path) -> dict[Path, list[tuple[Path, SessionManifest]]]:
+def worktree_owners(
+    state_dir: pathlib.Path,
+) -> dict[pathlib.Path, list[tuple[pathlib.Path, sessions_manifest.SessionManifest]]]:
     """Return every worktree a session manifest names, with the sessions naming it.
 
     The manifests are the only record of which directories are agent6's: a path no manifest
     names is never touched. An `/undo` fork shares its source's worktree.
     """
-    owners: dict[Path, list[tuple[Path, SessionManifest]]] = {}
+    owners: dict[pathlib.Path, list[tuple[pathlib.Path, sessions_manifest.SessionManifest]]] = {}
     for session_dir in session_dirs(state_dir):
-        with contextlib.suppress(ManifestError):
-            manifest = read_manifest(session_dir)
+        with contextlib.suppress(sessions_manifest.ManifestError):
+            manifest = sessions_manifest.read_manifest(session_dir)
             if manifest.worktree is not None:
                 owners.setdefault(manifest.worktree, []).append((session_dir, manifest))
     return owners
 
 
-def _still_needs_worktree(repo: Path, session_dir: Path, manifest: SessionManifest) -> str:
+def _still_needs_worktree(
+    repo: pathlib.Path, session_dir: pathlib.Path, manifest: sessions_manifest.SessionManifest
+) -> str:
     """Return why the session still needs its worktree ("live", "unmerged"), or "".
 
     The merge stamp is the test of "merged": the branch still points where the merge left it.
     """
-    if worker_is_alive(session_dir):
+    if ipc.worker_is_alive(session_dir):
         return "live"
-    merged = manifest.merged is not None and merge_stamp_holds(
+    merged = manifest.merged is not None and git_ops.merge_stamp_holds(
         repo, session_dir.name, manifest.run_branch or "", manifest.merged.tip
     )
     return "" if merged else "unmerged"
 
 
-def _landed_tips(repo: Path, sessions: Sequence[tuple[Path, SessionManifest]]) -> tuple[str, ...]:
+def _landed_tips(
+    repo: pathlib.Path, sessions: Sequence[tuple[pathlib.Path, sessions_manifest.SessionManifest]]
+) -> tuple[str, ...]:
     """Return the commits the sessions landed: each chain tip, else its merge stamp's tip.
 
     `--delete-squashed` deletes the ref in the same sweep, and the commit outlives it.
     """
     tips = (
-        chain_tip(repo, chain_ref_for(d.name)) or (m.merged.tip if m.merged else "")
+        git_ops.chain_tip(repo, git_ops.chain_ref_for(d.name)) or (m.merged.tip if m.merged else "")
         for d, m in sessions
     )
     return tuple(tip for tip in tips if tip)
 
 
-def sweep_fork_worktrees(repo: Path, state: Path) -> tuple[list[str], list[tuple[str, str]]]:
+def sweep_fork_worktrees(
+    repo: pathlib.Path, state: pathlib.Path
+) -> tuple[list[str], list[tuple[str, str]]]:
     """Remove every fork worktree whose sessions all landed their work; keep the rest.
 
     Args:

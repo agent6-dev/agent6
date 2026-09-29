@@ -8,18 +8,14 @@ state's log is that state's running total.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from pathlib import Path
+import datetime
+import pathlib
 
 from agent6.machine import AttemptSpend, MachineJournal, StepEvent
-from agent6.viewmodel.machine_state import (
-    newest_state_log,
-    read_budget_totals,
-    state_dir_seq,
-)
+from agent6.viewmodel import machine_state
 
 
-def book_crashed_attempt(journal: MachineJournal, root: Path) -> None:
+def book_crashed_attempt(journal: MachineJournal, root: pathlib.Path) -> None:
     """Journal an `AttemptSpend` for an orphaned state log and retire the log dir.
 
     A supervisor death mid-state leaves provider spend recorded only in the per-state log;
@@ -31,10 +27,10 @@ def book_crashed_attempt(journal: MachineJournal, root: Path) -> None:
         journal: The machine's journal.
         root: The machine instance's directory.
     """
-    newest = newest_state_log(root)
+    newest = machine_state.newest_state_log(root)
     if newest is None:
         return
-    seq = state_dir_seq(newest.parent.name)
+    seq = machine_state.state_dir_seq(newest.parent.name)
     if seq is None:
         return
     if any(isinstance(e, StepEvent) and e.seq == seq for e in journal.read()):
@@ -42,10 +38,10 @@ def book_crashed_attempt(journal: MachineJournal, root: Path) -> None:
     state = newest.parent.name.split("-", 1)[-1]
     # Rename first: the seq does not advance across a crash, so a seq-derived name collides.
     # A crash between the rename and the append loses one booking, never duplicates one.
-    ts = datetime.now(UTC).isoformat(timespec="microseconds")
+    ts = datetime.datetime.now(datetime.UTC).isoformat(timespec="microseconds")
     retired = newest.parent.with_name(f"crashed-{ts.replace(':', '')}-{newest.parent.name}")
     newest.parent.rename(retired)
-    spend = read_budget_totals(retired / newest.name)
+    spend = machine_state.read_budget_totals(retired / newest.name)
     if spend.usd or spend.input_tokens or spend.output_tokens:
         journal.append(
             AttemptSpend(

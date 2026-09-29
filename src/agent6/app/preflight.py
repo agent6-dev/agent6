@@ -10,48 +10,22 @@ injected by the front-end.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
+import pathlib
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
-from agent6.app._setup import apply_git_ops_policy, check_provider_keys
-from agent6.app.providers import (
-    InstrumentedProvider,
-    build_role_provider,
-)
-from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.budget import BudgetTracker
+from agent6 import budget as agent6_budget
+from agent6 import events as agent6_events
+from agent6 import git_ops, kinds, verify_infer
+from agent6.app import _setup, providers
+from agent6.app import reporter as app_reporter
 from agent6.config import Config, parse_seat_spec, plan_metered
-from agent6.events import EventSink
-from agent6.git_ops import (
-    CommitIdentity,
-    GitError,
-    chain_ref_for,
-    chain_tip,
-    is_git_repo,
-    run_branch_for,
-    verify_git_identity,
-    worktree_matches,
-)
-from agent6.git_ops import (
-    status as git_status,
-)
-from agent6.kinds import RoleName
-from agent6.models.pricing import lookup_price
-from agent6.models.validate import (
-    configured_model_refusal,
-    flag_model_refusal,
-    validate_configured_model,
-    warning_message,
-)
+from agent6.models import pricing, validate
 from agent6.providers import TranscriptSink
-from agent6.sessions.ipc import AWAY_MODES, effective_run_commands
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.tools.schema import UserQuestion
-from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command, read_agents_md
-from agent6.viewmodel.format import clip_cell
-from agent6.viewmodel.listing import session_dirs
+from agent6.sessions import ipc, manifest
+from agent6.tools import schema
+from agent6.viewmodel import format, listing
 
 
 class SessionRefusedError(Exception):
@@ -70,7 +44,7 @@ def budget_preflight(
     cfg: Config,
     extra_routes: Iterable[tuple[str, str]] = (),
     *,
-    reporter: Reporter = STDIO_REPORTER,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> str | None:
     """Judge the budget config against every statically reachable model, before any spend.
 
@@ -105,8 +79,8 @@ def budget_preflight(
             f"{'s' if len(plan_models) == 1 else ''} through a subscription plan."
             " Raise max_percent or reroute those roles."
         )
-    unpriced = sorted({m for prov, m in metered if lookup_price(m, prov) is None})
-    priced = sorted({m for prov, m in metered if lookup_price(m, prov) is not None})
+    unpriced = sorted({m for prov, m in metered if pricing.lookup_price(m, prov) is None})
+    priced = sorted({m for prov, m in metered if pricing.lookup_price(m, prov) is not None})
     if cfg.budget.max_tokens_fallback == 0 and unpriced:
         return (
             "[budget].max_tokens_fallback is 0 (unmetered calls refused), but "
@@ -144,7 +118,9 @@ def budget_preflight(
     return None
 
 
-def warn_if_prompt_override_incomplete(cfg: Config, *, reporter: Reporter = STDIO_REPORTER) -> None:
+def warn_if_prompt_override_incomplete(
+    cfg: Config, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
+) -> None:
     """Warn when a custom `prompt.system_prompt_file` omits a core tool contract.
 
     `finish_session` is the only clean exit and an edit primitive is needed to do
@@ -158,7 +134,7 @@ def warn_if_prompt_override_incomplete(cfg: Config, *, reporter: Reporter = STDI
     if not path:
         return
     try:
-        text = Path(path).expanduser().read_text(encoding="utf-8")
+        text = pathlib.Path(path).expanduser().read_text(encoding="utf-8")
     except OSError:
         return  # config validation enforces existence
     missing = [t for t in ("finish_session",) if t not in text]
@@ -180,7 +156,7 @@ def warn_if_prompt_override_incomplete(cfg: Config, *, reporter: Reporter = STDI
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class GitPreflight:
     """Where the run starts.
 
@@ -194,12 +170,12 @@ class GitPreflight:
 
 
 def git_preflight(
-    cwd: Path,
+    cwd: pathlib.Path,
     cfg: Config,
     mode: str,
     *,
     confirm_run_on_run_branch: Callable[[str], bool],
-    reporter: Reporter,
+    reporter: app_reporter.Reporter,
 ) -> GitPreflight:
     """Run the git checks a session needs before it creates anything.
 
@@ -219,16 +195,16 @@ def git_preflight(
     Raises:
         SessionRefusedError: A check refused; the refusal is already reported.
     """
-    apply_git_ops_policy(cfg)
-    identity = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
+    _setup.apply_git_ops_policy(cfg)
+    identity = git_ops.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
     # ask is read-only and may run outside a git repo.
     if mode == "ask":
         return GitPreflight(base_sha="", base_branch="")
     try:
-        verify_git_identity(cwd, identity)
+        git_ops.verify_git_identity(cwd, identity)
         # Captured before a run branch exists: `sessions diff` needs the start point.
-        pre_status = git_status(cwd)
-    except GitError as exc:
+        pre_status = git_ops.status(cwd)
+    except git_ops.GitError as exc:
         reporter.error(str(exc))
         raise SessionRefusedError(2) from exc
     # A run started on another run's branch piles onto unmerged work: confirm first.
@@ -250,7 +226,7 @@ DIRTY_TREE_OPTIONS: tuple[str, ...] = ("stash", "include", "cancel")
 
 
 def unmerged_run_holding_the_tree(
-    cwd: Path, state_dir: Path, *, except_id: str, modified: Sequence[str]
+    cwd: pathlib.Path, state_dir: pathlib.Path, *, except_id: str, modified: Sequence[str]
 ) -> str:
     """Find the unmerged run whose chain tip holds the working tree's modified files.
 
@@ -269,19 +245,19 @@ def unmerged_run_holding_the_tree(
     """
     if not modified:
         return ""
-    for d in session_dirs(state_dir, buckets=("runs",))[:10]:
+    for d in listing.session_dirs(state_dir, buckets=("runs",))[:10]:
         if d.name == except_id:
             continue
-        with contextlib.suppress(ManifestError):
-            if read_manifest(d).merged is not None:
+        with contextlib.suppress(manifest.ManifestError):
+            if manifest.read_manifest(d).merged is not None:
                 continue
-        tip = chain_tip(cwd, chain_ref_for(d.name))
+        tip = git_ops.chain_tip(cwd, git_ops.chain_ref_for(d.name))
         if tip is None:
             continue
         try:
-            if worktree_matches(cwd, tip, modified):
+            if git_ops.worktree_matches(cwd, tip, modified):
                 return d.name
-        except GitError:
+        except git_ops.GitError:
             return ""
     return ""
 
@@ -291,7 +267,7 @@ def _dirty_tree_listing(paths: Sequence[str], *, cap: int = 10, unmerged_run: st
     n = len(paths)
     head = f"{n} tracked {'file has' if n == 1 else 'files have'} uncommitted changes"
     head += (
-        f" (the unmerged work of run {unmerged_run}, on {run_branch_for(unmerged_run)}):"
+        f" (the unmerged work of run {unmerged_run}, on {git_ops.run_branch_for(unmerged_run)}):"
         if unmerged_run
         else ":"
     )
@@ -301,7 +277,7 @@ def _dirty_tree_listing(paths: Sequence[str], *, cap: int = 10, unmerged_run: st
     return "\n".join([head, *lines])
 
 
-def dirty_tree_question(paths: Sequence[str], *, unmerged_run: str = "") -> UserQuestion:
+def dirty_tree_question(paths: Sequence[str], *, unmerged_run: str = "") -> schema.UserQuestion:
     """Build the start question a run with uncommitted tracked changes asks.
 
     Args:
@@ -316,7 +292,7 @@ def dirty_tree_question(paths: Sequence[str], *, unmerged_run: str = "") -> User
         if unmerged_run
         else "cancel: park the run; resume it once they are committed or stashed"
     )
-    return UserQuestion(
+    return schema.UserQuestion(
         question=(
             f"{_dirty_tree_listing(paths, unmerged_run=unmerged_run)}\n"
             "How should this run treat them?\n"
@@ -369,7 +345,7 @@ def dirty_tree_refusal(paths: Sequence[str], *, unmerged_run: str = "") -> str:
     )
 
 
-def git_repo_refusal(cwd: Path) -> str | None:
+def git_repo_refusal(cwd: pathlib.Path) -> str | None:
     """Refuse a workspace that is not a git repository, naming the fix.
 
     This is also the wall on the model's workspace: the run's directory is what the
@@ -384,7 +360,7 @@ def git_repo_refusal(cwd: Path) -> str | None:
     if not cwd.is_dir():
         # git cannot chdir into a missing directory; the error would read as internal.
         return f"{cwd} is not a directory."
-    if is_git_repo(cwd):
+    if git_ops.is_git_repo(cwd):
         return None
     return (
         f"{cwd} is not a git repository.\n"
@@ -395,7 +371,9 @@ def git_repo_refusal(cwd: Path) -> str | None:
     )
 
 
-def require_git_repo(cwd: Path, *, reporter: Reporter = STDIO_REPORTER) -> bool:
+def require_git_repo(
+    cwd: pathlib.Path, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
+) -> bool:
     """Report the git-repository refusal, if any.
 
     Args:
@@ -433,11 +411,11 @@ def headless_approval_refusal(
     Returns:
         The refusal, or None when approval is answerable.
     """
-    if away and away not in AWAY_MODES:
+    if away and away not in ipc.AWAY_MODES:
         return (
             f"AGENT6_DETACHED_AWAY={away!r} is not an away-mode, so an absent operator's"
             " intent is unknown and an approval would wait forever.\n"
-            f"  - set AGENT6_DETACHED_AWAY={'|'.join(AWAY_MODES)}"
+            f"  - set AGENT6_DETACHED_AWAY={'|'.join(ipc.AWAY_MODES)}"
         )
     if cfg.sandbox.run_commands != "ask":
         return None
@@ -454,7 +432,8 @@ def headless_approval_refusal(
         f" TUI and no away-mode. Every command{gate} would wait forever.\n"
         f"  - unattended: {unattended}, or 'no' to withhold commands entirely\n"
         "  - attended: start it from a terminal, or set an away-mode"
-        f" (AGENT6_DETACHED_AWAY={'|'.join(AWAY_MODES)}) so an absent operator's intent is known"
+        f" (AGENT6_DETACHED_AWAY={'|'.join(ipc.AWAY_MODES)}) so an absent operator's "
+        "intent is known"
     )
 
 
@@ -486,7 +465,7 @@ def headless_parking_note(
 
 
 def route_preflight(
-    cfg: Config, role: RoleName, *, reporter: Reporter, model_flag: str = ""
+    cfg: Config, role: kinds.RoleName, *, reporter: app_reporter.Reporter, model_flag: str = ""
 ) -> bool:
     """Check the run's model route before any state exists.
 
@@ -504,20 +483,20 @@ def route_preflight(
     Returns:
         Whether the route can run.
     """
-    missing = check_provider_keys(cfg)
+    missing = _setup.check_provider_keys(cfg)
     if missing is not None:
         reporter.err(missing)
         return False
-    verdict = validate_configured_model(cfg, role)
+    verdict = validate.validate_configured_model(cfg, role)
     if verdict.refused:
         if model_flag:
-            reporter.refuse(flag_model_refusal(verdict, cfg, role, model_flag))
+            reporter.refuse(validate.flag_model_refusal(verdict, cfg, role, model_flag))
             return False
         # Name the entry the operator wrote, not the role that fell back to it.
-        reporter.refuse(configured_model_refusal(verdict, cfg.models.source_role(role)))
+        reporter.refuse(validate.configured_model_refusal(verdict, cfg.models.source_role(role)))
         return False
     if verdict.warned:
-        reporter.warn(warning_message(verdict))
+        reporter.warn(validate.warning_message(verdict))
     return True
 
 
@@ -534,10 +513,12 @@ def gate_text(argv: tuple[str, ...]) -> str:
     Returns:
         The clipped command line, or "none".
     """
-    return clip_cell(" ".join(argv), GATE_TEXT_WIDTH) or "none"
+    return format.clip_cell(" ".join(argv), GATE_TEXT_WIDTH) or "none"
 
 
-def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporter) -> Config:
+def drop_gate_if_unrunnable(
+    cfg: Config, *, session_dir: pathlib.Path, reporter: app_reporter.Reporter
+) -> Config:
     """Empty the verify command when this execution cannot run one.
 
     Every command tool is withheld when the effective policy is `no`, and the gate is
@@ -554,7 +535,7 @@ def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporte
     Returns:
         The config, gateless when commands are withheld.
     """
-    if effective_run_commands(cfg.sandbox.run_commands, session_dir) != "no":
+    if ipc.effective_run_commands(cfg.sandbox.run_commands, session_dir) != "no":
         return cfg
     if cfg.harness.verify_command:
         reporter.note(
@@ -567,13 +548,13 @@ def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporte
 
 def infer_verify_if_unset(
     cfg: Config,
-    cwd: Path,
+    cwd: pathlib.Path,
     *,
     mode: str,
-    events: EventSink,
+    events: agent6_events.EventSink,
     transcript_sink: TranscriptSink,
-    budget: BudgetTracker,
-    reporter: Reporter = STDIO_REPORTER,
+    budget: agent6_budget.BudgetTracker,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> Config:
     """Infer a verify command for a run or plan whose config sets none.
 
@@ -605,12 +586,14 @@ def infer_verify_if_unset(
                 " (per-step commits, no green gate; nothing is inferred or adopted)."
             )
         return cfg
-    agents_md = read_agents_md(cwd)
+    agents_md = verify_infer.read_agents_md(cwd)
 
     def _llm_call(context: str) -> str:
-        inner = build_role_provider(cfg, "reviewer", transcript_sink=transcript_sink, budget=budget)
+        inner = providers.build_role_provider(
+            cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
+        )
         rm = cfg.models.resolve("reviewer")
-        provider = InstrumentedProvider(
+        provider = providers.InstrumentedProvider(
             inner=inner,
             role="verify_inferer",
             model=rm.model if rm else "",
@@ -619,7 +602,7 @@ def infer_verify_if_unset(
             budget=budget,
         )
         resp = provider.call(
-            system=VERIFY_INFER_SYSTEM_PROMPT,
+            system=verify_infer.VERIFY_INFER_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": context}],
             tools=[],
             max_tokens=512,
@@ -627,7 +610,7 @@ def infer_verify_if_unset(
         )
         return resp.text or ""
 
-    inferred = infer_verify_command(cwd, agents_md, llm_call=_llm_call)
+    inferred = verify_infer.infer_verify_command(cwd, agents_md, llm_call=_llm_call)
     if inferred is None:
         events.emit("loop.verify_inferred", command=[], source="none")
         if mode == "run":

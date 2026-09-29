@@ -10,8 +10,8 @@ the bundle is never read by a tool on an isolation level that cannot read-only b
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+import dataclasses
+import pathlib
 
 from agent6.machine import MachineError, MachineSpec, ToolState, load_machine, validate_semantics
 
@@ -25,13 +25,13 @@ def _bundle_script_ref(element: str) -> str | None:
     cleaned = element[2:] if element.startswith("./") else element
     if not cleaned or cleaned.startswith("/"):
         return None
-    parts = Path(cleaned).parts
+    parts = pathlib.Path(cleaned).parts
     if parts and parts[0] == "scripts":
         return cleaned
     return None
 
 
-def _check_scripts_dir(scripts_dir: Path, bundle: Path) -> list[str]:
+def _check_scripts_dir(scripts_dir: pathlib.Path, bundle: pathlib.Path) -> list[str]:
     """Return a problem per entry under `scripts/` that does not resolve inside the bundle."""
     if not scripts_dir.is_dir():
         return ["bundle 'scripts' exists but is not a directory"]
@@ -50,7 +50,7 @@ def _check_scripts_dir(scripts_dir: Path, bundle: Path) -> list[str]:
     return problems
 
 
-def _check_command_scripts(name: str, state: ToolState, bundle: Path) -> list[str]:
+def _check_command_scripts(name: str, state: ToolState, bundle: pathlib.Path) -> list[str]:
     """Return a problem per static command element whose script is missing or escapes."""
     problems: list[str] = []
     for element in state.command:
@@ -72,7 +72,7 @@ def _check_command_scripts(name: str, state: ToolState, bundle: Path) -> list[st
     return problems
 
 
-def validate_bundle(spec: MachineSpec, machine_path: Path) -> list[str]:
+def validate_bundle(spec: MachineSpec, machine_path: pathlib.Path) -> list[str]:
     """Validate the script bundle beside a machine file.
 
     Args:
@@ -96,7 +96,7 @@ def validate_bundle(spec: MachineSpec, machine_path: Path) -> list[str]:
     return problems
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MachineFileSummary:
     """Hold one authored file's columns for a machines listing.
 
@@ -111,7 +111,7 @@ class MachineFileSummary:
     spec: str
 
 
-def summarize_machine_file(path: Path) -> MachineFileSummary:
+def summarize_machine_file(path: pathlib.Path) -> MachineFileSummary:
     """Summarize whether a machine file checks out, as `machine check` and `run` judge it.
 
     The verdict word is "valid", never "ok" (a machine run's terminal status). A file that does

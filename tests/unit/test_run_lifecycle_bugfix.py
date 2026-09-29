@@ -16,9 +16,8 @@ from typing import Any
 import pytest
 
 import agent6.app._session as session_mod
-import agent6.app.resume as resume_mod
-import agent6.app.run as run_mod
 from agent6 import budget, paths
+from agent6.app import providers
 from agent6.providers import ProviderResponse
 from agent6.ui.cli import cli_main
 
@@ -147,8 +146,8 @@ def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
     sp.run(["git", "add", "a.py"], cwd=repo, check=True)
     sp.run(["git", "commit", "-q", "-m", "seed"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
-    monkeypatch.setattr(run_mod, "select_isolation", _none_isolation)
-    monkeypatch.setattr(resume_mod, "select_isolation", _none_isolation)
+    monkeypatch.setattr(session_mod, "select_isolation", _none_isolation)
+    monkeypatch.setattr(session_mod, "select_isolation", _none_isolation)
     return repo
 
 
@@ -182,7 +181,7 @@ def test_a_failed_first_start_keeps_the_parked_task(
     def _interrupt(*_a: object, **_k: object) -> object:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(session_mod, "build_role_provider", _interrupt)
+    monkeypatch.setattr(providers, "build_role_provider", _interrupt)
     assert cli_main(["resume", "pin-PARK01"]) == 130
     capsys.readouterr()
     assert json.loads((sd / "manifest.json").read_text())["parked_task"] == (
@@ -193,7 +192,7 @@ def test_a_failed_first_start_keeps_the_parked_task(
     assert "parked" in capsys.readouterr().out
 
     prov = _Scripted([_edit("z.txt", "1\n"), _finish("done at last")])
-    monkeypatch.setattr(session_mod, "build_role_provider", _use(prov))
+    monkeypatch.setattr(providers, "build_role_provider", _use(prov))
     assert cli_main(["resume", "pin-PARK01"]) == 0
     assert (repo / "z.txt").exists()
     assert not json.loads((sd / "manifest.json").read_text())["parked_task"]
@@ -258,7 +257,7 @@ def test_a_execution_discards_a_stop_it_never_honored(
             ipc.request_stop(sd)
 
     prov = _Scripted([_edit("a.txt", "1\n"), _finish("done")], before_call=_stop_on_finish)
-    monkeypatch.setattr(session_mod, "build_role_provider", _use(prov))
+    monkeypatch.setattr(providers, "build_role_provider", _use(prov))
     assert cli_main(["run", "--session-id", "pin-STOP01", "task"]) == 0
     capsys.readouterr()
     assert not ipc.stop_request_pending(sd), (
@@ -279,7 +278,7 @@ def test_a_resumed_plan_execution_makes_no_commit_notes(
 
     repo = _setup(tmp_path, monkeypatch)
     prov = _Scripted([_plan("# Plan: p\n\n1. one\n")])
-    monkeypatch.setattr(session_mod, "build_role_provider", _use(prov))
+    monkeypatch.setattr(providers, "build_role_provider", _use(prov))
     assert cli_main(["plan", "--session-id", "p-PLAN01", "figure it out"]) == 0
     capsys.readouterr()
 
@@ -287,7 +286,7 @@ def test_a_resumed_plan_execution_makes_no_commit_notes(
     (repo / "scratch.md").write_text("notes\n", encoding="utf-8")  # untracked
 
     prov2 = _Scripted([_plan("# Plan: p\n\n1. one\n2. two\n")])
-    monkeypatch.setattr(session_mod, "build_role_provider", _use(prov2))
+    monkeypatch.setattr(providers, "build_role_provider", _use(prov2))
     assert cli_main(["resume", "p-PLAN01", "--steer", "add a step"]) == 0
     err = capsys.readouterr().err
     assert "commit" not in err
@@ -310,10 +309,10 @@ def test_an_ask_out_of_budget_exits_three(
         raise budget.BudgetExceededError("USD budget exhausted")
 
     prov = _Scripted([("an answer", ())], before_call=_raise)
-    monkeypatch.setattr(session_mod, "build_role_provider", _use(prov))
+    monkeypatch.setattr(providers, "build_role_provider", _use(prov))
     assert cli_main(["ask", "query", "why is the sky blue?"]) == 3
     capsys.readouterr()
 
     prov2 = _Scripted([("the sky is blue", ())])
-    monkeypatch.setattr(session_mod, "build_role_provider", _use(prov2))
+    monkeypatch.setattr(providers, "build_role_provider", _use(prov2))
     assert cli_main(["ask", "query", "why is the sky blue?"]) == 0

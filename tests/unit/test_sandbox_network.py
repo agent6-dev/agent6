@@ -14,12 +14,14 @@ from typing import Any
 import pytest
 
 from agent6 import git_ops, kinds
-from agent6.app import confine, machine_agent
+from agent6.app import confine, machine_agent, providers
 from agent6.app.machine import (
     machine_network_refusal,
 )
 from agent6.config import Config, validate_config
+from agent6.harness import loop as harness_loop
 from agent6.machine import AgentRequest, spec
+from agent6.tools import dispatch
 
 
 def _cfg(network: str = "session") -> Config:
@@ -134,10 +136,10 @@ def test_run_one_returns_finish_payload(
     def _fake(*_a: object, **_k: object) -> object:
         return object()
 
-    monkeypatch.setattr(machine_agent, "Harness", _FakeWf)
-    monkeypatch.setattr(machine_agent, "build_role_provider", _fake)
-    monkeypatch.setattr(machine_agent, "reviewer_seat_provider", _fake)
-    monkeypatch.setattr(machine_agent, "ToolDispatcher", _fake)
+    monkeypatch.setattr(harness_loop, "Harness", _FakeWf)
+    monkeypatch.setattr(providers, "build_role_provider", _fake)
+    monkeypatch.setattr(providers, "reviewer_seat_provider", _fake)
+    monkeypatch.setattr(dispatch, "ToolDispatcher", _fake)
 
     req = machine_agent.MachineAgentRequest(
         cwd=iso,
@@ -179,10 +181,10 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     def _prov(*_a: object, **_k: object) -> object:
         return object()
 
-    monkeypatch.setattr(machine_agent, "Harness", _FakeWf)
-    monkeypatch.setattr(machine_agent, "build_role_provider", _prov)
-    monkeypatch.setattr(machine_agent, "reviewer_seat_provider", _prov)
-    monkeypatch.setattr(machine_agent, "ToolDispatcher", _disp)
+    monkeypatch.setattr(harness_loop, "Harness", _FakeWf)
+    monkeypatch.setattr(providers, "build_role_provider", _prov)
+    monkeypatch.setattr(providers, "reviewer_seat_provider", _prov)
+    monkeypatch.setattr(dispatch, "ToolDispatcher", _disp)
     return captured
 
 

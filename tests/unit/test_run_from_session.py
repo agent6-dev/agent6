@@ -12,8 +12,8 @@ from typing import Any
 import pytest
 
 import agent6.app._session as session_mod
-import agent6.app.run as run_mod
 from agent6 import paths
+from agent6.app import providers
 from agent6.providers import ProviderResponse
 from agent6.ui.cli import cli_main
 
@@ -99,8 +99,8 @@ def _setup(
     def fake_provider(*_args: Any, **_kwargs: Any) -> _Finisher:
         return provider
 
-    monkeypatch.setattr(run_mod, "select_isolation", no_isolation)
-    monkeypatch.setattr(session_mod, "build_role_provider", fake_provider)
+    monkeypatch.setattr(session_mod, "select_isolation", no_isolation)
+    monkeypatch.setattr(providers, "build_role_provider", fake_provider)
     return repo, provider
 
 

@@ -15,71 +15,32 @@ undone session's checkout, put back to the checkpoint's tree.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as _dt
 import json
+import pathlib
 import shutil
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-from agent6.app._setup import SandboxOverrides, detect_env, session_config
-from agent6.app.fork_worktrees import remove_fork_worktree
-from agent6.app.manifest import write_session_manifest
-from agent6.app.parallel import subordinate_workdir_root
-from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.app.resume import resumable_bucket_dirs
-from agent6.config import Config, ConfigError
-from agent6.config.layer import load_effective
-from agent6.git_ops import (
-    GitError,
-    add_worktree,
-    chain_ref_for,
-    create_branch_at,
-    git_common_dir,
-    run_branch_for,
-    set_ref,
-    untracked_paths,
-)
-from agent6.graph.replay import graph_at_version, journal_prefix
-from agent6.graph.storage import (
-    append_jsonl,
-    flock,
-    list_checkpoint_turns,
-    load_graph,
-    read_cursor,
-    write_cursor,
-    write_node,
-)
-from agent6.harness._snapshot import load_session_snapshot
-from agent6.kinds import ModelRoute, ResumableMode, session_bucket, session_kind
-from agent6.paths import state_dir
-from agent6.portable import atomic_write
-from agent6.sandbox.detect import resolve_isolation
-from agent6.sessions.id import (
-    SessionIdError,
-    resolve_session,
-    session_id_bucket,
-    unused_session_id,
-    validate_explicit_session_id,
-)
-from agent6.sessions.layout import (
-    SessionLayout,
-    read_untracked_at_start,
-    write_untracked_at_start,
-)
-from agent6.sessions.manifest import (
-    ManifestError,
-    model_git_refusal,
-    read_manifest,
-)
+from agent6 import git_ops, kinds, paths, portable
+from agent6.app import _setup, fork_worktrees, manifest, parallel, resume
+from agent6.app import reporter as app_reporter
+from agent6.config import Config, ConfigError, layer
+from agent6.graph import replay, storage
+from agent6.harness import _snapshot
+from agent6.sandbox import detect
+from agent6.sessions import id, layout
+from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import newest_session_dir
 
 # The DAG artifacts copied verbatim when there is no version to rebuild at.
 _DAG_ARTIFACTS: tuple[str, ...] = ("graph", "graph.jsonl", "cursor.json")
 
 
-def resolve_source(state_dir: Path, query: str, *, reporter: Reporter) -> SessionLayout | None:
+def resolve_source(
+    state_dir: pathlib.Path, query: str, *, reporter: app_reporter.Reporter
+) -> layout.SessionLayout | None:
     """Resolve the session to fork, across every resumable bucket.
 
     Args:
@@ -92,20 +53,20 @@ def resolve_source(state_dir: Path, query: str, *, reporter: Reporter) -> Sessio
     """
     if not query:
         # The bucket set bare `resume` uses, so the two agree on "most recent".
-        latest = newest_session_dir(resumable_bucket_dirs(state_dir))
+        latest = newest_session_dir(resume.resumable_bucket_dirs(state_dir))
         if latest is None:
             reporter.err('nothing to fork yet. Start a session with `agent6 run "<task>"`.')
             return None
         query = latest.name
         reporter.note(f"forking most recent session: {query}")
     try:
-        return resolve_session(state_dir, query)
-    except SessionIdError as exc:
+        return id.resolve_session(state_dir, query)
+    except id.SessionIdError as exc:
         reporter.error(str(exc))
         return None
 
 
-def _copy_dag(src: SessionLayout, dst: SessionLayout, *, graph_version: int) -> None:
+def _copy_dag(src: layout.SessionLayout, dst: layout.SessionLayout, *, graph_version: int) -> None:
     """Write the destination's DAG as the source's stood at a graph version.
 
     The read holds the source curator's per-mutation lock, so a live source cannot
@@ -116,7 +77,7 @@ def _copy_dag(src: SessionLayout, dst: SessionLayout, *, graph_version: int) -> 
         dst: The fork.
         graph_version: The version to rebuild at; 0 or less copies the DAG verbatim.
     """
-    with flock(src.lock_path):
+    with storage.flock(src.lock_path):
         if graph_version <= 0:
             for name in _DAG_ARTIFACTS:
                 src_path = src.session_dir / name
@@ -128,19 +89,23 @@ def _copy_dag(src: SessionLayout, dst: SessionLayout, *, graph_version: int) -> 
                 else:
                     shutil.copy2(src_path, dst_path)
             return
-        nodes = load_graph(src)
+        nodes = storage.load_graph(src)
         journal = _read_journal(src)
-        replayed = graph_at_version(nodes, journal, graph_version, current_cursor=read_cursor(src))
+        replayed = replay.graph_at_version(
+            nodes, journal, graph_version, current_cursor=storage.read_cursor(src)
+        )
     dst.ensure()
     for node in replayed.nodes.values():
-        write_node(dst, replayed.nodes, node)
-    write_cursor(dst, replayed.cursor)
+        storage.write_node(dst, replayed.nodes, node)
+    storage.write_cursor(dst, replayed.cursor)
     # The journal prefix, so the fork's curator numbers on from the version it holds.
-    kept = journal_prefix(journal, graph_version)
-    atomic_write(dst.journal_path, "".join(json.dumps(e, sort_keys=True) + "\n" for e in kept))
+    kept = replay.journal_prefix(journal, graph_version)
+    portable.atomic_write(
+        dst.journal_path, "".join(json.dumps(e, sort_keys=True) + "\n" for e in kept)
+    )
 
 
-def _read_journal(src: SessionLayout) -> list[dict[str, Any]]:
+def _read_journal(src: layout.SessionLayout) -> list[dict[str, Any]]:
     """Read the source's graph journal, skipping torn and non-object lines.
 
     Args:
@@ -167,8 +132,11 @@ def _read_journal(src: SessionLayout) -> list[dict[str, Any]]:
 
 
 def _select_checkpoint_path(
-    src: SessionLayout, at_turn: int | None, *, reporter: Reporter = STDIO_REPORTER
-) -> Path | None:
+    src: layout.SessionLayout,
+    at_turn: int | None,
+    *,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
+) -> pathlib.Path | None:
     """Resolve which snapshot of the source to fork from.
 
     Args:
@@ -180,7 +148,7 @@ def _select_checkpoint_path(
     Returns:
         The snapshot path, or None after reporting why.
     """
-    turns = list_checkpoint_turns(src)
+    turns = storage.list_checkpoint_turns(src)
     if at_turn is None:
         rolling = src.session_dir / "loop_state.json"
         if rolling.is_file():
@@ -200,7 +168,7 @@ def _select_checkpoint_path(
     return None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Checkout:
     """A fork's own checkout, recorded so its jail never reads the worktree's `.git` pointer.
 
@@ -209,8 +177,8 @@ class Checkout:
         git_dir: The repository git dir the worktree points into.
     """
 
-    worktree: Path
-    git_dir: Path
+    worktree: pathlib.Path
+    git_dir: pathlib.Path
 
 
 class _ForkRefusedError(Exception):
@@ -225,7 +193,7 @@ class _ForkRefusedError(Exception):
         self.rc = rc
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _ForkPlan:
     """Everything a fork writes, resolved first so a refusal creates nothing.
 
@@ -248,16 +216,16 @@ class _ForkPlan:
             inferred or adopted gate has no config to derive from.
     """
 
-    src: SessionLayout
-    dst: SessionLayout
-    checkpoint_path: Path
+    src: layout.SessionLayout
+    dst: layout.SessionLayout
+    checkpoint_path: pathlib.Path
     graph_version: int
     forked_from_turn: int
     forked_from_sha: str
     base_sha: str
     base_branch: str
     user_task: str
-    mode: ResumableMode
+    mode: kinds.ResumableMode
     preset: str
     preset_from_flag: bool
     driver_from_flag: bool
@@ -266,15 +234,15 @@ class _ForkPlan:
 
 
 def _plan_fork(
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
     source_session_id: str,
     *,
     at_turn: int | None = None,
     new_session_id: str = "",
-    cwd: Path,
-    sandbox_overrides: SandboxOverrides | None = None,
+    cwd: pathlib.Path,
+    sandbox_overrides: _setup.SandboxOverrides | None = None,
     refuse_continuation: Callable[[Config, str], str | None] | None = None,
-    reporter: Reporter = STDIO_REPORTER,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> _ForkPlan:
     """Resolve a fork of a source session at a checkpoint.
 
@@ -299,7 +267,7 @@ def _plan_fork(
     Raises:
         _ForkRefusedError: The fork was refused; the reason is reported.
     """
-    state = state_dir(cwd)
+    state = paths.state_dir(cwd)
     src = resolve_source(state, source_session_id, reporter=reporter)
     if src is None:
         raise _ForkRefusedError(2)
@@ -309,19 +277,19 @@ def _plan_fork(
         raise _ForkRefusedError(2)
 
     try:
-        checkpoint = load_session_snapshot(checkpoint_path)
+        checkpoint = _snapshot.load_session_snapshot(checkpoint_path)
     except (OSError, ValueError) as exc:
         reporter.error(f"failed to load checkpoint {checkpoint_path}: {exc}")
         raise _ForkRefusedError(1) from exc
 
     # A damaged manifest fails loud: the mode must never fall open to "run".
     try:
-        sm = read_manifest(src.session_dir)
+        sm = sessions_manifest.read_manifest(src.session_dir)
         src_mode = sm.session_mode()
-    except ManifestError as exc:
+    except sessions_manifest.ManifestError as exc:
         reporter.error(f"cannot read source run manifest {src.manifest_path}: {exc}")
         raise _ForkRefusedError(2) from exc
-    refusal = model_git_refusal(sm, "fork")
+    refusal = sessions_manifest.model_git_refusal(sm, "fork")
     if refusal is not None:
         reporter.error(refusal)
         raise _ForkRefusedError(2)
@@ -335,11 +303,13 @@ def _plan_fork(
 
     try:
         # The child's stamp derives from the same preset-resolved config resume replays.
-        cfg = load_effective(cwd, config_path, preset=sm.harness.replay_preset).config
+        cfg = layer.load_effective(cwd, config_path, preset=sm.harness.replay_preset).config
         recorded = sm.models.replay_driver
-        route = ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
-        cfg = session_config(
-            cfg.with_model_route(session_kind(src_mode).role, route) if route else cfg,
+        route = (
+            kinds.ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
+        )
+        cfg = _setup.session_config(
+            cfg.with_model_route(kinds.session_kind(src_mode).role, route) if route else cfg,
             src_mode,
             sandbox_overrides,
         )
@@ -354,22 +324,24 @@ def _plan_fork(
 
     if new_session_id:
         try:
-            validate_explicit_session_id(new_session_id)
-        except SessionIdError as exc:
+            id.validate_explicit_session_id(new_session_id)
+        except id.SessionIdError as exc:
             reporter.error(str(exc))
             raise _ForkRefusedError(2) from exc
         # Ids are unique across buckets, so any bucket holding it refuses.
-        if (held := session_id_bucket(state, new_session_id)) is not None:
+        if (held := id.session_id_bucket(state, new_session_id)) is not None:
             reporter.error(
                 f"--session-id {new_session_id!r} already names a session under {held}/;"
                 " ids are unique across every bucket. Pick another id."
             )
             raise _ForkRefusedError(2)
-    child_id = new_session_id or unused_session_id(state, session_bucket(src_mode))
+    child_id = new_session_id or id.unused_session_id(state, kinds.session_bucket(src_mode))
     return _ForkPlan(
         src=src,
         # A fork keeps its source's mode, so its dir belongs in that mode's bucket.
-        dst=SessionLayout(state_dir=state, session_id=child_id, subdir=session_bucket(src_mode)),
+        dst=layout.SessionLayout(
+            state_dir=state, session_id=child_id, subdir=kinds.session_bucket(src_mode)
+        ),
         checkpoint_path=checkpoint_path,
         graph_version=checkpoint.graph_version,
         forked_from_turn=checkpoint.next_iteration,
@@ -388,18 +360,18 @@ def _plan_fork(
 
 
 def create_fork(
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
     source_session_id: str,
     *,
     at_turn: int | None = None,
     new_session_id: str = "",
-    cwd: Path,
-    sandbox_overrides: SandboxOverrides | None = None,
+    cwd: pathlib.Path,
+    sandbox_overrides: _setup.SandboxOverrides | None = None,
     refuse_continuation: Callable[[Config, str], str | None] | None = None,
     worktree: bool = True,
     checkout: Checkout | None = None,
     checkout_untracked: frozenset[str] | None = None,
-    reporter: Reporter = STDIO_REPORTER,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> tuple[str, int]:
     """Create a new session cloned from a source at a checkpoint, without starting it.
 
@@ -448,12 +420,12 @@ def create_fork(
         )
         return "", 2
     if added:
-        path = subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
+        path = parallel.subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
         try:
             # The git dir a fork execution's jail grants from.
-            checkout = Checkout(path, git_common_dir(cwd))
-            add_worktree(cwd, path, plan.forked_from_sha)
-        except GitError as exc:
+            checkout = Checkout(path, git_ops.git_common_dir(cwd))
+            git_ops.add_worktree(cwd, path, plan.forked_from_sha)
+        except git_ops.GitError as exc:
             reporter.error(f"could not add the fork's worktree at {path}: {exc}")
             return "", 1
     rc = _materialize_fork(
@@ -466,7 +438,7 @@ def create_fork(
     )
     if rc != 0:
         if added and checkout is not None:
-            remove_fork_worktree(cwd, checkout.worktree, (plan.forked_from_sha,))
+            fork_worktrees.remove_fork_worktree(cwd, checkout.worktree, (plan.forked_from_sha,))
         return "", rc
     return plan.dst.session_id, 0
 
@@ -474,11 +446,11 @@ def create_fork(
 def _materialize_fork(
     plan: _ForkPlan,
     *,
-    cwd: Path,
+    cwd: pathlib.Path,
     checkout: Checkout | None,
     fresh_checkout: bool,
     checkout_untracked: frozenset[str] | None = None,
-    reporter: Reporter = STDIO_REPORTER,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> int:
     """Write the fork's state on disk; the source is never touched.
 
@@ -502,25 +474,25 @@ def _materialize_fork(
 
     # The resume pointer and origin checkpoint, then the DAG as of the checkpoint.
     blob = plan.checkpoint_path.read_text(encoding="utf-8")
-    atomic_write(dst.session_dir / "loop_state.json", blob)
-    atomic_write(dst.checkpoint_path(0), blob)
+    portable.atomic_write(dst.session_dir / "loop_state.json", blob)
+    portable.atomic_write(dst.checkpoint_path(0), blob)
     _copy_dag(src, dst, graph_version=plan.graph_version)
     # The files the fork's commits leave out: observed in a fresh worktree, given for an
     # existing checkout (where the run's own work still reads untracked), else the source's.
     if fresh_checkout and checkout is not None:
-        excluded = untracked_paths(checkout.worktree)
+        excluded = git_ops.untracked_paths(checkout.worktree)
     elif checkout_untracked is not None:
         excluded = checkout_untracked
     else:
-        excluded = read_untracked_at_start(src.session_dir)
-    write_untracked_at_start(dst.session_dir, excluded)
+        excluded = layout.read_untracked_at_start(src.session_dir)
+    layout.write_untracked_at_start(dst.session_dir, excluded)
 
     run_branch = (
-        run_branch_for(dst.session_id)
+        git_ops.run_branch_for(dst.session_id)
         if plan.mode == "run" and plan.cfg.git.branch_per_run
         else None
     )
-    write_session_manifest(
+    manifest.write_session_manifest(
         dst,
         session_id=dst.session_id,
         user_task=plan.user_task,
@@ -536,7 +508,7 @@ def _materialize_fork(
         forked_from_turn=plan.forked_from_turn,
         forked_from_sha=plan.forked_from_sha,
         gate=plan.gate,
-        isolation=resolve_isolation(plan.cfg.sandbox.isolation, detect_env()),
+        isolation=detect.resolve_isolation(plan.cfg.sandbox.isolation, _setup.detect_env()),
         worktree=checkout.worktree if checkout is not None else None,
         worktree_git_dir=checkout.git_dir if checkout is not None else None,
     )
@@ -545,16 +517,16 @@ def _materialize_fork(
     try:
         # The branch can refuse (it may exist at another sha), so it goes first.
         if run_branch is not None:
-            create_branch_at(cwd, run_branch, plan.forked_from_sha)
+            git_ops.create_branch_at(cwd, run_branch, plan.forked_from_sha)
         if plan.mode == "run":
-            set_ref(cwd, chain_ref_for(dst.session_id), plan.forked_from_sha)
-    except GitError as exc:
+            git_ops.set_ref(cwd, git_ops.chain_ref_for(dst.session_id), plan.forked_from_sha)
+    except git_ops.GitError as exc:
         reporter.error(f"could not cut fork refs at {plan.forked_from_sha[:12]}: {exc}")
         # A fork exists only with its refs; a chain ref under this id predates the fork.
         shutil.rmtree(dst.session_dir, ignore_errors=True)
         return 1
 
-    append_jsonl(
+    storage.append_jsonl(
         src.state_dir / "lineage.jsonl",
         {
             "child": dst.session_id,
@@ -567,7 +539,7 @@ def _materialize_fork(
     at = (
         f"(branch {run_branch} "
         if run_branch
-        else f"({chain_ref_for(dst.session_id)} "
+        else f"({git_ops.chain_ref_for(dst.session_id)} "
         if plan.mode == "run"
         else "("
     )

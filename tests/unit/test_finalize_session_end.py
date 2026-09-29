@@ -487,7 +487,7 @@ def test_interrupt_end_prints_cost_resume_and_branch_hints(
             branch="agent6/r4", head_sha="x", is_clean=True, untracked_count=0, modified_count=0
         )
 
-    monkeypatch.setattr(_finalize, "git_status", _on_run_branch)
+    monkeypatch.setattr(git_ops, "status", _on_run_branch)
     _finalize.print_interrupt_end(
         layout=layout,
         cwd=tmp_path,
@@ -650,8 +650,6 @@ def test_finalize_auto_stash_prints_a_failed_bystander_putback(
     """A restore that raises prints the recovery command and finishes."""
     import subprocess
 
-    from agent6.app import finalize as finalize_mod
-
     repo = tmp_path / "repo"
     repo.mkdir()
 
@@ -673,7 +671,7 @@ def test_finalize_auto_stash_prints_a_failed_bystander_putback(
             " it back failed; restore it with:\n    git stash store -m 'x' abc123"
         )
 
-    monkeypatch.setattr(finalize_mod, "restore_stash", raising_restore)
+    monkeypatch.setattr(git_ops, "restore_stash", raising_restore)
     _finalize.finalize_auto_stash(
         repo,
         base_branch="main",
@@ -870,12 +868,11 @@ def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A GitError on the dirty check makes the banner say it could not check, claiming nothing."""
-    import agent6.app.finalize as finalize_mod
 
     def _boom(_path: pathlib.Path, **_kw: object) -> object:
         raise git_ops.GitError("git unreadable here")
 
-    monkeypatch.setattr(finalize_mod, "git_status", _boom)
+    monkeypatch.setattr(git_ops, "status", _boom)
     result = _snapshot.SessionResult(
         completed=True, reason="finish_session", summary="", iterations=1, tool_calls=1
     )

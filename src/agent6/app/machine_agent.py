@@ -16,7 +16,9 @@ and `AgentExecResult` owns `result.json`. The live view is injected as
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import os
+import pathlib
 import shutil
 import signal
 import subprocess
@@ -24,77 +26,30 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+import pydantic
 
-from agent6.app._session import tool_result_cap_bytes
-from agent6.app._setup import apply_git_ops_policy, budget_tracker
-from agent6.app.confine import check_hide_paths_support, check_network_support
-from agent6.app.providers import (
-    InstrumentedProvider,
-    build_role_provider,
-    resolve_compaction_thresholds,
-    resolve_decompose,
-    reviewer_seat_provider,
-)
-from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.budget import BudgetTracker
-from agent6.commit_message import render_commit_trailer
-from agent6.config import Config, ConfigError
-from agent6.config.layer import load_effective_with_overlay
-from agent6.events import EventSink
-from agent6.git_ops import (
-    CommitIdentity,
-    GitError,
-    chain_tip,
-    checkout_detached,
-    fetch_branch,
-    machine_branch_for,
-    machine_chain_ref_for,
-)
-from agent6.git_ops import status as git_status
-from agent6.harness._chain import RunChain, commit_identity
-from agent6.harness._compaction import CompactionSettings
-from agent6.harness._operator import OperatorBridge
-from agent6.harness.loop import Harness
-from agent6.harness.subrun import SubrunError, clone_workspace
-from agent6.kinds import IsolationLevel
+from agent6 import budget as agent6_budget
+from agent6 import commit_message, git_ops, kinds, paths
+from agent6 import events as agent6_events
+from agent6.app import _session, _setup, confine, providers
+from agent6.app import reporter as app_reporter
+from agent6.config import Config, ConfigError, layer
+from agent6.harness import _chain, _compaction, _operator, loop, subrun
 from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload
-from agent6.paths import state_dir
 from agent6.providers import Provider, TranscriptSink
-from agent6.sandbox.jail import die_with_parent
-from agent6.sessions.ipc import (
-    await_frontend_reply,
-    away_mode,
-    clear_pending_answers,
-    clear_steer_answer,
-    clear_steer_request,
-    frontend_is_live,
-    read_answer,
-    read_question_answers,
-    read_steer_answer,
-    record_answer,
-    steer_request_pending,
-)
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.operator_prompts import (
-    ApprovalAnswer,
-    ApprovalRequest,
-    OperatorPrompts,
-    QuestionAnswer,
-    QuestionRequest,
-)
-from agent6.viewmodel.machine_state import Spend, read_budget_totals
+from agent6.sandbox import jail
+from agent6.sessions import ipc
+from agent6.tools import dispatch, operator_prompts
+from agent6.viewmodel import machine_state
 
 
-def _no_console(_events: EventSink) -> None:
+def _no_console(_events: agent6_events.EventSink) -> None:
     """Attach no live view: the headless default."""
 
 
-class MachineAgentRequest(BaseModel):
+class MachineAgentRequest(pydantic.BaseModel):
     """The `request.json` envelope of the machine-agent subprocess IPC.
 
     Both sides are the same install, and the bytes are pinned by
@@ -114,20 +69,20 @@ class MachineAgentRequest(BaseModel):
         request: The state's request.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
-    cwd: Path
-    root: Path
+    cwd: pathlib.Path
+    root: pathlib.Path
     overlay: dict[str, Any]
-    isolation: IsolationLevel
-    transcript_dir: Path
-    events_log: Path | None = None
-    protect_paths: tuple[Path, ...] = ()
-    commit_identity: CommitIdentity | None = None
+    isolation: kinds.IsolationLevel
+    transcript_dir: pathlib.Path
+    events_log: pathlib.Path | None = None
+    protect_paths: tuple[pathlib.Path, ...] = ()
+    commit_identity: git_ops.CommitIdentity | None = None
     request: AgentRequest
 
 
-def _machine_head_sha(root: Path) -> str | None:
+def _machine_head_sha(root: pathlib.Path) -> str | None:
     """Read HEAD at state start, the chain's first parent; None when unreadable.
 
     Args:
@@ -137,8 +92,8 @@ def _machine_head_sha(root: Path) -> str | None:
         The sha, or None for an unborn or unreadable repo.
     """
     try:
-        return git_status(root).head_sha or None
-    except (GitError, OSError):
+        return git_ops.status(root).head_sha or None
+    except (git_ops.GitError, OSError):
         return None
 
 
@@ -198,7 +153,7 @@ def _task_with_contract(r: AgentRequest) -> str:
 
 
 def _result(
-    reason: str, payload: dict[str, Any] | None, budget: BudgetTracker | None
+    reason: str, payload: dict[str, Any] | None, budget: agent6_budget.BudgetTracker | None
 ) -> AgentExecResult:
     """Build the state's result.
 
@@ -244,7 +199,7 @@ def _apply_operator_env_grants(cfg: Config) -> Config:
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _MachineBridges:
     """The interactivity bridges for one machine `agent` state.
 
@@ -258,14 +213,14 @@ class _MachineBridges:
         steer_prompt: Reads the steer answer, or None.
     """
 
-    prompts: OperatorPrompts
+    prompts: operator_prompts.OperatorPrompts
     steer_requested: Callable[[], bool]
     steer_clear: Callable[[], None]
     steer_prompt: Callable[[], str | None]
 
 
 def _build_machine_bridges(
-    instance_dir: Path, agent_state: Path, events: EventSink
+    instance_dir: pathlib.Path, agent_state: pathlib.Path, events: agent6_events.EventSink
 ) -> _MachineBridges:
     """Wire the approval, question and steer bridges to a machine agent state.
 
@@ -282,61 +237,63 @@ def _build_machine_bridges(
         The bridges.
     """
     # Crash recovery reuses the state dir and its prompt ids, so stale answers go first.
-    clear_pending_answers(agent_state, started_at=time.time())
+    ipc.clear_pending_answers(agent_state, started_at=time.time())
 
-    def approve(request: ApprovalRequest, /) -> ApprovalAnswer:
-        if frontend_is_live(instance_dir):
-            answer = read_answer(agent_state, request.id, live_dir=instance_dir)
+    def approve(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
+        if ipc.frontend_is_live(instance_dir):
+            answer = ipc.read_answer(agent_state, request.id, live_dir=instance_dir)
             if answer is not None:
-                return ApprovalAnswer(record_answer(agent_state, answer, request.scope), "frontend")
-        if away_mode(instance_dir) == "wait":
-            reply = await_frontend_reply(
+                return operator_prompts.ApprovalAnswer(
+                    ipc.record_answer(agent_state, answer, request.scope), "frontend"
+                )
+        if ipc.away_mode(instance_dir) == "wait":
+            reply = ipc.await_frontend_reply(
                 instance_dir,
-                lambda: read_answer(
+                lambda: ipc.read_answer(
                     agent_state, request.id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
                 ),
             )
-            approved = reply is not None and record_answer(agent_state, reply, request.scope)
-            return ApprovalAnswer(approved, "await-frontend")
-        return ApprovalAnswer(False, "headless")  # no operator to ask
+            approved = reply is not None and ipc.record_answer(agent_state, reply, request.scope)
+            return operator_prompts.ApprovalAnswer(approved, "await-frontend")
+        return operator_prompts.ApprovalAnswer(False, "headless")  # no operator to ask
 
-    def ask(request: QuestionRequest, /) -> QuestionAnswer:
+    def ask(request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         empty = tuple("" for _ in request.questions)
-        if frontend_is_live(instance_dir):
-            answers = read_question_answers(agent_state, request.id, live_dir=instance_dir)
+        if ipc.frontend_is_live(instance_dir):
+            answers = ipc.read_question_answers(agent_state, request.id, live_dir=instance_dir)
             if answers is not None:
-                return QuestionAnswer(answers, "frontend")
-        if away_mode(instance_dir) == "wait":
+                return operator_prompts.QuestionAnswer(answers, "frontend")
+        if ipc.away_mode(instance_dir) == "wait":
             # Park for the front-end rather than inventing "".
-            reply = await_frontend_reply(
+            reply = ipc.await_frontend_reply(
                 instance_dir,
-                lambda: read_question_answers(
+                lambda: ipc.read_question_answers(
                     agent_state, request.id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
                 ),
             )
             if isinstance(reply, tuple):
-                return QuestionAnswer(reply, "frontend")
-            return QuestionAnswer(empty, "await-frontend", unseen=True)
-        return QuestionAnswer(empty, "headless", unseen=True)
+                return operator_prompts.QuestionAnswer(reply, "frontend")
+            return operator_prompts.QuestionAnswer(empty, "await-frontend", unseen=True)
+        return operator_prompts.QuestionAnswer(empty, "headless", unseen=True)
 
-    prompts = OperatorPrompts(
+    prompts = operator_prompts.OperatorPrompts(
         approver=approve, questioner=ask, journal=events.emit, session_dir=agent_state
     )
 
     def steer_requested() -> bool:
-        return steer_request_pending(agent_state)
+        return ipc.steer_request_pending(agent_state)
 
     def steer_clear() -> None:
-        clear_steer_answer(agent_state)
-        clear_steer_request(agent_state)
+        ipc.clear_steer_answer(agent_state)
+        ipc.clear_steer_request(agent_state)
 
     def steer_prompt() -> str | None:
-        if not frontend_is_live(instance_dir):
-            clear_steer_request(agent_state)
+        if not ipc.frontend_is_live(instance_dir):
+            ipc.clear_steer_request(agent_state)
             return None
-        answer = read_steer_answer(agent_state, live_dir=instance_dir)
+        answer = ipc.read_steer_answer(agent_state, live_dir=instance_dir)
         if answer is None:
-            clear_steer_request(agent_state)
+            ipc.clear_steer_request(agent_state)
         return answer
 
     return _MachineBridges(prompts, steer_requested, steer_clear, steer_prompt)
@@ -346,9 +303,9 @@ def _build_agent_providers(
     cfg: Config,
     req: MachineAgentRequest,
     *,
-    budget: BudgetTracker,
-    attach_console: Callable[[EventSink], None],
-) -> tuple[InstrumentedProvider, Provider, EventSink | None]:
+    budget: agent6_budget.BudgetTracker,
+    attach_console: Callable[[agent6_events.EventSink], None],
+) -> tuple[providers.InstrumentedProvider, Provider, agent6_events.EventSink | None]:
     """Build the state's worker provider, its summariser and its event sink.
 
     The worker always streams: machine agents run headless and generate long, and
@@ -364,14 +321,14 @@ def _build_agent_providers(
         The instrumented worker, the summariser, and the sink or None without a log.
     """
     transcript_sink = TranscriptSink(req.transcript_dir)
-    inner_provider = build_role_provider(
+    inner_provider = providers.build_role_provider(
         cfg, "worker", transcript_sink=transcript_sink, budget=budget
     )
-    events_sink = EventSink(req.events_log) if req.events_log is not None else None
+    events_sink = agent6_events.EventSink(req.events_log) if req.events_log is not None else None
     rm = cfg.models.resolve("worker")
     if events_sink is not None:
         attach_console(events_sink)
-    provider = InstrumentedProvider(
+    provider = providers.InstrumentedProvider(
         inner=inner_provider,
         role="worker",
         model=rm.model if rm is not None else "",
@@ -380,7 +337,7 @@ def _build_agent_providers(
         budget=budget,
         stream_text=True,
     )
-    summariser_provider = reviewer_seat_provider(
+    summariser_provider = providers.reviewer_seat_provider(
         cfg, "summariser", transcript_sink=transcript_sink, budget=budget, events=events_sink
     )
     return provider, summariser_provider, events_sink
@@ -389,8 +346,8 @@ def _build_agent_providers(
 def run_one(
     req: MachineAgentRequest,
     *,
-    attach_console: Callable[[EventSink], None] = _no_console,
-    reporter: Reporter = STDIO_REPORTER,
+    attach_console: Callable[[agent6_events.EventSink], None] = _no_console,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> AgentExecResult:
     """Run one machine `agent` state to completion inside its subprocess.
 
@@ -406,7 +363,9 @@ def run_one(
     r = req.request
     # A config error becomes an error result, not a traceback the host must salvage.
     try:
-        cfg = load_effective_with_overlay(req.cwd, req.overlay).config.with_machine_agent_overrides(
+        cfg = layer.load_effective_with_overlay(
+            req.cwd, req.overlay
+        ).config.with_machine_agent_overrides(
             provider=r.provider,
             model=r.model,
             effort=r.effort,
@@ -415,10 +374,10 @@ def run_one(
             max_tokens_fallback=r.max_tokens_fallback,
         )
         cfg = _apply_operator_env_grants(cfg)
-    except (ConfigError, ValidationError) as exc:
+    except (ConfigError, pydantic.ValidationError) as exc:
         reporter.refuse(f"machine agent config error: {exc}")
         return _result("error", None, None)
-    apply_git_ops_policy(cfg)
+    _setup.apply_git_ops_policy(cfg)
     # The confined process cannot read ~/.gitconfig, so the host-resolved identity is exported.
     if req.commit_identity is not None:
         if name := req.commit_identity.name:
@@ -426,15 +385,15 @@ def run_one(
         if email := req.commit_identity.email:
             os.environ["GIT_AUTHOR_EMAIL"] = os.environ["GIT_COMMITTER_EMAIL"] = email
     # The engine validated the isolation already; re-check and fail closed.
-    net_err = check_network_support(cfg, isolation)
+    net_err = confine.check_network_support(cfg, isolation)
     if net_err is not None:
         reporter.refuse(net_err)
         return _result("error", None, None)
-    hide_err = check_hide_paths_support(cfg, isolation, req.root)
+    hide_err = confine.check_hide_paths_support(cfg, isolation, req.root)
     if hide_err is not None:
         reporter.refuse(hide_err)
         return _result("error", None, None)
-    budget = budget_tracker(cfg)
+    budget = _setup.budget_tracker(cfg)
     provider, summariser_provider, events_sink = _build_agent_providers(
         cfg, req, budget=budget, attach_console=attach_console
     )
@@ -450,7 +409,7 @@ def run_one(
         agent_state = req.events_log.parent
         instance_dir = req.transcript_dir.parent
         bridges = _build_machine_bridges(instance_dir, agent_state, events_sink)
-    dispatcher = ToolDispatcher(
+    dispatcher = dispatch.ToolDispatcher(
         root=req.root,
         config=cfg,
         isolation=isolation,
@@ -462,22 +421,24 @@ def run_one(
         extra_protect_paths=protect,
         mode="machine" if read_only else "run",
         # The repo's state dir, keyed on the checkout: a clone has no memory of its own.
-        state_dir=state_dir(req.cwd),
+        state_dir=paths.state_dir(req.cwd),
     )
     rm = cfg.models.resolve("worker")
-    compact_drop, compact_summarise, keep_recent = resolve_compaction_thresholds(
+    compact_drop, compact_summarise, keep_recent = providers.resolve_compaction_thresholds(
         cfg, rm, log=reporter.err
     )
-    cfg = resolve_decompose(cfg, rm, log=reporter.err)
-    wf = Harness(
+    cfg = providers.resolve_decompose(cfg, rm, log=reporter.err)
+    wf = loop.Harness(
         # A run-mode state commits on its own chain, named by the instance dir.
-        chain=RunChain(
+        chain=_chain.RunChain(
             req.root,
-            ref=machine_chain_ref_for(req.transcript_dir.parent.name) if not read_only else None,
+            ref=git_ops.machine_chain_ref_for(req.transcript_dir.parent.name)
+            if not read_only
+            else None,
             fallback_parent=_machine_head_sha(req.root) if not read_only else None,
-            identity=commit_identity(
+            identity=_chain.commit_identity(
                 cfg.git.commit,
-                render_commit_trailer(
+                commit_message.render_commit_trailer(
                     cfg.git.commit.trailer, models=(rm.model if rm is not None else "",)
                 ),
             ),
@@ -489,24 +450,24 @@ def run_one(
         dispatcher=dispatcher,
         logger=reporter.err,
         mode="agent" if mode == "agent" else "run",
-        state_dir=state_dir(req.cwd),
-        compaction=CompactionSettings(
+        state_dir=paths.state_dir(req.cwd),
+        compaction=_compaction.CompactionSettings(
             drop_at_chars=compact_drop,
             summarise_at_chars=compact_summarise,
-            tool_result_cap_bytes=tool_result_cap_bytes(cfg, "worker"),
+            tool_result_cap_bytes=_session.tool_result_cap_bytes(cfg, "worker"),
             keep_recent_chars=keep_recent,
             keep_thinking_turns=cfg.context.keep_thinking_turns,
             elision_gists=cfg.context.elision_gists,
             summary_max_tokens=cfg.context.summary_max_tokens,
             summariser=summariser_provider,
         ),
-        bridge=OperatorBridge(
+        bridge=_operator.OperatorBridge(
             steer_requested=bridges.steer_requested,
             steer_clear=bridges.steer_clear,
             steer_prompt=bridges.steer_prompt,
         )
         if bridges is not None
-        else OperatorBridge(),
+        else _operator.OperatorBridge(),
         finish_validator=_finish_validator(r),
     )
     result = wf.run(_task_with_contract(r))
@@ -516,14 +477,14 @@ def run_one(
 
 def build_machine_agent_runner(
     overlay: dict[str, Any],
-    cwd: Path,
-    isolation: IsolationLevel,
-    transcript_dir: Path,
-    protect_paths: tuple[Path, ...] = (),
-    commit_identity: CommitIdentity | None = None,
+    cwd: pathlib.Path,
+    isolation: kinds.IsolationLevel,
+    transcript_dir: pathlib.Path,
+    protect_paths: tuple[pathlib.Path, ...] = (),
+    commit_identity: git_ops.CommitIdentity | None = None,
     machine_id: str | None = None,
-    clone_root: Path | None = None,
-) -> Callable[[AgentRequest, Path | None], AgentExecResult]:
+    clone_root: pathlib.Path | None = None,
+) -> Callable[[AgentRequest, pathlib.Path | None], AgentExecResult]:
     """Build the host-side runner an `agent` state fires.
 
     The runner spawns the subprocess with a fixed argv, hands it the request through
@@ -547,7 +508,7 @@ def build_machine_agent_runner(
         The runner: given a request and an optional per-call event log, the result.
     """
 
-    def run_agent(request: AgentRequest, events_log: Path | None = None) -> AgentExecResult:
+    def run_agent(request: AgentRequest, events_log: pathlib.Path | None = None) -> AgentExecResult:
         # The salvage reads this call's events only: `machine create` shares one draft log.
         start_offset = 0
         if events_log is not None:
@@ -557,9 +518,9 @@ def build_machine_agent_runner(
         def salvaged(reason: str) -> AgentExecResult:
             # Without a result file the spend comes from the event log, so the guard trips.
             spend = (
-                read_budget_totals(events_log, from_offset=start_offset)
+                machine_state.read_budget_totals(events_log, from_offset=start_offset)
                 if events_log is not None
-                else Spend()
+                else machine_state.Spend()
             )
             return AgentExecResult(
                 reason=reason,
@@ -570,13 +531,13 @@ def build_machine_agent_runner(
                 output_tokens=spend.output_tokens,
             )
 
-        clone: Path | None = None
-        chain = machine_chain_ref_for(machine_id) if machine_id is not None else None
+        clone: pathlib.Path | None = None
+        chain = git_ops.machine_chain_ref_for(machine_id) if machine_id is not None else None
         if chain is not None and clone_root is not None:
             clone = clone_root / f"state-{request.step_seq:04d}"
             try:
                 clone_at_machine_chain(cwd, clone, chain)
-            except (SubrunError, GitError) as exc:
+            except (subrun.SubrunError, git_ops.GitError) as exc:
                 return salvaged(f"error: clone for machine {machine_id!r} failed: {exc}")
         workdir = clone or cwd
         payload = MachineAgentRequest(
@@ -596,8 +557,8 @@ def build_machine_agent_runner(
             request=request,
         )
         with tempfile.TemporaryDirectory(prefix="agent6-machine-agent-") as td:
-            req_file = Path(td) / "request.json"
-            out_file = Path(td) / "result.json"
+            req_file = pathlib.Path(td) / "request.json"
+            out_file = pathlib.Path(td) / "result.json"
             req_file.write_text(payload.model_dump_json(), encoding="utf-8")
             argv = [
                 sys.executable,
@@ -615,7 +576,7 @@ def build_machine_agent_runner(
                     argv,
                     start_new_session=True,
                     env={**os.environ, "AGENT6_SUBRUN": "1"},
-                    preexec_fn=die_with_parent(os.getpid()),  # noqa: PLW1509
+                    preexec_fn=jail.die_with_parent(os.getpid()),  # noqa: PLW1509
                 )
             except OSError as exc:
                 result = salvaged(f"error: machine agent failed to start: {exc}")
@@ -634,17 +595,19 @@ def build_machine_agent_runner(
                     else:
                         try:
                             result = AgentExecResult.model_validate_json(out_file.read_bytes())
-                        except (OSError, ValidationError):
+                        except (OSError, pydantic.ValidationError):
                             # A malformed result file counts as missing.
                             result = salvaged("error")
         if clone is not None and chain is not None and machine_id is not None:
-            result = _land_machine_clone(cwd, clone, chain, machine_branch_for(machine_id), result)
+            result = _land_machine_clone(
+                cwd, clone, chain, git_ops.machine_branch_for(machine_id), result
+            )
         return result
 
     return run_agent
 
 
-def clone_at_machine_chain(origin: Path, dest: Path, chain_ref: str) -> None:
+def clone_at_machine_chain(origin: pathlib.Path, dest: pathlib.Path, chain_ref: str) -> None:
     """Make a fresh clone checked out at the machine chain's tip.
 
     A clone copies branches, not `refs/agent6/*`, so the chain ref is fetched in;
@@ -662,15 +625,15 @@ def clone_at_machine_chain(origin: Path, dest: Path, chain_ref: str) -> None:
     if dest.exists():
         shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    clone_workspace(origin, dest)
-    tip = chain_tip(origin, chain_ref)
+    subrun.clone_workspace(origin, dest)
+    tip = git_ops.chain_tip(origin, chain_ref)
     if tip is not None:
-        fetch_branch(dest, origin, f"{chain_ref}:{chain_ref}")
-        checkout_detached(dest, tip)
+        git_ops.fetch_branch(dest, origin, f"{chain_ref}:{chain_ref}")
+        git_ops.checkout_detached(dest, tip)
 
 
 def _land_machine_clone(
-    origin: Path, clone: Path, chain_ref: str, branch: str, result: AgentExecResult
+    origin: pathlib.Path, clone: pathlib.Path, chain_ref: str, branch: str, result: AgentExecResult
 ) -> AgentExecResult:
     """Land the state's work back in the origin on every outcome, and drop the clone.
 
@@ -687,14 +650,14 @@ def _land_machine_clone(
     Returns:
         The result, or a failed one when the import failed.
     """
-    advanced = chain_tip(clone, chain_ref)
-    if advanced is None or advanced == chain_tip(origin, chain_ref):
+    advanced = git_ops.chain_tip(clone, chain_ref)
+    if advanced is None or advanced == git_ops.chain_tip(origin, chain_ref):
         shutil.rmtree(clone, ignore_errors=True)
         return result
     try:
-        fetch_branch(origin, clone, f"{chain_ref}:{chain_ref}")
-        fetch_branch(origin, clone, f"{chain_ref}:refs/heads/{branch}")
-    except GitError as exc:
+        git_ops.fetch_branch(origin, clone, f"{chain_ref}:{chain_ref}")
+        git_ops.fetch_branch(origin, clone, f"{chain_ref}:refs/heads/{branch}")
+    except git_ops.GitError as exc:
         return result.model_copy(
             update={"reason": f"import of machine work failed: {exc}", "payload": None}
         )

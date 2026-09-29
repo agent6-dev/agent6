@@ -9,6 +9,9 @@ from unittest import mock
 
 import pytest
 
+from agent6.app import machine_agent
+from agent6.config import layer
+
 _MACHINE = """\
 machine = "tiny"
 version = 1
@@ -66,16 +69,15 @@ def test_machine_run_reads_the_explicit_config_layer(
     mfile.write_text(_MACHINE, encoding="utf-8")
 
     seen: list[int] = []
-    from agent6.app.machine import run as run_mod
 
-    real = run_mod.load_effective_with_overlay
+    real = layer.load_effective_with_overlay
 
     def spy(repo_root: pathlib.Path, overlay: dict[str, object], **kw: object):
         eff = real(repo_root, overlay, **kw)  # pyright: ignore[reportArgumentType]
         seen.append(eff.config.machine.snapshot_keep)
         return eff
 
-    monkeypatch.setattr(run_mod, "load_effective_with_overlay", spy)
+    monkeypatch.setattr(layer, "load_effective_with_overlay", spy)
     frontend = mock.MagicMock()
     frontend.reporter = mock.MagicMock()
     machine_run.run_machine(mfile, frontend, config_path=explicit)
@@ -120,7 +122,7 @@ max_iterations = 17
 
         return run
 
-    monkeypatch.setattr(run_mod, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
     frontend = mock.MagicMock()
     frontend.reporter = mock.MagicMock()
 

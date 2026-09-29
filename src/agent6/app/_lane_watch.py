@@ -11,18 +11,16 @@ from __future__ import annotations
 
 import contextlib
 import json
+import pathlib
 import threading
 import time
 from collections.abc import Callable
-from pathlib import Path
 
-from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.harness.subrun import LaneResult, LaneSpec
-from agent6.paths import mkdir_for_real_user
-from agent6.sessions.ipc import request_stop, worker_is_alive
-from agent6.sessions.layout import LOGS_NAME, bucket_dir
+from agent6 import budget, paths
+from agent6.app import reporter as app_reporter
+from agent6.harness import subrun
+from agent6.sessions import ipc, layout
 from agent6.viewmodel import summarize_session_dir
-from agent6.viewmodel.format import format_usd
 
 # How often the await loop polls lane liveness.
 POLL_INTERVAL_S = 2.0
@@ -31,7 +29,9 @@ POLL_INTERVAL_S = 2.0
 STOP_GRACE_S = 30.0
 
 
-def lane_terminal(session_dir: Path, status: str, worker_is_alive: Callable[[Path], bool]) -> bool:
+def lane_terminal(
+    session_dir: pathlib.Path, status: str, worker_is_alive: Callable[[pathlib.Path], bool]
+) -> bool:
     """Return whether an awaited lane is terminal: the fold left "running" and the worker is gone.
 
     `session.end` lands before the teardown clears `worker.pid`, so status alone races it. A
@@ -41,7 +41,7 @@ def lane_terminal(session_dir: Path, status: str, worker_is_alive: Callable[[Pat
 
 
 def await_lane(
-    res: LaneResult,
+    res: subrun.LaneResult,
     *,
     poll_interval_s: float = POLL_INTERVAL_S,
     should_stop: Callable[[], bool] | None = None,
@@ -58,7 +58,7 @@ def await_lane(
     """
     while True:
         summary = summarize_session_dir(res.session_dir)
-        if lane_terminal(res.session_dir, summary.status, worker_is_alive):
+        if lane_terminal(res.session_dir, summary.status, ipc.worker_is_alive):
             return True
         if should_stop is not None and should_stop():
             return False
@@ -66,7 +66,7 @@ def await_lane(
 
 
 def drain_lane(
-    res: LaneResult, *, poll_interval_s: float, hard_stop: threading.Event | None
+    res: subrun.LaneResult, *, poll_interval_s: float, hard_stop: threading.Event | None
 ) -> bool:
     """Wait a bounded grace after a stop for the lane to land, so its work still imports.
 
@@ -83,7 +83,7 @@ def drain_lane(
         if hard_stop is not None and hard_stop.is_set():
             return False
         summary = summarize_session_dir(res.session_dir)
-        if lane_terminal(res.session_dir, summary.status, worker_is_alive):
+        if lane_terminal(res.session_dir, summary.status, ipc.worker_is_alive):
             return True
         if hard_stop is not None:
             if hard_stop.wait(poll_interval_s):
@@ -93,18 +93,18 @@ def drain_lane(
     return False
 
 
-def lane_link(origin_state: Path, session_id: str) -> Path:
+def lane_link(origin_state: pathlib.Path, session_id: str) -> pathlib.Path:
     """Return where a lane's live symlink sits under the origin's runs dir."""
-    return bucket_dir(origin_state, "runs") / session_id
+    return layout.bucket_dir(origin_state, "runs") / session_id
 
 
-def symlink_lane(origin_state: Path, res: LaneResult) -> None:
+def symlink_lane(origin_state: pathlib.Path, res: subrun.LaneResult) -> None:
     """Symlink a lane's clone-side run dir into the origin's `runs/` so the hub shows it live.
 
     The import replaces the link with the real dir.
     """
     link = lane_link(origin_state, res.spec.session_id)
-    mkdir_for_real_user(link.parent)
+    paths.mkdir_for_real_user(link.parent)
     with contextlib.suppress(FileNotFoundError):
         link.unlink()
     with contextlib.suppress(OSError):
@@ -112,11 +112,11 @@ def symlink_lane(origin_state: Path, res: LaneResult) -> None:
 
 
 def await_lanes(
-    started: list[LaneResult],
+    started: list[subrun.LaneResult],
     *,
     already_interrupted: bool = False,
     should_stop: Callable[[], bool] | None = None,
-    reporter: Reporter = STDIO_REPORTER,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> bool:
     """Poll every started lane's real run dir until it is terminal, printing status changes.
 
@@ -146,13 +146,13 @@ def await_lanes(
                 print_lane_status(
                     res.spec, summary.status, summary.cost_usd, waiting=waiting, reporter=reporter
                 )
-            if lane_terminal(res.session_dir, summary.status, worker_is_alive):
+            if lane_terminal(res.session_dir, summary.status, ipc.worker_is_alive):
                 pending.pop(rid)
 
     def stop_and_drain() -> None:
         reporter.err("\n[agent6] interrupted; stopping lanes...")
         for res in pending.values():
-            if not request_stop(res.session_dir):
+            if not ipc.request_stop(res.session_dir):
                 reporter.err(f"[agent6] could not write the stop request for {res.spec.session_id}")
         deadline = time.monotonic() + STOP_GRACE_S
         with contextlib.suppress(KeyboardInterrupt):
@@ -183,7 +183,7 @@ _PROMPT_KIND = {"approval.prompt": "approval", "question.prompt": "a question"}
 _ANSWER_EVENTS = frozenset({"approval.answer", "question.answer"})
 
 
-def pending_prompt(session_dir: Path) -> str:
+def pending_prompt(session_dir: pathlib.Path) -> str:
     """Return "approval" or "a question" when the lane is blocked on an unanswered prompt.
 
     The last prompt or answer event in the log decides it: the worker blocks on its answer
@@ -196,7 +196,11 @@ def pending_prompt(session_dir: Path) -> str:
         The prompt kind, or "" when nothing is pending.
     """
     try:
-        lines = (session_dir / LOGS_NAME).read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = (
+            (session_dir / layout.LOGS_NAME)
+            .read_text(encoding="utf-8", errors="replace")
+            .splitlines()
+        )
     except OSError:
         return ""
     for raw in reversed(lines):
@@ -215,16 +219,16 @@ def pending_prompt(session_dir: Path) -> str:
 
 
 def print_lane_status(
-    spec: LaneSpec,
+    spec: subrun.LaneSpec,
     status: str,
     cost: float,
     *,
     waiting: str = "",
-    reporter: Reporter = STDIO_REPORTER,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
     """Print one lane's status line."""
     model = f" ({spec.route.spec})" if spec.route else ""
-    cost_s = f"  {format_usd(cost)}" if cost > 0 else ""
+    cost_s = f"  {budget.format_usd(cost)}" if cost > 0 else ""
     state = (
         f"waiting on {waiting} (answer via agent6 attach {spec.session_id}, the web or TUI hub)"
         if waiting

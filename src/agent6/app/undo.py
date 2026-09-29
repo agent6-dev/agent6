@@ -10,47 +10,21 @@ left alone.
 
 from __future__ import annotations
 
+import dataclasses
 import os
-from dataclasses import dataclass
-from pathlib import Path
+import pathlib
 from typing import Any
 
-from agent6.app.fork import Checkout, create_fork, resolve_source
-from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.app.resume import commits_note
-from agent6.config import ConfigError
-from agent6.config.layer import load_effective
-from agent6.git_ops import (
-    CommitIdentity,
-    GitError,
-    chain_commit,
-    chain_ref_for,
-    chain_tip,
-    sync_worktree,
-    tree_diff_paths,
-    worktree_tree,
-)
-from agent6.graph.storage import (
-    list_checkpoint_turns,
-)
-from agent6.harness._snapshot import SessionSnapshot, load_session_snapshot
-from agent6.paths import state_dir
-from agent6.sessions.ipc import read_worker_pid, worker_is_alive
-from agent6.sessions.layout import (
-    SessionLayout,
-    read_untracked_at_start,
-)
-from agent6.sessions.lock import (
-    acquire_repo_writer,
-    release_single_writer,
-    repo_writer_holder,
-)
-from agent6.sessions.manifest import (
-    ManifestError,
-    model_git_refusal,
-    read_manifest,
-)
-from agent6.task_text import operator_task_text
+from agent6 import git_ops, task_text
+from agent6 import paths as agent6_paths
+from agent6.app import fork, resume
+from agent6.app import reporter as app_reporter
+from agent6.config import ConfigError, layer
+from agent6.graph import storage
+from agent6.harness import _snapshot
+from agent6.sessions import ipc, lock
+from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
 
 _STEER_NOTICE = "OPERATOR STEERING"
 
@@ -89,7 +63,7 @@ def _operator_messages(messages: list[dict[str, Any]]) -> list[str]:
     return out
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _Checkpoint:
     """Locate a checkpoint.
 
@@ -105,7 +79,7 @@ class _Checkpoint:
     turn: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class UndoTarget:
     """Say where `/undo` forks a session.
 
@@ -117,23 +91,28 @@ class UndoTarget:
         undone_text: The message taken back, refilled into the composer.
     """
 
-    session: SessionLayout
+    session: sessions_layout.SessionLayout
     source_session_id: str
     at_turn: int
     turn: int
     undone_text: str
 
 
-def _snapshot_at(layout: SessionLayout, at_turn: int) -> SessionSnapshot | None:
+def _snapshot_at(
+    layout: sessions_layout.SessionLayout, at_turn: int
+) -> _snapshot.SessionSnapshot | None:
     """Return the checkpoint in the file, or None when it is unreadable."""
     try:
-        return load_session_snapshot(layout.checkpoint_path(at_turn))
+        return _snapshot.load_session_snapshot(layout.checkpoint_path(at_turn))
     except (OSError, ValueError):
         return None
 
 
 def undo_target(  # noqa: PLR0911 - each refusal names its own reason
-    state_dir: Path, session_id: str, *, reporter: Reporter = STDIO_REPORTER
+    state_dir: pathlib.Path,
+    session_id: str,
+    *,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> UndoTarget | None:
     """Resolve the checkpoint `/undo` forks a session at.
 
@@ -148,16 +127,16 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
     Returns:
         The target, or None with the reason printed.
     """
-    src = resolve_source(state_dir, session_id, reporter=reporter)
+    src = fork.resolve_source(state_dir, session_id, reporter=reporter)
     if src is None:
         return None
-    turns = sorted(list_checkpoint_turns(src))
+    turns = sorted(storage.list_checkpoint_turns(src))
     if not turns:
         reporter.err(f"nothing to undo: {src.session_id} has no checkpoints.")
         return None
     newest = turns[-1]
     try:
-        snap = load_session_snapshot(src.checkpoint_path(newest))
+        snap = _snapshot.load_session_snapshot(src.checkpoint_path(newest))
     except (OSError, ValueError) as exc:
         reporter.error(f"cannot read checkpoint {newest} of {src.session_id}: {exc}")
         return None
@@ -171,9 +150,9 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
             reporter.error(f"cannot read checkpoint {turns[0]} of {src.session_id}.")
             return None
         try:
-            task = read_manifest(src.session_dir).user_task
-        except ManifestError:
-            task = operator_task_text(ops[0]) if ops else ""
+            task = sessions_manifest.read_manifest(src.session_dir).user_task
+        except sessions_manifest.ManifestError:
+            task = task_text.operator_task_text(ops[0]) if ops else ""
         return UndoTarget(src, src.session_id, turns[0], first.next_iteration, task)
     target = _newest_checkpoint_below(src, len(ops), ops[-1])
     if target is None:
@@ -183,7 +162,7 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
 
 
 def _newest_checkpoint_below(
-    layout: SessionLayout,
+    layout: sessions_layout.SessionLayout,
     current_ops: int,
     last_message: str,
     *,
@@ -206,7 +185,7 @@ def _newest_checkpoint_below(
     """
     snapshots = [
         (at_turn, snap, _operator_messages(snap.messages))
-        for at_turn in sorted(list_checkpoint_turns(layout))
+        for at_turn in sorted(storage.list_checkpoint_turns(layout))
         if (snap := _snapshot_at(layout, at_turn)) is not None
     ]
     for previous, current in zip(reversed(snapshots[:-1]), reversed(snapshots[1:]), strict=True):
@@ -216,12 +195,12 @@ def _newest_checkpoint_below(
         if len(messages) < current_ops:
             return _Checkpoint(layout.session_id, at_turn, snap.next_iteration)
     try:
-        parent = read_manifest(layout.session_dir).parent_session_id
-    except ManifestError:
+        parent = sessions_manifest.read_manifest(layout.session_dir).parent_session_id
+    except sessions_manifest.ManifestError:
         return None
     if not parent or parent in seen:
         return None
-    parent_layout = SessionLayout(
+    parent_layout = sessions_layout.SessionLayout(
         state_dir=layout.state_dir, session_id=parent, subdir=layout.subdir
     )
     if not parent_layout.session_dir.is_dir():
@@ -231,7 +210,9 @@ def _newest_checkpoint_below(
     )
 
 
-def _rewind_checkout(checkout: Path, *, tip: str, sha: str, exclude: frozenset[str]) -> list[str]:
+def _rewind_checkout(
+    checkout: pathlib.Path, *, tip: str, sha: str, exclude: frozenset[str]
+) -> list[str]:
     """Put the checkout back to a commit's tree for every tracked path that differs.
 
     The current content is staged as a tree first, so the two-tree sync moves only the paths
@@ -246,15 +227,15 @@ def _rewind_checkout(checkout: Path, *, tip: str, sha: str, exclude: frozenset[s
     Returns:
         The paths put back.
     """
-    current = worktree_tree(checkout, tip, exclude)
-    paths = tree_diff_paths(checkout, sha, current)
+    current = git_ops.worktree_tree(checkout, tip, exclude)
+    paths = git_ops.tree_diff_paths(checkout, sha, current)
     if paths:
-        sync_worktree(checkout, current, sha)
+        git_ops.sync_worktree(checkout, current, sha)
     return paths
 
 
 def _checkout_writer_lock(
-    state: Path, checkout: Path, undone: SessionLayout
+    state: pathlib.Path, checkout: pathlib.Path, undone: sessions_layout.SessionLayout
 ) -> tuple[int | None, str]:
     """Take the checkout's writer lock for the commit and the rewind.
 
@@ -270,17 +251,17 @@ def _checkout_writer_lock(
         The held fd and "", or None and the refusal; None and "" when this process is the
         undone session's worker, whose lock is no obstacle.
     """
-    if read_worker_pid(undone.session_dir) == os.getpid():
+    if ipc.read_worker_pid(undone.session_dir) == os.getpid():
         return None, ""
-    if worker_is_alive(undone.session_dir):
+    if ipc.worker_is_alive(undone.session_dir):
         return None, (
             f"run {undone.session_id!r} is still live; /undo would put the tree back"
             " under it. Stop it first:\n"
             f"    agent6 stop {undone.session_id}"
         )
-    lock_fd = acquire_repo_writer(state, checkout, undone.session_id)
+    lock_fd = lock.acquire_repo_writer(state, checkout, undone.session_id)
     if lock_fd is None:
-        holder = repo_writer_holder(state, checkout) or "another run"
+        holder = lock.repo_writer_holder(state, checkout) or "another run"
         return None, (
             f"run {holder!r} is driving this checkout, and /undo would put the tree back"
             " under it. Stop it first:\n"
@@ -290,11 +271,11 @@ def _checkout_writer_lock(
 
 
 def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
     session_id: str,
     *,
-    cwd: Path,
-    reporter: Reporter = STDIO_REPORTER,
+    cwd: pathlib.Path,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> tuple[str, str] | None:
     """Commit the tree as it stands, fork the session at its undo target, and rewind the checkout.
 
@@ -311,17 +292,17 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     Returns:
         The fork's id and the text taken back, or None with the reason printed.
     """
-    state = state_dir(cwd)
+    state = agent6_paths.state_dir(cwd)
     target = undo_target(state, session_id, reporter=reporter)
     if target is None:
         return None
     undone = target.session
     try:
-        manifest = read_manifest(undone.session_dir)
-    except ManifestError as exc:
+        manifest = sessions_manifest.read_manifest(undone.session_dir)
+    except sessions_manifest.ManifestError as exc:
         reporter.error(f"cannot read the manifest of {undone.session_id}: {exc}")
         return None
-    refusal = model_git_refusal(manifest, "undo")
+    refusal = sessions_manifest.model_git_refusal(manifest, "undo")
     if refusal is not None:
         # A model-controlled run has no chain; a chain ref written here is one auto_merge lands.
         reporter.error(refusal)
@@ -337,12 +318,12 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     if manifest.worktree is not None and not (checkout / ".git").exists():
         reporter.error(
             f"cannot undo {undone.session_id}: its worktree {checkout} is gone (pruned or"
-            f" removed); {commits_note(cwd, manifest)}; `agent6 fork {undone.session_id}`"
+            f" removed); {resume.commits_note(cwd, manifest)}; `agent6 fork {undone.session_id}`"
             " continues it in a new worktree."
         )
         return None
     try:
-        cfg = load_effective(cwd, config_path).config
+        cfg = layer.load_effective(cwd, config_path).config
     except ConfigError as exc:
         reporter.error(str(exc))
         return None
@@ -350,31 +331,33 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     if refusal:
         reporter.refuse(refusal)
         return None
-    ref = chain_ref_for(undone.session_id)
+    ref = git_ops.chain_ref_for(undone.session_id)
     where = manifest.run_branch or ref
-    exclude = read_untracked_at_start(undone.session_dir)
+    exclude = sessions_layout.read_untracked_at_start(undone.session_dir)
     try:
         try:
-            kept = chain_commit(
+            kept = git_ops.chain_commit(
                 checkout,
                 f"agent6 undo: the tree before turn {target.turn} was taken back",
                 ref=ref,
                 fallback_parent=manifest.base_sha or None,
-                identity=CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email),
+                identity=git_ops.CommitIdentity(
+                    name=cfg.git.commit.name, email=cfg.git.commit.email
+                ),
                 also_branch=manifest.run_branch,
                 exclude=exclude,
             )
-        except GitError as exc:
+        except git_ops.GitError as exc:
             reporter.error(f"the tree as it stands could not be committed onto {where}: {exc}")
             return None
-        child, rc = create_fork(
+        child, rc = fork.create_fork(
             config_path,
             target.source_session_id,
             at_turn=target.at_turn,
             cwd=cwd,
             worktree=False,
             checkout=(
-                Checkout(manifest.worktree, manifest.worktree_git_dir)
+                fork.Checkout(manifest.worktree, manifest.worktree_git_dir)
                 if manifest.worktree is not None and manifest.worktree_git_dir is not None
                 else None
             ),
@@ -383,27 +366,29 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         )
         if rc != 0:
             return None
-        child_layout = SessionLayout(state_dir=state, session_id=child, subdir=undone.subdir)
-        sha = read_manifest(child_layout.session_dir).forked_from_sha or ""
+        child_layout = sessions_layout.SessionLayout(
+            state_dir=state, session_id=child, subdir=undone.subdir
+        )
+        sha = sessions_manifest.read_manifest(child_layout.session_dir).forked_from_sha or ""
         turn = f"turn {target.turn} ({sha[:12]})"
         try:
             paths = _rewind_checkout(
-                checkout, tip=chain_tip(checkout, ref) or sha, sha=sha, exclude=exclude
+                checkout, tip=git_ops.chain_tip(checkout, ref) or sha, sha=sha, exclude=exclude
             )
-        except GitError as exc:
+        except git_ops.GitError as exc:
             reporter.error(
                 f"the checkout was not put back to {turn}: {exc}."
                 f" Fork {child} continues from the tree as it is."
             )
             return child, target.undone_text
     finally:
-        release_single_writer(lock_fd)
+        lock.release_single_writer(lock_fd)
     _report_rewind(reporter, paths, turn=turn, kept=kept, where=where)
     return child, target.undone_text
 
 
 def _report_rewind(
-    reporter: Reporter, paths: list[str], *, turn: str, kept: str | None, where: str
+    reporter: app_reporter.Reporter, paths: list[str], *, turn: str, kept: str | None, where: str
 ) -> None:
     """Print the undo notice: the paths put back and where the earlier tree and commits live."""
     if paths:

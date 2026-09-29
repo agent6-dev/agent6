@@ -13,7 +13,7 @@ import pytest
 
 from agent6.app import _setup
 from agent6.config import Config
-from agent6.models import choices
+from agent6.models import choices, validate
 
 _GLOBAL = """\
 [providers.anthropic]
@@ -191,8 +191,8 @@ def test_a_refused_flag_route_names_the_flag_not_the_config(
             unknown=(model,), suggestions={model: ("claude-x",)}, can_validate=True
         )
 
-    monkeypatch.setattr(preflight, "check_provider_keys", _keys_ok)
-    monkeypatch.setattr(preflight, "validate_configured_model", _refused)
+    monkeypatch.setattr(_setup, "check_provider_keys", _keys_ok)
+    monkeypatch.setattr(validate, "validate_configured_model", _refused)
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
     flagged = _setup.load_session_config(repo, None, mode="run", model="claude-y").config
@@ -232,8 +232,8 @@ def test_a_refused_flag_names_the_modes_provider_when_role_ids_collide(
     def _refused(_cfg: Config, _role: str) -> validate.ModelValidation:
         return validate.ModelValidation(unknown=("claude-x",), suggestions={}, can_validate=True)
 
-    monkeypatch.setattr(preflight, "check_provider_keys", _keys_ok)
-    monkeypatch.setattr(preflight, "validate_configured_model", _refused)
+    monkeypatch.setattr(_setup, "check_provider_keys", _keys_ok)
+    monkeypatch.setattr(validate, "validate_configured_model", _refused)
     said: list[str] = []
     cfg = _setup.load_session_config(repo, None, mode="plan", model="claude-x").config
     assert not preflight.route_preflight(
@@ -264,8 +264,8 @@ def test_a_refused_flag_names_a_provider_head_that_matches_nothing(
         model = cfg.models.resolve(role).model  # type: ignore[union-attr]
         return validate.ModelValidation(unknown=(model,), suggestions={}, can_validate=True)
 
-    monkeypatch.setattr(preflight, "check_provider_keys", _keys_ok)
-    monkeypatch.setattr(preflight, "validate_configured_model", _refused)
+    monkeypatch.setattr(_setup, "check_provider_keys", _keys_ok)
+    monkeypatch.setattr(validate, "validate_configured_model", _refused)
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
     cfg = _setup.load_session_config(repo, None, mode="run", model="openrouterr/claude-x").config

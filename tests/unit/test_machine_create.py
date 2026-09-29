@@ -14,14 +14,16 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import machine_agent
+from agent6.app import _session as app__session
+from agent6.app import _setup, machine_agent
 from agent6.app.machine import create as _create
-from agent6.config import Config
+from agent6.config import Config, layer
 from agent6.machine import (
     AgentExecResult,
     AgentRequest,
     build_authoring_prompt,
 )
+from agent6.sandbox import detect
 from agent6.ui.cli import main
 
 VALID_MACHINE = """\
@@ -137,9 +139,9 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         # The isolation preflight is the run lifecycle's, tested there.
         return "none"
 
-    monkeypatch.setattr(_create, "load_effective", _load)
-    monkeypatch.setattr(_create, "check_provider_keys", _keys_ok)
-    monkeypatch.setattr(_create, "select_isolation", _no_preflight)
+    monkeypatch.setattr(layer, "load_effective", _load)
+    monkeypatch.setattr(_setup, "check_provider_keys", _keys_ok)
+    monkeypatch.setattr(app__session, "select_isolation", _no_preflight)
 
 
 def _stub_runner(
@@ -166,7 +168,7 @@ def _stub_runner(
 
         return run
 
-    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
 
 
 def _write_draft(root: pathlib.Path, files: dict[str, str]) -> None:
@@ -204,7 +206,7 @@ def test_create_inherits_worker_model(
 
         return run
 
-    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
     code = main(["machine", "create", "Greet the user"])
     assert code == 0
     assert captured, "runner was never invoked"
@@ -244,7 +246,7 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
 
         return run
 
-    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user"]) == 0
     assert seen == [Config().harness.max_iterations]
 
@@ -291,7 +293,7 @@ def test_create_writes_watchable_event_log(
 
         return run
 
-    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user"]) == 0
 
     logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
@@ -641,7 +643,7 @@ def test_create_publishes_the_bytes_the_lint_gate_passed(
 
         return run
 
-    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Run a script"]) == 0
     written = (tmp_path / "scripts" / "run.py").read_text(encoding="utf-8")
     assert "import json" not in written, written
@@ -689,7 +691,7 @@ def test_create_retry_prompt_names_the_script_problem(
 
         return run
 
-    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
     code = main(["machine", "create", "Run a script"])
     assert code == 0
     assert len(prompts) == 2
@@ -751,7 +753,7 @@ def test_create_attempts_share_one_budget_ledger(
 
         return run
 
-    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
     code = main(["machine", "create", "Run a script"])
     assert code == 1  # no valid draft, and no third full-budget attempt
     assert caps == [10.0, 4.0]
@@ -1054,7 +1056,6 @@ def test_create_runs_the_shared_isolation_preflight(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`machine create` goes through the run lifecycle's preflight, so the shared refusals apply."""
-    from agent6.app import _session as session_mod
     from agent6.config import Config, ModelsConfig, OpenAIProviderEntry, RoleModel, layer
     from agent6.sandbox import detect
 
@@ -1090,10 +1091,10 @@ def test_create_runs_the_shared_isolation_preflight(
     def _strict(_req: object, _env: object) -> str:
         return "strict"
 
-    monkeypatch.setattr(_create, "load_effective", _load)
-    monkeypatch.setattr(_create, "check_provider_keys", _keys_ok)
-    monkeypatch.setattr(session_mod, "detect_env", _env)
-    monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
+    monkeypatch.setattr(layer, "load_effective", _load)
+    monkeypatch.setattr(_setup, "check_provider_keys", _keys_ok)
+    monkeypatch.setattr(_setup, "detect_env", _env)
+    monkeypatch.setattr(detect, "resolve_isolation", _strict)
     assert main(["machine", "create", "a nightly loop"]) == 2
     err = capsys.readouterr().err
     assert "REFUSING" in err and "private directory" in err
@@ -1125,7 +1126,7 @@ def test_a_structural_failure_still_reports_the_scripts_lint_problems(
 
         return run
 
-    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
     code = main(["machine", "create", "--max-attempts", "2", "Doomed draft"])
     assert code == 1
     retry_prompt = seen_prompts[1]
@@ -1164,7 +1165,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
 
         return run
 
-    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user"]) == 0
     assert captured, "runner was never invoked"
     req, root, cfg = captured[0]
@@ -1272,7 +1273,7 @@ def test_an_operator_stop_ends_create_instead_of_retrying(
 
         return run
 
-    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user", "--max-attempts", "3"]) == 1
     assert attempts == 1
     assert "no valid machine after 1 attempt(s)" in capsys.readouterr().err

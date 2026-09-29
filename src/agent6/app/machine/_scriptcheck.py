@@ -13,18 +13,17 @@ unavailable jail surfaces a diagnostic, except on isolation `none`, where execut
 
 from __future__ import annotations
 
+import dataclasses
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
 import tempfile
 import tomllib
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.kinds import IsolationLevel, JailPolicy
-from agent6.sandbox import run_in_jail
-from agent6.sandbox.jail import JailUnavailableError
+from agent6 import kinds
+from agent6.sandbox import jail, run_in_jail
 
 __all__ = ["OfflineTestOutcome", "available_tools", "lint_and_typecheck", "run_offline_tests"]
 
@@ -37,7 +36,7 @@ def _resolve_tool(name: str) -> list[str] | None:
 
     The console script beside the running interpreter wins, then `PATH`, then `uvx <name>`.
     """
-    local = Path(sys.executable).parent / name
+    local = pathlib.Path(sys.executable).parent / name
     if local.is_file():
         return [str(local)]
     on_path = shutil.which(name)
@@ -63,7 +62,9 @@ def _trim(text: str) -> str:
     return "\n".join(kept).strip() + f"\n... ({len(lines) - _MAX_DIAG_LINES} more lines)"
 
 
-def _run_static(argv: list[str], cwd: Path, label: str, *, strip: Path | None = None) -> str | None:
+def _run_static(
+    argv: list[str], cwd: pathlib.Path, label: str, *, strip: pathlib.Path | None = None
+) -> str | None:
     """Run a static checker and return its problems, or None when it passed.
 
     Args:
@@ -91,7 +92,7 @@ def _run_static(argv: list[str], cwd: Path, label: str, *, strip: Path | None = 
     return f"{label} found problems:\n{_trim(out)}"
 
 
-def _nearest_ruff_config(start: Path) -> Path | None:
+def _nearest_ruff_config(start: pathlib.Path) -> pathlib.Path | None:
     """Return the ruff config governing a path, walking up as ruff's own discovery does.
 
     For the one caller whose files live outside the tree their config governs: the scratch
@@ -115,8 +116,8 @@ def _nearest_ruff_config(start: Path) -> Path | None:
 
 
 def _ruff_invocation(
-    ruff: list[str], scripts_dir: Path, ruff_config_from: Path | None, *, fix: bool
-) -> tuple[list[str], Path]:
+    ruff: list[str], scripts_dir: pathlib.Path, ruff_config_from: pathlib.Path | None, *, fix: bool
+) -> tuple[list[str], pathlib.Path]:
     """Return ruff's argv and cwd.
 
     Native discovery runs from the bundle dir. A config resolved from the publish destination
@@ -147,7 +148,7 @@ def _ruff_invocation(
 
 
 def lint_and_typecheck(
-    scripts_dir: Path, *, fix: bool = False, ruff_config_from: Path | None = None
+    scripts_dir: pathlib.Path, *, fix: bool = False, ruff_config_from: pathlib.Path | None = None
 ) -> list[str]:
     """Lint and type-check the bundle's Python scripts without running them.
 
@@ -177,7 +178,7 @@ def lint_and_typecheck(
         real = sorted(p for p in scripts_dir.rglob("*.py") if not p.name.endswith(_TEST_SUFFIX))
         if real:
             # ty walks up to the nearest pyproject.toml and has no isolation flag: a temp copy.
-            work = Path(tempfile.mkdtemp(prefix="agent6-scriptcheck-"))
+            work = pathlib.Path(tempfile.mkdtemp(prefix="agent6-scriptcheck-"))
             try:
                 dst = work / "scripts"
                 shutil.copytree(scripts_dir, dst, symlinks=True)
@@ -192,7 +193,7 @@ def lint_and_typecheck(
     return problems
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class OfflineTestOutcome:
     """Record the offline tests' failures and what could not run.
 
@@ -210,7 +211,7 @@ class OfflineTestOutcome:
 
 
 def run_offline_tests(
-    bundle_dir: Path, isolation: IsolationLevel, *, timeout_s: float = 30.0
+    bundle_dir: pathlib.Path, isolation: kinds.IsolationLevel, *, timeout_s: float = 30.0
 ) -> OfflineTestOutcome:
     """Execute every `scripts/**/*_test.py` in a no-network jail.
 
@@ -232,7 +233,7 @@ def run_offline_tests(
     if not sorted(scripts_dir.rglob(f"*{_TEST_SUFFIX}")):
         return OfflineTestOutcome()
     # A temp copy: the jail masks the state dir the real bundle lives under.
-    workdir = Path(tempfile.mkdtemp(prefix="agent6-scripttest-"))
+    workdir = pathlib.Path(tempfile.mkdtemp(prefix="agent6-scripttest-"))
     try:
         bundle_copy = workdir / "bundle"
         # A drafting workspace is a git repo; `.git` holds every draft and the tests need none.
@@ -245,7 +246,7 @@ def run_offline_tests(
 
 
 def _run_offline_tests_in(
-    bundle_dir: Path, isolation: IsolationLevel, *, timeout_s: float
+    bundle_dir: pathlib.Path, isolation: kinds.IsolationLevel, *, timeout_s: float
 ) -> OfflineTestOutcome:
     """Return the outcome of the tests of a bundle copy, one jail each."""
     scripts_dir = bundle_dir / "scripts"
@@ -262,7 +263,7 @@ def _run_offline_tests_in(
             shutil.rmtree(data_dir, ignore_errors=True)
             data_dir.mkdir(parents=True)
             rel = test.relative_to(bundle_dir).as_posix()
-            policy = JailPolicy(
+            policy = kinds.JailPolicy(
                 cwd=bundle_dir,
                 argv=("python3", rel),
                 isolation=isolation,
@@ -276,7 +277,7 @@ def _run_offline_tests_in(
             )
             try:
                 res = run_in_jail(policy)
-            except JailUnavailableError as exc:
+            except jail.JailUnavailableError as exc:
                 return OfflineTestOutcome(
                     problems=(
                         f"could not run offline tests in a jail ({exc});"

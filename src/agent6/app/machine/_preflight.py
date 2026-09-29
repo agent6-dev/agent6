@@ -9,15 +9,14 @@ read-only protect paths, and builds the operator notify hook. The hook runs thro
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 import sys
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.app.confine import check_network_support
-from agent6.app.finalize import hook_env, run_notify_hook
+from agent6 import kinds
+from agent6.app import confine, finalize
 from agent6.config import Config
-from agent6.kinds import IsolationLevel
 from agent6.machine import StateSpec, ToolState
 
 
@@ -41,7 +40,7 @@ def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> st
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class NetworkRefusal:
     """Describe a run this host cannot honor.
 
@@ -56,7 +55,7 @@ class NetworkRefusal:
 
 
 def machine_network_refusal(
-    cfg: Config, isolation: IsolationLevel, tool_states: list[ToolState]
+    cfg: Config, isolation: kinds.IsolationLevel, tool_states: list[ToolState]
 ) -> NetworkRefusal | None:
     """Return the refusal when the machine's tool-network needs cannot be honored, else None.
 
@@ -79,7 +78,7 @@ def machine_network_refusal(
     hardened_fix: tuple[tuple[str, str], ...] = (
         () if has_block else (("sandbox.network", "host" if has_allow else "auto"),)
     )
-    net_err = check_network_support(cfg, isolation)
+    net_err = confine.check_network_support(cfg, isolation)
     if net_err is not None:
         return NetworkRefusal(net_err, hardened_fix)
     tn = cfg.sandbox.network
@@ -109,14 +108,16 @@ def machine_network_refusal(
     return None
 
 
-def machine_protect_paths(machine_path: Path, cwd: Path) -> tuple[Path, ...]:
+def machine_protect_paths(
+    machine_path: pathlib.Path, cwd: pathlib.Path
+) -> tuple[pathlib.Path, ...]:
     """Return the machine file and its `scripts/` bundle, to mark read-only in run jails.
 
     Only paths under the jail-mounted cwd are listed: a path outside it is not in the child's
     view.
     """
     cwd_r = cwd.resolve()
-    out: list[Path] = []
+    out: list[pathlib.Path] = []
     for p in (machine_path, machine_path.parent / "scripts"):
         rp = p.resolve()
         if rp.exists() and rp.is_relative_to(cwd_r):
@@ -130,7 +131,7 @@ def _stderr_note(message: str) -> None:
 
 
 def build_machine_notify_hook(
-    cfg: Config, machine_id: str, root: Path
+    cfg: Config, machine_id: str, root: pathlib.Path
 ) -> Callable[[str, str, str, str], None] | None:
     """Return the operator hook fired on `machine.notify` and `machine.end`, or None.
 
@@ -141,7 +142,7 @@ def build_machine_notify_hook(
         return None
 
     def fire(kind: str, state: str, message: str, level: str) -> None:
-        env = hook_env(
+        env = finalize.hook_env(
             AGENT6_MACHINE_ID=machine_id,
             AGENT6_MACHINE_DIR=str(root),
             AGENT6_MACHINE_EVENT=kind,
@@ -149,7 +150,7 @@ def build_machine_notify_hook(
             AGENT6_MACHINE_MESSAGE=message,
             AGENT6_MACHINE_LEVEL=level,
         )
-        run_notify_hook(
+        finalize.run_notify_hook(
             notify.on_event,
             env,
             timeout_s=notify.timeout_s,
