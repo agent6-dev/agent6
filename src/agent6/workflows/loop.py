@@ -95,7 +95,6 @@ from agent6.tools.schema import (
 )
 from agent6.workflows._advice import (
     Gate,
-    GuardSettings,
     Nudge,
     Refusal,
     Stop,
@@ -368,7 +367,6 @@ class Workflow:
     mode: Literal["run", "plan", "ask", "agent"] = "run"
     plan_output_path: Path | None = None
     # The guards' knobs: the quiet-turn cap, the loop-guard kill, the stagnation notice.
-    guards: GuardSettings = field(default_factory=GuardSettings)
     # One-shot guard so a persistently unwritable state dir (full disk, quota,
     # read-only mount) warns once instead of every turn. Snapshot persistence is
     # recovery state; a failure disables resume/fork but must not abort the run.
@@ -1443,7 +1441,9 @@ class Workflow:
             mode=self.mode,
             iteration=iteration,
             leg_start=leg_start,
-            guards=self.guards,
+            went_quiet_max_nudges=self.config.workflow.went_quiet_max_nudges,
+            loop_guard_kill_threshold=self.config.workflow.loop_guard_kill_threshold,
+            stagnation_notice_after_s=self.config.workflow.stagnation_notice_after_s,
             verify_when=self.gate.when,
             verify_retries=self.gate.retries,
             finish_validator=self.finish_validator,

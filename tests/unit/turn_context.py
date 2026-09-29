@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.workflows._advice import GuardSettings, TurnContext
+from agent6.workflows._advice import TurnContext
 from agent6.workflows._loop_state import TurnState
 
 
@@ -24,7 +24,9 @@ def turn_context(**overrides: Any) -> TurnContext:
         "mode": "run",
         "iteration": 1,
         "leg_start": 1,
-        "guards": GuardSettings(),
+        "went_quiet_max_nudges": 4,
+        "loop_guard_kill_threshold": 10,
+        "stagnation_notice_after_s": 300.0,
         "verify_when": "finish",
         "verify_retries": 2,
         "finish_validator": None,

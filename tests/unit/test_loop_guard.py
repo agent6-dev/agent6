@@ -21,7 +21,6 @@ from unittest.mock import MagicMock
 
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
-from agent6.workflows._advice import GuardSettings
 from agent6.workflows._chain import RunChain
 from agent6.workflows._provider_call import CallSettings
 from agent6.workflows.loop import Workflow
@@ -80,7 +79,14 @@ def _build_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock) -> Workflo
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
+            workflow=MagicMock(
+                went_quiet_max_nudges=4,
+                loop_guard_kill_threshold=10,
+                stagnation_notice_after_s=300.0,
+                verify_command=(),
+                verify_when="never",
+                verify_retries=2,
+            ),
         ),
         provider=provider,
         dispatcher=dispatcher,
@@ -265,15 +271,22 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: Path) -> No
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
+            workflow=MagicMock(
+                went_quiet_max_nudges=4,
+                loop_guard_kill_threshold=10,
+                stagnation_notice_after_s=300.0,
+                verify_command=(),
+                verify_when="never",
+                verify_retries=2,
+            ),
         ),
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
         call=CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=20,
-        guards=GuardSettings(loop_guard_kill_threshold=5),
     )
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=5)
     result = wf.run("loop forever")
 
     assert result.completed is False
@@ -300,19 +313,33 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: Path) -> None:
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
+            workflow=MagicMock(
+                went_quiet_max_nudges=4,
+                loop_guard_kill_threshold=10,
+                stagnation_notice_after_s=300.0,
+                verify_command=(),
+                verify_when="never",
+                verify_retries=2,
+            ),
         ),
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
         call=CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=20,
-        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     result = wf.run("loop")
 
     assert result.completed is True
     assert provider.call.call_count == 7
+
+
+def _knobs(cfg: Any, **knobs: Any) -> Any:
+    """The mocked config with `[workflow]` guard knobs set."""
+    for key, value in knobs.items():
+        setattr(cfg.workflow, key, value)
+    return cfg
 
 
 def _gated_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock, **kw: Any) -> Workflow:
@@ -330,7 +357,14 @@ def _gated_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock, **kw: Any)
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=("true",), verify_when="never", verify_retries=2),
+            workflow=MagicMock(
+                went_quiet_max_nudges=4,
+                loop_guard_kill_threshold=10,
+                stagnation_notice_after_s=300.0,
+                verify_command=("true",),
+                verify_when="never",
+                verify_retries=2,
+            ),
         ),
         provider=provider,
         dispatcher=dispatcher,
@@ -380,8 +414,8 @@ def test_loop_guard_kill_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
         provider,
         _dirtying_dispatcher(repo),
         max_iterations=20,
-        guards=GuardSettings(loop_guard_kill_threshold=5),
     )
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=5)
     result = wf.run("loop forever")
 
     assert result.reason == "loop_guard_killed"
@@ -402,8 +436,8 @@ def test_max_iterations_stop_checkpoints_the_dirty_worktree(tmp_path: Path) -> N
         provider,
         _dirtying_dispatcher(repo),
         max_iterations=3,
-        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     result = wf.run("keep going")
 
     assert result.reason == "max_iterations"
@@ -452,7 +486,6 @@ def test_provider_error_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
 def test_went_quiet_checkpoints_the_dirty_worktree(tmp_path: Path, monkeypatch: Any) -> None:
     """A model that starves into empty turns after making real edits must not
     lose them from git history on the way out."""
-    monkeypatch.delenv("AGENT6_WENT_QUIET_MAX_NUDGES", raising=False)
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = MagicMock()
@@ -465,8 +498,8 @@ def test_went_quiet_checkpoints_the_dirty_worktree(tmp_path: Path, monkeypatch: 
         provider,
         _dirtying_dispatcher(repo),
         max_iterations=5,
-        guards=GuardSettings(went_quiet_max_nudges=0),
     )
+    wf.config = _knobs(wf.config, went_quiet_max_nudges=0)
     result = wf.run("do the thing")
     assert result.reason == "went_quiet"
     assert "checkpoint (iter" in _git_log(repo)
@@ -543,7 +576,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
     dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
-    wf.guards = GuardSettings(stagnation_notice_after_s=1e-9)
+    wf.config = _knobs(wf.config, stagnation_notice_after_s=1e-9)
     result = wf.run("investigate")
     assert result.completed is True
     notices = _stagnation_blocks(_final_messages(provider))
@@ -566,7 +599,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
     no_commands.command_policy.return_value = "no"
     wf3 = _build_wf(repo, denied, no_commands)
     wf3.config.workflow.verify_command = ("true",)
-    wf3.guards = GuardSettings(stagnation_notice_after_s=1e-9)
+    wf3.config = _knobs(wf3.config, stagnation_notice_after_s=1e-9)
     wf3.run("investigate")
     assert "nothing edited yet" in _stagnation_blocks(_final_messages(denied))[0]
 
@@ -578,7 +611,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
     )
     wf2 = _build_wf(repo, gated, dispatcher)
     wf2.config.workflow.verify_command = ("true",)
-    wf2.guards = GuardSettings(stagnation_notice_after_s=1e-9)
+    wf2.config = _knobs(wf2.config, stagnation_notice_after_s=1e-9)
     wf2.run("investigate")
     assert "no edit and no verify" in _stagnation_blocks(_final_messages(gated))[0]
 
@@ -598,7 +631,7 @@ def test_stagnation_ignores_time_blocked_on_the_operator(tmp_path: Path) -> None
     dispatcher = MagicMock(operator_wait_s=3600.0)
     dispatcher.dispatch.return_value = RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
-    wf.guards = GuardSettings(stagnation_notice_after_s=1e-9)
+    wf.config = _knobs(wf.config, stagnation_notice_after_s=1e-9)
     result = wf.run("investigate")
     assert result.completed is True
     assert _stagnation_blocks(_final_messages(provider)) == []
@@ -618,7 +651,7 @@ def test_stagnation_notice_suppressed_by_an_edit(tmp_path: Path) -> None:
     dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
-    wf.guards = GuardSettings(stagnation_notice_after_s=1e-9)
+    wf.config = _knobs(wf.config, stagnation_notice_after_s=1e-9)
     result = wf.run("fix it")
     assert result.completed is True
     assert _stagnation_blocks(_final_messages(provider)) == []
@@ -637,7 +670,7 @@ def test_stagnation_notice_zero_disables(tmp_path: Path) -> None:
     dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
-    wf.guards = GuardSettings(stagnation_notice_after_s=0.0)
+    wf.config = _knobs(wf.config, stagnation_notice_after_s=0.0)
     result = wf.run("look around")
     assert result.completed is True
     assert _stagnation_blocks(_final_messages(provider)) == []
@@ -737,7 +770,7 @@ def test_the_kill_is_a_hard_stop_at_the_threshold_and_off_at_zero() -> None:
 
     state = LoopState(original_task="t", tool_calls=0)
     turn = TurnState(iteration=5, resp=MagicMock(), assistant=AssistantTurn((), ()))
-    ctx = turn_context(guards=GuardSettings(loop_guard_kill_threshold=5))
+    ctx = turn_context(loop_guard_kill_threshold=5)
     for _ in range(4):
         state.spiral.note_call('read_file:{"path": "x.txt"}')
     assert loop_guard_kill(turn, state, ctx) is None
@@ -754,5 +787,5 @@ def test_the_kill_is_a_hard_stop_at_the_threshold_and_off_at_zero() -> None:
     assert stop.log == (
         "LOOP: loop_guard_killed at iter 5 - read_file called 5x in a row (threshold=5)"
     )
-    off = turn_context(guards=GuardSettings(loop_guard_kill_threshold=0))
+    off = turn_context(loop_guard_kill_threshold=0)
     assert loop_guard_kill(turn, state, off) is None

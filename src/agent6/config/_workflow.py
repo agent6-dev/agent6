@@ -142,6 +142,35 @@ class WorkflowConfig(BaseModel):
             raise ValueError("max_iterations is >= 1, or exactly -1 for unlimited")
         return v
 
+    # The loop's guards. An empty turn (no text, no tool call) is answered
+    # with a harness notice and re-asked; the same (tool, args) call repeated
+    # ends the run; a long silence with no edit and no verify draws one notice.
+    went_quiet_max_nudges: int = Field(
+        default=4,
+        ge=0,
+        description=(
+            "Empty turns (no text, no tool call) re-asked per streak, reasoning-starvation "
+            "bursts included; 0 ends the run on the first."
+        ),
+    )
+    loop_guard_kill_threshold: int = Field(
+        default=10,
+        ge=0,
+        description=(
+            "The same (tool, args) call this many times in a row ends the run as "
+            "`loop_guard_killed` (the notice fires from three, every other turn); 0 leaves "
+            "the notice alone."
+        ),
+    )
+    stagnation_notice_after_s: float = Field(
+        default=300.0,
+        ge=0.0,
+        description=(
+            "Seconds of wall clock with no edit and no verify before one notice (a recall "
+            "spiral makes few calls with long reasoning between them); 0 disables."
+        ),
+    )
+
     # How long a run_command may run before the model is handed it back as a
     # background job. Not a timeout: nothing is killed, the command keeps
     # running and the model decides whether to wait, poll or stop it. 0 disables

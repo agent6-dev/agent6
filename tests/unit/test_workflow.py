@@ -21,7 +21,7 @@ from agent6.config import Config
 from agent6.providers import ProviderError, ProviderResponse
 from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
-from agent6.workflows._advice import GuardSettings, Stop, with_open_tasks
+from agent6.workflows._advice import Stop, with_open_tasks
 from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import CompactionSettings
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
@@ -95,6 +95,13 @@ def _silent(_msg: str) -> None:
     return None
 
 
+def _knobs(cfg: Any, **knobs: Any) -> Any:
+    """The mocked config with `[workflow]` guard knobs set."""
+    for key, value in knobs.items():
+        setattr(cfg.workflow, key, value)
+    return cfg
+
+
 def _wf(
     root: Path | None = None,
     *,
@@ -137,7 +144,13 @@ def _wf(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(
-                verify_command=(), verify_when="never", verify_retries=2, standing_patience=-1
+                went_quiet_max_nudges=4,
+                loop_guard_kill_threshold=10,
+                stagnation_notice_after_s=300.0,
+                verify_command=(),
+                verify_when="never",
+                verify_retries=2,
+                standing_patience=-1,
             ),
         ),
         "provider": MagicMock(),
@@ -233,6 +246,9 @@ def _cfg_with_verify() -> Any:
     return MagicMock(
         prompt=MagicMock(system_prompt_file=""),
         workflow=MagicMock(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_command=("true",),
             verify_when="never",
             verify_retries=2,
@@ -834,6 +850,9 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: Path) -> Non
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=(),
@@ -919,6 +938,9 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -995,6 +1017,9 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -1075,8 +1100,8 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
         max_iterations=1 if ending == "iterations" else 3,
-        guards=GuardSettings(went_quiet_max_nudges=0),
     )
+    wf.config = _knobs(wf.config, went_quiet_max_nudges=0)
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=Conversation.from_wire(
@@ -1107,6 +1132,9 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: Path) -> N
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -1158,6 +1186,9 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: Path) -> None
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -1339,6 +1370,9 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=(),
@@ -1392,6 +1426,9 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=(),
@@ -1465,6 +1502,9 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -1525,6 +1565,9 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: Path
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -1612,6 +1655,9 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -1659,6 +1705,9 @@ def test_worker_max_tokens_starvation_backoff() -> None:
     non-metric runs are unaffected."""
     metric_cfg = SimpleNamespace(
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -1685,6 +1734,9 @@ def test_worker_max_tokens_starvation_backoff() -> None:
             git=_GIT_STUB,
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             workflow=SimpleNamespace(
+                went_quiet_max_nudges=4,
+                loop_guard_kill_threshold=10,
+                stagnation_notice_after_s=300.0,
                 verify_when="never",
                 verify_retries=2,
                 verify_command=("true",),
@@ -1746,6 +1798,9 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -1823,6 +1878,9 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -1909,6 +1967,9 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -2005,6 +2066,9 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -2227,6 +2291,9 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -2290,6 +2357,9 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -2373,6 +2443,9 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -2422,6 +2495,9 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -2487,6 +2563,9 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -2576,6 +2655,9 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -2595,8 +2677,8 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
         dispatcher=dispatcher,
         budget=budget,
         max_iterations=max_iters,
-        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with patch(
@@ -2650,6 +2732,9 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -2667,8 +2752,8 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
         dispatcher=DispatcherStub(),
         budget=budget,
         max_iterations=20,
-        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -2712,6 +2797,9 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -2727,8 +2815,8 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
         dispatcher=DispatcherStub(),
         budget=None,
         max_iterations=20,
-        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -2787,6 +2875,9 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: Path) -> Non
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -2802,8 +2893,8 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: Path) -> Non
         dispatcher=dispatcher,
         budget=None,
         max_iterations=20,
-        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="system",
@@ -2900,6 +2991,9 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -2918,8 +3012,8 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
         dispatcher=DispatcherStub(),
         budget=budget,
         max_iterations=20,
-        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with patch(
@@ -3044,6 +3138,9 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -3067,6 +3164,9 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -3090,6 +3190,9 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -4077,6 +4180,9 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -4097,8 +4203,8 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
             stop_clear=lambda: pending.__setitem__("stop", False),
         ),
         max_iterations=30,
-        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: x"}]}]
     with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -4175,6 +4281,9 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -4196,8 +4305,8 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
         curator=cur,  # low so tier-2 fires mid-run
         budget=None,
         max_iterations=30,
-        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: review"}]}]
     with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -4872,6 +4981,9 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -4892,8 +5004,8 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
         events=events,  # low so it fires mid-run
         budget=None,
         max_iterations=30,
-        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: optimize"}]}]
 
     with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
@@ -4986,6 +5098,9 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=(),
@@ -5028,6 +5143,9 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("pytest", "-q"),
@@ -5077,6 +5195,9 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=(),
@@ -5175,6 +5296,9 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=(),
@@ -5278,6 +5402,9 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -5348,6 +5475,9 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -5428,6 +5558,9 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -5482,6 +5615,9 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -5544,6 +5680,9 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -5620,6 +5759,9 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -5680,6 +5822,9 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -5760,6 +5905,9 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -5850,6 +5998,9 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -5916,6 +6067,9 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -6045,6 +6199,9 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> 
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -6107,6 +6264,9 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=(),  # GATELESS
@@ -6171,6 +6331,9 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=(),
@@ -6237,6 +6400,9 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=(),
@@ -6304,6 +6470,9 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=(),
@@ -6548,6 +6717,9 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: Path) -
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=(),
@@ -6606,6 +6778,9 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> 
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=(),
@@ -6746,6 +6921,9 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -6867,7 +7045,14 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
             git=_GIT_STUB,
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=("false",), verify_when="never", verify_retries=2),
+            workflow=MagicMock(
+                went_quiet_max_nudges=4,
+                loop_guard_kill_threshold=10,
+                stagnation_notice_after_s=300.0,
+                verify_command=("false",),
+                verify_when="never",
+                verify_retries=2,
+            ),
         ),
     )
     state = _state()
@@ -7397,6 +7582,9 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: Pat
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -8216,6 +8404,9 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
             verify_command=("true",),
@@ -8298,6 +8489,9 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: Pat
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
             verify_when="step",
             verify_retries=2,
             verify_command=("true",),

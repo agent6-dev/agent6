@@ -318,7 +318,7 @@ def loop_guard_kill(turn: TurnState, state: LoopState, ctx: TurnContext) -> Stop
     ends the run: the notice was advisory, and a worker still circling would
     spend the rest of the budget on it. 0 leaves the notice alone. Observed
     last, so a turn's other stops outrank it."""
-    threshold = ctx.guards.loop_guard_kill_threshold
+    threshold = ctx.loop_guard_kill_threshold
     streak = state.spiral.call_streak
     if not (threshold > 0 and streak >= threshold):
         return None
@@ -343,7 +343,7 @@ def stagnation(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | N
     run with no edit and no verify yet; time blocked on the operator is not
     the model's, and a gateless run's notice names no gate."""
     guard = state.stagnation
-    after = ctx.guards.stagnation_notice_after_s
+    after = ctx.stagnation_notice_after_s
     if not (
         after > 0
         and ctx.mode == "run"

@@ -8,7 +8,7 @@ from __future__ import annotations
 import time
 from unittest.mock import MagicMock
 
-from agent6.workflows._advice import GuardSettings, TurnContext
+from agent6.workflows._advice import TurnContext
 from agent6.workflows._conversation import AssistantTurn
 from agent6.workflows._guards import StagnationGuard, stagnation
 from agent6.workflows._loop_state import LoopState, TurnState
@@ -26,7 +26,7 @@ def _turn(iteration: int = 4) -> TurnState:
 
 
 def _ctx(**kw: object) -> TurnContext:
-    return turn_context(guards=GuardSettings(stagnation_notice_after_s=1.0), **kw)
+    return turn_context(stagnation_notice_after_s=1.0, **kw)
 
 
 def test_the_notice_fires_once_and_names_the_gate_only_when_one_can_run() -> None:
@@ -55,9 +55,4 @@ def test_an_edit_a_verify_another_mode_or_a_zero_knob_keeps_it_quiet() -> None:
     assert stagnation(_turn(), verified, _ctx()) is None
     assert stagnation(_turn(), _state(), _ctx(mode="plan")) is None
     assert stagnation(_turn(), _state(), turn_context()) is None  # the default knob, 300 s
-    assert (
-        stagnation(
-            _turn(), _state(), turn_context(guards=GuardSettings(stagnation_notice_after_s=0))
-        )
-        is None
-    )
+    assert stagnation(_turn(), _state(), turn_context(stagnation_notice_after_s=0)) is None

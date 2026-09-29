@@ -222,7 +222,14 @@ def test_after_auto_commit_default_continues() -> None:
         chain=RunChain(Path("/tmp")),
         config=MagicMock(
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
+            workflow=MagicMock(
+                went_quiet_max_nudges=4,
+                loop_guard_kill_threshold=10,
+                stagnation_notice_after_s=300.0,
+                verify_command=(),
+                verify_when="never",
+                verify_retries=2,
+            ),
         ),
         provider=MagicMock(),
         dispatcher=MagicMock(),
@@ -246,7 +253,14 @@ def test_after_auto_commit_field_is_overridable() -> None:
         chain=RunChain(Path("/tmp")),
         config=MagicMock(
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
+            workflow=MagicMock(
+                went_quiet_max_nudges=4,
+                loop_guard_kill_threshold=10,
+                stagnation_notice_after_s=300.0,
+                verify_command=(),
+                verify_when="never",
+                verify_retries=2,
+            ),
         ),
         provider=MagicMock(),
         dispatcher=MagicMock(),

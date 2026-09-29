@@ -5,10 +5,7 @@ turn that ends on a question, and an empty turn, each bounded."""
 
 from __future__ import annotations
 
-import pytest
-
 from agent6.providers import ProviderResponse
-from agent6.workflows._advice import GuardSettings
 from agent6.workflows._loop_state import LoopState
 from agent6.workflows._nudges import (
     QUESTION_NUDGE,
@@ -72,7 +69,7 @@ def test_a_question_in_prose_draws_one_nudge_per_run() -> None:
 
 def test_an_empty_turn_is_nudged_up_to_the_cap_with_the_starved_wording() -> None:
     state = _state()
-    ctx = turn_context(iteration=3, guards=GuardSettings(went_quiet_max_nudges=2))
+    ctx = turn_context(iteration=3, went_quiet_max_nudges=2)
     first = went_quiet(state, ctx, _empty())
     assert first is not None and first.text == WENT_QUIET_NUDGE
     assert first.event == "loop.went_quiet.nudge"
@@ -82,9 +79,9 @@ def test_an_empty_turn_is_nudged_up_to_the_cap_with_the_starved_wording() -> Non
     assert went_quiet(state, ctx, _empty()) is None
 
 
-def test_the_env_override_sets_the_cap(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGENT6_WENT_QUIET_MAX_NUDGES", "0")
-    assert went_quiet(_state(), turn_context(), _empty()) is None
-    monkeypatch.setenv("AGENT6_WENT_QUIET_MAX_NUDGES", "x")
+def test_the_config_knob_sets_the_cap() -> None:
+    """`[workflow].went_quiet_max_nudges` is the one knob: 0 ends the run on
+    the first empty turn (no nudge), and the default caps the streak at 4."""
+    assert went_quiet(_state(), turn_context(went_quiet_max_nudges=0), _empty()) is None
     default = went_quiet(_state(), turn_context(), _empty())
     assert default is not None and default.fields["nudges_max"] == 4

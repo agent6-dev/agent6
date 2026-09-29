@@ -3,7 +3,7 @@
 """What the loop's advisors and finish gates answer with, and what they
 read: a `Nudge` (a notice for the model, recorded), a `Stop` (an end of the
 run), a `Refusal` (a finish handed back), the frozen `TurnContext` of run
-facts, and the operator's `GuardSettings`. The advisors live in `_guards`
+facts and the guards' config knobs. The advisors live in `_guards`
 and `_metric`, the gates in `_finish_gates`; the loop applies their
 answers."""
 
@@ -19,24 +19,6 @@ from agent6.workflows._session_state import End
 
 if TYPE_CHECKING:
     from agent6.workflows._loop_state import LoopState, TurnState
-
-
-@dataclass(frozen=True, slots=True)
-class GuardSettings:
-    """The guards' operator-facing knobs. `went_quiet_max_nudges`: an empty
-    turn (no text, no tool call) is answered with a harness notice and
-    re-asked up to this many times per streak, reasoning-starvation bursts
-    included; 0 ends the run on the first. `loop_guard_kill_threshold`: the
-    same (tool, args) call this many times in a row ends the run as
-    loop_guard_killed (the notice fires from three, every other turn); 0
-    leaves the notice alone. `stagnation_notice_after_s`: one notice when
-    this much wall clock passes with no edit and no verify (a recall spiral
-    makes few calls with long reasoning between them, below every
-    call-count guard's horizon); 0 disables."""
-
-    went_quiet_max_nudges: int = 4
-    loop_guard_kill_threshold: int = 10
-    stagnation_notice_after_s: float = 300.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +62,11 @@ class TurnContext:
     iteration: int
     # The leg's first iteration: a turn allowance counts from it.
     leg_start: int
-    guards: GuardSettings
+    # `[workflow]`'s guard knobs: the empty-turn nudge cap, the repeated-call
+    # kill threshold and the stagnation notice delay.
+    went_quiet_max_nudges: int
+    loop_guard_kill_threshold: int
+    stagnation_notice_after_s: float
     # `[workflow].verify_when` and `verify_retries`: what the red-gate return
     # rule reads (`verify_command` moves mid-run and is a callable below).
     verify_when: Literal["finish", "step", "never"]

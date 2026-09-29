@@ -22,7 +22,6 @@ from unittest.mock import MagicMock
 from agent6.events import EventSink
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
-from agent6.workflows._advice import GuardSettings
 from agent6.workflows._chain import RunChain
 from agent6.workflows._provider_call import CallSettings
 from agent6.workflows._steer import OperatorBridge
@@ -97,6 +96,13 @@ def _init_repo(repo: Path) -> None:
     _sp.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
 
 
+def _knobs(wf: Workflow, **knobs: Any) -> Workflow:
+    """The workflow with `[workflow]` guard knobs set on its mocked config."""
+    for key, value in knobs.items():
+        setattr(wf.config.workflow, key, value)
+    return wf
+
+
 def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Workflow:
     dispatcher = MagicMock()
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
@@ -105,7 +111,14 @@ def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Workflow:
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
+            workflow=MagicMock(
+                went_quiet_max_nudges=4,
+                loop_guard_kill_threshold=10,
+                stagnation_notice_after_s=300.0,
+                verify_command=(),
+                verify_when="never",
+                verify_retries=2,
+            ),
         ),
         provider=provider,
         dispatcher=dispatcher,
@@ -146,7 +159,7 @@ def test_went_quiet_nudges_then_succeeds(tmp_path: Path) -> None:
         _resp_text("done"),
         _resp_text("done"),
     ]
-    wf = _build_wf(repo, provider, guards=GuardSettings(went_quiet_max_nudges=2))
+    wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=2)
     result = wf.run("do something")
 
     assert result.completed is True
@@ -174,7 +187,7 @@ def test_starvation_injects_nudge_without_suppressing_reasoning(tmp_path: Path) 
         _resp_text("done"),
         _resp_text("done"),
     ]
-    wf = _build_wf(repo, provider, guards=GuardSettings(went_quiet_max_nudges=2))
+    wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=2)
     result = wf.run("do something")
 
     assert result.completed is True
@@ -202,7 +215,7 @@ def test_went_quiet_drops_empty_assistant_turn(tmp_path: Path) -> None:
         _resp_text("done"),
         _resp_text("done"),
     ]
-    wf = _build_wf(repo, provider, guards=GuardSettings(went_quiet_max_nudges=1))
+    wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=1)
     wf.run("task")
 
     last_args = provider.call.call_args_list[-1]
@@ -222,7 +235,7 @@ def test_went_quiet_exhausts_nudges_then_fails(tmp_path: Path) -> None:
     provider = MagicMock()
     # 3 empty turns; with max_nudges=2 the third gives up.
     provider.call.side_effect = [_empty_resp(), _empty_resp(), _empty_resp()]
-    wf = _build_wf(repo, provider, guards=GuardSettings(went_quiet_max_nudges=2))
+    wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=2)
     result = wf.run("task")
 
     assert result.completed is False
@@ -238,7 +251,7 @@ def test_went_quiet_disabled_when_max_nudges_zero(tmp_path: Path) -> None:
 
     provider = MagicMock()
     provider.call.side_effect = [_empty_resp(), _resp_text("never reached")]
-    wf = _build_wf(repo, provider, guards=GuardSettings(went_quiet_max_nudges=0))
+    wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=0)
     result = wf.run("task")
 
     assert result.completed is False
@@ -261,7 +274,7 @@ def test_went_quiet_nudges_reset_after_successful_turn(tmp_path: Path) -> None:
         _empty_resp(),
         _resp_text("done"),
     ]
-    wf = _build_wf(repo, provider, guards=GuardSettings(went_quiet_max_nudges=2))
+    wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=2)
     result = wf.run("task")
 
     assert result.completed is True
@@ -289,7 +302,7 @@ def test_went_quiet_budget_refills_on_a_bounced_prose_turn(tmp_path: Path) -> No
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id="t1"),  # iter 5
         _resp_text("done"),  # iter 6: legitimate silent finish
     ]
-    wf = _build_wf(repo, provider, guards=GuardSettings(went_quiet_max_nudges=1))
+    wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=1)
     result = wf.run("task")
     assert result.reason != "went_quiet"
     assert result.completed is True
@@ -315,7 +328,7 @@ def test_a_billed_empty_turn_says_so(tmp_path: Path) -> None:
     provider = MagicMock()
     provider.call.side_effect = [billed, _resp_text("done"), _resp_text("done"), _resp_text("done")]
     lines: list[str] = []
-    wf = _build_wf(repo, provider, guards=GuardSettings(went_quiet_max_nudges=2))
+    wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=2)
     wf.logger = lines.append
     wf.events = EventSink(tmp_path / "logs.jsonl")
     wf.run("do something")
@@ -348,7 +361,7 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: Path) -> None
     provider = MagicMock()
     provider.call.side_effect = [billed, _resp_text("done"), _resp_text("done"), _resp_text("done")]
     lines: list[str] = []
-    wf = _build_wf(repo, provider, guards=GuardSettings(went_quiet_max_nudges=2))
+    wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=2)
     wf.logger = lines.append
     wf.events = EventSink(tmp_path / "logs.jsonl")
     wf.budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
@@ -405,9 +418,6 @@ def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: Path) -> N
         repo,
         provider,
         events=events,
-        guards=GuardSettings(
-            went_quiet_max_nudges=0
-        ),  # no nudge left: the park is the continuation
         interactive=True,
         bridge=OperatorBridge(
             steer_requested=lambda: bool(parked) and bool(steers),
@@ -415,6 +425,7 @@ def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: Path) -> N
             steer_clear=parked.clear,
         ),
     )
+    wf = _knobs(wf, went_quiet_max_nudges=0)  # no nudge left: the park is the continuation
     wf.run("do something")
 
     assert provider.call.call_count >= 2, "the steer did not resume the parked run"

@@ -262,7 +262,12 @@ def _build_wf(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(
-                verify_command=verify_command, verify_when=verify_when, verify_retries=2
+                went_quiet_max_nudges=4,
+                loop_guard_kill_threshold=10,
+                stagnation_notice_after_s=300.0,
+                verify_command=verify_command,
+                verify_when=verify_when,
+                verify_retries=2,
             ),
             # A real int, not a Mock: segment_lanes compares the spec's lane
             # count against this cap.

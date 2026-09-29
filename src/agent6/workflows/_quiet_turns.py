@@ -6,7 +6,6 @@ answering with a `Nudge` the loop puts in the conversation."""
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -85,20 +84,13 @@ def question_in_prose(state: LoopState, ctx: TurnContext, text: str) -> Nudge | 
     )
 
 
-def went_quiet_cap(ctx: TurnContext) -> int:
-    """The empty-turn nudge cap: `AGENT6_WENT_QUIET_MAX_NUDGES` when set,
-    else `went_quiet_max_nudges`."""
-    env_max = os.environ.get("AGENT6_WENT_QUIET_MAX_NUDGES", "").strip()
-    return int(env_max) if env_max.isdigit() else ctx.guards.went_quiet_max_nudges
-
-
 def went_quiet(state: LoopState, ctx: TurnContext, resp: ProviderResponse) -> Nudge | None:
     """An empty turn (no text, no tool call) is answered with a nudge up to
     the cap per streak (any non-empty turn refills it); a turn that spent
     its whole output budget on reasoning gets the starved wording. None once
     the cap is spent: the run ends as went_quiet unless a standing goal or a
     watching operator continues it."""
-    cap = went_quiet_cap(ctx)
+    cap = ctx.went_quiet_max_nudges
     quiet = state.quiet
     if quiet.went_quiet_nudges_used >= cap:
         return None
