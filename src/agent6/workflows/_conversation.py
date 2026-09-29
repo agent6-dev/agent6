@@ -435,3 +435,19 @@ def format_transcript_tail(
     if len(joined) > max_chars:
         joined = joined[-max_chars:]
     return joined
+
+
+def last_assistant_prose(conversation: Conversation) -> str:
+    """The text of the newest assistant turn, for pairing a steer with the
+    question it answers. Harness notices after it (the question nudge) do
+    not hide it; a tool result does ("": the model went on working)."""
+    for turn in reversed(conversation.turns):
+        if isinstance(turn, AssistantTurn):
+            return "".join(
+                str(b.get("text", ""))
+                for b in turn.raw_content
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+        if any(isinstance(item, ToolResultItem) for item in turn.items):
+            return ""
+    return ""

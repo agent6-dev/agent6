@@ -4432,9 +4432,7 @@ def _steer_via_wire(
 ) -> str | None:
     conversation = Conversation.from_wire(messages)
     try:
-        return wf._maybe_handle_steer(  # pyright: ignore[reportPrivateUsage]
-            conversation, iteration, state
-        )
+        return wf.steering.handle(conversation, iteration, state)
     finally:
         messages[:] = conversation.to_wire()
 
@@ -7763,9 +7761,7 @@ def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
         events=ev,
         bridge=OperatorBridge(steer_requested=lambda: True, steer_prompt=lambda: "exit"),
     )
-    result = wf._maybe_handle_steer(  # pyright: ignore[reportPrivateUsage]
-        Conversation(), 3, _state()
-    )
+    result = wf.steering.handle(Conversation(), 3, _state())
     assert result == "exit"
     out = wf._steer_outcome("exit", 3, _state())  # pyright: ignore[reportPrivateUsage]
     assert out is not None and out.reason == "steer_exit" and out.completed is False
@@ -7908,9 +7904,9 @@ def test_operator_answers_become_recorded_rulings(tmp_path: Path) -> None:
     conv = Conversation()
     conv.notice("task")
     conv.assistant([{"type": "text", "text": "Two shapes fit.\nDrop the modal or keep it?"}])
-    assert wf._maybe_handle_steer(conv, 2, st) is None  # pyright: ignore[reportPrivateUsage]
+    assert wf.steering.handle(conv, 2, st) is None
     conv.assistant([{"type": "text", "text": "Done with the item."}])
-    assert wf._maybe_handle_steer(conv, 3, st) is None  # pyright: ignore[reportPrivateUsage]
+    assert wf.steering.handle(conv, 3, st) is None
     text = decisions_path(state_dir).read_text(encoding="utf-8")
     assert text.count("[tidy-fox-1]") == 3
     assert "Q: Which port?\n  A: 8931\n" in text and "Q: Keep the modal?\n  A: no\n" in text
@@ -7957,7 +7953,7 @@ def test_a_skill_command_steer_expands_in_the_loop(tmp_path: Path) -> None:
     wf.mode = "run"
     st = _state()
     conv = MagicMock()
-    assert wf._maybe_handle_steer(conv, 1, st) is None  # pyright: ignore[reportPrivateUsage]
+    assert wf.steering.handle(conv, 1, st) is None
     # The steer reads the cached resolution: the prompt-assembly step's
     # warnings are not re-emitted on every slash steer.
     assert not [c for c in events.emit.call_args_list if c.args[:1] == ("loop.skills.warning",)]
@@ -7967,7 +7963,7 @@ def test_a_skill_command_steer_expands_in_the_loop(tmp_path: Path) -> None:
         "Skill arguments: lite" in injected
         and '<skill name="caveman">\nGRUNT\n</skill>' in injected
     )
-    assert wf._maybe_handle_steer(conv, 2, st) is None  # pyright: ignore[reportPrivateUsage]
+    assert wf.steering.handle(conv, 2, st) is None
     assert "/nosuch thing" in conv.notice.call_args.args[0]
 
 
@@ -8248,7 +8244,7 @@ def test_a_steer_answering_a_prose_question_records_after_the_nudge(tmp_path: Pa
     conversation.notice(QUESTION_NUDGE)
     state = LoopState(original_task="t", tool_calls=0)
 
-    wf._maybe_handle_steer(conversation, 4, state)  # pyright: ignore[reportPrivateUsage]
+    wf.steering.handle(conversation, 4, state)
 
     assert len(state.decisions_recorded) == 1
     assert question in decisions_path(tmp_path / "state").read_text(encoding="utf-8")
@@ -8267,7 +8263,7 @@ def test_a_steer_answering_an_optioned_question_records_the_question(tmp_path: P
     conversation.notice(QUESTION_NUDGE)
     state = LoopState(original_task="t", tool_calls=0)
 
-    wf._maybe_handle_steer(conversation, 4, state)  # pyright: ignore[reportPrivateUsage]
+    wf.steering.handle(conversation, 4, state)
 
     text = decisions_path(tmp_path / "state").read_text(encoding="utf-8")
     assert f"Q: {question}\n  A: keep squash\n" in text

@@ -8,10 +8,21 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
+from agent6.directive import DirectiveError, parse_directive, parse_pin
 from agent6.sessions.ipc import OperatorRequest
+from agent6.skills import skill_command, skill_steer_payload
 from agent6.types import AutoCommitDirective
+from agent6.workflows._conversation import last_assistant_prose
+from agent6.workflows._nudges import ending_question
 from agent6.workflows.subrun import GroupLaneSpawner
+
+if TYPE_CHECKING:
+    from agent6.tools.dispatch import ToolDispatcher
+    from agent6.workflows._conversation import Conversation
+    from agent6.workflows._loop_state import LoopState
+    from agent6.workflows._parallel_dispatch import ParallelDispatcher
 
 # `/pin` instructions are re-injected verbatim after every tier-2 restart, so
 # their total is capped. Over the cap a pin lands as an ordinary steer (the
@@ -95,3 +106,148 @@ def try_pin(pins: list[str], instruction: str) -> bool:
         return False
     pins.append(instruction)
     return True
+
+
+@dataclass(frozen=True, slots=True)
+class Steering:
+    """What a steer's text means for the run, taken at an operator boundary
+    or a park: a verb (`STEER_VERBS`: the name the loop maps to an end), a
+    `/parallel` directive dispatched at once, a `/pin` that survives
+    compaction, a `/<skill>` expanded to its text, or an instruction
+    injected into the conversation (paired with the question it answers,
+    when the model just asked one)."""
+
+    bridge: OperatorBridge
+    # Built on the first `/parallel` (the dispatcher reads the config then).
+    parallel: Callable[[], ParallelDispatcher]
+    dispatcher: ToolDispatcher
+    record_decision: Callable[[LoopState, str, str], None]
+    log: Callable[[str], None]
+    emit: Callable[..., None]
+
+    def handle(
+        self,
+        conversation: Conversation,
+        iteration: int,
+        state: LoopState,
+    ) -> str | None:
+        """Operator steering between iterations.
+
+        Returns `"abort"` if the operator typed "abort" at the prompt;
+        the loop should then return a steer_abort result. Returns `None`
+        in all other cases (no request, empty steer, `/parallel` dispatch,
+        or instruction injected into the conversation).
+
+        Polls steer_requested() and, on a positive, calls steer_prompt()
+        to capture operator text. Empty / None / KeyboardInterrupt aborts;
+        boundary is between completed iters so a tool_use / tool_result pair
+        is never split. A message starting with the exact `/parallel` token
+        is a dispatch directive (see `ParallelDispatcher.dispatch`), not an injected
+        instruction.
+        """
+        if not self.bridge.steer_requested():
+            return None
+        self.emit("loop.steer.requested", iteration=iteration)
+        self.log(f"STEER: operator steering at iter {iteration}")
+        try:
+            text = self.bridge.steer_prompt()
+        finally:
+            self.bridge.steer_clear()
+        if text is None or not text.strip():
+            self.log("  (empty - continuing)")
+            return None
+        steer_text = text.strip()
+        if verb := STEER_VERBS.get(steer_text.lower()):
+            name, event, line = verb
+            self.emit(event)
+            self.log(f"  {line}")
+            return name
+        if (
+            self.directive(conversation, iteration, state, steer_text)
+            or self.pin(conversation, state, steer_text)
+            or self.skill(conversation, steer_text)
+        ):
+            return None
+        self.log(f"  injecting steering instruction ({len(steer_text)} chars)")
+        self.emit("loop.steer.injected", chars=len(steer_text), text=steer_text)
+        asked = last_assistant_prose(conversation)
+        if question := ending_question(asked):
+            self.record_decision(state, question, steer_text)
+        conversation.notice(
+            f"OPERATOR STEERING (a mid-run instruction from the operator):\n{steer_text}"
+        )
+        return None
+
+    def skill(self, conversation: Conversation, steer_text: str) -> bool:
+        """Handle a `/<skill> [args]` steer from any composer: the skill's
+        full text is injected as the instruction (the same payload on every
+        surface). Returns True when handled; False when *steer_text* names no
+        enabled skill."""
+        if not steer_text.startswith("/"):
+            return False
+        found = skill_command(steer_text, self.dispatcher.resolved_skills())
+        if found is None:
+            return False
+        skill, args = found
+        self.log(f"  skill steer: {skill.name}")
+        self.emit("loop.steer.skill", name=skill.name, args=args)
+        conversation.notice(
+            "OPERATOR STEERING (a mid-run instruction from the operator):\n"
+            + skill_steer_payload(skill.name, skill.text, args)
+        )
+        return True
+
+    def pin(self, conversation: Conversation, state: LoopState, steer_text: str) -> bool:
+        """Handle a steer that is a `/pin` directive. A recorded pin is injected
+        as a marked instruction AND re-injected verbatim after every tier-2
+        restart. Over the total cap, the instruction is still delivered as an
+        ordinary steer -- only the durability is refused, loudly. Returns True
+        when handled; False when *steer_text* is not a pin directive."""
+        try:
+            instruction = parse_pin(steer_text)
+        except DirectiveError as exc:
+            conversation.notice(f"OPERATOR STEERING: nothing pinned: {exc}")
+            self.log(f"  /pin refused: {exc}")
+            return True
+        if instruction is None:
+            return False
+        if not try_pin(state.pins, instruction):
+            # parse_pin already rejects an empty directive, so a refusal here is
+            # always the cap: deliver the instruction as an ordinary steer.
+            self.log(f"  /pin over cap (> {PINS_MAX_CHARS}); delivered as an ordinary steer")
+            self.emit("loop.pin.refused", chars=len(instruction), limit=PINS_MAX_CHARS)
+            conversation.notice(
+                f"OPERATOR STEERING (not pinned: the {PINS_MAX_CHARS}-char pin cap is"
+                " full, so this instruction does not survive context compaction):\n"
+                f"{instruction}"
+            )
+            return True
+        self.log(f"  pinned instruction ({len(instruction)} chars, {len(state.pins)} pins)")
+        self.emit("loop.pin.added", text=instruction, chars=len(instruction), count=len(state.pins))
+        conversation.notice(
+            "OPERATOR STEERING (pinned: this instruction survives context compaction"
+            " and binds for the rest of the run):\n"
+            f"{instruction}"
+        )
+        return True
+
+    def directive(
+        self,
+        conversation: Conversation,
+        iteration: int,
+        state: LoopState,
+        steer_text: str,
+    ) -> bool:
+        """Handle a steer that is a `/parallel` directive: dispatch a valid one,
+        or answer a malformed one (a bare `/parallel`, a spec with no task) and
+        continue. Returns True when handled; False when *steer_text* is ordinary
+        steering to inject as an instruction."""
+        try:
+            segments = parse_directive(steer_text)
+        except DirectiveError as exc:
+            self.parallel().feedback(conversation, f"nothing dispatched: {exc}")
+            return True
+        if segments is None:
+            return False
+        self.parallel().dispatch(conversation, iteration, state, segments)
+        return True

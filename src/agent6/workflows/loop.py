@@ -25,7 +25,6 @@ from pydantic import ValidationError
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.commit_message import conventional_commit_subject
 from agent6.config import Config
-from agent6.directive import DirectiveError, parse_directive, parse_pin
 from agent6.git_ops import (
     GitError,
     commit_diff,
@@ -65,7 +64,7 @@ from agent6.providers import (
 from agent6.sessions.ipc import (
     emit_session_start,
 )
-from agent6.skills import ResolvedSkills, skill_command, skill_steer_payload
+from agent6.skills import ResolvedSkills
 from agent6.task_text import operator_task_text, task_headline
 from agent6.tools.dispatch import (
     OperatorCommandUnexecutable,
@@ -155,7 +154,6 @@ from agent6.workflows._metric import (
 )
 from agent6.workflows._nudges import (
     PLAN_ON_DISK_HEADER,
-    ending_question,
     tool_error_signature,
 )
 from agent6.workflows._panel import (
@@ -191,7 +189,7 @@ from agent6.workflows._session_state import (
     write_turn_marker,
 )
 from agent6.workflows._standing import Standing
-from agent6.workflows._steer import PINS_MAX_CHARS, STEER_VERBS, OperatorBridge, try_pin
+from agent6.workflows._steer import PINS_MAX_CHARS, OperatorBridge, Steering, try_pin
 from agent6.workflows._toolset import (
     build_readonly_review_tools,
     tool_definitions,
@@ -249,22 +247,6 @@ def _plan_is_title_only(plan_md: str) -> bool:
     return not any(
         line.strip() and not line.lstrip().startswith("#") for line in plan_md.splitlines()
     )
-
-
-def _last_assistant_prose(conversation: Conversation) -> str:
-    """The text of the newest assistant turn, for pairing a steer with the
-    question it answers. Harness notices after it (the question nudge) do
-    not hide it; a tool result does ("": the model went on working)."""
-    for turn in reversed(conversation.turns):
-        if isinstance(turn, AssistantTurn):
-            return "".join(
-                str(b.get("text", ""))
-                for b in turn.raw_content
-                if isinstance(b, dict) and b.get("type") == "text"
-            )
-        if any(isinstance(item, ToolResultItem) for item in turn.items):
-            return ""
-    return ""
 
 
 @dataclass
@@ -777,7 +759,7 @@ class Workflow:
         iteration -- mid-run Ctrl-C steering stays on the completed-iteration
         poll, and a Ctrl-C cannot precede this point."""
         return self._steer_outcome(
-            self._maybe_handle_steer(conversation, iteration, state), iteration, state
+            self.steering.handle(conversation, iteration, state), iteration, state
         )
 
     def _turn_pre_call(
@@ -869,7 +851,7 @@ class Workflow:
             # is discarded; the menu decides continue / steer / stop / detach.
             self._log(f"LOOP: steer requested mid-turn at iter {iteration}")
             outcome = self._steer_outcome(
-                self._maybe_handle_steer(conversation, iteration, state), iteration, state
+                self.steering.handle(conversation, iteration, state), iteration, state
             )
             if outcome is not None:
                 return outcome
@@ -2572,6 +2554,18 @@ class Workflow:
         )
 
     @cached_property
+    def steering(self) -> Steering:
+        """What a steer's text means for the run (`Steering.handle`)."""
+        return Steering(
+            bridge=self.bridge,
+            parallel=lambda: self.parallel,
+            dispatcher=self.dispatcher,
+            record_decision=self._record_decision,
+            log=self._log,
+            emit=self._emit,
+        )
+
+    @cached_property
     def reviewer(self) -> Reviewer:
         """The run's in-loop review panel."""
         return Reviewer(
@@ -2629,7 +2623,7 @@ class Workflow:
         # into the conversation; a second Ctrl-C within 2s raises
         # KeyboardInterrupt and aborts.
         return self._steer_outcome(
-            self._maybe_handle_steer(conversation, iteration, state), iteration, state
+            self.steering.handle(conversation, iteration, state), iteration, state
         )
 
     def _quiet_continuation(
@@ -2680,7 +2674,7 @@ class Workflow:
             if self.bridge.should_abort():
                 return self._steer_outcome("abort", iteration, state)
             if self.bridge.steer_requested():
-                verb = self._maybe_handle_steer(conversation, iteration, state)
+                verb = self.steering.handle(conversation, iteration, state)
                 if verb is not None:
                     return self._steer_outcome(verb, iteration, state)
                 # Injected (or a bare poke): the run continues where it parked.
@@ -2696,7 +2690,7 @@ class Workflow:
     def _steer_outcome(
         self, steer_result: str | None, iteration: int, state: LoopState
     ) -> SessionResult | None:
-        """Map a _maybe_handle_steer result to a terminal SessionResult, or None to keep
+        """Map a `Steering.handle` result to a terminal SessionResult, or None to keep
         going (empty steer, or an instruction injected into messages)."""
         if steer_result in ("abort", "exit"):
             # "exit" is /exit at the pause menu: the same stop, but the end
@@ -2746,137 +2740,6 @@ class Workflow:
                 iteration=iteration,
             )
         return None
-
-    def _maybe_handle_steer(
-        self,
-        conversation: Conversation,
-        iteration: int,
-        state: LoopState,
-    ) -> str | None:
-        """Operator steering between iterations.
-
-        Returns `"abort"` if the operator typed "abort" at the prompt;
-        the loop should then return a steer_abort result. Returns `None`
-        in all other cases (no request, empty steer, `/parallel` dispatch,
-        or instruction injected into the conversation).
-
-        Polls steer_requested() and, on a positive, calls steer_prompt()
-        to capture operator text. Empty / None / KeyboardInterrupt aborts;
-        boundary is between completed iters so a tool_use / tool_result pair
-        is never split. A message starting with the exact `/parallel` token
-        is a dispatch directive (see `ParallelDispatcher.dispatch`), not an injected
-        instruction.
-        """
-        if not self.bridge.steer_requested():
-            return None
-        self._emit("loop.steer.requested", iteration=iteration)
-        self._log(f"STEER: operator steering at iter {iteration}")
-        try:
-            text = self.bridge.steer_prompt()
-        finally:
-            self.bridge.steer_clear()
-        if text is None or not text.strip():
-            self._log("  (empty - continuing)")
-            return None
-        steer_text = text.strip()
-        if verb := STEER_VERBS.get(steer_text.lower()):
-            name, event, line = verb
-            self._emit(event)
-            self._log(f"  {line}")
-            return name
-        if (
-            self._steer_directive(conversation, iteration, state, steer_text)
-            or self._steer_pin(conversation, state, steer_text)
-            or self._steer_skill(conversation, steer_text)
-        ):
-            return None
-        self._log(f"  injecting steering instruction ({len(steer_text)} chars)")
-        self._emit("loop.steer.injected", chars=len(steer_text), text=steer_text)
-        asked = _last_assistant_prose(conversation)
-        if question := ending_question(asked):
-            self._record_decision(state, question, steer_text)
-        conversation.notice(
-            f"OPERATOR STEERING (a mid-run instruction from the operator):\n{steer_text}"
-        )
-        return None
-
-    def _steer_skill(self, conversation: Conversation, steer_text: str) -> bool:
-        """Handle a `/<skill> [args]` steer from any composer: the skill's
-        full text is injected as the instruction (the same payload on every
-        surface). Returns True when handled; False when *steer_text* names no
-        enabled skill."""
-        if not steer_text.startswith("/"):
-            return False
-        found = skill_command(steer_text, self.dispatcher.resolved_skills())
-        if found is None:
-            return False
-        skill, args = found
-        self._log(f"  skill steer: {skill.name}")
-        self._emit("loop.steer.skill", name=skill.name, args=args)
-        conversation.notice(
-            "OPERATOR STEERING (a mid-run instruction from the operator):\n"
-            + skill_steer_payload(skill.name, skill.text, args)
-        )
-        return True
-
-    def _steer_pin(self, conversation: Conversation, state: LoopState, steer_text: str) -> bool:
-        """Handle a steer that is a `/pin` directive. A recorded pin is injected
-        as a marked instruction AND re-injected verbatim after every tier-2
-        restart. Over the total cap, the instruction is still delivered as an
-        ordinary steer -- only the durability is refused, loudly. Returns True
-        when handled; False when *steer_text* is not a pin directive."""
-        try:
-            instruction = parse_pin(steer_text)
-        except DirectiveError as exc:
-            conversation.notice(f"OPERATOR STEERING: nothing pinned: {exc}")
-            self._log(f"  /pin refused: {exc}")
-            return True
-        if instruction is None:
-            return False
-        if not try_pin(state.pins, instruction):
-            # parse_pin already rejects an empty directive, so a refusal here is
-            # always the cap: deliver the instruction as an ordinary steer.
-            self._log(f"  /pin over cap (> {PINS_MAX_CHARS}); delivered as an ordinary steer")
-            self._emit("loop.pin.refused", chars=len(instruction), limit=PINS_MAX_CHARS)
-            conversation.notice(
-                f"OPERATOR STEERING (not pinned: the {PINS_MAX_CHARS}-char pin cap is"
-                " full, so this instruction does not survive context compaction):\n"
-                f"{instruction}"
-            )
-            return True
-        self._log(f"  pinned instruction ({len(instruction)} chars, {len(state.pins)} pins)")
-        self._emit(
-            "loop.pin.added", text=instruction, chars=len(instruction), count=len(state.pins)
-        )
-        conversation.notice(
-            "OPERATOR STEERING (pinned: this instruction survives context compaction"
-            " and binds for the rest of the run):\n"
-            f"{instruction}"
-        )
-        return True
-
-    # ---- /parallel steer dispatch (coordinator) --------------------------
-
-    def _steer_directive(
-        self,
-        conversation: Conversation,
-        iteration: int,
-        state: LoopState,
-        steer_text: str,
-    ) -> bool:
-        """Handle a steer that is a `/parallel` directive: dispatch a valid one,
-        or answer a malformed one (a bare `/parallel`, a spec with no task) and
-        continue. Returns True when handled; False when *steer_text* is ordinary
-        steering to inject as an instruction."""
-        try:
-            segments = parse_directive(steer_text)
-        except DirectiveError as exc:
-            self.parallel.feedback(conversation, f"nothing dispatched: {exc}")
-            return True
-        if segments is None:
-            return False
-        self.parallel.dispatch(conversation, iteration, state, segments)
-        return True
 
     @property
     def session_id(self) -> str:
