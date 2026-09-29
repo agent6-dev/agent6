@@ -14,7 +14,7 @@ from collections.abc import Callable
 
 import pytest
 
-from agent6 import events as agent6_events
+from agent6 import event_log
 from agent6.app import frontend
 from agent6.tools import operator_prompts, schema
 from agent6.ui.acp import frontend as acp_frontend
@@ -49,7 +49,7 @@ def _prompts(
     return operator_prompts.OperatorPrompts(
         approver=front.build_approver(session_dir),
         questioner=front.build_questioner(session_dir),
-        journal=agent6_events.EventSink(session_dir / log).emit,
+        journal=event_log.EventSink(session_dir / log).emit,
         session_dir=session_dir,
     )
 
@@ -257,7 +257,7 @@ def test_a_request_names_the_call_the_prompt_carries(tmp_path: pathlib.Path) -> 
         spawn_detached_resume=lambda _cwd, _rid, _flags: "",
     )
     prompts = _prompts(front, tmp_path)
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
     events.emit("tool.call", name="read_file", args={"path": "x"}, call_id=2)
     assert prompts.approve("Allow run_command: ls", scope="command", call_id=1) is True

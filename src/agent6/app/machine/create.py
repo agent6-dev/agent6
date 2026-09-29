@@ -13,8 +13,7 @@ import contextlib
 import pathlib
 import shutil
 
-from agent6 import events as agent6_events
-from agent6 import git_ops, kinds, paths, portable
+from agent6 import event_log, git_ops, kinds, paths, portable
 from agent6.app import _session, _setup, machine_agent, parallel, preflight
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import _bundle, _frontend, _scriptcheck
@@ -194,7 +193,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     # The draft's watchable log: this process owns session.start, the attempt markers and
     # session.end; each attempt's subprocess appends its own events to the same file.
     events_log = scratch / layout.LOGS_NAME
-    events = agent6_events.EventSink(events_log)
+    events = event_log.EventSink(events_log)
     # A terminal draft has its own session.end, which the status reads first: no clearing.
     ipc.emit_session_start(events, scratch, "session.start", user_task=task, mode="machine")
     reporter.err(

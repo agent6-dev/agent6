@@ -14,12 +14,12 @@ import os
 import pathlib
 import sys
 
-from agent6 import events as agent6_events
+from agent6 import event_log
 from agent6.app import machine_agent
 from agent6.ui.cli import _common, _console_view
 
 
-def _attach_console(events: agent6_events.EventSink) -> None:
+def _attach_console(events: event_log.EventSink) -> None:
     """Render the live conversation to stderr at a TTY or under AGENT6_FORCE_STREAM=1.
 
     The console consumes the same events the per-state sink records.
@@ -42,7 +42,7 @@ def main() -> int:
     )
     try:
         out = machine_agent.run_one(req, attach_console=_attach_console)
-    except agent6_events.EventWriteError as exc:
+    except event_log.EventWriteError as exc:
         # Off the CLI dispatch backstop, a raw traceback would leave the engine a bare "error".
         _common.error(f"{exc}")
         return 1

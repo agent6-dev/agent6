@@ -188,7 +188,7 @@ def test_allowing_every_command_does_not_allow_the_network(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An "s" answered at a run_command prompt never auto-approves later fetches."""
-    from agent6 import events
+    from agent6 import event_log
     from agent6.sessions import ipc
     from agent6.ui.cli import _interact
 
@@ -197,7 +197,7 @@ def test_allowing_every_command_does_not_allow_the_network(
     ipc.set_session_allow(session_dir, ipc.COMMAND_SCOPE)
     approve = operator_prompts.OperatorPrompts(
         approver=_interact.build_approver(session_dir),
-        journal=events.EventSink(session_dir / "logs.jsonl").emit,
+        journal=event_log.EventSink(session_dir / "logs.jsonl").emit,
         session_dir=session_dir,
     ).approve
 
@@ -211,7 +211,7 @@ def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An "a" typed at a fetch prompt grants nothing: the asking side decides what it means."""
-    from agent6 import events
+    from agent6 import event_log
     from agent6.sessions import ipc
     from agent6.ui.cli import _interact as interactmod
 
@@ -227,7 +227,7 @@ def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
     monkeypatch.setattr(_steer, "tty_prompt", _typed)
     approve = operator_prompts.OperatorPrompts(
         approver=interactmod.build_approver(session_dir),
-        journal=events.EventSink(session_dir / "logs.jsonl").emit,
+        journal=event_log.EventSink(session_dir / "logs.jsonl").emit,
         session_dir=session_dir,
     ).approve
 

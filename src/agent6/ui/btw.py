@@ -16,7 +16,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from agent6 import events as agent6_events
+from agent6 import event_log
 from agent6.app import btw
 from agent6.sandbox import jail
 from agent6.sessions import layout
@@ -55,7 +55,7 @@ def make_btw_runner(
     *,
     launch: btw.BtwLaunch,
     list_asks: Callable[[], list[pathlib.Path]],
-    events: agent6_events.EventSink,
+    events: event_log.EventSink,
 ) -> Callable[[str, pathlib.Path], tuple[bool, str]]:
     """Build the `/btw <question>` handler the pause menu and the composers call.
 
@@ -83,7 +83,7 @@ def make_btw_runner(
     return run_btw
 
 
-def _watch(session: btw.BtwSession, events: agent6_events.EventSink) -> None:
+def _watch(session: btw.BtwSession, events: event_log.EventSink) -> None:
     """Poll until the side question answers, then put the block on the run's journal.
 
     Runs on a daemon thread, so it never holds the run open. Past the give-up time
@@ -128,6 +128,6 @@ def open_btw(session_dir: pathlib.Path, question: str) -> tuple[bool, str]:
             if asks_dir(session_dir).is_dir()
             else []
         ),
-        events=agent6_events.EventSink(session_dir / layout.LOGS_NAME),
+        events=event_log.EventSink(session_dir / layout.LOGS_NAME),
     )
     return runner(question, session_dir)

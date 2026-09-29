@@ -19,8 +19,7 @@ from unittest import mock
 import pytest
 
 import agent6.app._execution as execution_mod
-from agent6 import events as agent6_events
-from agent6 import paths
+from agent6 import event_log, paths
 from agent6.app import _session, _setup, finalize, reporter
 from agent6.app import frontend as app_frontend
 from agent6.app import providers as app_providers
@@ -67,7 +66,7 @@ def test_provider_setup_failure_journals_session_end(
     state = tmp_path / "state"
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-SETUP1")
     layout.ensure()
-    events = agent6_events.EventSink(layout.logs_path)
+    events = event_log.EventSink(layout.logs_path)
 
     def _fail(*_args: object, **_kwargs: object) -> object:
         raise RuntimeError("provider setup failed")
@@ -121,7 +120,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
     state = tmp_path / "state"
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-GATE01")
     layout.ensure()
-    events = agent6_events.EventSink(layout.logs_path)
+    events = event_log.EventSink(layout.logs_path)
     closed: list[str] = []
     session = types.SimpleNamespace(
         budget=mock.MagicMock(),
@@ -181,7 +180,7 @@ def test_mcp_setup_failure_journals_session_end(
     state = tmp_path / "state"
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-MCPSET")
     layout.ensure()
-    events = agent6_events.EventSink(layout.logs_path)
+    events = event_log.EventSink(layout.logs_path)
     session = types.SimpleNamespace(
         budget=mock.MagicMock(),
         rm_role=types.SimpleNamespace(model="m", provider="p"),
@@ -257,7 +256,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
     state = tmp_path / "state"
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-CLOSE1")
     layout.ensure()
-    events = agent6_events.EventSink(layout.logs_path)
+    events = event_log.EventSink(layout.logs_path)
     closed: list[str] = []
 
     def _session_close() -> None:
@@ -380,7 +379,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
     layout.session_dir.mkdir(parents=True)
     snap = layout.session_dir / "loop_state.json"
     snap.write_text(json.dumps(TORN), encoding="utf-8")
-    events = agent6_events.EventSink(layout.logs_path)
+    events = event_log.EventSink(layout.logs_path)
 
     # What the co-process TUI could see when `_live.tui_session`'s finally calls proc.wait().
     seen_at_exit: list[list[str]] = []
@@ -601,7 +600,7 @@ def test_the_chown_runs_after_the_auto_merge_writes(
         ),
         frontend=frontend,
         reporter=reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
-        events=agent6_events.EventSink(layout.logs_path),
+        events=event_log.EventSink(layout.logs_path),
         transcript_sink=mock.MagicMock(),
         cwd=tmp_path,
         state_dir=state,
@@ -621,7 +620,7 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
     state = tmp_path / "state"
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-TUIRAI")
     layout.ensure()
-    events = agent6_events.EventSink(layout.logs_path)
+    events = event_log.EventSink(layout.logs_path)
     order: list[str] = []
 
     class _Boom(contextlib.AbstractContextManager[None]):
@@ -700,7 +699,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
     state = tmp_path / "state"
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-SETTLE")
     layout.ensure()
-    events = agent6_events.EventSink(layout.logs_path)
+    events = event_log.EventSink(layout.logs_path)
     order: list[str] = []
 
     class _Workflow:

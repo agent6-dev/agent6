@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from agent6 import events as agent6_events
+from agent6 import event_log
 from agent6.ui import btw
 from agent6.ui.cli import _console_view, _steer_menu
 
@@ -40,7 +40,7 @@ def test_the_run_is_never_blocked_and_the_answer_arrives_later(tmp_path: pathlib
     asks.mkdir(parents=True)
     out = io.StringIO()
     view = _console_view.ConsoleView(out, color=False)
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     events.subscribe(view.feed)
 
     def launch(cwd: pathlib.Path, argv: list[str], env: dict[str, str]) -> str:
@@ -78,7 +78,7 @@ def test_an_answer_survives_a_surface_that_cannot_print_it(tmp_path: pathlib.Pat
 
     asks = tmp_path / "sessions" / "asks"
     asks.mkdir(parents=True)
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
 
     def launch(cwd: pathlib.Path, argv: list[str], env: dict[str, str]) -> str:
         _answered_ask(asks, "quiet-fox-AAAAAA", "use ffmpeg")

@@ -13,7 +13,7 @@ import pathlib
 
 import pytest
 
-from agent6 import events
+from agent6 import event_log
 from agent6.config import Config
 from agent6.sessions import ipc
 from agent6.tools import dispatch, errors, mcp_client, operator_prompts
@@ -48,7 +48,7 @@ def _cli_prompts(session_dir: pathlib.Path) -> operator_prompts.OperatorPrompts:
 
     return operator_prompts.OperatorPrompts(
         approver=_interact.build_approver(session_dir),
-        journal=events.EventSink(session_dir / "logs.jsonl").emit,
+        journal=event_log.EventSink(session_dir / "logs.jsonl").emit,
         session_dir=session_dir,
     )
 

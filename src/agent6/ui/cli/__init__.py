@@ -16,7 +16,7 @@ from collections.abc import Callable
 
 import argcomplete
 
-from agent6 import errors, events, paths
+from agent6 import errors, event_log, paths
 from agent6.ui.cli import _common, _terminal_guard
 from agent6.ui.cli import parser as cli_parser
 
@@ -915,7 +915,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("unknown command")
     try:
         return handler(args)
-    except events.EventWriteError as exc:
+    except event_log.EventWriteError as exc:
         # The run journal could not be appended; the lifecycle's finally already cleaned up.
         _common.error(f"{exc}")
         return 1

@@ -15,8 +15,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import events as agent6_events
-from agent6 import portable
+from agent6 import event_log, portable
 from agent6.sessions import ipc
 from agent6.tools import operator_prompts, schema
 from agent6.ui import steer
@@ -36,7 +35,7 @@ def _events_of(log: pathlib.Path, type_: str) -> list[dict[str, Any]]:
 
 def _prompts(
     session_dir: pathlib.Path,
-    events: agent6_events.EventSink,
+    events: event_log.EventSink,
     steer_cell: list[steer.SteerState | None] | None = None,
 ) -> operator_prompts.OperatorPrompts:
     """The gate over the CLI's own approver and questioner, the pairing a run wires.
@@ -87,7 +86,7 @@ def test_approver_uses_tui_answer_when_live(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     monkeypatch.setattr(ipc, "frontend_is_live", _live)
     monkeypatch.setattr(ipc, "read_answer", _ans_yes)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
@@ -106,7 +105,7 @@ def test_approver_does_not_consume_an_answer_written_before_the_prompt(
     import functools
 
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     monkeypatch.setattr(ipc, "frontend_is_live", _live)
     monkeypatch.setattr(
         ipc, "read_answer", functools.partial(ipc.read_answer, timeout_s=0.4, poll_s=0.05)
@@ -129,7 +128,7 @@ def test_approver_consumes_an_answer_written_after_the_prompt(
     import time
 
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     monkeypatch.setattr(ipc, "frontend_is_live", _live)
     monkeypatch.setattr(
         ipc, "read_answer", functools.partial(ipc.read_answer, timeout_s=3.0, poll_s=0.05)
@@ -156,7 +155,7 @@ def test_approver_falls_back_to_stdin_without_tui(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     monkeypatch.setattr(ipc, "frontend_is_live", _dead)
     monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
@@ -173,7 +172,7 @@ def test_approver_headless_no_frontend_waits_not_denies(
     import time
 
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     # The real frontend_is_live: nothing is attached at approve() time, so the wait path runs.
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)  # headless
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
@@ -194,7 +193,7 @@ def test_approver_session_allows_every_later_command(
 ) -> None:
     # "allow session" approves this command and every later one across the run.
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     monkeypatch.setattr(ipc, "frontend_is_live", _dead)
     monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_session)
@@ -210,7 +209,7 @@ def test_approver_tui_timeout_falls_back_to_stdin(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     monkeypatch.setattr(ipc, "frontend_is_live", _live)
     monkeypatch.setattr(ipc, "read_answer", _ans_none)  # TUI died / timed out
     monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground
@@ -346,7 +345,7 @@ def test_approver_away_deny_auto_denies(
     # Detach chose "deny all": every run_command is denied without prompting.
 
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # must NOT prompt
     ipc.set_away_mode(tmp_path, "deny")
     approve = _prompts(tmp_path, events).approve
@@ -360,7 +359,7 @@ def test_approver_live_front_end_wins_over_away_mode(
     # A live front-end is always asked in its own UI; away-mode governs only the unattended window.
 
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     monkeypatch.setattr(ipc, "frontend_is_live", _live)  # a front-end is attached
     monkeypatch.setattr(ipc, "read_answer", _ans_yes)  # and it approved
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # no stdin fall
@@ -380,7 +379,7 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
     import time
 
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
     ipc.set_away_mode(tmp_path, "wait")
 
@@ -408,7 +407,7 @@ def test_a_stop_request_ends_an_away_wait(
     import time
 
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
     ipc.set_away_mode(tmp_path, "wait")
 
@@ -466,7 +465,7 @@ def test_approver_wait_consumes_a_claimless_answer(
     import time
 
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
 
@@ -528,7 +527,7 @@ def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
     """
     from agent6.ui.cli import _interact as interactmod
 
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     notices: list[str] = []
     calls: list[str] = []
 
@@ -599,7 +598,7 @@ def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
 
     monkeypatch.setattr(interactmod, "default_stdin_questioner", _first)
     fe = run.session_frontend()
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     prompts = operator_prompts.OperatorPrompts(
         approver=fe.build_approver(tmp_path),
         questioner=fe.build_questioner(tmp_path),

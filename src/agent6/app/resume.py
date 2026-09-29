@@ -14,8 +14,7 @@ import os
 import pathlib
 from collections.abc import Callable
 
-from agent6 import budget, directive, git_ops, kinds
-from agent6 import events as agent6_events
+from agent6 import budget, directive, event_log, git_ops, kinds
 from agent6 import paths as agent6_paths
 from agent6.app import _execution, _session, _setup, preflight, run
 from agent6.app import frontend as app_frontend
@@ -474,7 +473,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 return 2
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
-        events = agent6_events.EventSink(layout.logs_path)
+        events = event_log.EventSink(layout.logs_path)
         # The execution's one gate to the operator, whichever front-end answers.
         prompts = operator_prompts.OperatorPrompts(
             approver=frontend.build_approver(layout.session_dir),

@@ -15,7 +15,7 @@ import time
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from agent6 import budget, events, kinds
+from agent6 import budget, event_log, kinds
 from agent6.app import frontend
 from agent6.config import Config
 from agent6.harness import _snapshot, loop
@@ -165,7 +165,7 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         return bool(_approve("Run commands UNSANDBOXED on this host, with no per-command prompt?"))
 
     def _steer(
-        _events: events.EventSink,
+        _events: event_log.EventSink,
         session_dir: pathlib.Path,
         _facts: Callable[[], frontend.SessionFacts],
     ) -> frontend.SteerHooks:

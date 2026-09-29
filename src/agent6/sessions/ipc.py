@@ -24,8 +24,7 @@ import time
 from collections.abc import Callable, Sequence
 from typing import Any, Literal, cast
 
-from agent6 import events as agent6_events
-from agent6 import paths, portable
+from agent6 import event_log, paths, portable
 
 APPROVAL_DIR_NAME = "approvals"
 QUESTION_DIR_NAME = "questions"
@@ -459,7 +458,7 @@ def write_worker_pid(session_dir: pathlib.Path, pid: int) -> None:
 
 
 def emit_session_start(
-    events: agent6_events.EventSink, session_dir: pathlib.Path, event_type: str, /, **fields: Any
+    events: event_log.EventSink, session_dir: pathlib.Path, event_type: str, /, **fields: Any
 ) -> None:
     """Emit a start-family event with the worker pid already on disk.
 

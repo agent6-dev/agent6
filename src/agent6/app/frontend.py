@@ -15,7 +15,7 @@ import pathlib
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from agent6 import budget, events, kinds, portable
+from agent6 import budget, event_log, kinds, portable
 from agent6.config import Config
 from agent6.harness import _snapshot, loop, subrun
 from agent6.sessions import ipc, layout
@@ -152,14 +152,14 @@ class SessionFrontend:
     capabilities: FrontendCapabilities
     should_spawn_tui: Callable[[bool, bool, str], bool]
     stream_modes: Callable[[bool], tuple[bool, bool]]
-    attach_console_view: Callable[[events.EventSink], None]
+    attach_console_view: Callable[[event_log.EventSink], None]
     close_console_view: Callable[[], None]
     loop_logger: Callable[[str], Callable[[str], None]]
     tui_session: Callable[[pathlib.Path, bool], contextlib.AbstractContextManager[None]]
     build_approver: Callable[[pathlib.Path], operator_prompts.Approver]
     build_questioner: Callable[[pathlib.Path], operator_prompts.Questioner]
     make_steer_state: Callable[
-        [events.EventSink, pathlib.Path, Callable[[], SessionFacts]], SteerHooks
+        [event_log.EventSink, pathlib.Path, Callable[[], SessionFacts]], SteerHooks
     ]
     confirm_unconfined_autorun: Callable[[kinds.IsolationLevel, Config], bool]
     confirm_run_on_run_branch: Callable[[str], bool]

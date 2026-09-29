@@ -31,8 +31,7 @@ from typing import Any
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import commit_message, git_ops, kinds, paths
-from agent6 import events as agent6_events
+from agent6 import commit_message, event_log, git_ops, kinds, paths
 from agent6.app import _session, _setup, confine, providers
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
@@ -45,7 +44,7 @@ from agent6.tools import dispatch, operator_prompts
 from agent6.viewmodel import machine_state
 
 
-def _no_console(_events: agent6_events.EventSink) -> None:
+def _no_console(_events: event_log.EventSink) -> None:
     """Attach no live view: the headless default."""
 
 
@@ -220,7 +219,7 @@ class _MachineBridges:
 
 
 def _build_machine_bridges(
-    instance_dir: pathlib.Path, agent_state: pathlib.Path, events: agent6_events.EventSink
+    instance_dir: pathlib.Path, agent_state: pathlib.Path, events: event_log.EventSink
 ) -> _MachineBridges:
     """Wire the approval, question and steer bridges to a machine agent state.
 
@@ -304,8 +303,8 @@ def _build_agent_providers(
     req: MachineAgentRequest,
     *,
     budget: agent6_budget.BudgetTracker,
-    attach_console: Callable[[agent6_events.EventSink], None],
-) -> tuple[providers.InstrumentedProvider, Provider, agent6_events.EventSink | None]:
+    attach_console: Callable[[event_log.EventSink], None],
+) -> tuple[providers.InstrumentedProvider, Provider, event_log.EventSink | None]:
     """Build the state's worker provider, its summariser and its event sink.
 
     The worker always streams: machine agents run headless and generate long, and
@@ -324,7 +323,7 @@ def _build_agent_providers(
     inner_provider = providers.build_role_provider(
         cfg, "worker", transcript_sink=transcript_sink, budget=budget
     )
-    events_sink = agent6_events.EventSink(req.events_log) if req.events_log is not None else None
+    events_sink = event_log.EventSink(req.events_log) if req.events_log is not None else None
     rm = cfg.models.resolve("worker")
     if events_sink is not None:
         attach_console(events_sink)
@@ -346,7 +345,7 @@ def _build_agent_providers(
 def run_one(
     req: MachineAgentRequest,
     *,
-    attach_console: Callable[[agent6_events.EventSink], None] = _no_console,
+    attach_console: Callable[[event_log.EventSink], None] = _no_console,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> AgentExecResult:
     """Run one machine `agent` state to completion inside its subprocess.

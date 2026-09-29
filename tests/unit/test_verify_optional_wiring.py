@@ -681,7 +681,7 @@ def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: pathlib.Pat
     import json
 
     from agent6 import budget as agent6_budget
-    from agent6 import events
+    from agent6 import event_log
     from agent6.config import Config
 
     (tmp_path / "AGENTS.md").write_text(
@@ -693,7 +693,7 @@ def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: pathlib.Pat
         Config(),
         tmp_path,
         mode="run",
-        events=events.EventSink(tmp_path / "on.jsonl"),
+        events=event_log.EventSink(tmp_path / "on.jsonl"),
         transcript_sink=mock.MagicMock(),
         budget=budget,
     )
@@ -704,7 +704,7 @@ def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: pathlib.Pat
         Config.model_validate({"harness": {"verify_infer": False}}),
         tmp_path,
         mode="run",
-        events=events.EventSink(off_log),
+        events=event_log.EventSink(off_log),
         transcript_sink=mock.MagicMock(),
         budget=budget,
     )

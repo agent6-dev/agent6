@@ -135,7 +135,7 @@ def test_raw_watch_preserves_a_partial_replay_line(
 
 
 def test_format_plain_event_renders_elapsed_for_iso_ts() -> None:
-    # Regression: ts is an ISO string (events.py), not a number; the elapsed
+    # Regression: ts is an ISO string (event_log.py), not a number; the elapsed
     # column must still render rather than always blanking.
     start = "2026-06-08T05:41:39+00:00"
     later = "2026-06-08T05:42:39+00:00"  # +60s

@@ -16,8 +16,7 @@ import termios
 from collections.abc import Callable, Generator
 from typing import Any
 
-from agent6 import budget
-from agent6 import events as agent6_events
+from agent6 import budget, event_log
 from agent6.app import frontend
 from agent6.sessions import ipc
 from agent6.ui import steer
@@ -278,7 +277,7 @@ def _install_status_signal(
 
 
 def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one shared stage dict
-    events: agent6_events.EventSink,
+    events: event_log.EventSink,
     session_dir: pathlib.Path,
     console_view: _console_view.ConsoleView | None = None,
     session_facts: Callable[[], frontend.SessionFacts] | None = None,
@@ -431,7 +430,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
 
 
 def make_steer_state(
-    events: agent6_events.EventSink,
+    events: event_log.EventSink,
     session_dir: pathlib.Path,
     console_view: _console_view.ConsoleView | None = None,
     session_facts: Callable[[], frontend.SessionFacts] | None = None,

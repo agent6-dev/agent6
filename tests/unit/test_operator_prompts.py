@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import events as agent6_events
+from agent6 import event_log
 from agent6.config import Config
 from agent6.sessions import ipc
 from agent6.tools import dispatch, errors, operator_prompts, schema
@@ -38,20 +38,20 @@ def _deny(_request: operator_prompts.ApprovalRequest, /) -> operator_prompts.App
     return operator_prompts.ApprovalAnswer(False, "stdin")
 
 
-def _sink(session_dir: pathlib.Path) -> agent6_events.EventSink:
+def _sink(session_dir: pathlib.Path) -> event_log.EventSink:
     session_dir.mkdir(parents=True, exist_ok=True)
-    return agent6_events.EventSink(session_dir / "logs.jsonl")
+    return event_log.EventSink(session_dir / "logs.jsonl")
 
 
 def _prompts(
-    session_dir: pathlib.Path, events: agent6_events.EventSink, **kw: Any
+    session_dir: pathlib.Path, events: event_log.EventSink, **kw: Any
 ) -> operator_prompts.OperatorPrompts:
     return operator_prompts.OperatorPrompts(journal=events.emit, session_dir=session_dir, **kw)
 
 
 def _dispatcher(
     session_dir: pathlib.Path,
-    events: agent6_events.EventSink,
+    events: event_log.EventSink,
     prompts: operator_prompts.OperatorPrompts,
 ) -> dispatch.ToolDispatcher:
     """A run's wiring: the gate and the dispatcher journal to the one sink."""

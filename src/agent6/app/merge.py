@@ -16,8 +16,7 @@ from collections.abc import Callable
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import commit_message, git_ops, secrets
-from agent6 import events as agent6_events
+from agent6 import commit_message, event_log, git_ops, secrets
 from agent6.app import _setup, providers
 from agent6.app import manifest as app_manifest
 from agent6.config import Config, ConfigError
@@ -112,7 +111,7 @@ def dispatch_merge(
     *,
     transcript_dir: pathlib.Path | None = None,
     budget: agent6_budget.BudgetTracker | None = None,
-    events: agent6_events.EventSink | None = None,
+    events: event_log.EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
     merge_base: str | None = None,
 ) -> git_ops.MergeResult:
@@ -220,7 +219,7 @@ def _squash_message(
     run_branch: str,
     transcript_dir: pathlib.Path | None,
     budget: agent6_budget.BudgetTracker | None,
-    events: agent6_events.EventSink | None,
+    events: event_log.EventSink | None,
     warn: Callable[[str], None],
 ) -> str | None:
     """Return the squash message per `[git.commit.squash].message`; None lets git combine."""
@@ -270,7 +269,7 @@ def _model_squash_message(
     task: str,
     transcript_dir: pathlib.Path | None,
     budget: agent6_budget.BudgetTracker | None,
-    events: agent6_events.EventSink | None,
+    events: event_log.EventSink | None,
     warn: Callable[[str], None] = lambda _m: None,
 ) -> str | None:
     """Write the squash message with one provider call from git facts only.
@@ -360,7 +359,7 @@ def execute_merge(
     cfg: Config,
     identity: git_ops.CommitIdentity,
     budget: agent6_budget.BudgetTracker | None = None,
-    events: agent6_events.EventSink | None = None,
+    events: event_log.EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
 ) -> MergeOutcome:
     """Land the run's branch on the target and record the merge.

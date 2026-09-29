@@ -47,9 +47,9 @@ def _graph(
         ).id
         for title, by in actors
     ]
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
-    sink = agent6_events.EventSink(layout.session_dir / "logs.jsonl")
+    sink = event_log.EventSink(layout.session_dir / "logs.jsonl")
     return curator, layout.session_dir, root, kids, _workflow(curator, sink)
 
 

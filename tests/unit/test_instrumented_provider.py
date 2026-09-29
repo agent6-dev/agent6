@@ -88,9 +88,9 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: pathlib.Path) -> 
     """
     import types
 
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     inner = mock.MagicMock()
     inner.call.return_value = types.SimpleNamespace(
         text="the answer",
@@ -127,7 +127,7 @@ def test_a_failed_call_still_reports_what_it_spent(
 
     The live meters, `sessions list` and the machine spend ledger all read that event.
     """
-    from agent6 import events as agent6_events
+    from agent6 import event_log
     from agent6.providers import ProviderError
 
     # The USD assertion needs a table price; the suite isolates the price cache, so seed one.
@@ -137,7 +137,7 @@ def test_a_failed_call_still_reports_what_it_spent(
     (tmp_path / "agent6" / "models" / "anthropic.json").write_text(
         json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
     )
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     budget = agent6_budget.BudgetTracker(
         max_usd=10.0, max_tokens_fallback=2_000_000, max_percent=-1
     )

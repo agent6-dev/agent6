@@ -24,8 +24,7 @@ from typing import Any, Literal
 
 import pydantic
 
-from agent6 import events as agent6_events
-from agent6 import kinds, memory, paths, skills
+from agent6 import event_log, kinds, memory, paths, skills
 from agent6.config import Config
 from agent6.graph import curator as graph_curator
 from agent6.sandbox import jail, tool_paths
@@ -248,7 +247,7 @@ class ToolDispatcher:
         config: Config,
         isolation: kinds.IsolationLevel = "strict",
         prompts: operator_prompts.OperatorPrompts | None = None,
-        events: agent6_events.EventSink | None = None,
+        events: event_log.EventSink | None = None,
         curator: graph_curator.GraphCurator | None = None,
         run_root_node_id: str | None = None,
         mcp_manager: mcp_client.MCPManager | None = None,

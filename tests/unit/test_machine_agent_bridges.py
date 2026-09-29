@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from agent6 import events as agent6_events
+from agent6 import event_log
 from agent6.app import machine_agent as app_machine_agent
 from agent6.app import providers
 from agent6.harness import loop
@@ -23,11 +23,11 @@ from agent6.sessions import ipc
 from agent6.tools import dispatch, schema
 
 
-def _dirs(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, agent6_events.EventSink]:
+def _dirs(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, event_log.EventSink]:
     instance = tmp_path / "inst"
     state = instance / "states" / "0000-review"
     state.mkdir(parents=True)
-    return instance, state, agent6_events.EventSink(state / "logs.jsonl")
+    return instance, state, event_log.EventSink(state / "logs.jsonl")
 
 
 def test_a_machine_command_grant_does_not_answer_another_scopes_prompt(
@@ -38,7 +38,7 @@ def test_a_machine_command_grant_does_not_answer_another_scopes_prompt(
     state.mkdir(parents=True)
     ipc.set_session_allow(state, ipc.COMMAND_SCOPE)
     bridges = app_machine_agent._build_machine_bridges(
-        instance, state, agent6_events.EventSink(state / "logs.jsonl")
+        instance, state, event_log.EventSink(state / "logs.jsonl")
     )
 
     assert bridges.prompts.approve("Allow run_command: ls", scope=ipc.COMMAND_SCOPE) is True

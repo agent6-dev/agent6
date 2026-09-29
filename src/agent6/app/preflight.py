@@ -16,8 +16,7 @@ from collections.abc import Callable, Iterable, Sequence
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import events as agent6_events
-from agent6 import git_ops, kinds, verify_infer
+from agent6 import event_log, git_ops, kinds, verify_infer
 from agent6.app import _setup, providers
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, parse_seat_spec, plan_metered
@@ -551,7 +550,7 @@ def infer_verify_if_unset(
     cwd: pathlib.Path,
     *,
     mode: str,
-    events: agent6_events.EventSink,
+    events: event_log.EventSink,
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,

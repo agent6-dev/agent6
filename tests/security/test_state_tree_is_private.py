@@ -16,7 +16,7 @@ from collections.abc import Callable, Iterator
 
 import pytest
 
-from agent6 import events, init, memory, paths
+from agent6 import event_log, init, memory, paths
 from agent6.graph import storage
 from agent6.machine import journal
 from agent6.providers import types
@@ -44,7 +44,7 @@ WRITERS: dict[str, Callable[[pathlib.Path, pathlib.Path], object]] = {
     "questions dir": lambda repo, state: ipc.questions_dir(_session(state)),
     "session grant": lambda repo, state: ipc.set_session_allow(_session(state), "command"),
     "frontend claim": lambda repo, state: ipc.register_frontend(_session(state), os.getpid()),
-    "event sink": lambda repo, state: events.EventSink(
+    "event sink": lambda repo, state: event_log.EventSink(
         layout.SessionLayout(state, "s1").logs_path
     ).emit("x"),
     "transcripts": lambda repo, state: types.TranscriptSink(

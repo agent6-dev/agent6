@@ -16,8 +16,7 @@ from collections.abc import Iterable
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import child_env, git_ops, kinds
-from agent6 import events as agent6_events
+from agent6 import child_env, event_log, git_ops, kinds
 from agent6 import secrets as agent6_secrets
 from agent6.app import reporter as app_reporter
 from agent6.config import (
@@ -466,7 +465,7 @@ def start_mcp_manager_if_enabled(
     isolation: kinds.IsolationLevel,
     *,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-    events: agent6_events.EventSink | None = None,
+    events: event_log.EventSink | None = None,
     session_net: jail.SessionNetwork | None = None,
 ) -> mcp_client.MCPManager | None:
     """Spawn every enabled MCP server; a server that fails is skipped and its tools absent.

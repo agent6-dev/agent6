@@ -16,8 +16,7 @@ import subprocess
 from collections.abc import Callable, Collection, Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import child_env, commit_message, git_ops, verify_infer
-from agent6 import events as agent6_events
+from agent6 import child_env, commit_message, event_log, git_ops, verify_infer
 from agent6.app import merge
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, NotifyConfig
@@ -465,7 +464,7 @@ def finalize_auto_merge(
     cfg: Config,
     reporter: app_reporter.Reporter,
     budget: agent6_budget.BudgetTracker | None = None,
-    events: agent6_events.EventSink | None = None,
+    events: event_log.EventSink | None = None,
 ) -> None:
     """Land the run branch on its base with `git.merge_strategy`, best-effort.
 

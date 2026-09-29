@@ -76,7 +76,7 @@ _DEDUPE_MIN_CHARS = 500
 
 
 if TYPE_CHECKING:
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
 
 # Consecutive quiet turns after which a metric run drops the worker's output cap.
@@ -129,7 +129,7 @@ class Harness:
     provider: Provider
     dispatcher: dispatch.ToolDispatcher
     logger: Callable[[str], None] = dataclasses.field(default=print)
-    events: agent6_events.EventSink | None = None
+    events: event_log.EventSink | None = None
     curator: graph_curator.GraphCurator | None = None
     budget: agent6_budget.BudgetTracker | None = None
     state_dir: pathlib.Path | None = None

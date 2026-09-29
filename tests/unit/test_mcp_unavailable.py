@@ -15,7 +15,7 @@ import pathlib
 
 import pytest
 
-from agent6 import events as agent6_events
+from agent6 import event_log
 from agent6.app import _setup
 from agent6.config import Config
 from agent6.viewmodel import transcript
@@ -43,7 +43,7 @@ def test_a_server_that_cannot_spawn_is_recorded_not_just_logged(tmp_path: pathli
 
 def test_the_failure_reaches_the_journal(tmp_path: pathlib.Path) -> None:
     logs = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(logs)
+    events = event_log.EventSink(logs)
     mgr = _setup.start_mcp_manager_if_enabled(
         _cfg(["/nonexistent/mcp-server"]), tmp_path, "none", events=events
     )
@@ -72,7 +72,7 @@ def test_a_server_that_starts_emits_nothing(
     monkeypatch.setattr(mcp_client._MCPServer, "start", _ok)  # pyright: ignore[reportPrivateUsage]
     logs = tmp_path / "logs.jsonl"
     mgr = _setup.start_mcp_manager_if_enabled(
-        _cfg(["true"]), tmp_path, "none", events=agent6_events.EventSink(logs)
+        _cfg(["true"]), tmp_path, "none", events=event_log.EventSink(logs)
     )
     assert mgr is not None
     mgr.close()

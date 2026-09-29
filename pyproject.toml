@@ -200,7 +200,7 @@ banned-from = [
     "agent6.config.write",
     "agent6.directive",
     "agent6.errors",
-    "agent6.events",
+    "agent6.event_log",
     "agent6.git_ops",
     "agent6.graph.curator",
     "agent6.graph.models",

@@ -11,7 +11,7 @@ import pathlib
 
 import pytest
 
-from agent6 import events as agent6_events
+from agent6 import event_log
 from agent6.app import manifest
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
@@ -34,8 +34,8 @@ def _layout(tmp_path: pathlib.Path) -> sessions_layout.SessionLayout:
     return layout
 
 
-def _sink(tmp_path: pathlib.Path) -> agent6_events.EventSink:
-    return agent6_events.EventSink(tmp_path / "logs.jsonl")
+def _sink(tmp_path: pathlib.Path) -> event_log.EventSink:
+    return event_log.EventSink(tmp_path / "logs.jsonl")
 
 
 def _quiet() -> tuple[app_reporter.Reporter, list[str]]:

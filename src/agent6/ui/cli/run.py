@@ -13,8 +13,7 @@ import pathlib
 import sys
 import time
 
-from agent6 import errors, kinds, paths
-from agent6 import events as agent6_events
+from agent6 import errors, event_log, kinds, paths
 from agent6 import skills as agent6_skills
 from agent6.app import _setup, frontend, parallel, preflight, reporter, run
 from agent6.config import (
@@ -88,7 +87,7 @@ def session_frontend(config_path: pathlib.Path | None = None) -> frontend.Sessio
     console_cell: list[_console_view.ConsoleView | None] = [None]
     steer_cell: list[steer.SteerState | None] = [None]
 
-    def attach_console_view(events: agent6_events.EventSink) -> None:
+    def attach_console_view(events: event_log.EventSink) -> None:
         """Create the console view on the run's event sink."""
         # The sink's path is the handle to the run dir, so the layout need not cross the protocol.
         view = _console_view.ConsoleView(

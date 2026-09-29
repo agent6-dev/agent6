@@ -19,7 +19,7 @@ import types
 from typing import Any
 from unittest import mock
 
-from agent6 import events as agent6_events
+from agent6 import event_log
 from agent6.harness import _chain, _operator, _provider_call, loop
 from agent6.providers import ProviderResponse
 from agent6.tools import results
@@ -325,7 +325,7 @@ def test_a_billed_empty_turn_says_so(tmp_path: pathlib.Path) -> None:
     lines: list[str] = []
     wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=2)
     wf.logger = lines.append
-    wf.events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    wf.events = event_log.EventSink(tmp_path / "logs.jsonl")
     wf.run("do something")
 
     quiet = [ln for ln in lines if "went_quiet at iter" in ln]
@@ -357,7 +357,7 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: pathlib.Path)
     lines: list[str] = []
     wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=2)
     wf.logger = lines.append
-    wf.events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    wf.events = event_log.EventSink(tmp_path / "logs.jsonl")
     wf.budget = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     wf.budget.record(
         model="gpt-5.6-sol",
@@ -403,7 +403,7 @@ def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: pathlib.Pa
         return _empty_resp() if provider.call.call_count == 1 else _resp_text("done")
 
     provider.call.side_effect = _respond
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     # Steer only once the run has parked: at any earlier boundary the steer
     # handler would take it and the park would wait forever.
     steers = ["carry on", "abort"]

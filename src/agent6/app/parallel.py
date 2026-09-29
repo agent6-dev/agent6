@@ -25,8 +25,7 @@ from collections.abc import Callable, Sequence
 from concurrent import futures as concurrent_futures
 from typing import Protocol
 
-from agent6 import directive, git_ops, kinds, memory, paths
-from agent6 import events as agent6_events
+from agent6 import directive, event_log, git_ops, kinds, memory, paths
 from agent6.app import _lane_watch, finalize
 from agent6.app import compare as app_compare
 from agent6.app import manifest as app_manifest
@@ -1143,7 +1142,7 @@ def run_parallel(
         cfg=cfg,
         fanout=sessions_manifest.FanoutStamp(lanes=len(lanes), spec=spec),
     )
-    events = agent6_events.EventSink(layout.logs_path)
+    events = event_log.EventSink(layout.logs_path)
     ipc.emit_session_start(
         events,
         layout.session_dir,
@@ -1171,11 +1170,11 @@ def run_parallel(
         )
     except KeyboardInterrupt:
         # An interrupt past the await is journaled, so the record reads stopped, never stale.
-        with contextlib.suppress(agent6_events.EventWriteError):
+        with contextlib.suppress(event_log.EventWriteError):
             events.emit("session.end", reason="interrupted", iterations=0, all_passed=False)
         raise
     except Exception:
-        with contextlib.suppress(agent6_events.EventWriteError):
+        with contextlib.suppress(event_log.EventWriteError):
             events.emit("session.end", reason="crashed", iterations=0, all_passed=False)
         raise
     finally:
@@ -1194,7 +1193,7 @@ def _drive_fanout(
     max_usd: float | None,
     fanout_id: str,
     base_sha: str,
-    events: agent6_events.EventSink,
+    events: event_log.EventSink,
     coordinator_dir: pathlib.Path,
     reporter: app_reporter.Reporter,
 ) -> int:

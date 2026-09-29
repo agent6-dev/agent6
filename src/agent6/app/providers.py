@@ -9,8 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import budget as agent6_budget
-from agent6 import events as agent6_events
-from agent6 import secrets
+from agent6 import event_log, secrets
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -301,7 +300,7 @@ class InstrumentedProvider:
     role: str
     model: str
     provider_name: str
-    events: agent6_events.EventSink | None
+    events: event_log.EventSink | None
     budget: agent6_budget.BudgetTracker
     stream_text: bool = False
 
@@ -458,7 +457,7 @@ def reviewer_seat_provider(
     *,
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
-    events: agent6_events.EventSink | None,
+    events: event_log.EventSink | None,
 ) -> Provider:
     """Build the reviewer route under a seat's label, instrumented.
 
@@ -498,7 +497,7 @@ def build_review_seats(
     budget: agent6_budget.BudgetTracker,
     n: int,
     personas: tuple[str, ...] = (),
-    events: agent6_events.EventSink | None = None,
+    events: event_log.EventSink | None = None,
 ) -> list[_reviewer.ReviewSeat]:
     """Build the review-panel seats, one per roster entry.
 
@@ -599,7 +598,7 @@ def build_prompt_reviser_provider(
     *,
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
-    events: agent6_events.EventSink,
+    events: event_log.EventSink,
 ) -> Provider | None:
     """Route the reviewer role as a one-shot prompt reviser.
 

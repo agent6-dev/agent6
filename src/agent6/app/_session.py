@@ -14,8 +14,7 @@ from collections.abc import Callable
 
 import agent6
 from agent6 import budget as agent6_budget
-from agent6 import events as agent6_events
-from agent6 import kinds
+from agent6 import event_log, kinds
 from agent6.app import _setup, confine, frontend, preflight, providers
 from agent6.app import reporter as app_reporter
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
@@ -181,7 +180,7 @@ def build_session_providers(
     cfg: Config,
     *,
     role: RoleName,
-    events: agent6_events.EventSink,
+    events: event_log.EventSink,
     transcript_sink: TranscriptSink,
     stream_text: bool,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
@@ -262,7 +261,7 @@ def build_session_tools(
     layout: sessions_layout.SessionLayout,
     isolation: kinds.IsolationLevel,
     mode: kinds.ResumableMode,
-    events: agent6_events.EventSink,
+    events: event_log.EventSink,
     prompts: operator_prompts.OperatorPrompts,
     loop_log: Callable[[str], None],
     mcp_manager: mcp_client.MCPManager | None,

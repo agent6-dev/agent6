@@ -14,8 +14,7 @@ import pathlib
 from collections.abc import Sequence
 from typing import Any
 
-from agent6 import __version__, kinds, portable, task_text
-from agent6 import events as agent6_events
+from agent6 import __version__, event_log, kinds, portable, task_text
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.sessions import layout as sessions_layout
@@ -302,7 +301,7 @@ def pin_gate(
     argv: Sequence[str],
     origin: str,
     *,
-    events: agent6_events.EventSink,
+    events: event_log.EventSink,
     reporter: app_reporter.Reporter,
 ) -> None:
     """Pin the execution's gate, and re-pin it when the loop adopts one mid-run.

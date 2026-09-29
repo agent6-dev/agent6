@@ -10,7 +10,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from agent6 import events as agent6_events
+from agent6 import event_log
 from agent6.config import Config
 from agent6.harness import _chain, _conversation, _loop_state, loop
 from agent6.providers import (
@@ -219,7 +219,7 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
 
     (tmp_path / "a.py").write_text("answer = 42\n", encoding="utf-8")
     journal = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(journal)
+    events = event_log.EventSink(journal)
     dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=Config(), events=events)
     harness = loop.Harness(
         chain=_chain.RunChain(tmp_path),

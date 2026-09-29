@@ -18,7 +18,7 @@ import types
 from typing import Any
 from unittest import mock
 
-from agent6 import events as agent6_events
+from agent6 import event_log
 from agent6.graph import curator as graph_curator
 from agent6.harness import _chain, _operator, loop
 from agent6.providers import types as providers_types
@@ -67,7 +67,7 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pat
     )
     curator = graph_curator.GraphCurator(layout)
     session_dir = layout.session_dir
-    events = agent6_events.EventSink(session_dir / "logs.jsonl")
+    events = event_log.EventSink(session_dir / "logs.jsonl")
 
     provider = mock.MagicMock()
     dispatcher = mock.MagicMock()

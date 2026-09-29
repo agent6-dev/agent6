@@ -16,7 +16,7 @@ import types as types_
 from typing import Any
 from unittest import mock
 
-from agent6 import events
+from agent6 import event_log
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
 from agent6.harness import _chain, _dag_focus, _loop_state, _operator, _prompt_revision, loop
@@ -28,7 +28,7 @@ _NOW = datetime.datetime(2026, 9, 16, tzinfo=datetime.UTC)
 SPEC = "Add a --json flag\n\nSame fields as the table, keyed by name."
 
 
-def _workflow(curator: graph_curator.GraphCurator, sink: events.EventSink) -> loop.Harness:
+def _workflow(curator: graph_curator.GraphCurator, sink: event_log.EventSink) -> loop.Harness:
     """A loop with only what the drain reads wired: the graph and the journal."""
     return loop.Harness(
         chain=_chain.RunChain(
@@ -48,7 +48,7 @@ def _state(root: str) -> _loop_state.LoopState:
     return _loop_state.LoopState(original_task="t", tool_calls=0, root_task_id=root, system="")
 
 
-def _run_dir(tmp_path: pathlib.Path) -> tuple[graph_curator.GraphCurator, events.EventSink, str]:
+def _run_dir(tmp_path: pathlib.Path) -> tuple[graph_curator.GraphCurator, event_log.EventSink, str]:
     layout = sessions_layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     curator = graph_curator.GraphCurator(layout)
     root = curator.add_subtask(
@@ -56,10 +56,10 @@ def _run_dir(tmp_path: pathlib.Path) -> tuple[graph_curator.GraphCurator, events
             parent_id=None, draft=models.TaskNodeDraft(title="the run", created_by="user")
         )
     )
-    return curator, events.EventSink(layout.session_dir / "logs.jsonl"), root.id
+    return curator, event_log.EventSink(layout.session_dir / "logs.jsonl"), root.id
 
 
-def _events(sink: events.EventSink) -> list[dict[str, Any]]:
+def _events(sink: event_log.EventSink) -> list[dict[str, Any]]:
     if not sink.path.exists():
         return []
     return [json.loads(line) for line in sink.path.read_text(encoding="utf-8").splitlines()]

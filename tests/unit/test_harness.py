@@ -4059,7 +4059,7 @@ def test_compact_request_forces_a_tier2_restart() -> None:
 
 def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) -> None:
     """A stop.request ends the run at the iteration boundary in the resumable steer_abort shape."""
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -4114,7 +4114,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
         config=config,
         provider=provider,
         dispatcher=DispatcherStub(),
-        events=agent6_events.EventSink(tmp_path / "logs.jsonl"),
+        events=event_log.EventSink(tmp_path / "logs.jsonl"),
         bridge=_operator.OperatorBridge(
             stop_requested=lambda: pending["stop"],
             stop_clear=lambda: pending.__setitem__("stop", False),
@@ -4142,7 +4142,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
     """A tier-2 restart mid-run wipes the focus banner, so the next nudge pass re-surfaces it."""
     import json
 
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -4184,7 +4184,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
                 )
             return tools_results.RawResult({"ok": True})
 
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     cur = _FakeCurator(
         {
             "root": {"parent_id": None, "status": "in_progress", "title": "review"},
@@ -4814,7 +4814,7 @@ def test_tier2_summarise_failsafe_keeps_context_on_empty_summary(tmp_path: pathl
 def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> None:
     import json
 
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -4861,7 +4861,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
                 )
             return tools_results.RawResult({"ok": True})
 
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     summ = SummariserStub()
     config = types_.SimpleNamespace(
         git=_GIT_STUB,
@@ -8334,7 +8334,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
 
 def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Path) -> None:
     """A configured gate the operator denied makes the run gateless for its commits, unadopted."""
-    from agent6 import events as agent6_events
+    from agent6 import event_log
     from agent6.tools import errors
 
     (tmp_path / "AGENTS.md").write_text(
@@ -8391,7 +8391,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
         config=cfg,
         provider=ProviderStub(),
         dispatcher=dispatcher,
-        events=agent6_events.EventSink(events_path),
+        events=event_log.EventSink(events_path),
         max_iterations=8,
         mode="run",
     )

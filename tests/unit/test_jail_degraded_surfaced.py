@@ -13,7 +13,7 @@ import pathlib
 
 import pytest
 
-from agent6 import events as agent6_events
+from agent6 import event_log
 from agent6.config import Config
 from agent6.tools import dispatch
 
@@ -44,7 +44,7 @@ def _events(path: pathlib.Path, kind: str) -> list[dict[str, object]]:
 
 
 def _dispatcher(
-    tmp_path: pathlib.Path, events: agent6_events.EventSink, stub: _StubSession
+    tmp_path: pathlib.Path, events: event_log.EventSink, stub: _StubSession
 ) -> dispatch.ToolDispatcher:
     # network = "host" needs no session netns; isolation must be strict for a session to open.
     (tmp_path / "s").mkdir(exist_ok=True)
@@ -65,7 +65,7 @@ def test_a_degraded_session_emits_jail_degraded_once(
     stub = _StubSession(warning)
     _patch_open(monkeypatch, stub)
     log = tmp_path / "e.jsonl"
-    d = _dispatcher(tmp_path, agent6_events.EventSink(log), stub)
+    d = _dispatcher(tmp_path, event_log.EventSink(log), stub)
     try:
         assert d._run_session() is stub  # pyright: ignore[reportPrivateUsage]
         d._run_session()  # already open -> no second emit  # pyright: ignore[reportPrivateUsage]
@@ -82,7 +82,7 @@ def test_a_clean_session_emits_nothing(
     stub = _StubSession("")
     _patch_open(monkeypatch, stub)
     log = tmp_path / "e.jsonl"
-    d = _dispatcher(tmp_path, agent6_events.EventSink(log), stub)
+    d = _dispatcher(tmp_path, event_log.EventSink(log), stub)
     try:
         d._run_session()  # pyright: ignore[reportPrivateUsage]
     finally:
@@ -110,7 +110,7 @@ def test_concurrent_callers_open_exactly_one_session(
         return stub
 
     monkeypatch.setattr("agent6.sandbox.jail.JailSession.open", classmethod(slow_open))
-    d = _dispatcher(tmp_path, agent6_events.EventSink(tmp_path / "e.jsonl"), _StubSession(""))
+    d = _dispatcher(tmp_path, event_log.EventSink(tmp_path / "e.jsonl"), _StubSession(""))
     seen: list[object] = []
     try:
         threads = [

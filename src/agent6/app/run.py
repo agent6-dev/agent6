@@ -16,8 +16,7 @@ import shutil
 from collections.abc import Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import directive, git_ops, kinds, paths
-from agent6 import events as agent6_events
+from agent6 import directive, event_log, git_ops, kinds, paths
 from agent6.app import _execution, _session, _setup, finalize, manifest, preflight
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
@@ -247,7 +246,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             return 2
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
-        events = agent6_events.EventSink(layout.logs_path)
+        events = event_log.EventSink(layout.logs_path)
         # The execution's one gate to the operator, whichever front-end answers.
         prompts = operator_prompts.OperatorPrompts(
             approver=frontend.build_approver(layout.session_dir),

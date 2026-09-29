@@ -30,9 +30,9 @@ def _seeded(tmp_path: pathlib.Path) -> tuple[graph_curator.GraphCurator, str, lo
             parent_id=None, draft=models.TaskNodeDraft(title="the run", created_by="user")
         )
     ).id
-    from agent6 import events
+    from agent6 import event_log
 
-    return curator, root, _workflow(curator, events.EventSink(layout.session_dir / "logs.jsonl"))
+    return curator, root, _workflow(curator, event_log.EventSink(layout.session_dir / "logs.jsonl"))
 
 
 def test_only_a_fresh_run_takes_the_flag() -> None:

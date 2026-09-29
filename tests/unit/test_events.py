@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `agent6.events.EventSink`."""
+"""Tests for `agent6.event_log.EventSink`."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pathlib
 
 import pytest
 
-from agent6 import events
+from agent6 import event_log
 from agent6 import paths as agent6_paths
 
 
@@ -19,7 +19,7 @@ def _read_lines(path: pathlib.Path) -> list[dict[str, object]]:
 
 
 def test_emit_appends_json_lines(tmp_path: pathlib.Path) -> None:
-    sink = events.EventSink(tmp_path / "logs.jsonl")
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.emit("session.start", task="do a thing")
     sink.emit("step.start", index=1, title="hello")
     lines = _read_lines(tmp_path / "logs.jsonl")
@@ -33,14 +33,14 @@ def test_emit_appends_json_lines(tmp_path: pathlib.Path) -> None:
 
 def test_emit_creates_parent_dir(tmp_path: pathlib.Path) -> None:
     target = tmp_path / "nested" / "deeper" / "logs.jsonl"
-    sink = events.EventSink(target)
+    sink = event_log.EventSink(target)
     sink.emit("hello")
     assert target.is_file()
 
 
 def test_emit_reprs_non_serializable_fields(tmp_path: pathlib.Path) -> None:
     """The sink never drops a field: an unknown object, circular refs included, lands as a repr."""
-    sink = events.EventSink(tmp_path / "logs.jsonl")
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
 
     class Bad:
         pass
@@ -68,10 +68,10 @@ def test_durable_emit_raises_on_unwritable_journal(tmp_path: pathlib.Path) -> No
     # Point at a path under a regular file -> mkdir will fail.
     blocker = tmp_path / "blocker"
     blocker.write_text("", encoding="utf-8")
-    sink = events.EventSink(blocker / "subdir" / "logs.jsonl")
+    sink = event_log.EventSink(blocker / "subdir" / "logs.jsonl")
     seen: list[dict[str, object]] = []
     sink.subscribe(seen.append)
-    with pytest.raises(events.EventWriteError, match="unwritable"):
+    with pytest.raises(event_log.EventWriteError, match="unwritable"):
         sink.emit("session.end", reason="finish_session", all_passed=True)
     assert seen == []
     sink.emit("role.text_delta", text="still live")  # ephemeral: must not raise
@@ -92,7 +92,7 @@ def test_delta_events_flush_but_do_not_fsync(
         synced.append(fd)
 
     monkeypatch.setattr(os, "fsync", _fake_fsync)
-    sink = events.EventSink(tmp_path / "logs.jsonl")
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
 
     sink.emit("role.thinking_delta", text="reasoning")
     sink.emit("role.text_delta", text="answer")
@@ -116,7 +116,7 @@ def test_emit_survives_lone_surrogate(tmp_path: pathlib.Path) -> None:
     """
     import json
 
-    sink = events.EventSink(tmp_path / "logs.jsonl")
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.emit("session.start", user_task="caf\udce9")
     sink.emit("tool.call", args={"summary": "done \ud83d"})
     lines = [
@@ -137,11 +137,11 @@ def test_a_value_that_merely_answers_isoformat_encodes_as_its_repr(tmp_path: pat
     from unittest import mock as unittest_mock
 
     assert (
-        events._json_default(datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC))
+        event_log._json_default(datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC))
         == "2026-01-02T00:00:00+00:00"
     )
     mock = unittest_mock.MagicMock()
-    assert events._json_default(mock) == repr(mock)
+    assert event_log._json_default(mock) == repr(mock)
 
 
 def test_the_log_dir_is_created_once_not_per_event(
@@ -159,7 +159,7 @@ def test_the_log_dir_is_created_once_not_per_event(
         real(path)
 
     monkeypatch.setattr(agent6_paths, "mkdir_for_real_user", counting)
-    sink = events.EventSink(tmp_path / "run" / "logs.jsonl")
+    sink = event_log.EventSink(tmp_path / "run" / "logs.jsonl")
     sink.emit("session.start")
     sink.emit("loop.tool.call", name="read_file")
     assert calls == [tmp_path / "run"]

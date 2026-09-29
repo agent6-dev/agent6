@@ -82,9 +82,9 @@ def _run(tmp_path: pathlib.Path) -> tuple[graph_curator.GraphCurator, str, loop.
             parent_id=None, draft=models.TaskNodeDraft(title="the run", created_by="user")
         )
     ).id
-    from agent6 import events
+    from agent6 import event_log
 
-    return curator, root, _workflow(curator, events.EventSink(layout.session_dir / "logs.jsonl"))
+    return curator, root, _workflow(curator, event_log.EventSink(layout.session_dir / "logs.jsonl"))
 
 
 def test_the_loop_adopts_the_goal(tmp_path: pathlib.Path) -> None:

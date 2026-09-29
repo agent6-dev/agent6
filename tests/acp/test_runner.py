@@ -320,14 +320,14 @@ def test_a_fault_after_session_end_still_keeps_its_reason(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A finalizer fault after session.end is reported, not hidden behind the journal's verdict."""
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     monkeypatch.chdir(tmp_path)
 
     def _dies_after_end(*_a: object, **kw: Any) -> int:
         layout = sessions_layout.SessionLayout(paths.state_dir(tmp_path), str(kw["session_id"]))
         layout.ensure()
-        events = agent6_events.EventSink(layout.logs_path)
+        events = event_log.EventSink(layout.logs_path)
         events.emit("session.start", mode="run", user_task="t")
         events.emit("session.end", reason="finish_session", all_passed=True)
         raise RuntimeError("the finalizer exploded")
@@ -872,7 +872,7 @@ def test_a_refused_second_turn_does_not_inherit_the_first_turns_reason(
 
     An iteration-capped first turn made a refused second turn report max_turn_requests.
     """
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     monkeypatch.chdir(tmp_path)
 
@@ -889,7 +889,7 @@ def test_a_refused_second_turn_does_not_inherit_the_first_turns_reason(
     def _capped_run(*_a: object, **kw: Any) -> int:
         layout = sessions_layout.SessionLayout(paths.state_dir(tmp_path), str(kw["session_id"]))
         layout.ensure()
-        events = agent6_events.EventSink(layout.logs_path)
+        events = event_log.EventSink(layout.logs_path)
         events.emit("session.start", mode="run", user_task="t")
         events.emit("session.end", reason="max_iterations", all_passed=False)
         (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
@@ -963,7 +963,7 @@ def test_a_gated_call_reads_pending_on_the_wire(
 
     The journaled prompt and answer pair is what lets the fold say so on every surface.
     """
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     monkeypatch.chdir(tmp_path)
     layouts: list[sessions_layout.SessionLayout] = []
@@ -974,7 +974,7 @@ def test_a_gated_call_reads_pending_on_the_wire(
         )
         layouts.append(layout)
         layout.session_dir.mkdir(parents=True, exist_ok=True)
-        events = agent6_events.EventSink(layout.logs_path)
+        events = event_log.EventSink(layout.logs_path)
         prompts = operator_prompts.OperatorPrompts(  # built before the loop, as the execution does
             approver=kw["frontend"].build_approver(layout.session_dir),
             journal=events.emit,
@@ -1072,7 +1072,7 @@ def test_a_tool_call_id_is_unique_across_a_sessions_turns(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The tool call id carries the turn, since a resumed dispatcher restarts its ids at 1."""
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     monkeypatch.chdir(tmp_path)
 
@@ -1084,7 +1084,7 @@ def test_a_tool_call_id_is_unique_across_a_sessions_turns(
     def _run_task(*_a: object, **kw: Any) -> int:
         layout = _layout(str(kw["session_id"]))
         layout.session_dir.mkdir(parents=True, exist_ok=True)
-        events = agent6_events.EventSink(layout.logs_path)
+        events = event_log.EventSink(layout.logs_path)
         events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
         events.emit("tool.result", name="run_command", ok=False, summary="no", call_id=1)
@@ -1093,7 +1093,7 @@ def test_a_tool_call_id_is_unique_across_a_sessions_turns(
         return 0
 
     def _resume_task(_config_path: object, session_id: str, **_kw: Any) -> int:
-        events = agent6_events.EventSink(_layout(session_id).logs_path)
+        events = event_log.EventSink(_layout(session_id).logs_path)
         events.emit("loop.resume.start", session_id=session_id, mode="run", iteration=2)
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
         events.emit("tool.result", name="run_command", ok=True, summary="ok", call_id=1)
@@ -1127,7 +1127,7 @@ def test_a_late_tail_keeps_its_own_turn(tmp_path: pathlib.Path) -> None:
     """A tail that outlives its turn's join keeps its turn; the next turn does not restamp it."""
     import time
 
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
@@ -1144,9 +1144,7 @@ def test_a_late_tail_keeps_its_own_turn(tmp_path: pathlib.Path) -> None:
     )
     tail.start()
     session.turn = 2  # the next turn began while this tail still reads
-    agent6_events.EventSink(log).emit(
-        "tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1
-    )
+    event_log.EventSink(log).emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
     for _ in range(100):
         if sent:
             break
@@ -1207,7 +1205,7 @@ def test_model_deltas_stream_once_in_journal_order_and_side_calls_stay_hidden(
 
 def test_a_dead_workers_open_tool_call_is_settled(tmp_path: pathlib.Path) -> None:
     """A worker that died between tool.call and tool.result leaves no call in progress."""
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
@@ -1215,7 +1213,7 @@ def test_a_dead_workers_open_tool_call_is_settled(tmp_path: pathlib.Path) -> Non
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
     log = tmp_path / "logs.jsonl"
-    agent6_events.EventSink(log).emit(
+    event_log.EventSink(log).emit(
         "tool.call", name="run_command", args={"argv": ["false"]}, call_id=1
     )
 
@@ -1261,7 +1259,7 @@ def test_the_runs_notices_reach_the_editor(
 
     Over ACP they went to stderr only once a journal existed, so stashes accumulated invisibly.
     """
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     monkeypatch.chdir(tmp_path)
 
@@ -1270,7 +1268,7 @@ def test_the_runs_notices_reach_the_editor(
             state_dir=paths.state_dir(tmp_path), session_id=str(kw["session_id"])
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
-        events = agent6_events.EventSink(layout.logs_path)
+        events = event_log.EventSink(layout.logs_path)
         events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
         events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
         reporter = kw["reporter"]
@@ -1311,7 +1309,7 @@ def test_the_editor_gets_each_ending_fact_once(
     The lifecycle's cost receipt and the ending go to stderr (the editor's agent log), so the editor
     reads each fact once and the log keeps its headline.
     """
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     monkeypatch.chdir(tmp_path)
 
@@ -1320,7 +1318,7 @@ def test_the_editor_gets_each_ending_fact_once(
             state_dir=paths.state_dir(tmp_path), session_id=str(kw["session_id"])
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
-        events = agent6_events.EventSink(layout.logs_path)
+        events = event_log.EventSink(layout.logs_path)
         events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
         events.emit("budget.update", usd_total=0.0028)
         events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
@@ -1417,7 +1415,7 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With two calls in flight, only the gated call reads pending on the wire."""
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     monkeypatch.chdir(tmp_path)
 
@@ -1426,7 +1424,7 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
             state_dir=paths.state_dir(tmp_path), session_id=str(kw["session_id"])
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
-        events = agent6_events.EventSink(layout.logs_path)
+        events = event_log.EventSink(layout.logs_path)
         prompts = operator_prompts.OperatorPrompts(
             approver=kw["frontend"].build_approver(layout.session_dir),
             journal=events.emit,
@@ -1530,7 +1528,7 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathli
     """
     import time
 
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
@@ -1538,7 +1536,7 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathli
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", turn=1)
     log = tmp_path / "logs.jsonl"
-    events = agent6_events.EventSink(log)
+    events = event_log.EventSink(log)
     events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
     events.emit("tool.call", name="run_command", args={"argv": ["true"]}, call_id=2)
     order = runner.ProseOrder(server, "s", log)
@@ -1686,7 +1684,7 @@ def test_a_second_prompt_after_a_recorded_turn_with_no_snapshot_starts_a_new_run
 
 def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathlib.Path) -> None:
     """An edit's tool_call_update carries each journaled path, absolute, so the editor follows."""
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
@@ -1694,7 +1692,7 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", turn=1)
     log = tmp_path / "logs.jsonl"
-    sink = agent6_events.EventSink(log)
+    sink = event_log.EventSink(log)
     sink.emit("tool.call", name="apply_edit", args={"path": "src/x.py"}, call_id=1)
     sink.emit("tool.result", name="apply_edit", call_id=1, ok=True, paths=["src/x.py", "src/x.py"])
     sink.emit("session.end", reason="finish_session", iterations=1, all_passed=True)

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Type the logs.jsonl event families the session fold consumes.
 
-The write side (`agent6.events.EventSink`) appends free-form `{"type", "ts", **fields}`
+The write side (`agent6.event_log.EventSink`) appends free-form `{"type", "ts", **fields}`
 dicts and never validates; about 90 types exist. `parse_event` turns one raw dict into
 one of the frozen families here, or a `RawEvent` for every other type, which the fold
 drops: an old run dir folds without a crash whatever it holds.

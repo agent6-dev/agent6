@@ -748,20 +748,20 @@ def test_a_start_event_is_never_readable_before_the_pid_file(
     surface. The start emitter owns the order, so no entry point (the loop's two starts, machine
     create's header) can invert it.
     """
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     sdir = tmp_path / "sess"
     sdir.mkdir()
     pid_present_at_emit: list[bool] = []
-    real_emit = agent6_events.EventSink.emit
+    real_emit = event_log.EventSink.emit
 
-    def spy(self: agent6_events.EventSink, event_type: str, /, **fields: Any) -> None:
+    def spy(self: event_log.EventSink, event_type: str, /, **fields: Any) -> None:
         pid_present_at_emit.append((sdir / "worker.pid").exists())
         real_emit(self, event_type, **fields)
 
-    monkeypatch.setattr(agent6_events.EventSink, "emit", spy)
+    monkeypatch.setattr(event_log.EventSink, "emit", spy)
     sessions_ipc.emit_session_start(
-        agent6_events.EventSink(sdir / "logs.jsonl"), sdir, "session.start", mode="run"
+        event_log.EventSink(sdir / "logs.jsonl"), sdir, "session.start", mode="run"
     )
     assert pid_present_at_emit == [True]
 

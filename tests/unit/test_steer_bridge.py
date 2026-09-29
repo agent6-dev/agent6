@@ -16,8 +16,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import events as agent6_events
-from agent6 import portable
+from agent6 import event_log, portable
 from agent6.harness import _chain, _operator, _provider_call
 from agent6.sessions import ipc as sessions_ipc
 from agent6.ui import steer as ui_steer
@@ -72,7 +71,7 @@ def test_make_steer_state_without_tty_uses_bridge(
         return real_open(file, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr("builtins.open", fake_open)
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     steer = _steer.make_steer_state(events, tmp_path)
     # The old null steer answered False here even with a request pending.
     sessions_ipc.request_steer(tmp_path)
@@ -110,7 +109,7 @@ def test_sigint_escalates_boundary_interrupt_stop(
     import signal
 
     monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     steer = _steer.install_steer_sigint(events, tmp_path)
     try:
         assert steer.requested() is False
@@ -145,7 +144,7 @@ def test_sigint_at_the_pause_prompt_stops(
         return ""
 
     monkeypatch.setattr("agent6.ui.cli._steer.tty_prompt", prompt_hit_by_ctrl_c)
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     steer = _steer.install_steer_sigint(events, tmp_path)
     try:
         signal.raise_signal(signal.SIGINT)  # stage 1: the boundary pause
@@ -169,7 +168,7 @@ def test_a_seeded_steer_is_the_answer_on_the_terminal_too(
         pytest.fail("the menu opened over a seeded steer")
 
     monkeypatch.setattr("agent6.ui.cli._steer_menu.pause_menu", no_menu)
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     sessions_ipc.submit_steer(tmp_path, "also add a test that mul(2, 0) == 0")
     steer = _steer.install_steer_sigint(events, tmp_path)
     try:
@@ -207,7 +206,7 @@ def test_prompt_pauses_the_console_spinner(
         return "steer text"
 
     monkeypatch.setattr("agent6.ui.cli._steer_menu.pause_menu", fake_menu)
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     steer = _steer.install_steer_sigint(
         events, tmp_path, cast(_console_view.ConsoleView, FakeView())
     )
@@ -447,7 +446,7 @@ def test_the_fallback_pause_prompt_takes_a_steer_written_while_it_waits(
         return None
 
     monkeypatch.setattr("agent6.ui.cli._steer.tty_prompt", prompt_superseded)
-    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     steer = _steer.install_steer_sigint(events, tmp_path)
     try:
         import signal

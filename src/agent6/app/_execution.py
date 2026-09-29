@@ -17,8 +17,7 @@ import pathlib
 from collections.abc import Callable, Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import commit_message, git_ops, kinds, paths
-from agent6 import events as agent6_events
+from agent6 import commit_message, event_log, git_ops, kinds, paths
 from agent6.app import _session, _setup, finalize, manifest, providers
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
@@ -151,7 +150,7 @@ def _escape_reason(exc: BaseException) -> _snapshot.SessionEndReason:
 
 
 def _journal_escape(
-    events: agent6_events.EventSink, exc: BaseException, *, iterations: int
+    events: event_log.EventSink, exc: BaseException, *, iterations: int
 ) -> _snapshot.SessionEndReason:
     """Journal the end an escape leaves.
 
@@ -167,7 +166,7 @@ def _journal_escape(
         The reason journaled.
     """
     reason = _escape_reason(exc)
-    with contextlib.suppress(agent6_events.EventWriteError):
+    with contextlib.suppress(event_log.EventWriteError):
         events.emit("session.end", reason=reason, iterations=iterations, all_passed=False)
     return reason
 
@@ -179,7 +178,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     *,
     frontend: app_frontend.SessionFrontend,
     reporter: app_reporter.Reporter,
-    events: agent6_events.EventSink,
+    events: event_log.EventSink,
     transcript_sink: TranscriptSink,
     cwd: pathlib.Path,
     state_dir: pathlib.Path,
@@ -450,7 +449,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             """Close the MCP servers and journal any that survived."""
             if mcp_manager is not None and (survivors := mcp_manager.close()):
                 with contextlib.suppress(
-                    agent6_events.EventWriteError
+                    event_log.EventWriteError
                 ):  # a dead journal must not skip cleanup
                     events.emit("jail.degraded", detail=jail.survivors_message(survivors))
 

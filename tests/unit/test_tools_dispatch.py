@@ -1616,11 +1616,11 @@ def test_rejected_tool_emits_call_and_result_pair(tmp_path: pathlib.Path) -> Non
     """
     import json
 
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     cfg = _config(tmp_path)  # run_commands = "no"
     logs = tmp_path / "logs.jsonl"
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=agent6_events.EventSink(logs))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=event_log.EventSink(logs))
 
     with pytest.raises(errors.ToolError):  # run_command disabled by config -> guard reject
         d.dispatch("run_command", {"argv": ["echo", "hi"]})
@@ -1646,11 +1646,11 @@ def test_run_command_result_carries_output_tails(
     """Execution tools' tool.result events carry capped output tails; others stay summary-only."""
     import json
 
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     cfg = _config_with_run_commands(tmp_path, "yes")  # skip the approval prompt
     logs = tmp_path / "logs.jsonl"
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=agent6_events.EventSink(logs))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=event_log.EventSink(logs))
 
     def _fake_run_argv(self: object, argv: object, **kw: object) -> object:
 
@@ -2513,11 +2513,11 @@ def test_an_edit_or_patch_result_names_the_paths_it_wrote(tmp_path: pathlib.Path
     """
     import json
 
-    from agent6 import events as agent6_events
+    from agent6 import event_log
 
     cfg = _config(tmp_path)
     logs = tmp_path / "logs.jsonl"
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=agent6_events.EventSink(logs))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=event_log.EventSink(logs))
     d.dispatch(
         "apply_edit",
         {"path": "a.txt", "edits": [{"kind": "create", "old_string": "", "new_string": "a\n"}]},

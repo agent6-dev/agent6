@@ -537,7 +537,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
     """
     import signal
 
-    from agent6 import events
+    from agent6 import event_log
     from agent6.app import frontend
     from agent6.ui.cli import _steer
 
@@ -553,7 +553,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
         isolation="strict",
     )
     state = _steer.install_steer_sigint(
-        events.EventSink(tmp_path / "logs.jsonl"), tmp_path, None, lambda: facts
+        event_log.EventSink(tmp_path / "logs.jsonl"), tmp_path, None, lambda: facts
     )
     try:
         sigint = signal.getsignal(signal.SIGINT)
@@ -601,7 +601,7 @@ def test_ctrl_z_does_not_stand_down_the_stage_an_open_pause_menu_needs(
     """
     import signal
 
-    from agent6 import events
+    from agent6 import event_log
     from agent6.ui.cli import _steer
 
     monkeypatch.setattr(_steer, "tty_message", lambda _t: None)  # type: ignore[misc]
@@ -616,7 +616,7 @@ def test_ctrl_z_does_not_stand_down_the_stage_an_open_pause_menu_needs(
 
     monkeypatch.setattr(_steer, "tty_prompt", at_the_open_menu)
 
-    state = _steer.install_steer_sigint(events.EventSink(tmp_path / "logs.jsonl"), tmp_path)
+    state = _steer.install_steer_sigint(event_log.EventSink(tmp_path / "logs.jsonl"), tmp_path)
     try:
         sigint = signal.getsignal(signal.SIGINT)
         assert callable(sigint)
@@ -640,7 +640,7 @@ def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
     """
     import signal
 
-    from agent6 import events
+    from agent6 import event_log
     from agent6.ui.cli import _steer
 
     def typed(_text: str, **_kw: object) -> str:
@@ -651,7 +651,7 @@ def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
     monkeypatch.setattr(_menu_input, "menu_capable", lambda: False)
     monkeypatch.setattr(_steer, "tty_prompt", typed)
 
-    state = _steer.install_steer_sigint(events.EventSink(tmp_path / "logs.jsonl"), tmp_path)
+    state = _steer.install_steer_sigint(event_log.EventSink(tmp_path / "logs.jsonl"), tmp_path)
     try:
         sigint = signal.getsignal(signal.SIGINT)
         sigtstp = signal.getsignal(signal.SIGTSTP)

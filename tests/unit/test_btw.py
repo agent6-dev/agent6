@@ -169,7 +169,7 @@ def test_a_btw_still_thinking_when_the_watcher_gives_up_is_said_so(
 
     The give-up lands on the journal as its own block, naming how to read the answer later.
     """
-    from agent6 import events as agent6_events
+    from agent6 import event_log
     from agent6.ui import btw as ui_btw
 
     d = _ask_dir(tmp_path, "quiet-fox-AAAAAA", events=[{"type": "session.start"}])
@@ -178,7 +178,7 @@ def test_a_btw_still_thinking_when_the_watcher_gives_up_is_said_so(
     logs = tmp_path / "run" / "logs.jsonl"
     logs.parent.mkdir()
 
-    ui_btw._watch(btw.BtwSession(id=d.name, dir=d, question="q"), agent6_events.EventSink(logs))  # pyright: ignore[reportPrivateUsage]
+    ui_btw._watch(btw.BtwSession(id=d.name, dir=d, question="q"), event_log.EventSink(logs))  # pyright: ignore[reportPrivateUsage]
 
     events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
     (answered,) = [e for e in events if e["type"] == "btw.answered"]

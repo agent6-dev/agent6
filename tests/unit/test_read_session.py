@@ -248,8 +248,7 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
     import types
     from unittest import mock
 
-    from agent6 import budget
-    from agent6 import events as agent6_events
+    from agent6 import budget, event_log
     from agent6.app import providers
 
     d = tmp_path / "sessions" / "asks" / "quiet-fox-AAAAAA"
@@ -258,7 +257,7 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
         json.dumps({"version": 3, "mode": "ask", "user_task": "how do I convert h264"}),
         encoding="utf-8",
     )
-    events = agent6_events.EventSink(d / "logs.jsonl")
+    events = event_log.EventSink(d / "logs.jsonl")
     events.emit("session.start", user_task="how do I convert h264")
     inner = mock.MagicMock()
     inner.call.return_value = types.SimpleNamespace(

@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 import agent6.app._execution as execution_mod
-from agent6 import events
+from agent6 import event_log
 from agent6.app import _session, _setup, frontend, providers, reporter
 from agent6.config import Config
 from agent6.harness import _snapshot
@@ -281,7 +281,7 @@ def test_a_loop_crash_prints_the_end_that_it_journals(
             ),
             frontend=front,
             reporter=reporter.Reporter(out=said.append, err=said.append),
-            events=events.EventSink(layout.logs_path),
+            events=event_log.EventSink(layout.logs_path),
             transcript_sink=None,  # type: ignore[arg-type]
             cwd=cwd,
             state_dir=tmp_path / "state",
@@ -351,7 +351,7 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
         ),
         frontend=dataclasses.replace(front, save_ask_transcript=_save),
         reporter=reporter.Reporter(out=said.append, err=said.append),
-        events=events.EventSink(layout.logs_path),
+        events=event_log.EventSink(layout.logs_path),
         transcript_sink=None,  # type: ignore[arg-type]
         cwd=cwd,
         state_dir=tmp_path / "state",
@@ -421,7 +421,7 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
         ),
         frontend=dataclasses.replace(front, save_ask_transcript=_save),
         reporter=reporter.Reporter(out=said.append, err=said.append),
-        events=events.EventSink(layout.logs_path),
+        events=event_log.EventSink(layout.logs_path),
         transcript_sink=None,  # type: ignore[arg-type]
         cwd=cwd,
         state_dir=tmp_path / "state",
@@ -482,7 +482,7 @@ def test_a_surface_without_the_revise_choice_skips_revision(
         ),
         frontend=front,
         reporter=reporter.Reporter(out=said.append, err=said.append),
-        events=events.EventSink(layout.logs_path),
+        events=event_log.EventSink(layout.logs_path),
         transcript_sink=None,  # type: ignore[arg-type]
         cwd=cwd,
         state_dir=tmp_path / "state",
