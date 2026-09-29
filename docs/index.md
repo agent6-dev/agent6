@@ -8,7 +8,7 @@ hide:
 
 # agent6
 
-<p class="a6-tagline">A coding agent that jails model commands and uses editable state machines for long-running tasks.</p>
+<p class="a6-tagline">A coding agent that jails every command and leaves your branch untouched.</p>
 
 <div class="a6-cta" markdown>
 [:material-github: GitHub](https://github.com/agent6-dev/agent6){ .md-button }
@@ -21,43 +21,50 @@ hide:
 ![The run dashboard: task graph, budget, tool calls, reasoning, log, and diff](screenshots/out/02-run-dashboard.png)
 </div>
 
-The model can write code and ask to run commands, but those commands go through a jail with restricted filesystem and network access.
-Long-running workflows can be written, reviewed, edited, resumed, and replayed as declarative state machines.
+```sh
+uv tool install agent6                 # or: pipx install agent6
+agent6 connect                         # pick a provider, paste a key (once)
+cd your-repo
+agent6 run "add a --json output mode to the CLI"
+```
 
 <div class="a6-grid" markdown>
 
 <div class="a6-card" markdown>
-### Command sandbox
-Commands the model runs go through a jail to give you control over what the model can read and write, and to restrict network access.
+### Jailed commands
+Every command the model runs goes through a sandbox that bounds what it reads, writes and reaches on the network.
+`auto` picks the strongest level the host allows.
+[Security](security.md)
 </div>
 
 <div class="a6-card" markdown>
-### Verify gate
-A run is measured against a verify command, inferred from the repo when unset and pinned for the run.
-Every editing step commits; the gate certifies the tree the run ends on.
+### Your branch stays yours
+Each step commits to the run's own hidden ref; HEAD, the index and your branch are untouched until `sessions merge` lands the work.
+`resume` continues a run, `fork` branches it at any turn.
 </div>
 
 <div class="a6-card" markdown>
-### Detached commit chain
-Per-step commits land on a detached ref, leaving the branch, HEAD, and index untouched.
-`agent6 sessions merge` lands the work.
+### A verify gate
+The repo's test command, inferred when unset, certifies the tree before a run may finish.
+Every surface shows the same green or red.
 </div>
 
 <div class="a6-card" markdown>
-### Resume and fork
-State is snapshotted before every model call and checkpointed each turn.
-A run resumes from its snapshot, or forks into a new run at any past turn.
+### One run, four front-ends
+The CLI, the [terminal UI](terminal.md), a [browser](web.md) on a desktop or phone, and an [editor over ACP](acp.md) drive the same runs.
+`attach` follows a live run; `steer` queues an instruction from a script or a cron job.
 </div>
 
 <div class="a6-card" markdown>
-### Agent state machines
-Longer tasks run as declarative machines: model-drafted, operator-reviewed, journaled, replayable.
+### State machines for long work
+Declarative `.asm.toml` workflows you review, edit, run, watch and replay, with waits, operator input and steering built in.
+[State machines](state-machines.md)
 </div>
 
 <div class="a6-card" markdown>
-### Parallel fan-out
-A task can run in isolated lanes on different models, ranked by a reviewer model, or by verify and cost.
-Merging stays manual.
+### Secure by default
+`network = "auto"`, `run_commands = "ask"`, `protect_git = true`, a fixed tool surface, eight runtime dependencies, no telemetry.
+[Configuration](config.md)
 </div>
 
 </div>
@@ -69,10 +76,7 @@ Merging stays manual.
   <source src="/screenshots/out/tour.webm" type="video/webm">
 </video>
 
-`agent6 run` streams the run's conversation in your terminal, with no full-screen UI.
-`agent6 tui` opens the hub instead: every run for the repository with its mode, status, and cost.
-From there you open a session to read its live conversation, toggle the dashboard (Ctrl+D), or scroll the event log.
-`agent6 run --tui` starts on that conversation view, and `-i` drives the run from a stdin REPL.
+`agent6 run` streams the run in your terminal; `agent6 tui` opens the hub, every run for the repository with its mode, status and cost, and from there the live conversation and the dashboard (Ctrl+D).
 The [terminal UI](terminal.md) page has a still of each screen.
 
 ## The web UI
@@ -81,21 +85,9 @@ The [terminal UI](terminal.md) page has a still of each screen.
   <source src="/screenshots/out/web-desktop.webm" type="video/webm">
 </video>
 
-`agent6 web` serves the same views in a browser, from a desktop or a phone.
-There you start a run and watch it stream, steer it, approve prompts, answer questions, read the transcript, and browse and run state machines.
+`agent6 web` serves the same views in a browser, from a desktop or a phone: start a run, watch it stream, steer it, approve prompts, answer questions, read the transcript, browse and run state machines.
 It binds `127.0.0.1`; put `tailscale serve` in front for encrypted remote access.
 See [the web UI](web.md).
 
-## Usage
-
-```sh
-uv tool install agent6                 # or: pipx install agent6
-agent6 connect                         # pick a provider, paste an API key (once)
-agent6 model worker anthropic/claude-sonnet-5
-
-cd your-repo
-agent6 run "add a --json output mode to the CLI"
-```
-
-[Installation](installation.md) covers requirements, shell completion, and building from source.
-[Usage](usage.md) covers the first run, inspecting it, and recovering one that went wrong.
+[Installation](installation.md) covers requirements, shell completion and building from source.
+[Usage](usage.md) covers the first run, inspecting it and recovering one that went wrong.
