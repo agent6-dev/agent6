@@ -61,7 +61,7 @@ class ModelsBrief(BaseModel):
     def replay_driver(self) -> ModelBrief | None:
         """The driver a resumed or forked leg without its own `--model` must
         re-apply: only a flag-selected one (the preset's rule,
-        `WorkflowStamp.replay_preset`); None re-resolves from the config."""
+        `HarnessStamp.replay_preset`); None re-resolves from the config."""
         return self.driver if self.driver_from_flag else None
 
 
@@ -84,7 +84,7 @@ class PolicyStamp(BaseModel):
     commit_per_step: bool = True
 
 
-class WorkflowStamp(BaseModel):
+class HarnessStamp(BaseModel):
     """The in-loop strategy the run started with, so `resume` re-applies it."""
 
     model_config = _MODEL_CONFIG
@@ -203,7 +203,7 @@ class CompareStamp(BaseModel):
 
 # The shape this binary writes. Stamp-rewrites re-stamp it (see write_manifest)
 # so a manifest's version claim always matches the shape actually on disk.
-MANIFEST_VERSION = 3
+MANIFEST_VERSION = 4
 MANIFEST_NAME = "manifest.json"
 
 
@@ -237,7 +237,7 @@ class SessionManifest(BaseModel):
     # `model_git_refusal`. An old manifest folds the default.
     git_control: str = "agent6"
     models: ModelsBrief = ModelsBrief()
-    workflow: WorkflowStamp = WorkflowStamp()
+    harness: HarnessStamp = HarnessStamp()
     policy: PolicyStamp = PolicyStamp()
     # A parked run: submitted, never started. Holds the VERBATIM task
     # (user_task above is the truncated display twin); non-empty means
@@ -324,6 +324,8 @@ def read_manifest(session_dir: Path) -> SessionManifest:
         raise ManifestError(str(exc)) from exc
     if not isinstance(data, dict):
         raise ManifestError("manifest is not a JSON object")
+    if "harness" not in data and "workflow" in data:
+        data["harness"] = data.pop("workflow")  # the stamp's key through version 3
     try:
         return SessionManifest.model_validate(data)
     except ValidationError as exc:

@@ -7,11 +7,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from agent6.workflows._advice import Nudge, Stop
-from agent6.workflows._conversation import AssistantTurn
-from agent6.workflows._guards import no_progress
-from agent6.workflows._loop_state import LoopState, TurnState
-from agent6.workflows._nudges import (
+from agent6.harness._advice import Nudge, Stop
+from agent6.harness._conversation import AssistantTurn
+from agent6.harness._guards import no_progress
+from agent6.harness._loop_state import LoopState, TurnState
+from agent6.harness._nudges import (
     NO_PROGRESS_ESCALATE_AFTER,
     NO_PROGRESS_ESCALATION,
     NO_PROGRESS_NUDGE,

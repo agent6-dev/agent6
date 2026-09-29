@@ -4,8 +4,8 @@
 
 The run review (`sessions review`) reads a finished session's record; each
 adversarial seat sees the panel prompt, or its explore-tier variant, with a
-`{persona}` placeholder. Pure text; `workflows.run_review` and
-`workflows._review` own the calls.
+`{persona}` placeholder. Pure text; `harness.run_review` and
+`harness._review` own the calls.
 """
 
 from __future__ import annotations

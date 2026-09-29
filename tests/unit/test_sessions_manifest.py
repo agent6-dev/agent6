@@ -45,20 +45,20 @@ def test_missing_fields_default_so_any_old_dir_renders(tmp_path: Path) -> None:
 
 
 def test_legacy_version_1_and_missing_profile(tmp_path: Path) -> None:
-    # A real pre-reshape dir: version 1, workflow without `preset`.
+    # A real pre-reshape dir: version 1, harness without `preset`.
     _write(
         tmp_path,
         {
             "version": 1,
             "mode": "run",
             "user_task": "do a thing",
-            "workflow": {"critic": "off", "revise_prompt": "off"},
+            "harness": {"critic": "off", "revise_prompt": "off"},
         },
     )
     m = read_manifest(tmp_path)
     assert m.version == 1
     assert m.user_task == "do a thing"
-    assert m.workflow.preset == ""
+    assert m.harness.preset == ""
 
 
 def test_unknown_keys_are_dropped_never_folded(tmp_path: Path) -> None:
@@ -142,7 +142,7 @@ def test_write_manifest_bytes_fresh(tmp_path: Path) -> None:
     # pins the EXACT bytes write_manifest lands on disk: key set, key order,
     # indent, null shape, trailing newline). A fresh run: no fork/merge/compare.
     from agent6.app.manifest import write_manifest
-    from agent6.sessions.manifest import ModelBrief, ModelsBrief, SessionManifest, WorkflowStamp
+    from agent6.sessions.manifest import HarnessStamp, ModelBrief, ModelsBrief, SessionManifest
 
     m = SessionManifest(
         agent6_version="0.1.0",
@@ -157,7 +157,7 @@ def test_write_manifest_bytes_fresh(tmp_path: Path) -> None:
             driver=ModelBrief(provider="anthropic", model="claude-x"),
             reviewer=ModelBrief(provider="anthropic", model="claude-y"),
         ),
-        workflow=WorkflowStamp(review_trigger="off", revise_prompt="on", preset="strict"),
+        harness=HarnessStamp(review_trigger="off", revise_prompt="on", preset="strict"),
     )
     path = tmp_path / "manifest.json"
     write_manifest(path, m)
@@ -173,11 +173,11 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
     from agent6.app.manifest import write_manifest
     from agent6.sessions.manifest import (
         CompareStamp,
+        HarnessStamp,
         MergeStamp,
         ModelBrief,
         ModelsBrief,
         SessionManifest,
-        WorkflowStamp,
     )
 
     m = SessionManifest(
@@ -190,7 +190,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
         base_branch="master",
         run_branch="agent6/r-lane02",
         models=ModelsBrief(driver=ModelBrief(provider="openai", model="gpt-z")),
-        workflow=WorkflowStamp(review_trigger="on", revise_prompt="off", preset=""),
+        harness=HarnessStamp(review_trigger="on", revise_prompt="off", preset=""),
         parent_session_id="r-parent",
         forked_from_turn=7,
         forked_from_sha="2" * 40,
@@ -226,14 +226,14 @@ def test_rewriting_a_newer_manifest_is_refused(tmp_path: Path) -> None:
     downgrade the record it was only supposed to annotate."""
     from agent6.app.manifest import write_manifest
 
-    _write(tmp_path, {"version": 4, "session_id": "r-1", "future_key": {"x": 1}})
+    _write(tmp_path, {"version": MANIFEST_VERSION + 1, "session_id": "r-1", "future_key": {"x": 1}})
     m = read_manifest(tmp_path)  # reading it is fine
     assert m.session_id == "r-1"
-    with pytest.raises(ManifestError, match="version 4"):
+    with pytest.raises(ManifestError, match=f"version {MANIFEST_VERSION + 1}"):
         write_manifest(tmp_path / "manifest.json", m)
     # Untouched on disk: the newer record keeps its version AND its keys.
     on_disk = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
-    assert on_disk["version"] == 4
+    assert on_disk["version"] == MANIFEST_VERSION + 1
     assert on_disk["future_key"] == {"x": 1}
 
 
@@ -260,7 +260,7 @@ def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: Path) -> None:
 
     session_dir = tmp_path / "sessions" / "runs" / "r-newer"
     session_dir.mkdir(parents=True)
-    payload = {"version": 4, "session_id": "r-newer", "future_key": 1}
+    payload = {"version": MANIFEST_VERSION + 1, "session_id": "r-newer", "future_key": 1}
     _write(session_dir, payload)
 
     layout = SessionLayout(state_dir=tmp_path, session_id="r-newer")
@@ -268,7 +268,7 @@ def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: Path) -> None:
     assert json.loads((session_dir / "manifest.json").read_text(encoding="utf-8")) == payload
 
     err = _stamp(session_dir, lane=2)
-    assert err is not None and "version 4" in err
+    assert err is not None and f"version {MANIFEST_VERSION + 1}" in err
     assert json.loads((session_dir / "manifest.json").read_text(encoding="utf-8")) == payload
 
 
@@ -362,9 +362,9 @@ def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: Path) -> None:
     (tmp_path / "manifest.json").write_text(
         json.dumps({"version": 3, "mode": "run", "session_id": "r"}), encoding="utf-8"
     )
-    assert read_manifest(tmp_path).workflow.verify_origin == ""  # gateless until pinned
+    assert read_manifest(tmp_path).harness.verify_origin == ""  # gateless until pinned
     stamp_verify_gate(tmp_path, ("uv", "run", "pytest"), "inferred")
-    wf = read_manifest(tmp_path).workflow
+    wf = read_manifest(tmp_path).harness
     assert wf.verify_command == ("uv", "run", "pytest")
     assert wf.verify_origin == "inferred"
     # Re-stamping is what adoption does; it must not disturb the rest.
@@ -445,15 +445,15 @@ def test_a_leg_restamps_a_config_selected_preset(tmp_path: Path) -> None:
             "version": MANIFEST_VERSION,
             "session_id": "legs-preset-A1",
             "mode": "run",
-            "workflow": {"preset": "old-config", "preset_from_flag": False},
+            "harness": {"preset": "old-config", "preset_from_flag": False},
         },
     )
 
     stamp_leg(tmp_path, Config(preset="new-config"), "run", "strict")
 
-    workflow = read_manifest(tmp_path).workflow
-    assert workflow.preset == "new-config"
-    assert workflow.preset_from_flag is False
+    harness = read_manifest(tmp_path).harness
+    assert harness.preset == "new-config"
+    assert harness.preset_from_flag is False
 
 
 def test_a_leg_restamps_the_models_and_policy_it_runs_under(tmp_path: Path) -> None:
@@ -490,3 +490,21 @@ def test_a_leg_restamps_the_models_and_policy_it_runs_under(tmp_path: Path) -> N
     assert m.policy.run_commands == "ask"
     assert m.policy.commit_per_step is False
     assert m.models.driver is not None and m.models.driver.model == "new-model"
+
+
+def test_a_version_3_manifest_keeps_its_stamp_under_the_old_key(tmp_path: Path) -> None:
+    """The stamp's key was `workflow` through manifest version 3; `extra="ignore"`
+    dropped it silently, so a resumed session lost its preset and gate pin."""
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "old-run-AAAAAA",
+                "mode": "run",
+                "workflow": {"review_trigger": "off", "preset": "strict", "preset_from_flag": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    stamp = read_manifest(tmp_path).harness
+    assert (stamp.review_trigger, stamp.preset, stamp.replay_preset) == ("off", "strict", "strict")

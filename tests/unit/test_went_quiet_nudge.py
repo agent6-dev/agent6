@@ -20,12 +20,12 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.events import EventSink
+from agent6.harness._chain import RunChain
+from agent6.harness._provider_call import CallSettings
+from agent6.harness._steer import OperatorBridge
+from agent6.harness.loop import Harness
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
-from agent6.workflows._chain import RunChain
-from agent6.workflows._provider_call import CallSettings
-from agent6.workflows._steer import OperatorBridge
-from agent6.workflows.loop import Workflow
 
 
 def _silent(_msg: str) -> None:
@@ -96,22 +96,22 @@ def _init_repo(repo: Path) -> None:
     _sp.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
 
 
-def _knobs(wf: Workflow, **knobs: Any) -> Workflow:
-    """The workflow with `[workflow]` guard knobs set on its mocked config."""
+def _knobs(wf: Harness, **knobs: Any) -> Harness:
+    """The harness with `[harness]` guard knobs set on its mocked config."""
     for key, value in knobs.items():
-        setattr(wf.config.workflow, key, value)
+        setattr(wf.config.harness, key, value)
     return wf
 
 
-def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Workflow:
+def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Harness:
     dispatcher = MagicMock()
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
-    return Workflow(
+    return Harness(
         chain=RunChain(repo),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -385,7 +385,7 @@ def test_unrunnable_signature_names_only_the_adopted_runner() -> None:
     """Exit 127 and the adopted `-m` module missing are the unrunnable
     signatures; a different missing module or an ordinary red (exit 1 with
     test output) is not."""
-    from agent6.workflows._nudges import unrunnable_signature
+    from agent6.harness._nudges import unrunnable_signature
 
     argv = ("python3", "-m", "pytest", "-q")
     assert unrunnable_signature(argv, 127, "", "") == "exit 127, the command is not found"

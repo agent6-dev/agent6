@@ -280,7 +280,7 @@ def test_streaming_mid_stream_error_frame_raises_not_silent() -> None:
     carry the upstream status like the non-streaming 2xx-envelope path -- streaming
     is the default, so a permanent code delivered mid-stream would otherwise be
     retried every turn. A 502 stays retryable; insufficient_quota is permanent."""
-    from agent6.workflows._provider_call import NON_RETRYABLE_HTTP_STATUSES
+    from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
 
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
 

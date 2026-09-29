@@ -20,6 +20,7 @@ from agent6.config import (
     parse_seat_spec,
 )
 from agent6.events import EventSink
+from agent6.harness.review import ReviewSeat
 from agent6.models import registry as models_registry
 from agent6.providers import (
     AnthropicProvider,
@@ -36,7 +37,6 @@ from agent6.providers import (
     TranscriptSink,
 )
 from agent6.secrets import resolve_api_key
-from agent6.workflows.review import ReviewSeat
 
 
 def resolve_compaction_thresholds(

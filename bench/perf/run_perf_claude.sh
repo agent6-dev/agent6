@@ -33,7 +33,7 @@ git -C "$WORKDIR" config user.email "bench@agent6"
 git -C "$WORKDIR" config user.name "bench"
 
 # TASK.md mirrors agent6's task + HARD RULES, but omits agent6-specific
-# bits (verify_command, [workflow.metric], jailed-python path) that don't
+# bits (verify_command, [harness.metric], jailed-python path) that don't
 # apply to claude-code. Keep the goal description + HARD RULES sections
 # in lock-step when editing; the agent-tool-specific framing is allowed
 # to differ per runner.

@@ -34,6 +34,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config, ConfigError
 from agent6.directive import DirectiveError
 from agent6.git_ops import branch_exists, commit_all, create_branch
+from agent6.harness.subrun import LaneResult, LaneSpec, LaneTask, clone_workspace
 from agent6.memory import decisions_text, record_decision
 from agent6.paths import state_dir
 from agent6.sessions.manifest import ParallelLineage, read_manifest
@@ -41,7 +42,6 @@ from agent6.types import ModelRoute
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli.parallel import lane_runtime
 from agent6.viewmodel.listing import summarize_session_dir
-from agent6.workflows.subrun import LaneResult, LaneSpec, LaneTask, clone_workspace
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -409,7 +409,7 @@ def test_coordinator_dispatch_refuses_unknown_model(
 ) -> None:
     """The ui-built group dispatcher validates before cloning: an unknown model
     raises, and the loop's group-failure feedback (its `except Exception`) carries
-    the message to the coordinator -- so workflows needs no models dependency."""
+    the message to the coordinator -- so harness needs no models dependency."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     _write_models_cache(tmp_path / "cache" / "agent6", "o", ["moonshotai/kimi-k2.6"])
 
@@ -2056,7 +2056,7 @@ def test_fanout_exit_reflects_the_gate_verdicts() -> None:
     The exit now mirrors session_exit_code: 4 when gates ran and none passed,
     0 when some lane verified green or no lane had a gate, 1 for no candidates."""
     from agent6.app.parallel import fanout_exit_code
-    from agent6.workflows.judge import CandidateBrief
+    from agent6.harness.judge import CandidateBrief
 
     def _cand(verify_ok: bool | None) -> CandidateBrief:
         return CandidateBrief(session_id="s", task="t", diff="", verify_ok=verify_ok, cost_usd=0.0)
@@ -2077,8 +2077,8 @@ def test_the_judge_is_capped_like_a_lane(tmp_path: Path) -> None:
 
     from agent6.app.compare import rank
     from agent6.budget import BudgetTracker
+    from agent6.harness.judge import CandidateBrief
     from agent6.providers import ProviderError
-    from agent6.workflows.judge import CandidateBrief
 
     seen: list[BudgetTracker] = []
 

@@ -3,7 +3,7 @@
 """Session identity and on-disk state: friendly session ids + prefix resolution
 (`agent6.sessions.id`), the filesystem layout of one session's state directory
 (`agent6.sessions.layout`), the manifest reader (`agent6.sessions.manifest`),
-the single-writer flock (`agent6.sessions.lock`), and the front-end<->workflow
+the single-writer flock (`agent6.sessions.lock`), and the front-end<->harness
 answer-file contract (`agent6.sessions.ipc`). All leaves; import the
 submodules directly."""
 

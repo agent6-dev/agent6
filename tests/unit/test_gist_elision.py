@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agent6.workflows._compaction import (
+from agent6.harness._compaction import (
     ELISION_GIST_PREFIX,
     ELISION_PREFIX,
     GistRequest,
@@ -19,7 +19,7 @@ from agent6.workflows._compaction import (
     parse_gist_lines,
     read_file_text_from_result,
 )
-from agent6.workflows._conversation import Conversation, ToolResultItem, UserTurn
+from agent6.harness._conversation import Conversation, ToolResultItem, UserTurn
 
 
 def _add_call(conv: Conversation, name: str, tool_input: dict[str, Any], content: str) -> None:
@@ -190,7 +190,7 @@ def test_the_headroom_goes_to_the_newest_read() -> None:
 
 
 def test_a_short_gist_frees_headroom_for_an_older_gist() -> None:
-    from agent6.workflows._compaction import elision_placeholder
+    from agent6.harness._compaction import elision_placeholder
 
     conv = Conversation()
     _add_read(conv, "old.py", "o" * 4_000)
@@ -280,7 +280,7 @@ def test_gist_placeholder_identity_matches_bare_for_long_paths() -> None:
     re-reported as a fresh elision by the conversation differ."""
     import re
 
-    from agent6.workflows._compaction import call_label, elision_placeholder
+    from agent6.harness._compaction import call_label, elision_placeholder
 
     long_path = "docs/" + "d" * 130 + ".md"
     ident = re.compile(r": the result of (.+?) was replaced")
@@ -298,7 +298,7 @@ def test_gist_placeholder_identity_matches_bare_for_a_ranged_read() -> None:
     reported a second, phantom marker for one read."""
     import re
 
-    from agent6.workflows._compaction import call_label, elision_placeholder
+    from agent6.harness._compaction import call_label, elision_placeholder
 
     conv = Conversation()
     _add_call(conv, "read_file", {"path": "a.py", "start_line": 100, "limit": 500}, "z" * 4000)

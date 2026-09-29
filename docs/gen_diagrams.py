@@ -39,7 +39,7 @@ _GENERATED = re.compile(r"<!-- generated: ([a-z-]+) -->")
 
 # The documented layering, top to bottom. Every other top-level package is
 # shared substrate.
-_CORE_LAYERS = ("ui", "app", "workflows", "tools", "sandbox")
+_CORE_LAYERS = ("ui", "app", "harness", "tools", "sandbox")
 
 
 def _nid(name: str) -> str:

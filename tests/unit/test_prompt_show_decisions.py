@@ -9,8 +9,8 @@ import subprocess as sp
 from pathlib import Path
 
 from agent6.config import Config
+from agent6.harness import system_prompt_for
 from agent6.memory import record_decision
-from agent6.workflows import system_prompt_for
 
 
 def test_prompt_show_carries_the_recorded_decisions(tmp_path: Path) -> None:

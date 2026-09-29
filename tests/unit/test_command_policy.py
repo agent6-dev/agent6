@@ -63,7 +63,7 @@ def test_withdrawn_tools_leave_the_model_s_surface(tmp_path: Path) -> None:
     # A gate must be configured, or run_verify_command is hidden for its own
     # reason (a gateless run is not offered a tool that would only error).
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "ask"}, "workflow": {"verify_command": ["true"]}}
+        {"sandbox": {"run_commands": "ask"}, "harness": {"verify_command": ["true"]}}
     )
     d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
     assert set(d.available_tool_names()) >= _COMMAND_TOOLS
@@ -115,7 +115,7 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(
     from agent6.types import JailPolicy
 
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "ask"}, "workflow": {"verify_command": ["true"]}}
+        {"sandbox": {"run_commands": "ask"}, "harness": {"verify_command": ["true"]}}
     )
     answers = iter(["no", "no", "yes"])
 
@@ -167,7 +167,7 @@ def test_every_ask_command_tool_uses_the_command_scope(
     cfg = Config.model_validate(
         {
             "sandbox": {"run_commands": "ask", "network": "host"},
-            "workflow": {
+            "harness": {
                 "verify_command": ["true"],
                 "metric": {"command": ["true"], "pattern": "(true)", "goal": "minimize"},
             },
@@ -193,7 +193,7 @@ def test_a_stop_during_the_approval_wait_is_named_as_such(tmp_path: Path) -> Non
     from agent6.sessions.ipc import request_stop
 
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "ask"}, "workflow": {"verify_command": ["true"]}}
+        {"sandbox": {"run_commands": "ask"}, "harness": {"verify_command": ["true"]}}
     )
 
     def _wait_broken(_request: ApprovalRequest, /) -> ApprovalAnswer:

@@ -105,7 +105,7 @@ base_url = "http://127.0.0.1:9"
 provider = "local"
 model = "test-model"
 
-[workflow]
+[harness]
 max_iterations = 17
 """,
         encoding="utf-8",
@@ -128,4 +128,4 @@ max_iterations = 17
 
     code = run_mod.run_machine(mfile, frontend, config_path=explicit)
     assert code == 0, frontend.reporter.mock_calls
-    assert child_overlays[0]["workflow"]["max_iterations"] == 17  # type: ignore[index]
+    assert child_overlays[0]["harness"]["max_iterations"] == 17  # type: ignore[index]

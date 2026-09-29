@@ -44,7 +44,7 @@ protect_git = true
 dirty_tree = "ask"
 branch_per_run = true
 
-[workflow]
+[harness]
 verify_command = ["true"]
 [budget]
 max_tokens_fallback = 100000
@@ -61,7 +61,7 @@ def test_loads_valid_config(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.agent6.config_version == 1
     assert cfg.sandbox.isolation == "auto"
-    assert cfg.workflow.verify_command == ("true",)
+    assert cfg.harness.verify_command == ("true",)
 
 
 def test_missing_file_raises(tmp_path: Path) -> None:
@@ -292,7 +292,7 @@ def test_empty_verify_command_loads_and_is_runnable(tmp_path: Path) -> None:
     # must NOT block on it -- only providers/model are required.
     body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.workflow.verify_command == ()
+    assert cfg.harness.verify_command == ()
     cfg.require_runnable("worker")  # does not raise
 
 
@@ -302,15 +302,15 @@ def test_with_verify_command_injects_in_memory(tmp_path: Path) -> None:
     body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
     cfg = load_config(_write(tmp_path, body))
     injected = cfg.with_verify_command(("pytest", "-q"))
-    assert injected.workflow.verify_command == ("pytest", "-q")
-    assert cfg.workflow.verify_command == ()  # original untouched
-    assert cfg.with_verify_command(()).workflow.verify_command == ()
+    assert injected.harness.verify_command == ("pytest", "-q")
+    assert cfg.harness.verify_command == ()  # original untouched
+    assert cfg.with_verify_command(()).harness.verify_command == ()
 
 
 def test_verify_timeout_s_defaults_to_600(tmp_path: Path) -> None:
     """Default verify_timeout_s matches jail default (600s)."""
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.workflow.verify_timeout_s == 600.0
+    assert cfg.harness.verify_timeout_s == 600.0
 
 
 def test_verify_timeout_s_overridable(tmp_path: Path) -> None:
@@ -321,7 +321,7 @@ def test_verify_timeout_s_overridable(tmp_path: Path) -> None:
         'verify_command = ["true"]\nverify_timeout_s = 30.0',
     )
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.workflow.verify_timeout_s == 30.0
+    assert cfg.harness.verify_timeout_s == 30.0
 
 
 def test_verify_timeout_s_must_be_positive(tmp_path: Path) -> None:
@@ -493,25 +493,25 @@ def test_multiple_openai_providers_load(tmp_path: Path) -> None:
 
 def test_metric_block_loads(tmp_path: Path) -> None:
     body = _VALID_TOML + (
-        "\n[workflow.metric]\n"
+        "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "bench.py"]\n'
         'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
         'goal = "minimize"\n'
     )
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.workflow.metric is not None
-    assert cfg.workflow.metric.command == ("/usr/bin/python3", "bench.py")
-    assert cfg.workflow.metric.goal == "minimize"
+    assert cfg.harness.metric is not None
+    assert cfg.harness.metric.command == ("/usr/bin/python3", "bench.py")
+    assert cfg.harness.metric.goal == "minimize"
 
 
 def test_metric_block_absent_is_none(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.workflow.metric is None
+    assert cfg.harness.metric is None
 
 
 def test_metric_goal_invalid(tmp_path: Path) -> None:
     body = _VALID_TOML + (
-        '\n[workflow.metric]\ncommand = ["true"]\npattern = "x"\ngoal = "sideways"\n'
+        '\n[harness.metric]\ncommand = ["true"]\npattern = "x"\ngoal = "sideways"\n'
     )
     with pytest.raises(ConfigError):
         load_config(_write(tmp_path, body))
@@ -541,7 +541,7 @@ protect_git = true
 
 [git]
 
-[workflow]
+[harness]
 verify_command = ["true"]
 
 [budget]
@@ -553,7 +553,7 @@ max_tokens_fallback = 100000
     assert cfg.git.dirty_tree == "ask"
     assert cfg.git.branch_per_run is True
     assert cfg.git.merge_strategy == "squash"
-    assert cfg.workflow.verify_timeout_s == 600.0
+    assert cfg.harness.verify_timeout_s == 600.0
     anthro = cfg.providers["anthropic"]
     from agent6.config import AnthropicProviderEntry
 
@@ -1033,7 +1033,7 @@ def test_model_git_control_requires_git_writes(tmp_path: Path) -> None:
 
 def test_max_iterations_defaults_to_200(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.workflow.max_iterations == 200
+    assert cfg.harness.max_iterations == 200
 
 
 def test_max_iterations_unlimited_is_minus_one(tmp_path: Path) -> None:
@@ -1041,7 +1041,7 @@ def test_max_iterations_unlimited_is_minus_one(tmp_path: Path) -> None:
         'verify_command = ["true"]',
         'verify_command = ["true"]\nmax_iterations = -1',
     )
-    assert load_config(_write(tmp_path, body)).workflow.max_iterations == -1
+    assert load_config(_write(tmp_path, body)).harness.max_iterations == -1
 
 
 def test_max_iterations_zero_is_rejected(tmp_path: Path) -> None:

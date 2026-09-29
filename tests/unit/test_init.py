@@ -101,14 +101,14 @@ def test_init_infers_verify_for_python_repo(tmp_path: Path) -> None:
     cfg = load_effective(repo).config
     # No .venv in this fresh repo -> python3 on PATH (the .venv/bin/python default
     # is only used when that interpreter actually exists; see verify_infer).
-    assert cfg.workflow.verify_command == ("python3", "-m", "pytest", "-q")
+    assert cfg.harness.verify_command == ("python3", "-m", "pytest", "-q")
 
 
 def test_init_verify_from_agents_md(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / "AGENTS.md").write_text("## Verify\n\n```bash\nmake test\n```\n", encoding="utf-8")
     init_workspace(repo)
-    assert load_effective(repo).config.workflow.verify_command == ("make", "test")
+    assert load_effective(repo).config.harness.verify_command == ("make", "test")
 
 
 def test_init_detects_ecosystem_for_gitignore(tmp_path: Path) -> None:
@@ -134,7 +134,7 @@ def test_init_never_overwrites_or_writes_suggested(tmp_path: Path) -> None:
     (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     cfgp = repo_config_path(repo)
     cfgp.parent.mkdir(parents=True, exist_ok=True)
-    cfgp.write_text('[workflow]\nverify_command = ["my-test"]\n', encoding="utf-8")
+    cfgp.write_text('[harness]\nverify_command = ["my-test"]\n', encoding="utf-8")
     (repo / "AGENTS.md").write_text("# mine\n", encoding="utf-8")
 
     init_workspace(repo)
@@ -143,7 +143,7 @@ def test_init_never_overwrites_or_writes_suggested(tmp_path: Path) -> None:
     assert (repo / "AGENTS.md").read_text(encoding="utf-8") == "# mine\n"
     assert not cfgp.with_name("config.toml.suggested").is_file()
     assert not (repo / "AGENTS.md.suggested").is_file()
-    assert load_effective(repo).config.workflow.verify_command == ("my-test",)
+    assert load_effective(repo).config.harness.verify_command == ("my-test",)
 
 
 def test_init_gitignore_is_idempotent(tmp_path: Path) -> None:
@@ -233,7 +233,7 @@ def test_init_next_steps_name_only_what_is_still_missing(
         '[providers.openrouter]\napi_format = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
         '[models.worker]\nprovider = "openrouter"\nmodel = "m"\n'
-        "[workflow]\nverify_command = ['true']\n",
+        "[harness]\nverify_command = ['true']\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("OPENROUTER_API_KEY", "k")

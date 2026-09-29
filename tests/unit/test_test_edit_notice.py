@@ -15,12 +15,12 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.config import Config
+from agent6.harness import _nudges
+from agent6.harness._chain import RunChain
+from agent6.harness._conversation import Notice
+from agent6.harness._nudges import is_test_path
+from agent6.harness.loop import Harness, LoopState, TurnState
 from agent6.tools.results import EditResult, ExecResult
-from agent6.workflows import _nudges
-from agent6.workflows._chain import RunChain
-from agent6.workflows._conversation import Notice
-from agent6.workflows._nudges import is_test_path
-from agent6.workflows.loop import LoopState, TurnState, Workflow
 
 NOTICE_HEAD = "[harness verify] The gate was red at the last verify and green at this one;"
 EVENT = "loop.test_only_green.notice"
@@ -63,10 +63,10 @@ def _repo(root: Path) -> Path:
 Emitted = list[tuple[str, dict[str, Any]]]
 
 
-def _wf(root: Path) -> tuple[Workflow, Emitted]:
-    wf = Workflow(
+def _wf(root: Path) -> tuple[Harness, Emitted]:
+    wf = Harness(
         chain=RunChain(root),
-        config=Config.model_validate({"workflow": {"verify_command": ["true"]}}),
+        config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
         provider=MagicMock(),
         dispatcher=MagicMock(),
         logger=lambda _m: None,
@@ -89,7 +89,7 @@ def _turn(iteration: int) -> TurnState:
     return TurnState(iteration=iteration, resp=MagicMock(), assistant=MagicMock())
 
 
-def _edit(wf: Workflow, state: LoopState, turn: TurnState, rel: str) -> None:
+def _edit(wf: Harness, state: LoopState, turn: TurnState, rel: str) -> None:
     """apply_edit through the real path: the file changes on disk, then the
     loop notes the result."""
     (wf.chain.root / rel).write_text("y = 2\n", encoding="utf-8")
@@ -99,7 +99,7 @@ def _edit(wf: Workflow, state: LoopState, turn: TurnState, rel: str) -> None:
 
 
 def _command(
-    wf: Workflow, state: LoopState, turn: TurnState, *, writes: tuple[str, ...] = ()
+    wf: Harness, state: LoopState, turn: TurnState, *, writes: tuple[str, ...] = ()
 ) -> None:
     """run_command through the real path: whatever it wrote is on disk when
     the loop asks git whether the tree moved."""
@@ -111,7 +111,7 @@ def _command(
     )
 
 
-def _verify(wf: Workflow, state: LoopState, turn: TurnState, rc: int) -> None:
+def _verify(wf: Harness, state: LoopState, turn: TurnState, rc: int) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "run_verify_command", _exec(rc), {}
     )

@@ -14,7 +14,7 @@ Architecture:
   menus, and the coalesced repaint of the app's SessionState.
 
 The dashboard is read-only on the log stream and only writes the answer files
-the workflow polls: `<session_dir>/approvals/<id>.answer` (approve), `.../questions/
+the harness polls: `<session_dir>/approvals/<id>.answer` (approve), `.../questions/
 <id>.answer` (ask_user), `<session_dir>/steer.answer` (steer), and the
 `<session_dir>/compact.request` marker (Compact now). Any other front-end can
 mirror this contract.

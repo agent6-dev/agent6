@@ -301,7 +301,7 @@ def _cmd_run(
     role = session_kind(mode).role
 
     # Resolve @path references in the task string before the
-    # workflow ever sees it. Lets the user write "fix the bug in @src/x.py
+    # harness ever sees it. Lets the user write "fix the bug in @src/x.py
     # described in @notes.md" and have those files inlined verbatim.
     task = expand_task_file_refs(task, Path.cwd())
 

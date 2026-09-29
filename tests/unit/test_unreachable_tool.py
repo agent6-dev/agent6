@@ -6,9 +6,9 @@ different binary or a later call draws none."""
 
 from __future__ import annotations
 
+from agent6.harness._guards import unreachable_tool
+from agent6.harness._loop_state import LoopState
 from agent6.tools.results import ExecResult, RawResult
-from agent6.workflows._guards import unreachable_tool
-from agent6.workflows._loop_state import LoopState
 
 
 def _exec(*, exec_failed: bool) -> ExecResult:

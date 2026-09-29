@@ -17,7 +17,7 @@ def _manifest(session_dir: Path, **over: object) -> None:
         "session_id": "r",
         "models": {"driver": {"provider": "anthropic", "model": "claude-x"}},
         "policy": {"run_commands": "ask", "isolation": "strict"},
-        "workflow": {"verify_command": ["uv", "run", "pytest"], "verify_origin": "configured"},
+        "harness": {"verify_command": ["uv", "run", "pytest"], "verify_origin": "configured"},
     }
     data.update(over)
     (session_dir / "manifest.json").write_text(json.dumps(data), encoding="utf-8")
@@ -35,12 +35,12 @@ def test_the_gate_says_whose_it_is(tmp_path: Path) -> None:
     """An inferred gate came from a file the model can edit; a configured one
     did not. A surface that hides the difference hides the only thing that
     makes "passed" mean something."""
-    _manifest(tmp_path, workflow={"verify_command": ["make", "test"], "verify_origin": "inferred"})
+    _manifest(tmp_path, harness={"verify_command": ["make", "test"], "verify_origin": "inferred"})
     assert session_policy(tmp_path).gate() == "make test (inferred)"
 
 
 def test_a_gateless_run_says_so(tmp_path: Path) -> None:
-    _manifest(tmp_path, workflow={})
+    _manifest(tmp_path, harness={})
     assert session_policy(tmp_path).gate() == "no verify gate"
 
 

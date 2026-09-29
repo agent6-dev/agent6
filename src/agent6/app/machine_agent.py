@@ -66,6 +66,11 @@ from agent6.git_ops import (
     machine_chain_ref_for,
 )
 from agent6.git_ops import status as git_status
+from agent6.harness._chain import RunChain, commit_identity
+from agent6.harness._compaction import CompactionSettings
+from agent6.harness._steer import OperatorBridge
+from agent6.harness.loop import Harness
+from agent6.harness.subrun import SubrunError, clone_workspace
 from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload
 from agent6.paths import state_dir
 from agent6.providers import Provider, TranscriptSink
@@ -93,11 +98,6 @@ from agent6.tools.operator_prompts import (
 )
 from agent6.types import IsolationLevel
 from agent6.viewmodel.machine_state import Spend, read_budget_totals
-from agent6.workflows._chain import RunChain, commit_identity
-from agent6.workflows._compaction import CompactionSettings
-from agent6.workflows._steer import OperatorBridge
-from agent6.workflows.loop import Workflow
-from agent6.workflows.subrun import SubrunError, clone_workspace
 
 
 def _no_console(_events: EventSink) -> None:
@@ -121,7 +121,7 @@ class MachineAgentRequest(BaseModel):
     # The operator's checkout: config layers and cross-run memory resolve
     # from it (keyed by the repo's own path), whatever `root` is.
     cwd: Path
-    # Where the workflow, the dispatcher and the jail work: the clone for a
+    # Where the harness, the dispatcher and the jail work: the clone for a
     # mode="run" state, else `cwd`.
     root: Path
     # The machine's `[config]` overlay, applied over the effective config.
@@ -451,7 +451,7 @@ def run_one(
         cfg, rm, log=reporter.err
     )
     cfg = resolve_decompose(cfg, rm, log=reporter.err)
-    wf = Workflow(
+    wf = Harness(
         # A mode="run" state commits on its own chain like any run; the
         # instance dir name is its session-unique id. Read-only states never
         # commit (mode gate), so the refs stay None there.
@@ -468,7 +468,7 @@ def run_one(
             per_step=cfg.git.commit_per_step,
         ),
         config=cfg,
-        max_iterations=cfg.workflow.max_iterations,
+        max_iterations=cfg.harness.max_iterations,
         provider=provider,
         dispatcher=dispatcher,
         logger=reporter.err,

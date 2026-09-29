@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """plan-mode unit tests covering schema, dispatcher, system prompt,
-tool-filter, and the Workflow's plan-output side effect.
+tool-filter, and the Harness's plan-output side effect.
 """
 
 from __future__ import annotations
@@ -16,6 +16,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.config import Config, load_config
+from agent6.harness import loop as loopmod
+from agent6.harness._chain import RunChain
+from agent6.harness._loop_state import LoopState
+from agent6.harness._provider_call import CallSettings
+from agent6.harness.loop import Harness
 from agent6.providers import ProviderResponse
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.mcp_client import MCPManager
@@ -32,11 +37,6 @@ from agent6.tools.schema import (
     RunMetricInput,
 )
 from agent6.types import RepoSummary
-from agent6.workflows import loop as loopmod
-from agent6.workflows._chain import RunChain
-from agent6.workflows._loop_state import LoopState
-from agent6.workflows._provider_call import CallSettings
-from agent6.workflows.loop import Workflow
 
 _VALID_TOML = """
 [agent6]
@@ -58,7 +58,7 @@ protect_git = true
 [git]
 dirty_tree = "ask"
 branch_per_run = true
-[workflow]
+[harness]
 verify_command = ["true"]
 [budget]
 max_tokens_fallback = 2000000
@@ -295,7 +295,7 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> N
     # and the block describing it goes with the tool.
     p.write_text(
         _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"')
-        + '\n[workflow.metric]\ncommand = ["python3", "bench.py"]\n'
+        + '\n[harness.metric]\ncommand = ["python3", "bench.py"]\n'
         + 'pattern = "CYCLES: (\\\\d+)"\ngoal = "minimize"\n',
         encoding="utf-8",
     )
@@ -338,7 +338,7 @@ def test_run_commands_no_withholds_the_command_tools_and_every_rule_about_them(
         _VALID_TOML.replace(  # carries run_commands = "no" and a verify_command
             'verify_command = ["true"]', 'verify_command = ["true"]\nverify_when = "step"'
         )
-        + '\n[workflow.metric]\ncommand = ["python3", "bench.py"]\n'
+        + '\n[harness.metric]\ncommand = ["python3", "bench.py"]\n'
         + 'pattern = "CYCLES: (\\\\d+)"\ngoal = "minimize"\n',
         encoding="utf-8",
     )
@@ -541,7 +541,7 @@ def test_dispatcher_refuses_mutations_in_ask_mode(tmp_path: Path) -> None:
         d.dispatch("apply_patch", {"patch": "--- a\n+++ b\n"})
 
 
-# --- Workflow plan-mode validation --------------------------------------
+# --- Harness plan-mode validation --------------------------------------
 
 
 def _wf(
@@ -553,7 +553,7 @@ def _wf(
     per_step: bool = True,
     base_sha: str = "",
     **kw: Any,
-) -> Workflow:
+) -> Harness:
     defaults: dict[str, Any] = {
         "chain": RunChain(
             root or Path("/tmp"),
@@ -565,7 +565,7 @@ def _wf(
         ),
         "config": MagicMock(
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -581,7 +581,7 @@ def _wf(
         "call": CallSettings(retry_delay_s=0.01),
     }
     defaults.update(kw)
-    return Workflow(**defaults)
+    return Harness(**defaults)
 
 
 def test_workflow_plan_mode_without_output_path_raises() -> None:
@@ -621,13 +621,13 @@ def _tool_use(name: str, args: dict[str, Any], tu_id: str = "tu1") -> ProviderRe
     )
 
 
-def _plan_wf(repo: Path, provider: Any, plan_path: Path, state_path: Path) -> Workflow:
-    return Workflow(
+def _plan_wf(repo: Path, provider: Any, plan_path: Path, state_path: Path) -> Harness:
+    return Harness(
         chain=RunChain(repo),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file="", decompose="off"),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -713,13 +713,13 @@ def test_an_unchanged_plan_md_is_not_injected_twice(tmp_path: Path) -> None:
 def test_an_unreadable_plan_parks_the_leg(tmp_path: Path) -> None:
     """Continuing on the planner's own copy burns budget on direction the
     operator may have superseded; the leg ends with the remedy instead."""
-    from agent6.workflows.loop import SessionResult
+    from agent6.harness.loop import SessionResult
 
     plan = tmp_path / "plan.md"
     plan.write_text("# Plan\n", encoding="utf-8")
     plan.chmod(0o000)
     try:
-        wf = loopmod.Workflow(
+        wf = loopmod.Harness(
             chain=RunChain(tmp_path),
             config=MagicMock(),
             provider=MagicMock(),
@@ -744,8 +744,8 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: Path) -> None:
     """The operator's rulings ride the system prompt in every mode, after the
     memory block; nothing renders when none are recorded."""
     from agent6.config import Config
+    from agent6.harness.loop import build_system_prompt  # pyright: ignore[reportPrivateUsage]
     from agent6.types import RepoSummary
-    from agent6.workflows.loop import build_system_prompt  # pyright: ignore[reportPrivateUsage]
 
     repo = RepoSummary(
         root=tmp_path,

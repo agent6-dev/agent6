@@ -148,10 +148,10 @@ CONDITIONS: dict[str, str] = {
     # plain prompt-length sensitivity, not the skills index specifically.
     "padding_neutral": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/padding_neutral.md"\n',
     # Native spec-recheck finish gate: the skill mechanism's one-turn bounce
-    # as a loop feature ([workflow].spec_recheck_on_finish). A/B against
+    # as a loop feature ([harness].spec_recheck_on_finish). A/B against
     # baseline on eventflow (spec-vs-suite gap) and textkit (suite IS the
     # spec: measures the pure cost of a wasted bounce).
-    # Header-less on purpose: extends the base block's trailing [workflow].
+    # Header-less on purpose: extends the base block's trailing [harness].
     "spec_recheck": "spec_recheck_on_finish = true\n",
     # Bootstrap question: with the using-superpowers meta-skill injected
     # always-on (verbatim, no harness tool-mapping added), does the model
@@ -185,12 +185,12 @@ def _provider_block(provider: str, model: str, verify: list[str], effort: str = 
         + effort_line
         for role in ("worker", "planner", "reviewer")
     )
-    # [workflow] is deliberately the LAST section: a condition fragment
+    # [harness] is deliberately the LAST section: a condition fragment
     # WITHOUT a section header (see CONDITIONS) legally extends it, whereas a
-    # second [workflow] header would be invalid TOML (cannot declare twice).
+    # second [harness] header would be invalid TOML (cannot declare twice).
     return (
         f'{roles}\n[sandbox]\nrun_commands = "yes"\n\n'
-        f"[workflow]\nverify_command = {verify_toml}\n"
+        f"[harness]\nverify_command = {verify_toml}\n"
         f"verify_timeout_s = 60.0\n"
     )
 

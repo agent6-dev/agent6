@@ -9,13 +9,13 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from agent6.config import Config, load_config
+from agent6.harness._chain import RunChain
+from agent6.harness._prompt_revision import RevisionSettings, parse_prompt_revision
+from agent6.harness._provider_call import CallSettings
+from agent6.harness.loop import Harness
 from agent6.providers import ProviderResponse
 from agent6.tools.results import ExecResult, RawResult
 from agent6.types import RepoSummary
-from agent6.workflows._chain import RunChain
-from agent6.workflows._prompt_revision import RevisionSettings, parse_prompt_revision
-from agent6.workflows._provider_call import CallSettings
-from agent6.workflows.loop import Workflow
 
 _VALID_TOML = """
 [agent6]
@@ -37,7 +37,7 @@ protect_git = true
 [git]
 dirty_tree = "ask"
 branch_per_run = true
-[workflow]
+[harness]
 verify_command = ["true"]
 [budget]
 max_tokens_fallback = 2000000
@@ -99,7 +99,7 @@ def _finish_resp(summary: str) -> ProviderResponse:
     )
 
 
-def _wf(tmp_path: Path, **kw: Any) -> Workflow:
+def _wf(tmp_path: Path, **kw: Any) -> Harness:
     dispatcher = kw.pop("dispatcher", MagicMock())
     dispatcher.available_tool_names.return_value = []
     dispatcher.dispatch.return_value = RawResult({"acknowledged": True})
@@ -116,7 +116,7 @@ def _wf(tmp_path: Path, **kw: Any) -> Workflow:
         "call": CallSettings(retry_delay_s=0.01),
     }
     defaults.update(kw)
-    return Workflow(**defaults)
+    return Harness(**defaults)
 
 
 def test_parse_prompt_revision_tagged_output() -> None:
@@ -187,7 +187,7 @@ def test_workflow_auto_revises_task_before_worker_call(tmp_path: Path) -> None:
         revision=RevisionSettings(reviser=reviser, mode="auto"),
     )
 
-    with patch("agent6.workflows.loop.load_repo_summary", return_value=_repo(tmp_path)):
+    with patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix it")
 
     assert result.reason == "finish_session"
@@ -210,7 +210,7 @@ def test_workflow_prompt_revision_empty_response_fails_before_worker(tmp_path: P
         revision=RevisionSettings(reviser=reviser, mode="auto"),
     )
 
-    with patch("agent6.workflows.loop.load_repo_summary", return_value=_repo(tmp_path)):
+    with patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix it")
 
     assert result.completed is False
@@ -232,7 +232,7 @@ def test_workflow_interactive_selector_can_use_original(tmp_path: Path) -> None:
         revision=RevisionSettings(reviser=reviser, mode="interactive", selector=select_original),
     )
 
-    with patch("agent6.workflows.loop.load_repo_summary", return_value=_repo(tmp_path)):
+    with patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("keep this exact task")
 
     assert result.reason == "finish_session"
@@ -257,7 +257,7 @@ def test_quit_at_the_revise_choice_reads_as_an_operator_stop(tmp_path: Path) -> 
         tmp_path,
         revision=RevisionSettings(reviser=reviser, mode="interactive", selector=quit_at_the_choice),
     )
-    with patch("agent6.workflows.loop.load_repo_summary", return_value=_repo(tmp_path)):
+    with patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix the bug in src/foo.py")
     assert result.reason == "steer_abort"
     word, _ = status_word(finished=True, all_passed=False, end_reason=result.reason)

@@ -29,17 +29,17 @@ import agent6.app.preflight as preflight_mod
 from agent6.app._setup import SandboxOverrides
 from agent6.git_ops import chain_ref_for
 from agent6.graph.storage import list_checkpoint_turns, load_graph
+from agent6.harness._chain import RunChain
+from agent6.harness._session_state import SNAPSHOT_VERSION, load_session_snapshot
+from agent6.harness.loop import (
+    Harness,
+    LoopState,
+)
 from agent6.paths import global_config_dir, state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.types import session_bucket
 from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
-from agent6.workflows._chain import RunChain
-from agent6.workflows._session_state import SNAPSHOT_VERSION, load_session_snapshot
-from agent6.workflows.loop import (
-    LoopState,
-    Workflow,
-)
 
 
 def _silent(_: str) -> None:
@@ -68,7 +68,7 @@ def _wf(
     per_step: bool = True,
     base_sha: str = "",
     **kw: Any,
-) -> Workflow:
+) -> Harness:
     defaults: dict[str, Any] = {
         "chain": RunChain(
             root or Path("/tmp"),
@@ -80,7 +80,7 @@ def _wf(
         ),
         "config": MagicMock(
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -95,7 +95,7 @@ def _wf(
         "logger": _silent,
     }
     defaults.update(kw)
-    return Workflow(**defaults)
+    return Harness(**defaults)
 
 
 # --- checkpoint store -------------------------------------------------------
@@ -113,7 +113,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     curator = MagicMock()
     curator.graph_version = 7
     config = SimpleNamespace(
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -153,7 +153,7 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
     session_dir.mkdir()
     snap = session_dir / "loop_state.json"
     config = SimpleNamespace(
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -194,7 +194,7 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: Path) -
     session_dir.mkdir()
     snap = session_dir / "loop_state.json"
     config = SimpleNamespace(
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -307,7 +307,7 @@ def _seed_source_run(
                 "base_sha": "basesha000",
                 "base_branch": "main",
                 "run_branch": f"agent6/{session_id}",
-                "workflow": {
+                "harness": {
                     "review_trigger": "off",
                     "revise_prompt": "off",
                     "preset": workflow_profile,
@@ -434,7 +434,7 @@ def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.M
 
     dst = SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["workflow"]["preset"] == "paranoid"
+    assert manifest["harness"]["preset"] == "paranoid"
 
 
 def test_fork_stamps_the_child_manifest_from_the_profiled_config(
@@ -468,7 +468,7 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     assert rc == 0
     dst = SessionLayout(state_dir=state, session_id="child-PROF22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["workflow"]["preset"] == "fast"
+    assert manifest["harness"]["preset"] == "fast"
     assert manifest["models"]["driver"]["model"] == "claude-fast"  # not claude-base
 
 
@@ -502,8 +502,8 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
             encoding="utf-8"
         )
     )
-    assert manifest["workflow"]["preset"] == "quick"  # re-derived, not "stale-old-name"
-    assert manifest["workflow"]["preset_from_flag"] is False
+    assert manifest["harness"]["preset"] == "quick"  # re-derived, not "stale-old-name"
+    assert manifest["harness"]["preset_from_flag"] is False
 
 
 def test_fork_snapshots_the_dag_under_the_source_curator_lock(

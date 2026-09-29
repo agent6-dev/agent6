@@ -53,7 +53,7 @@ branch_per_run = true
 max_usd = 10.0
 max_tokens_fallback = 2000000
 
-[workflow]
+[harness]
 verify_command = ["uv", "run", "pytest", "-x"]
 
 [providers.anthropic]

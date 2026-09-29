@@ -470,7 +470,7 @@ def test_list_setting_prefill_saves_back_unchanged(
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
-        _GLOBAL + '\n[workflow]\nverify_command = ["uv", "run", "pytest"]\n',
+        _GLOBAL + '\n[harness]\nverify_command = ["uv", "run", "pytest"]\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
@@ -485,7 +485,7 @@ def test_list_setting_prefill_saves_back_unchanged(
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, ConfigScreen)
-            tbl = screen.query_one("#tbl-workflow", DataTable)
+            tbl = screen.query_one("#tbl-harness", DataTable)
             tbl.focus()
             ridx = next(
                 r
@@ -505,7 +505,7 @@ def test_list_setting_prefill_saves_back_unchanged(
             assert isinstance(app.screen, ConfigScreen)
 
     asyncio.run(scenario())
-    saved = load_effective(repo_root, None).config.workflow.verify_command
+    saved = load_effective(repo_root, None).config.harness.verify_command
     assert saved == ("uv", "run", "pytest")  # unchanged, not corrupted to a str
 
 
@@ -1413,7 +1413,7 @@ def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: Path
             assert baseline > 10
             gdir = global_config_dir()
             (gdir / "config.toml").write_text(
-                _GLOBAL + '\n[workflow]\nplan = "yess"\n', encoding="utf-8"
+                _GLOBAL + '\n[harness]\nplan = "yess"\n', encoding="utf-8"
             )
             await pilot.press("r")
             await pilot.pause()

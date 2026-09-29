@@ -9,7 +9,7 @@ against runaway spend, not a ledger across a multi-day task.
 
 Budget enforcement is a HARD STOP (not a warning): once a ledger
 crosses its cap, the next provider call raises `BudgetExceeded`; the
-workflow drains and the process exits with a distinct exit code so
+harness drains and the process exits with a distinct exit code so
 resume tooling can recognise the condition.
 
 Every call is bounded in exactly ONE currency. A call the meter can
@@ -563,7 +563,7 @@ class BudgetTracker:
 
         Computed against whichever ceiling is closest to exhaustion, so a run
         that has burned 90% of one ceiling but only 10% of another reports 0.10,
-        the conservative, decision-relevant figure. Used by the workflow to
+        the conservative, decision-relevant figure. Used by the harness to
         decide whether a metric plateau is worth quitting on, whether enough
         budget remains to keep pivoting, and when to nudge a graceful wind-down
         (verify + finish_session) before the hard stop.

@@ -391,7 +391,7 @@ def _models_at(model: type[BaseModel], part: str) -> tuple[type[BaseModel], ...]
     annotation = field.annotation
     if get_origin(annotation) is dict:
         return _model_members(get_args(annotation)[1]) or None
-    # An optional section (`models.worker`, `workflow.metric`) is a section:
+    # An optional section (`models.worker`, `harness.metric`) is a section:
     # written as a leaf it would sit inline under a `[models]` header and
     # collide with the `[models.worker]` table already there.
     return _model_members(annotation) or None

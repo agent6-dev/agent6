@@ -7,10 +7,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent6.config import Config, load_config
+from agent6.harness._chain import RunChain
+from agent6.harness._prompt_blocks import build_system_prompt, skills_block
 from agent6.skills import ResolvedSkills, Skill
 from agent6.types import RepoSummary
-from agent6.workflows._chain import RunChain
-from agent6.workflows._prompt_blocks import build_system_prompt, skills_block
 
 _VALID_TOML = """
 [agent6]
@@ -244,16 +244,16 @@ class TestUseSkillTool:
 
 class TestUseSkillGating:
     def test_hidden_when_no_skills(self, tmp_path: Path, monkeypatch: object) -> None:
+        from agent6.harness._toolset import tool_definitions
         from agent6.tools.dispatch import ToolDispatcher
-        from agent6.workflows._toolset import tool_definitions
 
         _skills_env(tmp_path, monkeypatch)  # empty data dir
         d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
         assert "use_skill" not in {t.name for t in tool_definitions(d, mode="run")}
 
     def test_exposed_when_skills_installed(self, tmp_path: Path, monkeypatch: object) -> None:
+        from agent6.harness._toolset import tool_definitions
         from agent6.tools.dispatch import ToolDispatcher
-        from agent6.workflows._toolset import tool_definitions
 
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
@@ -261,8 +261,8 @@ class TestUseSkillGating:
         assert "use_skill" in {t.name for t in tool_definitions(d, mode="run")}
 
     def test_hidden_when_subsystem_disabled(self, tmp_path: Path, monkeypatch: object) -> None:
+        from agent6.harness._toolset import tool_definitions
         from agent6.tools.dispatch import ToolDispatcher
-        from agent6.workflows._toolset import tool_definitions
 
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
@@ -271,8 +271,8 @@ class TestUseSkillGating:
         assert "use_skill" not in {t.name for t in tool_definitions(d, mode="run")}
 
     def test_never_exposed_outside_run(self, tmp_path: Path, monkeypatch: object) -> None:
+        from agent6.harness._toolset import tool_definitions
         from agent6.tools.dispatch import ToolDispatcher
-        from agent6.workflows._toolset import tool_definitions
 
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
@@ -283,14 +283,14 @@ class TestUseSkillGating:
 
 class TestWorkflowLoadSkills:
     def test_run_mode_loads_from_dispatcher(self, tmp_path: Path, monkeypatch: object) -> None:
+        from agent6.harness.loop import Harness
         from agent6.tools.dispatch import ToolDispatcher
-        from agent6.workflows.loop import Workflow
 
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
         cfg = _config(tmp_path)
         d = ToolDispatcher(root=tmp_path, config=cfg)
-        wf = Workflow(
+        wf = Harness(
             chain=RunChain(tmp_path),
             config=cfg,
             provider=None,  # pyright: ignore[reportArgumentType]
@@ -302,14 +302,14 @@ class TestWorkflowLoadSkills:
         assert [s.name for s in resolved.enabled] == ["tidy"]
 
     def test_non_run_mode_returns_none(self, tmp_path: Path, monkeypatch: object) -> None:
+        from agent6.harness.loop import Harness
         from agent6.tools.dispatch import ToolDispatcher
-        from agent6.workflows.loop import Workflow
 
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
         cfg = _config(tmp_path)
         d = ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
-        wf = Workflow(
+        wf = Harness(
             chain=RunChain(tmp_path),
             config=cfg,
             provider=None,  # type: ignore[arg-type]

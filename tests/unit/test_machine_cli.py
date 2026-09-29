@@ -1244,7 +1244,7 @@ def test_offline_validation_reads_the_explicit_config_layer(
     machine = tmp_path / "tiny.asm.toml"
     machine.write_text(TINY, encoding="utf-8")
     config = tmp_path / "broken.toml"
-    config.write_text('[workflow]\nnonsense_key = "x"\n', encoding="utf-8")
+    config.write_text('[harness]\nnonsense_key = "x"\n', encoding="utf-8")
 
     assert main(["--config", str(config), "machine", verb, str(machine)]) == 1
     err = capsys.readouterr().err
@@ -1260,7 +1260,7 @@ def test_check_validates_the_config_overlay_run_will_merge(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "bad.asm.toml"
     f.write_text(
-        TINY + '\n[config.workflow]\nnonsense_key = "x"\n',
+        TINY + '\n[config.harness]\nnonsense_key = "x"\n',
         encoding="utf-8",
     )
     assert main(["machine", "check", str(f)]) == 1

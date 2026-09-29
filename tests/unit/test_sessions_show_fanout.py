@@ -87,7 +87,7 @@ def test_show_names_the_preset_the_run_continues_under(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    _session(repo, "preset", {"workflow": {"preset": "paranoid", "preset_from_flag": True}})
+    _session(repo, "preset", {"harness": {"preset": "paranoid", "preset_from_flag": True}})
 
     assert main(["sessions", "show", "preset"]) == 0
     assert "preset:     paranoid" in capsys.readouterr().out

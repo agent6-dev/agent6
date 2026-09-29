@@ -10,14 +10,14 @@ Every card is generated from the module and class docstrings, so edit those rath
 
 ## Conversation
 
-[`agent6.workflows._conversation`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/_conversation.py) &middot; mutable container + 5 frozen turn types
+[`agent6.harness._conversation`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/_conversation.py) &middot; mutable container + 5 frozen turn types
 
 The loop-owned conversation: typed turns over the provider wire.
 
 **Conversation** &mdash; Mutable container of frozen turns plus the rolling cache-mark pair.
 
-- **Written by:** workflows/loop
-- **Read by:** workflows/{_compaction, _compactor, _loop_state, _parallel_dispatch, _standing, _steer, _verify_gate}
+- **Written by:** harness/loop
+- **Read by:** harness/{_compaction, _compactor, _loop_state, _parallel_dispatch, _standing, _steer, _verify_gate}
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (23 test files exercise it)
 
 ## SessionManifest
@@ -34,14 +34,14 @@ Read a session's manifest.json into the typed SessionManifest: the one reader an
 
 ## SessionSnapshot
 
-[`agent6.workflows._session_state`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/_session_state.py) &middot; pydantic model
+[`agent6.harness._session_state`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/_session_state.py) &middot; pydantic model
 
-Session end and resume: the SessionResult the workflow returns, the ResumeError it raises, and the provider-agnostic resume snapshot written before each LLM call (load here; the loop owns saving it).
+Session end and resume: the SessionResult the harness returns, the ResumeError it raises, and the provider-agnostic resume snapshot written before each LLM call (load here; the loop owns saving it).
 
 **SessionSnapshot** &mdash; The persisted state of an in-flight session: what `resume` re-enters and what `fork` clones.
 
-- **Written by:** workflows/loop
-- **Read by:** app/{_leg, fork, resume, undo}, workflows/{_advice, _finish_gates, _guards, _loop_state, _metric, _verify_gate}
+- **Written by:** harness/loop
+- **Read by:** app/{_leg, fork, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_state, _metric, _verify_gate}
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (18 test files exercise it)
 
 ## ToolResult family
@@ -55,7 +55,7 @@ Typed tool-handler results: every handler returns one of these frozen values ins
 Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`
 
 - **Written by:** tools/{_control_tools, _dag_tools, _edit_diag, _fs_tools, _nav_tools, _skill_tools, dispatch}
-- **Read by:** workflows/{_guards, _memory_touch, _metric_sampler, _review, _toolset, _verify_gate, loop}
+- **Read by:** harness/{_guards, _memory_touch, _metric_sampler, _review, _toolset, _verify_gate, loop}
 - **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (26 test files exercise it)
 
 ## Event union
@@ -133,7 +133,7 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 | `graph_version` | `int` | `0` |
 
 - **Written by:** graph/{curator, storage}
-- **Read by:** graph/{order, replay}, tools/{_dag_tools, schema}, viewmodel/state, workflows/{_advice, _compactor, _dag_focus, _guards, _operator_tasks, _parallel_dispatch, loop}
+- **Read by:** graph/{order, replay}, harness/{_advice, _compactor, _dag_focus, _guards, _operator_tasks, _parallel_dispatch, loop}, tools/{_dag_tools, schema}, viewmodel/state
 - **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (20 test files exercise it)
 
 ## Run/machine wire snapshot

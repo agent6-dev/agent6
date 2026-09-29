@@ -3,7 +3,7 @@
 """Compare-judge prompt.
 
 The system prompt for the structured judge that ranks parallel-run
-candidates. Pure text; `workflows.judge` owns the call and parsing.
+candidates. Pure text; `harness.judge` owns the call and parsing.
 """
 
 from __future__ import annotations

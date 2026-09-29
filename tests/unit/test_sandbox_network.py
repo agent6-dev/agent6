@@ -111,7 +111,7 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 def test_run_one_returns_finish_payload(
     iso: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.workflows.loop import SessionResult
+    from agent6.harness.loop import SessionResult
 
     class _FakeWf:
         def __init__(self, **_kw: object) -> None:
@@ -130,7 +130,7 @@ def test_run_one_returns_finish_payload(
     def _fake(*_a: object, **_k: object) -> object:
         return object()
 
-    monkeypatch.setattr(machine_agent, "Workflow", _FakeWf)
+    monkeypatch.setattr(machine_agent, "Harness", _FakeWf)
     monkeypatch.setattr(machine_agent, "build_role_provider", _fake)
     monkeypatch.setattr(machine_agent, "reviewer_seat_provider", _fake)
     monkeypatch.setattr(machine_agent, "ToolDispatcher", _fake)
@@ -150,7 +150,7 @@ def test_run_one_returns_finish_payload(
 
 def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Stub the agent loop in machine_agent; return a dict capturing dispatcher kwargs."""
-    from agent6.workflows.loop import SessionResult
+    from agent6.harness.loop import SessionResult
 
     class _FakeWf:
         def __init__(self, **_kw: object) -> None:
@@ -175,7 +175,7 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     def _prov(*_a: object, **_k: object) -> object:
         return object()
 
-    monkeypatch.setattr(machine_agent, "Workflow", _FakeWf)
+    monkeypatch.setattr(machine_agent, "Harness", _FakeWf)
     monkeypatch.setattr(machine_agent, "build_role_provider", _prov)
     monkeypatch.setattr(machine_agent, "reviewer_seat_provider", _prov)
     monkeypatch.setattr(machine_agent, "ToolDispatcher", _disp)

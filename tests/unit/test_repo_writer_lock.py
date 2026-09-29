@@ -365,7 +365,7 @@ def test_runs_show_reports_a_parked_run_as_parked(
 
 
 def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: Path) -> None:
-    """The parked manifest's workflow.preset is what resume feeds back to
+    """The parked manifest's harness.preset is what resume feeds back to
     load_effective; the park path stamped the SANDBOX preset there
     ('strict'/'hardened'/'none'), so `agent6 resume <parked-id>` died with
     "CONFIG ERROR: unknown preset 'strict'" on every sandboxed host."""
@@ -387,9 +387,9 @@ def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: Pa
         release_single_writer(holder_fd)
     assert rc == 2
     m = read_manifest(SessionLayout(state_dir=state, session_id="run-PROF").session_dir)
-    assert m.workflow.preset == _load_cfg().preset  # the CONFIG preset ("")
+    assert m.harness.preset == _load_cfg().preset  # the CONFIG preset ("")
     # The exact call resume makes with it must not blow up on a sandbox word.
-    load_effective(repo, None, preset=m.workflow.preset)
+    load_effective(repo, None, preset=m.harness.preset)
 
 
 def test_parked_resume_passes_the_steer_through_to_run_task(
@@ -505,7 +505,7 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     in-process editor server; later runs must not wait for a process restart."""
     from agent6.app import resume as resume_mod
     from agent6.app._leg import LegEnd
-    from agent6.workflows._session_state import SessionSnapshot
+    from agent6.harness._session_state import SessionSnapshot
 
     state = state_dir(repo)
     layout = SessionLayout(state_dir=state, session_id="run-RTD")
@@ -677,9 +677,9 @@ def test_resume_treats_a_file_that_arrived_between_legs_as_the_operators(
     from agent6.app import _leg as leg_mod
     from agent6.app import resume as resume_mod
     from agent6.app._leg import LegEnd, LegInputs
+    from agent6.harness._session_state import SessionSnapshot
     from agent6.secrets import save_secret
     from agent6.sessions.layout import read_untracked_at_start
-    from agent6.workflows._session_state import SessionSnapshot
 
     save_secret("anthropic", "x")  # the provider preflight runs before the leg
     state = state_dir(repo)

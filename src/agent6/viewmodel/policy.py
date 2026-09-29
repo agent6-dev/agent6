@@ -70,7 +70,7 @@ def session_policy(session_dir: Path) -> SessionPolicy:
         model=driver.model if driver else "",
         run_commands=m.policy.run_commands,
         isolation=m.policy.isolation,
-        verify_command=tuple(m.workflow.verify_command),
-        verify_origin=m.workflow.verify_origin,
+        verify_command=tuple(m.harness.verify_command),
+        verify_origin=m.harness.verify_origin,
         mode=m.mode,
     )

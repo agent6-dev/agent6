@@ -22,11 +22,11 @@ from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.app.reporter import Reporter
 from agent6.config import Config
 from agent6.events import EventSink
+from agent6.harness.loop import SessionResult
 from agent6.sessions.ipc import read_worker_pid, write_worker_pid
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.ui.acp.frontend import acp_frontend
-from agent6.workflows.loop import SessionResult
 
 
 def _frontend(calls: list[tuple[str, Any]], *, spawn_err: str = "") -> SessionFrontend:
@@ -242,7 +242,7 @@ def _stub_leg_internals(
     monkeypatch.setattr(leg_mod, "wants_session_network", _returning(False))
     monkeypatch.setattr(leg_mod, "start_mcp_manager_if_enabled", _returning(None))
     monkeypatch.setattr(leg_mod, "build_session_tools", _returning(tools))
-    monkeypatch.setattr(leg_mod, "Workflow", _Workflow)
+    monkeypatch.setattr(leg_mod, "Harness", _Workflow)
     monkeypatch.setattr(leg_mod, "session_facts_provider", _returning(lambda: None))
 
 

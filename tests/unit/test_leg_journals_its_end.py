@@ -24,11 +24,11 @@ from agent6.app.frontend import FrontendCapabilities
 from agent6.app.reporter import Reporter
 from agent6.config import Config
 from agent6.events import EventSink
+from agent6.harness._session_state import SNAPSHOT_VERSION
+from agent6.harness.loop import SessionResult
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.acp.frontend import acp_frontend
 from agent6.ui.steer import SteerState
-from agent6.workflows._session_state import SNAPSHOT_VERSION
-from agent6.workflows.loop import SessionResult
 
 # The snapshot resume.py's preflight accepts (load_session_snapshot passes) and
 # Conversation.from_wire rejects one leg deeper: a tool_result with no tool_use.
@@ -60,7 +60,7 @@ def _returning(value: object) -> Callable[..., object]:
 def test_provider_setup_failure_journals_session_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A provider setup failure happens before the workflow can journal its own end,
+    """A provider setup failure happens before the harness can journal its own end,
     but the run already has a manifest and worker pid for every surface to read."""
     state = tmp_path / "state"
     layout = SessionLayout(state_dir=state, session_id="sess-SETUP1")
@@ -175,7 +175,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
 def test_mcp_setup_failure_journals_session_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """MCP startup is part of a live leg even though the workflow does not exist yet."""
+    """MCP startup is part of a live leg even though the harness does not exist yet."""
     state = tmp_path / "state"
     layout = SessionLayout(state_dir=state, session_id="sess-MCPSET")
     layout.ensure()
@@ -317,7 +317,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_leg_teardown(
     monkeypatch.setattr(leg_mod, "build_session_tools", _returning(tools))
     monkeypatch.setattr(leg_mod, "start_mcp_manager_if_enabled", _returning(mcp))
     monkeypatch.setattr(leg_mod, "wants_session_network", _returning(False))
-    monkeypatch.setattr(leg_mod, "Workflow", _Workflow)
+    monkeypatch.setattr(leg_mod, "Harness", _Workflow)
 
     def _chown(_path: Path) -> None:
         closed.append("chown")
@@ -485,7 +485,7 @@ def _wired_frontend(
     monkeypatch: pytest.MonkeyPatch,
     order: list[str],
     *,
-    workflow: type,
+    harness: type,
     cfg: Config,
     tui_session: Callable[[Path, bool], contextlib.AbstractContextManager[None]] | None = None,
 ) -> Any:
@@ -524,7 +524,7 @@ def _wired_frontend(
 
     monkeypatch.setattr(leg_mod, "chown_to_real_user", _chown)
     monkeypatch.setattr(leg_mod, "finalize_auto_merge", _merge)
-    monkeypatch.setattr(leg_mod, "Workflow", workflow)
+    monkeypatch.setattr(leg_mod, "Harness", harness)
 
     def _steer_state(*_args: object) -> SteerState:
         return SteerState(
@@ -578,7 +578,7 @@ def test_the_chown_runs_after_the_auto_merge_writes(
     layout.ensure()
     order: list[str] = []
     cfg = Config.model_validate({"git": {"auto_merge": True}})
-    frontend = _wired_frontend(monkeypatch, order, workflow=_finishing_workflow(1), cfg=cfg)
+    frontend = _wired_frontend(monkeypatch, order, harness=_finishing_workflow(1), cfg=cfg)
     run_leg(
         cfg,
         layout,
@@ -645,7 +645,7 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
             )
 
     frontend = _wired_frontend(
-        monkeypatch, order, workflow=_Workflow, cfg=Config(), tui_session=lambda _d, _e: _Boom()
+        monkeypatch, order, harness=_Workflow, cfg=Config(), tui_session=lambda _d, _e: _Boom()
     )
     said: list[str] = []
     with pytest.raises(RuntimeError, match="dashboard teardown failed"):
@@ -715,7 +715,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
                 verified="passed",
             )
 
-    frontend = _wired_frontend(monkeypatch, order, workflow=_Workflow, cfg=Config())
+    frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=Config())
     stubbed_build = leg_mod.build_session_tools
 
     def _boom() -> None:

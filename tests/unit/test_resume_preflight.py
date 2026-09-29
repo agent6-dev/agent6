@@ -18,10 +18,10 @@ import agent6.app._session as session_mod
 import agent6.app._setup as setup_mod
 import agent6.app.preflight as preflight_mod
 import agent6.app.resume as resume_mod
+from agent6.harness._session_state import SNAPSHOT_VERSION
 from agent6.paths import state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
-from agent6.workflows._session_state import SNAPSHOT_VERSION
 
 
 def _git_repo(path: Path) -> None:
@@ -55,7 +55,7 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
                 "mode": "run",
                 "user_task": "queued work",
                 "parked_task": "queued work",
-                "workflow": {"preset": "t", "preset_from_flag": False},
+                "harness": {"preset": "t", "preset_from_flag": False},
             }
         ),
         encoding="utf-8",
@@ -72,7 +72,7 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     rc = _cmd_resume(None, "parked-AAAA11", force=False)
     assert rc == 2
     # A config-selected preset re-resolves from the config files; only a
-    # --preset flag is replayed (WorkflowStamp.replay_preset's contract).
+    # --preset flag is replayed (HarnessStamp.replay_preset's contract).
     assert seen == [""]
 
 
@@ -98,7 +98,7 @@ def _park_manifest(session_dir: Path, *, preset: str, from_flag: bool) -> None:
                 "mode": "run",
                 "user_task": "queued work",
                 "parked_task": "queued work",
-                "workflow": {"preset": preset, "preset_from_flag": from_flag},
+                "harness": {"preset": preset, "preset_from_flag": from_flag},
             }
         ),
         encoding="utf-8",
@@ -311,10 +311,10 @@ def test_resume_preset_flag_is_recorded_for_later_legs(
     monkeypatch.setattr(resume_mod, "verify_git_identity", _nothing)
     monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
     assert _cmd_resume(None, "plan-PRESET1", force=False, preset="quick") == 0
-    stamp = read_manifest(session_dir).workflow
+    stamp = read_manifest(session_dir).harness
     assert (stamp.preset, stamp.preset_from_flag, stamp.replay_preset) == ("quick", True, "quick")
     assert _cmd_resume(None, "plan-PRESET1", force=False) == 0
-    assert read_manifest(session_dir).workflow.replay_preset == "quick"
+    assert read_manifest(session_dir).harness.replay_preset == "quick"
 
 
 def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
@@ -407,7 +407,7 @@ def test_a_late_resume_refusal_does_not_record_unrun_preset_or_model_picks(
         == 2
     )
     manifest = read_manifest(state_dir(repo) / "sessions" / "runs" / "plan-PICKREFUSE")
-    assert manifest.workflow.preset == ""
+    assert manifest.harness.preset == ""
     assert manifest.models.driver_from_flag is False
 
 
@@ -419,7 +419,7 @@ def test_a_resume_startup_failure_keeps_the_crash_replay_marker(
     failure made the next attempt replay the crashed turn's tools without warning."""
     from unittest.mock import MagicMock
 
-    from agent6.workflows._session_state import (
+    from agent6.harness._session_state import (
         TURN_IN_FLIGHT_NAME,
         read_turn_marker,
         write_turn_marker,
@@ -596,11 +596,11 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
     session_dir = state_dir(repo) / "sessions" / "runs" / "parked-LEAVES"
     _park_manifest(session_dir, preset="", from_flag=False)
     cfg_path = tmp_path / "cfg.toml"
-    cfg_path.write_text(_PLANNER_AND_WORKER + "[workflow]\nmax_iterations = 7\n", encoding="utf-8")
+    cfg_path.write_text(_PLANNER_AND_WORKER + "[harness]\nmax_iterations = 7\n", encoding="utf-8")
     cfg = load_config(cfg_path)
 
     def _load(*_a: object, **_k: object) -> EffectiveConfig:
-        return EffectiveConfig(config=cfg, sources={"workflow.max_iterations": "global"}, layers=())
+        return EffectiveConfig(config=cfg, sources={"harness.max_iterations": "global"}, layers=())
 
     monkeypatch.setattr(setup_mod, "load_effective", _load)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)  # no key in a unit test
@@ -618,7 +618,7 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
         )
         == 0
     )
-    assert seen["explicit_leaves"] == frozenset({"workflow.max_iterations"})
+    assert seen["explicit_leaves"] == frozenset({"harness.max_iterations"})
 
 
 def test_the_resume_note_leaves_the_untracked_at_start_files_out(

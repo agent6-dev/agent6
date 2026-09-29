@@ -20,8 +20,8 @@ from agent6.app.finalize import print_interrupt_end, print_session_end
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.git_ops import GitStatus
+from agent6.harness._session_state import SessionResult
 from agent6.sessions.layout import SessionLayout
-from agent6.workflows._session_state import SessionResult
 
 
 def _layout(tmp_path: Path, session_id: str, events: list[dict[str, object]]) -> SessionLayout:
@@ -127,7 +127,7 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
         "mode": "run",
         "user_task": "t",
         "base_sha": "a" * 40,
-        "workflow": {"verify_command": ["pytest", "-q"], "verify_origin": "configured"},
+        "harness": {"verify_command": ["pytest", "-q"], "verify_origin": "configured"},
     }
     result = SessionResult(
         completed=True,
@@ -175,7 +175,7 @@ def test_the_stale_gate_proposal_survives_an_unverified_verdict(
 def test_the_stale_gate_remedy_is_a_command_that_installs_that_gate(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`workflow.verify_command` is argv and takes no shell, so a proposal with
+    """`harness.verify_command` is argv and takes no shell, so a proposal with
     a pipeline wraps as `sh -c`. Splitting it word by word printed a command
     that installs a gate handing `&& ruff check` to pytest as arguments -- and
     `config set` accepts it silently."""

@@ -16,10 +16,10 @@ import pytest
 from agent6.app.reporter import Reporter
 from agent6.app.undo import undo_fork
 from agent6.git_ops import chain_commit, chain_ref_for, chain_tip
+from agent6.harness._session_state import SessionSnapshot
 from agent6.paths import state_dir
 from agent6.sessions.layout import SessionLayout, write_untracked_at_start
 from agent6.sessions.lock import acquire_repo_writer, release_single_writer
-from agent6.workflows._session_state import SessionSnapshot
 
 
 def _git(repo: Path, *args: str) -> str:

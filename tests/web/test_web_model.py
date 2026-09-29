@@ -419,13 +419,13 @@ def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: Path
 def test_config_payload_carries_round_trippable_editor_values(tmp_path: Path) -> None:
     cfg = tmp_path / "c.toml"
     cfg.write_text(
-        '[workflow]\nverify_command = ["uv", "run", "pytest"]\n[skills.state]\nalpha = "always"\n',
+        '[harness]\nverify_command = ["uv", "run", "pytest"]\n[skills.state]\nalpha = "always"\n',
         encoding="utf-8",
     )
 
     payload = model.config_payload(tmp_path, cfg)
 
-    assert payload["workflow.verify_command"]["input"] == '["uv", "run", "pytest"]'
+    assert payload["harness.verify_command"]["input"] == '["uv", "run", "pytest"]'
     assert payload["skills.state"]["input"] == '{ alpha = "always" }'
 
 
@@ -559,7 +559,7 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: Path) 
         base_sha="0" * 40,
         base_branch="main",
         run_branch=None,
-        cfg=Config.model_validate({"workflow": {"verify_command": ["python3", "-m", "pytest"]}}),
+        cfg=Config.model_validate({"harness": {"verify_command": ["python3", "-m", "pytest"]}}),
     )
     stamp_parked(layout.session_dir, task="t", reason="checkout busy")
     snap = session_snapshot(layout.session_dir)

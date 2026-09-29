@@ -8,6 +8,16 @@ from `agent6.config.io` / `agent6.config.layer`."""
 from __future__ import annotations
 
 from agent6.config._git import GitCommitConfig, GitConfig
+from agent6.config._harness import (
+    BudgetConfig,
+    ContextConfig,
+    HarnessConfig,
+    MetricConfig,
+    PromptConfig,
+    ReviewConfig,
+    ReviewTier,
+    parse_seat_spec,
+)
 from agent6.config._providers import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -33,16 +43,6 @@ from agent6.config._surfaces import (
     WebConfig,
     is_loopback_host,
 )
-from agent6.config._workflow import (
-    BudgetConfig,
-    ContextConfig,
-    MetricConfig,
-    PromptConfig,
-    ReviewConfig,
-    ReviewTier,
-    WorkflowConfig,
-    parse_seat_spec,
-)
 from agent6.config.model import (
     Agent6Section,
     Config,
@@ -67,6 +67,7 @@ __all__ = [
     "EffortLevel",
     "GitCommitConfig",
     "GitConfig",
+    "HarnessConfig",
     "MCPConfig",
     "MCPServerEntry",
     "MachineConfig",
@@ -84,7 +85,6 @@ __all__ = [
     "RoleName",
     "SandboxConfig",
     "WebConfig",
-    "WorkflowConfig",
     "is_cleartext_url",
     "is_loopback_host",
     "is_loopback_url",

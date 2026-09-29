@@ -14,18 +14,18 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from agent6.graph.curator import GraphCurator
-from agent6.workflows._dag_focus import ready_subtask
-from agent6.workflows._nudges import standing_fruitless_nudge, standing_resume_nudge
+from agent6.harness._dag_focus import ready_subtask
+from agent6.harness._nudges import standing_fruitless_nudge, standing_resume_nudge
 
 if TYPE_CHECKING:
-    from agent6.workflows._conversation import Conversation
-    from agent6.workflows._loop_state import LoopState, TurnState
+    from agent6.harness._conversation import Conversation
+    from agent6.harness._loop_state import LoopState, TurnState
 
 
 @dataclass(frozen=True, slots=True)
 class Standing:
     """The run's standing goal, read from the graph; `patience` is
-    `[workflow].standing_patience`."""
+    `[harness].standing_patience`."""
 
     curator: GraphCurator | None
     patience: int
@@ -48,7 +48,7 @@ class Standing:
         inject when the run should re-enter the standing task instead of
         ending, else None. None when there is no ready standing task, when
         the budget is spent (the hard bounds always win), or once
-        `[workflow].standing_patience` fruitless re-entries (no executed
+        `[harness].standing_patience` fruitless re-entries (no executed
         tool call since the last one) are used up. At the default (-1) a
         fruitless round never ends the run by itself: the nudge escalates
         to "dig deeper or try a different approach" instead, and the run

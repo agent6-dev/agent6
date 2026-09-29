@@ -310,7 +310,7 @@ def test_pause_menu_status_shows_ctx_and_profile(
         encoding="utf-8",
     )
     (tmp_path / "manifest.json").write_text(
-        json.dumps({"workflow": {"preset": "paranoid"}}), encoding="utf-8"
+        json.dumps({"harness": {"preset": "paranoid"}}), encoding="utf-8"
     )
     assert pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
     printed = capsys.readouterr().out

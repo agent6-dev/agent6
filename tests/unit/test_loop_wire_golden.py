@@ -31,14 +31,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from agent6.harness._chain import RunChain
+from agent6.harness._compaction import CompactionSettings
+from agent6.harness._conversation import Conversation
+from agent6.harness._steer import OperatorBridge
+from agent6.harness.loop import Harness
 from agent6.providers import ProviderResponse
 from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, RawResult, ToolResult
-from agent6.workflows._chain import RunChain
-from agent6.workflows._compaction import CompactionSettings
-from agent6.workflows._conversation import Conversation
-from agent6.workflows._steer import OperatorBridge
-from agent6.workflows.loop import Workflow
 
 _GOLDEN = Path(__file__).parent / "data" / "golden_loop_wire.json"
 
@@ -201,7 +201,7 @@ class _SteerOnce:
 
 def _config() -> Any:
     return SimpleNamespace(
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -262,7 +262,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
     def _compact_clear() -> None:
         compact_flag[0] = False
 
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(tmp_dir),
         config=_config(),
         provider=worker,  # type: ignore[arg-type]
@@ -309,7 +309,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
         ],
         resume_snap,
     )
-    wf2 = Workflow(
+    wf2 = Harness(
         chain=RunChain(tmp_dir),
         config=_config(),
         provider=resume_worker,  # type: ignore[arg-type]

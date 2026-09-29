@@ -8,12 +8,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from agent6.workflows._advice import Nudge, Stop
-from agent6.workflows._conversation import AssistantTurn
-from agent6.workflows._finish_gates import FinishCall
-from agent6.workflows._guards import SettledGuard, settled_end, verify_settled
-from agent6.workflows._loop_state import LoopState, TurnState
-from agent6.workflows._nudges import (
+from agent6.harness._advice import Nudge, Stop
+from agent6.harness._conversation import AssistantTurn
+from agent6.harness._finish_gates import FinishCall
+from agent6.harness._guards import SettledGuard, settled_end, verify_settled
+from agent6.harness._loop_state import LoopState, TurnState
+from agent6.harness._nudges import (
     VERIFY_SETTLED_NUDGE,
     VERIFY_SETTLED_NUDGE_AFTER,
     VERIFY_SETTLED_STOP_AFTER,

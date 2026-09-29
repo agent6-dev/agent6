@@ -8,10 +8,10 @@ from __future__ import annotations
 import time
 from unittest.mock import MagicMock
 
-from agent6.workflows._advice import TurnContext
-from agent6.workflows._conversation import AssistantTurn
-from agent6.workflows._guards import StagnationGuard, stagnation
-from agent6.workflows._loop_state import LoopState, TurnState
+from agent6.harness._advice import TurnContext
+from agent6.harness._conversation import AssistantTurn
+from agent6.harness._guards import StagnationGuard, stagnation
+from agent6.harness._loop_state import LoopState, TurnState
 from tests.unit.turn_context import turn_context
 
 

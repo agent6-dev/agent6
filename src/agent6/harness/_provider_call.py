@@ -6,7 +6,7 @@
 constants classify one response or status in isolation (which HTTP statuses are
 permanent, how long an upstream Retry-After is honored, the hint for a fatal
 error, the empty tool call that earns a blind retry, the reasoning that starved
-a turn), so they stay unit-testable without a Workflow.
+a turn), so they stay unit-testable without a Harness.
 """
 
 from __future__ import annotations

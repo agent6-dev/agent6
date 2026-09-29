@@ -21,7 +21,7 @@ nothing blocks (a fresh/offline machine, or a provider that lists no models).
 Never raises.
 
 Lives in the models layer so all three front-ends and the coordinator's group
-dispatcher share one policy without a UI or workflows dependency.
+dispatcher share one policy without a UI or harness dependency.
 """
 
 from __future__ import annotations

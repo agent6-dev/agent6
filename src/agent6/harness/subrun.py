@@ -76,7 +76,7 @@ class GroupLaneSpawner(Protocol):
     coordinator's repo. All spawn/await/import machinery is `app.parallel`'s
     (over the front-end's `LaneRuntime`); the coordinator loop supplies only
     the per-lane tasks
-    and a *group* id (`p<seq>`), so `workflows` never imports ui. On a lane that
+    and a *group* id (`p<seq>`), so `harness` never imports ui. On a lane that
     failed to start, is still running at teardown, or whose import was refused,
     that lane's `LaneResult.ok` is False and the coordinator's repo is left
     untouched for it."""

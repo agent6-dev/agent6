@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-from agent6.workflows._panel import (
+from agent6.harness._panel import (
     Finding,
     Hunk,
     PanelResult,
@@ -511,7 +511,7 @@ def test_output_cap_truncated_case_folds_both_spellings() -> None:
 
 
 def test_panel_is_inconclusive_owner() -> None:
-    from agent6.workflows._panel import panel_is_inconclusive
+    from agent6.harness._panel import panel_is_inconclusive
 
     abstain = ReviewVerdict(seat="s", model="m", verdict="pass", error="starved")
     passing = ReviewVerdict(seat="s2", model="m2", verdict="pass")
@@ -669,14 +669,14 @@ def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
     """`agent6 review` runs no verify command, and the loop has none to run
     when none is configured; the prompt told the seats "none configured" in
     both cases, wrong for a review of a repo that has one."""
-    from agent6.workflows._review import _build_user_message  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness._review import _build_user_message  # pyright: ignore[reportPrivateUsage]
 
     prompt = _build_user_message(ReviewContext(task="t"))
     assert "VERIFY: not run." in prompt and "none configured" not in prompt
 
 
 def test_the_seat_prompt_carries_the_whole_large_diff() -> None:
-    from agent6.workflows._review import _build_user_message  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness._review import _build_user_message  # pyright: ignore[reportPrivateUsage]
 
     diff = "start\n" + "x" * 200_000 + "\nend"
     prompt = _build_user_message(ReviewContext(task="t", diff=diff))
@@ -762,7 +762,7 @@ def test_a_renames_two_names_do_not_ground_each_others_lines() -> None:
 def test_a_review_notice_is_cut_head_first_at_a_character_boundary() -> None:
     """The cut keeps the head (the findings lead), lands on a character
     boundary inside the byte budget, and names the bytes it dropped."""
-    from agent6.workflows._panel import REVIEW_NOTICE_BYTES, review_notice
+    from agent6.harness._panel import REVIEW_NOTICE_BYTES, review_notice
 
     assert review_notice("short") == "[review]\nshort"
     text = "\u6f22" * 2_000  # three bytes a character

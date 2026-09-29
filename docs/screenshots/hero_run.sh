@@ -55,7 +55,7 @@ email = "demo@agent6.dev"
 [budget]
 max_usd = 0.50
 max_tokens_fallback = 2000000
-[workflow]
+[harness]
 verify_command = ["python3", "-m", "unittest", "discover", "-s", "tests", "-t", "."]
 [providers.openrouter]
 api_format = "openai"

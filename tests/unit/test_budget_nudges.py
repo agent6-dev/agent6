@@ -6,9 +6,9 @@ a low budget, each once per run and only in its mode."""
 
 from __future__ import annotations
 
-from agent6.workflows._guards import plan_budget_nudge, run_budget_nudge
-from agent6.workflows._loop_state import LoopState
-from agent6.workflows._nudges import (
+from agent6.harness._guards import plan_budget_nudge, run_budget_nudge
+from agent6.harness._loop_state import LoopState
+from agent6.harness._nudges import (
     PLAN_BUDGET_NUDGE,
     PLAN_BUDGET_NUDGE_BELOW,
     PLAN_NUDGE_AFTER_ITERS,

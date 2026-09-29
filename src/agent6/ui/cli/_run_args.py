@@ -104,7 +104,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help=(
             "Keep returning to GOAL whenever all other tasks are done or the agent tries to"
             " stop. New tasks take priority. The session can still end when you stop it or it"
-            " reaches its budget or iteration limit. workflow.standing_patience can also end"
+            " reaches its budget or iteration limit. harness.standing_patience can also end"
             " it after repeated unproductive returns; by default, it never does."
         ),
     )

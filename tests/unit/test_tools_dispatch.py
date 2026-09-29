@@ -43,7 +43,7 @@ protect_git = true
 [git]
 dirty_tree = "ask"
 branch_per_run = true
-[workflow]
+[harness]
 verify_command = ["true"]
 [budget]
 max_tokens_fallback = 2000000
@@ -232,9 +232,9 @@ def test_run_metric_refused_outside_run_mode(
 ) -> None:
     """run_metric_command executes the operator's metric command with no
     approval gate; it is run-only (LOOP_EXTRA_TOOLS) and the dispatcher must
-    backstop it in every other mode even with [workflow.metric] configured."""
+    backstop it in every other mode even with [harness.metric] configured."""
     body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
-        "\n[workflow.metric]\n"
+        "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
         'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
         'goal = "minimize"\n'
@@ -1243,7 +1243,7 @@ def test_empty_input_command_tools_reject_arguments(
     from agent6.sandbox.jail import CommandResult
 
     body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"\nnetwork = "host"') + (
-        '\n[workflow.metric]\ncommand = ["true"]\npattern = "(true)"\ngoal = "minimize"\n'
+        '\n[harness.metric]\ncommand = ["true"]\npattern = "(true)"\ngoal = "minimize"\n'
     )
     path = tmp_path / "agent6.toml"
     path.write_text(body, encoding="utf-8")
@@ -1260,7 +1260,7 @@ def test_empty_input_command_tools_reject_arguments(
 def test_run_metric_command_no_config(tmp_path: Path) -> None:
     cfg = _config_with_run_commands(tmp_path, "yes")
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match=r"no \[workflow.metric\]"):
+    with pytest.raises(ToolError, match=r"no \[harness.metric\]"):
         d.dispatch("run_metric_command", {})
     # Not in the LLM-visible tool surface either.
     assert "run_metric_command" not in d.available_tool_names()
@@ -1272,7 +1272,7 @@ def test_run_metric_command_is_withheld_when_commands_are(tmp_path: Path) -> Non
     it was exposed and dispatched under "no", and prompted under "ask" only
     because the harness calls it itself."""
     body = _VALID_TOML + (
-        "\n[workflow.metric]\n"
+        "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
         'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
         'goal = "minimize"\n'
@@ -1290,7 +1290,7 @@ def test_run_metric_command_is_withheld_when_commands_are(tmp_path: Path) -> Non
 
 def test_run_metric_command_invokes_jail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
-        "\n[workflow.metric]\n"
+        "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
         'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
         'goal = "minimize"\n'
@@ -1332,19 +1332,16 @@ def test_run_metric_command_honors_verify_timeout(
     (its documented scope); the metric path silently ran on the jail's fixed
     600s default, so a bench config's fast-failure timeout never applied."""
     body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
-        "\n[workflow.metric]\n"
-        'command = ["/usr/bin/true"]\n'
-        'pattern = "(\\\\d+)"\n'
-        'goal = "minimize"\n'
+        '\n[harness.metric]\ncommand = ["/usr/bin/true"]\npattern = "(\\\\d+)"\ngoal = "minimize"\n'
     )
-    body = body.replace("[workflow]\n", "[workflow]\nverify_timeout_s = 7.0\n")
+    body = body.replace("[harness]\n", "[harness]\nverify_timeout_s = 7.0\n")
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
     from agent6.config import load_config
     from agent6.sandbox.jail import CommandResult
 
     cfg = load_config(p)
-    assert cfg.workflow.verify_timeout_s == 7.0  # the override reached the config
+    assert cfg.harness.verify_timeout_s == 7.0  # the override reached the config
 
     captured: dict[str, object] = {}
 
@@ -1366,7 +1363,7 @@ def test_run_metric_command_score_null_on_no_match(
     """Pattern compiles fine but doesn't match the output -> score is null,
     rest of the result is unchanged."""
     body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
-        "\n[workflow.metric]\n"
+        "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"no number here\\")"]\n'
         'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
         'goal = "minimize"\n'

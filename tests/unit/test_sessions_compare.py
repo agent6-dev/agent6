@@ -20,13 +20,13 @@ import pytest
 
 from agent6.budget import BudgetTracker
 from agent6.config import Config
+from agent6.harness.judge import CandidateBrief
 from agent6.paths import repo_config_path, state_dir
 from agent6.providers import Provider, ProviderError
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import _compare as compare_mod
 from agent6.ui.cli import main
 from agent6.viewmodel.format import SPINNER_FRAMES
-from agent6.workflows.judge import CandidateBrief
 
 
 def _git(repo: Path, *args: str) -> str:

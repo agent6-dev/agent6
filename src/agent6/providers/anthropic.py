@@ -172,8 +172,8 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
 def strip_cache_control_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return `messages` with every `cache_control` marker removed.
 
-    The workflow places rolling breakpoints in the message list (see
-    `agent6.workflows._conversation`); when the operator sets
+    The harness places rolling breakpoints in the message list (see
+    `agent6.harness._conversation`); when the operator sets
     `prompt_caching = false` this strips them before the request is built.
     Copy-on-write: unmarked messages pass through untouched, marked blocks are
     shallow-copied so the caller's list (shared with resume snapshots) is
@@ -344,8 +344,8 @@ class AnthropicProvider:
         version_placement, version_value = _anthropic_version(self.deployment)
 
         # Breakpoint budget (Anthropic max 4 per request): this provider marks
-        # the system block and the last tool (2); the workflow's rolling pair
-        # in `messages` (agent6.workflows._conversation) accounts for the other 2.
+        # the system block and the last tool (2); the harness's rolling pair
+        # in `messages` (agent6.harness._conversation) accounts for the other 2.
         system_blocks: list[dict[str, Any]] = [{"type": "text", "text": system}]
         if self.prompt_caching:
             system_blocks[0]["cache_control"] = {"type": "ephemeral"}
@@ -490,7 +490,7 @@ class AnthropicProvider:
         Anthropic Messages event shape. It fans text_delta and thinking_delta
         deltas to their callbacks as they arrive, and at message_stop returns
         a ProviderResponse whose .raw is shaped identically to a non-streaming
-        response so callers (Workflow, transcript replay) don't need a
+        response so callers (Harness, transcript replay) don't need a
         streaming-aware code path.
         """
         body = dict(body)
@@ -792,7 +792,7 @@ class AnthropicProvider:
 
         # Synthesise the non-streaming-shaped response body so
         # downstream consumers (transcript replay, assistant_blocks
-        # reconstruction in Workflow) see the same shape they would
+        # reconstruction in Harness) see the same shape they would
         # see from a non-streaming call.
         synthesised: dict[str, Any] = {
             "type": "message",

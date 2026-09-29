@@ -307,7 +307,7 @@ def _provider_block(provider: str, model: str) -> str:
     return (
         # `bash verify.sh` (not ./verify.sh): the jail PATH is /usr/bin:/bin and
         # an exec-bit-less script cannot be run directly, but bash can read it.
-        f'{roles}\n[workflow]\nverify_command = ["bash", "verify.sh"]\n'
+        f'{roles}\n[harness]\nverify_command = ["bash", "verify.sh"]\n'
         f'verify_timeout_s = 60.0\n\n[sandbox]\nrun_commands = "yes"\n\n'
     )
 

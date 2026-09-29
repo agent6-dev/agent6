@@ -107,7 +107,7 @@ class SandboxConfig(BaseModel):
     # Make `.git/` read-only from the child's view so a worker that gains
     # `run_command` (e.g. `run_commands = "ask"` + user approval) cannot
     # `rm -rf .git`, rewrite history, or otherwise corrupt the repository
-    # from inside a child process. The workflow's own commits go through
+    # from inside a child process. The harness's own commits go through
     # `git_ops.py` from the agent process (outside the jail) and are
     # unaffected. Strict only: it is a read-only bind-remount, which needs a
     # mount namespace. On hardened the cwd is blanket read-write (no namespace

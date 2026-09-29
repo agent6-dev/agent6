@@ -171,8 +171,8 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
       Argument-conditional rules `EPERM` two more cases on syscalls that stay allowed: a mode carrying `S_ISUID` / `S_ISGID` on `chmod` and the create family (above), and a `mknod` / `mknodat` naming a character or block device (`/dev` above)
     - anything else is allowed; the list itself is the source (`jail/src/main.rs`), and it grows by syscall, never by class
 - Capabilities: cleared between fork and exec.
-- Timeout: the policy's `timeout_s` (verify and metric gates set it from `[workflow].verify_timeout_s`, default 600), then SIGKILL of the process group, rc=124
-    - a model's `run_command` is not wall-clock killed: at `[workflow].command_checkin_s` it is handed back as a background job ([Commands and environment](#4-commands-and-environment))
+- Timeout: the policy's `timeout_s` (verify and metric gates set it from `[harness].verify_timeout_s`, default 600), then SIGKILL of the process group, rc=124
+    - a model's `run_command` is not wall-clock killed: at `[harness].command_checkin_s` it is handed back as a background job ([Commands and environment](#4-commands-and-environment))
 - One launcher per run at every isolation level; under `strict` its commands share that netns, PID namespace, and private `/tmp`, and under `hardened` the host's network and `/tmp`
     - closing the run's channel takes the PID namespace down
     - a launcher that cannot start leaves each command its own

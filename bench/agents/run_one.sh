@@ -58,7 +58,7 @@ case "$AGENT" in
     # (kept OUTSIDE the run repo so the clean-worktree gate stays green)
     A6_CFG="$(dirname "$RUN")/$(basename "$RUN")_config.toml"
     cat > "$A6_CFG" <<CFG
-[workflow]
+[harness]
 verify_command = ["bash", "verify.sh"]
 [sandbox]
 run_commands = "yes"

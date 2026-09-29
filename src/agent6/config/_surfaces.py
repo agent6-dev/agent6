@@ -198,14 +198,14 @@ class NotifyConfig(BaseModel):
     """Optional post-run notification hook.
 
     When `on_complete` is set, agent6 runs the argv tuple after the
-    workflow returns (`agent6 run` or `agent6 resume`). The argv is
+    harness returns (`agent6 run` or `agent6 resume`). The argv is
     operator-controlled, it never includes LLM output, and runs outside the
     jail under a curated env (PATH/HOME/locale + desktop vars, never provider
     keys; see `child_env.curated_env`) with these vars added:
 
     - `AGENT6_SESSION_ID`      , session id under the per-repo state dir
-    - `AGENT6_SESSION_OK`      , `1` if the workflow finished cleanly, `0` otherwise
-    - `AGENT6_SESSION_REASON`  , workflow termination reason (e.g. `finish_session`,
+    - `AGENT6_SESSION_OK`      , `1` if the harness finished cleanly, `0` otherwise
+    - `AGENT6_SESSION_REASON`  , harness termination reason (e.g. `finish_session`,
                                  `budget_exhausted`, `provider_error`)
     - `AGENT6_SESSION_VERIFIED`, `passed` / `failed` / `unverified` /
                                  `not_applicable` (the verify gate's verdict;

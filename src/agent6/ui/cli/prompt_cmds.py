@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.config.layer import load_effective
+from agent6.harness import ModelExchange, model_exchange_for
 from agent6.paths import state_dir
 from agent6.verify_infer import infer_verify_command, read_agents_md
-from agent6.workflows import ModelExchange, model_exchange_for
 
 
 def _cmd_prompt_show(
@@ -29,7 +29,7 @@ def _cmd_prompt_show(
     cwd = Path.cwd()
     eff = load_effective(cwd, config_path)
     cfg = eff.config
-    if mode in ("run", "plan") and not cfg.workflow.verify_command and cfg.workflow.verify_infer:
+    if mode in ("run", "plan") and not cfg.harness.verify_command and cfg.harness.verify_infer:
         # A run infers its gate before assembling the prompt, and the gate
         # decides the `<verify-command>` block, the commit rule and whether
         # `run_verify_command` is offered at all, so the audit surface infers

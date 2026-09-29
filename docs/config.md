@@ -18,7 +18,7 @@ The layers, lowest precedence first:
 
 A selected preset is inserted above the config layer that selected it; [Presets](#presets) gives the precedence rules.
 The per-repo config lives in the state dir, out of the workspace: per-machine, never committed.
-It can be empty or absent when the global config supplies a provider and model; `workflow.verify_command` is inferred per run when unset.
+It can be empty or absent when the global config supplies a provider and model; `harness.verify_command` is inferred per run when unset.
 
 ## Creating and inspecting
 
@@ -244,7 +244,7 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 |---|---|---|
 | `preset` | `""` | The strategy preset in force: `standard` (plain defaults), `quick` (no review panel), `ultra` (a three-seat panel that advises and vetoes before finish), `paranoid` (five explore-tier seats), or a `[presets.<name>]` of your own. Fills many settings at once and overrides every section of the layer that selects it; `--preset` overrides per run, `resume --preset` per resumed leg. Empty: no preset. |
 
-## `[workflow]`
+## `[harness]`
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -259,6 +259,8 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 | `standing_patience` | `-1` | Consecutive fruitless standing-goal re-entries (rounds with no executed tool call) the run absorbs before soft ends are honoured. `-1`: never on its own (the run ends on its budget, iteration cap, or an operator stop); `0`: the first fruitless round ends it; `N`: N fruitless re-entries get an escalating nudge, then ends are honoured. A round that lands work resets the streak. |
 | `verify_when` | `"finish"` | When the harness runs `verify_command` itself: `finish` (when the model calls `finish_session` and the tree changed since the last green run), `step` (also after every turn that edits the tree), `never` (only the model's own `run_verify_command` calls run it). The tool stays available in every mode; a run with no verify command has no gate to run. |
 | `verify_retries` | `2` | How many times a red finish certification returns to the model with the gate's output before the finish stands and the run reads `finished · gate red`, never passed. `0`: the first red ends the run. A gate that was red before the run touched anything is not returned unless this run has since made it green. |
+
+The table was `[harness]` from 0.0.35; a config that still says `[workflow]` is refused with the table named.
 
 ## `[review]`
 
@@ -343,7 +345,7 @@ seats = [
 ]
 ```
 
-### `[workflow.metric]` (optional)
+### `[harness.metric]` (optional)
 
 A continuous score for measurable goals; `command` runs in the jail like `verify_command`.
 

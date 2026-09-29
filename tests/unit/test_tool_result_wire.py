@@ -3,7 +3,7 @@
 """FROZEN model-facing wire: the bytes each tool handler serializes to the LLM.
 
 The loop JSON-dumps a dispatched tool's result verbatim into the tool_result
-the model reads (workflows/loop.py). That JSON -- keys, key ORDER (dicts
+the model reads (harness/loop.py). That JSON -- keys, key ORDER (dicts
 preserve insertion order), and value formats -- is frozen LLM I/O: a drift
 silently changes every model's tool feedback. This pins a representative
 handler from each family, including the optional-field, score-append, preview,
@@ -50,7 +50,7 @@ protect_git = true
 [git]
 dirty_tree = "ask"
 branch_per_run = true
-[workflow]
+[harness]
 verify_command = ["true"]
 [budget]
 max_tokens_fallback = 2000000
@@ -305,7 +305,7 @@ def test_wire_run_command_clip_names_dropped_chars(tmp_path: Path) -> None:
     assert stdout.startswith("... 5000 earlier chars clipped ...\n")
     assert stdout.endswith("x" * 100) and len(stdout) < 20_100
     extra = (
-        "\n[workflow.metric]\n"
+        "\n[harness.metric]\n"
         'command = ["/usr/bin/true"]\n'
         'pattern = "CYCLES: (\\\\d+)"\n'
         'goal = "minimize"\n'
@@ -329,10 +329,7 @@ def test_metric_score_survives_the_display_clip(tmp_path: Path) -> None:
     dropped-byte count instead of the metric's printed number. The score must
     come from the command's real, unclipped output."""
     toml = _VALID_TOML.replace('isolation = "auto"', 'isolation = "auto"\nnetwork = "host"') + (
-        "\n[workflow.metric]\n"
-        'command = ["/usr/bin/true"]\n'
-        'pattern = "(\\\\d+)"\n'
-        'goal = "minimize"\n'
+        '\n[harness.metric]\ncommand = ["/usr/bin/true"]\npattern = "(\\\\d+)"\ngoal = "minimize"\n'
     )
     p = tmp_path / "agent6.toml"
     p.write_text(toml, encoding="utf-8")
@@ -352,9 +349,9 @@ def test_wire_tool_error_shape(tmp_path: Path) -> None:
     here pinned the test's own literal and left the producer unpinned."""
     from unittest.mock import MagicMock
 
-    from agent6.workflows.loop import (
+    from agent6.harness.loop import (
+        Harness,
         LoopState,
-        Workflow,
     )
 
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
@@ -363,7 +360,7 @@ def test_wire_tool_error_shape(tmp_path: Path) -> None:
 
     wf = MagicMock()
     state = LoopState(original_task="t", tool_calls=0)
-    content = Workflow._note_tool_error(  # pyright: ignore[reportPrivateUsage]
+    content = Harness._note_tool_error(  # pyright: ignore[reportPrivateUsage]
         wf, state, "no_such_tool", {}, exc.value
     )
     assert content == '{"error": "Unknown tool: no_such_tool"}'
@@ -374,16 +371,16 @@ def test_the_tool_error_log_line_names_the_tool_once() -> None:
     (`unknown or disabled skill`, never `use_skill: unknown ...`)."""
     from unittest.mock import MagicMock
 
+    from agent6.harness.loop import Harness, LoopState
     from agent6.skills import ResolvedSkills
     from agent6.tools._skill_tools import use_skill  # pyright: ignore[reportPrivateUsage]
-    from agent6.workflows.loop import LoopState, Workflow
 
     with pytest.raises(ToolError) as exc:
         use_skill(lambda: ResolvedSkills(enabled=(), always=(), warnings=()), {"name": "x"})
     assert str(exc.value).startswith("unknown or disabled skill 'x'")
     wf = MagicMock()
     state = LoopState(original_task="t", tool_calls=0)
-    Workflow._note_tool_error(  # pyright: ignore[reportPrivateUsage]
+    Harness._note_tool_error(  # pyright: ignore[reportPrivateUsage]
         wf, state, "use_skill", {}, exc.value
     )
     wf._log.assert_called_with(f"  tool_error: use_skill: {exc.value}")

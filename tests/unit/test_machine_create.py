@@ -223,7 +223,7 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
     config_home = tmp_path / "config"
     (config_home / "agent6").mkdir(parents=True)
     (config_home / "agent6" / "config.toml").write_text(
-        "[workflow]\nmax_iterations = 7\n", encoding="utf-8"
+        "[harness]\nmax_iterations = 7\n", encoding="utf-8"
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
     _stub_preflight(monkeypatch)  # models a repo resetting 7 to the built-in default
@@ -236,7 +236,7 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
         transcript_dir: Path,
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:
-        seen.append(load_effective_with_overlay(root, overlay).config.workflow.max_iterations)
+        seen.append(load_effective_with_overlay(root, overlay).config.harness.max_iterations)
 
         def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             _write_draft(root, _draft(VALID_MACHINE))
@@ -246,7 +246,7 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
 
     monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user"]) == 0
-    assert seen == [Config().workflow.max_iterations]
+    assert seen == [Config().harness.max_iterations]
 
 
 def test_create_writes_default_path(

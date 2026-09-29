@@ -68,7 +68,7 @@ def build_repl_hook(
     Captures the budget tracker (for `/cost`), the repo root (for
     `/diff` and `/init`), the current run id (for `/diff` and
     `/watch`), and the live MCP manager (for `/mcp`) in a closure
-    so Workflow stays agnostic of the CLI's extra state. `/undo` is the
+    so Harness stays agnostic of the CLI's extra state. `/undo` is the
     loop's own undo (take back the last message: the tree goes back and a
     fork holds the state before it), returned as a directive. *steer_cell*
     holds the leg's steer state once it exists: a Ctrl-C pause armed during

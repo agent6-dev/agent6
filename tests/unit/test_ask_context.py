@@ -150,9 +150,9 @@ def test_ask_repl_multi_turn_carries_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
+    from agent6.harness.loop import SessionResult
     from agent6.sessions.layout import SessionLayout
     from agent6.ui.cli._ask import run_ask_repl as _run_ask_repl
-    from agent6.workflows.loop import SessionResult
 
     class _FakeWf:
         def __init__(self) -> None:
@@ -219,7 +219,7 @@ def test_ask_transcript_snippet_reads_interactive_transcripts(tmp_path: Path) ->
 
 
 def test_load_repo_summary_outside_git(tmp_path: Path) -> None:
-    from agent6.workflows._context import load_repo_summary
+    from agent6.harness._context import load_repo_summary
 
     (tmp_path / "notes.txt").write_text("alpha\n", encoding="utf-8")
     (tmp_path / "sub").mkdir()
@@ -233,8 +233,8 @@ def test_load_repo_summary_outside_git(tmp_path: Path) -> None:
 
 def test_system_prompt_names_non_git_directory(tmp_path: Path) -> None:
     from agent6.config import load_config
+    from agent6.harness.loop import build_system_prompt  # pyright: ignore[reportPrivateUsage]
     from agent6.types import RepoSummary
-    from agent6.workflows.loop import build_system_prompt  # pyright: ignore[reportPrivateUsage]
 
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(
@@ -270,8 +270,8 @@ def test_system_prompt_names_non_git_directory(tmp_path: Path) -> None:
 def test_prompt_revision_context_names_non_git_directory(tmp_path: Path) -> None:
     """The reviser context degrades the same way the worker prompt does:
     outside git it names the situation instead of a fake empty repo header."""
+    from agent6.harness._prompt_revision import format_prompt_revision_context
     from agent6.types import RepoSummary
-    from agent6.workflows._prompt_revision import format_prompt_revision_context
 
     repo = RepoSummary(
         root=tmp_path,
@@ -307,8 +307,8 @@ def test_ask_repl_prompt_uses_default_sigint(monkeypatch: pytest.MonkeyPatch) ->
     import signal
     from typing import Any, cast
 
+    from agent6.harness.loop import Harness
     from agent6.ui.cli._ask import run_ask_repl
-    from agent6.workflows.loop import Workflow
 
     fired: list[object] = []
 
@@ -325,7 +325,7 @@ def test_ask_repl_prompt_uses_default_sigint(monkeypatch: pytest.MonkeyPatch) ->
 
         monkeypatch.setattr("builtins.input", fake_input)
         result = run_ask_repl(
-            cast("Workflow", object()),
+            cast("Harness", object()),
             cast("Any", object()),
             cast("Any", object()),
             first_question="",

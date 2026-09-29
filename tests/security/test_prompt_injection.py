@@ -38,7 +38,7 @@ protect_git = true
 [git]
 dirty_tree = "ask"
 branch_per_run = true
-[workflow]
+[harness]
 verify_command = ["true"]
 [budget]
 max_tokens_fallback = 2000000

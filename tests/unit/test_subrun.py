@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.workflows.subrun on temporary git repositories."""
+"""Tests for agent6.harness.subrun on temporary git repositories."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from agent6.git_ops import branch_exists, commit_all, create_branch
-from agent6.workflows.subrun import SubrunError, clone_workspace, import_run
+from agent6.harness.subrun import SubrunError, clone_workspace, import_run
 
 
 def _git(repo: Path, *args: str) -> None:

@@ -36,13 +36,13 @@ from agent6.git_ops import (
 from agent6.git_ops import (
     status as git_status,
 )
+from agent6.harness.loop import SessionResult
 from agent6.sessions.layout import LOGS_NAME, SessionLayout, read_untracked_at_start
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.verify_infer import line_to_argv
 from agent6.viewmodel import scan_session_log, summarize_session_dir, tail_events, worker_models
 from agent6.viewmodel.format import format_usd, status_label
 from agent6.viewmodel.snapshot import commits_ref
-from agent6.workflows.loop import SessionResult
 
 # Distinct exit code for a budget-exhausted run so automation can tell "raise
 # the cap and `agent6 resume`" apart from a genuine failure. Documented in
@@ -50,7 +50,7 @@ from agent6.workflows.loop import SessionResult
 _EXIT_BUDGET_EXHAUSTED = 3
 # The agent finished deliberately but the verify gate was red or stale. Its own
 # code so a script can tell "the work is not green" from "the run broke" (1)
-# without parsing the event log; `[workflow].verify_retries` bounds how often
+# without parsing the event log; `[harness].verify_retries` bounds how often
 # the same condition returns a finish to the model first. Public: the parallel
 # fan-out exits with it when gates ran and no lane passed, and a review panel
 # on a BLOCK verdict.
@@ -190,7 +190,7 @@ def _print_unknown_baseline(
     base = ""
     with contextlib.suppress(ManifestError):
         m = read_manifest(layout.session_dir)
-        gate, base = m.workflow.verify_command, (m.forked_from_sha or m.base_sha)
+        gate, base = m.harness.verify_command, (m.forked_from_sha or m.base_sha)
     if not (gate and base):
         return
     reporter.out(
@@ -239,7 +239,7 @@ def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
     # `&&` becomes `sh -c "..."`, where a word-by-word split would hand
     # `&& ruff check` to pytest as arguments.
     argv = json.dumps(list(line_to_argv(result.stale_gate) or ()))
-    reporter.out(f"    agent6 config set workflow.verify_command {shlex.quote(argv)}")
+    reporter.out(f"    agent6 config set harness.verify_command {shlex.quote(argv)}")
 
 
 def print_session_end(

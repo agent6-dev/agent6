@@ -11,7 +11,7 @@ blanket `.suggested` file or clobbers an existing AGENTS.md / config.
 
 Steps, in order:
   1. create the per-repo config file if it's missing (else leave it);
-  2. set `workflow.verify_command` if unset, inferred from the repo
+  2. set `harness.verify_command` if unset, inferred from the repo
      (AGENTS.md / package.json / Makefile / pyproject / Cargo / go.mod);
   3. add secret + build-artifact entries to `.gitignore` (idempotent);
   4. create AGENTS.md, or append a `## Verify command` section if missing.
@@ -171,9 +171,9 @@ def _append_gitignore(root: Path, missing: list[str]) -> str:
 def _setup_verify_command(
     root: Path, *, ecosystem: str, ask: _Ask, config_path: Path | None = None
 ) -> None:
-    """Set workflow.verify_command if unset, inferring it from the repo. Warns
+    """Set harness.verify_command if unset, inferring it from the repo. Warns
     (and asks) before overriding a command already set in any layer."""
-    leaf = effective_leaf(load_effective(root, config_path), "workflow.verify_command")
+    leaf = effective_leaf(load_effective(root, config_path), "harness.verify_command")
     value, source = leaf or ((), "default")
     already = bool(value)
     if already:
@@ -185,24 +185,24 @@ def _setup_verify_command(
         print(
             "  no verify command could be inferred from this repo. `agent6 run`"
             " will infer one (LLM) at run time or run gateless; set"
-            " workflow.verify_command later to pin one."
+            " harness.verify_command later to pin one."
         )
         return
     shown = " ".join(inferred.argv)
     warn = " (OVERRIDES the current value)" if already else ""
-    if not ask(f"  Set workflow.verify_command to `{shown}` (from {inferred.source}){warn}?", True):
+    if not ask(f"  Set harness.verify_command to `{shown}` (from {inferred.source}){warn}?", True):
         print("  skipped verify_command.")
         return
     try:
         err = set_config_value(
-            root, "workflow.verify_command", json.dumps(list(inferred.argv)), to_repo=True
+            root, "harness.verify_command", json.dumps(list(inferred.argv)), to_repo=True
         )
     except OperatorError as exc:
         err = str(exc)  # an unwritable repo config skips this step, never the whole init
     if err:
         print(f"  ERROR setting verify_command: {err}")
     else:
-        print(f"  set workflow.verify_command = {list(inferred.argv)}")
+        print(f"  set harness.verify_command = {list(inferred.argv)}")
 
 
 def _setup_agents_md(root: Path, *, ecosystem: str, ask: _Ask) -> None:

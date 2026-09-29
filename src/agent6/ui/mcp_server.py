@@ -213,7 +213,7 @@ class MCPServer:
         # tools/list. _call_tool still names the real reason for a client that
         # calls one by name anyway.
         self._commands_withdrawn = config.sandbox.run_commands in ("ask", "no")
-        self._gate_missing = not config.workflow.verify_command
+        self._gate_missing = not config.harness.verify_command
         specs = self._build_tools()
         if self._commands_withdrawn:
             specs = [t for t in specs if t.name not in _COMMAND_TOOLS]
@@ -402,7 +402,7 @@ class MCPServer:
             if isinstance(name, str) and name in _GATE_TOOLS and self._gate_missing:
                 raise _RpcError(
                     -32601,
-                    f"{name} is withdrawn: this workspace has no [workflow]"
+                    f"{name} is withdrawn: this workspace has no [harness]"
                     " verify_command, so there is no gate to run",
                 )
             raise _RpcError(-32601, f"unknown tool: {name!r}")

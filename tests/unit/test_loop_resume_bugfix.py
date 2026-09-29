@@ -20,22 +20,22 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.config import Config
-from agent6.tools.results import ExecResult, RawResult
-from agent6.workflows._chain import RunChain
-from agent6.workflows._compactor import Compactor
-from agent6.workflows._conversation import Conversation
-from agent6.workflows._metric import MetricGuard
-from agent6.workflows._metric import MetricSample as _MetricSample
-from agent6.workflows._provider_call import CallSettings
-from agent6.workflows._session_state import (
+from agent6.harness._chain import RunChain
+from agent6.harness._compactor import Compactor
+from agent6.harness._conversation import Conversation
+from agent6.harness._metric import MetricGuard
+from agent6.harness._metric import MetricSample as _MetricSample
+from agent6.harness._provider_call import CallSettings
+from agent6.harness._session_state import (
     SNAPSHOT_VERSION,
     SessionSnapshot,
     load_session_snapshot,
 )
-from agent6.workflows.loop import (
+from agent6.harness.loop import (
+    Harness,
     LoopState,
-    Workflow,
 )
+from agent6.tools.results import ExecResult, RawResult
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
 # identity (`commit_identity`), empty as a real Config carries it unset.
@@ -58,7 +58,7 @@ def _wf(
     ref: str | None = None,
     fallback_parent: str | None = None,
     **kw: Any,
-) -> Workflow:
+) -> Harness:
     """A loop over *root* with a chain mirroring run.py's wiring (the chain's
     first parent is HEAD at start); no root, no chain."""
     if root is not None and fallback_parent is None:
@@ -81,7 +81,7 @@ def _wf(
             git=_GIT_STUB,
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -96,7 +96,7 @@ def _wf(
         "logger": _silent,
     }
     defaults.update(kw)
-    return Workflow(**defaults)
+    return Harness(**defaults)
 
 
 def _git_repo(path: Path) -> None:
@@ -119,7 +119,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -151,13 +151,13 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
 def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: Path) -> None:
     """A resume must not forget a prior red or re-arm memory notices and the
     once-only finish deferral that already fired earlier in the same run."""
-    from agent6.workflows.loop import restore_completion_state
+    from agent6.harness.loop import restore_completion_state
 
     snap = tmp_path / "loop_state.json"
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -195,8 +195,8 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path)
     on tool turns, so a stop after a prose answer left loop_state.json at the
     PRE-call snapshot: resume re-paid the provider call and the nudge never
     existed in the resumed history."""
+    from agent6.harness._session_state import SessionResult
     from agent6.providers import ProviderResponse
-    from agent6.workflows._session_state import SessionResult
 
     repo = tmp_path / "repo"
     _git_repo(repo)
@@ -226,7 +226,7 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path)
     def stop_at_boundary(*_a: object, **_k: object) -> SessionResult:
         return stopped
 
-    with mock.patch.object(Workflow, "_operator_boundary", stop_at_boundary):
+    with mock.patch.object(Harness, "_operator_boundary", stop_at_boundary):
         result = wf.run("do the task")
     assert result.reason == "interactive_stop"
     loaded = load_session_snapshot(snap_path)
@@ -243,7 +243,7 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
     ids of a prior group -- clone dirs collided or, cache clean, the lanes ran
     to completion and then failed import on the already-existing branch,
     stranding paid work. Persist it like the sibling completion scalars."""
-    from agent6.workflows.loop import (
+    from agent6.harness.loop import (
         restore_completion_state,
     )
 
@@ -251,7 +251,7 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -282,7 +282,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
     re-injects them verbatim, so a resume must carry them like the sibling
     completion scalars. A version-2 snapshot written BEFORE pins existed loads
     with none (additive defaulted field, same as the /parallel counter)."""
-    from agent6.workflows.loop import (
+    from agent6.harness.loop import (
         restore_completion_state,
     )
 
@@ -290,7 +290,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -387,7 +387,7 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -474,7 +474,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -540,7 +540,7 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
     mode like session.start so the leg's log identifies itself (the manifest owns
     the task). An identity-less leg log left every fold empty and each consumer
     patching its own copy."""
-    from agent6.workflows._session_state import SessionSnapshot as _Snap
+    from agent6.harness._session_state import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
@@ -560,7 +560,7 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -619,7 +619,7 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -694,7 +694,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -843,7 +843,7 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -912,7 +912,7 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -955,12 +955,12 @@ def test_a_forked_leg_reports_the_elisions_its_context_carries() -> None:
     compact.dropped events to fold: /status reported "0 elided" over a restored
     context full of elision markers, contradicting the field's own "markers in
     the CURRENT context" contract. Same shape as the pin re-announce."""
-    from agent6.workflows._compaction import ELISION_GIST_PREFIX, ELISION_PREFIX
+    from agent6.harness._compaction import ELISION_GIST_PREFIX, ELISION_PREFIX
 
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1083,7 +1083,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
     dispatcher.dispatch.return_value = RawResult({"ok": True})
     config = MagicMock(
         prompt=MagicMock(system_prompt_file=""),
-        workflow=MagicMock(
+        harness=MagicMock(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1128,8 +1128,8 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     huge --pin then rode every restart and permanently wedged /pin) and the
     non-empty check (--pin '' seeded a blank pin). Seeding now goes through the
     same try_pin owner /pin uses."""
+    from agent6.harness._steer import PINS_MAX_CHARS
     from agent6.providers import ProviderResponse
-    from agent6.workflows._steer import PINS_MAX_CHARS
 
     provider = MagicMock()
     provider.call.return_value = ProviderResponse(
@@ -1155,7 +1155,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     dispatcher.dispatch.return_value = RawResult({"ok": True})
     config = MagicMock(
         prompt=MagicMock(system_prompt_file=""),
-        workflow=MagicMock(
+        harness=MagicMock(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1197,7 +1197,7 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
     verify command between legs swaps what judges the work while the
     instructions still name the old gate, so the worker runs one command and is
     graded on another. Silence there is the worst case: it looks like it worked."""
-    from agent6.workflows._session_state import SessionSnapshot as _Snap
+    from agent6.harness._session_state import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
@@ -1217,7 +1217,7 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1273,7 +1273,7 @@ def test_an_adopted_gate_carries_into_the_next_leg(tmp_path: Path) -> None:
     """A gateless run adopts a verify command at its first commit; a resumed
     leg started with nothing adopted, so the swap notice named the gate as
     lost and the run re-adopted it one commit later."""
-    from agent6.workflows._session_state import SessionSnapshot as _Snap
+    from agent6.harness._session_state import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
@@ -1293,7 +1293,7 @@ def test_an_adopted_gate_carries_into_the_next_leg(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1358,7 +1358,7 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Pat
 
     from agent6.git_ops import chain_commit, chain_tip
     from agent6.git_ops import status as git_status
-    from agent6.workflows._session_state import SessionSnapshot
+    from agent6.harness._session_state import SessionSnapshot
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -1377,7 +1377,7 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Pat
     chain = "refs/agent6/run1/head"
     wf = _wf(
         root=repo,
-        config=Config.model_validate({"workflow": {"verify_command": ["true"]}}),
+        config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
         ref=chain,
         fallback_parent=base,
     )
@@ -1412,7 +1412,7 @@ def test_a_gate_withheld_between_legs_is_no_swap_for_the_worker(tmp_path: Path) 
     config, and the resume told the worker the gate "changed between legs ...
     now `none`" over a gate the leg withheld, not swapped. No notice and no
     swap event: no command can run, that one included."""
-    from agent6.workflows._session_state import SessionSnapshot as _Snap
+    from agent6.harness._session_state import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
@@ -1432,7 +1432,7 @@ def test_a_gate_withheld_between_legs_is_no_swap_for_the_worker(tmp_path: Path) 
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,

@@ -44,7 +44,7 @@ protect_git = true
 [git]
 dirty_tree = "ask"
 branch_per_run = true
-[workflow]
+[harness]
 verify_command = ["true"]
 [budget]
 max_tokens_fallback = 2000000
@@ -618,7 +618,7 @@ def test_no_one_to_ask_withdraws_rather_than_breaks(configured: str, offered: bo
     from agent6.ui.mcp_server import _no_one_to_ask  # pyright: ignore[reportPrivateUsage]
 
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": configured}, "workflow": {"verify_command": ["true"]}}
+        {"sandbox": {"run_commands": configured}, "harness": {"verify_command": ["true"]}}
     )
     assert (_no_one_to_ask(cfg).sandbox.run_commands == "yes") is offered
 

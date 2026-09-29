@@ -63,7 +63,7 @@ BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
 _CHARS_PER_TOKEN = 4
 _DROP_FRACTION = 0.45
 _RESERVE_TOKENS = 16_384
-# Used when the window is unknown. Mirrors workflows._compaction
+# Used when the window is unknown. Mirrors harness._compaction
 # DROP_BLOCKS_AT_CHARS / SUMMARISE_AT_CHARS.
 _FALLBACK_DROP_CHARS = 256_000
 _FALLBACK_SUMMARISE_CHARS = 768_000

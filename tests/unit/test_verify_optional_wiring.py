@@ -18,17 +18,17 @@ import pytest
 import agent6.app.preflight as preflight_mod
 from agent6.config import Config
 from agent6.config.layer import EffectiveConfig
+from agent6.harness._chain import RunChain
+from agent6.harness._prompt_blocks import build_system_prompt
+from agent6.harness._session_state import SNAPSHOT_VERSION
+from agent6.harness._verify_verdict import VerifyVerdict
 from agent6.paths import state_dir
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import RepoSummary
-from agent6.workflows._chain import RunChain
-from agent6.workflows._prompt_blocks import build_system_prompt
-from agent6.workflows._session_state import SNAPSHOT_VERSION
-from agent6.workflows._verify_verdict import VerifyVerdict
 
 
 def _cfg(*, verify: bool) -> Config:
-    data = {"workflow": {"verify_command": ["true"]}} if verify else {}
+    data = {"harness": {"verify_command": ["true"]}} if verify else {}
     return Config.model_validate(data)
 
 
@@ -81,9 +81,7 @@ def test_system_prompt_switches_verify_block(tmp_path: Path) -> None:
     assert "run project tests only through" not in gateless.lower()
     assert "stale_gate" in with_verify and "commits each editing turn" in with_verify
     # The per-step commit rule belongs to a gate that judges each step.
-    never = Config.model_validate(
-        {"workflow": {"verify_command": ["true"], "verify_when": "never"}}
-    )
+    never = Config.model_validate({"harness": {"verify_command": ["true"], "verify_when": "never"}})
     assert "pending changes automatically after each passing" in build_system_prompt(
         config=never, repo=repo, mode="run", skills=None
     )
@@ -131,21 +129,21 @@ def test_a_leg_that_cannot_run_commands_is_gateless_wherever_it_starts(tmp_path:
     session_dir.mkdir()
     said: list[str] = []
     reporter = Reporter(out=said.append, err=said.append)
-    gated = Config.model_validate({"workflow": {"verify_command": ["pytest", "-q"]}})
+    gated = Config.model_validate({"harness": {"verify_command": ["pytest", "-q"]}})
 
     assert drop_gate_if_unrunnable(
         gated, session_dir=session_dir, reporter=reporter
-    ).workflow.verify_command == (
+    ).harness.verify_command == (
         "pytest",
         "-q",
     )
     withheld = Config.model_validate(
-        {"workflow": {"verify_command": ["pytest", "-q"]}, "sandbox": {"run_commands": "no"}}
+        {"harness": {"verify_command": ["pytest", "-q"]}, "sandbox": {"run_commands": "no"}}
     )
     assert (
         drop_gate_if_unrunnable(
             withheld, session_dir=session_dir, reporter=reporter
-        ).workflow.verify_command
+        ).harness.verify_command
         == ()
     )
     assert any("running gateless" in line for line in said)
@@ -156,7 +154,7 @@ def test_a_leg_that_cannot_run_commands_is_gateless_wherever_it_starts(tmp_path:
     assert (
         drop_gate_if_unrunnable(
             gated, session_dir=session_dir, reporter=reporter
-        ).workflow.verify_command
+        ).harness.verify_command
         == ()
     )
 
@@ -170,12 +168,12 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: Path) -> 
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
-    from agent6.workflows.loop import LoopState, Workflow
+    from agent6.harness.loop import Harness, LoopState
 
-    wf = Workflow.__new__(Workflow)
+    wf = Harness.__new__(Harness)
     wf.chain = RunChain(tmp_path)
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -205,7 +203,7 @@ def test_a_deny_mid_run_takes_the_gate_with_it(tmp_path: Path) -> None:
 
     session_dir = tmp_path / "run"
     session_dir.mkdir()
-    cfg = Config.model_validate({"workflow": {"verify_command": ["true"]}})
+    cfg = Config.model_validate({"harness": {"verify_command": ["true"]}})
     d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     assert "run_verify_command" in d.available_tool_names()
     set_away_mode(session_dir, "deny")
@@ -224,7 +222,7 @@ def test_a_gate_is_never_adopted_when_the_worker_cannot_run_one(tmp_path: Path) 
     cfg = Config.model_validate({"sandbox": {"run_commands": "no"}})
     d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     assert d.adopt_verify_command(("/bin/true",)) is False
-    assert d._config.workflow.verify_command == ()  # pyright: ignore[reportPrivateUsage]
+    assert d._config.harness.verify_command == ()  # pyright: ignore[reportPrivateUsage]
 
 
 def test_the_worker_gets_the_tool_for_a_gate_adopted_mid_run(tmp_path: Path) -> None:
@@ -232,8 +230,8 @@ def test_the_worker_gets_the_tool_for_a_gate_adopted_mid_run(tmp_path: Path) -> 
     was TOLD to run run_verify_command while that tool was absent from every
     remaining call: commits stopped, the finish was graded failed, exit 4."""
     from agent6.config import Config
+    from agent6.harness._toolset import tool_definitions
     from agent6.tools.dispatch import ToolDispatcher
-    from agent6.workflows._toolset import tool_definitions
 
     d = ToolDispatcher(root=tmp_path, config=Config())
     before = {t.name for t in tool_definitions(d, mode="run")}
@@ -312,7 +310,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
                 "session_id": "crashed-AAAA11",
                 "mode": "run",
                 "user_task": "t",
-                "workflow": {"verify_command": manifest_gate, "verify_origin": origin},
+                "harness": {"verify_command": manifest_gate, "verify_origin": origin},
             }
         ),
         encoding="utf-8",
@@ -351,7 +349,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     used: list[tuple[str, ...]] = []
 
     def _leg(_cfg: Config, _layout: object, inputs: LegInputs, **_kw: object) -> LegEnd:
-        used.append(inputs.gate(_cfg, MagicMock()).workflow.verify_command)
+        used.append(inputs.gate(_cfg, MagicMock()).harness.verify_command)
         return LegEnd(0)
 
     monkeypatch.setattr(resume_mod, "run_leg", _leg)
@@ -363,7 +361,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     )
     assert used == [manifest_gate]
     persisted = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert tuple(persisted["workflow"]["verify_command"]) == manifest_gate
+    assert tuple(persisted["harness"]["verify_command"]) == manifest_gate
 
 
 def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
@@ -474,7 +472,7 @@ def test_a_withheld_fresh_leg_is_not_regated_by_inference(
     cfg = _role_cfg(
         {
             "sandbox": {"run_commands": "no"},
-            "workflow": {"verify_command": ["pytest", "-q"]},
+            "harness": {"verify_command": ["pytest", "-q"]},
             "git": {"branch_per_run": False},
         }
     )
@@ -541,7 +539,7 @@ def test_patch_only_prompt_names_only_the_offered_edit_tool(
     monkeypatch.setenv("AGENT6_DISABLE_APPLY_EDIT", "1")
     cfg = _cfg(verify=True)
     prompt = build_system_prompt(config=cfg, repo=_repo(tmp_path), mode="run", skills=None)
-    from agent6.workflows._toolset import tool_definitions
+    from agent6.harness._toolset import tool_definitions
 
     names = {tool.name for tool in tool_definitions(ToolDispatcher(root=tmp_path, config=cfg))}
     assert "apply_edit" not in names
@@ -556,7 +554,7 @@ def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: Path) -> N
     repo = _repo(tmp_path)
     on = _cfg(verify=True)
     off = Config.model_validate(
-        {"workflow": {"verify_command": ["true"]}, "sandbox": {"protect_git": False}}
+        {"harness": {"verify_command": ["true"]}, "sandbox": {"protect_git": False}}
     )
     marker = ".git/` is read-only inside the jail"
     for isolation, cfg, expect in (
@@ -591,10 +589,10 @@ def test_prompt_git_rules_match_git_control(tmp_path: Path) -> None:
     automatically" (base block and gateless block both did) misdirects the
     model into never committing."""
     repo = _repo(tmp_path)
-    agent6_cfg = Config.model_validate({"workflow": {"verify_command": ["true"]}})
+    agent6_cfg = Config.model_validate({"harness": {"verify_command": ["true"]}})
     model_cfg = Config.model_validate(
         {
-            "workflow": {"verify_command": ["true"]},
+            "harness": {"verify_command": ["true"]},
             "git": {"control": "model"},
             "sandbox": {"protect_git": False},
         }
@@ -631,7 +629,7 @@ def test_model_git_rule_does_not_offer_a_withheld_run_command(tmp_path: Path) ->
         }
     )
     prompt = build_system_prompt(config=cfg, repo=_repo(tmp_path), mode="run", skills=None)
-    from agent6.workflows._toolset import tool_definitions
+    from agent6.harness._toolset import tool_definitions
 
     names = {
         tool.name
@@ -688,18 +686,18 @@ def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: Path) -> No
         transcript_sink=MagicMock(),
         budget=budget,
     )
-    assert cfg_on.workflow.verify_command, "the fence must infer when the knob is on"
+    assert cfg_on.harness.verify_command, "the fence must infer when the knob is on"
 
     off_log = tmp_path / "off.jsonl"
     cfg_off = infer_verify_if_unset(
-        Config.model_validate({"workflow": {"verify_infer": False}}),
+        Config.model_validate({"harness": {"verify_infer": False}}),
         tmp_path,
         mode="run",
         events=EventSink(off_log),
         transcript_sink=MagicMock(),
         budget=budget,
     )
-    assert cfg_off.workflow.verify_command == ()
+    assert cfg_off.harness.verify_command == ()
     rows = [json.loads(line) for line in off_log.read_text(encoding="utf-8").splitlines()]
     assert any(r["type"] == "loop.verify_inferred" and r["source"] == "disabled" for r in rows)
 
@@ -711,15 +709,15 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: Path) -> Non
     from unittest.mock import MagicMock
 
     from agent6.config import Config
-    from agent6.workflows.loop import TurnState, Workflow
+    from agent6.harness.loop import Harness, TurnState
 
     (tmp_path / "AGENTS.md").write_text(
         "## Verify command\n\n```bash\ntrue\n```\n", encoding="utf-8"
     )
     dispatcher = MagicMock()
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(tmp_path),
-        config=Config.model_validate({"workflow": {"verify_infer": False}}),
+        config=Config.model_validate({"harness": {"verify_infer": False}}),
         provider=MagicMock(),
         dispatcher=dispatcher,
         logger=lambda _line: None,
@@ -736,7 +734,7 @@ def test_prompt_says_nothing_commits_under_commit_per_step_off(tmp_path: Path) -
     stayed uncommitted in the worktree while it was told otherwise."""
     repo = _repo(tmp_path)
     cfg = Config.model_validate(
-        {"workflow": {"verify_command": ["true"]}, "git": {"commit_per_step": False}}
+        {"harness": {"verify_command": ["true"]}, "git": {"commit_per_step": False}}
     )
     out = build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
     assert "Nothing commits automatically" in out
@@ -749,7 +747,7 @@ def test_hardened_rule_renders_only_where_the_jail_carries_protect_paths(tmp_pat
     hardened run has none and was told to `apply_edit` placeholders it never
     needed."""
     repo = _repo(tmp_path)
-    cfg = Config.model_validate({"workflow": {"verify_command": ["true"]}})
+    cfg = Config.model_validate({"harness": {"verify_command": ["true"]}})
     plain = build_system_prompt(
         config=cfg, repo=repo, mode="run", skills=None, isolation="hardened"
     )
@@ -765,8 +763,8 @@ def test_the_dag_block_and_tools_follow_the_curator(tmp_path: Path) -> None:
     taught add_task / update_task / list_tasks and offered them, and every
     call errored "DAG curator not available"; with decompose on, the block's
     first instruction was unsatisfiable."""
+    from agent6.harness._toolset import tool_definitions
     from agent6.tools.dispatch import ToolDispatcher
-    from agent6.workflows._toolset import tool_definitions
 
     repo = _repo(tmp_path)
     cfg = Config.model_validate({"prompt": {"decompose": "on"}})
@@ -885,7 +883,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
                 "session_id": "withheld-AAAA11",
                 "mode": "run",
                 "user_task": "t",
-                "workflow": {"verify_command": list(gate), "verify_origin": "configured"},
+                "harness": {"verify_command": list(gate), "verify_origin": "configured"},
             }
         ),
         encoding="utf-8",
@@ -905,8 +903,8 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
         ),
         encoding="utf-8",
     )
-    workflow = {"verify_command": list(gate)} if configured else {}
-    cfg = _role_cfg({"sandbox": {"run_commands": "no"}, "workflow": workflow})
+    harness = {"verify_command": list(gate)} if configured else {}
+    cfg = _role_cfg({"sandbox": {"run_commands": "no"}, "harness": harness})
     effective = EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _effective(*_a: object, **_k: object) -> EffectiveConfig:

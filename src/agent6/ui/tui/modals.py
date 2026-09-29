@@ -6,7 +6,7 @@ message to edit).
 
 These are pure textual widgets, they take a prompt and `dismiss()` a result.
 The app wires the result back through the file bridge (see frontend.approval); nothing
-here touches the workflow, so any other front-end can drop them in or replace
+here touches the harness, so any other front-end can drop them in or replace
 them.
 
 Unlike the theme/edit/provider/help overlays, these consequential prompts have

@@ -3,7 +3,7 @@
 """Typed assembly of the agent-loop system prompt.
 
 The helpers that fill the pure `agent6.prompts.loop` block templates with a
-run's config + repo summary + memory + skills. These stay in the workflow
+run's config + repo summary + memory + skills. These stay in the harness
 layer because their signatures need agent6 types (`Config`, `RepoSummary`,
 `ResolvedSkills`); the leaf `agent6.prompts` package holds only the
 dependency-free text they render.
@@ -210,7 +210,7 @@ def _commit_rule(config: Config, *, has_gate: bool, commands_allowed: bool) -> s
         return MODEL_GIT_RULE if commands_allowed else MODEL_GIT_RULE_NO_COMMANDS
     if not config.git.commit_per_step:
         return NO_AUTO_COMMIT_RULE
-    if has_gate and config.workflow.verify_when != "finish":
+    if has_gate and config.harness.verify_when != "finish":
         return AUTO_COMMIT_RULE
     return AUTO_COMMIT_RULE_GATELESS
 
@@ -261,7 +261,7 @@ def build_system_prompt(
     # Fill the DAG-rules sentinel (present only in the run-mode default base).
     # On an override file the sentinel is absent, so this is a no-op there.
     # "auto" is pinned to on/off by the CLI (resolve_decompose) before the
-    # workflow starts; an unresolved "auto" reaching here (bench/embedders)
+    # harness starts; an unresolved "auto" reaching here (bench/embedders)
     # conservatively renders the optional block.
     # A run with no curator (a machine agent state) has no DAG tools to teach.
     dag_block = dag_rules_block(config.prompt.decompose == "on") if dag_available else ""
@@ -290,7 +290,7 @@ def build_system_prompt(
     # below reads the ONE answer, and the caller's (a resumed run whose
     # operator denied commands for the session) wins over the configured value.
     allowed = config.sandbox.run_commands != "no" if commands_allowed is None else commands_allowed
-    has_gate = bool(config.workflow.verify_command) and allowed
+    has_gate = bool(config.harness.verify_command) and allowed
     base = base.replace("__PLAN_VERIFY_RULE__", PLAN_VERIFY_RULE if has_gate else "")
     base = base.replace("__READONLY_COMMAND_RULE__", READONLY_COMMAND_RULE if allowed else "")
     base = base.replace("__READONLY_COMMAND_NOTE__", READONLY_COMMAND_NOTE + " " if allowed else "")
@@ -338,17 +338,17 @@ def build_system_prompt(
         )
         return "\n".join(parts)
 
-    verify_argv = list(config.workflow.verify_command) if has_gate else []
+    verify_argv = list(config.harness.verify_command) if has_gate else []
     if verify_argv:
         parts.append(
             V2_VERIFY_BLOCK_TEMPLATE.format(
                 argv=json.dumps(verify_argv),
-                timeout_s=config.workflow.verify_timeout_s,
+                timeout_s=config.harness.verify_timeout_s,
                 # The harness runs the gate in run mode only; plan and ask
                 # leave every run to the model, and have no finish_session.
                 when=V2_VERIFY_WHEN[
-                    config.workflow.verify_when if mode == "run" else "never"
-                ].format(retries=config.workflow.verify_retries),
+                    config.harness.verify_when if mode == "run" else "never"
+                ].format(retries=config.harness.verify_retries),
                 stale=V2_STALE_GATE if mode == "run" else "",
             )
         )
@@ -359,8 +359,8 @@ def build_system_prompt(
     # "harness automatically runs this metric" behaviour is the run loop's.
     # `run_commands = "no"` withholds the tool, and a block describing a tool
     # the model does not have is one it cannot act on.
-    if mode == "run" and config.workflow.metric is not None and allowed:
-        m = config.workflow.metric
+    if mode == "run" and config.harness.metric is not None and allowed:
+        m = config.harness.metric
         parts.append(
             V2_METRIC_BLOCK_TEMPLATE.format(
                 argv=json.dumps(list(m.command)),

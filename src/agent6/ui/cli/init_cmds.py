@@ -132,7 +132,7 @@ def _print_next_steps(cwd: Path, config_path: Path | None) -> None:
     if cfg is None or cfg.models.resolve("worker") is None:
         print("  agent6 model worker <provider> <model>   # pick your worker model")
     print("  agent6 config show             # audit the effective config")
-    gated = cfg is not None and bool(cfg.workflow.verify_command)
+    gated = cfg is not None and bool(cfg.harness.verify_command)
     print('  agent6 run "<task>"' + ("" if gated else "            # verify is inferred per run"))
 
 

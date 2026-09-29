@@ -8,11 +8,11 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from agent6.harness._chain import RunChain
+from agent6.harness._conversation import Conversation
+from agent6.harness._review import ReviewSeat, ReviewSettings
+from agent6.harness.loop import Harness
 from agent6.tools.results import RawResult
-from agent6.workflows._chain import RunChain
-from agent6.workflows._conversation import Conversation
-from agent6.workflows._review import ReviewSeat, ReviewSettings
-from agent6.workflows.loop import Workflow
 from tests.unit.test_review_gate import (
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
     _resp,  # pyright: ignore[reportPrivateUsage]
@@ -55,7 +55,7 @@ def _begin() -> list[dict[str, Any]]:
     return [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo\n\nBegin."}]}]
 
 
-def _drive(wf: Workflow, messages: list[dict[str, Any]]) -> Any:
+def _drive(wf: Harness, messages: list[dict[str, Any]]) -> Any:
     conversation = Conversation.from_wire(messages)
     with patch.object(RunChain, "diff_since_base", return_value=_DIFF):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -123,7 +123,7 @@ def test_panel_skipped_when_budget_fraction_low() -> None:
         ),
         base_sha="b",
     )  # review_budget_fraction defaults to 0.25
-    with patch.object(Workflow, "_budget_fraction_remaining", return_value=0.10):
+    with patch.object(Harness, "_budget_fraction_remaining", return_value=0.10):
         result = _drive(wf, _begin())
     assert seat_provider.call.call_count == 0  # panel skipped, not run
     assert result.reason == "finish_session" and result.iterations == 1
@@ -200,9 +200,9 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     'No blocking findings.' (the CLI verdict was fixed for the same reason).
     Uses the shared panel_is_inconclusive/inconclusive_note owner; the gate
     still lets the finish through (a panel never deadlocks a run)."""
-    import agent6.workflows._review as review_mod
-    from agent6.workflows._panel import PanelResult, ReviewVerdict
-    from agent6.workflows.loop import LoopState
+    import agent6.harness._review as review_mod
+    from agent6.harness._panel import PanelResult, ReviewVerdict
+    from agent6.harness.loop import LoopState
 
     abstain = ReviewVerdict(seat="s", model="m", verdict="pass", error="output hit the cap")
     res = PanelResult(

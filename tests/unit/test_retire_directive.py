@@ -15,17 +15,17 @@ from pathlib import Path
 from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS, parse_retire
 from agent6.graph.curator import GraphCurator
 from agent6.graph.models import AddSubtaskIntent, NodeActor, TaskNodeDraft
+from agent6.harness.loop import Harness
 from agent6.sessions.ipc import drain_requests, queue_request
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.directives import act_on_directive
 from agent6.viewmodel.format import short_task_id
-from agent6.workflows.loop import Workflow
 from tests.unit.test_task_queue_drain import (
     _workflow,  # pyright: ignore[reportPrivateUsage]
 )
 
 
-def _graph(tmp_path: Path) -> tuple[GraphCurator, Path, str, list[str], Workflow]:
+def _graph(tmp_path: Path) -> tuple[GraphCurator, Path, str, list[str], Harness]:
     layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     curator = GraphCurator(layout)
     root = curator.add_subtask(

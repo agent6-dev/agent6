@@ -12,19 +12,19 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.config import Config
+from agent6.harness._chain import RunChain
+from agent6.harness._conversation import AssistantTurn
+from agent6.harness._guards import MemoryState
+from agent6.harness._session_state import End
+from agent6.harness.loop import Harness, LoopState, TurnState
 from agent6.memory import memory_dir, read_use, record_use, use_path
 from agent6.tools.results import EditResult, PatchResult, ReadFileResult
-from agent6.workflows._chain import RunChain
-from agent6.workflows._conversation import AssistantTurn
-from agent6.workflows._guards import MemoryState
-from agent6.workflows._session_state import End
-from agent6.workflows.loop import LoopState, TurnState, Workflow
 
 
-def _wf(state_dir: Path | None, **kw: Any) -> Workflow:
+def _wf(state_dir: Path | None, **kw: Any) -> Harness:
     events = MagicMock()
     events.path = Path("/x/sessions/runs/run-a/logs.jsonl")
-    return Workflow(
+    return Harness(
         chain=RunChain(Path("/tmp")),
         config=Config.model_validate({}),
         provider=MagicMock(),
@@ -44,7 +44,7 @@ def _turn() -> TurnState:
     return TurnState(iteration=1, resp=MagicMock(), assistant=AssistantTurn((), ()))
 
 
-def _read(wf: Workflow, state: LoopState, path: str) -> None:
+def _read(wf: Harness, state: LoopState, path: str) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state,
         _turn(),
@@ -54,7 +54,7 @@ def _read(wf: Workflow, state: LoopState, path: str) -> None:
     )
 
 
-def _edit(wf: Workflow, state: LoopState, path: str, *, created: bool = False) -> None:
+def _edit(wf: Harness, state: LoopState, path: str, *, created: bool = False) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state,
         _turn(),
@@ -66,7 +66,7 @@ def _edit(wf: Workflow, state: LoopState, path: str, *, created: bool = False) -
     )
 
 
-def _patch(wf: Workflow, state: LoopState, text: str) -> None:
+def _patch(wf: Harness, state: LoopState, text: str) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, _turn(), "apply_patch", PatchResult(path="x", bytes_written=1), {"patch": text}
     )
@@ -228,8 +228,8 @@ def test_a_leg_that_touched_nothing_writes_no_record(tmp_path: Path) -> None:
 def test_a_resumed_leg_starts_its_own_count_with_the_nudge_flags_carried() -> None:
     """The nudge flags are run-lifetime (the snapshot); the touched facts are
     leg-local: a resumed leg records only what it touches itself."""
-    from agent6.workflows._loop_state import restore_completion_state
-    from agent6.workflows._session_state import SessionSnapshot
+    from agent6.harness._loop_state import restore_completion_state
+    from agent6.harness._session_state import SessionSnapshot
 
     snap = SessionSnapshot(
         system="s",
@@ -281,7 +281,7 @@ def test_a_record_that_cannot_be_written_logs_and_lets_the_end_stand(tmp_path: P
     logs: list[str] = []
     events = MagicMock()
     events.path = Path("/x/sessions/runs/run-a/logs.jsonl")
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(Path("/tmp")),
         config=Config.model_validate({}),
         provider=MagicMock(),

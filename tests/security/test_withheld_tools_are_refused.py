@@ -21,13 +21,13 @@ from typing import Literal
 import pytest
 
 from agent6.config import Config
+from agent6.harness._toolset import tool_definitions
 from agent6.sessions.ipc import set_session_deny
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.errors import ToolDenied, ToolError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.operator_prompts import ApprovalAnswer, ApprovalRequest, OperatorPrompts
 from agent6.tools.schema import ALL_TOOLS
-from agent6.workflows._toolset import tool_definitions
 from tests.unit.test_mcp_client import _fake_server_argv  # pyright: ignore[reportPrivateUsage]
 
 Mode = Literal["run", "plan", "ask", "machine", "agent"]

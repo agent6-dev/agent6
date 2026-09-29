@@ -94,7 +94,7 @@ def test_openai_2xx_envelope_permanent_status_is_not_retried() -> None:
     402-retried-every-turn regression `ProviderCaller` documents. The upstream
     code now becomes the status, so NON_RETRYABLE classifies it permanent, and
     the hint (HTTP 402) survives."""
-    from agent6.workflows._provider_call import NON_RETRYABLE_HTTP_STATUSES
+    from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
 
     budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
     provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
@@ -114,7 +114,7 @@ def test_openai_2xx_envelope_permanent_status_is_not_retried() -> None:
 
 def test_openai_2xx_envelope_transient_status_stays_retryable() -> None:
     # A 429/5xx envelope keeps a retryable classification (not in the set).
-    from agent6.workflows._provider_call import NON_RETRYABLE_HTTP_STATUSES
+    from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
 
     budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
     provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
@@ -136,8 +136,8 @@ def test_envelope_status_classifies_string_codes() -> None:
     """String error codes/types (OpenAI `code`, Anthropic `type`) that are
     permanent map to their terminal HTTP status so a budgeted run fails fast;
     transient statuses remain retryable while retaining the provider's fact."""
+    from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
     from agent6.providers._transport import envelope_status
-    from agent6.workflows._provider_call import NON_RETRYABLE_HTTP_STATUSES
 
     permanent = [
         ({"code": "insufficient_quota"}, 402),
@@ -216,7 +216,7 @@ def test_openai_2xx_error_envelope_is_the_upstreams_failure() -> None:
     side-call -- with no retry. The streaming paths already surface the
     envelope; the non-streaming path must match: upstream code/message, and a
     502/429 stays retryable (not in NON_RETRYABLE_HTTP_STATUSES)."""
-    from agent6.workflows._provider_call import NON_RETRYABLE_HTTP_STATUSES
+    from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
 
     budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
     provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)

@@ -27,7 +27,7 @@ from typing import Any
 
 from agent6.providers import result_text
 
-# Matches ELISION_PREFIX in workflows/_compaction.py, duplicated so the
+# Matches ELISION_PREFIX in harness/_compaction.py, duplicated so the
 # read-model needs no runtime import of the engine; a test pins the equality
 # and the placeholder bytes themselves are pinned in the compaction tests.
 ELISION_MARKER_PREFIX = "<elided by context compaction"

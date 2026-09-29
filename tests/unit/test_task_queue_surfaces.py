@@ -14,10 +14,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from agent6.graph.models import TaskNode
+from agent6.harness._advice import open_subtasks, with_open_tasks
 from agent6.viewmodel.log_line import format_log_line
 from agent6.viewmodel.state import task_tree_views
 from agent6.viewmodel.transcript import fold_transcript
-from agent6.workflows._advice import open_subtasks, with_open_tasks
 
 _NOW = datetime(2026, 9, 16, tzinfo=UTC)
 

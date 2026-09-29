@@ -493,10 +493,10 @@ def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporte
     """
     if effective_run_commands(cfg.sandbox.run_commands, session_dir) != "no":
         return cfg
-    if cfg.workflow.verify_command:
+    if cfg.harness.verify_command:
         reporter.note(
             "commands are withheld, and the verify gate is a command"
-            f" ({gate_text(cfg.workflow.verify_command)}): running gateless"
+            f" ({gate_text(cfg.harness.verify_command)}): running gateless"
             " (per-step commits, no green gate)."
         )
     return cfg.with_verify_command(())
@@ -512,7 +512,7 @@ def infer_verify_if_unset(
     budget: BudgetTracker,
     reporter: Reporter = STDIO_REPORTER,
 ) -> Config:
-    """When `workflow.verify_command` is unset for a run/plan, infer one and
+    """When `harness.verify_command` is unset for a run/plan, infer one and
     inject it IN-MEMORY (never persisted: runs do not mutate config).
 
     Layered cheapest-first (AGENTS.md -> repo signals -> a reviewer-role LLM
@@ -524,9 +524,9 @@ def infer_verify_if_unset(
     `drop_gate_if_unrunnable` runs AFTER this and has the last word: a leg
     that cannot run commands ends gateless, whatever was inferred.
     """
-    if mode not in ("run", "plan") or cfg.workflow.verify_command:
+    if mode not in ("run", "plan") or cfg.harness.verify_command:
         return cfg
-    if not cfg.workflow.verify_infer:
+    if not cfg.harness.verify_infer:
         # Pinned gateless: the operator said no gate, so no tier runs and the
         # mid-run adoption stays off too (the loop reads the same knob).
         events.emit("loop.verify_inferred", command=[], source="disabled")
@@ -566,13 +566,13 @@ def infer_verify_if_unset(
                 "no verify_command set and none could be inferred; running"
                 " gateless\n         (per-step commits, no green gate). If the run"
                 " creates a recognizable project, a verify\n         command is"
-                " adopted mid-run; pin one with workflow.verify_command."
+                " adopted mid-run; pin one with harness.verify_command."
             )
         return cfg
     events.emit("loop.verify_inferred", command=list(inferred.argv), source=inferred.source)
     reporter.note(
         f"verify_command not set; inferred from {inferred.source}:"
         f" {' '.join(inferred.argv)}\n         (this run only; pin it with"
-        " workflow.verify_command in your per-repo config)"
+        " harness.verify_command in your per-repo config)"
     )
     return cfg.with_verify_command(inferred.argv)

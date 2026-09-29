@@ -11,8 +11,8 @@ operator picks a winner and runs `agent6 sessions merge <id>`.
 
 The origin repo is never mutated (no branch cut, no run dir, no commits) until
 `import_run` lands a lane's branch. Clones + lane state are torn down after
-import. The heavy git plumbing lives in `workflows.subrun`; the ranking in
-`app.compare` over `workflows.judge`; this module orchestrates them over a
+import. The heavy git plumbing lives in `harness.subrun`; the ranking in
+`app.compare` over `harness.judge`; this module orchestrates them over a
 `LaneRuntime`, the process-spawn + run-dir bridge the front-end injects so this
 pipeline never imports `agent6.ui`.
 """
@@ -68,6 +68,17 @@ from agent6.git_ops import (
     run_branch_for,
 )
 from agent6.git_ops import status as git_status
+from agent6.harness.judge import CandidateBrief
+from agent6.harness.subrun import (
+    GroupLaneSpawner,
+    LaneResult,
+    LaneSpawner,
+    LaneSpec,
+    LaneTask,
+    SubrunError,
+    clone_workspace,
+    import_run,
+)
 from agent6.memory import merge_decisions, merge_memory, merge_use, seed_store
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, mkdir_for_real_user, repo_id, state_dir
@@ -94,17 +105,6 @@ from agent6.types import ModelRoute, session_bucket
 from agent6.viewmodel import produced_result, summarize_session_dir
 from agent6.viewmodel.format import status_label
 from agent6.viewmodel.listing import HUB_BUCKETS
-from agent6.workflows.judge import CandidateBrief
-from agent6.workflows.subrun import (
-    GroupLaneSpawner,
-    LaneResult,
-    LaneSpawner,
-    LaneSpec,
-    LaneTask,
-    SubrunError,
-    clone_workspace,
-    import_run,
-)
 
 
 class ParallelError(Exception):
@@ -593,7 +593,7 @@ def build_lane_spawner(
             )
         # Resolve and validate the per-lane routes before any clone: a refusal
         # raises, and the loop's group-failure feedback delivers the message to
-        # the coordinator (keeping workflows free of a models dependency); no
+        # the coordinator (keeping harness free of a models dependency); no
         # cache = warn + proceed.
         try:
             routes = _lane_routes(cfg, [lane.model for lane in lanes])

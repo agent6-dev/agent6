@@ -42,7 +42,7 @@ run_commands = "ask"
 """
 
 _REPO = """\
-[workflow]
+[harness]
 verify_command = ["pytest", "-q"]
 
 [sandbox]
@@ -71,7 +71,7 @@ def test_layering_merges_global_and_repo(repo: Path) -> None:
     assert cfg.models.worker is not None
     assert cfg.models.worker.model == "claude-sonnet-4-5"
     # From repo:
-    assert cfg.workflow.verify_command == ("pytest", "-q")
+    assert cfg.harness.verify_command == ("pytest", "-q")
     # Repo overrides global on the same field:
     assert cfg.sandbox.run_commands == "yes"
 
@@ -93,7 +93,7 @@ def test_an_unknown_key_points_at_config_fix(repo: Path) -> None:
 def test_source_map_attribution(repo: Path) -> None:
     eff = load_effective(repo)
     assert eff.sources["models.worker.model"] == "global"
-    assert eff.sources["workflow.verify_command"] == "repo"
+    assert eff.sources["harness.verify_command"] == "repo"
     assert eff.sources["sandbox.run_commands"] == "repo"  # repo wins
     # Untouched secure default:
     assert eff.sources["git.run_repo_hooks"] == "default"
@@ -113,7 +113,7 @@ def test_render_show_json(repo: Path) -> None:
     import json
 
     data = json.loads(render_show(eff, as_json=True))
-    assert data["workflow.verify_command"]["source"] == "repo"
+    assert data["harness.verify_command"]["source"] == "repo"
 
 
 # --- the UI-agnostic config view-model (shared by config show / TUI / web) ---
@@ -304,15 +304,15 @@ def test_written_value_error_catches_an_invalid_container_element(tmp_path: Path
 
 
 def test_a_scalar_written_to_a_list_leaf_names_both_ways_to_write_one(tmp_path: Path) -> None:
-    """`config set workflow.verify_command "python -m pytest"` answered with
+    """`config set harness.verify_command "python -m pytest"` answered with
     pydantic's "Input should be a valid tuple", which names neither the array
     form nor `config add`."""
     from agent6.config.write import written_value_error
 
-    err = written_value_error("workflow.verify_command", "python -m pytest", repo_root=tmp_path)
+    err = written_value_error("harness.verify_command", "python -m pytest", repo_root=tmp_path)
     assert err is not None
     assert "expected a list" in err
-    assert "config add workflow.verify_command" in err
+    assert "config add harness.verify_command" in err
 
 
 def test_setting_a_section_keeps_its_other_leaves_and_comments(
@@ -474,7 +474,7 @@ def test_overlay_is_highest_layer(repo: Path) -> None:
     assert eff.config.review.trigger == "periodic"
     assert eff.sources["review.trigger"] == "machine"
     # Lower layers still read through where the overlay is silent.
-    assert eff.config.workflow.verify_command == ("pytest", "-q")
+    assert eff.config.harness.verify_command == ("pytest", "-q")
 
 
 def test_empty_overlay_matches_load_effective(repo: Path) -> None:
@@ -565,7 +565,7 @@ def test_materialize_roundtrips(repo: Path, tmp_path: Path) -> None:
     out.write_text(text, encoding="utf-8")
     # The materialized file must be a complete, valid config on its own.
     reloaded = load_config(out)
-    assert reloaded.workflow.verify_command == ("pytest", "-q")
+    assert reloaded.harness.verify_command == ("pytest", "-q")
     assert reloaded.sandbox.run_commands == "yes"
     assert reloaded.providers["anthropic"].api_format == "anthropic"
 
@@ -686,11 +686,11 @@ def test_materialize_escapes_control_chars_in_values(repo: Path, tmp_path: Path)
     from agent6.config import Config, load_config
     from agent6.config.layer import materialize
 
-    cfg = Config.model_validate({"workflow": {"verify_command": ["echo", "a\x01b\nc"]}})
+    cfg = Config.model_validate({"harness": {"verify_command": ["echo", "a\x01b\nc"]}})
     out = tmp_path / "materialized.toml"
     out.write_text(materialize(cfg), encoding="utf-8")
     reloaded = load_config(out)
-    assert list(reloaded.workflow.verify_command) == ["echo", "a\x01b\nc"]
+    assert list(reloaded.harness.verify_command) == ["echo", "a\x01b\nc"]
 
 
 def test_concurrent_rollback_does_not_erase_a_valid_write(
@@ -860,7 +860,7 @@ def test_no_lock_rollback_keeps_the_write_and_says_so(
 
 
 def test_an_optional_section_is_written_leaf_by_leaf(repo: Path) -> None:
-    """`models.worker` and `workflow.metric` are `[table]`s whose type is
+    """`models.worker` and `harness.metric` are `[table]`s whose type is
     optional; read as leaves they were written inline under a `[models]` header
     of their own, which declares the same key the existing `[models.worker]`
     block does -- refused as "invalid TOML", blaming a file that parses."""

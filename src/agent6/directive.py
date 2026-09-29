@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The steer-directive grammars (`/parallel`, `/pin`, `/compact`, `/btw`,
 `/task`, `/standing`, `/retire`), shared by the coordinator steer parser
-(`workflows/loop.py`) and the web + TUI composers.
+(`harness/loop.py`) and the web + TUI composers.
 
     /parallel [spec] <task text> [/parallel [spec] <task text>]...
     /pin <instruction that must survive context compaction>
@@ -24,7 +24,7 @@
   too.
 - Newlines are ordinary task characters, so a task can span multiple lines.
 
-One parser per directive, imported by `workflows` (the coordinator) and
+One parser per directive, imported by `harness` (the coordinator) and
 `ui` (the composers, and the CLI `--parallel` value via
 :func:`parse_spec`). Pure stdlib string parsing, no agent6 imports: a leaf
 both layers sit above."""

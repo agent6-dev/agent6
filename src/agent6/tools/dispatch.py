@@ -307,7 +307,7 @@ def _roster(shells: BackgroundShells) -> tuple[str, ...]:
 
 
 class ToolDispatcher:
-    """Runtime tool dispatcher. Constructed once per workflow run."""
+    """Runtime tool dispatcher. Constructed once per harness run."""
 
     def __init__(
         self,
@@ -389,7 +389,7 @@ class ToolDispatcher:
         # Optional MCP (Model Context Protocol) manager. When
         # set, `dispatch` routes any tool name starting with the MCP
         # prefix to the manager. Discovered tool names are also added
-        # to `available_tool_names()` so the workflow exposes them.
+        # to `available_tool_names()` so the harness exposes them.
         self._mcp_manager = mcp_manager
         # Per-repo state dir: sessions roster reads plus the memory grant
         # above. None (tests, review/one-off dispatchers) leaves both off.
@@ -443,10 +443,10 @@ class ToolDispatcher:
             StopBackgroundInput.TOOL_NAME: self._stop_background,
             # run_metric: LLM-exposed via LOOP_EXTRA_TOOLS so the
             # loop can call it after a successful verify when
-            # [workflow.metric] is configured.
+            # [harness.metric] is configured.
             RunMetricInput.TOOL_NAME: self._run_metric,
             # finish_session signals the loop should exit. Handler
-            # just echoes the summary; the workflow checks for this tool name
+            # just echoes the summary; the harness checks for this tool name
             # in resp.tool_uses and terminates after dispatching it.
             FinishSessionInput.TOOL_NAME: finish_session,
             FinishPlanningInput.TOOL_NAME: finish_planning,
@@ -472,7 +472,7 @@ class ToolDispatcher:
         self._skills_cache: ResolvedSkills | None = None
 
     def set_run_root_node_id(self, node_id: str | None) -> None:
-        """Workflow sets this after seeding the run's root task.
+        """Harness sets this after seeding the run's root task.
         `add_task` with parent_id=None falls back to this as the parent."""
         self._run_root_node_id = node_id
 
@@ -489,10 +489,10 @@ class ToolDispatcher:
         return effective_run_commands(configured, self._session_dir)
 
     def metric_configured(self) -> bool:
-        """Whether `[workflow.metric]` gives `run_metric_command` anything to
+        """Whether `[harness.metric]` gives `run_metric_command` anything to
         run. The loop exposes that tool as an extra, outside
         `available_tool_names`, so it asks this instead."""
-        return self._config.workflow.metric is not None
+        return self._config.harness.metric is not None
 
     def tool_is_withheld(self, name: str) -> bool:
         """Whether the model is denied *name*, extras included. The tool list is
@@ -518,7 +518,7 @@ class ToolDispatcher:
         names = [cls.TOOL_NAME for cls in ALL_TOOLS if self._tool_refusal(cls.TOOL_NAME) is None]
         # No verify_command (and none inferred) -> a gateless run: hide
         # run_verify_command rather than offer a tool that would error.
-        if not self._config.workflow.verify_command:
+        if not self._config.harness.verify_command:
             names = [n for n in names if n != RunVerifyInput.TOOL_NAME]
         names.extend(d.qualified_name for d in self.mcp_descriptors())
         return tuple(sorted(names))
@@ -722,7 +722,7 @@ class ToolDispatcher:
 
     def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
         """Adopt a verify command mid-run: the loop's gateless adoption after
-        the tree materializes (see Workflow._maybe_adopt_verify). Same trust
+        the tree materializes (see Harness._maybe_adopt_verify). Same trust
         as preflight's in-memory injection: derived from the repo's own
         AGENTS.md fence or project signals, operator-origin, never persisted.
 
@@ -816,12 +816,12 @@ class ToolDispatcher:
         *extra_argv* appends to the configured command (the harness's scoped
         fallback passes the selected test paths); the result's `command`
         carries the argv that actually ran."""
-        argv = self._config.workflow.verify_command + extra_argv
+        argv = self._config.harness.verify_command + extra_argv
         self._approve_command("run_verify_command", argv)
         # per-call timeout from config. Defaults to the jail's
         # general 600s but bench configs crank it down so infinite-loop
         # edits fail fast instead of burning ~10 min of wall per attempt.
-        timeout_s = self._config.workflow.verify_timeout_s
+        timeout_s = self._config.harness.verify_timeout_s
         self._emit("verify.start", cmd=list(argv), timeout_s=timeout_s)
         res = self._run_argv_in_jail(argv, label="verify_command", timeout_s=timeout_s)
         # Name the gate in the result: it is the operator's command, or one
@@ -907,7 +907,7 @@ class ToolDispatcher:
         """
         session = self._run_session()
         shells = self._shells
-        checkin = self._config.workflow.command_checkin_s
+        checkin = self._config.harness.command_checkin_s
         if (
             session is None
             or shells is None
@@ -1009,7 +1009,7 @@ class ToolDispatcher:
         shells = self._background()
         if not args.id:
             return BackgroundResult(shells=_roster(shells))
-        wait_s = self._config.workflow.command_checkin_s if args.wait_s is None else args.wait_s
+        wait_s = self._config.harness.command_checkin_s if args.wait_s is None else args.wait_s
         try:
             _view, output = shells.read(
                 args.id,
@@ -1066,7 +1066,7 @@ class ToolDispatcher:
         return bool(resolved.enabled or resolved.always)
 
     def _run_metric(self, raw: dict[str, Any]) -> MetricResult:
-        """Run `cfg.workflow.metric.command` in the jail.
+        """Run `cfg.harness.metric.command` in the jail.
 
         Return shape mirrors `_run_argv_in_jail` (returncode / stdout /
         stderr / duration_s) plus `score`: the `pattern` regex's first
@@ -1075,14 +1075,14 @@ class ToolDispatcher:
         configured.
         """
         RunMetricInput.model_validate(raw)
-        metric_cfg = self._config.workflow.metric
+        metric_cfg = self._config.harness.metric
         if metric_cfg is None:
-            raise ToolError("no [workflow.metric] configured")
+            raise ToolError("no [harness.metric] configured")
         argv = metric_cfg.command
         self._approve_command("run_metric_command", argv)
         self._emit("metric.start", cmd=list(argv))
         outcome, timeout_s = self._run_argv_raw(
-            argv, label="metric_command", timeout_s=self._config.workflow.verify_timeout_s
+            argv, label="metric_command", timeout_s=self._config.harness.verify_timeout_s
         )
         if outcome.exec_failed:
             raise OperatorCommandUnexecutable(

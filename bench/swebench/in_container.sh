@@ -152,7 +152,7 @@ extra_read_paths = ["/opt/miniconda3", "/opt/conda"]
 dirty_tree = "ask"
 branch_per_run = false
 
-[workflow]
+[harness]
 $VERIFY_TOML
 ${AGENT6_SB_VERIFY_WHEN:+verify_when = \"$AGENT6_SB_VERIFY_WHEN\"}
 # Half a 1200s run died in ONE 600s full-suite verify; fast signal wins.

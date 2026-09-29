@@ -131,7 +131,7 @@ def _type_label(ann: Any) -> str:
     if origin is dict:
         return "table"
     if isinstance(ann, type) and issubclass(ann, BaseModel):
-        # An unset optional nested section (models.reviewer, workflow.metric):
+        # An unset optional nested section (models.reviewer, harness.metric):
         # groups with the other structured leaves, not the model's own class name.
         return "table"
     if isinstance(ann, type):

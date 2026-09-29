@@ -17,7 +17,7 @@ from agent6.ui.cli._console_view import ConsoleView
 
 
 def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], None]:
-    """The workflow's text logger.
+    """The harness's text logger.
 
     When the live ConsoleView is rendering the product stream (foreground run),
     notices go through it (`console_view.notice`) so each clears the spinner

@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""File-based IPC between the workflow process and a front-end.
+"""File-based IPC between the harness process and a front-end.
 
-The workflow process and a front-end (the Textual TUI or the `agent6 web`
+The harness process and a front-end (the Textual TUI or the `agent6 web`
 server) run as separate OS processes; the front-end tails JSONL and
 answers prompts by writing files. When an approval is needed:
 
-1. The workflow process writes an `approval.prompt` event to logs.jsonl
+1. The harness process writes an `approval.prompt` event to logs.jsonl
    and then polls `<session_dir>/approvals/<id>.answer` for a result.
 2. If a `<session_dir>/frontends/` claim points at a live process, the
-   workflow process waits for the front-end to write the answer file.
+   harness process waits for the front-end to write the answer file.
    Otherwise it falls back to a plain stdin prompt.
 3. The front-end (when present) presents a modal / control, then writes
    `<session_dir>/approvals/<id>.answer` containing the operator's literal
@@ -18,7 +18,7 @@ answers prompts by writing files. When an approval is needed:
 
 We use the filesystem rather than a socket because:
 - the JSONL log is already the cross-process contract,
-- the front-end may crash without taking the workflow down with it,
+- the front-end may crash without taking the harness down with it,
 - every front-end mirrors the same files (the TUI, the web server, the ACP agent).
 
 An answer is written whole to a staging file of its own, fsync'd and hard
@@ -775,7 +775,7 @@ def read_answer(
     live_dir: Path | None = None,
     dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
 ) -> str | None:
-    """Called by the workflow. Returns the operator's literal choice ("yes",
+    """Called by the harness. Returns the operator's literal choice ("yes",
     "no", "session", "session-deny"), or None on timeout, once a stop is
     requested, or once the front-end has stayed dead past `dead_grace_s` (a
     shorter drop keeps waiting).
@@ -797,7 +797,7 @@ def read_answer(
 
 # --- agent->user question bridge (the `ask_user` tool) -----------------------
 # Same shape as approvals, but the answer is a free string (a selected option or
-# typed text). The workflow emits `question.prompt`, polls for the answer file;
+# typed text). The harness emits `question.prompt`, polls for the answer file;
 # the TUI shows a modal and writes it. Falls back to stdin (then a default) when
 # no TUI is live, so headless runs never hang.
 
@@ -831,7 +831,7 @@ def read_question_answers(
     live_dir: Path | None = None,
     dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
 ) -> tuple[str, ...] | None:
-    """Called by the workflow. Returns the answers tuple (aligned to the prompt's
+    """Called by the harness. Returns the answers tuple (aligned to the prompt's
     questions), or None on timeout, once a stop is requested, or once the
     front-end has stayed dead past `dead_grace_s`. `live_dir` overrides the
     liveness-gate dir (see
@@ -1022,7 +1022,7 @@ def clear_compact_request(session_dir: Path) -> None:
 
 
 def read_steer_answer(session_dir: Path, *, live_dir: Path | None = None) -> str | None:
-    """Called by the workflow when a front-end is live. Returns the answer
+    """Called by the harness when a front-end is live. Returns the answer
     string (consuming the file), or None after ten minutes, once a stop is
     requested, or once the front-end has stayed dead past
     `FRONTEND_DEAD_GRACE_S`. `live_dir`

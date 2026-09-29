@@ -81,9 +81,9 @@ class Contract:
 CONTRACTS: tuple[Contract, ...] = (
     Contract(
         title="Conversation",
-        module="agent6.workflows._conversation",
+        module="agent6.harness._conversation",
         primary=("Conversation",),
-        writers=("workflows/loop.py",),
+        writers=("harness/loop.py",),
         pins=("tests/unit/data/golden_loop_wire.json",),
     ),
     Contract(
@@ -95,9 +95,9 @@ CONTRACTS: tuple[Contract, ...] = (
     ),
     Contract(
         title="SessionSnapshot",
-        module="agent6.workflows._session_state",
+        module="agent6.harness._session_state",
         primary=("SessionSnapshot",),
-        writers=("workflows/loop.py",),
+        writers=("harness/loop.py",),
         pins=("tests/unit/data/golden_loop_wire.json",),
     ),
     Contract(
@@ -169,7 +169,7 @@ COLS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 "budget", "init", "verify_infer", "git_ops")),
     ("state & data", ("config", "models", "runs", "memory", "skills", "graph")),
     ("exec & tools", ("sandbox", "tools", "providers")),
-    ("engine", ("workflows", "machine")),
+    ("engine", ("harness", "machine")),
     ("read-model", ("viewmodel",)),
     ("composition", ("app",)),
     ("presentation", ("ui",)),
@@ -460,8 +460,8 @@ def _derive(contract: Contract) -> Card:
 
 
 def _group(paths: tuple[str, ...]) -> str:
-    """`workflows/loop.py`, `app/merge.py`, `app/run.py` -> `app/{merge, run},
-    workflows/loop`: one package per part, braces only where they group."""
+    """`harness/loop.py`, `app/merge.py`, `app/run.py` -> `app/{merge, run},
+    harness/loop`: one package per part, braces only where they group."""
     by_dir: dict[str, list[str]] = defaultdict(list)
     for p in paths:
         parent = str(Path(p).parent)

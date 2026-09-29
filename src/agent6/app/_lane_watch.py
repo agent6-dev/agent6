@@ -6,7 +6,7 @@ The fan-out's await loop and the single-lane await and drain behind
 `run_lane_to_completion`, the live symlink a lane gets under the origin's
 runs dir while it runs, and the pending-prompt probe the status line uses.
 The types a lane is described with (`LaneSpec`, `LaneResult`) are
-`workflows/subrun`'s; `app/parallel.py`, the orchestrator this serves, drives
+`harness/subrun`'s; `app/parallel.py`, the orchestrator this serves, drives
 the lanes.
 """
 
@@ -20,12 +20,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 from agent6.app.reporter import STDIO_REPORTER, Reporter
+from agent6.harness.subrun import LaneResult, LaneSpec
 from agent6.paths import mkdir_for_real_user
 from agent6.sessions.ipc import request_stop, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, bucket_dir
 from agent6.viewmodel import summarize_session_dir
 from agent6.viewmodel.format import format_usd
-from agent6.workflows.subrun import LaneResult, LaneSpec
 
 # How often the await loop polls lane liveness.
 POLL_INTERVAL_S = 2.0

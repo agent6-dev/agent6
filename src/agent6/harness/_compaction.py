@@ -27,18 +27,18 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
-from agent6.providers import CLAUDE_CODE_PERSIST_BYTES, Provider
-from agent6.providers.types import ToolDefinition
-from agent6.tools.schema import AskUserInput
-from agent6.workflows._conversation import (
+from agent6.harness._conversation import (
     AssistantTurn,
     Conversation,
     ToolResultItem,
     Turn,
     UserTurn,
 )
-from agent6.workflows._panel import REVIEW_NOTICE_BYTES
-from agent6.workflows._verify_gate import VERIFY_TAIL_CHARS
+from agent6.harness._panel import REVIEW_NOTICE_BYTES
+from agent6.harness._verify_gate import VERIFY_TAIL_CHARS
+from agent6.providers import CLAUDE_CODE_PERSIST_BYTES, Provider
+from agent6.providers.types import ToolDefinition
+from agent6.tools.schema import AskUserInput
 
 # Stable prefix shared by every placeholder variant: idempotency checks and
 # tests key on it.

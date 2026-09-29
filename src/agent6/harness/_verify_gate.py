@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The harness-run verify gate (`[workflow].verify_when`): when the harness
+"""The harness-run verify gate (`[harness].verify_when`): when the harness
 runs the gate itself, and what the model is told about a run it did not
 start.
 
@@ -19,13 +19,10 @@ from typing import TYPE_CHECKING, Literal
 
 from agent6.git_ops import GitError, tree_diff_paths
 from agent6.git_ops import status as git_status
-from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
-from agent6.tools.results import ExecResult
-from agent6.verify_infer import infer_verify_command, read_agents_md
-from agent6.workflows._chain import RunChain
-from agent6.workflows._conversation import Notice
-from agent6.workflows._nearest_tests import diff_changed_paths, is_bare_pytest, nearest_test_paths
-from agent6.workflows._nudges import (
+from agent6.harness._chain import RunChain
+from agent6.harness._conversation import Notice
+from agent6.harness._nearest_tests import diff_changed_paths, is_bare_pytest, nearest_test_paths
+from agent6.harness._nudges import (
     BASELINE_RED_NOTICE,
     VERIFY_BROKEN_NUDGE,
     VERIFY_UNADOPTED_NOTICE,
@@ -35,11 +32,14 @@ from agent6.workflows._nudges import (
     verify_did_not_run,
     verify_failure_signature,
 )
-from agent6.workflows._session_state import Verification
-from agent6.workflows._verify_verdict import VerifyVerdict
+from agent6.harness._session_state import Verification
+from agent6.harness._verify_verdict import VerifyVerdict
+from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
+from agent6.tools.results import ExecResult
+from agent6.verify_infer import infer_verify_command, read_agents_md
 
 if TYPE_CHECKING:
-    from agent6.workflows._loop_state import LoopState, TurnState
+    from agent6.harness._loop_state import LoopState, TurnState
 
 VerifyWhen = Literal["finish", "step", "never"]
 HarnessVerifyWhy = Literal["finish", "step"]
@@ -132,7 +132,7 @@ EXIT_TIMEOUT = 124
 @dataclass(slots=True)
 class VerifyGate:
     """The run's verify gate: the configured command, when the harness runs
-    it (`[workflow].verify_when`), its retries and timeout, and the run facts
+    it (`[harness].verify_when`), its retries and timeout, and the run facts
     it reads. The command in force is `command(verdict)`: the configured one,
     else the one a gateless run adopted at a commit (`verdict.adopted`), else
     `()` for gateless. One owner for whether a gate is present, whether the
@@ -317,7 +317,7 @@ class VerifyGate:
         return bool(self.command(verdict)) and self.may_run(denied=verdict.denied)
 
     def harness_verify(self, state: LoopState, turn: TurnState, *, ending: bool = False) -> None:
-        """Run the gate the harness owes this turn (`[workflow].verify_when`):
+        """Run the gate the harness owes this turn (`[harness].verify_when`):
         after an editing turn under `step`, and when the run is ending (a
         finish_session, or `ending`: an end the harness declares) over a tree
         no green run covers under `step` or `finish`. The model's own

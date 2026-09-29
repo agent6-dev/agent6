@@ -153,7 +153,7 @@ class AgentRequest(BaseModel):
     temperature: float | None = None
     max_usd: float | None = None
     max_tokens_fallback: int | None = None
-    # Workflow mode for the nested loop: "agent" (default) for a machine
+    # Harness mode for the nested loop: "agent" (default) for a machine
     # `agent` state, a read-only structured-output judge; "run" for an agent
     # state that opted into coding work (the `machine create` authoring agent
     # is one). machine_agent maps anything else to "run".
@@ -297,7 +297,7 @@ class LiveWorld:
     change.
 
     `agent` states are delegated to an injected `agent_runner` so the engine
-    module need not import the provider / workflow stack; the CLI wires the real
+    module need not import the provider / harness stack; the CLI wires the real
     runner (loading the effective config, building a provider and the loop). When no
     runner is configured, reaching an `agent` state fails loudly.
     """

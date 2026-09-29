@@ -14,10 +14,10 @@ from pathlib import Path
 
 from agent6.graph.curator import GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
+from agent6.harness._dag_focus import current_task_id
+from agent6.harness._guards import FocusGuard
 from agent6.sessions.layout import SessionLayout
 from agent6.tools._dag_tools import update_task
-from agent6.workflows._dag_focus import current_task_id
-from agent6.workflows._guards import FocusGuard
 
 
 def _graph(tmp_path: Path) -> tuple[GraphCurator, str, list[str]]:

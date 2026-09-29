@@ -277,7 +277,7 @@ class ReadBackgroundInput(_ToolInput):
     id: str = ""
     tail_lines: int = Field(default=200, ge=1, le=2000)
     # None = the operator's configured check-in; 0 = look without waiting. The
-    # interval has ONE owner ([workflow].command_checkin_s), so the default is
+    # interval has ONE owner ([harness].command_checkin_s), so the default is
     # resolved by the dispatcher rather than duplicated here.
     wait_s: float | None = Field(default=None, ge=0.0)
 
@@ -520,7 +520,7 @@ ALL_TOOLS: tuple[type[_ToolInput], ...] = (
     StopBackgroundInput,
 )
 
-# Extra tools exposed only to the single-loop workflow. Kept separate from
+# Extra tools exposed only to the single-loop harness. Kept separate from
 # ALL_TOOLS so the read-only ToolDispatcher surface used by tests and external
 # callers does not advertise loop-only control tools.
 LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (

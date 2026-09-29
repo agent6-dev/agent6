@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The metric readings of a run with a `[workflow.metric]`: the sample a
+"""The metric readings of a run with a `[harness.metric]`: the sample a
 `run_metric_command` result becomes (the model's own call, or the harness's
 after a green verify), the feedback block the model reads, and the plateau
 summary. The pure rules live in `_metric`; this object does the call and
@@ -13,9 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from agent6.config import MetricConfig
-from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
-from agent6.tools.results import MetricResult
-from agent6.workflows._metric import (
+from agent6.harness._metric import (
     MetricSample,
     coerce_metric_score,
     extract_metric_targets,
@@ -24,14 +22,16 @@ from agent6.workflows._metric import (
     metric_goal,
     metric_plateau_summary,
 )
+from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
+from agent6.tools.results import MetricResult
 
 if TYPE_CHECKING:
-    from agent6.workflows._loop_state import LoopState
+    from agent6.harness._loop_state import LoopState
 
 
 @dataclass(frozen=True, slots=True)
 class MetricSampler:
-    """`settings` is `[workflow.metric]`; `enabled` is run mode (plan and ask
+    """`settings` is `[harness.metric]`; `enabled` is run mode (plan and ask
     never sample); `dispatcher` runs the harness's own `run_metric_command`."""
 
     settings: MetricConfig | None

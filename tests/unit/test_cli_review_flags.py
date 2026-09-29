@@ -316,9 +316,9 @@ def _explore_review(
     from types import SimpleNamespace
 
     from agent6.config import Config
+    from agent6.harness._panel import PanelResult
+    from agent6.harness._review import ReviewSeat
     from agent6.ui.cli import review_cmds
-    from agent6.workflows._panel import PanelResult
-    from agent6.workflows._review import ReviewSeat
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

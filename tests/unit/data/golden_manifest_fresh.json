@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "agent6_version": "0.1.0",
   "session_id": "r-fresh01",
   "mode": "run",
@@ -20,7 +20,7 @@
     },
     "driver_from_flag": false
   },
-  "workflow": {
+  "harness": {
     "review_trigger": "off",
     "revise_prompt": "on",
     "preset": "strict",

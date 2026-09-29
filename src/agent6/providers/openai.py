@@ -10,7 +10,7 @@ for a smaller audit surface.
 
 agent6's internal lingua franca is Anthropic content-blocks (text + tool_use +
 tool_result inline, the most expressive shape); translation both ways lives in
-`_openai_messages` / `_openai_parse`, so workflow code sees one shape across
+`_openai_messages` / `_openai_parse`, so harness code sees one shape across
 providers. Deliberately NOT translated: `cache_control` markers are stripped
 (OpenAI caches server-side), and Anthropic's `extended_thinking` budget_tokens
 has no equivalent -- OpenAI reasoning is the `reasoning_effort` knob, wired
@@ -287,7 +287,7 @@ class OpenAIProvider:
     ) -> ProviderResponse:
         # extended_thinking is Anthropic-shaped (`budget_tokens`).
         # OpenAI reasoning models use `reasoning_effort` instead; no
-        # 1:1 mapping. Silently no-op so cross-provider workflow code
+        # 1:1 mapping. Silently no-op so cross-provider harness code
         # doesn't have to branch.
         del extended_thinking
         if self.budget is not None:

@@ -47,7 +47,7 @@
 
 ### Architecture
 
-- **Layering** is `ui -> app -> workflows -> tools -> sandbox`; workflows import only below themselves, and the engine (`app` and below) imports only below itself.
+- **Layering** is `ui -> app -> harness -> tools -> sandbox`; harness imports only below itself, and the engine (`app` and below) imports only below itself.
   `app/` holds the run/resume/fork/machine-agent lifecycles and the `--parallel` fan-out, taking the callables the front-end injects (`SessionFrontend`, `LaneRuntime`) and printing only through the injected `Reporter`.
   `ui/` is the presentation layer and composition root: the four front-ends (`ui/cli`, `ui/tui`, `ui/web`, `ui/acp`) plus `ui/spawn.py`, `ui/notify.py`, and `ui/mcp_server.py`, over the shared headless read-model fold (`viewmodel`).
   `ui/cli` is the entry point that wires a run.

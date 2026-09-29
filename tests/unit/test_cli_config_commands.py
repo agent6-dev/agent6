@@ -477,7 +477,7 @@ def test_set_refuses_a_machine_file_holding_a_protected_table(
     text = '[config.sandbox]\nnetwork = "host"\n'
     machine.write_text(text, encoding="utf-8")
 
-    argv = ["config", "set", "workflow.max_iterations", "3", "--machine-file", str(machine)]
+    argv = ["config", "set", "harness.max_iterations", "3", "--machine-file", str(machine)]
     assert _refuse(argv) == 2
     assert "operator-only" in capsys.readouterr().err
     assert machine.read_text(encoding="utf-8") == text
@@ -518,7 +518,7 @@ _CRASH_MARKERS = ("unexpected", "full traceback", "report this")
 @pytest.mark.parametrize(
     "argv",
     [
-        ["config", "set", "workflow.max_iterations", "7"],
+        ["config", "set", "harness.max_iterations", "7"],
         ["config", "unset", "review.period"],
         ["config", "add", "sandbox.allow_urls", "https://example.com"],
         ["config", "remove", "sandbox.allow_urls", "https://example.com"],
@@ -558,7 +558,7 @@ def test_a_write_command_bug_still_crash_reports(
 
     monkeypatch.setattr(write_mod, "upsert_toml_leaf", _boom)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
-    assert _refuse(["config", "set", "workflow.max_iterations", "7"]) == 1
+    assert _refuse(["config", "set", "harness.max_iterations", "7"]) == 1
     err = capsys.readouterr().err
     assert "unexpected RuntimeError" in err
     tb_line = next(line for line in err.splitlines() if "full traceback:" in line)
@@ -571,7 +571,7 @@ def test_set_of_an_unserializable_cli_value_refuses(
     """parse_cli_value reads `2024-01-01` as a TOML date, which the writer cannot
     serialize. That refusal used to live in a per-command except arm; it must
     survive the arm's deletion as a refusal, never become a crash report."""
-    assert _refuse(["config", "set", "workflow.max_iterations", "2024-01-01"]) == 2
+    assert _refuse(["config", "set", "harness.max_iterations", "2024-01-01"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("ERROR: ")
     assert not any(marker in err for marker in _CRASH_MARKERS)

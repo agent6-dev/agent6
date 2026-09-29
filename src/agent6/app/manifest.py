@@ -22,13 +22,13 @@ from agent6.sessions.manifest import (
     MANIFEST_NAME,
     MANIFEST_VERSION,
     FanoutStamp,
+    HarnessStamp,
     ManifestError,
     ModelBrief,
     ModelsBrief,
     ParallelLineage,
     PolicyStamp,
     SessionManifest,
-    WorkflowStamp,
     read_manifest,
 )
 from agent6.task_text import operator_task_text
@@ -122,8 +122,8 @@ def write_session_manifest(
     # as such (a parked run keeps this stamp, no leg having run) until
     # `pin_gate` stamps the pair the leg resolved.
     verify_command, verify_origin = gate or (
-        cfg.workflow.verify_command,
-        "configured" if cfg.workflow.verify_command else "",
+        cfg.harness.verify_command,
+        "configured" if cfg.harness.verify_command else "",
     )
     m = SessionManifest(
         agent6_version=__version__,
@@ -149,12 +149,12 @@ def write_session_manifest(
             reviewer=_model_brief(cfg.models.resolve("reviewer")),
             driver_from_flag=driver_from_flag,
         ),
-        workflow=WorkflowStamp(
+        harness=HarnessStamp(
             review_trigger=cfg.review.trigger,
             revise_prompt=cfg.prompt.revise_prompt,
             # The preset the run actually used (--preset flag or top-level
             # `preset`), with how it was chosen: only a flag-selected one is
-            # replayed as an override on resume (see WorkflowStamp.replay_preset).
+            # replayed as an override on resume (see HarnessStamp.replay_preset).
             preset=effective_preset,
             preset_from_flag=preset_from_flag,
             verify_command=tuple(verify_command),
@@ -233,9 +233,9 @@ def stamp_leg(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None
     `agent6 exec` joins the recorded policy's jail and `sessions show` reads
     the recorded model, so both must describe the leg that is live."""
     m = read_manifest(session_dir)
-    workflow = m.workflow
-    if not workflow.preset_from_flag:
-        workflow = workflow.model_copy(update={"preset": cfg.preset})
+    harness = m.harness
+    if not harness.preset_from_flag:
+        harness = harness.model_copy(update={"preset": cfg.preset})
     write_manifest(
         session_dir / MANIFEST_NAME,
         m.model_copy(
@@ -245,7 +245,7 @@ def stamp_leg(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None
                     reviewer=_model_brief(cfg.models.resolve("reviewer")),
                     driver_from_flag=m.models.driver_from_flag,
                 ),
-                "workflow": workflow,
+                "harness": harness,
                 "policy": _policy_stamp(cfg, isolation),
             }
         ),
@@ -255,10 +255,10 @@ def stamp_leg(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None
 def stamp_preset(session_dir: Path, name: str) -> None:
     """Record the preset a resumed leg was started under with `--preset`: from
     here the run runs under it, and a later resume without a flag replays it
-    (`WorkflowStamp.replay_preset`)."""
+    (`HarnessStamp.replay_preset`)."""
     m = read_manifest(session_dir)
-    workflow = m.workflow.model_copy(update={"preset": name, "preset_from_flag": True})
-    write_manifest(session_dir / MANIFEST_NAME, m.model_copy(update={"workflow": workflow}))
+    harness = m.harness.model_copy(update={"preset": name, "preset_from_flag": True})
+    write_manifest(session_dir / MANIFEST_NAME, m.model_copy(update={"harness": harness}))
 
 
 def stamp_model(session_dir: Path, route: ModelRoute) -> None:
@@ -326,10 +326,8 @@ def stamp_verify_gate(session_dir: Path, argv: Sequence[str], origin: str) -> No
     cannot move the gate under it, on this leg or a resumed one.
     """
     m = read_manifest(session_dir)
-    workflow = m.workflow.model_copy(
-        update={"verify_command": tuple(argv), "verify_origin": origin}
-    )
-    write_manifest(session_dir / MANIFEST_NAME, m.model_copy(update={"workflow": workflow}))
+    harness = m.harness.model_copy(update={"verify_command": tuple(argv), "verify_origin": origin})
+    write_manifest(session_dir / MANIFEST_NAME, m.model_copy(update={"harness": harness}))
 
 
 def pin_gate(

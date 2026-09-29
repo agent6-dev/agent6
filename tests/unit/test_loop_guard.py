@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""degenerate-loop guard in Workflow._drive_loop.
+"""degenerate-loop guard in Harness._drive_loop.
 
 When the worker calls the same (tool_name, args) back-to-back >=3 times,
-the workflow appends a one-shot "loop-guard" text block to the next user
+the harness appends a one-shot "loop-guard" text block to the next user
 turn telling the worker the result has not changed and to pivot. Behaviour
 observed live with Kimi K2.6 on the perf takehome: 15 consecutive
 `read_file(path="problem.py")` calls returning the same 19826 bytes,
@@ -19,11 +19,11 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
+from agent6.harness._chain import RunChain
+from agent6.harness._provider_call import CallSettings
+from agent6.harness.loop import Harness
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
-from agent6.workflows._chain import RunChain
-from agent6.workflows._provider_call import CallSettings
-from agent6.workflows.loop import Workflow
 
 
 def _silent(_msg: str) -> None:
@@ -67,8 +67,8 @@ def _init_repo(repo: Path) -> None:
     _sp.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
 
 
-def _build_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock) -> Workflow:
-    return Workflow(
+def _build_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock) -> Harness:
+    return Harness(
         chain=RunChain(
             repo,
             ref="refs/agent6/guard",
@@ -79,7 +79,7 @@ def _build_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock) -> Workflo
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -267,12 +267,12 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: Path) -> No
     dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(repo),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -310,12 +310,12 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: Path) -> None:
     dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(repo),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -339,17 +339,17 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: Path) -> None:
 
 
 def _knobs(cfg: Any, **knobs: Any) -> Any:
-    """The mocked config with `[workflow]` guard knobs set."""
+    """The mocked config with `[harness]` guard knobs set."""
     for key, value in knobs.items():
-        setattr(cfg.workflow, key, value)
+        setattr(cfg.harness, key, value)
     return cfg
 
 
-def _gated_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock, **kw: Any) -> Workflow:
-    """A GATED workflow (verify_command set), where the per-turn auto-commit
+def _gated_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock, **kw: Any) -> Harness:
+    """A GATED harness (verify_command set), where the per-turn auto-commit
     fires only on a green verify -- so a run_command-authored edit stays in the
     worktree and only a final checkpoint can get it into git history."""
-    return Workflow(
+    return Harness(
         chain=RunChain(
             repo,
             ref="refs/agent6/guard",
@@ -360,7 +360,7 @@ def _gated_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock, **kw: Any)
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -602,7 +602,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
     no_commands.dispatch.return_value = RawResult({"content": "x"})
     no_commands.command_policy.return_value = "no"
     wf3 = _build_wf(repo, denied, no_commands)
-    wf3.config.workflow.verify_command = ("true",)
+    wf3.config.harness.verify_command = ("true",)
     wf3.config = _knobs(wf3.config, stagnation_notice_after_s=1e-9)
     wf3.run("investigate")
     assert "nothing edited yet" in _stagnation_blocks(_final_messages(denied))[0]
@@ -614,7 +614,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
         itertools.repeat(_resp_text("ok")),
     )
     wf2 = _build_wf(repo, gated, dispatcher)
-    wf2.config.workflow.verify_command = ("true",)
+    wf2.config.harness.verify_command = ("true",)
     wf2.config = _knobs(wf2.config, stagnation_notice_after_s=1e-9)
     wf2.run("investigate")
     assert "no edit and no verify" in _stagnation_blocks(_final_messages(gated))[0]
@@ -681,7 +681,7 @@ def test_stagnation_notice_zero_disables(tmp_path: Path) -> None:
 
 
 def test_unlimited_iterations_is_minus_one(tmp_path: Path) -> None:
-    """[workflow].max_iterations = -1 runs unbounded. The pre-knob loop fed -1
+    """[harness].max_iterations = -1 runs unbounded. The pre-knob loop fed -1
     into range(start, 0), which is EMPTY: the run exited max_iterations at
     zero iterations without a single provider call."""
     repo = tmp_path / "repo"
@@ -717,7 +717,7 @@ def test_resume_leg_rearms_the_iteration_allowance(tmp_path: Path) -> None:
     wf = _build_wf(repo, provider, dispatcher)
     wf.max_iterations = 5
     wf.resume_state_path = tmp_path / "loop_state.json"
-    from agent6.workflows.loop import LoopState
+    from agent6.harness.loop import LoopState
 
     (
         LoopState(original_task="t", tool_calls=0).system,
@@ -735,9 +735,9 @@ def test_the_notice_fires_at_three_and_re_arms_after_a_quiet_iteration() -> None
     """The advisor itself: the third identical call draws the notice with
     the tool's name and the streak, the next iteration is quiet, the one
     after that hears it again; a shorter streak draws nothing."""
-    from agent6.workflows._conversation import AssistantTurn
-    from agent6.workflows._guards import loop_guard_notice
-    from agent6.workflows._loop_state import LoopState, TurnState
+    from agent6.harness._conversation import AssistantTurn
+    from agent6.harness._guards import loop_guard_notice
+    from agent6.harness._loop_state import LoopState, TurnState
     from tests.unit.turn_context import turn_context
 
     state = LoopState(original_task="t", tool_calls=0)
@@ -765,9 +765,9 @@ def test_the_kill_is_a_hard_stop_at_the_threshold_and_off_at_zero() -> None:
     """The advisor itself: at the threshold the stop names the tool and the
     streak, in its summary, its event fields and its log line; below it, or
     with the knob at 0, nothing."""
-    from agent6.workflows._conversation import AssistantTurn
-    from agent6.workflows._guards import loop_guard_kill
-    from agent6.workflows._loop_state import LoopState, TurnState
+    from agent6.harness._conversation import AssistantTurn
+    from agent6.harness._guards import loop_guard_kill
+    from agent6.harness._loop_state import LoopState, TurnState
     from tests.unit.turn_context import turn_context
 
     state = LoopState(original_task="t", tool_calls=0)

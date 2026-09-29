@@ -16,13 +16,13 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from agent6.harness._chain import RunChain
+from agent6.harness._conversation import Conversation, Notice
+from agent6.harness._provider_call import CallSettings
+from agent6.harness._review import CritiqueResult, Reviewer, ReviewSettings
+from agent6.harness.loop import Harness
 from agent6.providers import ProviderResponse
 from agent6.tools.results import ExecResult, RawResult
-from agent6.workflows._chain import RunChain
-from agent6.workflows._conversation import Conversation, Notice
-from agent6.workflows._provider_call import CallSettings
-from agent6.workflows._review import CritiqueResult, Reviewer, ReviewSettings
-from agent6.workflows.loop import Workflow
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
 # identity (`commit_identity`), empty as a real Config carries it unset.
@@ -46,7 +46,7 @@ def _wf(
     per_step: bool = True,
     base_sha: str = "",
     **kw: Any,
-) -> Workflow:
+) -> Harness:
     defaults: dict[str, Any] = {
         "chain": RunChain(
             root or Path("/tmp"),
@@ -59,7 +59,7 @@ def _wf(
         "config": MagicMock(
             git=_GIT_STUB,
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -76,7 +76,7 @@ def _wf(
         "review": ReviewSettings(seats=[MagicMock()]),
     }
     defaults.update(kw)
-    return Workflow(**defaults)
+    return Harness(**defaults)
 
 
 def _resp(text: str) -> ProviderResponse:
@@ -344,7 +344,7 @@ def test_periodic_panel_fires_every_n_iterations() -> None:
     # verify-settled detector stays dormant and all 5 iterations run.
     with (
         patch.object(Reviewer, "critique", panel),
-        patch("agent6.workflows._chain.chain_commit", return_value="sha"),
+        patch("agent6.harness._chain.chain_commit", return_value="sha"),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
@@ -465,8 +465,8 @@ def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
 
 
 def _settled_state() -> Any:
-    from agent6.workflows._nudges import VERIFY_SETTLED_STOP_AFTER
-    from agent6.workflows.loop import LoopState
+    from agent6.harness._nudges import VERIFY_SETTLED_STOP_AFTER
+    from agent6.harness.loop import LoopState
 
     state = LoopState(original_task="t", tool_calls=0)
     state.settled.gateless_ever_edited = True
@@ -475,15 +475,15 @@ def _settled_state() -> Any:
 
 
 def _idle_turn() -> Any:
-    from agent6.workflows.loop import TurnState
+    from agent6.harness.loop import TurnState
 
     return TurnState(iteration=9, resp=MagicMock(), assistant=MagicMock())
 
 
-def _settle(wf: Workflow, state: Any, turn: Any) -> Any:
+def _settle(wf: Harness, state: Any, turn: Any) -> Any:
     """The settled advisor's answer, applied through the loop (a stop runs
     the end gates at once)."""
-    from agent6.workflows._guards import verify_settled
+    from agent6.harness._guards import verify_settled
 
     ctx = wf._turn_context(state, iteration=turn.iteration, leg_start=1)  # pyright: ignore[reportPrivateUsage]
     return wf._take(state, turn, ctx, verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
@@ -496,7 +496,7 @@ def test_a_settled_end_is_reviewed_like_a_finish() -> None:
     approval lets the end stand."""
     wf = _wf(review=ReviewSettings(trigger="before_finish", seats=[MagicMock()]))
     wf.mode = "run"
-    wf.config.workflow.metric = None
+    wf.config.harness.metric = None
     panel = _PanelScript(
         [
             CritiqueResult(text="* a test is missing", satisfied=False),
@@ -529,7 +529,7 @@ def test_a_periodic_finding_on_a_settling_turn_is_delivered_once() -> None:
     out twice on a turn that reviewed and settled."""
     wf = _wf(review=ReviewSettings(trigger="periodic", period=1, seats=[MagicMock()]))
     wf.mode = "run"
-    wf.config.workflow.metric = None
+    wf.config.harness.metric = None
     panel = _PanelScript([CritiqueResult(text="* one periodic finding", satisfied=True)])
     state = _settled_state()
     turn = _idle_turn()
@@ -566,7 +566,7 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     from agent6.config import Config
 
     cfg = Config.model_validate(
-        {"workflow": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
+        {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
     )
     dispatcher = MagicMock()
     dispatcher.command_policy.return_value = "yes"
@@ -605,10 +605,10 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     with the output, in the conversation since there are no tool results),
     then the before-finish panel judges it."""
     from agent6.config import Config
-    from agent6.workflows.loop import LoopState, TurnState
+    from agent6.harness.loop import LoopState, TurnState
 
     cfg = Config.model_validate(
-        {"workflow": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
+        {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
     )
     dispatcher = MagicMock()
     dispatcher.command_policy.return_value = "yes"

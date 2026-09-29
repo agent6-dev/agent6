@@ -3,7 +3,7 @@
 """Structured compare judge over parallel-run candidates.
 
 One LLM call ranks N candidate lane runs -- same task, independent diffs --
-best first, with a rationale. Mirrors `workflows/_review.structured_review`'s
+best first, with a rationale. Mirrors `harness/_review.structured_review`'s
 request/parse shape (strict JSON, tolerant of fences/prose), but unlike a
 review seat's silent abstain, a compare needs one authoritative order: it
 retries once on a malformed reply (unparseable JSON, a provider error, or a
@@ -20,9 +20,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from agent6.budget import BudgetExceeded
+from agent6.harness._llm_json import extract_json
 from agent6.prompts.judge import JUDGE_SYSTEM_PROMPT
 from agent6.providers import Provider, ProviderError
-from agent6.workflows._llm_json import extract_json
 
 
 class JudgeError(Exception):

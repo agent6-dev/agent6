@@ -12,7 +12,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from agent6.workflows._context import AGENTS_MD_WARN_CHARS, agents_md_notices, agents_md_text
+from agent6.harness._context import AGENTS_MD_WARN_CHARS, agents_md_notices, agents_md_text
 
 
 def _git_repo(root: Path) -> None:

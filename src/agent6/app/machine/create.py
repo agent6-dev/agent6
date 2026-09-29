@@ -264,7 +264,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # headless create denies. agent6 runs the validators itself: they need
     # agent6, which no jailed command can reach.
     overlay["sandbox"] = {**overlay.get("sandbox", {}), "run_commands": "no", "fetch_hosts": []}
-    overlay["workflow"] = {**overlay.get("workflow", {}), "metric": None}
+    overlay["harness"] = {**overlay.get("harness", {}), "metric": None}
     # Resolved on the host, where the global git config is visible: the confined
     # leg cannot read ~/.gitconfig, and its per-iteration commits are how a
     # draft survives a failure.

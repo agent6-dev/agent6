@@ -2,11 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """Fresh and resumed legs run the SAME leg body.
 
-The two lifecycles once each constructed the Workflow and drifted (resume
+The two lifecycles once each constructed the Harness and drifted (resume
 silently dropped state_dir, the interactive REPL hook, and the prompt-revision
 wiring). Now neither constructs one: both hand `LegInputs` to `_leg.run_leg`,
-the one place the Workflow is built, so an input added to one lifecycle cannot
-be missing from the other. Pinned structurally: a `Workflow(...)` call in
+the one place the Harness is built, so an input added to one lifecycle cannot
+be missing from the other. Pinned structurally: a `Harness(...)` call in
 either lifecycle module is the drift returning.
 """
 
@@ -32,9 +32,9 @@ def _calls(module: ModuleType, name: str) -> int:
 
 
 def test_neither_lifecycle_builds_its_own_workflow() -> None:
-    assert _calls(agent6.app.run, "Workflow") == 0
-    assert _calls(agent6.app.resume, "Workflow") == 0
-    assert _calls(agent6.app._leg, "Workflow") == 1  # pyright: ignore[reportPrivateUsage]
+    assert _calls(agent6.app.run, "Harness") == 0
+    assert _calls(agent6.app.resume, "Harness") == 0
+    assert _calls(agent6.app._leg, "Harness") == 1  # pyright: ignore[reportPrivateUsage]
 
 
 def test_both_lifecycles_run_the_one_leg_body() -> None:

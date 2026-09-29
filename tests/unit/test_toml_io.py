@@ -28,19 +28,19 @@ def test_leaf_scan_skips_the_interior_of_a_multiline_value(tmp_path: Path) -> No
     span once matched -- was already fixed.)"""
     p = tmp_path / "c.toml"
     p.write_text(
-        '[workflow]\nverify_command = """\nx = 5\n"""\nx = 30\n',
+        '[harness]\nverify_command = """\nx = 5\n"""\nx = 30\n',
         encoding="utf-8",
     )
 
-    upsert_toml_leaf(p, "workflow.x", 60)
+    upsert_toml_leaf(p, "harness.x", 60)
     parsed = tomllib.loads(p.read_text(encoding="utf-8"))
-    assert parsed["workflow"]["x"] == 60, "the real leaf must be the one rewritten"
-    assert "x = 5" in parsed["workflow"]["verify_command"], "the string was corrupted"
+    assert parsed["harness"]["x"] == 60, "the real leaf must be the one rewritten"
+    assert "x = 5" in parsed["harness"]["verify_command"], "the string was corrupted"
 
-    assert remove_toml_leaf(p, "workflow.x") is True
+    assert remove_toml_leaf(p, "harness.x") is True
     parsed = tomllib.loads(p.read_text(encoding="utf-8"))
-    assert "x" not in parsed["workflow"]
-    assert "x = 5" in parsed["workflow"]["verify_command"], "the string was corrupted"
+    assert "x" not in parsed["harness"]
+    assert "x = 5" in parsed["harness"]["verify_command"], "the string was corrupted"
 
 
 def test_table_header_lookup_tolerates_a_trailing_comment(tmp_path: Path) -> None:
@@ -430,19 +430,19 @@ def test_upsert_end_scan_skips_a_multiline_value_with_a_bracket_line(tmp_path: P
     sibling and reporting success."""
     p = tmp_path / "c.toml"
     p.write_text(
-        '[workflow.metric]\npattern = """\n[0-9]+ ms\n"""\ngoal = "minimize"\n',
+        '[harness.metric]\npattern = """\n[0-9]+ ms\n"""\ngoal = "minimize"\n',
         encoding="utf-8",
     )
-    upsert_toml_leaf(p, "workflow.metric.goal", "maximize")
+    upsert_toml_leaf(p, "harness.metric.goal", "maximize")
     parsed = tomllib.loads(p.read_text(encoding="utf-8"))
-    assert parsed["workflow"]["metric"]["goal"] == "maximize", "the real leaf must be rewritten"
-    assert parsed["workflow"]["metric"]["pattern"] == "[0-9]+ ms\n", "the string was corrupted"
+    assert parsed["harness"]["metric"]["goal"] == "maximize", "the real leaf must be rewritten"
+    assert parsed["harness"]["metric"]["pattern"] == "[0-9]+ ms\n", "the string was corrupted"
 
     # The unset twin: it must FIND (and remove) the real leaf, not report absent.
-    assert remove_toml_leaf(p, "workflow.metric.goal") is True
+    assert remove_toml_leaf(p, "harness.metric.goal") is True
     parsed = tomllib.loads(p.read_text(encoding="utf-8"))
-    assert "goal" not in parsed["workflow"]["metric"]
-    assert parsed["workflow"]["metric"]["pattern"] == "[0-9]+ ms\n"
+    assert "goal" not in parsed["harness"]["metric"]
+    assert parsed["harness"]["metric"]["pattern"] == "[0-9]+ ms\n"
 
 
 def test_drop_top_region_key_skips_a_multiline_value_bracket_line(tmp_path: Path) -> None:

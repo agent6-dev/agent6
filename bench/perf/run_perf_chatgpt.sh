@@ -78,7 +78,7 @@ The configured `verify_command` is
 `pytest tests/submission_tests.py::CorrectnessTests` - only correctness
 is checked, not speed tiers.
 
-This run has `[workflow.metric]` configured: after every passing step,
+This run has `[harness.metric]` configured: after every passing step,
 the harness runs the cycles command, parses `CYCLES:` and feeds the
 trajectory back to you as a `[harness metric]` block on the next step.
 Keep verified edits only when that block shows a new best; if it is
@@ -134,7 +134,7 @@ protect_git = true
 dirty_tree = "ask"
 branch_per_run = true
 
-[workflow]
+[harness]
 verify_command = [
   "/usr/bin/pytest",
   "-q",
@@ -145,7 +145,7 @@ verify_timeout_s = 30.0
 [prompt]
 revise_prompt = "${AGENT6_PERF_REVISE_PROMPT:-off}"
 
-[workflow.metric]
+[harness.metric]
 command = ["/usr/bin/python3", "tests/submission_tests.py"]
 pattern = 'CYCLES:\s*(\d+)'
 goal = "minimize"

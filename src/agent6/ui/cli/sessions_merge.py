@@ -37,6 +37,7 @@ from agent6.git_ops import (
     verify_git_identity,
 )
 from agent6.git_ops import status as git_status
+from agent6.harness.subrun import SubrunError
 from agent6.paths import state_dir
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, SessionLayout, session_layout
@@ -54,7 +55,6 @@ from agent6.ui.cli.sessions_cmds import (
     _resolve_session_manifest,
 )
 from agent6.viewmodel import tail_events, worker_models
-from agent6.workflows.subrun import SubrunError
 
 
 @dataclass(frozen=True, slots=True)

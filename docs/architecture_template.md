@@ -6,7 +6,7 @@ Three diagrams are built from the current source at site-build time (`docs/gen_d
 
 ## Layering
 
-The engine stack is `ui -> app -> workflows -> tools -> sandbox`.
+The engine stack is `ui -> app -> harness -> tools -> sandbox`.
 An edge is "imports from"; a dashed edge would mark an import climbing the stack.
 [tach](https://docs.gauge.sh/) records the map ([tach.toml](https://github.com/agent6-dev/agent6/blob/master/tach.toml)); `loop` and `review` never import each other, and the engine never imports the UI.
 
@@ -21,14 +21,14 @@ Any layer may also use the shared substrate: <!-- generated: substrate-names -->
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` fan-out
     - never imports `agent6.ui`
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
-- **workflows** ([src/agent6/workflows/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/workflows)): `loop` (the agent loop behind `agent6 run` and `resume`) and `review` (the read-only pass behind `agent6 review`).
+- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`) and `review` (the read-only pass behind `agent6 review`).
   The single-turn `code_review` call shape lives here too; the agent loop makes its own provider calls inline.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
-  `workflows/_toolset.py` picks the subset each mode exposes, and appends the MCP tools in the modes that edit.
+  `harness/_toolset.py` picks the subset each mode exposes, and appends the MCP tools in the modes that edit.
 - **sandbox** ([src/agent6/sandbox/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sandbox)): the `agent6-jail` launcher and its policy.
   The jail bounds commands, one launcher per run; the agent process itself is never confined.
 
-**Where the CLI resolves things.** `ui/cli` parses arguments, optionally spawns the TUI, and picks a workflow.
+**Where the CLI resolves things.** `ui/cli` parses arguments, optionally spawns the TUI, and picks a mode.
 
 - `cli_main` is the one error boundary: `OperatorError` (with `ConfigError`, `MemoryStoreError`) prints an `ERROR:` refusal at exit 2; anything else crash-reports with a saved traceback at exit 1
 - config resolves through [config/layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/layer.py) (defaults, global, per-repo, `--config FILE`, then a machine agent's per-state overlay; a selected preset sits just above the layer that named it); paths and sudo/root through [paths.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/paths.py); keys through [secrets.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/secrets.py)
@@ -50,16 +50,16 @@ The stash finalize is last because it runs from `finally`, on every exit path, r
 
 A run keeps one message history with one provider and one model.
 
-- the model drives by calling tools; the workflow dispatches, snapshots, tracks budget
+- the model drives by calling tools; the harness dispatches, snapshots, tracks budget
 - multi-step work is the next tool call in the same conversation: no planner-to-worker handoff, no separate reviewer by default
 - the in-loop review panel is opt-in (`[review]`), layered on the same history
 - under `api_format = "claude_code"` the provider keeps one `claude` process per leg and replays that history as text whenever a call is not a continuation of its last round ([Config](config.md))
 
-`workflows/loop.py` holds the turn: the request, the model call, the tool dispatch, what the tools did, and the ends.
+`harness/loop.py` holds the turn: the request, the model call, the tool dispatch, what the tools did, and the ends.
 What the turn leans on sits beside it, one module each: `_chain` (the run's commit chain), `_steer` (the operator's callables, the steer verbs, the pin cap, and what a steer's text means), `_advice` (what an advisor answers with, a nudge, a stop or a refusal, and the turn's context it reads), `_guards` (the advisors, one function per heuristic with its counters: no progress, settled, stagnation, the memory flip, the loop guard, the tool-error ladder, reachability, focus, the budget nudges), `_metric` (a metric run's plateau, ceiling and early-finish rules) and `_metric_sampler` (the readings a run takes), `_quiet_turns` (the nudges an empty or prose-only turn draws), `_finish_gates` (what a finish call declares, what it must satisfy and what an end is called), `_standing` (the standing goal's re-entry), `_operator_tasks` (the operator's writes to the task graph: the root, the goal, `/task` and `/retire`), `_parallel_dispatch` (the `/parallel` fan-out), `_checkpoint` (the per-step commit and the final one), `_compactor` (the compaction driver over `_compaction`'s rules), `_memory_touch` (what a tool call did to the memory store), and the settings each sibling owns (`_review`, `_compaction`, `_provider_call`, `_prompt_revision`).
 The loop runs the advisors and the gates in a declared order and applies each answer; a heuristic is one function and one test file.
 
-Drawn by hand against `workflows/loop.py`, the turn as a state machine:
+Drawn by hand against `harness/loop.py`, the turn as a state machine:
 
 ```mermaid
 stateDiagram-v2
@@ -73,7 +73,7 @@ stateDiagram-v2
     dispatch --> [*]: finish_session
 ```
 
-The same turn with its decisions, also by hand, against `workflows/loop.py`'s drive tier:
+The same turn with its decisions, also by hand, against `harness/loop.py`'s drive tier:
 
 ```mermaid
 flowchart TD
@@ -95,7 +95,7 @@ flowchart TD
 `agent6 resume` rehydrates from `loop_state.json` and `agent6 fork --at-turn N` from the matching checkpoint.
 With the per-call transcripts, an interrupted run replays deterministically up to the next model call.
 
-**The harness runs the gate** (`[workflow].verify_when`, default `finish`).
+**The harness runs the gate** (`[harness].verify_when`, default `finish`).
 When `finish_session` arrives over a tree no verify verdict covers (green or red, nothing edited since), the loop runs `verify_command` itself, through the same dispatcher path as the model's `run_verify_command`, approvals included.
 A denied approval withholds the gate for the rest of the run, and the run ends unverified.
 `step` also runs it after every editing turn; `never` leaves every run to the model.
@@ -125,7 +125,7 @@ A red finish certification returns to the model with the gate's output `verify_r
 - only the operator retires it: `/standing` with a new goal, or stopping the run
 - while one exists, the soft out-of-work endings (`finish_session`, the settled family, a quiet turn) convert into re-entry
 - faults, operator verbs, the iteration cap, and a spent budget still end the run
-- a re-entry round landing no executed tool call escalates the nudge; `[workflow].standing_patience` bounds the streak (`-1` default: never self-ends; landed work resets)
+- a re-entry round landing no executed tool call escalates the nudge; `[harness].standing_patience` bounds the streak (`-1` default: never self-ends; landed work resets)
 - an interactive run parks the same way on a quiet turn: the conversation waits on the steer bridge; any composer or the pause menu continues it in place
 
 **Context compaction has two tiers**, thresholds in `[context]`.
@@ -171,11 +171,11 @@ The table routes <!-- generated: tool-names -->.
 
 ## A review
 
-A single read-only pass ([workflows/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/code_review.py)) over a diff: the working tree, a branch against a base, or an arbitrary range.
+A single read-only pass ([harness/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/code_review.py)) over a diff: the working tree, a branch against a base, or an arbitrary range.
 It prints a markdown review, and makes no edits, no commits, and no `run_command`; `--reviewers N` runs the adversarial panel instead, which returns structured findings.
 Either output is also saved as `<stamp>-review.md` under `<state-dir>/reviews/`, beside the provider transcripts, so a later session reads a module's review there.
 
-`agent6 sessions review <id>` ([workflows/run_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/run_review.py)) reviews a finished session's record the same way: the journal folds into a digest (the task, the steers and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
+`agent6 sessions review <id>` ([harness/run_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/run_review.py)) reviews a finished session's record the same way: the journal folds into a digest (the task, the steers and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
 It writes nothing to the repo or the memory: the operator turns a candidate into `agent6 memory add` or an AGENTS.md line, or leaves it.
 
 ## Parallel runs
@@ -183,7 +183,7 @@ It writes nothing to the repo or the memory: the operator turns a candidate into
 The primitive is a task run as a subordinate isolated run whose branch joins back.
 Three consumers drive it: `run --parallel`, the web and TUI composers' `/parallel` new-work directive, and a live run's `/parallel` steer.
 
-All three share one grammar in [directive.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/directive.py), a pure-stdlib leaf both `workflows` and `ui` import.
+All three share one grammar in [directive.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/directive.py), a pure-stdlib leaf both `harness` and `ui` import.
 The form is `/parallel [spec] <task>`, repeatable; `spec` is an optional lane count or model list, and `parse_spec` maps it to one model per lane.
 A segment's first token counts as a spec when it contains a comma or a slash, since model ids are provider/model shaped.
 A bare name like `opus` stays task text, and a task whose first word is a path parses as a bogus model spec.
@@ -192,9 +192,9 @@ Before any clone, a spec's models are checked against what a lane can run.
 
 - a lane keeps the worker's provider unless the spec names another configured one; the model is checked against what the roles name on that provider plus its cached listing ([models/validate.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/models/validate.py))
 - unknown model: a miss against an existing cache re-checks that provider's live listing, and refuses with a did-you-mean only when the fresh listing confirms it; no cache, or a re-fetch that fails, proceeds with a warning (offline machines never block on a regenerable cache)
-- all three consumers validate through the one helper, keeping `workflows` free of a models dependency
+- all three consumers validate through the one helper, keeping `harness` free of a models dependency
 
-The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/subrun.py), with no LLM, no UI, and no process spawning:
+The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/subrun.py), with no LLM, no UI, and no process spawning:
 
 - `clone_workspace(origin, dest)`: a plain `git clone` of a disposable lane workspace.
 - `import_run(origin, lane_repo, branch, lane_session_dir, origin_state)`: fetches the lane's branch into the origin and moves its session dir under `<origin_state>/sessions/runs/`, refusing to overwrite an existing branch or session dir.
@@ -212,12 +212,12 @@ The detached spawn it drives (`ui.spawn`'s `spawn_and_locate`, the path the web 
 - every lane's manifest names the session that dispatched it (`parallel.coordinator`, stamped from the spawn env), so each listing nests lanes under their coordinator, folded into a count
 - each lane's live session dir symlinks into `<origin_state>/sessions/runs/` on locate: a fan-out is visible in every hub while it runs
 - on completion a lane imports and the symlink becomes the real directory; a failed-to-start, still-running, or refused lane keeps its clone and symlink (never the only copy lost)
-- imported candidates auto-compare into a ranked report with `sessions merge <id>` lines: a structured judge ([judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/judge.py)) where a reviewer model exists, else verify-then-cost
+- imported candidates auto-compare into a ranked report with `sessions merge <id>` lines: a structured judge ([judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py)) where a reviewer model exists, else verify-then-cost
 - the compare stamps each lane's manifest (`compare`, one writer): every view shows placement and why; listings star the winner
 - nothing merges automatically
 - `--max-usd` is per lane and caps the judge like one more lane; the `$X/lane x N + judge = $Y total` line prints before spawning
 
-**A `/parallel` steer dispatches a sibling group** through `OperatorBridge.lane_spawner`, on `Workflow.bridge` (the injection point keeping `workflows` from importing `ui`; `run.py`/`resume.py` wire the real spawner, run mode only).
+**A `/parallel` steer dispatches a sibling group** through `OperatorBridge.lane_spawner`, on `Harness.bridge` (the injection point keeping `harness` from importing `ui`; `run.py`/`resume.py` wire the real spawner, run mode only).
 
 - the loop blocks with no provider calls while lanes run, in this order:
     - expand each segment into its lanes
@@ -231,7 +231,7 @@ The detached spawn it drives (`ui.spawn`'s `spawn_and_locate`, the path the web 
 
 ## Enforcement layering
 
-- `git_ops.py` runs outside the jail, in the agent's own process, so the read-only bind of `.git` stops the worker without stopping the workflow's commits.
+- `git_ops.py` runs outside the jail, in the agent's own process, so the read-only bind of `.git` stops the worker without stopping the harness's commits.
 - `protect_git` is strict-only: strict read-only bind-remounts `.git` over the workspace mount
     - hardened has no mount namespace to carve: blanket read-write on the cwd, `.git` writable by jailed commands
     - carving it there would also deny new top-level entries (`target/`, `.pytest_cache/`)
@@ -343,7 +343,7 @@ One listing row shape (`viewmodel.summary_row`) serves `sessions list --json` an
 Two shared layers sit under them.
 
 - the read side, [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel): the `SessionState` and `MachineState` fold plus its wire form, exactly what `agent6 attach --json` and the web endpoints emit
-- the write side: [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) for detached spawns, and [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) for the approval, question, steer, stop-request and compact-request file contract the workflow polls
+- the write side: [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) for detached spawns, and [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) for the approval, question, steer, stop-request and compact-request file contract the harness polls
 
 A run started from a hub, or detached mid-run with `/detach`, keeps going with no terminal on it (`ui/spawn.py`); `agent6 attach <id>` opens it again, tailing the same journal every other surface folds.
 
@@ -408,17 +408,17 @@ A `run_command` approval publishes as `approval.prompt`.
 
 | Concern | File or directory |
 | --- | --- |
-| Config schema | [config/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/config) (`model.py` holds `Config` and the model roles; each section has its own module: `_sandbox.py`, `_workflow.py`, `_git.py`, `_surfaces.py`, `_providers.py`) |
+| Config schema | [config/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/config) (`model.py` holds `Config` and the model roles; each section has its own module: `_sandbox.py`, `_harness.py`, `_git.py`, `_surfaces.py`, `_providers.py`) |
 | Tool surface | [tools/schema.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/schema.py) |
 | Tool dispatch | [tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py) |
-| Agent loop | [workflows/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/loop.py) |
+| Agent loop | [harness/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/loop.py) |
 | Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (pure strings the loop, review, judge, and machine assemble; `revision.py` holds the loop's prompt-revision, summariser, gist and restart-notice prompts) |
-| Review pass | [workflows/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/code_review.py); `workflows/review.py` re-exports it with the panel, so `ui/cli` imports one module |
+| Review pass | [harness/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/code_review.py); `harness/review.py` re-exports it with the panel, so `ui/cli` imports one module |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |
 | Git policy | [git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/git_ops.py) |
-| Subordinate-run primitive | [workflows/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/subrun.py) |
+| Subordinate-run primitive | [harness/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/subrun.py) |
 | Run-dir single-writer lock | [sessions/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lock.py) |
-| Compare judge | [workflows/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/judge.py) |
+| Compare judge | [harness/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py) |
 | Fan-out orchestrator | [app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) (pipeline), [ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
 | Provider clients | [providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers) |
 | Task graph | [graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph) |

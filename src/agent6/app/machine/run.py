@@ -61,6 +61,7 @@ from agent6.git_ops import (
     paths_dirty,
     verify_git_identity,
 )
+from agent6.harness.subrun import SubrunError
 from agent6.machine import (
     AgentExecResult,
     AgentRequest,
@@ -88,7 +89,6 @@ from agent6.tools.policy import jail_policy, passthrough_env
 from agent6.types import CommandResult, IsolationLevel, JailPolicy, NetworkMode
 from agent6.viewmodel.format import format_usd
 from agent6.viewmodel.machine_state import machine_spend, wait_line
-from agent6.workflows.subrun import SubrunError
 
 
 def _fail(reporter: Reporter, path: Path, problems: list[str], label: str = "") -> int:

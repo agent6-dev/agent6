@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Workflow package: built-in deterministic state machines."""
+"""Harness package: built-in deterministic state machines."""
 
 from __future__ import annotations
 
@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.config import Config
+from agent6.harness._context import load_repo_summary
+from agent6.harness._dag_focus import initial_dag_hint
+from agent6.harness._prompt_blocks import build_system_prompt, initial_instructions
+from agent6.harness._toolset import tool_definitions
+from agent6.harness.review import CodeReviewError, code_review
 from agent6.memory import decisions_path, decisions_text, memory_dir
 from agent6.memory import index_text as memory_index_text
 from agent6.providers import ToolDefinition
@@ -16,11 +21,6 @@ from agent6.sandbox.detect import IsolationUnavailableError, detect, resolve_iso
 from agent6.skills import ResolvedSkills
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import IsolationLevel
-from agent6.workflows._context import load_repo_summary
-from agent6.workflows._dag_focus import initial_dag_hint
-from agent6.workflows._prompt_blocks import build_system_prompt, initial_instructions
-from agent6.workflows._toolset import tool_definitions
-from agent6.workflows.review import CodeReviewError, code_review
 
 __all__ = [
     "CodeReviewError",
@@ -101,7 +101,7 @@ def model_exchange_for(
     )
     tools = tuple(tool_definitions(dispatcher, mode=mode))
     header = initial_instructions(
-        mode, config.sandbox.run_commands, has_gate=bool(config.workflow.verify_command)
+        mode, config.sandbox.run_commands, has_gate=bool(config.harness.verify_command)
     )
     hint = initial_dag_hint("<root task id>", mode, config.prompt.decompose == "on")
     return ModelExchange(

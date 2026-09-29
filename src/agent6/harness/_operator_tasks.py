@@ -17,14 +17,14 @@ from pydantic import ValidationError
 from agent6.graph.curator import CuratorError, GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
 from agent6.graph.order import OPEN_STATUSES
-from agent6.sessions.ipc import OperatorRequest
-from agent6.task_text import task_headline
-from agent6.workflows._context import load_repo_summary
-from agent6.workflows._prompt_revision import (
+from agent6.harness._context import load_repo_summary
+from agent6.harness._prompt_revision import (
     PromptRevisionError,
     RevisionSettings,
     revise_prompt,
 )
+from agent6.sessions.ipc import OperatorRequest
+from agent6.task_text import task_headline
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +82,7 @@ class OperatorTasks:
         try:
             draft = TaskNodeDraft(
                 title=title,
-                rationale="single-loop run; root task seeded by Workflow",
+                rationale="single-loop run; root task seeded by Harness",
                 acceptance="",
                 relevant_paths=(),
                 created_by="user",

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Session end and resume: the SessionResult the workflow returns, the
+"""Session end and resume: the SessionResult the harness returns, the
 ResumeError it raises, and the provider-agnostic resume snapshot written before
 each LLM call (load here; the loop owns saving it)."""
 
@@ -139,7 +139,7 @@ class SessionResult:
 
 @dataclass(frozen=True, slots=True)
 class End:
-    """A decision to end the run, as `Workflow._finish` records it: the
+    """A decision to end the run, as `Harness._finish` records it: the
     checkpoint of a dirty worktree first (an operator's stop skips it, so
     whoever takes over keeps the choice to discard), the `session.end` event,
     then the result. `verdict` is what the event's `all_passed` carries:

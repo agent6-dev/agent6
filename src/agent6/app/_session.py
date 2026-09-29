@@ -3,7 +3,7 @@
 """One owner for the session assembly `run_task` and `resume_task` share: the
 isolation preflight and the provider/dispatcher/tools build. The lifecycles
 keep their own workspace steps (branch cut + manifest vs snapshot guards) and
-their Workflow wiring."""
+their Harness wiring."""
 
 from __future__ import annotations
 
@@ -39,6 +39,8 @@ from agent6.budget import BudgetTracker
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
+from agent6.harness._compaction import CLAUDE_CODE_RESULT_CAP_BYTES, TOOL_RESULT_CAP_BYTES
+from agent6.harness.review import ReviewSeat
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox.detect import Environment, IsolationUnavailableError, resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError, SessionNetwork
@@ -47,8 +49,6 @@ from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import IsolationLevel, ResumableMode
-from agent6.workflows._compaction import CLAUDE_CODE_RESULT_CAP_BYTES, TOOL_RESULT_CAP_BYTES
-from agent6.workflows.review import ReviewSeat
 
 
 def resolve_isolation_or_refuse(
@@ -215,7 +215,7 @@ def build_session_providers(
 @dataclass(frozen=True, slots=True)
 class SessionTools:
     """The curator + dispatcher pair and the model-derived loop knobs.
-    `cfg` is the decompose-resolved config the Workflow must be built with."""
+    `cfg` is the decompose-resolved config the Harness must be built with."""
 
     curator: GraphCurator
     dispatcher: ToolDispatcher
@@ -251,7 +251,7 @@ def build_session_tools(
         prompts=prompts,
         events=events,
         curator=curator,
-        run_root_node_id=None,  # Workflow seeds the root + calls set_run_root_node_id
+        run_root_node_id=None,  # Harness seeds the root + calls set_run_root_node_id
         mcp_manager=mcp_manager,
         worktree_git_dir=worktree_git_dir,
         mode=mode,

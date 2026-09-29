@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from agent6.workflows._conversation import (
+from agent6.harness._conversation import (
     AssistantTurn,
     Conversation,
     Notice,
@@ -438,7 +438,7 @@ def test_restart_refuses_a_tail_leading_with_tool_results() -> None:
 def test_format_transcript_tail_renders_roles_and_strips_thinking() -> None:
     """The summariser's plain-text tail shows user text, assistant text, tool
     calls, and tool results; assistant thinking blocks never leak into it."""
-    from agent6.workflows._conversation import format_transcript_tail
+    from agent6.harness._conversation import format_transcript_tail
 
     conversation = Conversation.from_wire(
         [

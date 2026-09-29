@@ -17,6 +17,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.events import EventSink
+from agent6.harness._chain import RunChain
+from agent6.harness._provider_call import CallSettings
+from agent6.harness._steer import OperatorBridge
 from agent6.sessions.ipc import (
     request_steer,
     steer_request_pending,
@@ -24,9 +27,6 @@ from agent6.sessions.ipc import (
     write_steer_answer,
 )
 from agent6.ui.cli._steer import file_bridge_steer, install_steer_sigint, make_steer_state
-from agent6.workflows._chain import RunChain
-from agent6.workflows._provider_call import CallSettings
-from agent6.workflows._steer import OperatorBridge
 
 
 def test_prompt_consumes_bridged_answer(tmp_path: Path) -> None:
@@ -288,14 +288,14 @@ def test_workflow_run_resets_the_steer_stage_at_leg_entry() -> None:
     very top of run(), before any other leg work."""
     import contextlib
 
-    from agent6.workflows.loop import Workflow
+    from agent6.harness.loop import Harness
 
     resets: list[bool] = []
 
     def spy() -> None:
         resets.append(True)
 
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(Path("/tmp")),
         config=MagicMock(),
         provider=MagicMock(),
@@ -314,8 +314,8 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: Path) -> None:
     a model that starts one and never asks again left `/shells` -- which reads
     off disk, at this very boundary -- reporting it maybe-running for the rest
     of the run. The boundary observes once per turn."""
+    from agent6.harness.loop import Harness
     from agent6.providers import ProviderResponse
-    from agent6.workflows.loop import Workflow
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -331,12 +331,12 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: Path) -> None:
         raw={"content": [{"type": "text", "text": "done"}]},
     )
     dispatcher = MagicMock()
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(repo),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,

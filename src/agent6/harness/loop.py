@@ -33,6 +33,108 @@ from agent6.graph.models import (
     UpdateStatusIntent,
 )
 from agent6.graph.order import OPEN_STATUSES
+from agent6.harness._advice import (
+    Gate,
+    Nudge,
+    Refusal,
+    Stop,
+    TurnContext,
+    open_subtasks,
+    with_open_tasks,
+)
+from agent6.harness._chain import RunChain
+from agent6.harness._checkpoint import Checkpoints
+from agent6.harness._compaction import (
+    CompactionSettings,
+    cap_tool_result,
+    count_elisions,
+    request_prefix_chars,
+)
+from agent6.harness._compactor import Compactor
+from agent6.harness._context import load_repo_summary
+from agent6.harness._conversation import (
+    AssistantTurn,
+    Conversation,
+    Notice,
+    ToolResultItem,
+)
+from agent6.harness._dag_focus import (
+    DAG_MUTATING_TOOLS,
+    current_task_banner,
+    current_task_id,
+    initial_dag_hint,
+)
+from agent6.harness._finish_gates import (
+    END_GATES,
+    FINISH_GATES,
+    SILENT_END_GATES,
+    FinishCall,
+    finish_reason,
+)
+from agent6.harness._guards import (
+    AFTER_TOOLS,
+    BEFORE_CALL,
+    stuck_on_task,
+    tool_error_ladder,
+    unreachable_tool,
+)
+from agent6.harness._loop_state import (
+    NEXT_TURN,
+    LoopState,
+    NextTurn,
+    TurnState,
+    restore_completion_state,
+)
+from agent6.harness._memory_touch import memory_store_facts
+from agent6.harness._metric import (
+    best_metric_sample,
+)
+from agent6.harness._metric_sampler import MetricSampler
+from agent6.harness._nudges import (
+    PLAN_ON_DISK_HEADER,
+    tool_error_signature,
+)
+from agent6.harness._operator_tasks import OperatorTasks
+from agent6.harness._panel import (
+    review_notice,
+)
+from agent6.harness._parallel_dispatch import (
+    ParallelDispatcher,
+)
+from agent6.harness._prompt_blocks import build_system_prompt, initial_instructions
+from agent6.harness._prompt_revision import (
+    PromptRevisionDeclined,
+    PromptRevisionError,
+    RevisionSettings,
+    revise_prompt,
+)
+from agent6.harness._provider_call import (
+    CallSettings,
+    ProviderCaller,
+    provider_error_hint,
+    reasoning_starvation,
+)
+from agent6.harness._quiet_turns import question_in_prose, silent_no_work, went_quiet
+from agent6.harness._review import Reviewer, ReviewSettings
+from agent6.harness._session_state import (
+    TURN_IN_FLIGHT_NAME,
+    End,
+    ResumeError,
+    SessionEndReason,
+    SessionResult,
+    SessionSnapshot,
+    clear_turn_marker,
+    load_session_snapshot,
+    write_turn_marker,
+)
+from agent6.harness._standing import Standing
+from agent6.harness._steer import PINS_MAX_CHARS, OperatorBridge, Steering, try_pin
+from agent6.harness._toolset import (
+    build_readonly_review_tools,
+    tool_definitions,
+)
+from agent6.harness._verify_gate import EXIT_TIMEOUT, VerifyGate
+from agent6.harness._verify_verdict import VerifyVerdict
 from agent6.memory import (
     decisions_path,
     decisions_text,
@@ -76,108 +178,6 @@ from agent6.tools.results import (
 from agent6.tools.schema import (
     ReadBackgroundInput,
 )
-from agent6.workflows._advice import (
-    Gate,
-    Nudge,
-    Refusal,
-    Stop,
-    TurnContext,
-    open_subtasks,
-    with_open_tasks,
-)
-from agent6.workflows._chain import RunChain
-from agent6.workflows._checkpoint import Checkpoints
-from agent6.workflows._compaction import (
-    CompactionSettings,
-    cap_tool_result,
-    count_elisions,
-    request_prefix_chars,
-)
-from agent6.workflows._compactor import Compactor
-from agent6.workflows._context import load_repo_summary
-from agent6.workflows._conversation import (
-    AssistantTurn,
-    Conversation,
-    Notice,
-    ToolResultItem,
-)
-from agent6.workflows._dag_focus import (
-    DAG_MUTATING_TOOLS,
-    current_task_banner,
-    current_task_id,
-    initial_dag_hint,
-)
-from agent6.workflows._finish_gates import (
-    END_GATES,
-    FINISH_GATES,
-    SILENT_END_GATES,
-    FinishCall,
-    finish_reason,
-)
-from agent6.workflows._guards import (
-    AFTER_TOOLS,
-    BEFORE_CALL,
-    stuck_on_task,
-    tool_error_ladder,
-    unreachable_tool,
-)
-from agent6.workflows._loop_state import (
-    NEXT_TURN,
-    LoopState,
-    NextTurn,
-    TurnState,
-    restore_completion_state,
-)
-from agent6.workflows._memory_touch import memory_store_facts
-from agent6.workflows._metric import (
-    best_metric_sample,
-)
-from agent6.workflows._metric_sampler import MetricSampler
-from agent6.workflows._nudges import (
-    PLAN_ON_DISK_HEADER,
-    tool_error_signature,
-)
-from agent6.workflows._operator_tasks import OperatorTasks
-from agent6.workflows._panel import (
-    review_notice,
-)
-from agent6.workflows._parallel_dispatch import (
-    ParallelDispatcher,
-)
-from agent6.workflows._prompt_blocks import build_system_prompt, initial_instructions
-from agent6.workflows._prompt_revision import (
-    PromptRevisionDeclined,
-    PromptRevisionError,
-    RevisionSettings,
-    revise_prompt,
-)
-from agent6.workflows._provider_call import (
-    CallSettings,
-    ProviderCaller,
-    provider_error_hint,
-    reasoning_starvation,
-)
-from agent6.workflows._quiet_turns import question_in_prose, silent_no_work, went_quiet
-from agent6.workflows._review import Reviewer, ReviewSettings
-from agent6.workflows._session_state import (
-    TURN_IN_FLIGHT_NAME,
-    End,
-    ResumeError,
-    SessionEndReason,
-    SessionResult,
-    SessionSnapshot,
-    clear_turn_marker,
-    load_session_snapshot,
-    write_turn_marker,
-)
-from agent6.workflows._standing import Standing
-from agent6.workflows._steer import PINS_MAX_CHARS, OperatorBridge, Steering, try_pin
-from agent6.workflows._toolset import (
-    build_readonly_review_tools,
-    tool_definitions,
-)
-from agent6.workflows._verify_gate import EXIT_TIMEOUT, VerifyGate
-from agent6.workflows._verify_verdict import VerifyVerdict
 
 # A re-served tool result must exceed this many bytes before the back-to-back
 # dedupe elides it; below it the stub would not save enough to matter and the
@@ -191,14 +191,14 @@ if TYPE_CHECKING:
 
 # Consecutive went-quiet turns after which a metric run drops the worker's
 # per-call output cap from metric_task_max_tokens back to per_call_max_tokens
-# (see Workflow._worker_max_tokens). 2 spares a one-off starvation its full
+# (see Harness._worker_max_tokens). 2 spares a one-off starvation its full
 # recovery room while breaking a reasoning-binge spiral.
 _STARVATION_BACKOFF_AFTER_QUIETS = 2
 
 
 @dataclass
-class Workflow:
-    """Single-loop agent workflow.
+class Harness:
+    """Single-loop agent harness.
 
     The agent decides everything via tool calls in one large loop:
     when to read, when to plan (implicitly via subsequent tool calls),
@@ -219,7 +219,7 @@ class Workflow:
     # In-process GraphCurator. When None,
     # DAG-as-tool handlers raise ToolError and the loop runs without DAG
     # persistence (still usable for bench / one-off tasks). When wired,
-    # Workflow.run() seeds a root task and the agent can add subtasks
+    # Harness.run() seeds a root task and the agent can add subtasks
     # and update statuses; survives crashes via <run-dir>/graph.jsonl.
     curator: GraphCurator | None = None
     # Per-invocation token budget tracker (the same instance wired into
@@ -234,7 +234,7 @@ class Workflow:
     # dispatcher so memory-dir edits persist across runs.
     # None (bench / tests / one-off embedders) runs memory-less.
     state_dir: Path | None = None
-    # Cap on assistant turns for THIS leg (config [workflow].max_iterations;
+    # Cap on assistant turns for THIS leg (config [harness].max_iterations;
     # -1 unlimited). Each turn = one provider.call. A resumed leg re-arms the
     # allowance: the cap is relative to its start_iteration, so a standing
     # run is bounded per leg, never by the sum of its history.
@@ -260,7 +260,7 @@ class Workflow:
     # out-of-band of user_task). Fresh runs only; resume/fork restore pins
     # from the snapshot instead.
     initial_pins: Sequence[str] = ()
-    # When set, Workflow writes a JSON snapshot of (system, messages,
+    # When set, Harness writes a JSON snapshot of (system, messages,
     # tool_calls, next_iteration, root_task_id) before every LLM call. The
     # snapshot is provider-agnostic (it holds the anthropic-shaped message
     # list the loop maintains internally, not the on-the-wire OpenAI-shaped body
@@ -279,7 +279,7 @@ class Workflow:
     # ending: interactively, going quiet is the most normal thing an agent
     # does, not a failure.
     interactive: bool = False
-    # Plan mode. When `mode="plan"`, the workflow uses the
+    # Plan mode. When `mode="plan"`, the harness uses the
     # planning system prompt + plan-mode tool list (no apply_edit /
     # apply_patch; finish_planning replaces finish_session), skips auto-
     # commit-on-verify-pass, and on finish_planning writes the
@@ -304,7 +304,7 @@ class Workflow:
         """Drive the single-loop agent to completion."""
         self.bridge.steer_reset()  # a leg starts with no armed Ctrl-C
         if self.mode == "plan" and self.plan_output_path is None:
-            raise ValueError("Workflow(mode='plan') requires plan_output_path to be set")
+            raise ValueError("Harness(mode='plan') requires plan_output_path to be set")
         # The event carries the operator's own words (a seed digest or skill
         # block prepended by `run --from`/`--skill` is context, not the task),
         # clipped: every headline reads this field.
@@ -629,7 +629,7 @@ class Workflow:
         on it): run() threads it straight through, resume() reads it verbatim
         from the snapshot -- never re-derived from the message history.
 
-        Before each provider call, writes a snapshot of the workflow's
+        Before each provider call, writes a snapshot of the harness's
         in-memory state to `self.resume_state_path` (if set) so a
         crash mid-call can be resumed from the same point.
         """
@@ -1467,9 +1467,9 @@ class Workflow:
             mode=self.mode,
             iteration=iteration,
             leg_start=leg_start,
-            went_quiet_max_nudges=self.config.workflow.went_quiet_max_nudges,
-            loop_guard_kill_threshold=self.config.workflow.loop_guard_kill_threshold,
-            stagnation_notice_after_s=self.config.workflow.stagnation_notice_after_s,
+            went_quiet_max_nudges=self.config.harness.went_quiet_max_nudges,
+            loop_guard_kill_threshold=self.config.harness.loop_guard_kill_threshold,
+            stagnation_notice_after_s=self.config.harness.stagnation_notice_after_s,
             verify_when=self.gate.when,
             verify_retries=self.gate.retries,
             finish_validator=self.finish_validator,
@@ -2002,7 +2002,7 @@ class Workflow:
     def gate(self) -> VerifyGate:
         """The run's verify gate over the config's command; `gate.command`
         reads the one in force, the config's or the adopted one."""
-        wf = self.config.workflow
+        wf = self.config.harness
         return VerifyGate(
             configured=tuple(wf.verify_command),
             when=wf.verify_when,
@@ -2049,7 +2049,7 @@ class Workflow:
         """The run's standing goal: the re-entry a soft end converts into."""
         return Standing(
             curator=self.curator,
-            patience=self.config.workflow.standing_patience,
+            patience=self.config.harness.standing_patience,
             budget_remaining=self._budget_fraction_remaining,
             log=self._log,
             emit=self._emit,
@@ -2058,7 +2058,7 @@ class Workflow:
     @cached_property
     def metrics(self) -> MetricSampler:
         return MetricSampler(
-            settings=self.config.workflow.metric,
+            settings=self.config.harness.metric,
             enabled=self.mode == "run",
             dispatcher=self.dispatcher,
             log=self._log,

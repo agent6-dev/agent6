@@ -17,7 +17,7 @@ The layers, lowest precedence first:
 
 A selected preset is inserted above the config layer that selected it; [Presets](#presets) gives the precedence rules.
 The per-repo config lives in the state dir, out of the workspace: per-machine, never committed.
-It can be empty or absent when the global config supplies a provider and model; `workflow.verify_command` is inferred per run when unset.
+It can be empty or absent when the global config supplies a provider and model; `harness.verify_command` is inferred per run when unset.
 
 ## Creating and inspecting
 
@@ -190,9 +190,11 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 
 <!-- config-table: preset -->
 
-## `[workflow]`
+## `[harness]`
 
-<!-- config-table: workflow -->
+<!-- config-table: harness -->
+
+The table was `[harness]` from 0.0.35; a config that still says `[workflow]` is refused with the table named.
 
 ## `[review]`
 
@@ -247,11 +249,11 @@ seats = [
 ]
 ```
 
-### `[workflow.metric]` (optional)
+### `[harness.metric]` (optional)
 
 A continuous score for measurable goals; `command` runs in the jail like `verify_command`.
 
-<!-- config-table: workflow.metric -->
+<!-- config-table: harness.metric -->
 
 ## `[budget]`
 

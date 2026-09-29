@@ -19,22 +19,22 @@ from unittest.mock import MagicMock
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNode, TaskNodeDraft
+from agent6.harness._chain import RunChain
+from agent6.harness._dag_focus import current_task_banner
+from agent6.harness._prompt_revision import RevisionSettings
+from agent6.harness._steer import OperatorBridge
+from agent6.harness.loop import Harness, LoopState
 from agent6.providers.types import ProviderError
 from agent6.sessions.ipc import OperatorRequest, drain_requests, queue_request
 from agent6.sessions.layout import SessionLayout
-from agent6.workflows._chain import RunChain
-from agent6.workflows._dag_focus import current_task_banner
-from agent6.workflows._prompt_revision import RevisionSettings
-from agent6.workflows._steer import OperatorBridge
-from agent6.workflows.loop import LoopState, Workflow
 
 _NOW = datetime(2026, 9, 16, tzinfo=UTC)
 SPEC = "Add a --json flag\n\nSame fields as the table, keyed by name."
 
 
-def _workflow(curator: GraphCurator, sink: EventSink) -> Workflow:
+def _workflow(curator: GraphCurator, sink: EventSink) -> Harness:
     """A loop with only what the drain reads wired: the graph and the journal."""
-    return Workflow(
+    return Harness(
         chain=RunChain(Path("/tmp"), ref=None, branch=None, fallback_parent=None, per_step=False),
         config=MagicMock(),
         provider=MagicMock(),

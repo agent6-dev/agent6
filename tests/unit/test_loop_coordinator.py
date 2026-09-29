@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Coordinator dispatch: `/parallel` steer fans out subordinate lanes.
 
-Drives Workflow._drive_loop with a fake provider (steer fires once after the
+Drives Harness._drive_loop with a fake provider (steer fires once after the
 first turn) and a fake GROUP spawner that fabricates real, mergeable branches in
 the coordinator's tmp repo -- so the loop's dispatch phase (parse, dirty-tree
 gate, sequential join, DAG stamping, events, summary message) is exercised
@@ -24,16 +24,16 @@ from agent6.app.parallel import build_coordinator_spawner
 from agent6.config import Config
 from agent6.graph.curator import CuratorError
 from agent6.graph.models import TaskNode
+from agent6.harness import _chain as chain_mod
+from agent6.harness._chain import RunChain
+from agent6.harness._provider_call import CallSettings
+from agent6.harness._steer import OperatorBridge
+from agent6.harness.loop import Harness
+from agent6.harness.subrun import LaneResult, LaneSpec, LaneTask
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
 from agent6.ui.cli.parallel import lane_runtime
 from agent6.viewmodel.transcript import fold_transcript
-from agent6.workflows import _chain as chain_mod
-from agent6.workflows._chain import RunChain
-from agent6.workflows._provider_call import CallSettings
-from agent6.workflows._steer import OperatorBridge
-from agent6.workflows.loop import Workflow
-from agent6.workflows.subrun import LaneResult, LaneSpec, LaneTask
 
 
 def _silent(_msg: str) -> None:
@@ -251,17 +251,17 @@ def _build_wf(
     verify_command: tuple[str, ...] = (),
     verify_when: str = "finish",
     max_iterations: int = 2,
-) -> Workflow:
+) -> Harness:
     steer = _OneShotSteer(steer_text)
     disp = dispatcher if dispatcher is not None else MagicMock()
     if dispatcher is None:
         disp.dispatch.return_value = RawResult({"content": "hi\n"})
-    return Workflow(
+    return Harness(
         chain=RunChain(repo, ref="refs/agent6/coord", fallback_parent=_head(repo)),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,

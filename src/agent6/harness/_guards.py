@@ -21,8 +21,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.graph.models import TaskNode
 from agent6.graph.order import is_focusable_subtask
-from agent6.tools.results import ExecResult, ToolResult
-from agent6.workflows._advice import (
+from agent6.harness._advice import (
     Advisor,
     BeforeCallAdvisor,
     Nudge,
@@ -30,13 +29,13 @@ from agent6.workflows._advice import (
     TurnContext,
     with_open_tasks,
 )
-from agent6.workflows._dag_focus import (
+from agent6.harness._dag_focus import (
     STUCK_NUDGE_MAX,
     STUCK_ON_TASK_AFTER,
     stuck_on_task_nudge,
 )
-from agent6.workflows._metric import metric_plateau
-from agent6.workflows._nudges import (
+from agent6.harness._metric import metric_plateau
+from agent6.harness._nudges import (
     LOOP_GUARD_NOTICE_AFTER,
     MEMORY_FLIP_NUDGE,
     NO_PROGRESS_ESCALATE_AFTER,
@@ -61,10 +60,11 @@ from agent6.workflows._nudges import (
     loop_guard_words,
     unreachable_tool_notice,
 )
-from agent6.workflows._session_state import End
+from agent6.harness._session_state import End
+from agent6.tools.results import ExecResult, ToolResult
 
 if TYPE_CHECKING:
-    from agent6.workflows._loop_state import LoopState, TurnState
+    from agent6.harness._loop_state import LoopState, TurnState
 
 Rung = Literal["nudge", "escalate", "stop"]
 
@@ -432,7 +432,7 @@ def memory_flip(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | 
 class StandingGoal:
     """Standing-goal re-entry: `ok_tool_calls` at the last absorption (-1 =
     never) and the consecutive fruitless re-entries since work last landed;
-    `[workflow].standing_patience` decides how many are absorbed before an
+    `[harness].standing_patience` decides how many are absorbed before an
     end is honoured (-1 = never on its own). Both persist."""
 
     tools_mark: int = -1

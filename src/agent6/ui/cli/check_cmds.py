@@ -753,7 +753,7 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
     on every doctor call. Operators can do `./$(verify_command)` themselves when
     they want a live run.
     """
-    argv = list(cfg.workflow.verify_command)
+    argv = list(cfg.harness.verify_command)
     if not argv:
         # Optional: `agent6 run`/`plan` infer one (AGENTS.md -> repo signals ->
         # LLM), else run gateless. Say what this repo infers, from the
@@ -775,7 +775,7 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
     detail = f"resolves to {resolved}" if resolved else f"not found on the command PATH: {head!r}"
     print(f"  {head}: {detail}")
     print(f"  argv = {argv}")
-    print(f"  timeout = {cfg.workflow.verify_timeout_s}s")
+    print(f"  timeout = {cfg.harness.verify_timeout_s}s")
     return [_DoctorCheck(name="verify.head", status="PASS" if ok else "FAIL", detail=detail)]
 
 

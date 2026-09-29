@@ -956,11 +956,11 @@ def test_a_machine_overlay_refusal_reads_like_every_other_writer() -> None:
 
     raw = (
         "Config validation failed: (merged config layers + machine overlay)\n"
-        "  - workflow.verify_retries: Input should be greater than or equal to 0"
+        "  - harness.verify_retries: Input should be greater than or equal to 0"
         " (type=greater_than_equal)"
     )
     assert _leaf_problems(raw) == (
-        "workflow.verify_retries: Input should be greater than or equal to 0"
+        "harness.verify_retries: Input should be greater than or equal to 0"
     )
     assert _leaf_problems("machine file unreadable") == "machine file unreadable"
 

@@ -16,6 +16,8 @@ from typing import Protocol
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.events import EventSink
+from agent6.harness.loop import Harness, SessionResult
+from agent6.harness.subrun import GroupLaneSpawner
 from agent6.portable import has_controlling_tty
 from agent6.sessions.ipc import (
     AWAY_MODES,
@@ -31,8 +33,6 @@ from agent6.sessions.layout import SessionLayout
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.operator_prompts import Approver, Questioner
 from agent6.types import AutoCommitDirective, IsolationLevel
-from agent6.workflows.loop import SessionResult, Workflow
-from agent6.workflows.subrun import GroupLaneSpawner
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,7 +165,7 @@ class SessionFrontend:
         [Path, BudgetTracker, str, MCPManager | None],
         Callable[[int, str], AutoCommitDirective],
     ]
-    run_ask_repl: Callable[[Workflow, BudgetTracker, SessionLayout, str], SessionResult]
+    run_ask_repl: Callable[[Harness, BudgetTracker, SessionLayout, str], SessionResult]
     save_ask_transcript: Callable[[SessionLayout, str, str], None]
     # `/parallel` coordinator dispatch (the cli builds LaneRuntime + spawner).
     build_coordinator_spawner: Callable[

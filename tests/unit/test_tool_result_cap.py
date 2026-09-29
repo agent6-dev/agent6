@@ -19,10 +19,10 @@ from __future__ import annotations
 
 import json
 
-from agent6.workflows._compaction import (
+from agent6.harness._compaction import (
     TOOL_RESULT_CAP_BYTES as _TOOL_RESULT_CAP_BYTES,
 )
-from agent6.workflows._compaction import (
+from agent6.harness._compaction import (
     cap_tool_result as _cap_tool_result,
 )
 

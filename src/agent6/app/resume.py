@@ -68,6 +68,13 @@ from agent6.git_ops import (
     untracked_paths,
     verify_git_identity,
 )
+from agent6.harness._context import agents_md_notices
+from agent6.harness._session_state import (
+    TURN_IN_FLIGHT_NAME,
+    clear_turn_marker,
+    load_session_snapshot,
+    read_turn_marker,
+)
 from agent6.paths import state_dir
 from agent6.providers import (
     TranscriptSink,
@@ -96,13 +103,6 @@ from agent6.sessions.manifest import ManifestError, MergeStamp, SessionManifest,
 from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import SESSION_KINDS, ModelRoute, session_bucket, session_kind
 from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
-from agent6.workflows._context import agents_md_notices
-from agent6.workflows._session_state import (
-    TURN_IN_FLIGHT_NAME,
-    clear_turn_marker,
-    load_session_snapshot,
-    read_turn_marker,
-)
 
 
 def resumable_bucket_dirs(state_dir: Path) -> list[Path]:
@@ -409,7 +409,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     repo,
                     config_path,
                     mode=mode,
-                    preset=preset or manifest.workflow.replay_preset,
+                    preset=preset or manifest.harness.replay_preset,
                     budget_overrides=budget_overrides,
                     sandbox_overrides=sandbox_overrides,
                     model=route,
@@ -443,8 +443,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # like a fresh run. A resume that DOES set --preset is a fresh
                 # flag choice, so run_task's own derivation stamps it.
                 preset_stamp=(
-                    (manifest.workflow.preset, True)
-                    if (not preset and manifest.workflow.preset_from_flag)
+                    (manifest.harness.preset, True)
+                    if (not preset and manifest.harness.preset_from_flag)
                     else None
                 ),
                 # Hand --steer through: run_task seeds its own initial steer.
@@ -506,7 +506,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 " (the marker stays; resume again and answer yes to replay)."
             )
             return 2
-        manifest_preset = manifest.workflow.replay_preset
+        manifest_preset = manifest.harness.replay_preset
         resume_base_sha = manifest.base_sha
         run_branch = manifest.run_branch or ""
 
@@ -622,14 +622,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             # Config the operator has since set still outranks both.
             pinned_origin, pinned_gate = "", ()
             with contextlib.suppress(ManifestError, OSError):
-                pinned = read_manifest(layout.session_dir).workflow
+                pinned = read_manifest(layout.session_dir).harness
                 pinned_origin, pinned_gate = pinned.verify_origin, pinned.verify_command
             replay_gate = (
                 pinned_gate
                 if pinned_origin in ("adopted", "unadopted")
                 else snapshot.verify_command
             )
-            leg_configured = bool(cfg.workflow.verify_command)
+            leg_configured = bool(cfg.harness.verify_command)
             reused = not leg_configured and bool(replay_gate)
             if reused:
                 cfg = cfg.with_verify_command(replay_gate)
@@ -637,30 +637,30 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             # hands the gate back: a leg that cannot run a command cannot run
             # its gate, so it is gateless rather than unwinnable. Frozen here,
             # with the system prompt.
-            gate_before = cfg.workflow.verify_command
+            gate_before = cfg.harness.verify_command
             cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
             # A withheld gate is the line above: neither a reuse nor a change,
             # since nothing can run.
-            withheld = bool(gate_before) and not cfg.workflow.verify_command
+            withheld = bool(gate_before) and not cfg.harness.verify_command
             if reused and not withheld:
                 reporter.note(f"reusing this run's verify command: {gate_text(replay_gate)}")
             # Re-pin for this leg: config outranks the pin, the pin outranks a
             # re-inference, and the manifest has to say which one this leg used.
-            if tuple(pinned_gate) != cfg.workflow.verify_command and not withheld:
+            if tuple(pinned_gate) != cfg.harness.verify_command and not withheld:
                 # Both directions, including none -> gate: the frozen system
                 # prompt names the OLD gate either way, so the operator has to
                 # know which command is now judging the run.
                 reporter.note(
                     "this run's verify gate changed:"
                     f" was {gate_text(tuple(pinned_gate))},"
-                    f" now {gate_text(cfg.workflow.verify_command)}"
+                    f" now {gate_text(cfg.harness.verify_command)}"
                 )
             pin_gate(
                 layout.session_dir,
-                cfg.workflow.verify_command,
+                cfg.harness.verify_command,
                 leg_gate_origin(
                     configured=leg_configured,
-                    has_gate=bool(cfg.workflow.verify_command),
+                    has_gate=bool(cfg.harness.verify_command),
                     pinned=pinned_origin,
                 ),
                 events=events,

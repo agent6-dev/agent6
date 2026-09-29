@@ -15,10 +15,10 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.graph.models import TaskNode, owner_note
 from agent6.graph.order import OPEN_STATUSES
-from agent6.workflows._session_state import End
+from agent6.harness._session_state import End
 
 if TYPE_CHECKING:
-    from agent6.workflows._loop_state import LoopState, TurnState
+    from agent6.harness._loop_state import LoopState, TurnState
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +36,7 @@ class Nudge:
 @dataclass(frozen=True, slots=True)
 class Stop:
     """An advisor's decision to end the run, honoured once the turn's results
-    and snapshot are on disk (`Workflow._turn_stop_checks`): `end` composes
+    and snapshot are on disk (`Harness._turn_stop_checks`): `end` composes
     what `_finish` records, called then so it reads the run as the end gates
     left it; `log` is the line written then. `soft` names the reason a
     standing task's re-entry nudge carries when it absorbs the stop ("" = a
@@ -62,12 +62,12 @@ class TurnContext:
     iteration: int
     # The leg's first iteration: a turn allowance counts from it.
     leg_start: int
-    # `[workflow]`'s guard knobs: the empty-turn nudge cap, the repeated-call
+    # `[harness]`'s guard knobs: the empty-turn nudge cap, the repeated-call
     # kill threshold and the stagnation notice delay.
     went_quiet_max_nudges: int
     loop_guard_kill_threshold: int
     stagnation_notice_after_s: float
-    # `[workflow].verify_when` and `verify_retries`: what the red-gate return
+    # `[harness].verify_when` and `verify_retries`: what the red-gate return
     # rule reads (`verify_command` moves mid-run and is a callable below).
     verify_when: Literal["finish", "step", "never"]
     verify_retries: int

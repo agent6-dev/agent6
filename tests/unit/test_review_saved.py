@@ -99,7 +99,7 @@ class _PassingSeatProvider:
 def test_the_panel_verdict_is_saved_too(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.workflows.review import ReviewSeat
+    from agent6.harness.review import ReviewSeat
 
     seat = ReviewSeat(
         persona="correctness",

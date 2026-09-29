@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Unit tests for the Workflow loop: provider retry, operator steering, the
+"""Unit tests for the Harness loop: provider retry, operator steering, the
 tool-error ladder, finish gates, and the other drive-loop mechanics, driven
 directly with scripted providers and dispatchers. Termination-reason
 distinctions are exercised end-to-end in the integration suite."""
@@ -18,33 +18,33 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent6.config import Config
-from agent6.providers import ProviderError, ProviderResponse
-from agent6.tools.mcp_client import MCPToolDescriptor
-from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
-from agent6.workflows._advice import Stop, with_open_tasks
-from agent6.workflows._chain import RunChain
-from agent6.workflows._compaction import CompactionSettings
-from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
-from agent6.workflows._finish_gates import (
+from agent6.harness._advice import Stop, with_open_tasks
+from agent6.harness._chain import RunChain
+from agent6.harness._compaction import CompactionSettings
+from agent6.harness._conversation import AssistantTurn, Conversation, Notice
+from agent6.harness._finish_gates import (
     SILENT_END_GATES,
     FinishCall,
     FinishGates,
     task_finish_nudge,
 )
-from agent6.workflows._guards import SettledGuard, settled_end, verify_settled
-from agent6.workflows._metric import MetricGuard, metric_plateau
-from agent6.workflows._provider_call import (
+from agent6.harness._guards import SettledGuard, settled_end, verify_settled
+from agent6.harness._metric import MetricGuard, metric_plateau
+from agent6.harness._provider_call import (
     CallSettings,
     ProviderCaller,
     is_empty_tool_call_response,
     reasoning_starvation,
 )
-from agent6.workflows._quiet_turns import QuietGuard
-from agent6.workflows._review import Reviewer, ReviewSettings
-from agent6.workflows._session_state import SNAPSHOT_VERSION, End
-from agent6.workflows._steer import OperatorBridge
-from agent6.workflows._verify_verdict import VerifyVerdict
-from agent6.workflows.loop import LoopState, TurnState, Workflow
+from agent6.harness._quiet_turns import QuietGuard
+from agent6.harness._review import Reviewer, ReviewSettings
+from agent6.harness._session_state import SNAPSHOT_VERSION, End
+from agent6.harness._steer import OperatorBridge
+from agent6.harness._verify_verdict import VerifyVerdict
+from agent6.harness.loop import Harness, LoopState, TurnState
+from agent6.providers import ProviderError, ProviderResponse
+from agent6.tools.mcp_client import MCPToolDescriptor
+from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from tests.unit.turn_context import turn_context
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
@@ -101,9 +101,9 @@ def _silent(_msg: str) -> None:
 
 
 def _knobs(cfg: Any, **knobs: Any) -> Any:
-    """The mocked config with `[workflow]` guard knobs set."""
+    """The mocked config with `[harness]` guard knobs set."""
     for key, value in knobs.items():
-        setattr(cfg.workflow, key, value)
+        setattr(cfg.harness, key, value)
     return cfg
 
 
@@ -116,8 +116,8 @@ def _wf(
     per_step: bool = True,
     base_sha: str = "",
     **kw: Any,
-) -> Workflow:
-    """Construct a Workflow with mocks for everything not under test.
+) -> Harness:
+    """Construct a Harness with mocks for everything not under test.
 
     Caller-supplied kwargs win over the defaults so a test can pass its
     own provider / steer callables without colliding on the keyword.
@@ -148,7 +148,7 @@ def _wf(
             git=_GIT_STUB,
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -164,12 +164,12 @@ def _wf(
         "call": CallSettings(retry_delay_s=0.01),  # keep tests fast
     }
     defaults.update(kw)
-    return Workflow(**defaults)
+    return Harness(**defaults)
 
 
 def _state(**kw: Any) -> Any:
     """Minimal LoopState for _save_resume_snapshot call sites."""
-    from agent6.workflows.loop import LoopState
+    from agent6.harness.loop import LoopState
 
     defaults: dict[str, Any] = {"original_task": "t", "tool_calls": 0}
     defaults.update(kw)
@@ -250,7 +250,7 @@ class _EventCapture:
 def _cfg_with_verify() -> Any:
     return MagicMock(
         prompt=MagicMock(system_prompt_file=""),
-        workflow=MagicMock(
+        harness=MagicMock(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -325,7 +325,7 @@ def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
 
 def _turn(**kw: Any) -> Any:
     """A bare TurnState for direct turn-phase method tests."""
-    from agent6.workflows.loop import TurnState
+    from agent6.harness.loop import TurnState
 
     defaults: dict[str, Any] = {
         "iteration": 1,
@@ -336,7 +336,7 @@ def _turn(**kw: Any) -> Any:
     return TurnState(**defaults)
 
 
-def _ctx(wf: Workflow, state: Any, iteration: int = 1) -> Any:
+def _ctx(wf: Harness, state: Any, iteration: int = 1) -> Any:
     return wf._turn_context(state, iteration=iteration, leg_start=1)  # pyright: ignore[reportPrivateUsage]
 
 
@@ -346,7 +346,7 @@ def _plateau_stop() -> Stop:
     return Stop(lambda: end, soft="metric_plateau", declared="metric_plateau")
 
 
-def _settle(wf: Workflow, state: Any, turn: Any) -> Any:
+def _settle(wf: Harness, state: Any, turn: Any) -> Any:
     """The settled advisor's answer, applied through the loop (a stop runs
     the end gates at once)."""
     ctx = _ctx(wf, state, turn.iteration)
@@ -503,7 +503,7 @@ def test_caller_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
     """A 429 carrying retry_after_s waits at least that long, not the shorter
     self-computed backoff."""
     slept: list[float] = []
-    monkeypatch.setattr("agent6.workflows._provider_call.time.sleep", slept.append)
+    monkeypatch.setattr("agent6.harness._provider_call.time.sleep", slept.append)
     provider = MagicMock()
     provider.call.side_effect = [
         ProviderError("429 rate limited", status_code=429, retry_after_s=50.0),
@@ -516,7 +516,7 @@ def test_caller_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_caller_clamps_retry_after_to_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
     """A hostile or buggy Retry-After cannot hang the run: clamped to the ceiling."""
     slept: list[float] = []
-    monkeypatch.setattr("agent6.workflows._provider_call.time.sleep", slept.append)
+    monkeypatch.setattr("agent6.harness._provider_call.time.sleep", slept.append)
     provider = MagicMock()
     provider.call.side_effect = [
         ProviderError("429", status_code=429, retry_after_s=9999.0),
@@ -785,7 +785,7 @@ def test_call_with_retry_backoff_skips_sleep_on_permanent_status() -> None:
 
 
 def test_call_with_retry_pins_default_temperature_to_zero() -> None:
-    """Default Workflow.temperature is 0.0; every provider.call must
+    """Default Harness.temperature is 0.0; every provider.call must
     receive it. agent6 used to pass temperature=None
     so OpenRouter routed to the model's (often high) provider default,
     which produced observable degeneration on Kimi K2.6."""
@@ -855,7 +855,7 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: Path) -> Non
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -944,7 +944,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -969,7 +969,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
-    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.harness._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -994,7 +994,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
 
 
 def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
-    """The loop records the absolute iteration it is driving on the Workflow, so
+    """The loop records the absolute iteration it is driving on the Harness, so
     the app-level KeyboardInterrupt fallbacks in run/resume can emit a session.end
     carrying a truthful iteration count (matching the loop's own session.end shape).
     Uses a resumed start_iteration to prove it is the absolute number, not a
@@ -1024,7 +1024,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1047,7 +1047,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
     assert wf.iterations_reached == 0  # untouched before the loop runs
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
 
-    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.harness._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -1140,7 +1140,7 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: Path) -> N
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1195,7 +1195,7 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: Path) -> None
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1272,7 +1272,7 @@ def test_a_call_the_providers_front_end_refused_is_an_error_result_not_a_dispatc
     replayed the whole history. The refusal is the call's error result."""
     from dataclasses import replace as _replace
 
-    from agent6.workflows._conversation import ToolResultItem
+    from agent6.harness._conversation import ToolResultItem
 
     provider = MagicMock()
     refused = _replace(
@@ -1331,7 +1331,7 @@ class _OneShotSteer:
 
 
 def _resume_snapshot(**kw: Any) -> Any:
-    from agent6.workflows._session_state import SessionSnapshot
+    from agent6.harness._session_state import SessionSnapshot
 
     defaults: dict[str, Any] = {
         "system": "system",
@@ -1380,7 +1380,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1405,7 +1405,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
     )
     snapshot = _resume_snapshot()
 
-    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.harness._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system=snapshot.system,
             conversation=Conversation.from_wire(snapshot.messages),
@@ -1437,7 +1437,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1450,7 +1450,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
             verify_timeout_s=60.0,
         ),
     )
-    # No steer callables: the Workflow's default steer_requested() is False, so the
+    # No steer callables: the Harness's default steer_requested() is False, so the
     # up-front resume check is a no-op -- exactly a resume with no `--steer`.
     wf = _wf(
         root=tmp_path,
@@ -1514,7 +1514,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1532,7 +1532,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
-    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.harness._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -1578,7 +1578,7 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: Path
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1603,7 +1603,7 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: Path
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     trees = iter(["t1", "t2", "t3"])
     with (
-        patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"),
+        patch("agent6.harness._chain.chain_commit", return_value="abc1234567890"),
         patch.object(RunChain, "tree_sha", side_effect=lambda: next(trees)),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1669,7 +1669,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1699,7 +1699,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
         commits.append(subject)
         return f"sha{len(commits)}"
 
-    with patch("agent6.workflows._chain.chain_commit", side_effect=_fake_commit):
+    with patch("agent6.harness._chain.chain_commit", side_effect=_fake_commit):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -1720,7 +1720,7 @@ def test_worker_max_tokens_starvation_backoff() -> None:
     reasoning-binge spiral. A one-off quiet keeps the full recovery room;
     non-metric runs are unaffected."""
     metric_cfg = SimpleNamespace(
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1750,7 +1750,7 @@ def test_worker_max_tokens_starvation_backoff() -> None:
         config=SimpleNamespace(
             git=_GIT_STUB,
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            workflow=SimpleNamespace(
+            harness=SimpleNamespace(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -1815,7 +1815,7 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1896,7 +1896,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1919,7 +1919,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with patch(
-        "agent6.workflows._chain.chain_commit",
+        "agent6.harness._chain.chain_commit",
         side_effect=["sha1", "sha2", "sha3", "sha4", "sha5", "sha6", "sha7", "sha8"],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1986,7 +1986,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2009,7 +2009,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with patch(
-        "agent6.workflows._chain.chain_commit",
+        "agent6.harness._chain.chain_commit",
         side_effect=["sha1", "sha2", "sha3", "sha4", "sha5"],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -2086,7 +2086,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2113,7 +2113,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with patch(
-        "agent6.workflows._chain.chain_commit",
+        "agent6.harness._chain.chain_commit",
         side_effect=[f"sha{i}" for i in range(20)],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -2138,7 +2138,7 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> 
     'finish now' nudge once it hits the plan turn cap -- not before, not again.
     This is the lever that makes Kimi K2.6 actually land a plan; pins the
     off-by-one (iteration - start + 1 >= cap) and the one-shot latch."""
-    from agent6.workflows._nudges import (
+    from agent6.harness._nudges import (
         PLAN_BUDGET_NUDGE,
         PLAN_NUDGE_AFTER_ITERS,
     )
@@ -2187,13 +2187,13 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
 ) -> None:
     """The nudge also fires early when the token budget runs low (not only on
     the turn cap) -- e.g. a planner reading large files burns budget fast."""
-    from agent6.workflows import loop as loopmod
-    from agent6.workflows._nudges import PLAN_BUDGET_NUDGE
+    from agent6.harness import loop as loopmod
+    from agent6.harness._nudges import PLAN_BUDGET_NUDGE
 
     def _low_budget(_self: object) -> float:
         return 0.2
 
-    monkeypatch.setattr(loopmod.Workflow, "_budget_fraction_remaining", _low_budget)
+    monkeypatch.setattr(loopmod.Harness, "_budget_fraction_remaining", _low_budget)
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2237,13 +2237,13 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
     """A non-metric `run` gets a one-shot wrap-up nudge when budget runs low.
     Observed live: the worker solves the task but never re-verifies or calls
     finish_session, so the budget dies on read-only commands."""
-    from agent6.workflows import loop as loopmod
-    from agent6.workflows._nudges import RUN_BUDGET_NUDGE
+    from agent6.harness import loop as loopmod
+    from agent6.harness._nudges import RUN_BUDGET_NUDGE
 
     def _low_budget(_self: object) -> float:
         return 0.2
 
-    monkeypatch.setattr(loopmod.Workflow, "_budget_fraction_remaining", _low_budget)
+    monkeypatch.setattr(loopmod.Harness, "_budget_fraction_remaining", _low_budget)
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2286,7 +2286,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
     commit, no edit) gets one finish nudge, then the loop stops it with
     reason='verify_settled' — the positive completion signal a non-metric run
     otherwise lacks (Kimi K2.6 observed running 128 iters when done at ~45)."""
-    from agent6.workflows._nudges import VERIFY_SETTLED_NUDGE
+    from agent6.harness._nudges import VERIFY_SETTLED_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2312,7 +2312,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2334,7 +2334,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
         max_iterations=30,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -2379,7 +2379,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2408,7 +2408,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path
         events=_Events(),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -2441,7 +2441,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
     """The settled detector must stay dormant until verify has passed at least
     once — a worker still reading toward its first green build must not be
     stopped early."""
-    from agent6.workflows._nudges import VERIFY_SETTLED_NUDGE
+    from agent6.harness._nudges import VERIFY_SETTLED_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2466,7 +2466,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2519,7 +2519,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2541,7 +2541,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
         max_iterations=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value=""):
+    with patch("agent6.harness._chain.chain_commit", return_value=""):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -2588,7 +2588,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2610,7 +2610,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
         max_iterations=8,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value=""):
+    with patch("agent6.harness._chain.chain_commit", return_value=""):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -2626,7 +2626,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
 def test_metric_plateau_nudge_states_the_remaining_budget() -> None:
     """The plateau notice is one fact with the run's remaining budget; three
     coaching tiers keyed on budget pressure were what it replaced."""
-    from agent6.workflows._metric import metric_plateau_nudge as _metric_plateau_nudge
+    from agent6.harness._metric import metric_plateau_nudge as _metric_plateau_nudge
 
     assert "the remaining budget is unknown" in _metric_plateau_nudge(None)
     assert "80% of the budget remains" in _metric_plateau_nudge(0.80)
@@ -2681,7 +2681,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2710,7 +2710,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with patch(
-        "agent6.workflows._chain.chain_commit",
+        "agent6.harness._chain.chain_commit",
         side_effect=[f"sha{i}" for i in range(1, max_iters + 2)],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -2759,7 +2759,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2825,7 +2825,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2904,7 +2904,7 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: Path) -> Non
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2941,7 +2941,7 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: Path) -> Non
 
 
 def test_metric_at_fraction_ceiling_detects_maxed_score() -> None:
-    from agent6.workflows._metric import (
+    from agent6.harness._metric import (
         metric_at_fraction_ceiling as _metric_at_fraction_ceiling,
     )
 
@@ -2957,7 +2957,7 @@ def test_metric_at_fraction_ceiling_detects_maxed_score() -> None:
 
 
 def test_metric_at_fraction_ceiling_scans_only_the_score_line() -> None:
-    from agent6.workflows._metric import (
+    from agent6.harness._metric import (
         metric_at_fraction_ceiling as _metric_at_fraction_ceiling,
     )
 
@@ -3021,7 +3021,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -3049,7 +3049,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with patch(
-        "agent6.workflows._chain.chain_commit",
+        "agent6.harness._chain.chain_commit",
         side_effect=[f"sha{i}" for i in range(1, 22)],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -3075,7 +3075,7 @@ def test_extract_metric_targets_ignores_arrow_output() -> None:
     '>' alternative also matched the second char of '->', fabricating an
     unmeetable 'drive the metric above <current>' directive from the grader's
     own echo of the score."""
-    from agent6.workflows._metric import (
+    from agent6.harness._metric import (
         extract_metric_targets as _extract_metric_targets,
     )
 
@@ -3086,7 +3086,7 @@ def test_extract_metric_targets_ignores_arrow_output() -> None:
 
 
 def test_extract_metric_targets_minimize_picks_upper_bounds() -> None:
-    from agent6.workflows._metric import (
+    from agent6.harness._metric import (
         extract_metric_targets as _extract_metric_targets,
     )
 
@@ -3102,7 +3102,7 @@ def test_extract_metric_targets_minimize_picks_upper_bounds() -> None:
 
 
 def test_extract_metric_targets_maximize_picks_lower_bounds() -> None:
-    from agent6.workflows._metric import (
+    from agent6.harness._metric import (
         extract_metric_targets as _extract_metric_targets,
     )
 
@@ -3112,7 +3112,7 @@ def test_extract_metric_targets_maximize_picks_lower_bounds() -> None:
 
 
 def test_next_metric_target_minimize_returns_nearest_unmet() -> None:
-    from agent6.workflows._metric import next_metric_target as _next_metric_target
+    from agent6.harness._metric import next_metric_target as _next_metric_target
 
     targets = (147734.0, 18532.0, 1579.0, 1487.0)
     # At 8256 we've cleared 18532/147734; nearest unmet is the largest
@@ -3123,7 +3123,7 @@ def test_next_metric_target_minimize_returns_nearest_unmet() -> None:
 
 
 def test_next_metric_target_maximize_returns_nearest_unmet() -> None:
-    from agent6.workflows._metric import next_metric_target as _next_metric_target
+    from agent6.harness._metric import next_metric_target as _next_metric_target
 
     targets = (0.50, 0.80, 0.95)
     assert _next_metric_target(targets, 0.83, "maximize") == 0.95
@@ -3134,7 +3134,7 @@ def test_next_metric_target_equality_is_unmet() -> None:
     # Thresholds are harvested from strict comparisons (`assert x < N`), which
     # still FAIL at x == N; a score sitting exactly on the threshold has not
     # met it and must keep it as the next target.
-    from agent6.workflows._metric import next_metric_target as _next_metric_target
+    from agent6.harness._metric import next_metric_target as _next_metric_target
 
     assert _next_metric_target((1487.0,), 1487.0, "minimize") == 1487.0
     assert _next_metric_target((0.95,), 0.95, "maximize") == 0.95
@@ -3144,10 +3144,10 @@ def test_next_metric_target_equality_is_unmet() -> None:
 
 
 def test_format_metric_feedback_shows_next_target() -> None:
-    from agent6.workflows._metric import (
+    from agent6.harness._metric import (
         MetricSample as _MetricSample,
     )
-    from agent6.workflows._metric import (
+    from agent6.harness._metric import (
         format_metric_feedback as _format_metric_feedback,
     )
 
@@ -3169,7 +3169,7 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -3196,7 +3196,7 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -3223,7 +3223,7 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -3273,13 +3273,13 @@ def _long_history(n_pairs: int) -> list[dict[str, Any]]:
     return msgs
 
 
-def _restart_via_wire(wf: Workflow, messages: list[dict[str, Any]], *, state: Any = None) -> None:
+def _restart_via_wire(wf: Harness, messages: list[dict[str, Any]], *, state: Any = None) -> None:
     conversation = Conversation.from_wire(messages)
     wf.compactor.summarise_and_restart(conversation, state if state is not None else _state())
     messages[:] = conversation.to_wire()
 
 
-def _compact_via_wire(wf: Workflow, messages: list[dict[str, Any]], *, state: Any = None) -> bool:
+def _compact_via_wire(wf: Harness, messages: list[dict[str, Any]], *, state: Any = None) -> bool:
     conversation = Conversation.from_wire(messages)
     out = wf.compactor.compact(conversation, state if state is not None else _state())
     messages[:] = conversation.to_wire()
@@ -3536,7 +3536,7 @@ def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
     """The gate refuses while a subtask is open, naming only the tasks that
     block it, and lets the end through after TASK_FINISH_PATIENCE refusals
     (the receipt then names the open tasks)."""
-    from agent6.workflows._nudges import TASK_FINISH_PATIENCE
+    from agent6.harness._nudges import TASK_FINISH_PATIENCE
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "review repo"},
@@ -3581,7 +3581,7 @@ def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> N
     settles as verify_settled (the status word carries the verify truth and
     nothing else) and the receipt names the open subtasks. An uncapped gate
     bounced a worker for its whole budget."""
-    from agent6.workflows._nudges import TASK_FINISH_PATIENCE, VERIFY_SETTLED_STOP_AFTER
+    from agent6.harness._nudges import TASK_FINISH_PATIENCE, VERIFY_SETTLED_STOP_AFTER
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "review repo"},
@@ -3607,7 +3607,7 @@ def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> N
 def test_a_settled_end_from_the_scoped_gate_reads_scoped() -> None:
     """A verify_settled end carries `scoped` like the grounded ends do, so a
     green from the scoped gate reads "passed · scoped gate", never a bare pass."""
-    from agent6.workflows._nudges import VERIFY_SETTLED_STOP_AFTER
+    from agent6.harness._nudges import VERIFY_SETTLED_STOP_AFTER
 
     ev = _EventCapture()
     wf = _wf(events=ev)
@@ -3635,7 +3635,7 @@ def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
 def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:
     """The automatic settled ending passes the same task gate as finish_session,
     so a green gate cannot make the run read passed while work remains open."""
-    from agent6.workflows._nudges import VERIFY_SETTLED_STOP_AFTER
+    from agent6.harness._nudges import VERIFY_SETTLED_STOP_AFTER
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "review repo"},
@@ -3662,7 +3662,7 @@ def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:
 def test_metric_plateau_end_is_refused_while_a_subtask_is_open() -> None:
     """A metric ceiling cannot end passed while a task remains open; the task
     refusal reaches the next model turn instead."""
-    from agent6.workflows._metric import MetricSample
+    from agent6.harness._metric import MetricSample
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "optimize"},
@@ -3695,7 +3695,7 @@ def test_metric_plateau_end_is_refused_while_a_subtask_is_open() -> None:
 def test_current_task_id_prefers_open_cursor() -> None:
     """The cursor wins when it still points at an open subtask, even if an
     earlier subtask is also open (the worker's explicit focus choice is kept)."""
-    from agent6.workflows.loop import current_task_id  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.loop import current_task_id  # pyright: ignore[reportPrivateUsage]
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
@@ -3714,7 +3714,7 @@ def test_current_task_id_prefers_open_cursor() -> None:
 def test_first_ready_subtask_respects_deps_and_order() -> None:
     """The frontier skips a subtask whose dependency is not yet done, and a
     passed/obsolete dependency unblocks it; roots and done tasks never surface."""
-    from agent6.workflows._dag_focus import first_ready_subtask as _first_ready_subtask
+    from agent6.harness._dag_focus import first_ready_subtask as _first_ready_subtask
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
@@ -3736,10 +3736,10 @@ def test_first_ready_subtask_prefers_leaf_over_decomposed_parent() -> None:
     """A subtask with open children is a container -- the frontier surfaces its
     first ready leaf, not the parent, so a decompose moves focus forward. A cursor
     still pointing at the parent falls through to the leaf too."""
-    from agent6.workflows._dag_focus import (
+    from agent6.harness._dag_focus import (
         current_task_id as _current_task_id,
     )
-    from agent6.workflows._dag_focus import (
+    from agent6.harness._dag_focus import (
         first_ready_subtask as _first_ready_subtask,
     )
 
@@ -3763,7 +3763,7 @@ def test_first_ready_subtask_surfaces_a_parent_over_a_failed_child() -> None:
     curator still refuses to pass it, naming the child to retry or retire),
     so the frontier surfaces the parent, not nothing and not the child the
     model gave up on."""
-    from agent6.workflows._dag_focus import first_ready_subtask as _first_ready_subtask
+    from agent6.harness._dag_focus import first_ready_subtask as _first_ready_subtask
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r", "children": ["a"]},
@@ -3774,7 +3774,7 @@ def test_first_ready_subtask_surfaces_a_parent_over_a_failed_child() -> None:
 
 
 def test_current_task_banner_carries_title_acceptance_paths() -> None:
-    from agent6.workflows.loop import current_task_banner  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.loop import current_task_banner  # pyright: ignore[reportPrivateUsage]
 
     banner = current_task_banner(
         "01TASK",
@@ -3803,7 +3803,7 @@ def test_graph_update_snapshot_payload_is_wire_stable(tmp_path: Path) -> None:
     plus a top-level cursor, with children a JSON list. A run dir written
     before a field existed simply lacks it, and every reader defaults it.
     Interface-independent: drives a real
-    curator + real Workflow, so it pins the emitted bytes regardless of how the
+    curator + real Harness, so it pins the emitted bytes regardless of how the
     curator hands state to the loop internally."""
     from agent6.graph.curator import GraphCurator
     from agent6.graph.models import (
@@ -3896,7 +3896,7 @@ class _FakeCurator:
         self._nodes[intent.id]["status"] = intent.new_status
 
 
-def _surface(wf: Workflow, st: Any, messages: list[dict[str, Any]]) -> None:
+def _surface(wf: Harness, st: Any, messages: list[dict[str, Any]]) -> None:
     """Wire-in/wire-out driver so the tests keep asserting on message dicts."""
     conversation = Conversation.from_wire(messages)
     wf._maybe_surface_current_task(conversation, st)  # pyright: ignore[reportPrivateUsage]
@@ -4005,7 +4005,7 @@ def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None
     """The split/pass/skip nudge re-fires every _STUCK_ON_TASK_AFTER turns on the
     same stuck task (a weak model ignored a single nudge live), but caps at
     _STUCK_NUDGE_MAX so it cannot nag forever."""
-    from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER
+    from agent6.harness._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER
 
     cur = _FakeCurator(
         {
@@ -4032,7 +4032,7 @@ def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None
 def test_surface_current_task_stuck_nudge_resets_on_progress() -> None:
     """Forward motion (a task marked passed -> focus advances) resets the grind
     counter, so the stuck nudge does not fire."""
-    from agent6.workflows._dag_focus import STUCK_ON_TASK_AFTER
+    from agent6.harness._dag_focus import STUCK_ON_TASK_AFTER
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
@@ -4214,7 +4214,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -4242,7 +4242,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: x"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.harness._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -4316,7 +4316,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -4345,7 +4345,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: review"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.harness._chain.chain_commit", return_value="abc1234567890"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -4433,7 +4433,7 @@ def test_summarise_and_restart_keeps_history_on_provider_error() -> None:
 
 
 def _steer_via_wire(
-    wf: Workflow, messages: list[dict[str, Any]], *, iteration: int, state: Any
+    wf: Harness, messages: list[dict[str, Any]], *, iteration: int, state: Any
 ) -> str | None:
     conversation = Conversation.from_wire(messages)
     try:
@@ -4533,7 +4533,7 @@ def test_steer_pin_records_and_injects_marked_notice() -> None:
 def test_steer_pin_over_cap_delivers_as_ordinary_steer() -> None:
     """A pin past the total cap still reaches the model NOW as a plain steer;
     only the survives-compaction durability is refused, loudly."""
-    from agent6.workflows._steer import PINS_MAX_CHARS
+    from agent6.harness._steer import PINS_MAX_CHARS
 
     ev = _EventCapture()
     st = _state(pins=["x" * (PINS_MAX_CHARS - 10)])
@@ -4644,7 +4644,7 @@ def test_save_resume_snapshot_noop_when_path_unset(tmp_path: Path) -> None:
 
 def test_save_and_load_run_snapshot_round_trip(tmp_path: Path) -> None:
     """Snapshot written by _save_resume_snapshot loads back identically."""
-    from agent6.workflows.loop import load_session_snapshot  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.loop import load_session_snapshot  # pyright: ignore[reportPrivateUsage]
 
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
@@ -4700,7 +4700,7 @@ def test_save_resume_snapshot_uses_durable_atomic_writer(
         else:
             path.write_text(data, encoding="utf-8")
 
-    monkeypatch.setattr("agent6.workflows.loop.atomic_write", _fake_atomic_write)
+    monkeypatch.setattr("agent6.harness.loop.atomic_write", _fake_atomic_write)
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
 
@@ -4718,7 +4718,7 @@ def test_load_run_snapshot_rejects_version_mismatch(tmp_path: Path) -> None:
     """A snapshot with a wrong version must raise ValueError."""
     import json as _json
 
-    from agent6.workflows.loop import load_session_snapshot  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.loop import load_session_snapshot  # pyright: ignore[reportPrivateUsage]
 
     snap_path = tmp_path / "loop_state.json"
     snap_path.write_text(
@@ -4740,7 +4740,7 @@ def test_load_run_snapshot_rejects_version_mismatch(tmp_path: Path) -> None:
 
 def test_resume_raises_when_path_unset() -> None:
     """resume() with resume_state_path=None must raise ResumeError."""
-    from agent6.workflows.loop import ResumeError
+    from agent6.harness.loop import ResumeError
 
     wf = _wf()
     with pytest.raises(ResumeError, match="resume_state_path"):
@@ -4749,7 +4749,7 @@ def test_resume_raises_when_path_unset() -> None:
 
 def test_resume_raises_on_missing_snapshot(tmp_path: Path) -> None:
     """resume() with a nonexistent snapshot file must raise ResumeError."""
-    from agent6.workflows.loop import ResumeError
+    from agent6.harness.loop import ResumeError
 
     wf = _wf(resume_state_path=tmp_path / "nope.json")
     with pytest.raises(ResumeError, match="failed to load"):
@@ -4853,7 +4853,7 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> No
 
     # Snapshot must exist after the crash and be loadable.
     assert snap_path.is_file(), "snapshot must be written before every LLM call"
-    from agent6.workflows.loop import load_session_snapshot  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.loop import load_session_snapshot  # pyright: ignore[reportPrivateUsage]
 
     snap = load_session_snapshot(snap_path)
     # The user's task message survived in the snapshot.
@@ -4887,7 +4887,7 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> No
 
 
 def _ctx_chars(messages: list[dict[str, Any]]) -> int:
-    from agent6.workflows._compaction import context_chars
+    from agent6.harness._compaction import context_chars
 
     return context_chars(Conversation.from_wire(messages))
 
@@ -5006,7 +5006,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5035,7 +5035,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: optimize"}]}]
 
-    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.harness._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -5124,7 +5124,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5146,7 +5146,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
         max_iterations=30,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5164,13 +5164,13 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     """The snapshot stores the run's resolved verify_command so resume reuses it
     rather than re-inferring (which could diverge from the frozen prompt). A
     gateless run stores [] and loads back as ()."""
-    from agent6.workflows._session_state import load_session_snapshot
+    from agent6.harness._session_state import load_session_snapshot
 
     snap = tmp_path / "loop_state.json"
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5189,7 +5189,7 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     )
     assert load_session_snapshot(snap).verify_command == ("pytest", "-q")
 
-    config.workflow.verify_command = ()  # gateless run -> stored as [] -> loads as ()
+    config.harness.verify_command = ()  # gateless run -> stored as [] -> loads as ()
     wf = _wf(resume_state_path=snap, config=config)
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         _state(system="s", tool_calls=0, root_task_id=None), [], next_iteration=1
@@ -5198,7 +5198,7 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
 
 
 def test_provider_error_hint_for_auth_and_quota() -> None:
-    from agent6.workflows.loop import provider_error_hint  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.loop import provider_error_hint  # pyright: ignore[reportPrivateUsage]
 
     assert "agent6 connect" in provider_error_hint(401)
     assert "agent6 connect" in provider_error_hint(403)
@@ -5223,7 +5223,7 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5255,9 +5255,9 @@ def test_run_result_docstring_enumerates_every_loop_reason() -> None:
     import ast
     import inspect
 
-    import agent6.workflows._guards as guardsmod
-    import agent6.workflows.loop as loopmod
-    from agent6.workflows._session_state import SessionResult
+    import agent6.harness._guards as guardsmod
+    import agent6.harness.loop as loopmod
+    from agent6.harness._session_state import SessionResult
 
     reasons: set[str] = set()
     source = inspect.getsource(loopmod) + inspect.getsource(guardsmod)
@@ -5289,7 +5289,7 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
     """A run-mode turn that ends by asking a prose question with no tool call is
     nudged ONCE to call ask_user; if the model then acts it recovers, and if it
     keeps asking the run accepts silent_finish (bounded, no loop)."""
-    from agent6.workflows._nudges import QUESTION_NUDGE
+    from agent6.harness._nudges import QUESTION_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5320,7 +5320,7 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5356,7 +5356,7 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
 
 
 def test_ends_with_question_detection() -> None:
-    from agent6.workflows._nudges import ends_with_question
+    from agent6.harness._nudges import ends_with_question
 
     assert ends_with_question("I found two options.\nWhich do you prefer?")
     assert not ends_with_question("Done. All tests pass.")
@@ -5377,7 +5377,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
     mistral-small repeating one failure nine times) gets a root-cause nudge at
     the 4th identical consecutive failure and one escalation at the 7th; the
     signature ignores cosmetic drift like line numbers."""
-    from agent6.workflows._nudges import (
+    from agent6.harness._nudges import (
         NO_PROGRESS_ESCALATION,
         NO_PROGRESS_NUDGE,
     )
@@ -5427,7 +5427,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5449,7 +5449,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
         max_iterations=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5466,7 +5466,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
 def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> None:
     """Distinct failures mean real progress through the error list; the guard
     must stay quiet."""
-    from agent6.workflows._nudges import NO_PROGRESS_NUDGE
+    from agent6.harness._nudges import NO_PROGRESS_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5501,7 +5501,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5523,7 +5523,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
         max_iterations=30,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5536,7 +5536,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
 
 
 def test_verify_failure_signature_normalizes_cosmetics() -> None:
-    from agent6.workflows._nudges import verify_failure_signature
+    from agent6.harness._nudges import verify_failure_signature
 
     a = verify_failure_signature("", 'File "t.py", line 41\nAssertionError: want 3 got 2')
     b = verify_failure_signature("", 'File "t.py", line 97\nAssertionError: want 3 got 2')
@@ -5585,7 +5585,7 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5607,7 +5607,7 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
         max_iterations=60,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5626,7 +5626,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
     implicit finish (observed: kimi answering a SWE-bench problem statement
     in prose at iteration 2, ending the run patchless). Two nudges steer back
     to the tools; a third prose turn is then honored as silent_finish."""
-    from agent6.workflows._nudges import SILENT_NO_WORK_NUDGE
+    from agent6.harness._nudges import SILENT_NO_WORK_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5643,7 +5643,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5665,7 +5665,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
         max_iterations=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5682,7 +5682,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
 def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> None:
     """Once an edit has landed, a prose wrap-up is the normal implicit finish
     and must not be bounced by the no-work gate."""
-    from agent6.workflows._nudges import SILENT_NO_WORK_NUDGE
+    from agent6.harness._nudges import SILENT_NO_WORK_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5709,7 +5709,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5731,7 +5731,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
         max_iterations=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5749,7 +5749,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
     search are expected, and the metric plateau/early-finish machinery owns
     when the run stops. The no-progress guard must NOT fire (it would truncate
     the budgeted search and end the run completed=false)."""
-    from agent6.workflows._nudges import NO_PROGRESS_NUDGE
+    from agent6.harness._nudges import NO_PROGRESS_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5789,7 +5789,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5811,7 +5811,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
         max_iterations=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5853,7 +5853,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5876,7 +5876,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nread"}]}]
     conversation = Conversation.from_wire(messages)
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=conversation,
@@ -5905,7 +5905,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
     grep tripping 'not valid JSON' repeatedly) is nudged, escalated, then
     stopped as reason=tool_error_stuck instead of looping to the cap
     (observed: kimi re-issuing malformed grep until timeout)."""
-    from agent6.workflows._nudges import (
+    from agent6.harness._nudges import (
         TOOL_ERROR_ESCALATION,
         TOOL_ERROR_NUDGE,
     )
@@ -5937,7 +5937,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5959,7 +5959,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
         max_iterations=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nsearch"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5980,11 +5980,11 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
     retrying', never 'your call is malformed', and the stale binary a REAL
     exec failure recorded first (git at streak 1; the note fires at 2) must
     not be resurfaced by what is pure policy."""
-    from agent6.tools.errors import ToolDenied as _TD
-    from agent6.workflows._nudges import (
+    from agent6.harness._nudges import (
         TOOL_DENIED_NUDGE,
         TOOL_ERROR_NUDGE,
     )
+    from agent6.tools.errors import ToolDenied as _TD
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -6031,7 +6031,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6053,7 +6053,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
         max_iterations=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nship"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6071,8 +6071,8 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
 def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
     """A successful tool call between errors clears the streak, so intermittent
     errors never trip the ladder."""
+    from agent6.harness._nudges import TOOL_ERROR_NUDGE
     from agent6.tools.errors import ToolError as _TE
-    from agent6.workflows._nudges import TOOL_ERROR_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -6101,7 +6101,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6123,7 +6123,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
         max_iterations=20,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6141,7 +6141,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
     flagged once with the verify-broken nudge (observed: sympy `python -m
     pytest` with pytest missing, exit 1 in 0.0s); a legitimate slow test
     failure is not flagged."""
-    from agent6.workflows._nudges import VERIFY_BROKEN_NUDGE
+    from agent6.harness._nudges import VERIFY_BROKEN_NUDGE
 
     wf = _wf(root=tmp_path, config=MagicMock(), provider=MagicMock(), dispatcher=MagicMock())
     st = _state()
@@ -6181,7 +6181,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
 
 
 def test_note_verify_result_does_not_flag_real_failure(tmp_path: Path) -> None:
-    from agent6.workflows._nudges import VERIFY_BROKEN_NUDGE
+    from agent6.harness._nudges import VERIFY_BROKEN_NUDGE
 
     wf = _wf(root=tmp_path, config=MagicMock(), provider=MagicMock(), dispatcher=MagicMock())
     st = _state()
@@ -6234,7 +6234,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> 
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6256,7 +6256,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> 
         max_iterations=20,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6300,7 +6300,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6329,7 +6329,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
         events=_Events(),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6368,7 +6368,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6401,7 +6401,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
         bridge=OperatorBridge(after_auto_commit=_stop_hook),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6438,7 +6438,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6471,7 +6471,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: Path) -> None:
         bridge=OperatorBridge(after_auto_commit=_exit_hook),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6509,7 +6509,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6544,7 +6544,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
         ),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6625,7 +6625,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
         max_iterations=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6691,7 +6691,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
         max_iterations=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6700,7 +6700,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
             root_task_id=None,
             original_task="t",
         )
-    assert tuple(wf.config.workflow.verify_command) == ()  # still gateless
+    assert tuple(wf.config.harness.verify_command) == ()  # still gateless
     assert provider.adoption_notices == 0  # no false gate-flip message
     assert result.reason == "settled"
     assert "no verify command existed" in result.summary
@@ -6757,7 +6757,7 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: Path) -
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6819,7 +6819,7 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> 
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6860,7 +6860,7 @@ def test_load_repo_summary_tolerates_a_broken_agents_md(tmp_path: Path) -> None:
     session.end -- a dead run listed "running" then "stale". The tolerant pattern
     already existed for the loop's own reads; the startup summary was the
     outlier."""
-    from agent6.workflows._context import load_repo_summary
+    from agent6.harness._context import load_repo_summary
 
     (tmp_path / "AGENTS.md").write_bytes(b"Style: use \x93smart quotes\x94\n")
     summary = load_repo_summary(tmp_path)
@@ -6874,9 +6874,9 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
     reads and recovers from. Capturing it anyway ended the run completed=True
     -- for finish_planning even all_passed=True -- bypassing every finish
     gate."""
+    from agent6.harness._conversation import ToolUse
+    from agent6.harness.loop import TurnState
     from agent6.tools.dispatch import ToolError
-    from agent6.workflows._conversation import ToolUse
-    from agent6.workflows.loop import TurnState
 
     dispatcher = MagicMock()
     dispatcher.dispatch.side_effect = ToolError("finish_planning is not available in run mode")
@@ -6905,9 +6905,9 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
     goal's revoked finish would otherwise reset the fruitless streak every
     round, and standing_patience could never engage (the run span a
     3-second finish->revoke->finish loop until killed)."""
+    from agent6.harness._conversation import ToolUse
+    from agent6.harness.loop import TurnState
     from agent6.tools.results import FinishSessionResult
-    from agent6.workflows._conversation import ToolUse
-    from agent6.workflows.loop import TurnState
 
     dispatcher = MagicMock()
     dispatcher.dispatch.return_value = FinishSessionResult(summary_text="done", result=None)
@@ -6963,7 +6963,7 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -7007,8 +7007,8 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
     (finish_session, verify_settled): a same-turn edit AFTER the green verify
     means nothing verified the FINAL tree, so the end must not claim
     all_passed=True."""
-    from agent6.workflows._conversation import ToolUse
-    from agent6.workflows.loop import TurnState
+    from agent6.harness._conversation import ToolUse
+    from agent6.harness.loop import TurnState
 
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=Path("/tmp"))
@@ -7035,8 +7035,8 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
 
 def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
     """The mirror: a verified-green tree at the plateau still ends passed."""
-    from agent6.workflows._conversation import ToolUse
-    from agent6.workflows.loop import TurnState
+    from agent6.harness._conversation import ToolUse
+    from agent6.harness.loop import TurnState
 
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=Path("/tmp"))
@@ -7089,7 +7089,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
             git=_GIT_STUB,
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -7152,7 +7152,7 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: Pat
     import json
 
     from agent6.directive import Segment
-    from agent6.workflows.subrun import LaneResult, LaneSpec
+    from agent6.harness.subrun import LaneResult, LaneSpec
 
     snap = tmp_path / "loop_state.json"
     at_spawn: dict[str, Any] = {}
@@ -7246,7 +7246,7 @@ def test_the_frontier_executes_the_order_the_children_list_shows() -> None:
     `children` order, but the frontier walked node ids (creation order), so a
     reordered or positionally-inserted child was shown in one order and
     executed in another."""
-    from agent6.workflows._dag_focus import (
+    from agent6.harness._dag_focus import (
         first_ready_subtask,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -7263,7 +7263,7 @@ def test_the_frontier_executes_the_order_the_children_list_shows() -> None:
 def test_the_frontier_walks_depth_first_through_children() -> None:
     """A decomposed child's own leaves come before its later siblings, the
     order the tree shows top to bottom."""
-    from agent6.workflows._dag_focus import (
+    from agent6.harness._dag_focus import (
         first_ready_subtask,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -7342,7 +7342,7 @@ def test_standing_patience_bounds_fruitless_reentries() -> None:
     curator = MagicMock()
     curator.nodes.return_value = _standing_nodes()
     wf = _wf(mode="run", curator=curator, budget=None)
-    wf.config.workflow.standing_patience = 1
+    wf.config.harness.standing_patience = 1
     conv = Conversation()
     state = _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True))
     ctx = _ctx(wf, state)
@@ -7352,7 +7352,7 @@ def test_standing_patience_bounds_fruitless_reentries() -> None:
     assert ended is not None and ended.reason == "silent_finish"
 
     wf0 = _wf(mode="run", curator=curator, budget=None)
-    wf0.config.workflow.standing_patience = 0
+    wf0.config.harness.standing_patience = 0
     state0 = _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True))
     ctx0 = _ctx(wf0, state0)
     quiet = _turn(iteration=3)
@@ -7596,7 +7596,7 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: Pat
     the dispatch->snapshot window leaves it at the re-run iteration for resume
     to ask about) and gone once the after-tools snapshot advanced (a clean
     turn leaves nothing; a later resume never falsely prompts)."""
-    from agent6.workflows._session_state import TURN_IN_FLIGHT_NAME, read_turn_marker
+    from agent6.harness._session_state import TURN_IN_FLIGHT_NAME, read_turn_marker
 
     marker = tmp_path / TURN_IN_FLIGHT_NAME
     seen: list[tuple[int, tuple[str, ...]] | None] = []
@@ -7623,7 +7623,7 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: Pat
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -7645,7 +7645,7 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: Pat
         resume_state_path=tmp_path / "loop_state.json",
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.harness._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -7665,7 +7665,7 @@ def test_the_old_crash_marker_survives_the_replayed_provider_call(tmp_path: Path
     marker; nothing clears it earlier. Cleared before the provider call, a crash
     inside that call made the next resume replay the turn silently, and the
     original turn's tool effects may already stand."""
-    from agent6.workflows._session_state import (
+    from agent6.harness._session_state import (
         TURN_IN_FLIGHT_NAME,
         SessionSnapshot,
         read_turn_marker,
@@ -7710,7 +7710,7 @@ def test_turn_replay_allowed_marker_semantics(tmp_path: Path) -> None:
     preflight refusal replayed the turn on the next attempt with no warning,
     and its tools' side effects happened twice."""
     from agent6.app.resume import turn_replay_allowed
-    from agent6.workflows._session_state import TURN_IN_FLIGHT_NAME, write_turn_marker
+    from agent6.harness._session_state import TURN_IN_FLIGHT_NAME, write_turn_marker
 
     marker = tmp_path / TURN_IN_FLIGHT_NAME
     asked: list[tuple[int, tuple[str, ...]]] = []
@@ -7789,7 +7789,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
     missing) drops the gate again, tells the model, re-pins the manifest
     gateless, and never re-adopts that argv; a configured gate stays red."""
     from agent6.config import Config
-    from agent6.workflows._nudges import VERIFY_UNADOPTED_NOTICE
+    from agent6.harness._nudges import VERIFY_UNADOPTED_NOTICE
 
     argv = ("python3", "-m", "pytest", "-q")
     events: list[dict[str, Any]] = []
@@ -7854,7 +7854,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
             exec_failed=False,
         ),
     )
-    assert wf2.config.workflow.verify_command == argv and st2.verify.broken_warned
+    assert wf2.config.harness.verify_command == argv and st2.verify.broken_warned
 
 
 def test_operator_answers_become_recorded_rulings(tmp_path: Path) -> None:
@@ -7862,9 +7862,9 @@ def test_operator_answers_become_recorded_rulings(tmp_path: Path) -> None:
     ask_user answer lands as a ruling with its question, a steer that answers
     the model's trailing question lands with that question, an ordinary steer
     does not, and the finish-time check finds them all in the file."""
+    from agent6.harness._conversation import Conversation
     from agent6.memory import decisions_path
     from agent6.tools.results import AnswersResult
-    from agent6.workflows._conversation import Conversation
 
     state_dir = tmp_path / "state"
     state_dir.mkdir()
@@ -7976,15 +7976,15 @@ def _metric_repo(repo: Path) -> str:
 
 def _metric_wf(
     repo: Path, base: str, dispatcher: MagicMock, *, commit_per_step: bool = True
-) -> Workflow:
+) -> Harness:
     """A gateless run with an operator metric on a chain."""
-    return Workflow(
+    return Harness(
         chain=RunChain(
             repo, ref="refs/agent6/metric-run/head", fallback_parent=base, per_step=commit_per_step
         ),
         config=Config.model_validate(
             {
-                "workflow": {
+                "harness": {
                     "verify_command": [],
                     "metric": {
                         "command": ["score.sh"],
@@ -8084,10 +8084,10 @@ def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: Path) -> Non
     assert plateaus == []
 
 
-def _settles_at(wf: Workflow, repo: Path, state: LoopState, *, gated: bool) -> int | None:
+def _settles_at(wf: Harness, repo: Path, state: LoopState, *, gated: bool) -> int | None:
     """The iteration the verify-settled stop fires at, or None within a
     generous window: one editing turn, then read-only turns."""
-    from agent6.workflows._nudges import VERIFY_SETTLED_STOP_AFTER
+    from agent6.harness._nudges import VERIFY_SETTLED_STOP_AFTER
 
     (repo / "x.txt").write_text("the worker's finished work\n", encoding="utf-8")
     first = _edited_turn(1)
@@ -8115,8 +8115,8 @@ def test_the_settled_stop_still_fires_without_per_step_commits(tmp_path: Path, g
     after the commit early return. The run spun on read-only calls to its
     iteration cap. Progress is a changed tree, and an editing step seeds."""
 
-    def wf_for(repo: Path, base: str, *, commit_per_step: bool) -> Workflow:
-        return Workflow(
+    def wf_for(repo: Path, base: str, *, commit_per_step: bool) -> Harness:
+        return Harness(
             chain=RunChain(
                 repo,
                 ref="refs/agent6/settled-run/head",
@@ -8124,7 +8124,7 @@ def test_the_settled_stop_still_fires_without_per_step_commits(tmp_path: Path, g
                 per_step=commit_per_step,
             ),
             config=Config.model_validate(
-                {"workflow": {"verify_command": ["true"] if gated else []}}
+                {"harness": {"verify_command": ["true"] if gated else []}}
             ),
             provider=MagicMock(),
             dispatcher=MagicMock(),
@@ -8144,14 +8144,14 @@ def test_the_settled_stop_still_fires_without_per_step_commits(tmp_path: Path, g
     assert _settles_at(off, repo2, state, gated=gated) == baseline
 
 
-def _ruling_wf(tmp_path: Path) -> Workflow:
+def _ruling_wf(tmp_path: Path) -> Harness:
     """A run with a state dir (so a ruling lands in DECISIONS.md) whose steer
     bridge always carries the answer "keep squash"."""
 
     def steer_prompt() -> str | None:
         return "keep squash"
 
-    return Workflow(
+    return Harness(
         chain=RunChain(tmp_path),
         config=Config(),
         provider=MagicMock(),
@@ -8223,8 +8223,8 @@ def test_a_steer_answering_a_prose_question_records_after_the_nudge(tmp_path: Pa
     """Run mode nudges once when the model ends on a prose question, so the
     conversation's last turn is the harness's notice, not the prose; the
     pairing read "" there and the operator's answer was never recorded."""
+    from agent6.harness._nudges import QUESTION_NUDGE
     from agent6.memory import decisions_path
-    from agent6.workflows._nudges import QUESTION_NUDGE
 
     question = "Should the default merge strategy stay squash?"
     wf = _ruling_wf(tmp_path)
@@ -8242,8 +8242,8 @@ def test_a_steer_answering_a_prose_question_records_after_the_nudge(tmp_path: Pa
 
 def test_a_steer_answering_an_optioned_question_records_the_question(tmp_path: Path) -> None:
     """Options after a prose question do not become the recorded question."""
+    from agent6.harness._nudges import QUESTION_NUDGE
     from agent6.memory import decisions_path
-    from agent6.workflows._nudges import QUESTION_NUDGE
 
     question = "Which merge strategy should remain the default?"
     wf = _ruling_wf(tmp_path)
@@ -8290,7 +8290,7 @@ def test_the_root_passes_with_an_open_child(
             draft=TaskNodeDraft(title=label, depends_on=(), created_by=actor, standing=standing),
         )
     )
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(tmp_path),
         config=Config(),
         provider=MagicMock(),
@@ -8312,9 +8312,9 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: Path) -> None:
     operator's standing goal, three tool errors feeding the error ladder."""
     from agent6.graph.curator import GraphCurator
     from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
+    from agent6.harness._conversation import UserTurn
+    from agent6.harness._dag_focus import STUCK_ON_TASK_AFTER
     from agent6.sessions.layout import SessionLayout
-    from agent6.workflows._conversation import UserTurn
-    from agent6.workflows._dag_focus import STUCK_ON_TASK_AFTER
 
     curator = GraphCurator(SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1"))
     root = curator.add_subtask(
@@ -8331,7 +8331,7 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: Path) -> None:
             ),
         )
     )
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(tmp_path),
         config=Config(),
         provider=MagicMock(),
@@ -8369,8 +8369,8 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
     without the plateau's end gates running too."""
     from unittest.mock import patch
 
+    from agent6.harness._review import CritiqueResult
     from agent6.tools.results import FinishSessionResult
-    from agent6.workflows._review import CritiqueResult
 
     def _tool_use(name: str, call_id: str, args: dict[str, Any]) -> ProviderResponse:
         block = {"type": "tool_use", "id": call_id, "name": name, "input": args}
@@ -8444,7 +8444,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -8477,9 +8477,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
 
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     with (
-        patch(
-            "agent6.workflows._chain.chain_commit", side_effect=[f"sha{i}" for i in range(1, 20)]
-        ),
+        patch("agent6.harness._chain.chain_commit", side_effect=[f"sha{i}" for i in range(1, 20)]),
         patch.object(Reviewer, "critique", fake_panel),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -8530,7 +8528,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: Pat
     config = SimpleNamespace(
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -8552,7 +8550,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: Pat
         max_iterations=5,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with patch("agent6.workflows._chain.chain_commit", return_value="sha1") as commit:
+    with patch("agent6.harness._chain.chain_commit", return_value="sha1") as commit:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -8616,7 +8614,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: Path) -> No
 
     cfg = Config.model_validate(
         {
-            "workflow": {
+            "harness": {
                 "verify_command": ["configured-gate"],
                 "verify_when": "step",
                 "verify_infer": True,
@@ -8640,7 +8638,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: Path) -> No
     def _next_sha(*_args: object, **_kwargs: object) -> str:
         return next(shas)
 
-    with patch("agent6.workflows._chain.chain_commit", side_effect=_next_sha):
+    with patch("agent6.harness._chain.chain_commit", side_effect=_next_sha):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -8651,5 +8649,5 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: Path) -> No
         )
     assert result.reason == "finish_session"
     assert dispatcher.adopted == []
-    assert wf.config.workflow.verify_command == ("configured-gate",)
+    assert wf.config.harness.verify_command == ("configured-gate",)
     assert "loop.verify_inferred" not in events_path.read_text(encoding="utf-8")

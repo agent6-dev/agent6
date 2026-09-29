@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The `agent6 tui` hub: a home screen to browse recent runs and start new work.
 
-CLI-first by design, the hub never reimplements the workflow. "Start a run /
+CLI-first by design, the hub never reimplements the harness. "Start a run /
 plan / ask" spawns the normal `agent6` CLI as a detached subprocess
 (whose non-TTY stdout means it won't try to open its own TUI) and then opens the
 read-only dashboard on the run directory it creates. So everything here is a

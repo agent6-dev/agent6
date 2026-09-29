@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """The verify finish gate: finish_session can never report 'passed' over a red or
-stale verify, and `[workflow].verify_when` has the harness run the gate itself
+stale verify, and `[harness].verify_when` has the harness run the gate itself
 at finish (or every step), returning a red finish `verify_retries` times. Both
 ground on VerifyGate.tree_green."""
 
@@ -14,22 +14,22 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.config import Config
-from agent6.prompts.loop import V2_VERIFY_WHEN
-from agent6.viewmodel.listing import status_word
-from agent6.workflows._chain import RunChain
-from agent6.workflows._finish_gates import (
+from agent6.harness._chain import RunChain
+from agent6.harness._finish_gates import (
     SILENT_END_GATES,
     FinishCall,
     red_gate_returns,
     verify_finish,
 )
-from agent6.workflows._session_state import End
-from agent6.workflows._verify_verdict import VerifyVerdict
-from agent6.workflows.loop import (
+from agent6.harness._session_state import End
+from agent6.harness._verify_verdict import VerifyVerdict
+from agent6.harness.loop import (
+    Harness,
     LoopState,
     TurnState,
-    Workflow,
 )
+from agent6.prompts.loop import V2_VERIFY_WHEN
+from agent6.viewmodel.listing import status_word
 
 
 def _wf(
@@ -37,9 +37,9 @@ def _wf(
     verify: bool,
     mode: Literal["run", "plan", "ask", "agent"] = "run",
     root: Path = Path("/tmp"),
-) -> Workflow:
-    data: dict[str, Any] = {"workflow": {"verify_command": ["true"]}} if verify else {}
-    return Workflow(
+) -> Harness:
+    data: dict[str, Any] = {"harness": {"verify_command": ["true"]}} if verify else {}
+    return Harness(
         chain=RunChain(root),
         config=Config.model_validate(data),
         provider=MagicMock(),
@@ -49,7 +49,7 @@ def _wf(
     )
 
 
-def _green(wf: Workflow, **verdict_kw: Any) -> bool | None:
+def _green(wf: Harness, **verdict_kw: Any) -> bool | None:
     state = LoopState(original_task="t", tool_calls=0, verify=VerifyVerdict(**verdict_kw))
     return wf.gate.tree_green(state.verify)
 
@@ -71,7 +71,7 @@ def test_green_only_when_last_verify_passed_and_tree_unedited() -> None:
 
 
 def test_the_harness_gate_defaults_to_finish_with_two_returns() -> None:
-    wf = Config().workflow
+    wf = Config().harness
     assert (wf.verify_when, wf.verify_retries) == ("finish", 2)
 
 
@@ -83,8 +83,8 @@ def test_a_red_gate_at_the_untouched_base_is_not_returned_to_the_worker() -> Non
         verify=VerifyVerdict(last_ok=False, baseline_ok=False),
     )
     assert not red_gate_returns(
-        wf.config.workflow.verify_when,
-        wf.config.workflow.verify_retries,
+        wf.config.harness.verify_when,
+        wf.config.harness.verify_retries,
         state.verify,
         state.gates,
         gate_present=wf.gate.present(state.verify),
@@ -92,7 +92,7 @@ def test_a_red_gate_at_the_untouched_base_is_not_returned_to_the_worker() -> Non
     assert "untouched base" in V2_VERIFY_WHEN["finish"]
 
 
-def _verified(wf: Workflow, **verdict_kw: Any) -> str:
+def _verified(wf: Harness, **verdict_kw: Any) -> str:
     state = LoopState(original_task="t", tool_calls=0, verify=VerifyVerdict(**verdict_kw))
     return wf.gate.verification(state.verify)
 
@@ -276,7 +276,7 @@ def _git_seed(tmp_path: Path) -> str:
 
 
 def _snap(**kw: Any) -> Any:
-    from agent6.workflows._session_state import SessionSnapshot
+    from agent6.harness._session_state import SessionSnapshot
 
     base: dict[str, Any] = {
         "system": "s",
@@ -290,8 +290,8 @@ def _snap(**kw: Any) -> Any:
     return SessionSnapshot(**{**base, **kw})
 
 
-def _resumed_state(wf: Workflow, snap: Any) -> LoopState:
-    from agent6.workflows._conversation import Conversation
+def _resumed_state(wf: Harness, snap: Any) -> LoopState:
+    from agent6.harness._conversation import Conversation
 
     state = LoopState(original_task="t", tool_calls=0)
     wf._seed_carryover(state, Conversation.from_wire([]), snap)  # pyright: ignore[reportPrivateUsage]
@@ -354,7 +354,7 @@ def test_a_resumed_leg_carries_the_scoped_gate(tmp_path: Path) -> None:
     assert state.verify.last_ok is None
 
 
-# ---- the harness-run gate (`[workflow].verify_when`) -------------------------
+# ---- the harness-run gate (`[harness].verify_when`) -------------------------
 
 
 def _exec(rc: int, out: str = "") -> Any:
@@ -363,14 +363,14 @@ def _exec(rc: int, out: str = "") -> Any:
     return ExecResult(returncode=rc, stdout=out, stderr="", duration_s=1.0, exec_failed=False)
 
 
-def _harness_wf(when: str, retries: int = 2, *, policy: str = "yes") -> tuple[Workflow, MagicMock]:
+def _harness_wf(when: str, retries: int = 2, *, policy: str = "yes") -> tuple[Harness, MagicMock]:
     """A run-mode loop over a gate, and the mock dispatcher that owns `run_verify`."""
     data: dict[str, Any] = {
-        "workflow": {"verify_command": ["true"], "verify_when": when, "verify_retries": retries}
+        "harness": {"verify_command": ["true"], "verify_when": when, "verify_retries": retries}
     }
     dispatcher = MagicMock()
     dispatcher.command_policy.return_value = policy
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(Path("/tmp")),
         config=Config.model_validate(data),
         provider=MagicMock(),
@@ -382,7 +382,7 @@ def _harness_wf(when: str, retries: int = 2, *, policy: str = "yes") -> tuple[Wo
 
 
 def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
-    from agent6.workflows.loop import TurnState
+    from agent6.harness.loop import TurnState
 
     turn = TurnState(iteration=3, resp=MagicMock(), assistant=MagicMock())
     if finishing:
@@ -393,14 +393,14 @@ def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
     return turn
 
 
-def _verify_gate(wf: Workflow, state: LoopState, turn: Any) -> None:
+def _verify_gate(wf: Harness, state: LoopState, turn: Any) -> None:
     """The verify gate's answer over *turn*, applied through the loop."""
     ctx = wf._turn_context(state, iteration=turn.iteration, leg_start=1)  # pyright: ignore[reportPrivateUsage]
     wf._refuse(state, turn, verify_finish(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
 def _notices(turn: Any) -> list[str]:
-    from agent6.workflows._conversation import Notice
+    from agent6.harness._conversation import Notice
 
     return [r.text for r in turn.tool_results if isinstance(r, Notice)]
 
@@ -538,8 +538,8 @@ def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
 
 
 def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
+    from agent6.harness._prompt_blocks import build_system_prompt
     from agent6.types import RepoSummary
-    from agent6.workflows._prompt_blocks import build_system_prompt
 
     repo = RepoSummary(
         root=Path("/tmp"),
@@ -553,7 +553,7 @@ def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
 
     def block(when: str, mode: Literal["run", "plan"] = "run") -> str:
         cfg = Config.model_validate(
-            {"workflow": {"verify_command": ["true"], "verify_when": when, "verify_retries": 1}}
+            {"harness": {"verify_command": ["true"], "verify_when": when, "verify_retries": 1}}
         )
         return build_system_prompt(config=cfg, repo=repo, mode=mode, skills=None)
 
@@ -585,15 +585,15 @@ def test_a_verify_followed_by_an_edit_in_one_turn_is_judged_again() -> None:
 
 def _scoped_wf(
     root: Path, command: list[str], *, when: str = "finish"
-) -> tuple[Workflow, MagicMock]:
+) -> tuple[Harness, MagicMock]:
     """A harness-gated loop whose root holds pkg/mod.py + tests/test_mod.py."""
     for rel in ("pkg/mod.py", "tests/test_mod.py"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text("")
-    data: dict[str, Any] = {"workflow": {"verify_command": command, "verify_when": when}}
+    data: dict[str, Any] = {"harness": {"verify_command": command, "verify_when": when}}
     dispatcher = MagicMock()
     dispatcher.command_policy.return_value = "yes"
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(root),
         config=Config.model_validate(data),
         provider=MagicMock(),
@@ -604,7 +604,7 @@ def _scoped_wf(
     return wf, dispatcher
 
 
-def _fake_diff(_self: Workflow) -> str:
+def _fake_diff(_self: Harness) -> str:
     return "diff --git a/pkg/mod.py b/pkg/mod.py\n"
 
 
@@ -694,7 +694,7 @@ def test_a_timeout_with_no_nearby_tests_stands(tmp_path: Path, monkeypatch: Any)
     """Nothing near the change to run: the timeout is the verdict; scoping
     never arms on an empty selection."""
 
-    def no_tests_diff(_self: Workflow) -> str:
+    def no_tests_diff(_self: Harness) -> str:
         return "diff --git a/docs/page.md b/docs/page.md\n"
 
     monkeypatch.setattr(RunChain, "diff_since_base", no_tests_diff)
@@ -816,10 +816,10 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     dispatcher.run_verify.return_value = ExecResult(
         returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
     )
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(Path("/tmp")),
         config=Config.model_validate(
-            {"workflow": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 2}}
+            {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 2}}
         ),
         provider=MagicMock(),
         dispatcher=dispatcher,
@@ -853,10 +853,10 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     denied is not the model's to fix, and bouncing the end told it to."""
     dispatcher = MagicMock()
     dispatcher.command_policy.return_value = policy
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(Path("/tmp")),
         config=Config.model_validate(
-            {"workflow": {"verify_command": ["true"], "verify_when": "step", "verify_retries": 2}}
+            {"harness": {"verify_command": ["true"], "verify_when": "step", "verify_retries": 2}}
         ),
         provider=MagicMock(),
         dispatcher=dispatcher,

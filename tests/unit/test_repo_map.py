@@ -10,11 +10,11 @@ from pathlib import Path
 import pytest
 
 from agent6.git_ops import tracked_files
-from agent6.workflows._context import (
+from agent6.harness._context import (
     _build_repo_map,  # pyright: ignore[reportPrivateUsage]
     load_repo_summary,
 )
-from agent6.workflows._prompt_blocks import repo_priors_block
+from agent6.harness._prompt_blocks import repo_priors_block
 
 
 def _repo_map(root: Path) -> str:

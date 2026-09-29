@@ -24,10 +24,10 @@ from agent6.app._setup import budget_tracker
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config
+from agent6.harness.judge import CandidateBrief, JudgeError, compare, mechanical_ranking
 from agent6.providers import Provider, ProviderError, TranscriptSink
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel.format import format_usd
-from agent6.workflows.judge import CandidateBrief, JudgeError, compare, mechanical_ranking
 
 # The reviewer provider the judge call uses, built by the caller from the
 # configured `reviewer` role (ui/cli wires it via `build_role_provider`).

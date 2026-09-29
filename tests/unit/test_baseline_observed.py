@@ -14,31 +14,31 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agent6.tools.results import ExecResult
-from agent6.workflows._chain import RunChain
-from agent6.workflows._finish_gates import (
+from agent6.harness._chain import RunChain
+from agent6.harness._finish_gates import (
     FinishCall,
     finish_reason,
     red_gate_returns,
     verify_finish,
 )
-from agent6.workflows.loop import (
+from agent6.harness.loop import (
+    Harness,
     LoopState,
     TurnState,
-    Workflow,
 )
+from agent6.tools.results import ExecResult
 from tests.unit.turn_context import turn_context
 
 _BASE = "b" * 40
 
 
-def _wf(*, head: str = _BASE, clean: bool = True) -> Workflow:
-    wf = Workflow.__new__(Workflow)
+def _wf(*, head: str = _BASE, clean: bool = True) -> Harness:
+    wf = Harness.__new__(Harness)
     wf.chain = RunChain(Path("/nonexistent"), base_sha=_BASE)
     object.__setattr__(wf, "_git_status", lambda: SimpleNamespace(is_clean=clean, head_sha=head))
     object.__setattr__(wf, "_emit", _quiet)
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -59,11 +59,11 @@ def _quiet(*_a: object, **_k: object) -> None:
     return None
 
 
-def _patch_git(monkeypatch: pytest.MonkeyPatch, wf: Workflow) -> None:
+def _patch_git(monkeypatch: pytest.MonkeyPatch, wf: Harness) -> None:
     def _status(_root: object, **_kw: object) -> object:
         return wf._git_status()  # pyright: ignore[reportAttributeAccessIssue]
 
-    monkeypatch.setattr("agent6.workflows._verify_gate.git_status", _status)
+    monkeypatch.setattr("agent6.harness._verify_gate.git_status", _status)
 
 
 def _state() -> LoopState:
@@ -129,7 +129,7 @@ def test_an_unreadable_git_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> No
         raise GitError("index.lock held")
 
     state, turn = _state(), _turn()
-    monkeypatch.setattr("agent6.workflows._verify_gate.git_status", _boom)
+    monkeypatch.setattr("agent6.harness._verify_gate.git_status", _boom)
     _wf().gate.note_result(state, turn, _verify(1))
     assert state.verify.baseline_ok is None
 
@@ -152,8 +152,8 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
     wf.mode = "run"
     wf.dispatcher = MagicMock()
     wf.dispatcher.command_policy.return_value = "ask"
-    wf.config.workflow.verify_when = "finish"
-    wf.config.workflow.verify_retries = 2
+    wf.config.harness.verify_when = "finish"
+    wf.config.harness.verify_retries = 2
     state = _state()
     state.verify.baseline_ok = False
     state.verify.ever_passed = True
@@ -161,8 +161,8 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
     finish = FinishCall("finish_session", "done")
 
     assert red_gate_returns(
-        wf.config.workflow.verify_when,
-        wf.config.workflow.verify_retries,
+        wf.config.harness.verify_when,
+        wf.config.harness.verify_retries,
         state.verify,
         state.gates,
         gate_present=wf.gate.present(state.verify),
@@ -208,11 +208,11 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
     """Plan mode can run the gate but never edits, so a red one is always
     "already red" -- and `finish_planning` would have been relabelled, turning
     a clean plan into "gate was already red"."""
-    wf = Workflow.__new__(Workflow)
+    wf = Harness.__new__(Harness)
     wf.chain = RunChain(Path("/nonexistent"))
     wf.mode = "plan"
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -244,7 +244,7 @@ def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
     """Attribution belongs in the word, not the exit code: a script reading 0
     would take it as a passing gate, and the tree is not green either way."""
     from agent6.app.finalize import session_exit_code
-    from agent6.workflows._session_state import SessionResult
+    from agent6.harness._session_state import SessionResult
 
     inherited = SessionResult(
         completed=True,
@@ -273,7 +273,7 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path
     wf = _wf()
     wf.mode = "run"
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        workflow=SimpleNamespace(
+        harness=SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,

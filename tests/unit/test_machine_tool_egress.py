@@ -433,7 +433,7 @@ def test_machine_run_validates_config_overlay_for_pure_machine(
     pure = (
         'machine = "pure"\nversion = 1\ninitial = "go"\n'
         "[budget]\nmax_transitions = 5\n"
-        "[config.workflow]\nbogus_key = 42\n"
+        "[config.harness]\nbogus_key = 42\n"
         '[states.go]\nkind = "wait"\nuntil = "2020-01-01T00:00:00Z"\n'
         'on = { tick = "done", signal = "done" }\n'
         '[states.done]\nkind = "terminal"\nstatus = "ok"\nreason = "x"\n'

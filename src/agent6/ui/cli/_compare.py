@@ -23,11 +23,11 @@ from agent6.app.compare import rank as core_rank
 from agent6.app.providers import build_role_provider
 from agent6.budget import BudgetTracker
 from agent6.config import Config
+from agent6.harness.judge import CandidateBrief
 from agent6.providers import Provider, TranscriptSink
 from agent6.ui.cli._console_view import _HEARTBEAT_TICK_S
 from agent6.ui.cli._terminal_guard import raw_stream
 from agent6.viewmodel.format import spinner_frame
-from agent6.workflows.judge import CandidateBrief
 
 __all__ = ["rank"]
 

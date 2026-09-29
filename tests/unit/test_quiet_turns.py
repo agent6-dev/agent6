@@ -5,20 +5,20 @@ turn that ends on a question, and an empty turn, each bounded."""
 
 from __future__ import annotations
 
-from agent6.providers import ProviderResponse
-from agent6.workflows._loop_state import LoopState
-from agent6.workflows._nudges import (
+from agent6.harness._loop_state import LoopState
+from agent6.harness._nudges import (
     QUESTION_NUDGE,
     SILENT_NO_WORK_NUDGE,
     SILENT_NO_WORK_PATIENCE,
     WENT_QUIET_NUDGE,
 )
-from agent6.workflows._quiet_turns import (
+from agent6.harness._quiet_turns import (
     SILENT_NO_WORK_UNTIL,
     question_in_prose,
     silent_no_work,
     went_quiet,
 )
+from agent6.providers import ProviderResponse
 from tests.unit.turn_context import turn_context
 
 
@@ -80,7 +80,7 @@ def test_an_empty_turn_is_nudged_up_to_the_cap_with_the_starved_wording() -> Non
 
 
 def test_the_config_knob_sets_the_cap() -> None:
-    """`[workflow].went_quiet_max_nudges` is the one knob: 0 ends the run on
+    """`[harness].went_quiet_max_nudges` is the one knob: 0 ends the run on
     the first empty turn (no nudge), and the default caps the streak at 4."""
     assert went_quiet(_state(), turn_context(went_quiet_max_nudges=0), _empty()) is None
     default = went_quiet(_state(), turn_context(), _empty())

@@ -23,19 +23,10 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.budget import BudgetExceeded
 from agent6.config import ReviewTier
-from agent6.prompts.review import EXPLORE_REVIEW_SYSTEM_PROMPT, REVIEW_SYSTEM_PROMPT
-from agent6.providers import (
-    Provider,
-    ProviderError,
-    ProviderResponse,
-    ToolDefinition,
-    output_cap_truncated,
-)
-from agent6.tools.results import ToolResult
-from agent6.workflows._chain import RunChain
-from agent6.workflows._context import agents_md_text
-from agent6.workflows._llm_json import extract_json
-from agent6.workflows._panel import (
+from agent6.harness._chain import RunChain
+from agent6.harness._context import agents_md_text
+from agent6.harness._llm_json import extract_json
+from agent6.harness._panel import (
     ALL_CATEGORIES,
     Finding,
     PanelResult,
@@ -47,9 +38,18 @@ from agent6.workflows._panel import (
     panel_is_inconclusive,
     render_findings,
 )
+from agent6.prompts.review import EXPLORE_REVIEW_SYSTEM_PROMPT, REVIEW_SYSTEM_PROMPT
+from agent6.providers import (
+    Provider,
+    ProviderError,
+    ProviderResponse,
+    ToolDefinition,
+    output_cap_truncated,
+)
+from agent6.tools.results import ToolResult
 
 if TYPE_CHECKING:
-    from agent6.workflows._loop_state import LoopState, TurnState
+    from agent6.harness._loop_state import LoopState, TurnState
 
 
 @dataclass(frozen=True, slots=True)

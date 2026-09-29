@@ -2,9 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """`/parallel` steer dispatch: `ParallelDispatcher` owns the policy (when to
 cut lanes, the DAG stamps, the events, the injected group spawner) over the
-Workflow-free pieces below: expanding a segment into lanes, joining one
+Harness-free pieces below: expanding a segment into lanes, joining one
 returned lane's branch, and reducing lane outcomes to the DAG stamp and the
-summary message the model continues with. Unit-testable without a Workflow.
+summary message the model continues with. Unit-testable without a Harness.
 """
 
 from __future__ import annotations
@@ -26,13 +26,13 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
-from agent6.workflows._chain import RunChain
-from agent6.workflows._dag_focus import current_task_id
-from agent6.workflows.subrun import GroupLaneSpawner, LaneResult, LaneTask, SubrunError
+from agent6.harness._chain import RunChain
+from agent6.harness._dag_focus import current_task_id
+from agent6.harness.subrun import GroupLaneSpawner, LaneResult, LaneTask, SubrunError
 
 if TYPE_CHECKING:
-    from agent6.workflows._conversation import Conversation
-    from agent6.workflows._loop_state import LoopState
+    from agent6.harness._conversation import Conversation
+    from agent6.harness._loop_state import LoopState
 
 
 @dataclass(frozen=True, slots=True)

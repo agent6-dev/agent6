@@ -313,7 +313,7 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
     prompt's duration: the spinner's per-tick line-erase otherwise wipes the
     pause-menu line and its Tab preview.
 
-    Returns callables for the workflow plus a `restore` hook to put the
+    Returns callables for the harness plus a `restore` hook to put the
     previous handler back when the run is done.
     """
     state: dict[str, Any] = {"stage": 0, "prompting": False}

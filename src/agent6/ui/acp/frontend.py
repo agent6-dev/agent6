@@ -24,6 +24,7 @@ from agent6.app.frontend import FrontendCapabilities, SessionFacts, SessionFront
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.events import EventSink
+from agent6.harness.loop import Harness, SessionResult
 from agent6.sessions.ipc import (
     answer_written,
     question_answers_written,
@@ -42,7 +43,6 @@ from agent6.tools.operator_prompts import (
 )
 from agent6.types import AutoCommitDirective, IsolationLevel
 from agent6.ui.steer import file_bridge_steer
-from agent6.workflows.loop import SessionResult, Workflow
 
 # How long a permission request waits for the editor. An operator who has
 # walked away must not hold a run forever, and the seam already reads silence
@@ -201,7 +201,7 @@ def acp_frontend(
         return lambda _iteration, _summary: "continue"
 
     def _no_ask_repl(
-        _wf: Workflow, _budget: BudgetTracker, _layout: SessionLayout, _task: str
+        _wf: Harness, _budget: BudgetTracker, _layout: SessionLayout, _task: str
     ) -> SessionResult:
         raise RuntimeError("an ACP session drives its own turns; the ask REPL is not used")
 

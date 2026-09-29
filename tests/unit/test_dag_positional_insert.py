@@ -62,7 +62,7 @@ def test_after_must_name_a_sibling(tmp_path: Path) -> None:
 def test_the_inserted_task_is_focused_next(tmp_path: Path) -> None:
     """The point of placing work: the frontier surfaces it in its new
     position, not at the end of the list."""
-    from agent6.workflows._dag_focus import first_ready_subtask
+    from agent6.harness._dag_focus import first_ready_subtask
 
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")
@@ -110,7 +110,7 @@ def test_standing_task_is_the_fallback_never_the_frontier(tmp_path: Path) -> Non
 
     from agent6.graph.curator import CuratorError
     from agent6.graph.models import TaskNodeDraft, UpdateStatusIntent
-    from agent6.workflows._dag_focus import current_task_id, first_ready_subtask
+    from agent6.harness._dag_focus import current_task_id, first_ready_subtask
 
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")
@@ -202,7 +202,7 @@ def test_a_parent_over_a_failed_child_is_focused_and_its_refusal_names_the_child
 
     from agent6.graph.curator import CuratorError
     from agent6.graph.models import UpdateStatusIntent
-    from agent6.workflows._dag_focus import first_ready_subtask
+    from agent6.harness._dag_focus import first_ready_subtask
 
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")

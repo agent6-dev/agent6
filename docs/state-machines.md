@@ -140,7 +140,7 @@ Every state has a `kind`.
 
 | kind       | what it does                                              | outcome labels (edges)               |
 |------------|-----------------------------------------------------------|--------------------------------------|
-| `agent`    | runs one agent6 loop (a `Workflow`) on a prompt           | `ok` · `failed` · `budget_exhausted` · `timeout` |
+| `agent`    | runs one agent6 loop (a `Harness`) on a prompt           | `ok` · `failed` · `budget_exhausted` · `timeout` |
 | `tool`     | one sandboxed command via `run_in_jail`                   | `ok` · `nonzero` · `timeout`         |
 | `wait`     | sleeps until a wall-clock tick or an external signal      | `tick` · `signal`                    |
 | `branch`   | pure predicate over the blackboard → next state           | (chooses a `goto` directly)          |
@@ -504,7 +504,7 @@ A machine file may carry an optional top-level `[config]` table: an agent6 confi
 - most knobs `agent6 config show` lists are valid inside it; the refusals are below
 
 ```toml
-[config.workflow]
+[config.harness]
 verify_command = ["uv", "run", "pytest", "-q"]
 
 [config.review]
@@ -657,7 +657,7 @@ Describe a loop in plain language and get a first-cut bundle back.
 It is an ordinary agent6 run handed this document's grammar, working in a drafting workspace of its own.
 The model writes the `.asm.toml` and every `scripts/...` file there with `apply_edit`, one file at a time, and finishes when the bundle is complete.
 No new tool.
-The leg has the edit tools; `run_commands = "no"` withholds `run_command`, `run_verify_command`, `run_metric_command` and `stop_background`, and the operator's `[workflow].metric` is dropped.
+The leg has the edit tools; `run_commands = "no"` withholds `run_command`, `run_verify_command`, `run_metric_command` and `stop_background`, and the operator's `[harness].metric` is dropped.
 No host is pre-allowed, so a headless `fetch` denies.
 It never sees the operator's checkout, and its writes are bounded by the workspace the way any run's are by its repo.
 
@@ -677,15 +677,15 @@ It never sees the operator's checkout, and its writes are bounded by the workspa
 
 ## 8. Module boundaries
 
-The layering is `ui → app → workflows → tools → sandbox`, with `agent6.machine` a top-level package beside them, and workflows never import each other.
-An `agent` state needs to *invoke* the `loop` workflow, so the engine cannot itself be a `workflow` without breaking that rule.
+The layering is `ui → app → harness → tools → sandbox`, with `agent6.machine` a top-level package beside them.
+An `agent` state needs to *invoke* the harness, so the engine cannot itself sit inside `harness` without importing upward.
 
-The engine does not import the workflow stack.
+The engine does not import the harness.
 `engine.drive` takes a `World`; the live one, `LiveWorld`, runs an `agent` state through its `agent_runner` callable (`Callable[[AgentRequest, Path | None], AgentExecResult]`).
 The second argument is the per-state event-log path (`<instance>/states/<seq>-<state>/logs.jsonl`) each agent-state execution streams to.
-`app/`, which depends on both `agent6.machine` and `agent6.workflows`, builds that runner (`build_machine_agent_runner` in `app/machine_agent.py`) and wires it into the `LiveWorld` in `app/machine/run.py`.
+`app/`, which depends on both `agent6.machine` and `agent6.harness`, builds that runner (`build_machine_agent_runner` in `app/machine_agent.py`) and wires it into the `LiveWorld` in `app/machine/run.py`.
 The orchestration around `machine create`/`run` lives in `app/machine/`, and `ui/cli` adapts argv and renders.
-So `agent6.machine` never gains an edge into `agent6.workflows`, and the tach graph stays acyclic.
+So `agent6.machine` never gains an edge into `agent6.harness`, and the tach graph stays acyclic.
 
 Files (all `from __future__ import annotations`, strict pyright, pydantic only at the parse boundary, `@dataclass(frozen=True, slots=True)` for the internal value types):
 
@@ -697,7 +697,7 @@ Files (all `from __future__ import annotations`, strict pyright, pydantic only a
 - `machine/graph.py`: the mermaid/DOT renderers.
 - `machine/journal.py`: append-only event log, snapshots, locking, and persisted-wake state.
 - `machine/engine.py`: the deterministic reducer loop.
-- `machine/authoring.py`: the per-attempt prompt builder for `machine create`, around the grammar guide in `agent6.prompts.machine`; it imports nothing from the workflow stack.
+- `machine/authoring.py`: the per-attempt prompt builder for `machine create`, around the grammar guide in `agent6.prompts.machine`; it imports nothing from the harness.
 
 No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
 
@@ -708,7 +708,7 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
 - **No new LLM tool surface**
     - the fixed set in `tools/schema.py` is unchanged; machines orchestrate existing capabilities
     - `machine create` is no exception: the drafting agent has the same edit tools any run has, pointed at a drafting workspace of its own
-    - every command tool is withheld, and its `[workflow].metric` and `fetch` reach are removed
+    - every command tool is withheld, and its `[harness].metric` and `fetch` reach are removed
 - **No arbitrary code execution from a file**
     - predicates and templates are parsed-then-walked against an allow-list; never `eval`/`exec`, never `getattr`
     - dotted references are agent6-interpreted data navigation

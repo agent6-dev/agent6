@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from agent6.workflows._conversation import AssistantTurn
-from agent6.workflows._finish_gates import (
+from agent6.harness._conversation import AssistantTurn
+from agent6.harness._finish_gates import (
     END_GATES,
     FINISH_GATES,
     SILENT_END_GATES,
@@ -18,8 +18,8 @@ from agent6.workflows._finish_gates import (
     review_finish,
     standing_finish,
 )
-from agent6.workflows._loop_state import LoopState, TurnState
-from agent6.workflows._metric import (
+from agent6.harness._loop_state import LoopState, TurnState
+from agent6.harness._metric import (
     METRIC_EARLY_FINISH_PATIENCE,
     METRIC_FINISH_NUDGE,
     MetricGuard,

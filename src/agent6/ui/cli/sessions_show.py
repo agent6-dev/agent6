@@ -275,7 +275,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "task": manifest.user_task or scan.task,
                     "model": model,
                     "model_from_flag": model_from_flag,
-                    "preset": manifest.workflow.preset or None,
+                    "preset": manifest.harness.preset or None,
                     "status": status,
                     "label": status_cell,
                     "detail": status_detail,
@@ -329,7 +329,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     _print_fanout(manifest, lanes, lane_manifests)
     print(
         f"model:      {model}{' (from --model)' if model_from_flag else ''}\n"
-        f"preset:     {manifest.workflow.preset or '-'}"
+        f"preset:     {manifest.harness.preset or '-'}"
     )
     print(f"state:      {state}{pid_note}")
     print(f"iteration:  {scan.iteration if scan.iteration is not None else '-'}")

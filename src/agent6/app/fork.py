@@ -69,6 +69,7 @@ from agent6.graph.storage import (
     write_cursor,
     write_node,
 )
+from agent6.harness._session_state import load_session_snapshot
 from agent6.paths import state_dir
 from agent6.portable import atomic_write
 from agent6.sandbox.detect import resolve_isolation
@@ -91,7 +92,6 @@ from agent6.sessions.manifest import (
 )
 from agent6.types import ModelRoute, ResumableMode, session_bucket, session_kind
 from agent6.viewmodel import newest_session_dir
-from agent6.workflows._session_state import load_session_snapshot
 
 # Curator-owned DAG artifacts copied verbatim into the fork; each is a
 # top-level entry under the run dir (`graph/` is a directory).
@@ -318,10 +318,10 @@ def _plan_fork(
 
     try:
         # The source's preset: resume replays it (preset or manifest_preset),
-        # so the child manifest's models/workflow stamp must be derived from
+        # so the child manifest's models/harness stamp must be derived from
         # the SAME preset-resolved config or `sessions show` reports a model the forked
         # run never uses.
-        cfg = load_effective(cwd, config_path, preset=sm.workflow.replay_preset).config
+        cfg = load_effective(cwd, config_path, preset=sm.harness.replay_preset).config
         recorded = sm.models.replay_driver
         route = ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
         cfg = session_config(
@@ -371,11 +371,11 @@ def _plan_fork(
         # source replays its flag name (replay_preset); a CONFIG-selected one
         # re-derives from the CURRENT config (cfg.preset), never the source
         # manifest's possibly-stale name.
-        preset=sm.workflow.replay_preset or cfg.preset,
-        preset_from_flag=sm.workflow.preset_from_flag,
+        preset=sm.harness.replay_preset or cfg.preset,
+        preset_from_flag=sm.harness.preset_from_flag,
         driver_from_flag=sm.models.driver_from_flag,
         cfg=cfg,
-        gate=(sm.workflow.verify_command, sm.workflow.verify_origin),
+        gate=(sm.harness.verify_command, sm.harness.verify_origin),
     )
 
 

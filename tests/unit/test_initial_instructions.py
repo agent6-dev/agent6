@@ -15,8 +15,8 @@ import re
 
 import pytest
 
+from agent6.harness._prompt_blocks import initial_instructions
 from agent6.tools.schema import mode_tools
-from agent6.workflows._prompt_blocks import initial_instructions
 
 
 def test_ask_gets_direct_answer_instructions() -> None:

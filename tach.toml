@@ -57,7 +57,7 @@ depends_on = [
   "agent6.types",
   "agent6.verify_infer",
   "agent6.viewmodel",
-  "agent6.workflows",
+  "agent6.harness",
 ]
 
 [[modules]]
@@ -110,13 +110,13 @@ depends_on = [
   "agent6.ui.web",
   "agent6.verify_infer",
   "agent6.viewmodel",
-  "agent6.workflows",
+  "agent6.harness",
 ]
 
 [[modules]]
-path = "agent6.workflows"
+path = "agent6.harness"
 depends_on = [
-  "agent6.budget",  # loop workflow needs BudgetExceeded
+  "agent6.budget",  # loop harness needs BudgetExceeded
   "agent6.commit_message",
   "agent6.config",
   "agent6.directive",
@@ -262,7 +262,7 @@ depends_on = [
   # journal again with ACP's own rules is how a fourth surface starts
   # disagreeing with the other three about what happened.
   "agent6.viewmodel",
-  "agent6.workflows",
+  "agent6.harness",
 ]
 
 [[modules]]
@@ -386,7 +386,7 @@ depends_on = ["agent6.child_env", "agent6.commit_message", "agent6.types"]  # th
 [[modules]]
 # The package __init__ re-exports the models as the public API.
 path = "agent6.config"
-depends_on = ["agent6.config._git", "agent6.config._providers", "agent6.config._sandbox", "agent6.config._surfaces", "agent6.config._workflow", "agent6.config.model"]
+depends_on = ["agent6.config._git", "agent6.config._providers", "agent6.config._sandbox", "agent6.config._surfaces", "agent6.config._harness", "agent6.config.model"]
 
 [[modules]]
 # The one pydantic ConfigDict every config model shares.
@@ -410,8 +410,8 @@ path = "agent6.config._git"
 depends_on = ["agent6.config._base"]
 
 [[modules]]
-# The loop-behaviour models: workflow, review, context, prompt, budget.
-path = "agent6.config._workflow"
+# The loop-behaviour models: harness, review, context, prompt, budget.
+path = "agent6.config._harness"
 depends_on = ["agent6.config._base"]
 
 [[modules]]
@@ -431,7 +431,7 @@ depends_on = [
   "agent6.config._providers",
   "agent6.config._sandbox",
   "agent6.config._surfaces",
-  "agent6.config._workflow",
+  "agent6.config._harness",
   "agent6.errors",
   "agent6.types",
 ]
@@ -518,7 +518,7 @@ depends_on = []
 
 [[modules]]
 # The shared `/parallel` grammar (parse + spec), imported by the coordinator
-# (workflows) and the composers/CLI (ui). A pure-stdlib leaf both layers sit
+# (harness) and the composers/CLI (ui). A pure-stdlib leaf both layers sit
 # above, so neither side re-implements the syntax and the CLI --parallel value
 # grammar stays identical to the directive spec.
 path = "agent6.directive"
@@ -537,7 +537,7 @@ depends_on = []
 [[modules]]
 # Pure prompt + template text (the strings agent6 sends to models). A leaf: it
 # imports nothing from agent6, so the typed assembly that fills these templates
-# lives one layer up (workflows/_prompt_blocks, machine/authoring).
+# lives one layer up (harness/_prompt_blocks, machine/authoring).
 path = "agent6.prompts"
 depends_on = []
 
@@ -547,7 +547,7 @@ depends_on = []
 
 [[modules]]
 # The one walk order every surface reads a task graph in: the frontier
-# (workflows), the model's own list_tasks (tools) and the renderers. A leaf
+# (harness), the model's own list_tasks (tools) and the renderers. A leaf
 # over the node types, so sharing it pulls in nothing else.
 path = "agent6.graph.order"
 depends_on = ["agent6.graph.models"]
@@ -614,7 +614,7 @@ path = "agent6.sessions.lock"
 depends_on = ["agent6.paths", "agent6.portable"]
 
 [[modules]]
-# The run-dir answer-file contract the workflow process polls and every
+# The run-dir answer-file contract the harness process polls and every
 # front-end writes (approve / ask_user / steer / stop / compact markers, worker
 # pid liveness, detach away-mode). Pure stdlib filesystem primitives; a leaf so
 # app, the viewmodel, and the three front-ends all read/write run state without

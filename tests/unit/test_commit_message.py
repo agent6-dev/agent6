@@ -8,7 +8,7 @@ from pathlib import Path
 
 from agent6.commit_message import agent6_subject
 from agent6.config import Config
-from agent6.workflows._chain import commit_identity
+from agent6.harness._chain import commit_identity
 
 
 def test_empty_text_falls_back() -> None:

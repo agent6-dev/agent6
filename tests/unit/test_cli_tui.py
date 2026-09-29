@@ -3,7 +3,7 @@
 """run_command approver bridge + TUI auto-spawn gating.
 
 The textual TUI was fully built (modal, writes `approvals/<id>.answer`) but the
-workflow side never read those answers and never auto-spawned the dashboard.
+harness side never read those answers and never auto-spawned the dashboard.
 These cover the wiring that fixes that.
 """
 

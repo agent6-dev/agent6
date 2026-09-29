@@ -53,7 +53,7 @@ def test_check_verify_uses_the_jail_path_not_the_ambient_path(
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     executable.chmod(0o755)
     monkeypatch.setenv("PATH", str(host_bin))
-    cfg = Config.model_validate({"workflow": {"verify_command": ["host-only"]}})
+    cfg = Config.model_validate({"harness": {"verify_command": ["host-only"]}})
 
     checks = check_cmds._doctor_check_verify(cfg)  # pyright: ignore[reportPrivateUsage]
 

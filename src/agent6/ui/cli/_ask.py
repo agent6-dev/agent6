@@ -16,6 +16,10 @@ from typing import Any
 from agent6.budget import BudgetTracker
 from agent6.errors import read_operator_file
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, branch_tip_sha, git_hardening_flags
+from agent6.harness.loop import (
+    Harness,
+    SessionResult,
+)
 from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import SessionLayout, bucket_dir
@@ -23,10 +27,6 @@ from agent6.sessions.manifest import NO_MERGE_COMMIT, ManifestError, SessionMani
 from agent6.ui.cli._common import error, warn
 from agent6.ui.cli._steer import idle_prompt_sigint
 from agent6.viewmodel import newest_session_dir
-from agent6.workflows.loop import (
-    SessionResult,
-    Workflow,
-)
 
 
 def summarize_session_log(logs_path: Path) -> str:
@@ -266,7 +266,7 @@ def save_ask_repl_transcript(layout: SessionLayout, conversation: list[tuple[str
 
 
 def run_ask_repl(
-    wf: Workflow, budget: BudgetTracker, layout: SessionLayout, *, first_question: str
+    wf: Harness, budget: BudgetTracker, layout: SessionLayout, *, first_question: str
 ) -> SessionResult:
     """Interactive multi-turn ask. Each follow-up re-enters the loop with the
     prior Q&A carried as context, reusing the one provider/jail/budget setup.

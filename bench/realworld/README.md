@@ -33,7 +33,7 @@ bench/realworld/
 | `install`        | list of argv lists to bootstrap the project's venv   |
 | `break`          | list of `{path, find, replace}` text substitutions   |
 | `task_md`        | the prompt written to TASK.md                        |
-| `verify_command` | list of argv elements for `[workflow] verify_command`|
+| `verify_command` | list of argv elements for `[harness] verify_command`|
 | `description`    | short label for the results table                    |
 
 ## Running

@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from agent6.workflows._guards import Ladder, Rung
-from agent6.workflows._nudges import (
+from agent6.harness._guards import Ladder, Rung
+from agent6.harness._nudges import (
     TOOL_ERROR_ESCALATE_AFTER,
     TOOL_ERROR_NUDGE_AFTER,
     TOOL_ERROR_STOP_AFTER,

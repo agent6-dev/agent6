@@ -12,8 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent6.app.finalize import session_exit_code
-from agent6.workflows._session_state import SessionEndReason, Verification
-from agent6.workflows.loop import SessionResult
+from agent6.harness._session_state import SessionEndReason, Verification
+from agent6.harness.loop import SessionResult
 
 
 def _result(

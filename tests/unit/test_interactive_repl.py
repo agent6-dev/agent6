@@ -12,7 +12,7 @@ Covers:
     moves HEAD, so a `git revert HEAD` would have reverted the checkout's
     own commit)
   - unknown command re-prompts
-* ``Workflow`` exits cleanly with ``reason="interactive_stop"`` when
+* ``Harness`` exits cleanly with ``reason="interactive_stop"`` when
   the hook returns ``"stop"`` after an auto-commit, and takes the undo
   fork on ``"undo"``.
 """
@@ -27,12 +27,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.budget import BudgetTracker
+from agent6.harness._chain import RunChain
+from agent6.harness._steer import OperatorBridge
 from agent6.paths import state_dir
 from agent6.ui.cli._repl import REPL_HELP
 from agent6.ui.cli.run import build_repl_hook  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.steer import SteerState
-from agent6.workflows._chain import RunChain
-from agent6.workflows._steer import OperatorBridge
 
 
 def _init_repo(path: Path) -> None:
@@ -211,18 +211,18 @@ def test_hook_undo_is_the_loops_undo_directive(
     assert subprocess.run(argv, check=True, capture_output=True, text=True).stdout.strip() == head
 
 
-# --- Workflow integration ----------------------------------------------
+# --- Harness integration ----------------------------------------------
 
 
 def test_after_auto_commit_default_continues() -> None:
     """Default hook is a no-op lambda returning "continue"."""
-    from agent6.workflows.loop import Workflow
+    from agent6.harness.loop import Harness
 
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(Path("/tmp")),
         config=MagicMock(
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -242,7 +242,7 @@ def test_after_auto_commit_default_continues() -> None:
 
 def test_after_auto_commit_field_is_overridable() -> None:
     """Custom hook is honoured (called with iteration + sha)."""
-    from agent6.workflows.loop import Workflow
+    from agent6.harness.loop import Harness
 
     calls: list[tuple[int, str]] = []
 
@@ -250,11 +250,11 @@ def test_after_auto_commit_field_is_overridable() -> None:
         calls.append((it, sha))
         return "stop"
 
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(Path("/tmp")),
         config=MagicMock(
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,

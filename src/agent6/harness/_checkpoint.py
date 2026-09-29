@@ -14,11 +14,11 @@ from typing import TYPE_CHECKING
 from agent6.commit_message import agent6_subject, conventional_commit_subject, first_prose_line
 from agent6.git_ops import GitError, commit_diff
 from agent6.git_ops import status as git_status
+from agent6.harness._chain import RunChain
 from agent6.providers import Provider, call_for_text
-from agent6.workflows._chain import RunChain
 
 if TYPE_CHECKING:
-    from agent6.workflows._loop_state import TurnState
+    from agent6.harness._loop_state import TurnState
 
 
 @dataclass(frozen=True, slots=True)

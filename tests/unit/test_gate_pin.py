@@ -52,11 +52,11 @@ def test_a_gate_adopted_mid_leg_re_pins(tmp_path: Path) -> None:
     events = _sink(tmp_path)
     reporter, _said = _quiet()
     pin_gate(layout.session_dir, (), "", events=events, reporter=reporter)
-    assert read_manifest(layout.session_dir).workflow.verify_command == ()
+    assert read_manifest(layout.session_dir).harness.verify_command == ()
 
     events.emit("loop.verify_inferred", command=["pytest", "-q"], source="agents_md", adopted_at=3)
 
-    pinned = read_manifest(layout.session_dir).workflow
+    pinned = read_manifest(layout.session_dir).harness
     assert pinned.verify_command == ("pytest", "-q")
     assert pinned.verify_origin == "adopted"
 
@@ -70,7 +70,7 @@ def test_an_un_adopted_gate_re_pins_gateless(tmp_path: Path) -> None:
     pin_gate(layout.session_dir, (), "", events=events, reporter=reporter)
     events.emit("loop.verify_inferred", command=["pytest", "-q"], source="agents_md", adopted_at=3)
     events.emit("loop.verify_inferred", command=[], source="unadopted", adopted_at=5)
-    pinned = read_manifest(layout.session_dir).workflow
+    pinned = read_manifest(layout.session_dir).harness
     assert pinned.verify_command == () and pinned.verify_origin == "unadopted"
 
 
@@ -82,7 +82,7 @@ def test_a_preflight_inference_is_not_an_adoption(tmp_path: Path) -> None:
     reporter, _said = _quiet()
     pin_gate(layout.session_dir, ("make", "check"), "configured", events=events, reporter=reporter)
     events.emit("loop.verify_inferred", command=["pytest"], source="repo_signals")
-    pinned = read_manifest(layout.session_dir).workflow
+    pinned = read_manifest(layout.session_dir).harness
     assert pinned.verify_command == ("make", "check")
     assert pinned.verify_origin == "configured"
 
@@ -114,7 +114,7 @@ def test_a_fork_inherits_the_gate_its_source_was_judged_by(tmp_path: Path) -> No
         cfg=Config(),  # no verify_command configured, as the source had none
         gate=(("pytest", "-q"), "adopted"),
     )
-    pinned = read_manifest(dst.session_dir).workflow
+    pinned = read_manifest(dst.session_dir).harness
     assert pinned.verify_command == ("pytest", "-q")
     assert pinned.verify_origin == "adopted"
 
@@ -146,7 +146,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
 
     from agent6.app import finalize
     from agent6.budget import BudgetTracker
-    from agent6.workflows._session_state import SessionResult
+    from agent6.harness._session_state import SessionResult
 
     rd = tmp_path / "sessions" / "runs" / "r1"
     rd.mkdir(parents=True)
@@ -161,7 +161,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
                 "session_id": "r1",
                 "mode": "run",
                 "base_sha": "a" * 40,
-                "workflow": {"verify_command": ["uv", "run", "pytest"]},
+                "harness": {"verify_command": ["uv", "run", "pytest"]},
             }
         ),
         encoding="utf-8",
@@ -210,5 +210,5 @@ def test_an_empty_gate_never_carries_an_origin(tmp_path: Path) -> None:
     layout = _layout(tmp_path)
     reporter, _said = _quiet()
     pin_gate(layout.session_dir, (), "", events=_sink(tmp_path), reporter=reporter)
-    pinned = read_manifest(layout.session_dir).workflow
+    pinned = read_manifest(layout.session_dir).harness
     assert (pinned.verify_command, pinned.verify_origin) == ((), "")

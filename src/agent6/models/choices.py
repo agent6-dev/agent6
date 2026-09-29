@@ -117,7 +117,7 @@ def resume_defaults(
     except ManifestError:
         replayed, driver, mode = "", None, "run"
     else:
-        replayed, driver = manifest.workflow.replay_preset, manifest.models.replay_driver
+        replayed, driver = manifest.harness.replay_preset, manifest.models.replay_driver
     route = (
         f"{driver.provider}/{driver.model}"
         if driver is not None

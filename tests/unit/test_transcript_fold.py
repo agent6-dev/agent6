@@ -263,7 +263,7 @@ def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
     and the done line words it as every listing does: the operator's own stop."""
     from typing import get_args
 
-    from agent6.workflows._session_state import SessionEndReason
+    from agent6.harness._session_state import SessionEndReason
 
     assert "interrupted" in get_args(SessionEndReason)
     (done,) = fold_transcript(
@@ -592,7 +592,7 @@ def test_every_end_reason_has_a_done_line_label() -> None:
     rest failed with the reason. A new reason extends the table."""
     from typing import get_args
 
-    from agent6.workflows._session_state import SessionEndReason
+    from agent6.harness._session_state import SessionEndReason
 
     assert set(_DONE_LABELS) == set(get_args(SessionEndReason))
     for reason, label in _DONE_LABELS.items():

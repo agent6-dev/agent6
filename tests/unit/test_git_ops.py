@@ -1868,7 +1868,7 @@ def test_a_diff_carries_a_b_prefixes_whatever_the_diff_config_says(tmp_path: Pat
     so the panel's hunk map filed each file under a path no citation matched
     and every block downgraded to a warning in silence."""
     from agent6.git_ops import diff_since
-    from agent6.workflows._panel import diff_hunks, is_grounded
+    from agent6.harness._panel import diff_hunks, is_grounded
 
     _init_repo(tmp_path)
     base = _rev(tmp_path, "HEAD")

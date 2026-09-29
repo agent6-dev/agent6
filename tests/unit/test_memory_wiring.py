@@ -13,11 +13,11 @@ from pathlib import Path
 import pytest
 
 from agent6.config import Config
+from agent6.harness import _prompt_blocks as pb
 from agent6.memory import INDEX_INJECT_CAP, add, memory_dir
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.errors import ToolError
 from agent6.types import RepoSummary
-from agent6.workflows import _prompt_blocks as pb
 
 
 def _repo(root: Path) -> RepoSummary:
@@ -34,7 +34,7 @@ def _repo(root: Path) -> RepoSummary:
 
 def _build(mode: str, index: str, tmp_path: Path) -> str:
     return pb.build_system_prompt(
-        config=Config.model_validate({"workflow": {"verify_command": ["true"]}}),
+        config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
         repo=_repo(tmp_path),
         mode=mode,  # pyright: ignore[reportArgumentType]
         memory_index=index,
@@ -168,18 +168,18 @@ def test_a_memory_write_does_not_withdraw_a_green_verify(
     fixed (caught live). The predicate now judges the model's INPUT path."""
     from unittest.mock import MagicMock
 
-    from agent6.memory import memory_dir
-    from agent6.workflows.loop import (
+    from agent6.harness.loop import (
+        Harness,
         LoopState,
         TurnState,
-        Workflow,
     )
+    from agent6.memory import memory_dir
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "statehome"))
     state_dir = tmp_path / "statehome" / "repo-id"
     state_dir.mkdir(parents=True)
 
-    wf = Workflow.__new__(Workflow)
+    wf = Harness.__new__(Harness)
     wf.state_dir = state_dir
     state = LoopState(original_task="t", tool_calls=0)
     state.verify.note_pass()

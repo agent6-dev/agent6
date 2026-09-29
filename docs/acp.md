@@ -98,7 +98,7 @@ Five tools, of which a default config publishes two:
 | --- | --- |
 | `query_dag` (a run's task graph) | never |
 | `list_sessions` (this repository's sessions) | never |
-| `run_verify` (the configured gate, jailed) | no `[workflow] verify_command`, or `[sandbox] run_commands` is not `yes` |
+| `run_verify` (the configured gate, jailed) | no `[harness] verify_command`, or `[sandbox] run_commands` is not `yes` |
 | `run_in_sandbox` (an argv, jailed) | `[sandbox] run_commands` is not `yes` |
 | `apply_patch_in_sandbox` (a patch, then the gate) | either of the two above |
 

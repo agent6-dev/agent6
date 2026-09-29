@@ -225,7 +225,7 @@ def test_streaming_calls_back_on_each_text_delta(
     assert resp.output_tokens == 9
     assert resp.cache_read_tokens == 7
     # raw must be shaped like a non-streaming response so downstream
-    # assistant-block reconstruction in Workflow keeps working.
+    # assistant-block reconstruction in Harness keeps working.
     assert resp.raw["content"] == [{"type": "text", "text": "hello world"}]
     assert resp.raw["stop_reason"] == "end_turn"
 

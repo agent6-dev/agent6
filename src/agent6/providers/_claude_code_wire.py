@@ -18,7 +18,7 @@ from agent6.child_env import curated_env
 # Claude Code writes a tool result above this many bytes under
 # ~/.claude/projects and hands the model a 2 KB preview of it. The loop's
 # result cap for this provider sits under it by the room the turn's trailing
-# notices take (`workflows/_compaction.CLAUDE_CODE_RESULT_CAP_BYTES`).
+# notices take (`harness/_compaction.CLAUDE_CODE_RESULT_CAP_BYTES`).
 CLAUDE_CODE_PERSIST_BYTES = 50_000
 
 

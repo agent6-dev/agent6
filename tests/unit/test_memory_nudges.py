@@ -12,24 +12,24 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.config import Config
-from agent6.tools.results import EditResult, ExecResult
-from agent6.workflows._chain import RunChain
-from agent6.workflows._conversation import AssistantTurn, Notice
-from agent6.workflows._finish_gates import FinishCall, memory_finish
-from agent6.workflows._guards import MemoryState, memory_flip
-from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
-from agent6.workflows._verify_verdict import VerifyVerdict
-from agent6.workflows.loop import (
+from agent6.harness._chain import RunChain
+from agent6.harness._conversation import AssistantTurn, Notice
+from agent6.harness._finish_gates import FinishCall, memory_finish
+from agent6.harness._guards import MemoryState, memory_flip
+from agent6.harness._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
+from agent6.harness._verify_verdict import VerifyVerdict
+from agent6.harness.loop import (
+    Harness,
     LoopState,
     TurnState,
-    Workflow,
 )
+from agent6.tools.results import EditResult, ExecResult
 from tests.unit.turn_context import turn_context
 
 
-def _wf(**kw: Any) -> Workflow:
+def _wf(**kw: Any) -> Harness:
     kw.setdefault("state_dir", Path("/tmp/state"))
-    return Workflow(
+    return Harness(
         chain=RunChain(Path("/tmp")),
         config=Config.model_validate({}),
         provider=MagicMock(),
@@ -47,7 +47,7 @@ def _turn(iteration: int = 1, **kw: Any) -> TurnState:
     return TurnState(iteration=iteration, resp=MagicMock(), assistant=AssistantTurn((), ()), **kw)
 
 
-def _verify(wf: Workflow, state: LoopState, turn: TurnState, rc: int) -> None:
+def _verify(wf: Harness, state: LoopState, turn: TurnState, rc: int) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state,
         turn,
@@ -61,7 +61,7 @@ def _notice_texts(turn: TurnState) -> list[str]:
     return [item.text for item in turn.tool_results if isinstance(item, Notice)]
 
 
-def _flip(wf: Workflow, state: LoopState, turn: TurnState) -> str | None:
+def _flip(wf: Harness, state: LoopState, turn: TurnState) -> str | None:
     """The flip advisory's text for this turn, as the advisor answers it."""
     ctx = turn_context(mode=wf.mode, memory_wired=wf.state_dir is not None)
     nudge = memory_flip(turn, state, ctx)
@@ -245,7 +245,7 @@ def test_finish_gate_quiet_without_a_recovery_or_after_a_write() -> None:
         ),
         # No memory store wired.
         (_wf(state_dir=None), _state(verify=VerifyVerdict(ever_failed=True, last_ok=True))),
-        # Not a run-mode workflow.
+        # Not a run-mode harness.
         (_wf(mode="ask"), _state(verify=VerifyVerdict(ever_failed=True, last_ok=True))),
     ]
     for gated_wf, state in cases:

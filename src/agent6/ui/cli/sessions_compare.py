@@ -15,6 +15,7 @@ from agent6.git_ops import (
     branch_exists,
     diff_range,
 )
+from agent6.harness.judge import CandidateBrief
 from agent6.paths import state_dir
 from agent6.sessions.layout import (
     SessionLayout,
@@ -40,7 +41,6 @@ from agent6.viewmodel import (
 from agent6.viewmodel.format import (
     WINNER_GLYPH,
 )
-from agent6.workflows.judge import CandidateBrief
 
 
 def _candidate_diff(cwd: Path, manifest: SessionManifest) -> tuple[str, bool]:

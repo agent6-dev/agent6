@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The Workflow-free lane bookkeeping behind `/parallel` dispatch, pinned at
-the unit level now that it lives outside the loop (workflows/_parallel_dispatch)."""
+"""The Harness-free lane bookkeeping behind `/parallel` dispatch, pinned at
+the unit level now that it lives outside the loop (harness/_parallel_dispatch)."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ import pytest
 
 from agent6.directive import DirectiveError, Segment
 from agent6.git_ops import GitError
-from agent6.workflows import _parallel_dispatch as pd
-from agent6.workflows._parallel_dispatch import (
+from agent6.harness import _parallel_dispatch as pd
+from agent6.harness._parallel_dispatch import (
     LaneJoin,
     join_lane_result,
     lane_note,
@@ -21,7 +21,7 @@ from agent6.workflows._parallel_dispatch import (
     segment_stamp,
     summary_text,
 )
-from agent6.workflows.subrun import LaneResult, LaneSpec
+from agent6.harness.subrun import LaneResult, LaneSpec
 
 
 def _res(*, ok: bool, error: str = "", branch: str = "agent6/lane-1") -> LaneResult:

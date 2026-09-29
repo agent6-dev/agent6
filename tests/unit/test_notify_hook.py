@@ -111,7 +111,7 @@ model = "claude-sonnet-4-5"
 provider = "anthropic"
 model = "claude-opus-4-5"
 
-[workflow]
+[harness]
 verify_command = ["true"]
 
 [machine.notify]
@@ -202,7 +202,7 @@ protect_git = true
 
 [git]
 
-[workflow]
+[harness]
 verify_command = ["true"]
 
 [budget]

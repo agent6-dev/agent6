@@ -3,7 +3,7 @@
 """The finish gates: what a finish_session must satisfy before the loop
 honours it, what an end is called, and the words each refusal carries. The
 loop runs a gate list in order over the turn that declared an end and
-applies the first `Refusal` (`Workflow._refuse`): `FINISH_GATES` over a
+applies the first `Refusal` (`Harness._refuse`): `FINISH_GATES` over a
 finish_session, `END_GATES` over an end the harness declares (settled, a
 plateau), `SILENT_END_GATES` over a silent finish; `turn.ending` names the
 end the gates judge."""
@@ -15,16 +15,16 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
+from agent6.harness._advice import Gate, Refusal, TurnContext
+from agent6.harness._metric import metric_early_finish
+from agent6.harness._nudges import MEMORY_FINISH_NUDGE, TASK_FINISH_PATIENCE
+from agent6.harness._session_state import SessionEndReason
+from agent6.harness._verify_gate import finish_red_notice
+from agent6.harness._verify_verdict import VerifyVerdict
 from agent6.tools.schema import FinishPlanningInput, FinishSessionInput
-from agent6.workflows._advice import Gate, Refusal, TurnContext
-from agent6.workflows._metric import metric_early_finish
-from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, TASK_FINISH_PATIENCE
-from agent6.workflows._session_state import SessionEndReason
-from agent6.workflows._verify_gate import finish_red_notice
-from agent6.workflows._verify_verdict import VerifyVerdict
 
 if TYPE_CHECKING:
-    from agent6.workflows._loop_state import LoopState, TurnState
+    from agent6.harness._loop_state import LoopState, TurnState
 
 
 @dataclass(frozen=True, slots=True)

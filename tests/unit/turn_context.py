@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.workflows._advice import TurnContext
-from agent6.workflows._loop_state import TurnState
+from agent6.harness._advice import TurnContext
+from agent6.harness._loop_state import TurnState
 
 
 def _never_rejected(_turn: TurnState, _ending: str) -> bool:

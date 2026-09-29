@@ -134,20 +134,20 @@ def test_prompt_show_infers_the_gate_a_run_would_infer(
 
 def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: Path) -> None:
     """`run_commands = "no"` withholds every command tool, and a metric with no
-    `[workflow.metric]` can only error. A prompt block describing a tool the
+    `[harness.metric]` can only error. A prompt block describing a tool the
     model does not have is one it cannot act on, and the metric tool was
     offered unconditionally while `run_verify_command` was already hidden."""
     import tempfile
 
     from agent6.config import Config
+    from agent6.harness import model_exchange_for
+    from agent6.harness._toolset import tool_definitions  # pyright: ignore[reportPrivateUsage]
     from agent6.tools.dispatch import ToolDispatcher
-    from agent6.workflows import model_exchange_for
-    from agent6.workflows._toolset import tool_definitions  # pyright: ignore[reportPrivateUsage]
 
     withheld = Config.model_validate(
         {
             "sandbox": {"run_commands": "no"},
-            "workflow": {
+            "harness": {
                 "verify_command": ["pytest", "-q"],
                 "metric": {"command": ["m"], "pattern": r"x:(\d+)", "goal": "minimize"},
             },
@@ -161,21 +161,21 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: Path) -> None:
     with tempfile.TemporaryDirectory() as td:
         plain = ToolDispatcher(root=Path(td), config=Config())
         names = [t.name for t in tool_definitions(plain, mode="run")]
-    assert "run_metric_command" not in names, "offered with no [workflow.metric]"
+    assert "run_metric_command" not in names, "offered with no [harness.metric]"
 
 
 def test_plan_mode_does_not_name_a_gate_it_says_is_absent(tmp_path: Path) -> None:
     """One plan prompt carried both "run_verify_command runs the operator's
     gate" and "`run_verify_command` is not available", forty lines apart."""
     from agent6.config import Config
-    from agent6.workflows import model_exchange_for
+    from agent6.harness import model_exchange_for
 
     gateless = model_exchange_for(Config(), tmp_path, "plan", state_dir=tmp_path).system
     assert "<no-verify-command>" in gateless
     assert "run_verify_command runs the operator's gate" not in gateless
 
     gated = model_exchange_for(
-        Config.model_validate({"workflow": {"verify_command": ["pytest", "-q"]}}),
+        Config.model_validate({"harness": {"verify_command": ["pytest", "-q"]}}),
         tmp_path,
         "plan",
         state_dir=tmp_path,

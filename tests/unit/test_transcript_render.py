@@ -556,9 +556,9 @@ def test_second_same_identity_elision_in_a_later_pass_is_counted() -> None:
 
 def test_elision_marker_prefix_matches_the_compaction_placeholder() -> None:
     """The renderer detects placeholders by prefix; this pins the cross-module
-    coupling without a runtime viewmodel->workflows import."""
+    coupling without a runtime viewmodel->harness import."""
+    from agent6.harness._compaction import ELISION_PREFIX
     from agent6.viewmodel.transcript_render import ELISION_MARKER_PREFIX
-    from agent6.workflows._compaction import ELISION_PREFIX
 
     assert ELISION_MARKER_PREFIX == ELISION_PREFIX
 

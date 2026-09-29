@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from agent6.harness._review import ReviewDispatch
 from agent6.providers import ToolDefinition
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.results import ToolResult
@@ -24,7 +25,6 @@ from agent6.tools.schema import (
     wire_schema,
 )
 from agent6.types import session_kind
-from agent6.workflows._review import ReviewDispatch
 
 # The ONLY tools an explore-tier reviewer may use: read-only navigation, no
 # edits/commits/run_command/dag/finish. Enforced both by what we expose AND by
@@ -68,7 +68,7 @@ def tool_definitions(
             # No curator (a machine agent state): every DAG call errors.
             continue
         if cls.TOOL_NAME == RunMetricInput.TOOL_NAME and not dispatcher.metric_configured():
-            # No [workflow.metric]: the tool can only answer "no metric
+            # No [harness.metric]: the tool can only answer "no metric
             # configured", which the model cannot fix. Hidden like use_skill
             # below and run_verify_command in the dispatcher.
             continue

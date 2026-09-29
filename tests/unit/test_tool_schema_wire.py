@@ -102,7 +102,7 @@ def test_extra_tool_schemas_structure_matches_golden() -> None:
 
 
 def test_read_background_does_not_claim_the_default_configured_interval() -> None:
-    """The tool resolves an omitted wait_s from workflow.command_checkin_s, so
+    """The tool resolves an omitted wait_s from harness.command_checkin_s, so
     its static description must not claim the 900-second Config default after
     an operator configures another interval."""
     from agent6.tools.schema import ReadBackgroundInput
@@ -171,8 +171,8 @@ def test_wire_schema_strips_schema_titles_but_keeps_a_field_named_title() -> Non
     descriptor dump alone had it, so tests pinned a schema the model never
     saw and the model would have seen add_task without its one required
     field once the loop shared it)."""
+    from agent6.harness._toolset import tool_definitions
     from agent6.tools.schema import DagAddTaskInput, ReadFileInput, wire_schema
-    from agent6.workflows._toolset import tool_definitions
 
     add_task = wire_schema(DagAddTaskInput)
     assert "title" in add_task["properties"] and add_task["required"] == ["title"]

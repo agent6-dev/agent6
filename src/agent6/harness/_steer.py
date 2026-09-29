@@ -11,18 +11,18 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from agent6.directive import DirectiveError, parse_directive, parse_pin
+from agent6.harness._conversation import last_assistant_prose
+from agent6.harness._nudges import ending_question
+from agent6.harness.subrun import GroupLaneSpawner
 from agent6.sessions.ipc import OperatorRequest
 from agent6.skills import skill_command, skill_steer_payload
 from agent6.types import AutoCommitDirective
-from agent6.workflows._conversation import last_assistant_prose
-from agent6.workflows._nudges import ending_question
-from agent6.workflows.subrun import GroupLaneSpawner
 
 if TYPE_CHECKING:
+    from agent6.harness._conversation import Conversation
+    from agent6.harness._loop_state import LoopState
+    from agent6.harness._parallel_dispatch import ParallelDispatcher
     from agent6.tools.dispatch import ToolDispatcher
-    from agent6.workflows._conversation import Conversation
-    from agent6.workflows._loop_state import LoopState
-    from agent6.workflows._parallel_dispatch import ParallelDispatcher
 
 # `/pin` instructions are re-injected verbatim after every tier-2 restart, so
 # their total is capped. Over the cap a pin lands as an ordinary steer (the
@@ -83,7 +83,7 @@ class OperatorBridge:
     )
     # `/undo`: commits the tree as it stands onto the session's ref, forks the
     # session at the state before its last operator message and puts the
-    # checkout back to that tree (app.undo.undo_fork, injected: workflows never
+    # checkout back to that tree (app.undo.undo_fork, injected: harness never
     # import app); returns (new_session_id, undone_text), or None with the
     # reason printed.
     undo_forker: Callable[[], tuple[str, str] | None] | None = None

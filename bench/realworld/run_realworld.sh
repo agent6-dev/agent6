@@ -90,7 +90,7 @@ protect_git = true
 dirty_tree = "ask"
 branch_per_run = true
 
-[workflow]
+[harness]
 verify_command = $verify_cmd_json
 
 [review]
@@ -252,7 +252,7 @@ for task_json in "$REPO"/bench/realworld/tasks/*.json; do
   verify_cmd_json=$(python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1]))['verify_command']))" "$task_json")
   # Optional metric block. Task JSON may declare a `metric` object
   # with {command: argv, pattern: regex, goal: 'minimize' | 'maximize'}.
-  # When present we emit a [workflow.metric] block so the agent's
+  # When present we emit a [harness.metric] block so the agent's
   # `run_metric_command` tool is wired up, AND we run the metric ourselves
   # post-run as an independent score (so the harness number isn't subject
   # to whatever the agent did or didn't measure).
@@ -265,7 +265,7 @@ if not m:
     raise SystemExit(0)
 cmd_toml = "[" + ", ".join(json.dumps(a) for a in m["command"]) + "]"
 print(
-    "\n[workflow.metric]\n"
+    "\n[harness.metric]\n"
     f"command = {cmd_toml}\n"
     f"pattern = {json.dumps(m['pattern'])}\n"
     f"goal = {json.dumps(m['goal'])}\n"

@@ -20,13 +20,13 @@ from unittest.mock import MagicMock
 
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
+from agent6.harness._chain import RunChain
+from agent6.harness._steer import OperatorBridge
+from agent6.harness.loop import Harness
 from agent6.providers.types import ProviderResponse
 from agent6.sessions.ipc import drain_requests, queue_request
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.results import RawResult
-from agent6.workflows._chain import RunChain
-from agent6.workflows._steer import OperatorBridge
-from agent6.workflows.loop import Workflow
 
 
 def _repo(path: Path) -> str:
@@ -85,12 +85,12 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: Pat
 
     provider.call.side_effect = _turn
 
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(repo, ref="refs/agent6/bridges", fallback_parent=head),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file="", decompose="off", revise_prompt="off"),
-            workflow=MagicMock(
+            harness=MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,

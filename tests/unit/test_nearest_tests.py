@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from agent6.workflows._nearest_tests import (
+from agent6.harness._nearest_tests import (
     diff_changed_paths,
     is_bare_pytest,
     nearest_test_paths,
@@ -104,7 +104,7 @@ def test_a_changed_helper_under_a_tests_dir_is_not_handed_to_pytest(tmp_path: Pa
 def test_the_scan_examines_every_entry_within_its_cap(tmp_path: Path, monkeypatch: Any) -> None:
     """The cap counts entries examined: with three entries under tests/ and a
     cap of three, the last one (the nested test file) is still seen."""
-    monkeypatch.setattr("agent6.workflows._nearest_tests._SCAN_CAP", 3)
+    monkeypatch.setattr("agent6.harness._nearest_tests._SCAN_CAP", 3)
     _touch(tmp_path, "pkg/mod.py", "tests/test_a.py", "tests/unit/test_mod.py")
     assert nearest_test_paths(tmp_path, ("pkg/mod.py",)) == ("tests/unit/test_mod.py",)
 

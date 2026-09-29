@@ -20,16 +20,16 @@ from agent6.app.machine_agent import (
     _task_with_contract,  # pyright: ignore[reportPrivateUsage]
 )
 from agent6.config import Config
+from agent6.harness._chain import RunChain
+from agent6.harness._conversation import Notice
+from agent6.harness._finish_gates import FinishCall, finish_contract
+from agent6.harness._loop_state import LoopState
+from agent6.harness.loop import (
+    Harness,
+    TurnState,
+)
 from agent6.machine import AgentRequest
 from agent6.machine.model import FieldSpec
-from agent6.workflows._chain import RunChain
-from agent6.workflows._conversation import Notice
-from agent6.workflows._finish_gates import FinishCall, finish_contract
-from agent6.workflows._loop_state import LoopState
-from agent6.workflows.loop import (
-    TurnState,
-    Workflow,
-)
 from tests.unit.turn_context import turn_context
 
 _SCHEMAS = {
@@ -63,8 +63,8 @@ def test_a_schemaless_request_leaves_the_task_alone() -> None:
     assert _finish_validator(_request(None)) is None
 
 
-def _wf(validator: Any) -> Workflow:
-    wf = Workflow(
+def _wf(validator: Any) -> Harness:
+    wf = Harness(
         chain=RunChain(Path("/tmp")),
         config=Config.model_validate({}),
         provider=MagicMock(),

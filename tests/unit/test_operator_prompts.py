@@ -57,7 +57,7 @@ def _prompts(session_dir: Path, events: EventSink, **kw: Any) -> OperatorPrompts
 def _dispatcher(session_dir: Path, events: EventSink, prompts: OperatorPrompts) -> ToolDispatcher:
     """A run's wiring: the gate and the dispatcher journal to the one sink."""
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "ask"}, "workflow": {"verify_command": ["true"]}}
+        {"sandbox": {"run_commands": "ask"}, "harness": {"verify_command": ["true"]}}
     )
     return ToolDispatcher(
         root=session_dir.parent, config=cfg, prompts=prompts, events=events, session_dir=session_dir

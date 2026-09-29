@@ -5,7 +5,7 @@
 The system-prompt bases for each mode (run / plan / ask / agent / machine), the
 `<...>` context-block templates the worker prompt is assembled from, and the
 tiny pure helpers that pick a block variant. Pure text with `{...}` format
-placeholders; `agent6.workflows._prompt_blocks` owns the typed assembly
+placeholders; `agent6.harness._prompt_blocks` owns the typed assembly
 (`build_system_prompt`) that fills these in.
 """
 
@@ -266,7 +266,7 @@ V2_STALE_GATE = """
 finish_session's stale_gate field records a replacement-gate proposal
 for the operator; the gate itself does not move."""
 
-# The `[workflow].verify_when` fact for the block above, by mode; {retries}
+# The `[harness].verify_when` fact for the block above, by mode; {retries}
 # is `verify_retries`.
 V2_VERIFY_WHEN = {
     "finish": (

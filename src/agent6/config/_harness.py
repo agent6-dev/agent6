@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The loop-behaviour models: `[workflow]` (+ its metric), `[review]`,
+"""The loop-behaviour models: `[harness]` (+ its metric), `[review]`,
 `[context]`, `[prompt]`, and `[budget]`."""
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ class MetricConfig(BaseModel):
     )
 
 
-class WorkflowConfig(BaseModel):
+class HarnessConfig(BaseModel):
     model_config = MODEL_CONFIG
 
     # The command agent6 runs to decide whether a step "succeeded". This is
@@ -420,7 +420,7 @@ class ReviewConfig(BaseModel):
 
     model_config = MODEL_CONFIG
 
-    # When != "off", Workflow runs the review panel at the chosen trigger and
+    # When != "off", Harness runs the review panel at the chosen trigger and
     # injects its findings as a user message the worker sees next turn. With no
     # `seats`, the panel is one seat on `[models.reviewer]` (same route
     # `agent6 review` uses).

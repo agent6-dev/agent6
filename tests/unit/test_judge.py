@@ -8,8 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-from agent6.providers import Provider, ProviderError
-from agent6.workflows.judge import (
+from agent6.harness.judge import (
     _DIFF_CAP,  # pyright: ignore[reportPrivateUsage]
     CandidateBrief,
     JudgeError,
@@ -17,6 +16,7 @@ from agent6.workflows.judge import (
     compare,
     mechanical_ranking,
 )
+from agent6.providers import Provider, ProviderError
 
 _WELL_FORMED = '{"ranking": ["run-a", "run-b"], "rationale": "a passed verify, b did not"}'
 _UNKNOWN_SESSION_ID = '{"ranking": ["run-a", "run-x"], "rationale": "oops"}'

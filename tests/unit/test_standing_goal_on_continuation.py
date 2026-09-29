@@ -14,15 +14,15 @@ from pathlib import Path
 
 from agent6.graph.curator import GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
+from agent6.harness.loop import Harness
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli.parser import build_parser
-from agent6.workflows.loop import Workflow
 from tests.unit.test_task_queue_drain import (
     _workflow,  # pyright: ignore[reportPrivateUsage]
 )
 
 
-def _seeded(tmp_path: Path) -> tuple[GraphCurator, str, Workflow]:
+def _seeded(tmp_path: Path) -> tuple[GraphCurator, str, Harness]:
     layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     curator = GraphCurator(layout)
     root = curator.add_subtask(

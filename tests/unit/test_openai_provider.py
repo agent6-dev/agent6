@@ -418,7 +418,7 @@ def test_reasoning_effort_arg_overrides_default(monkeypatch: Any) -> None:
 def test_call_captures_reasoning_content_in_raw() -> None:
     """Kimi-shaped ``reasoning_content`` is preserved on resp.raw["content"]
     as a Anthropic-style ``{"type": "thinking"}`` block, but does NOT leak
-    into resp.text (workflows.loop strips ``<thinking>`` prefixes from the
+    into resp.text (harness.loop strips ``<thinking>`` prefixes from the
     auto-commit summary, and we don't want it double-printed)."""
     provider = OpenAIProvider(api_key="sk", model="kimi-k2-thinking")
 

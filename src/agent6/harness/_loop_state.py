@@ -13,10 +13,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from agent6.providers import ProviderResponse
-from agent6.workflows._conversation import AssistantTurn, Notice, ToolResultItem
-from agent6.workflows._finish_gates import FinishCall, FinishGates
-from agent6.workflows._guards import (
+from agent6.harness._conversation import AssistantTurn, Notice, ToolResultItem
+from agent6.harness._finish_gates import FinishCall, FinishGates
+from agent6.harness._guards import (
     BudgetNudges,
     FocusGuard,
     Ladder,
@@ -28,11 +27,12 @@ from agent6.workflows._guards import (
     Stop,
     no_progress_ladder,
 )
-from agent6.workflows._metric import MetricGuard, MetricSample
-from agent6.workflows._quiet_turns import QuietGuard
-from agent6.workflows._session_state import SessionSnapshot
-from agent6.workflows._spiral_guards import SpiralGuard
-from agent6.workflows._verify_verdict import VerifyVerdict
+from agent6.harness._metric import MetricGuard, MetricSample
+from agent6.harness._quiet_turns import QuietGuard
+from agent6.harness._session_state import SessionSnapshot
+from agent6.harness._spiral_guards import SpiralGuard
+from agent6.harness._verify_verdict import VerifyVerdict
+from agent6.providers import ProviderResponse
 
 
 @dataclass(slots=True)

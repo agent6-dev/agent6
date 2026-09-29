@@ -10,9 +10,9 @@ from contextlib import redirect_stdout
 import pytest
 
 from agent6.app.reporter import STDIO_REPORTER
+from agent6.harness._session_state import SessionResult
 from agent6.tools.results import FinishSessionResult
 from agent6.viewmodel.listing import status_word
-from agent6.workflows._session_state import SessionResult
 
 
 def test_the_reason_reads_as_a_failure_with_its_cause() -> None:
@@ -67,8 +67,7 @@ def test_the_operator_gets_a_paste_ready_line() -> None:
     # argv, as `config set` accepts it: the shell string it proposes is
     # rejected with "Input should be a valid tuple".
     assert (
-        'agent6 config set workflow.verify_command \'["uv", "run", "pytest", "tests/unit"]\''
-        in text
+        'agent6 config set harness.verify_command \'["uv", "run", "pytest", "tests/unit"]\'' in text
     )
 
 
@@ -121,8 +120,8 @@ def test_nothing_is_printed_without_a_declaration() -> None:
 def test_a_declaration_names_the_end_only_over_a_red_tree(
     declared: str, green: bool | None, expected: str
 ) -> None:
-    from agent6.workflows._finish_gates import finish_reason
-    from agent6.workflows._verify_verdict import VerifyVerdict
+    from agent6.harness._finish_gates import finish_reason
+    from agent6.harness._verify_verdict import VerifyVerdict
 
     reason = finish_reason(
         "finish_session", stale_gate=declared, tree_green=green, verify=VerifyVerdict()

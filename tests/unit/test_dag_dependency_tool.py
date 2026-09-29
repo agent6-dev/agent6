@@ -18,10 +18,10 @@ import pytest
 from agent6.config import Config, load_config
 from agent6.graph.curator import GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
+from agent6.harness import loop as loopmod
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.schema import DagAddTaskInput, DagUpdateTaskInput
-from agent6.workflows import loop as loopmod
 
 _VALID_TOML = """
 [agent6]
@@ -35,7 +35,7 @@ model = "x"
 [models.reviewer]
 provider = "anthropic"
 model = "x"
-[workflow]
+[harness]
 verify_command = ["true"]
 """
 

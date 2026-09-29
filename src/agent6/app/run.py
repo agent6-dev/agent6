@@ -68,6 +68,7 @@ from agent6.git_ops import (
     stash_tracked_changes,
     untracked_paths,
 )
+from agent6.harness._context import agents_md_notices
 from agent6.paths import state_dir
 from agent6.providers import TranscriptSink
 from agent6.sessions.id import (
@@ -99,7 +100,6 @@ from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import ModelRoute, ResumableMode, session_bucket, session_kind
 from agent6.viewmodel.listing import finished_needs_new_work
-from agent6.workflows._context import agents_md_notices
 
 
 def discard_husk_dir(session_dir: Path) -> None:
@@ -471,7 +471,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # Never persisted. The drop comes LAST so nothing hands the gate
             # back: a leg that cannot run a command is gateless, whatever
             # inference found.
-            configured_gate = bool(cfg.workflow.verify_command)
+            configured_gate = bool(cfg.harness.verify_command)
             cfg = infer_verify_if_unset(
                 cfg,
                 cwd,
@@ -486,13 +486,13 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # run that cannot run commands), and an empty gate with an origin
             # of "configured" is a self-contradiction the next leg reads back.
             gate_origin = ""
-            if cfg.workflow.verify_command:
+            if cfg.harness.verify_command:
                 gate_origin = "configured" if configured_gate else "inferred"
             # Pin it: from here the run is judged by THIS gate, whatever the
             # file it was inferred from says later.
             pin_gate(
                 layout.session_dir,
-                cfg.workflow.verify_command,
+                cfg.harness.verify_command,
                 gate_origin,
                 events=events,
                 reporter=reporter,

@@ -12,14 +12,14 @@ import pytest
 
 from agent6.config import Config
 from agent6.events import EventSink
+from agent6.harness._chain import RunChain
+from agent6.harness._conversation import Conversation, ToolResultItem
+from agent6.harness._loop_state import LoopState, TurnState
+from agent6.harness.loop import Harness
 from agent6.providers import OpenAIProvider, ToolDefinition, TranscriptSink
 from agent6.providers._openai_parse import parse_response
 from agent6.providers._openai_recovery import coerce_text_tool_calls
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.workflows._chain import RunChain
-from agent6.workflows._conversation import Conversation, ToolResultItem
-from agent6.workflows._loop_state import LoopState, TurnState
-from agent6.workflows.loop import Workflow
 from tests.unit.turn_context import turn_context
 
 _TOOLS = frozenset({"list_dir", "read_file"})
@@ -118,7 +118,7 @@ def test_unknown_tagged_call_returns_the_dispatcher_error(tmp_path: Path) -> Non
     conversation.notice("Write a.py")
     assistant = conversation.assistant(response.raw["content"])
     dispatcher = ToolDispatcher(root=tmp_path, config=Config())
-    workflow = Workflow(
+    harness = Harness(
         chain=RunChain(tmp_path),
         config=Config(),
         provider=OpenAIProvider(api_key="k", model="weak-model"),
@@ -127,7 +127,7 @@ def test_unknown_tagged_call_returns_the_dispatcher_error(tmp_path: Path) -> Non
     )
     turn = TurnState(iteration=1, resp=response, assistant=assistant)
 
-    workflow._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
+    harness._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
         LoopState(original_task="Write a.py", tool_calls=0), turn, turn_context()
     )
 
@@ -220,7 +220,7 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
     journal = tmp_path / "logs.jsonl"
     events = EventSink(journal)
     dispatcher = ToolDispatcher(root=tmp_path, config=Config(), events=events)
-    workflow = Workflow(
+    harness = Harness(
         chain=RunChain(tmp_path),
         config=Config(),
         provider=provider,
@@ -231,7 +231,7 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
     turn = TurnState(iteration=1, resp=response, assistant=assistant)
 
     assert (
-        workflow._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
+        harness._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
             LoopState(original_task="Read a.py", tool_calls=0), turn, turn_context()
         )
         is None
@@ -285,7 +285,7 @@ def test_malformed_recovered_call_returns_only_its_error(
     conversation.notice("Read a.py")
     assistant = conversation.assistant(response.raw["content"])
     dispatcher = ToolDispatcher(root=tmp_path, config=Config())
-    workflow = Workflow(
+    harness = Harness(
         chain=RunChain(tmp_path),
         config=Config(),
         provider=provider,
@@ -294,7 +294,7 @@ def test_malformed_recovered_call_returns_only_its_error(
     )
     turn = TurnState(iteration=1, resp=response, assistant=assistant)
 
-    workflow._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
+    harness._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
         LoopState(original_task="Read a.py", tool_calls=0), turn, turn_context()
     )
 

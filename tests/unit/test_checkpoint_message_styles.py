@@ -11,18 +11,18 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.config import Config
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.workflows import _chain as chain_mod
-from agent6.workflows._chain import RunChain
-from agent6.workflows.loop import (
+from agent6.harness import _chain as chain_mod
+from agent6.harness._chain import RunChain
+from agent6.harness.loop import (
+    Harness,
     TurnState,
-    Workflow,
 )
+from agent6.tools.dispatch import ToolDispatcher
 
 
-def _wf(tmp_path: Path, style: str, provider: Any = None, logger: Any = print) -> Workflow:
+def _wf(tmp_path: Path, style: str, provider: Any = None, logger: Any = print) -> Harness:
     cfg = Config.model_validate({"git": {"commit": {"checkpoint": {"message": style}}}})
-    return Workflow(
+    return Harness(
         chain=RunChain(tmp_path),
         config=cfg,
         provider=provider or MagicMock(),

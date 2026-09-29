@@ -36,7 +36,7 @@ protect_git = true
 dirty_tree = "ask"
 branch_per_run = true
 
-[workflow]
+[harness]
 verify_command = ["python3", "-m", "unittest", "-v"]
 
 [budget]

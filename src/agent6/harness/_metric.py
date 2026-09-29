@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Metric-driven optimisation helpers for the agent loop.
 
-For runs with a configured [workflow.metric], the loop measures a continuous
+For runs with a configured [harness.metric], the loop measures a continuous
 score after each verified step and feeds the trajectory back to the worker.
 This module owns the pure pieces of that: the `MetricSample` record, parsing a
 score and the unmet thresholds out of metric output, deciding whether a sample
@@ -17,11 +17,11 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from agent6.workflows._advice import Nudge, Refusal, Stop, TurnContext, with_open_tasks
-from agent6.workflows._session_state import End
+from agent6.harness._advice import Nudge, Refusal, Stop, TurnContext, with_open_tasks
+from agent6.harness._session_state import End
 
 if TYPE_CHECKING:
-    from agent6.workflows._loop_state import LoopState, TurnState
+    from agent6.harness._loop_state import LoopState, TurnState
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +132,7 @@ def metric_at_fraction_ceiling(text: str, score: float, *, pattern: str) -> bool
     and unbounded metrics (raw cycle counts, which never print a
     denominator) are unaffected.
 
-    `pattern` is the metric score regex (`[workflow.metric].pattern`, the
+    `pattern` is the metric score regex (`[harness.metric].pattern`, the
     one the score was parsed with): only fractions on the line of the score
     match count, so an incidental fraction elsewhere in the output (a tqdm
     `100/100` in stderr) cannot latch the ceiling for the run.

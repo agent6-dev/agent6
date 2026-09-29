@@ -190,13 +190,13 @@ def test_bench_container_config_template_validates() -> None:
         if env.get("AGENT6_SB_EFFORT"):
             assert data["models"]["worker"]["effort"] == "medium"
         if env.get("AGENT6_SB_VERIFY_WHEN"):
-            assert data["workflow"]["verify_when"] == "step"
+            assert data["harness"]["verify_when"] == "step"
         if env.get("AGENT6_SB_MAX_PERCENT"):
             assert data["budget"]["max_percent"] == 40
         if env.get("AGENT6_SB_REVIEW_SEATS"):
             assert data["review"]["seats"] == ["security@openrouter/a", "tests@anthropic/b"]
         if env.get("AGENT6_SB_VERIFY") == "none":
-            assert data["workflow"]["verify_infer"] is False
-            assert "verify_command" not in data["workflow"]
+            assert data["harness"]["verify_infer"] is False
+            assert "verify_command" not in data["harness"]
         else:
-            assert data["workflow"]["verify_command"][0] == "python3"
+            assert data["harness"]["verify_command"][0] == "python3"

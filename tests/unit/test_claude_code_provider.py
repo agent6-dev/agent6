@@ -1330,16 +1330,16 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     turn folds into the payload, so a capped result never reaches that
     refusal, whatever its characters weigh."""
     from agent6.app._session import tool_result_cap_bytes
-    from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
-    from agent6.tools.results import ExecResult
-    from agent6.workflows._compaction import (
+    from agent6.harness._compaction import (
         CLAUDE_CODE_RESULT_CAP_BYTES,
         TOOL_RESULT_CAP_BYTES,
         cap_tool_result,
     )
-    from agent6.workflows._nudges import RUN_BUDGET_NUDGE, STAGNATION_NUDGE
-    from agent6.workflows._panel import review_notice
-    from agent6.workflows._verify_gate import VERIFY_TAIL_CHARS, harness_verify_notice
+    from agent6.harness._nudges import RUN_BUDGET_NUDGE, STAGNATION_NUDGE
+    from agent6.harness._panel import review_notice
+    from agent6.harness._verify_gate import VERIFY_TAIL_CHARS, harness_verify_notice
+    from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
+    from agent6.tools.results import ExecResult
 
     cc = Config.model_validate(
         {
@@ -1386,7 +1386,7 @@ def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
     generic cap over Claude Code's 50,000-byte threshold."""
     from agent6.app._session import tool_result_cap_bytes
     from agent6.config import Config
-    from agent6.workflows._compaction import CLAUDE_CODE_RESULT_CAP_BYTES, TOOL_RESULT_CAP_BYTES
+    from agent6.harness._compaction import CLAUDE_CODE_RESULT_CAP_BYTES, TOOL_RESULT_CAP_BYTES
 
     cfg = Config.model_validate(
         {

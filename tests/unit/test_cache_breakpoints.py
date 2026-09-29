@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent6.harness._conversation import Conversation
 from agent6.providers.anthropic import strip_cache_control_messages
-from agent6.workflows._conversation import Conversation
 
 
 def _marked_wire() -> list[dict[str, Any]]:

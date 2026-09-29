@@ -24,16 +24,9 @@ from agent6.config import (
 )
 from agent6.config.layer import load_effective
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, chain_tip, git_hardening_flags
-from agent6.paths import mkdir_for_real_user, state_dir
-from agent6.providers import (
-    ProviderError,
-    TranscriptSink,
-)
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.ui.cli._common import error
-from agent6.workflows._context import agents_md_text
-from agent6.workflows.loop import build_readonly_review_tools
-from agent6.workflows.review import (
+from agent6.harness._context import agents_md_text
+from agent6.harness.loop import build_readonly_review_tools
+from agent6.harness.review import (
     CodeReviewError,
     ReviewContext,
     code_review,
@@ -42,6 +35,13 @@ from agent6.workflows.review import (
     render_findings,
     run_panel,
 )
+from agent6.paths import mkdir_for_real_user, state_dir
+from agent6.providers import (
+    ProviderError,
+    TranscriptSink,
+)
+from agent6.tools.dispatch import ToolDispatcher
+from agent6.ui.cli._common import error
 
 
 def _collect_review_diff(

@@ -150,7 +150,7 @@ def test_steer_request_and_answer_bridge(tmp_path: Path) -> None:
 def test_machine_agent_wires_the_summariser_seat(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The machine agent built its Workflow without a summariser_provider, so
+    """The machine agent built its Harness without a summariser_provider, so
     compaction side-calls fell back to the worker-stamped provider and their
     transcripts carried seat="worker" -- the class of misfold the seat
     stamping exists to prevent. It now wires the same reviewer-role
@@ -159,8 +159,8 @@ def test_machine_agent_wires_the_summariser_seat(
     from typing import Any
 
     from agent6.app import machine_agent
+    from agent6.harness.loop import SessionResult
     from agent6.machine.engine import AgentRequest
-    from agent6.workflows.loop import SessionResult
 
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
@@ -192,7 +192,7 @@ def test_machine_agent_wires_the_summariser_seat(
         sinks["summariser"] = k.get("transcript_sink")
         return summariser
 
-    monkeypatch.setattr(machine_agent, "Workflow", _FakeWf)
+    monkeypatch.setattr(machine_agent, "Harness", _FakeWf)
     monkeypatch.setattr(machine_agent, "build_role_provider", _fake_role)
     monkeypatch.setattr(machine_agent, "reviewer_seat_provider", _fake_summariser)
 

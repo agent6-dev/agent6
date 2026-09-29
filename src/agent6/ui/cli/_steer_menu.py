@@ -167,7 +167,7 @@ def _fold(session_dir: Path) -> SessionState:
 def _read_preset(session_dir: Path) -> str:
     """The effective preset the run started with (manifest.json), or ""."""
     try:
-        return read_manifest(session_dir).workflow.preset
+        return read_manifest(session_dir).harness.preset
     except ManifestError:
         return ""
 

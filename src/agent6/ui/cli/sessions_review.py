@@ -13,14 +13,14 @@ from agent6.app._setup import budget_tracker, check_provider_keys
 from agent6.app.providers import build_role_provider
 from agent6.budget import BudgetExceeded
 from agent6.config import ConfigError
+from agent6.harness._context import agents_md_text
+from agent6.harness.run_review import RunReviewError, run_digest, run_review
 from agent6.paths import state_dir
 from agent6.providers import ProviderError, TranscriptSink
 from agent6.sessions.id import SessionIdError
 from agent6.ui.cli._common import error, print_nothing_yet, resolve_or_newest_layout
 from agent6.ui.cli.review_cmds import _reviewer_config, save_review
 from agent6.viewmodel import session_is_live
-from agent6.workflows._context import agents_md_text
-from agent6.workflows.run_review import RunReviewError, run_digest, run_review
 
 
 def _cmd_sessions_review(  # noqa: PLR0911

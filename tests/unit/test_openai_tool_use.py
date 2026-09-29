@@ -408,7 +408,7 @@ def test_huge_malformed_tool_arguments_are_capped(
 
 def test_extended_thinking_silently_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     """Anthropic-shape extended_thinking param doesn't translate to OpenAI;
-    silently drop so cross-provider workflow code doesn't have to branch."""
+    silently drop so cross-provider harness code doesn't have to branch."""
     captured: dict[str, Any] = {}
 
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
@@ -451,7 +451,7 @@ def test_no_tools_path_still_works(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_full_loop_message_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
     """Simulates one turn of a worker_loop-style conversation: assistant
     emits a tool_use (which we get back as Anthropic shape), then the
-    workflow appends a tool_result in user content, and the NEXT call's
+    harness appends a tool_result in user content, and the NEXT call's
     OpenAI request has the right role=tool message."""
     captured_bodies: list[dict[str, Any]] = []
 

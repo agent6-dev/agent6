@@ -92,7 +92,7 @@ after a single failing step. With correctness-only verify, every
 commit that preserves behaviour is accepted and the planner can
 chain many cycle-reducing edits.
 
-**This run also has `[workflow.metric]` configured**: after every
+**This run also has `[harness.metric]` configured**: after every
 passing step, the harness automatically runs
 `/usr/bin/python3 tests/submission_tests.py`, parses out the
 `CYCLES:` number, and feeds the trajectory (baseline, current, best,
@@ -179,7 +179,7 @@ protect_git = true
 dirty_tree = "ask"
 branch_per_run = true
 
-[workflow]
+[harness]
 # Verify only checks correctness — speed-tier tests would always fail
 # until the final improvement and would terminate the run after step 1.
 # The agent still measures cycles itself by running
@@ -206,7 +206,7 @@ revise_prompt = "${AGENT6_PERF_REVISE_PROMPT:-off}"
 # while the metric is still improving. This is the dial that lets us
 # spend the full budget on continuous optimization rather than stopping
 # after the planner's first 5-10 steps.
-[workflow.metric]
+[harness.metric]
 command = ["/usr/bin/python3", "tests/submission_tests.py"]
 pattern = 'CYCLES:\s*(\d+)'
 goal = "minimize"

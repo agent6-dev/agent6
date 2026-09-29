@@ -3,7 +3,7 @@
 """A model's command is handed back, never killed for taking too long.
 
 A wall-clock timeout has to answer a question it cannot: whether a command that
-has run twenty minutes is stuck or working. `[workflow].command_checkin_s`
+has run twenty minutes is stuck or working. `[harness].command_checkin_s`
 replaces the kill with a hand-back, so the judgement goes to the model (or the
 operator), and the command keeps running either way.
 
@@ -32,7 +32,7 @@ def _dispatcher(tmp_path: Path, checkin: float) -> ToolDispatcher:
     cfg = Config.model_validate(
         {
             "sandbox": {"run_commands": "yes"},
-            "workflow": {"command_checkin_s": checkin},
+            "harness": {"command_checkin_s": checkin},
         }
     )
     return ToolDispatcher(
@@ -110,7 +110,7 @@ def test_the_verify_gate_is_never_handed_back(tmp_path: Path) -> None:
     cfg = Config.model_validate(
         {
             "sandbox": {"run_commands": "yes"},
-            "workflow": {
+            "harness": {
                 "command_checkin_s": 0.5,
                 "verify_command": ["/bin/sh", "-c", "sleep 2; echo verified"],
                 "verify_timeout_s": 30.0,
@@ -307,7 +307,7 @@ def test_a_plan_or_ask_command_runs_bounded_instead_of_handing_back(tmp_path: Pa
     session_dir = tmp_path / "session"
     session_dir.mkdir(exist_ok=True)
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "yes"}, "workflow": {"command_checkin_s": 0.3}}
+        {"sandbox": {"run_commands": "yes"}, "harness": {"command_checkin_s": 0.3}}
     )
     d = ToolDispatcher(
         root=root,

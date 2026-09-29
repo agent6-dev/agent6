@@ -38,6 +38,13 @@ from pydantic import (
 
 from agent6.config._base import MODEL_CONFIG
 from agent6.config._git import GitConfig
+from agent6.config._harness import (
+    BudgetConfig,
+    ContextConfig,
+    HarnessConfig,
+    PromptConfig,
+    ReviewConfig,
+)
 from agent6.config._providers import ClaudeCodeProviderEntry, ProviderEntry
 from agent6.config._sandbox import MCPConfig, SandboxConfig, is_cleartext_url, is_loopback_url
 from agent6.config._surfaces import (
@@ -46,13 +53,6 @@ from agent6.config._surfaces import (
     ParallelConfig,
     SkillsConfig,
     WebConfig,
-)
-from agent6.config._workflow import (
-    BudgetConfig,
-    ContextConfig,
-    PromptConfig,
-    ReviewConfig,
-    WorkflowConfig,
 )
 from agent6.errors import OperatorError
 from agent6.types import ModelRoute, RoleName
@@ -223,7 +223,7 @@ class Config(BaseModel):
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     git: GitConfig = Field(default_factory=GitConfig)
-    workflow: WorkflowConfig = Field(default_factory=WorkflowConfig)
+    harness: HarnessConfig = Field(default_factory=HarnessConfig)
     review: ReviewConfig = Field(default_factory=ReviewConfig)
     context: ContextConfig = Field(default_factory=ContextConfig)
     prompt: PromptConfig = Field(default_factory=PromptConfig)
@@ -431,7 +431,7 @@ class Config(BaseModel):
         return Config.model_validate(data)
 
     def with_verify_command(self, argv: tuple[str, ...]) -> Config:
-        """Return a copy whose `workflow.verify_command` is *argv*, `()` for
+        """Return a copy whose `harness.verify_command` is *argv*, `()` for
         a gateless run.
 
         How `agent6 run`/`plan` inject a verify command inferred at run start,
@@ -440,7 +440,7 @@ class Config(BaseModel):
         operator is shown what was picked and can pin it explicitly.
         """
         data = self.model_dump(mode="python")
-        data.setdefault("workflow", {})["verify_command"] = list(argv)
+        data.setdefault("harness", {})["verify_command"] = list(argv)
         return Config.model_validate(data)
 
     def cleartext_credential_endpoints(self) -> tuple[str, ...]:
@@ -483,7 +483,7 @@ class Config(BaseModel):
         """Return a copy with `prompt.decompose` pinned to *value*.
 
         Used by the CLI to resolve `"auto"` (from the model-capability
-        registry) before the workflow starts, so the engine only ever sees
+        registry) before the harness starts, so the engine only ever sees
         on/off. In memory only, like `with_verify_command`.
         """
         data = self.model_dump(mode="python")

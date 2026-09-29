@@ -733,7 +733,7 @@ def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: Path) -> N
             assert await answer_written(tmp_path, pilot, "approval-1") == "yes"
             app._handle_event(_ev(type="approval.answer", id="approval-1", approved=True))
             # The resume: a real resumed leg emits ONLY loop.resume.start (never
-            # a second session.start -- workflows/loop.py run() vs resume()), then
+            # a second session.start -- harness/loop.py run() vs resume()), then
             # the new session's approval-1. Feeding session.start here masked the
             # bug where the seen-set was cleared only on session.start and every
             # resumed leg's modals were swallowed forever.

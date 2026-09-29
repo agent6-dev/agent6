@@ -5,7 +5,7 @@
 From the provider session to the end block: prompt revision, providers, the
 gate step (per lifecycle: a fresh leg infers, a resumed one reuses the
 snapshot's), steer state, the session network and MCP servers, the tool set,
-the Workflow, its teardown, the auto-merge, and the end report. `app/run.py`
+the Harness, its teardown, the auto-merge, and the end report. `app/run.py`
 and `app/resume.py` keep only what differs before it (id, manifest, dirty
 tree, snapshot, guards) and after it (the stash, the locks) and hand the leg
 its `LegInputs`. One body, so a knob wired into one lifecycle cannot be
@@ -50,6 +50,14 @@ from agent6.commit_message import render_commit_trailer
 from agent6.config import Config, RoleName
 from agent6.events import EventSink, EventWriteError
 from agent6.git_ops import chain_ref_for
+from agent6.harness._chain import RunChain, commit_identity
+from agent6.harness._compaction import CompactionSettings
+from agent6.harness._prompt_revision import RevisionSettings
+from agent6.harness._provider_call import CallSettings
+from agent6.harness._review import ReviewSettings
+from agent6.harness._session_state import SessionEndReason
+from agent6.harness._steer import OperatorBridge
+from agent6.harness.loop import Harness, ResumeError, SessionResult
 from agent6.paths import chown_to_real_user
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox.jail import SessionNetwork, survivors_message
@@ -69,14 +77,6 @@ from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import AutoCommitDirective, IsolationLevel, ResumableMode
-from agent6.workflows._chain import RunChain, commit_identity
-from agent6.workflows._compaction import CompactionSettings
-from agent6.workflows._prompt_revision import RevisionSettings
-from agent6.workflows._provider_call import CallSettings
-from agent6.workflows._review import ReviewSettings
-from agent6.workflows._session_state import SessionEndReason
-from agent6.workflows._steer import OperatorBridge
-from agent6.workflows.loop import ResumeError, SessionResult, Workflow
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,7 +253,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
 
     interrupted = False
     result: SessionResult | None = None
-    wf: Workflow | None = None
+    wf: Harness | None = None
     escape_handled = False
     undo_outcome: list[tuple[str, str]] = []
     dispatcher: ToolDispatcher | None = None
@@ -264,7 +264,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
     try:
         reporter.note(f"{'resume ' if inputs.resuming else ''}session id: {inputs.session_id}")
 
-        # Spawn any configured MCP servers BEFORE the workflow starts so their
+        # Spawn any configured MCP servers BEFORE the harness starts so their
         # tools are visible from iteration 1. The manager owns its subprocesses;
         # the finally block below closes it. The run's session network, before
         # its first member: the commands and any server that joins it share it.
@@ -308,7 +308,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             if inputs.interactive and mode == "run"
             else (lambda _i, _s: "continue")
         )
-        wf = Workflow(
+        wf = Harness(
             chain=RunChain(
                 cwd,
                 # `git.control = "model"` suspends the whole shadow chain: the
@@ -330,7 +330,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             standing_goal=inputs.standing_goal,
             interactive=inputs.interactive and mode == "run",
             initial_pins=inputs.pins,
-            max_iterations=cfg.workflow.max_iterations,
+            max_iterations=cfg.harness.max_iterations,
             provider=session.provider,
             dispatcher=dispatcher,
             logger=loop_log,

@@ -20,16 +20,8 @@ from pydantic import ValidationError
 from agent6.budget import BudgetExceeded
 from agent6.graph.curator import CuratorError, GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
-from agent6.prompts.revision import (
-    CONTEXT_SUMMARY_SYSTEM_PROMPT,
-    GIST_DISTILL_SYSTEM_PROMPT,
-    PINS_NO_RESTATE_CLAUSE,
-    context_restart_notice,
-    progress_summary_from_notice,
-)
-from agent6.providers import Provider, ProviderError
-from agent6.workflows._advice import open_subtasks
-from agent6.workflows._compaction import (
+from agent6.harness._advice import open_subtasks
+from agent6.harness._compaction import (
     CompactionSettings,
     GistRequest,
     compact_old_tool_results,
@@ -41,10 +33,18 @@ from agent6.workflows._compaction import (
     strip_checkoff,
     strip_old_thinking,
 )
-from agent6.workflows._conversation import Conversation, Notice, format_transcript_tail
+from agent6.harness._conversation import Conversation, Notice, format_transcript_tail
+from agent6.prompts.revision import (
+    CONTEXT_SUMMARY_SYSTEM_PROMPT,
+    GIST_DISTILL_SYSTEM_PROMPT,
+    PINS_NO_RESTATE_CLAUSE,
+    context_restart_notice,
+    progress_summary_from_notice,
+)
+from agent6.providers import Provider, ProviderError
 
 if TYPE_CHECKING:
-    from agent6.workflows._loop_state import LoopState
+    from agent6.harness._loop_state import LoopState
 
 
 @dataclass(frozen=True, slots=True)

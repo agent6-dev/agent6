@@ -7,8 +7,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from agent6.workflows._chain import RunChain
-from agent6.workflows._compaction import (
+from agent6.harness._chain import RunChain
+from agent6.harness._compaction import (
     call_label,
     compact_old_tool_results,
     context_chars,
@@ -16,7 +16,7 @@ from agent6.workflows._compaction import (
     parse_checkoff,
     strip_checkoff,
 )
-from agent6.workflows._conversation import Conversation, ToolResultItem, UserTurn
+from agent6.harness._conversation import Conversation, ToolResultItem, UserTurn
 
 
 def _add_exchange(conv: Conversation, *calls: tuple[str, dict[str, Any], str]) -> None:
@@ -118,7 +118,7 @@ def test_context_chars_counts_text_tool_use_and_tool_results() -> None:
 def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
     # Eliding a tool_result already smaller than the placeholder would
     # GROW cumulative size, not shrink it. Such blocks must be left intact.
-    from agent6.workflows._compaction import (
+    from agent6.harness._compaction import (
         ELISION_PLACEHOLDER as PLACEHOLDER,
     )
 
@@ -185,8 +185,8 @@ def test_tier2_measures_the_request_not_just_the_conversation() -> None:
     conversation alone, the threshold left a band exactly the size of the
     system prompt and tool definitions where the loop saw room and the
     provider answered 400 -- and a resumed leg re-issued the same request."""
+    from agent6.harness._compaction import request_prefix_chars
     from agent6.providers.types import ToolDefinition
-    from agent6.workflows._compaction import request_prefix_chars
 
     tools = (
         ToolDefinition(
@@ -381,7 +381,7 @@ def test_restart_notice_omits_dag_recovery_without_a_curator() -> None:
 
 
 def test_elision_placeholder_names_the_call() -> None:
-    from agent6.workflows._compaction import ELISION_PREFIX, elision_placeholder
+    from agent6.harness._compaction import ELISION_PREFIX, elision_placeholder
 
     p = elision_placeholder("read_file", {"path": "src/x.py", "start_line": 10, "limit": 50})
     assert p.startswith(ELISION_PREFIX)
@@ -389,7 +389,7 @@ def test_elision_placeholder_names_the_call() -> None:
     g = elision_placeholder("find_definition", {"symbol": "foo"})
     assert "find_definition foo" in g
     # Unknown pairing (orphan result) falls back to the generic marker.
-    from agent6.workflows._compaction import ELISION_PLACEHOLDER
+    from agent6.harness._compaction import ELISION_PLACEHOLDER
 
     assert elision_placeholder("", None) == ELISION_PLACEHOLDER
     assert elision_placeholder("read_file", "not-a-dict") == ELISION_PLACEHOLDER
@@ -399,7 +399,7 @@ def test_elision_placeholder_names_the_call() -> None:
 
 
 def test_recently_edited_paths_extraction() -> None:
-    from agent6.workflows._compaction import recently_edited_paths
+    from agent6.harness._compaction import recently_edited_paths
 
     unified = (
         "diff --git a/pkg/mod.py b/pkg/mod.py\n"
@@ -557,8 +557,8 @@ def test_context_chars_counts_an_unknown_block_type() -> None:
 
 
 def test_recent_tail_start_respects_cap_and_boundaries() -> None:
-    from agent6.workflows._compaction import recent_tail_start
-    from agent6.workflows._conversation import Conversation, ToolResultItem
+    from agent6.harness._compaction import recent_tail_start
+    from agent6.harness._conversation import Conversation, ToolResultItem
 
     conv = Conversation()
     conv.notice("task")
@@ -584,7 +584,7 @@ def test_recent_tail_start_respects_cap_and_boundaries() -> None:
 
 
 def _conv_with_repeated_reads(payload: str) -> Conversation:
-    from agent6.workflows._conversation import Conversation, ToolResultItem
+    from agent6.harness._conversation import Conversation, ToolResultItem
 
     conv = Conversation()
     conv.notice("task")
@@ -603,8 +603,8 @@ def test_tier1_dedupes_identical_results_keeping_the_newest() -> None:
     """The same read re-run with identical bytes: older copies become pointer
     placeholders, the newest survives whole. Lossless, so no knob (Claude
     Code dedupes the same way)."""
-    from agent6.workflows._compaction import ELISION_PREFIX, compact_old_tool_results
-    from agent6.workflows._conversation import ToolResultItem, UserTurn
+    from agent6.harness._compaction import ELISION_PREFIX, compact_old_tool_results
+    from agent6.harness._conversation import ToolResultItem, UserTurn
 
     payload = "x" * 1_000
     conv = _conv_with_repeated_reads(payload)
@@ -624,8 +624,8 @@ def test_a_duplicate_marker_claims_no_copy_the_same_pass_elides() -> None:
     """The duplicate marker sent the model to "the newer result", which the
     elision pass in the same call can replace with a bare marker: a pointer to
     content nothing holds any more."""
-    from agent6.workflows._compaction import ELISION_PREFIX, compact_old_tool_results
-    from agent6.workflows._conversation import AssistantTurn
+    from agent6.harness._compaction import ELISION_PREFIX, compact_old_tool_results
+    from agent6.harness._conversation import AssistantTurn
 
     payload = "x" * 4_000
     conv = Conversation()
@@ -654,8 +654,8 @@ def test_a_duplicate_marker_never_grows_the_result_it_replaces() -> None:
     """The marker carries the call's arguments, so a long path makes it longer
     than a small result: writing it inflated the conversation while `deduped`
     reported a saving."""
-    from agent6.workflows._compaction import compact_old_tool_results
-    from agent6.workflows._conversation import AssistantTurn
+    from agent6.harness._compaction import compact_old_tool_results
+    from agent6.harness._conversation import AssistantTurn
 
     payload = "z" * 210  # over _DEDUP_MIN_CHARS, under the marker's own length
     conv = Conversation()
@@ -691,7 +691,7 @@ def test_a_duplicate_marker_never_grows_the_result_it_replaces() -> None:
 def test_tier1_dedup_alone_can_satisfy_the_budget() -> None:
     """When freeing duplicates gets the total under the threshold, nothing
     real is elided."""
-    from agent6.workflows._compaction import compact_old_tool_results
+    from agent6.harness._compaction import compact_old_tool_results
 
     payload = "y" * 1_000
     conv = _conv_with_repeated_reads(payload)
@@ -701,8 +701,8 @@ def test_tier1_dedup_alone_can_satisfy_the_budget() -> None:
 
 
 def test_tier1_dedup_skips_small_and_different_results() -> None:
-    from agent6.workflows._compaction import compact_old_tool_results
-    from agent6.workflows._conversation import Conversation, ToolResultItem
+    from agent6.harness._compaction import compact_old_tool_results
+    from agent6.harness._conversation import Conversation, ToolResultItem
 
     conv = Conversation()
     conv.notice("task")
@@ -723,8 +723,8 @@ def test_strip_old_thinking_clears_all_but_the_newest_turns() -> None:
     """Claude-side thinking eviction behind the keep_thinking_turns knob: old
     assistant turns lose their thinking blocks, the newest keep theirs
     (Anthropic needs the signed block of a pending tool_use)."""
-    from agent6.workflows._compaction import strip_old_thinking
-    from agent6.workflows._conversation import AssistantTurn, Conversation
+    from agent6.harness._compaction import strip_old_thinking
+    from agent6.harness._conversation import AssistantTurn, Conversation
 
     conv = Conversation()
     conv.notice("task")
@@ -745,7 +745,7 @@ def test_strip_old_thinking_clears_all_but_the_newest_turns() -> None:
 
 
 def test_strip_thinking_preserves_tool_use_pairing() -> None:
-    from agent6.workflows._conversation import Conversation, ToolResultItem
+    from agent6.harness._conversation import Conversation, ToolResultItem
 
     conv = Conversation()
     conv.notice("task")
@@ -804,8 +804,8 @@ def test_a_refused_checkoff_id_does_not_drop_the_rest(tmp_path: Path) -> None:
     from agent6.config import Config
     from agent6.graph.curator import GraphCurator
     from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
+    from agent6.harness.loop import Harness
     from agent6.sessions.layout import SessionLayout
-    from agent6.workflows.loop import Workflow
 
     def draft(title: str) -> TaskNodeDraft:
         return TaskNodeDraft(title=title, depends_on=(), created_by="planner")
@@ -815,7 +815,7 @@ def test_a_refused_checkoff_id_does_not_drop_the_rest(tmp_path: Path) -> None:
     container = curator.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=draft("container")))
     curator.add_subtask(AddSubtaskIntent(parent_id=container.id, draft=draft("open child")))
     done = curator.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=draft("finished")))
-    wf = Workflow(
+    wf = Harness(
         chain=RunChain(tmp_path),
         config=Config(),
         provider=MagicMock(),

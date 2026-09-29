@@ -9,9 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from agent6.providers import ProviderResponse
-from agent6.workflows._advice import Nudge, TurnContext
-from agent6.workflows._nudges import (
+from agent6.harness._advice import Nudge, TurnContext
+from agent6.harness._nudges import (
     QUESTION_NUDGE,
     SILENT_NO_WORK_NUDGE,
     SILENT_NO_WORK_PATIENCE,
@@ -19,10 +18,11 @@ from agent6.workflows._nudges import (
     ends_with_question,
     reasoning_starved_nudge,
 )
-from agent6.workflows._provider_call import reasoning_starvation
+from agent6.harness._provider_call import reasoning_starvation
+from agent6.providers import ProviderResponse
 
 if TYPE_CHECKING:
-    from agent6.workflows._loop_state import LoopState
+    from agent6.harness._loop_state import LoopState
 
 # An early prose turn on an untouched tree is a stall, not a finish, for
 # this many iterations; a later prose finish is honoured.

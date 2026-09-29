@@ -11,18 +11,18 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.config import Config
-from agent6.workflows._chain import RunChain
-from agent6.workflows._conversation import AssistantTurn
-from agent6.workflows._finish_gates import FinishCall
-from agent6.workflows.loop import (
+from agent6.harness._chain import RunChain
+from agent6.harness._conversation import AssistantTurn
+from agent6.harness._finish_gates import FinishCall
+from agent6.harness.loop import (
+    Harness,
     TurnState,
-    Workflow,
 )
 
 
-def _wf(**kw: Any) -> Workflow:
+def _wf(**kw: Any) -> Harness:
     kw.setdefault("state_dir", Path("/tmp/state"))
-    return Workflow(
+    return Harness(
         chain=RunChain(Path("/tmp")),
         config=Config.model_validate({}),
         provider=MagicMock(),
