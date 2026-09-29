@@ -19,7 +19,6 @@ try:
     from rich.text import Text
     from textual import events
     from textual.app import App, ComposeResult, SystemCommand
-    from textual.binding import Binding
     from textual.screen import Screen
     from textual.widgets import DataTable, Footer
 except ImportError as e:  # pragma: no cover - clear runtime message
@@ -107,27 +106,27 @@ class HomeScreen(ScreenChrome, Screen[None]):
         Menu(
             "File",
             (
-                MenuItem("New session", "new_work", "n"),
-                MenuItem("Open selected", "open_selected", "enter"),
-                MenuItem("Merge selected run", "merge_selected", "m"),
-                MenuItem("Delete selected run…", "delete_selected", "d"),
+                MenuItem("New session", "new_work"),
+                MenuItem("Open selected", "open_selected"),
+                MenuItem("Merge selected run", "merge_selected"),
+                MenuItem("Delete selected run…", "delete_selected"),
                 MenuItem("Prune merged runs…", "prune"),
                 MenuItem("Prune merged runs, squash-merged too…", "prune_squashed"),
                 MenuItem("Clear saved asks…", "clear_asks"),
-                MenuItem("Refresh", "refresh", "r"),
-                MenuItem("Quit", "quit", "q"),
+                MenuItem("Refresh", "refresh"),
+                MenuItem("Quit", "quit"),
             ),
         ),
-        Menu("Config", (MenuItem("Open config", "open_config", "c"),)),
-        Menu("Machines", (MenuItem("Open machines", "open_machines", "M"),)),
+        Menu("Config", (MenuItem("Open config", "open_config"),)),
+        Menu("Machines", (MenuItem("Open machines", "open_machines"),)),
         Menu(
             "View",
             (
                 # Viewing a selected run's raw event log is filed under View to
                 # match the run views' View menus. There is no separate
                 # transcript viewer: Enter opens the run on its conversation.
-                MenuItem("View logs", "view_logs", "l"),
-                MenuItem("Fold/expand lanes", "toggle_lanes", "space"),
+                MenuItem("View logs", "view_logs"),
+                MenuItem("Fold/expand lanes", "toggle_lanes"),
                 MenuItem("Theme…", "choose_theme"),
                 MenuItem("Copy method…", "choose_copy_method"),
             ),
@@ -135,26 +134,24 @@ class HomeScreen(ScreenChrome, Screen[None]):
         Menu(
             "Help",
             (
-                MenuItem("Keys & actions", "help", "question_mark"),
-                MenuItem("Command palette", "command_palette", "ctrl+p"),
+                MenuItem("Keys & actions", "help"),
+                MenuItem("Command palette", "command_palette"),
             ),
         ),
     )
-    BINDINGS: ClassVar = [
-        # Footer order: run-list actions, then Config, then meta (Help, Quit, Menu).
-        Binding("n", "new_work", "New session"),
-        Binding("enter", "open_selected", "Open"),
-        Binding("l", "view_logs", "View logs", show=False),
-        Binding("space", "toggle_lanes", "Lanes"),
-        Binding("m", "merge_selected", "Merge run"),
-        Binding("d", "delete_selected", "Delete run"),
-        Binding("r", "refresh", "Refresh", show=False),
-        Binding("c", "open_config", "Config"),
-        Binding("M", "open_machines", "Machines"),
-        Binding("question_mark", "help", "Help"),
-        Binding("q", "quit", "Quit"),
-        *menu_bindings(MENUS),
-    ]
+    # Footer order: run-list actions, then Config, then meta (Help, Quit, Menu).
+    FOOTER: ClassVar = (
+        ("new_work", "New session"),
+        ("open_selected", "Open"),
+        ("toggle_lanes", "Lanes"),
+        ("merge_selected", "Merge run"),
+        ("delete_selected", "Delete run"),
+        ("open_config", "Config"),
+        ("open_machines", "Machines"),
+        ("help", "Help"),
+        ("quit", "Quit"),
+    )
+    BINDINGS: ClassVar = menu_bindings("hub", MENUS, footer=FOOTER)
     COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
     HELP_HINTS: ClassVar = (
         "Enter opens the selected run",

@@ -17,7 +17,6 @@ try:
     from rich.text import Text
     from textual import events
     from textual.app import ComposeResult
-    from textual.binding import Binding
     from textual.containers import Horizontal, ScrollableContainer, VerticalScroll
     from textual.css.query import NoMatches
     from textual.screen import Screen
@@ -46,7 +45,6 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.types import SESSION_KINDS
-from agent6.ui.keymap import RUN_VIEW_KEYS, SCROLL_KEYS
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.composer import (
     APPROVAL_KEY_BINDINGS,
@@ -59,12 +57,12 @@ from agent6.ui.tui.composer import (
     open_history_search,
 )
 from agent6.ui.tui.logview import LogScreen
-from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
+from agent6.ui.tui.menubar import SCROLL_ITEMS, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
     ToolCallDetailModal,
 )
 from agent6.ui.tui.prompts import PromptDispatcher
-from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome, keys
+from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import (
     status_style,
@@ -181,20 +179,28 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         "Pickers: ↑↓ highlight · Space selects",
     )
 
+    # The composer bar is the default focus, so (exactly like the conversation
+    # view) the keys are modified keys and Esc, as priority bindings. `?` opens
+    # help when the focus is not in the bar.
     MENUS: ClassVar = (
         Menu(
             "File",
-            (MenuItem("Back", "to_hub"), MenuItem("Quit", "quit_hub", "ctrl+q")),
+            (
+                MenuItem("Back", "to_hub", priority=True),
+                MenuItem("Quit", "quit_hub", priority=True),
+            ),
         ),
         RUN_MENU,  # shared verbatim with the primary conversation view
         Menu(
             "View",
             (
-                MenuItem("Next pane", "focus_next_pane", "tab"),
-                MenuItem("Prev pane", "focus_prev_pane", "shift+tab"),
+                MenuItem("Next pane", "focus_next_pane"),
+                MenuItem("Prev pane", "focus_prev_pane"),
                 MenuItem("Maximize pane", "fullscreen"),
+                *SCROLL_ITEMS,
                 MenuItem("Full log…", "view_logs"),
-                MenuItem("Conversation…", "toggle_dashboard"),
+                MenuItem("Copy selection", "copy", priority=True),
+                MenuItem("Conversation…", "toggle_dashboard", priority=True),
                 MenuItem("Theme…", "choose_theme"),
                 MenuItem("Copy method…", "choose_copy_method"),
             ),
@@ -203,24 +209,20 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             "Help",
             (
                 MenuItem("Keys & actions", "help"),
-                MenuItem("Command palette", "command_palette", "ctrl+p"),
+                MenuItem("Command palette", "command_palette"),
             ),
         ),
     )
-    # The composer bar is the default focus, so (exactly like the conversation
-    # view) the run shortcuts are priority bindings on modified keys: the same
-    # set, in the same footer order, on both screens. The one plain-letter set
-    # is the approval answers, which fire from any focus outside a text field.
-    # Run control lives in the Run menu and the palette. `?` opens help when
-    # focus is not in the bar.
+    # The same footer, in the same order, as the conversation view.
+    FOOTER: ClassVar = (
+        ("toggle_dashboard", "Conversation"),
+        ("copy", "Copy"),
+        ("history_search", "History"),
+        ("to_hub", "Back"),
+    )
     BINDINGS: ClassVar = [
-        Binding("ctrl+d", "toggle_dashboard", "Conversation", priority=True),
-        *keys(RUN_VIEW_KEYS, priority=True, show=True),
-        Binding("escape", "to_hub", "Back", key_display="Esc", priority=True),
-        *keys(SCROLL_KEYS, priority=True),
-        Binding("question_mark", "help", "Help", show=False),
+        *menu_bindings("dashboard", MENUS, footer=FOOTER),
         *APPROVAL_KEY_BINDINGS,  # an open approval answers from any non-text focus
-        *menu_bindings(MENUS),
     ]
 
     def _sync_diff_nav(self, s: SessionState) -> None:

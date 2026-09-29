@@ -37,11 +37,18 @@ except ImportError as e:  # pragma: no cover
     raise SystemExit("The menu bar needs textual, a required dependency; reinstall agent6.") from e
 
 
+from agent6.ui.keymap import SCREEN_KEYS
+
+
 @dataclass(frozen=True, slots=True)
 class MenuItem:
+    """One menu row. Its key, if any, is `ui.keymap.SCREEN_KEYS`' for the
+    action; `priority` makes that binding fire before the focused widget (a
+    composer that would otherwise take the key)."""
+
     label: str
     action: str  # dispatched as action_<action> on the host screen/app
-    key: str | None = None  # shortcut shown next to the item (display only)
+    priority: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,12 +61,54 @@ class Menu:
         return self.title[0].lower()
 
 
-def menu_bindings(menus: tuple[Menu, ...]) -> list[Binding]:
-    """Keyboard openers for the menu bar, spread into a host's BINDINGS:
-    Alt+<mnemonic> per menu, plus F10 to open the first one (the classic,
-    terminal-robust menu key; some terminals eat Alt+f as 'forward-word').
-    Once open, Left/Right switch menus and arrows/Enter pick."""
-    binds = [Binding(f"alt+{m.mnemonic}", f"menu('{m.mnemonic}')", show=False) for m in menus]
+# The View items every screen that scrolls a long body offers; the run views
+# bind them priority (the composer has the focus), the event log plain.
+SCROLL_ITEMS: tuple[MenuItem, ...] = (
+    MenuItem("Scroll ↑ a page", "page_up", priority=True),
+    MenuItem("Scroll ↓ a page", "page_down", priority=True),
+    MenuItem("Scroll → top", "scroll_top", priority=True),
+    MenuItem("Scroll → end", "scroll_bottom", priority=True),
+)
+
+
+def menu_bindings(
+    screen: str, menus: tuple[Menu, ...], *, footer: tuple[tuple[str, str], ...] = ()
+) -> list[Binding]:
+    """A screen's bindings from its menus and `SCREEN_KEYS[screen]`, spread
+    into its BINDINGS: *footer* names the actions the footer shows, in its
+    order and with its labels (every other keyed action binds hidden), then
+    the menu openers, Alt+<mnemonic> per menu and F10 for the first (the
+    classic, terminal-robust menu key; some terminals eat Alt+f). Once open,
+    Left/Right switch menus and arrows/Enter pick. A comma in the table joins
+    an action's aliases: the first key carries the footer entry, which names
+    them all."""
+    keys = SCREEN_KEYS[screen]
+    shown = dict(footer)
+    items = {it.action: it for m in menus for it in m.items}
+    binds: list[Binding] = []
+    for action in shown:
+        assert action in keys, f"{screen}: footer action {action!r} has no key"
+    for action in (*shown, *(a for a in keys if a not in shown)):
+        item = items.get(action)
+        if item is None or action not in keys:
+            continue
+        first, *aliases = keys[action].split(",")
+        display = "/".join(_key_label(k) for k in (first, *aliases))
+        binds.append(
+            Binding(
+                first,
+                action,
+                shown.get(action, item.label),
+                show=action in shown,
+                key_display=display,
+                priority=item.priority,
+            )
+        )
+        binds.extend(
+            Binding(alias, action, item.label, show=False, priority=item.priority)
+            for alias in aliases
+        )
+    binds.extend(Binding(f"alt+{m.mnemonic}", f"menu('{m.mnemonic}')", show=False) for m in menus)
     if menus:
         # Shown in the footer: the discoverable, terminal-robust way to reach the
         # menus (Alt isn't bindable on its own, and some terminals eat Alt+f).
@@ -130,15 +179,14 @@ def _menu_options(
 ) -> list[Option]:
     """Dropdown rows with labels left-aligned and shortcut keys right-aligned to a
     common edge, so the keys line up in a column. The shortcut comes from the live
-    key bindings (`keys` = action -> label, possibly several joined), falling back
-    to the item's own key hint for menu-only actions with no binding.
+    key bindings (`keys` = action -> label, possibly several joined).
 
     An item whose `check_action` reads False or None is disabled, exactly like
     its key binding: a click must not reach an action the footer already greys
     out (Merge/Delete on a live run), since `MenuBar` dispatches straight to the
     handler with no check of its own."""
     checker = getattr(screen, "check_action", None)
-    labels = [keys.get(it.action) or (_key_label(it.key) if it.key else "") for it in items]
+    labels = [keys.get(it.action, "") for it in items]
     label_w = max((len(it.label) for it in items), default=0)
     key_w = max((len(k) for k in labels), default=0)
     width = label_w + 2 + key_w  # 2-space minimum gap between the two columns
@@ -215,7 +263,7 @@ class HelpScreen(Screen[None]):
         self._extra = _footer_only_rows(source, menus, self._keys)
 
     def _shortcut(self, it: MenuItem) -> str:
-        return self._keys.get(it.action) or (_key_label(it.key) if it.key else "")
+        return self._keys.get(it.action, "")
 
     def _sections(self) -> list[tuple[Text, list[tuple[str, str]]]]:
         """(heading, rows) per section: one per menu (mnemonic underlined, matching

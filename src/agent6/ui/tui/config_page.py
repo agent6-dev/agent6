@@ -7,8 +7,8 @@ logic lives in those layers, so this page and the web editor never drift.
 
 Discoverability is driven by one action registry (:data:`CONFIG_ACTIONS`): the
 same list generates the on-screen action bar (clickable + keyboard-navigable
-buttons), the key bindings shown in the footer, the help/keys overlay, and the
-command-palette entries.
+buttons), the footer's labels and the command-palette descriptions; the keys
+are `ui.keymap.SCREEN_KEYS`' and the menus name the actions.
 """
 
 from __future__ import annotations
@@ -79,34 +79,30 @@ from agent6.viewmodel.config_view import (
 @dataclass(frozen=True, slots=True)
 class Action:
     """A user action, reachable three ways from one definition: a labelled
-    button (mouse + Tab/Enter), an optional key binding (shown in the footer),
+    button (mouse + Tab/Enter), a footer entry (its key is `SCREEN_KEYS`'),
     and a command-palette entry. The help overlay lists them all."""
 
     id: str
     label: str
     description: str
-    key: str | None = None
 
 
 # The single source of truth for every Config-page action.
 CONFIG_ACTIONS: tuple[Action, ...] = (
-    Action("search", "Filter", "Filter settings by name", key="/"),
-    Action("toggle_modified", "Modified only", "Show only settings a config layer set", key="m"),
-    Action("edit", "Edit", "Edit the selected setting (dropdown for choices)", key="e"),
-    Action("add_provider", "Add provider…", "Add a [providers.<name>] entry via a form", key="a"),
-    # `r` is a harmless Refresh here (re-read config), matching `r`=Refresh on
-    # the home hub; Reset (which unsets a setting) stays off `r` and lives on
-    # `d` (default). Label is "Refresh" (not "Reload") + "Help" (not
-    # "Help / keys") to match the home/run footers.
-    Action("reset", "Unset", "Unset the selected setting in its source config layer", key="d"),
-    Action("reload", "Refresh", "Re-read config from disk", key="r"),
-    # No key (View-menu / palette only, like the home hub): key=None is skipped by
-    # the BINDINGS comprehension so it adds no footer binding, but palette_commands
-    # still lists it, so the live-preview Theme… picker stays reachable from the
-    # config Ctrl+P palette (the built-in "Theme" is filtered out app-wide).
-    Action("choose_theme", "Theme…", "Choose a colour theme", key=None),
-    Action("help", "Help", "Show all actions and shortcuts", key="question_mark"),
-    Action("close", "Back", "Back to the hub", key="escape"),
+    Action("search", "Filter", "Filter settings by name"),
+    Action("toggle_modified", "Modified only", "Show only settings a config layer set"),
+    Action("edit", "Edit", "Edit the selected setting (dropdown for choices)"),
+    Action("add_provider", "Add provider…", "Add a [providers.<name>] entry via a form"),
+    # Labels match the home/run footers: "Refresh" (not "Reload"), "Help" (not
+    # "Help / keys"); Reset, which unsets a setting, is "Unset".
+    Action("reset", "Unset", "Unset the selected setting in its source config layer"),
+    Action("reload", "Refresh", "Re-read config from disk"),
+    # View-menu / palette only, like the home hub: the live-preview Theme…
+    # picker stays reachable from the config Ctrl+P palette (the built-in
+    # "Theme" is filtered out app-wide).
+    Action("choose_theme", "Theme…", "Choose a colour theme"),
+    Action("help", "Help", "Show all actions and shortcuts"),
+    Action("close", "Back", "Back to the hub"),
 )
 
 
@@ -544,58 +540,46 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         Menu(
             "Config",
             (
-                MenuItem("Refresh", "reload", "r"),
-                MenuItem("Back", "close", "Esc/q"),
-                MenuItem("Quit", "quit", "ctrl+q"),
+                MenuItem("Refresh", "reload"),
+                MenuItem("Back", "close"),
+                MenuItem("Quit", "quit"),
             ),
         ),
         Menu(
             "Edit",
             (
-                MenuItem("Edit setting…", "edit", "e"),
-                MenuItem("Add provider…", "add_provider", "a"),
-                MenuItem("Unset override", "reset", "d"),
+                MenuItem("Edit setting…", "edit"),
+                MenuItem("Add provider…", "add_provider"),
+                MenuItem("Unset override", "reset"),
             ),
         ),
         Menu(
             "View",
             (
-                MenuItem("Filter", "search", "/"),
-                MenuItem("Modified only", "toggle_modified", "m"),
+                MenuItem("Filter", "search"),
+                MenuItem("Modified only", "toggle_modified"),
                 MenuItem("Theme…", "choose_theme"),
             ),
         ),
         Menu(
             "Help",
             (
-                MenuItem("Keys & actions", "help", "question_mark"),
-                MenuItem("Command palette", "command_palette", "ctrl+p"),
+                MenuItem("Keys & actions", "help"),
+                MenuItem("Command palette", "command_palette"),
             ),
         ),
     )
-    # Footer order: page actions first, then the meta tail Help, Back, Menu --
-    # same order as the home/run footers (the root hub shows Quit in that slot
-    # instead, since it is the only screen that quits on q). Help + Back close out
-    # CONFIG_ACTIONS; Menu is appended below.
-    BINDINGS: ClassVar = (
-        [
-            Binding(
-                a.key,
-                a.id,
-                a.label,
-                show=a.id in {"search", "edit", "toggle_modified", "reload", "help", "close"},
-                # Back responds to both Esc and q, shown as one "Esc/q" footer entry.
-                key_display="Esc/q" if a.id == "close" else None,
-            )
-            for a in CONFIG_ACTIONS
-            if a.key is not None
-        ]
-        # Config is one level below the hub, so q (like Esc) backs out; only the
-        # root hub quits on q. (q is typeable in #search: the focused Input eats it
-        # first.) Ctrl+Q is the app-wide hard quit; Quit is in the menu as ^Q.
-        + [Binding("q", "close", "Back", show=False)]
-        + menu_bindings(MENUS)
+    # Footer order: page actions first, then the meta tail Help, Back, Menu,
+    # the same order as the home/run footers (the root hub shows Quit in that
+    # slot instead, since it is the only screen that quits on q). Config is one
+    # level below the hub, so q (like Esc) backs out; q is typeable in #search,
+    # where the focused Input eats it first.
+    FOOTER: ClassVar = tuple(
+        (a.id, a.label)
+        for a in CONFIG_ACTIONS
+        if a.id in {"search", "toggle_modified", "edit", "reload", "help", "close"}
     )
+    BINDINGS: ClassVar = menu_bindings("config", MENUS, footer=FOOTER)
     COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
     HELP_TITLE: ClassVar = "agent6 config — keys & actions"
     HELP_HINTS: ClassVar = ("Enter edits the selected setting",)

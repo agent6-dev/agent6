@@ -19,7 +19,6 @@ from typing import ClassVar
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import Screen
@@ -77,8 +76,15 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
     #draft-options Picker { margin-right: 2; }
     """
 
+    # The composer has the focus: Esc and Ctrl+Q fire before it.
     MENUS: ClassVar = (
-        Menu("File", (MenuItem("Back", "close"), MenuItem("Quit", "quit_hub", "ctrl+q"))),
+        Menu(
+            "File",
+            (
+                MenuItem("Back", "close", priority=True),
+                MenuItem("Quit", "quit_hub", priority=True),
+            ),
+        ),
         Menu(
             "View",
             (MenuItem("Theme…", "choose_theme"), MenuItem("Copy method…", "choose_copy_method")),
@@ -88,12 +94,7 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
             (MenuItem("Keys & actions", "help"), MenuItem("Command palette", "command_palette")),
         ),
     )
-    BINDINGS: ClassVar = [
-        Binding("escape", "close", "Back", key_display="Esc", priority=True),
-        Binding("ctrl+q", "quit_hub", "Quit", priority=True, show=False),
-        Binding("question_mark", "help", "Help", show=False),
-        *menu_bindings(MENUS),
-    ]
+    BINDINGS: ClassVar = menu_bindings("new work", MENUS, footer=(("close", "Back"),))
     COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
     HELP_TITLE: ClassVar = "agent6 — new session"
     HELP_HINTS: ClassVar = (

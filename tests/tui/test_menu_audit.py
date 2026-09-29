@@ -158,13 +158,13 @@ def test_menu_dropdown_keys_right_align_to_common_edge() -> None:
     from agent6.ui.tui.menubar import MenuItem, _menu_options
 
     items = (
-        MenuItem("New run/plan/ask", "a", "n"),
-        MenuItem("Open selected", "b", "enter"),
-        MenuItem("Theme…", "c", None),  # keyless
-        MenuItem("Quit", "d", "q"),
+        MenuItem("New run/plan/ask", "a"),
+        MenuItem("Open selected", "b"),
+        MenuItem("Theme…", "c"),  # keyless
+        MenuItem("Quit", "d"),
     )
-    # No live bindings map -> falls back to each item's own key hint.
-    opts = {o.id: cast(Text, o.prompt).plain for o in _menu_options(items, {}, None)}
+    keys = {"a": "n", "b": "Enter", "d": "q"}  # the live bindings' labels
+    opts = {o.id: cast(Text, o.prompt).plain for o in _menu_options(items, keys, None)}
     keyed = [opts["a"], opts["b"], opts["d"]]
     assert len({len(r) for r in keyed}) == 1  # all padded to one width => shared right edge
     assert opts["a"].endswith(" n") and opts["b"].endswith("Enter") and opts["d"].endswith(" q")

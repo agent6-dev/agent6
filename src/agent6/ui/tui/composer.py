@@ -237,7 +237,7 @@ class ResumeOptions(Horizontal):
 RUN_MENU = Menu(
     "Run",
     (
-        MenuItem("Search past messages…", "history_search", "ctrl+r"),
+        MenuItem("Search past messages…", "history_search", priority=True),
         MenuItem("Compact context now", "compact"),
         MenuItem("Stop after this step", "stop_step"),
         MenuItem("Stop now", "stop_now"),

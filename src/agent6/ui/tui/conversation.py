@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.geometry import Offset
@@ -37,7 +36,6 @@ from textual.screen import Screen
 from textual.timer import Timer
 from textual.widgets import Footer, Static, TextArea
 
-from agent6.ui.keymap import RUN_VIEW_KEYS, SCROLL_KEYS
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.composer import (
     APPROVAL_KEY_BINDINGS,
@@ -52,13 +50,14 @@ from agent6.ui.tui.composer import (
 )
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.menubar import (
+    SCROLL_ITEMS,
     Menu,
     MenuBar,
     MenuItem,
     menu_bindings,
 )
 from agent6.ui.tui.prompts import PromptDispatcher
-from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome, keys
+from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.settings import get_copy_method
 from agent6.viewmodel import approval_parts
 from agent6.viewmodel.events import SESSION_START_EVENTS
@@ -207,15 +206,15 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     #conv-input { display: none; }
     """
 
+    # The composer bar owns plain letters + Enter, so the keys here are
+    # modified keys and Esc, and they are priority bindings (they fire before
+    # the bar). `?` opens help when the focus is not in the bar.
     _VIEW_ITEMS: ClassVar = (
-        MenuItem("Detail: hidden / collapsed / expanded", "cycle_detail"),
-        MenuItem("Scroll ↑ a page", "page_up"),
-        MenuItem("Scroll ↓ a page", "page_down"),
-        MenuItem("Scroll → top", "scroll_top"),
-        MenuItem("Scroll → end", "scroll_bottom"),
+        MenuItem("Detail: hidden / collapsed / expanded", "cycle_detail", priority=True),
+        *SCROLL_ITEMS,
         MenuItem("Reload the log", "reload"),
         MenuItem("Full log…", "view_logs"),
-        MenuItem("Copy selection / all", "copy"),
+        MenuItem("Copy selection / all", "copy", priority=True),
         MenuItem("Copy via terminal", "suspend_copy"),
         MenuItem("Copy via pager", "pager"),
         MenuItem("Save transcript to file", "write_file"),
@@ -230,29 +229,28 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         ),
     )
     MENUS: ClassVar = (
-        Menu("File", (MenuItem("Back", "close"), MenuItem("Quit", "quit_hub", "ctrl+q"))),
+        Menu(
+            "File",
+            (
+                MenuItem("Back", "close", priority=True),
+                MenuItem("Quit", "quit_hub", priority=True),
+            ),
+        ),
         RUN_MENU,
-        Menu("View", (*_VIEW_ITEMS, MenuItem("Dashboard…", "toggle_dashboard"))),
+        Menu("View", (*_VIEW_ITEMS, MenuItem("Dashboard…", "toggle_dashboard", priority=True))),
         _HELP_MENU,
     )
-
-    # The composer bar owns plain letters + Enter, so the run shortcuts are
-    # priority bindings (they fire before the bar) on modified keys: the same
-    # set, in the same footer order, as the dashboard. The one plain-letter
-    # set is the approval answers, which fire from any focus outside a text
-    # field. Everything else lives in the menu bar (which shows the shortcuts
-    # from these bindings) and the palette. `?` opens help too, when focus is
-    # not in the bar.
+    # The same footer, in the same order, as the dashboard, plus the detail cycle.
+    FOOTER: ClassVar = (
+        ("toggle_dashboard", "Dashboard"),
+        ("copy", "Copy"),
+        ("history_search", "History"),
+        ("cycle_detail", "Detail"),
+        ("close", "Back"),
+    )
     BINDINGS: ClassVar = [
-        Binding("ctrl+d", "toggle_dashboard", "Dashboard", priority=True),
-        *keys(RUN_VIEW_KEYS, priority=True, show=True),
-        # The thinking/tool-detail cycle: hidden -> collapsed -> expanded.
-        Binding("ctrl+t", "cycle_detail", "Detail", priority=True),
-        Binding("escape", "close", "Back", key_display="Esc", priority=True),
-        *keys(SCROLL_KEYS, priority=True),
-        Binding("question_mark", "help", "Help", show=False),
+        *menu_bindings("conversation", MENUS, footer=FOOTER),
         *APPROVAL_KEY_BINDINGS,  # an open approval answers from any non-text focus
-        *menu_bindings(MENUS),
     ]
     COMMANDS: ClassVar = {MenuCommands}
     HELP_TITLE: ClassVar = "agent6 — conversation"

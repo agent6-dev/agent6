@@ -74,84 +74,111 @@ def approval_prompt_suffix(*, standing: bool) -> str:
     return f"[{letters}]  ({scoped}, this session): "
 
 
-# The scroll keys every scrollable screen carries, as (key, action, label). The
-# three screens that scroll a long body (the conversation, the dashboard, the
-# event log) offer exactly these, so they are spelled once.
-SCROLL_KEYS: tuple[tuple[str, str, str], ...] = (
-    ("pageup", "page_up", "Scroll up"),
-    ("pagedown", "page_down", "Scroll down"),
-    ("ctrl+home", "scroll_top", "Top"),
-    ("ctrl+end", "scroll_bottom", "End"),
-)
-
-# The control keys a live run's two views share. They differ only in where Esc
-# goes and in the conversation's detail cycle, which each screen adds itself.
-RUN_VIEW_KEYS: tuple[tuple[str, str, str], ...] = (
-    ("ctrl+c", "copy", "Copy"),
-    ("ctrl+r", "history_search", "History"),
-)
-
-
-# Every plain letter a TUI screen binds, by screen. Letters are scarce and
-# actions are not, so one letter means different things on different screens:
-# `d` deletes a run on the hub, unsets a setting on the config page and denies
-# an approval for the session in a run view. This table is where that is
-# visible; `tests/tui/test_keymap_screens.py` reads the screens' own BINDINGS
-# and fails if it drifts, so a new letter is chosen with the others in sight.
-#
-# A destructive letter is confirmed before it acts (the hub's `d` asks; the
-# config page's `d` is a config-file edit you undo by setting the value again).
-SCREEN_LETTERS: dict[str, dict[str, str]] = {
+# Every key a TUI screen binds to one of its menu actions, by screen: the
+# one place a key is chosen, so a collision is read here before a key is
+# taken (letters are scarce and actions are not: `d` deletes a run on the hub,
+# unsets a setting on the config page and denies an approval for the session
+# in a run view; a destructive letter is confirmed before it acts). A screen
+# builds its bindings from its menus and this table (`menu_bindings`); an
+# action absent here is reachable from the menu and the palette only. Commas
+# join the aliases of one action: the first key carries the footer entry.
+# The approval letters (`APPROVAL_ANSWERS`) are bound beside these on every
+# view of a session.
+SCREEN_KEYS: dict[str, dict[str, str]] = {
     "hub": {
-        "n": "new_work",
-        "l": "view_logs",
-        "m": "merge_selected",
-        "d": "delete_selected",
-        "r": "refresh",
-        "c": "open_config",
-        "M": "open_machines",
-        "q": "quit",
+        "new_work": "n",
+        "open_selected": "enter",
+        "merge_selected": "m",
+        "delete_selected": "d",
+        "refresh": "r",
+        "quit": "q",
+        "open_config": "c",
+        "open_machines": "M",
+        "view_logs": "l",
+        "toggle_lanes": "space",
+        "help": "question_mark",
+        "command_palette": "ctrl+p",
     },
     # The two run views carry no letters of their own: the composer has the
-    # keyboard, and these four answer an open approval from any non-text focus.
+    # keyboard, so their keys are modified keys and Esc.
     "conversation": {
-        "y": "answer('yes')",
-        "a": "answer('session')",
-        "n": "answer('no')",
-        "d": "answer('session-deny')",
+        "close": "escape",
+        "quit_hub": "ctrl+q",
+        "history_search": "ctrl+r",
+        "cycle_detail": "ctrl+t",
+        "page_up": "pageup",
+        "page_down": "pagedown",
+        "scroll_top": "ctrl+home",
+        "scroll_bottom": "ctrl+end",
+        "copy": "ctrl+c",
+        "toggle_dashboard": "ctrl+d",
+        "help": "question_mark",
+        "command_palette": "ctrl+p",
     },
     "dashboard": {
-        "y": "answer('yes')",
-        "a": "answer('session')",
-        "n": "answer('no')",
-        "d": "answer('session-deny')",
+        "to_hub": "escape",
+        "quit_hub": "ctrl+q",
+        "history_search": "ctrl+r",
+        "focus_next_pane": "tab",
+        "focus_prev_pane": "shift+tab",
+        "page_up": "pageup",
+        "page_down": "pagedown",
+        "scroll_top": "ctrl+home",
+        "scroll_bottom": "ctrl+end",
+        "copy": "ctrl+c",
+        "toggle_dashboard": "ctrl+d",
+        "help": "question_mark",
+        "command_palette": "ctrl+p",
     },
-    "event log": {"q": "close", "l": "close", "r": "reload"},
+    "new work": {
+        "close": "escape",
+        "quit_hub": "ctrl+q",
+        "help": "question_mark",
+        "command_palette": "ctrl+p",
+    },
+    # `l` closes the log too: the key that opened it (the hub's, the
+    # dashboard's) toggles it shut.
+    "event log": {
+        "close": "escape,q,l",
+        "page_up": "pageup",
+        "page_down": "pagedown",
+        "scroll_top": "ctrl+home",
+        "scroll_bottom": "ctrl+end",
+        "reload": "r",
+        "help": "question_mark",
+        "command_palette": "ctrl+p",
+    },
     "config": {
-        "m": "toggle_modified",
-        "e": "edit",
-        "a": "add_provider",
-        "d": "reset",
-        "r": "reload",
-        "q": "close",
+        "reload": "r",
+        "close": "escape,q",
+        "quit": "ctrl+q",
+        "edit": "e",
+        "add_provider": "a",
+        "reset": "d",
+        "search": "/",
+        "toggle_modified": "m",
+        "help": "question_mark",
+        "command_palette": "ctrl+p",
     },
+    # `r` refreshes on every screen that refreshes, so running a machine takes
+    # the shifted letter, as `M` does for the machines screen itself.
     "machines": {
-        "v": "view",
-        "R": "run",
-        "w": "watch",
-        "c": "create",
-        "r": "refresh",
-        "q": "close",
+        "close": "escape,q",
+        "quit": "ctrl+q",
+        "view": "v",
+        "run": "R",
+        "watch": "w",
+        "create": "c",
+        "refresh": "r",
+        "help": "question_mark",
+        "command_palette": "ctrl+p",
     },
-    "machine": {"q": "close"},
     "machine watch": {
-        "s": "steer",
-        "m": "poke",
-        "x": "stop",
-        "q": "close",
-        "y": "answer('yes')",
-        "a": "answer('session')",
-        "n": "answer('no')",
-        "d": "answer('session-deny')",
+        "close": "escape,q",
+        "steer": "s",
+        "poke": "m",
+        "stop": "x",
+        "help": "question_mark",
+        "command_palette": "ctrl+p",
     },
 }

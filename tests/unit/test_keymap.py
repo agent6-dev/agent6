@@ -11,7 +11,12 @@ from __future__ import annotations
 
 from importlib import resources
 
-from agent6.ui.keymap import APPROVAL_ANSWERS, answer_for, approval_prompt_suffix
+from agent6.ui.keymap import (
+    APPROVAL_ANSWERS,
+    SCREEN_KEYS,
+    answer_for,
+    approval_prompt_suffix,
+)
 
 
 def test_the_four_answers_and_their_order() -> None:
@@ -120,3 +125,28 @@ def test_completion_only_fires_on_a_line_that_is_one_word() -> None:
     # The web asks the same of the textarea's whole value.
     js = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     assert "v.startsWith('/') && !/\\s/.test(v)" in js
+
+
+def test_one_key_never_means_two_things_on_one_screen() -> None:
+    """The table is read before a key is taken; a dict cannot hold an action
+    twice, so the check is that no key (alias included) serves two actions."""
+    for screen, table in SCREEN_KEYS.items():
+        keys = [key for spec in table.values() for key in spec.split(",")]
+        assert len(keys) == len(set(keys)), f"{screen} binds a key twice"
+
+
+def test_refresh_is_r_wherever_a_screen_refreshes() -> None:
+    """One letter, one meaning: the machines list refreshed on `f` and ran a
+    machine on `r`, against every other screen."""
+    for screen, table in SCREEN_KEYS.items():
+        refreshers = [key for action, key in table.items() if action in ("refresh", "reload")]
+        assert refreshers in ([], ["r"]), f"{screen} refreshes on {refreshers}, not r"
+
+
+def test_the_approval_letters_are_free_on_every_view_of_a_session() -> None:
+    """The four answer letters bind beside a run view's table: a table letter
+    of its own would shadow an answer."""
+    letters = {e.key for e in APPROVAL_ANSWERS}
+    for screen in ("conversation", "dashboard", "machine watch"):
+        taken = {key for spec in SCREEN_KEYS[screen].values() for key in spec.split(",")}
+        assert not (taken & letters), f"{screen} takes an approval letter"

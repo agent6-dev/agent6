@@ -157,29 +157,30 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         Menu(
             "Machine",
             (
-                MenuItem("Steer the running state", "steer", "s"),
-                MenuItem("Message a waiting machine", "poke", "m"),
-                MenuItem("Stop at the next transition", "stop", "x"),
+                MenuItem("Steer the running state", "steer"),
+                MenuItem("Message a waiting machine", "poke"),
+                MenuItem("Stop at the next transition", "stop"),
             ),
         ),
         Menu(
             "Help",
             (
-                MenuItem("Keys & actions", "help", "question_mark"),
-                MenuItem("Command palette", "command_palette", "ctrl+p"),
+                MenuItem("Keys & actions", "help"),
+                MenuItem("Command palette", "command_palette"),
             ),
         ),
     )
     COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
+    FOOTER: ClassVar = (
+        ("steer", "Steer"),
+        ("poke", "Message"),
+        ("stop", "Stop"),
+        ("help", "Help"),
+        ("close", "Back"),
+    )
     BINDINGS: ClassVar = [
-        Binding("s", "steer", "Steer"),
-        Binding("m", "poke", "Message"),
-        Binding("x", "stop", "Stop"),
-        Binding("question_mark", "help", "Help"),
-        Binding("escape", "close", "Back", key_display="Esc/q"),
-        Binding("q", "close", "Back", show=False),
+        *menu_bindings("machine watch", MENUS, footer=FOOTER),
         *APPROVAL_KEY_BINDINGS,  # an open approval answers from any non-text focus
-        *menu_bindings(MENUS),
     ]
     APPROVAL_DOCK_BEFORE: ClassVar = "Footer"
     APPROVAL_LOST: ClassVar = _ANSWER_LOST
@@ -676,18 +677,18 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         Menu(
             "File",
             (
-                MenuItem("Back", "close", "Esc/q"),
-                MenuItem("Quit", "quit", "ctrl+q"),
+                MenuItem("Back", "close"),
+                MenuItem("Quit", "quit"),
             ),
         ),
         Menu(
             "Machines",
             (
-                MenuItem("View", "view", "v"),
-                MenuItem("Run", "run", "R"),
-                MenuItem("Watch", "watch", "w"),
-                MenuItem("Create…", "create", "c"),
-                MenuItem("Refresh", "refresh", "r"),
+                MenuItem("View", "view"),
+                MenuItem("Run", "run"),
+                MenuItem("Watch", "watch"),
+                MenuItem("Create…", "create"),
+                MenuItem("Refresh", "refresh"),
             ),
         ),
         Menu(
@@ -700,24 +701,21 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         Menu(
             "Help",
             (
-                MenuItem("Keys & actions", "help", "question_mark"),
-                MenuItem("Command palette", "command_palette", "ctrl+p"),
+                MenuItem("Keys & actions", "help"),
+                MenuItem("Command palette", "command_palette"),
             ),
         ),
     )
-    BINDINGS: ClassVar = [
-        Binding("v", "view", "View"),
-        # `r` refreshes on every screen that refreshes, so running a machine
-        # takes the shifted letter, as `M` does for the machines screen itself.
-        Binding("R", "run", "Run"),
-        Binding("w", "watch", "Watch"),
-        Binding("c", "create", "Create"),
-        Binding("r", "refresh", "Refresh"),
-        Binding("question_mark", "help", "Help"),
-        Binding("escape", "close", "Back", key_display="Esc/q"),
-        Binding("q", "close", "Back", show=False),
-        *menu_bindings(MENUS),
-    ]
+    FOOTER: ClassVar = (
+        ("view", "View"),
+        ("run", "Run"),
+        ("watch", "Watch"),
+        ("create", "Create"),
+        ("refresh", "Refresh"),
+        ("help", "Help"),
+        ("close", "Back"),
+    )
+    BINDINGS: ClassVar = menu_bindings("machines", MENUS, footer=FOOTER)
     COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
     HELP_TITLE: ClassVar = "agent6 machines — keys & actions"
     HELP_HINTS: ClassVar = ("Enter opens the selected machine",)

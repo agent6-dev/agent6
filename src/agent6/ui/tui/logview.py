@@ -31,19 +31,18 @@ from typing import ClassVar
 
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.binding import Binding
 from textual.containers import VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Static
 
-from agent6.ui.keymap import SCROLL_KEYS
 from agent6.ui.tui.menubar import (
+    SCROLL_ITEMS,
     Menu,
     MenuBar,
     MenuItem,
     menu_bindings,
 )
-from agent6.ui.tui.screen_chrome import ScreenChrome, keys
+from agent6.ui.tui.screen_chrome import ScreenChrome
 from agent6.viewmodel.log_line import format_log_line
 from agent6.viewmodel.state import LOG_NOISE_EVENTS, STREAM_DELTA_EVENTS
 from agent6.viewmodel.tail import LogTail
@@ -61,32 +60,14 @@ class LogScreen(ScreenChrome, Screen[None]):
     HELP_TITLE: ClassVar = "agent6 — log"
     MENUS: ClassVar = (
         Menu("File", (MenuItem("Back", "close"),)),
-        Menu(
-            "View",
-            (
-                MenuItem("Scroll ↑ a page", "page_up"),
-                MenuItem("Scroll ↓ a page", "page_down"),
-                MenuItem("Scroll → top", "scroll_top"),
-                MenuItem("Scroll → end", "scroll_bottom"),
-                MenuItem("Reload", "reload"),
-            ),
-        ),
+        Menu("View", (*SCROLL_ITEMS, MenuItem("Reload", "reload"))),
         Menu(
             "Help",
             (MenuItem("Keys & actions", "help"), MenuItem("Command palette", "command_palette")),
         ),
     )
-
-    BINDINGS: ClassVar = [
-        Binding("escape", "close", "Back", key_display="Esc/q"),
-        Binding("q", "close", "Back", show=False),
-        # l closes too: the key that opened the view (dashboard `l`, hub `l`)
-        # toggles it shut, so open/close is one keystroke from either side.
-        Binding("l", "close", "Back", show=False),
-        Binding("r", "reload", "Reload"),
-        *keys(SCROLL_KEYS),
-        *menu_bindings(MENUS),
-    ]
+    FOOTER: ClassVar = (("close", "Back"), ("reload", "Reload"), ("help", "Help"))
+    BINDINGS: ClassVar = menu_bindings("event log", MENUS, footer=FOOTER)
 
     def __init__(self, logs_path: Path, *, title: Callable[[], str]) -> None:
         super().__init__()
