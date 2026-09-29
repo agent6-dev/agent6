@@ -11,28 +11,23 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from rich.text import Text
-from textual import events
-from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Static, TextArea
+from rich import text as rich_text
+from textual import app, binding, containers, events, screen, widgets
 
-from agent6.ui.tui.widgets import TypeaheadField
-from agent6.viewmodel.state import Question
+from agent6.ui.tui import widgets as tui_widgets
+from agent6.viewmodel import state
 
 # The arrows move focus like Tab; a focused Input consumes left and right for its cursor.
 _ARROW_NAV = (
-    Binding("down", "app.focus_next", "next", show=False),
-    Binding("up", "app.focus_previous", "prev", show=False),
-    Binding("right", "app.focus_next", "next", show=False),
-    Binding("left", "app.focus_previous", "prev", show=False),
+    binding.Binding("down", "app.focus_next", "next", show=False),
+    binding.Binding("up", "app.focus_previous", "prev", show=False),
+    binding.Binding("right", "app.focus_next", "next", show=False),
+    binding.Binding("left", "app.focus_previous", "prev", show=False),
 )
 
 
 # A modal's frame is the focused accent border: a modal always owns the focus.
-class ConfirmModal(ModalScreen[bool]):
+class ConfirmModal(screen.ModalScreen[bool]):
     """A yes/no confirmation; focus defaults to Cancel, so an accidental Enter is safe."""
 
     DEFAULT_CSS = """
@@ -51,12 +46,14 @@ class ConfirmModal(ModalScreen[bool]):
 
     BINDINGS: ClassVar = [
         *_ARROW_NAV,
-        Binding("y", "confirm", "Yes", show=True),
-        Binding("Y", "confirm", "Yes", show=False),
-        Binding("n", "cancel", "No", show=True),
-        Binding("N", "cancel", "No", show=False),
-        Binding("escape", "cancel", "No", show=False),
-        Binding("q", "cancel", "No", show=False),  # the footer under a modal reads "Esc/q Back"
+        binding.Binding("y", "confirm", "Yes", show=True),
+        binding.Binding("Y", "confirm", "Yes", show=False),
+        binding.Binding("n", "cancel", "No", show=True),
+        binding.Binding("N", "cancel", "No", show=False),
+        binding.Binding("escape", "cancel", "No", show=False),
+        binding.Binding(
+            "q", "cancel", "No", show=False
+        ),  # the footer under a modal reads "Esc/q Back"
     ]
 
     def __init__(self, title: str, body: str, *, confirm_label: str = "Confirm") -> None:
@@ -66,26 +63,26 @@ class ConfirmModal(ModalScreen[bool]):
         self._body = body
         self._confirm_label = confirm_label
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Lay out the dialog.
 
         Yields:
             The text and the two buttons.
         """
-        with Container(id="confirm-box"):
-            text = Text()
+        with containers.Container(id="confirm-box"):
+            text = rich_text.Text()
             text.append(f"{self._title}\n\n", style="bold")
             text.append(self._body)  # never parsed as markup
-            yield Static(text)
-            with Horizontal(id="confirm-buttons"):
-                yield Button(f"{self._confirm_label} (y)", id="yes", variant="success")
-                yield Button("Cancel (n)", id="no", variant="error")
+            yield widgets.Static(text)
+            with containers.Horizontal(id="confirm-buttons"):
+                yield widgets.Button(f"{self._confirm_label} (y)", id="yes", variant="success")
+                yield widgets.Button("Cancel (n)", id="no", variant="error")
 
     def on_mount(self) -> None:
         """Focus Cancel."""
-        self.query_one("#no", Button).focus()
+        self.query_one("#no", widgets.Button).focus()
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    def on_button_pressed(self, event: widgets.Button.Pressed) -> None:
         """Dismiss with the button's answer."""
         self.dismiss(event.button.id == "yes")
 
@@ -98,7 +95,7 @@ class ConfirmModal(ModalScreen[bool]):
         self.dismiss(False)
 
 
-class SteerModal(ModalScreen[str]):
+class SteerModal(screen.ModalScreen[str]):
     """Steer the run with a multi-line instruction, or continue as is.
 
     The result is the instruction, or "" to continue; the dialog never stops the run.
@@ -121,37 +118,39 @@ class SteerModal(ModalScreen[str]):
 
     BINDINGS: ClassVar = [
         *_ARROW_NAV,
-        Binding("ctrl+s", "send", "Send", show=False),
-        Binding("escape", "cont", "Continue", show=False),
-        Binding("ctrl+underscore", "undo_text", "Undo", show=False),  # the composer's undo key
+        binding.Binding("ctrl+s", "send", "Send", show=False),
+        binding.Binding("escape", "cont", "Continue", show=False),
+        binding.Binding(
+            "ctrl+underscore", "undo_text", "Undo", show=False
+        ),  # the composer's undo key
     ]
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Lay out the dialog.
 
         Yields:
             The text, the input and the two buttons.
         """
-        with Container(id="steer-box"):
-            body = Text()
+        with containers.Container(id="steer-box"):
+            body = rich_text.Text()
             body.append("Steer this run\n\n", style="bold")
             # Split at the clause, so a narrow terminal never wraps mid-phrase.
             body.append("Type an instruction (multi-line) then Send it,\nor Continue as-is.")
-            yield Static(body)
-            yield TextArea(id="steer-input", soft_wrap=True)
-            with Horizontal(id="steer-buttons"):
-                yield Button("Send (Ctrl+S)", id="send", variant="primary")
-                yield Button("Continue", id="continue", variant="success")
+            yield widgets.Static(body)
+            yield widgets.TextArea(id="steer-input", soft_wrap=True)
+            with containers.Horizontal(id="steer-buttons"):
+                yield widgets.Button("Send (Ctrl+S)", id="send", variant="primary")
+                yield widgets.Button("Continue", id="continue", variant="success")
 
     def on_mount(self) -> None:
         """Focus the input."""
-        self.query_one("#steer-input", TextArea).focus()
+        self.query_one("#steer-input", widgets.TextArea).focus()
 
     def _text(self) -> str:
         """Return the typed instruction, stripped."""
-        return self.query_one("#steer-input", TextArea).text.strip()
+        return self.query_one("#steer-input", widgets.TextArea).text.strip()
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    def on_button_pressed(self, event: widgets.Button.Pressed) -> None:
         """Send or continue, by the button."""
         self.dismiss(self._text() if event.button.id == "send" else "")
 
@@ -165,10 +164,10 @@ class SteerModal(ModalScreen[str]):
 
     def action_undo_text(self) -> None:
         """Undo the last edit."""
-        self.query_one("#steer-input", TextArea).undo()
+        self.query_one("#steer-input", widgets.TextArea).undo()
 
 
-class ToolCallDetailModal(ModalScreen[None]):
+class ToolCallDetailModal(screen.ModalScreen[None]):
     """The full args and summary of one tool call, selectable; Esc or the backdrop closes."""
 
     DEFAULT_CSS = """
@@ -186,9 +185,11 @@ class ToolCallDetailModal(ModalScreen[None]):
     """
 
     BINDINGS: ClassVar = [
-        Binding("escape", "close", "Close", show=True),  # the one key the text area never swallows
-        Binding("enter", "close", "Close", show=False),
-        Binding("q", "close", "Close", show=False),
+        binding.Binding(
+            "escape", "close", "Close", show=True
+        ),  # the one key the text area never swallows
+        binding.Binding("enter", "close", "Close", show=False),
+        binding.Binding("q", "close", "Close", show=False),
     ]
 
     def __init__(self, name: str, ok: bool | None, args: str, summary: str) -> None:
@@ -199,26 +200,26 @@ class ToolCallDetailModal(ModalScreen[None]):
         self._args = args or "(no args)"
         self._summary = summary or "(no summary)"
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Lay out the view.
 
         Yields:
             The header, then the args and the summary, each labelled.
         """
         status = "… in flight" if self._ok is None else ("✓ ok" if self._ok else "✗ failed")
-        with Vertical(id="toolcall-box"):
-            header = Text()
+        with containers.Vertical(id="toolcall-box"):
+            header = rich_text.Text()
             header.append(self._name, style="bold")
             header.append(f"   {status}", style="dim")
-            yield Static(header)
-            yield Static("args", classes="tc-label")
-            yield TextArea(self._args, read_only=True, soft_wrap=True, id="tc-args")
-            yield Static("summary", classes="tc-label")
-            yield TextArea(self._summary, read_only=True, soft_wrap=True, id="tc-summary")
+            yield widgets.Static(header)
+            yield widgets.Static("args", classes="tc-label")
+            yield widgets.TextArea(self._args, read_only=True, soft_wrap=True, id="tc-args")
+            yield widgets.Static("summary", classes="tc-label")
+            yield widgets.TextArea(self._summary, read_only=True, soft_wrap=True, id="tc-summary")
 
     def on_mount(self) -> None:
         """Focus the args, so the page keys scroll them at once."""
-        self.query_one("#tc-args", TextArea).focus()
+        self.query_one("#tc-args", widgets.TextArea).focus()
 
     def on_click(self, event: events.Click) -> None:
         """Close on a click outside the box."""
@@ -230,7 +231,7 @@ class ToolCallDetailModal(ModalScreen[None]):
         self.dismiss(None)
 
 
-class TextModal(ModalScreen[None]):
+class TextModal(screen.ModalScreen[None]):
     """A titled read-only text view, selectable; Esc or the backdrop closes."""
 
     DEFAULT_CSS = """
@@ -247,8 +248,8 @@ class TextModal(ModalScreen[None]):
     """
 
     BINDINGS: ClassVar = [
-        Binding("escape", "close", "Close", show=True),
-        Binding("q", "close", "Close", show=False),
+        binding.Binding("escape", "close", "Close", show=True),
+        binding.Binding("q", "close", "Close", show=False),
     ]
 
     def __init__(self, title: str, text: str) -> None:
@@ -257,19 +258,19 @@ class TextModal(ModalScreen[None]):
         self._title = title
         self._text = text
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Lay out the view.
 
         Yields:
             The title and the text.
         """
-        with Vertical(id="text-box"):
-            yield Static(Text(self._title, style="bold"))
-            yield TextArea(self._text, read_only=True, soft_wrap=True, id="text-view")
+        with containers.Vertical(id="text-box"):
+            yield widgets.Static(rich_text.Text(self._title, style="bold"))
+            yield widgets.TextArea(self._text, read_only=True, soft_wrap=True, id="text-view")
 
     def on_mount(self) -> None:
         """Focus the text."""
-        self.query_one("#text-view", TextArea).focus()
+        self.query_one("#text-view", widgets.TextArea).focus()
 
     def on_click(self, event: events.Click) -> None:
         """Close on a click outside the box."""
@@ -281,7 +282,7 @@ class TextModal(ModalScreen[None]):
         self.dismiss(None)
 
 
-class TextInputModal(ModalScreen[str | None]):
+class TextInputModal(screen.ModalScreen[str | None]):
     """A one-line text prompt; Enter submits the text, Esc dismisses with None."""
 
     DEFAULT_CSS = """
@@ -293,7 +294,7 @@ class TextInputModal(ModalScreen[str | None]):
     #ti-input { margin-top: 1; }
     """
 
-    BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel", show=False)]
+    BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel", show=False)]
 
     def __init__(self, title: str, placeholder: str = "") -> None:
         """Create the prompt with its title and the input's placeholder."""
@@ -301,21 +302,21 @@ class TextInputModal(ModalScreen[str | None]):
         self._title = title
         self._placeholder = placeholder
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Lay out the prompt.
 
         Yields:
             The title and the input.
         """
-        with Container(id="ti-box"):
-            yield Static(Text(self._title, style="bold"))
-            yield Input(placeholder=self._placeholder, id="ti-input")
+        with containers.Container(id="ti-box"):
+            yield widgets.Static(rich_text.Text(self._title, style="bold"))
+            yield widgets.Input(placeholder=self._placeholder, id="ti-input")
 
     def on_mount(self) -> None:
         """Focus the input."""
-        self.query_one("#ti-input", Input).focus()
+        self.query_one("#ti-input", widgets.Input).focus()
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
+    def on_input_submitted(self, event: widgets.Input.Submitted) -> None:
         """Dismiss with the text."""
         self.dismiss(event.value)
 
@@ -324,7 +325,7 @@ class TextInputModal(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class HistorySearchModal(ModalScreen[str | None]):
+class HistorySearchModal(screen.ModalScreen[str | None]):
     """Pick one of the session's past messages to edit and resend.
 
     Enter keeps the highlighted match, or the typed text when none is; Esc or the
@@ -343,8 +344,8 @@ class HistorySearchModal(ModalScreen[str | None]):
     """
 
     BINDINGS: ClassVar = [
-        Binding("escape", "cancel", "Cancel", show=False),
-        Binding("enter", "submit", "Use", show=False),
+        binding.Binding("escape", "cancel", "Cancel", show=False),
+        binding.Binding("enter", "submit", "Use", show=False),
     ]
 
     def __init__(self, entries: list[str]) -> None:
@@ -352,20 +353,22 @@ class HistorySearchModal(ModalScreen[str | None]):
         super().__init__()
         self._entries = entries
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Lay out the search.
 
         Yields:
             The title, the typeahead field and the hint.
         """
-        with Container(id="hs-box"):
-            yield Static(Text("Search past messages", style="bold"))
-            yield TypeaheadField("", self._entries, id="hs-field")
-            yield Static("↑↓ highlight · Enter fills the composer · Esc closes", id="hs-hint")
+        with containers.Container(id="hs-box"):
+            yield widgets.Static(rich_text.Text("Search past messages", style="bold"))
+            yield tui_widgets.TypeaheadField("", self._entries, id="hs-field")
+            yield widgets.Static(
+                "↑↓ highlight · Enter fills the composer · Esc closes", id="hs-hint"
+            )
 
     def on_mount(self) -> None:
         """Focus the field."""
-        self.query_one("#hs-field", TypeaheadField).focus()
+        self.query_one("#hs-field", tui_widgets.TypeaheadField).focus()
 
     def on_click(self, event: events.Click) -> None:
         """Cancel on a click outside the box."""
@@ -374,14 +377,14 @@ class HistorySearchModal(ModalScreen[str | None]):
 
     def action_submit(self) -> None:
         """Dismiss with the field's value, or None when empty."""
-        self.dismiss(self.query_one("#hs-field", TypeaheadField).value or None)
+        self.dismiss(self.query_one("#hs-field", tui_widgets.TypeaheadField).value or None)
 
     def action_cancel(self) -> None:
         """Dismiss with None."""
         self.dismiss(None)
 
 
-class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
+class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
     """An `ask_user` prompt: related questions answered together and submitted at once.
 
     Each question has an answer field its option buttons fill. Submit returns the
@@ -420,12 +423,12 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
 
     BINDINGS: ClassVar = [
         *_ARROW_NAV,
-        Binding("ctrl+s", "submit", "Submit", show=True),
-        Binding("escape", "skip", "Skip", show=True),
+        binding.Binding("ctrl+s", "submit", "Submit", show=True),
+        binding.Binding("escape", "skip", "Skip", show=True),
     ]
 
     def __init__(
-        self, question_id: str, questions: tuple[Question, ...], *, from_harness: bool = False
+        self, question_id: str, questions: tuple[state.Question, ...], *, from_harness: bool = False
     ) -> None:
         """Create the prompt for a question id and its questions."""
         super().__init__()
@@ -433,7 +436,7 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
         self.questions = questions
         self.from_harness = from_harness
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Lay out the prompt.
 
         Yields:
@@ -441,58 +444,63 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
             field, then Submit and the hint.
         """
         multi = len(self.questions) > 1
-        with Vertical(id="question-box"):
-            head = Text()
+        with containers.Vertical(id="question-box"):
+            head = rich_text.Text()
             head.append(
                 "agent6 is asking" if self.from_harness else "The agent is asking", style="bold"
             )
             head.append(". Answer, then Submit (ctrl+s):" if multi else ":")
-            yield Static(head)
-            with VerticalScroll(id="question-list"):
+            yield widgets.Static(head)
+            with containers.VerticalScroll(id="question-list"):
                 for qi, q in enumerate(self.questions):
-                    body = Text()
+                    body = rich_text.Text()
                     if multi:
                         body.append(f"{qi + 1}. ", style="bold")
                     body.append(q.question)  # never parsed as markup
-                    yield Static(body, classes="q-text")
+                    yield widgets.Static(body, classes="q-text")
                     if q.options:
                         # Text labels, so an option holding brackets is not parsed as markup.
-                        with Horizontal(classes="q-opts"):
+                        with containers.Horizontal(classes="q-opts"):
                             for oi, opt in enumerate(q.options):
-                                yield Button(Text(opt), id=f"opt-{qi}-{oi}", compact=True)
-                    yield Input(
+                                yield widgets.Button(
+                                    rich_text.Text(opt), id=f"opt-{qi}-{oi}", compact=True
+                                )
+                    yield widgets.Input(
                         placeholder="pick above or type an answer",
                         id=f"ans-{qi}",
                         classes="q-ans",
                     )
-            yield Button("Submit (ctrl+s)", id="question-submit", compact=True)
-            yield Static("Enter next field · Ctrl+S submit · Esc skip", id="question-hint")
+            yield widgets.Button("Submit (ctrl+s)", id="question-submit", compact=True)
+            yield widgets.Static("Enter next field · Ctrl+S submit · Esc skip", id="question-hint")
 
     def on_mount(self) -> None:
         """Focus the first answer field."""
-        self.query_one("#ans-0", Input).focus()
+        self.query_one("#ans-0", widgets.Input).focus()
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    def on_button_pressed(self, event: widgets.Button.Pressed) -> None:
         """Submit, or fill a question's field with the pressed option."""
         bid = event.button.id or ""
         if bid == "question-submit":
             self.action_submit()
         elif bid.startswith("opt-"):
             _, qi, oi = bid.split("-")
-            self.query_one(f"#ans-{qi}", Input).value = self.questions[int(qi)].options[int(oi)]
+            self.query_one(f"#ans-{qi}", widgets.Input).value = self.questions[int(qi)].options[
+                int(oi)
+            ]
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
+    def on_input_submitted(self, event: widgets.Input.Submitted) -> None:
         """Advance to the next field on Enter, or submit from the last one."""
         idx = int((event.input.id or "ans-0").removeprefix("ans-"))
         if idx + 1 < len(self.questions):
-            self.query_one(f"#ans-{idx + 1}", Input).focus()
+            self.query_one(f"#ans-{idx + 1}", widgets.Input).focus()
         else:
             self.action_submit()
 
     def action_submit(self) -> None:
         """Dismiss with every answer, stripped."""
         answers = tuple(
-            self.query_one(f"#ans-{qi}", Input).value.strip() for qi in range(len(self.questions))
+            self.query_one(f"#ans-{qi}", widgets.Input).value.strip()
+            for qi in range(len(self.questions))
         )
         self.dismiss(answers)
 

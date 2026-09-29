@@ -12,35 +12,31 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 try:
-    from rich.text import Text
-    from textual import events, on
-    from textual.app import App, ComposeResult
-    from textual.binding import Binding
-    from textual.containers import Vertical, VerticalScroll
-    from textual.screen import ModalScreen
-    from textual.widgets import Static
+    import textual
+    from rich import text
+    from textual import app as textual_app
+    from textual import binding, containers, events, screen
+    from textual import widgets as textual_widgets
 except ImportError as e:  # pragma: no cover
     raise SystemExit("The TUI needs textual: pip install 'agent6[tui]'") from e
 
-from agent6.ui.tui import clipboard
-from agent6.ui.tui.settings import get_copy_method, save_copy_method
-from agent6.ui.tui.widgets import FORM_CSS, ChoiceField
+from agent6.ui.tui import clipboard, settings, widgets
 
 
-def open_copy_method_picker(app: App[Any]) -> None:
+def open_copy_method_picker(app: textual_app.App[Any]) -> None:
     """Push the copy-method picker (the View>Copy method handler)."""
     app.push_screen(CopyMethodPicker())
 
 
-class CopyMethodPicker(ModalScreen[None]):
+class CopyMethodPicker(screen.ModalScreen[None]):
     """Pick how copy reaches the clipboard; selecting persists, Enter or Esc close."""
 
     BINDINGS: ClassVar = [
-        Binding("escape", "cancel", "Close"),
-        Binding("enter", "confirm", "Use"),
+        binding.Binding("escape", "cancel", "Close"),
+        binding.Binding("enter", "confirm", "Use"),
     ]
     CSS = (
-        FORM_CSS
+        widgets.FORM_CSS
         + """
     CopyMethodPicker { align: center middle; }
     #copy-box {
@@ -55,26 +51,26 @@ class CopyMethodPicker(ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Focus the choice list."""
-        self.query_one(ChoiceField).focus(scroll_visible=False)
+        self.query_one(widgets.ChoiceField).focus(scroll_visible=False)
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> textual_app.ComposeResult:
         """Lay out the picker.
 
         Yields:
             The title, the choice list and the hint.
         """
         choices = tuple(clipboard.COPY_METHODS)
-        current = get_copy_method()
+        current = settings.get_copy_method()
         if current not in choices:
             current = "auto"
         resolved = clipboard.resolve_method("auto")
-        with Vertical(id="copy-box"):
-            yield Static("Copy method", id="copy-title")
-            with VerticalScroll(id="copy-scroll"):
-                yield ChoiceField(choices, current, id="copy-list")
+        with containers.Vertical(id="copy-box"):
+            yield textual_widgets.Static("Copy method", id="copy-title")
+            with containers.VerticalScroll(id="copy-scroll"):
+                yield widgets.ChoiceField(choices, current, id="copy-list")
             # Split by hand: the box is 58 cells inside, so one line would wrap mid-phrase.
-            yield Static(
-                Text(
+            yield textual_widgets.Static(
+                text.Text(
                     "how the TUI copies to your clipboard\n"
                     f"auto → {resolved} in this terminal\n"
                     "↑↓ highlight · Space select (saved) · Esc closes",
@@ -83,9 +79,9 @@ class CopyMethodPicker(ModalScreen[None]):
                 id="copy-hint",
             )
 
-    @on(ChoiceField.Changed)
-    def _save(self, event: ChoiceField.Changed) -> None:
-        save_copy_method(event.field.value)
+    @textual.on(widgets.ChoiceField.Changed)
+    def _save(self, event: widgets.ChoiceField.Changed) -> None:
+        settings.save_copy_method(event.field.value)
 
     def action_confirm(self) -> None:
         """Close the picker."""

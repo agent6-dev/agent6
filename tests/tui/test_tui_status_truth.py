@@ -26,9 +26,12 @@ import pytest
 from textual import app as textual_app
 from textual import screen, widgets
 
+from agent6.config import layer
+from agent6.models import choices
+from agent6.ui import spawn
 from agent6.ui.tui import _dashboard_header, composer
 from agent6.ui.tui import app as tui_app
-from agent6.viewmodel import state
+from agent6.viewmodel import state, tail
 from tests.tui._waits import answerable, focus_answers, wait_for
 
 
@@ -241,8 +244,6 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: pathlib.Path, monkey
 
     The stream pane says parked, never "(waiting for the model…)".
     """
-    from agent6.ui.tui import app as app_mod
-
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
@@ -257,7 +258,7 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: pathlib.Path, monkey
         spawned.append((rid, steer))
         return ""
 
-    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
     _mk_parked(tmp_path / "parked1")
 
     async def scenario() -> None:
@@ -308,8 +309,6 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
 
     The picks ride the detached resume as `--preset` and `--model`; a refused spawn says why.
     """
-    from agent6.ui.tui import app as app_mod
-
     spawned: list[tuple[str, str, str, str]] = []
     notes: list[str] = []
 
@@ -325,7 +324,7 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
         spawned.append((rid, steer, preset, model))
         return "the checkout is busy" if steer == "refuse me" else ""
 
-    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
 
     def _presets(_cwd: pathlib.Path, _cp: object) -> list[str]:
         return ["quick", "ultra"]
@@ -333,8 +332,8 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
     def _routes(_cwd: pathlib.Path, _cp: object) -> list[str]:
         return ["o/a", "o/b"]
 
-    monkeypatch.setattr(app_mod, "available_preset_names", _presets)
-    monkeypatch.setattr(app_mod, "available_routes", _routes)
+    monkeypatch.setattr(layer, "available_preset_names", _presets)
+    monkeypatch.setattr(choices, "available_routes", _routes)
     _mk_parked(tmp_path / "parked2")
 
     async def scenario() -> None:
@@ -400,8 +399,6 @@ def test_the_resume_rows_name_what_a_bare_resume_runs_under(
     """Each resume picker's first entry names what a resume without the flag runs under."""
     from textual.widgets._select import SelectCurrent
 
-    from agent6.ui.tui import app as app_mod
-
     def _presets(_cwd: pathlib.Path, _cp: object) -> list[str]:
         return ["quick"]
 
@@ -413,9 +410,9 @@ def test_the_resume_rows_name_what_a_bare_resume_runs_under(
     ) -> tuple[str, str]:
         return "fast (as recorded)", f"o/{preset or 'a'} (config default)"
 
-    monkeypatch.setattr(app_mod, "available_preset_names", _presets)
-    monkeypatch.setattr(app_mod, "available_routes", _routes)
-    monkeypatch.setattr(app_mod, "resume_defaults", _defaults)
+    monkeypatch.setattr(layer, "available_preset_names", _presets)
+    monkeypatch.setattr(choices, "available_routes", _routes)
+    monkeypatch.setattr(choices, "resume_defaults", _defaults)
     _mk_parked(tmp_path / "parked3")
 
     def labels(row: composer.ResumeOptions) -> tuple[str, str]:
@@ -796,8 +793,6 @@ def test_a_finished_log_is_folded_before_the_first_paint(
     Seeding only the status left the dashboard's first paint on an empty fold, so it called the role
     idle and promised a model was still coming until the reader replayed the journal.
     """
-    from agent6.ui.tui import app as app_mod
-
     d = tmp_path / "seeded"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
@@ -822,14 +817,14 @@ def test_a_finished_log_is_folded_before_the_first_paint(
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
     reader_go = threading.Event()
-    real_tail_events = app_mod.tail_events
+    real_tail_events = tail.tail_events
 
     def held_reader(path: pathlib.Path, **kwargs: Any) -> Any:
         if kwargs.get("follow"):
             reader_go.wait(timeout=5)
         yield from real_tail_events(path, **kwargs)
 
-    monkeypatch.setattr(app_mod, "tail_events", held_reader)
+    monkeypatch.setattr(tail, "tail_events", held_reader)
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d, exit_on_end=True)

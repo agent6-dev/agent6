@@ -13,6 +13,7 @@ from textual import widgets
 
 from agent6 import paths
 from agent6.machine import MachineSpec
+from agent6.ui import notify, spawn
 from agent6.ui.tui import composer, modals
 from agent6.ui.tui import machines as machmod
 from agent6.viewmodel import machine_files, machine_state
@@ -265,7 +266,6 @@ def test_watch_screen_does_not_reannounce_a_stale_end(
     """
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
-    from agent6.ui.tui import machines as machines_mod
 
     monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
     fired: list[tuple[str, str]] = []
@@ -273,7 +273,7 @@ def test_watch_screen_does_not_reannounce_a_stale_end(
     def fake_notify(title: str, body: str) -> None:
         fired.append((title, body))
 
-    monkeypatch.setattr(machines_mod, "desktop_notify", fake_notify)  # type: ignore[attr-defined]
+    monkeypatch.setattr(notify, "desktop_notify", fake_notify)  # type: ignore[attr-defined]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0
@@ -410,7 +410,7 @@ def test_create_opens_dashboard_on_the_draft(tmp_path: pathlib.Path, monkeypatch
     def _fake_locate(*_a: object, **_k: object) -> tuple[pathlib.Path, str]:
         return draft, ""
 
-    monkeypatch.setattr(machmod, "spawn_and_locate", _fake_locate)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_locate", _fake_locate)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -446,7 +446,7 @@ def test_create_spawns_off_the_ui_thread(tmp_path: pathlib.Path, monkeypatch: ob
             return None, "the test never released the spawn"
         return draft, ""
 
-    monkeypatch.setattr(machmod, "spawn_and_locate", _slow_locate)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_locate", _slow_locate)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -537,7 +537,7 @@ def test_machine_run_confirms_then_spawns(tmp_path: pathlib.Path, monkeypatch: o
         captured.append(list(argv))
         return ""
 
-    monkeypatch.setattr(machmod, "spawn_and_confirm", _fake_spawn)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_confirm", _fake_spawn)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -565,7 +565,7 @@ def test_machine_run_refusal_notifies_and_skips_watch(
     def _fake_spawn(argv: list[str], cwd: pathlib.Path, **_k: object) -> str:
         return "agent6 machine exited (1) before starting:\nERROR: lock held"
 
-    monkeypatch.setattr(machmod, "spawn_and_confirm", _fake_spawn)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_confirm", _fake_spawn)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -676,7 +676,7 @@ def test_machine_create_spawns_with_task(tmp_path: pathlib.Path, monkeypatch: ob
         captured.append(list(argv))
         return draft, ""
 
-    monkeypatch.setattr(machmod, "spawn_and_locate", _fake_locate)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_locate", _fake_locate)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -945,7 +945,7 @@ def test_a_create_whose_screen_was_left_still_opens_its_draft(
             return None, "the test never released the spawn"
         return draft, ""
 
-    monkeypatch.setattr(machmod, "spawn_and_locate", _slow_locate)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_locate", _slow_locate)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -985,7 +985,7 @@ def test_a_run_whose_screen_was_left_still_opens_its_watch(
             return "the test never released the spawn"
         return ""
 
-    monkeypatch.setattr(machmod, "spawn_and_confirm", _slow_confirm)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_confirm", _slow_confirm)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -1049,7 +1049,7 @@ def test_machine_run_confirm_backs_out_on_q(tmp_path: pathlib.Path, monkeypatch:
         captured.append(list(argv))
         return ""
 
-    monkeypatch.setattr(machmod, "spawn_and_confirm", _fake_spawn)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_confirm", _fake_spawn)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
         app = _Host(tmp_path)

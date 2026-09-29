@@ -18,6 +18,8 @@ from textual import widgets
 
 from agent6 import paths
 from agent6.config import OpenAIProviderEntry, layer
+from agent6.models import cache
+from agent6.models import choices as models_choices
 from agent6.ui.tui import config_page, menubar
 from agent6.viewmodel import config_view
 
@@ -382,15 +384,13 @@ def test_model_field_is_a_typeahead_picker(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Editing models.<role>.model opens a type-to-narrow picker over the provider's models."""
-    import agent6.ui.tui.config_page as cp
-
     models = ["claude-opus-4-8", "claude-sonnet-4-6", "claude-sonnet-4-5", "claude-haiku-4-5"]
 
     def _models(*_a: object, **_k: object) -> list[str]:
         return models
 
-    monkeypatch.setattr(cp, "cached_models", _models)
-    monkeypatch.setattr(cp, "config_value_choices", _models)  # mock the live fetch
+    monkeypatch.setattr(cache, "cached_models", _models)
+    monkeypatch.setattr(models_choices, "config_value_choices", _models)  # mock the live fetch
 
     async def scenario() -> None:
         from agent6.ui.tui import widgets as tui_widgets
@@ -544,7 +544,6 @@ def test_editing_a_model_survives_a_broken_secrets_file(
     The thread worker's SecretsError hit textual's default exit_on_error; the fetch degrades to
     a keyless attempt instead, as models/validate.py does.
     """
-    import agent6.ui.tui.config_page as cp
     from agent6.models import choices
 
     gdir = paths.global_config_dir()
@@ -557,7 +556,7 @@ def test_editing_a_model_survives_a_broken_secrets_file(
     def _models(*_a: object, **_k: object) -> list[str]:
         return models
 
-    monkeypatch.setattr(cp, "cached_models", _models)
+    monkeypatch.setattr(cache, "cached_models", _models)
     monkeypatch.setattr(choices, "list_models", _models)  # the live fetch, keyless here
 
     async def scenario() -> None:

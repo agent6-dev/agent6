@@ -16,6 +16,8 @@ from typing import Any
 import pytest
 from textual import widgets
 
+from agent6.app import fork, undo
+from agent6.ui import spawn
 from agent6.ui.tui import app as app_mod
 from agent6.ui.tui import composer
 
@@ -53,7 +55,7 @@ def test_a_live_undo_hands_both_resumes_to_the_fork_under_the_picks(
         spawned.append((rid, steer, preset, model))
         return ""
 
-    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
     run = tmp_path / "undone-run-AAAAAA"
     _undone_run(run)
 
@@ -108,8 +110,8 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
     def _fake_undo_fork(*_a: object, **_k: object) -> tuple[str, str]:
         return ("fork-child-BBBBBB", "the message taken back")
 
-    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
-    monkeypatch.setattr(app_mod, "undo_fork", _fake_undo_fork)
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
+    monkeypatch.setattr(undo, "undo_fork", _fake_undo_fork)
     run = tmp_path / "done-run-AAAAAA"
     run.mkdir()
     evs = [
@@ -165,8 +167,8 @@ def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
     def _fake_create_fork(*_a: object, **_k: object) -> tuple[str, int]:
         return ("fork-child-CCCCCC", 0)
 
-    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
-    monkeypatch.setattr(app_mod, "create_fork", _fake_create_fork)
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
+    monkeypatch.setattr(fork, "create_fork", _fake_create_fork)
     run = tmp_path / "done-run-AAAAAA"
     run.mkdir()
     evs = [
@@ -203,7 +205,7 @@ def test_fork_of_a_live_run_leaves_the_composer_steering_this_run(
     def _fake_create_fork(*_a: object, **_k: object) -> tuple[str, int]:
         return ("fork-child-DDDDDD", 0)
 
-    monkeypatch.setattr(app_mod, "create_fork", _fake_create_fork)
+    monkeypatch.setattr(fork, "create_fork", _fake_create_fork)
     run = tmp_path / "live-run-AAAAAA"
     run.mkdir()
     (run / "logs.jsonl").write_text(
@@ -249,7 +251,7 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
         spawned.append((rid, steer))
         return ""
 
-    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
     run = tmp_path / "done-run-AAAAAA"
     run.mkdir()
     evs = [
@@ -308,7 +310,7 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: pathlib.Path, monkeypat
         seen["env"] = kw.get("env")
         return child, ""
 
-    monkeypatch.setattr(app_mod, "spawn_and_locate", _fake_spawn)
+    monkeypatch.setattr(spawn, "spawn_and_locate", _fake_spawn)
     plan = tmp_path / "sessions" / "plans" / "planny-one-AAAAAA"
     plan.mkdir(parents=True)
     (plan / "manifest.json").write_text(

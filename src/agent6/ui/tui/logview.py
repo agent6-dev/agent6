@@ -13,30 +13,18 @@ extract.
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Callable
-from pathlib import Path
 from typing import ClassVar
 
-from rich.text import Text
-from textual.app import ComposeResult
-from textual.containers import VerticalScroll
-from textual.screen import Screen
-from textual.widgets import Footer, Static
+from rich import text
+from textual import app, containers, screen, widgets
 
-from agent6.ui.tui.menubar import (
-    SCROLL_ITEMS,
-    Menu,
-    MenuBar,
-    MenuItem,
-    menu_bindings,
-)
-from agent6.ui.tui.screen_chrome import ScreenChrome
-from agent6.viewmodel.log_line import format_log_line
-from agent6.viewmodel.state import LOG_NOISE_EVENTS, STREAM_DELTA_EVENTS
-from agent6.viewmodel.tail import LogTail
+from agent6.ui.tui import menubar, screen_chrome
+from agent6.viewmodel import log_line, state, tail
 
 
-class LogScreen(ScreenChrome, Screen[None]):
+class LogScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     """The scrollable, read-only, selectable log of one session, live or finished."""
 
     CSS = """
@@ -47,34 +35,37 @@ class LogScreen(ScreenChrome, Screen[None]):
 
     HELP_TITLE: ClassVar = "agent6 — log"
     MENUS: ClassVar = (
-        Menu("File", (MenuItem("Back", "close"),)),
-        Menu("View", (*SCROLL_ITEMS, MenuItem("Reload", "reload"))),
-        Menu(
+        menubar.Menu("File", (menubar.MenuItem("Back", "close"),)),
+        menubar.Menu("View", (*menubar.SCROLL_ITEMS, menubar.MenuItem("Reload", "reload"))),
+        menubar.Menu(
             "Help",
-            (MenuItem("Keys & actions", "help"), MenuItem("Command palette", "command_palette")),
+            (
+                menubar.MenuItem("Keys & actions", "help"),
+                menubar.MenuItem("Command palette", "command_palette"),
+            ),
         ),
     )
     FOOTER: ClassVar = (("close", "Back"), ("reload", "Reload"), ("help", "Help"))
-    BINDINGS: ClassVar = menu_bindings("event log", MENUS, footer=FOOTER)
+    BINDINGS: ClassVar = menubar.menu_bindings("event log", MENUS, footer=FOOTER)
 
-    def __init__(self, logs_path: Path, *, title: Callable[[], str]) -> None:
+    def __init__(self, logs_path: pathlib.Path, *, title: Callable[[], str]) -> None:
         """Bind the screen to a log file and the callable naming its session."""
         super().__init__()
         self._logs_path = logs_path
         self._title = title
-        self._tail = LogTail(logs_path)
-        self._text = Text()
+        self._tail = tail.LogTail(logs_path)
+        self._text = text.Text()
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Lay out the screen.
 
         Yields:
             The menu bar, the scrollable body and the footer.
         """
-        yield MenuBar(self.MENUS)
-        with VerticalScroll(id="logview-scroll"):
-            yield Static(id="logview-body")
-        yield Footer()
+        yield menubar.MenuBar(self.MENUS)
+        with containers.VerticalScroll(id="logview-scroll"):
+            yield widgets.Static(id="logview-body")
+        yield widgets.Footer()
 
     def on_mount(self) -> None:
         """Load the file and keep following it; a resume appends to the same file."""
@@ -82,24 +73,27 @@ class LogScreen(ScreenChrome, Screen[None]):
         self._reload()
         self.set_interval(0.5, self._poll)
 
-    def _scroll(self) -> VerticalScroll:
-        return self.query_one("#logview-scroll", VerticalScroll)
+    def _scroll(self) -> containers.VerticalScroll:
+        return self.query_one("#logview-scroll", containers.VerticalScroll)
 
     def _append(self, events: list[dict[str, object]]) -> bool:
         added = False
         for event in events:
-            if event.get("type") in STREAM_DELTA_EVENTS or event.get("type") in LOG_NOISE_EVENTS:
+            if (
+                event.get("type") in state.STREAM_DELTA_EVENTS
+                or event.get("type") in state.LOG_NOISE_EVENTS
+            ):
                 continue
-            self._text.append(format_log_line(event) + "\n")
+            self._text.append(log_line.format_log_line(event) + "\n")
             added = True
         return added
 
     def _reload(self) -> None:
-        self._tail = LogTail(self._logs_path)
-        self._text = Text()
+        self._tail = tail.LogTail(self._logs_path)
+        self._text = text.Text()
         self._append(self._tail.read())
-        shown = self._text if len(self._text) else Text("(no events yet)", style="dim italic")
-        self.query_one("#logview-body", Static).update(shown)
+        shown = self._text if len(self._text) else text.Text("(no events yet)", style="dim italic")
+        self.query_one("#logview-body", widgets.Static).update(shown)
         self._scroll().scroll_end(animate=False)
         self._scroll().focus()
 
@@ -108,7 +102,7 @@ class LogScreen(ScreenChrome, Screen[None]):
         at_bottom = scroll.is_vertical_scroll_end
         if not self._append(self._tail.read()):
             return
-        self.query_one("#logview-body", Static).update(self._text)
+        self.query_one("#logview-body", widgets.Static).update(self._text)
         if at_bottom:  # hold the position when the operator scrolled up
             scroll.scroll_end(animate=False)
 

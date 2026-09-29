@@ -8,75 +8,42 @@
 from __future__ import annotations
 
 import contextlib
+import pathlib
 import subprocess
-from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
 
 try:
-    from rich.markup import escape
-    from rich.text import Text
-    from textual import events
-    from textual.app import ComposeResult
-    from textual.containers import Horizontal, ScrollableContainer
-    from textual.css.query import NoMatches
-    from textual.screen import Screen
+    from rich import markup
+    from rich import text as rich_text
+    from textual import app, containers, events, screen
+    from textual import widgets as textual_widgets
+    from textual.css import query
     from textual.scroll_view import ScrollView
     from textual.widget import Widget
-    from textual.widgets import (
-        DataTable,
-        Footer,
-        RichLog,
-        Static,
-        TextArea,
-        Tree,
-    )
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise ImportError(
         "agent6 TUI requires the 'textual' package (part of the base install)."
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6.ui.tui import clipboard
-from agent6.ui.tui._dashboard_header import RunHeader
-from agent6.ui.tui._diff_pane import DiffPane
-from agent6.ui.tui.composer import (
-    APPROVAL_KEY_BINDINGS,
-    RUN_MENU,
-    ApprovalKeys,
-    ComposerMode,
-    ResumeOptions,
-    SteerInput,
-    SteerSuggest,
-    open_history_search,
+from agent6.ui.tui import (
+    _dashboard_header,
+    _diff_pane,
+    clipboard,
+    composer,
+    logview,
+    menubar,
+    modals,
+    screen_chrome,
+    settings,
+    theme,
+    widgets,
 )
-from agent6.ui.tui.logview import LogScreen
-from agent6.ui.tui.menubar import SCROLL_ITEMS, Menu, MenuBar, MenuItem, menu_bindings
-from agent6.ui.tui.modals import (
-    ToolCallDetailModal,
-)
-from agent6.ui.tui.prompts import PromptDispatcher
-from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
-from agent6.ui.tui.settings import get_copy_method
-from agent6.ui.tui.theme import (
-    status_style,
-)
-from agent6.ui.tui.widgets import ScrollPane
-from agent6.viewmodel.format import (
-    clip_cell,
-    dead_run_note,
-    spinner_frame,
-    status_label,
-)
-from agent6.viewmodel.state import (
-    MAX_LOG_TAIL,
-    SessionState,
-    ToolCallView,
-    fold_until_commit,
-)
-from agent6.viewmodel.tail import tail_events
+from agent6.ui.tui import prompts as tui_prompts
+from agent6.viewmodel import format, state, tail
 
 if TYPE_CHECKING:
-    from agent6.ui.tui.app import Agent6TUI
+    from agent6.ui.tui import app as tui_app
 
 # The tool calls the inline table shows; the RowSelected handler maps rows through the same window.
 _TOOL_TABLE_ROWS = 20
@@ -86,7 +53,7 @@ _COMPACT_ROWS = 28
 _PANE_ROWS = ("head", "tools", "body")
 
 
-class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
+class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.Screen[None]):
     """The dashboard panes: tasks, the live stream, the tool table, the log, the diff, the composer.
 
     Presentation only: it renders the app's folded state and sends run control back
@@ -143,7 +110,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     #plan:focus, #stream:focus, #tools:focus, #log:focus, #diff:focus { border: round $accent; }
     """
 
-    COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
+    COMMANDS: ClassVar = screen.Screen.COMMANDS | {screen_chrome.MenuCommands}
     APPROVAL_DOCK_BEFORE: ClassVar = "#dash-suggest"
     APPROVAL_FOCUS_AFTER: ClassVar = "#stream"
     HELP_HINTS: ClassVar = (
@@ -154,33 +121,33 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
 
     # The composer holds the focus, so the keys are modified keys and Esc, as priority bindings.
     MENUS: ClassVar = (
-        Menu(
+        menubar.Menu(
             "File",
             (
-                MenuItem("Back", "to_hub", priority=True),
-                MenuItem("Quit", "quit_hub", priority=True),
+                menubar.MenuItem("Back", "to_hub", priority=True),
+                menubar.MenuItem("Quit", "quit_hub", priority=True),
             ),
         ),
-        RUN_MENU,
-        Menu(
+        composer.RUN_MENU,
+        menubar.Menu(
             "View",
             (
-                MenuItem("Next pane", "focus_next_pane"),
-                MenuItem("Prev pane", "focus_prev_pane"),
-                MenuItem("Maximize pane", "fullscreen"),
-                *SCROLL_ITEMS,
-                MenuItem("Full log…", "view_logs"),
-                MenuItem("Copy selection", "copy", priority=True),
-                MenuItem("Conversation…", "toggle_dashboard", priority=True),
-                MenuItem("Theme…", "choose_theme"),
-                MenuItem("Copy method…", "choose_copy_method"),
+                menubar.MenuItem("Next pane", "focus_next_pane"),
+                menubar.MenuItem("Prev pane", "focus_prev_pane"),
+                menubar.MenuItem("Maximize pane", "fullscreen"),
+                *menubar.SCROLL_ITEMS,
+                menubar.MenuItem("Full log…", "view_logs"),
+                menubar.MenuItem("Copy selection", "copy", priority=True),
+                menubar.MenuItem("Conversation…", "toggle_dashboard", priority=True),
+                menubar.MenuItem("Theme…", "choose_theme"),
+                menubar.MenuItem("Copy method…", "choose_copy_method"),
             ),
         ),
-        Menu(
+        menubar.Menu(
             "Help",
             (
-                MenuItem("Keys & actions", "help"),
-                MenuItem("Command palette", "command_palette"),
+                menubar.MenuItem("Keys & actions", "help"),
+                menubar.MenuItem("Command palette", "command_palette"),
             ),
         ),
     )
@@ -192,20 +159,20 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         ("to_hub", "Back"),
     )
     BINDINGS: ClassVar = [
-        *menu_bindings("dashboard", MENUS, footer=FOOTER),
-        *APPROVAL_KEY_BINDINGS,  # an open approval answers from any non-text focus
+        *menubar.menu_bindings("dashboard", MENUS, footer=FOOTER),
+        *composer.APPROVAL_KEY_BINDINGS,  # an open approval answers from any non-text focus
     ]
 
     @property
-    def diff(self) -> DiffPane:
+    def diff(self) -> _diff_pane.DiffPane:
         """The diff pane."""
-        return self.query_one("#diff", DiffPane)
+        return self.query_one("#diff", _diff_pane.DiffPane)
 
-    def on_diff_pane_step_changed(self, _event: DiffPane.StepChanged) -> None:
+    def on_diff_pane_step_changed(self, _event: _diff_pane.DiffPane.StepChanged) -> None:
         """Repaint for the newly selected step."""
         self.render_state()
 
-    def _details_state(self, s: SessionState) -> tuple[SessionState, str]:
+    def _details_state(self, s: state.SessionState) -> tuple[state.SessionState, str]:
         """Return the state the task tree and the cost line show, and its "as of" suffix.
 
         Live, or as of the selected step, folded once per selection from the log.
@@ -214,7 +181,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         if not sha:
             return s, ""
         if self._step_state is None or self._step_state[0] != sha:
-            at = fold_until_commit(tail_events(self._tui.logs_path, follow=False), sha)
+            at = state.fold_until_commit(tail.tail_events(self._tui.logs_path, follow=False), sha)
             if at is None:
                 return s, ""
             self._step_state = (sha, at)
@@ -226,7 +193,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         *,
         presets: list[str] | None = None,
         routes: list[str] | None = None,
-        prompts: PromptDispatcher | None = None,
+        prompts: tui_prompts.PromptDispatcher | None = None,
     ) -> None:
         super().__init__()
         self._presets = presets if presets is not None else []
@@ -236,44 +203,46 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self._selected_task_id: str | None = None
         self._log_filter: str | None = None  # what the append-only log shows; a change re-renders
         self._last_log_count = 0
-        self._visible_tools: tuple[ToolCallView, ...] = ()  # the tool rows on screen now
+        self._visible_tools: tuple[state.ToolCallView, ...] = ()  # the tool rows on screen now
         # What each pane last rendered: the fold keeps untouched fields identical, so `is` says
         # nothing to redo, and a burst never rebuilds the tree and table per event.
         self._rendered_tree: tuple[object, ...] | None = None
         self._rendered_tools: tuple[object, object] | None = None
-        self._step_state: tuple[str, SessionState] | None = None  # the fold as of the step
+        self._step_state: tuple[str, state.SessionState] | None = None  # the fold as of the step
 
     @property
-    def _tui(self) -> Agent6TUI:
+    def _tui(self) -> tui_app.Agent6TUI:
         """The app; only Agent6TUI pushes this screen."""
-        return cast("Agent6TUI", self.app)
+        return cast("tui_app.Agent6TUI", self.app)
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Yield the menu bar, the header, the three pane rows, the composer and the footer."""
-        yield MenuBar(self.MENUS)
-        yield RunHeader()
-        yield Static("", id="summary")  # compact only: the folded rows in one line
-        with Horizontal(id="head"):
-            yield Tree("tasks", id="plan")
-            with ScrollPane(id="stream"):
-                yield Static("", id="stream-body")
-        yield DataTable(id="tools", cursor_type="row")
-        with Horizontal(id="body"):
+        yield menubar.MenuBar(self.MENUS)
+        yield _dashboard_header.RunHeader()
+        yield textual_widgets.Static("", id="summary")  # compact only: the folded rows in one line
+        with containers.Horizontal(id="head"):
+            yield textual_widgets.Tree("tasks", id="plan")
+            with widgets.ScrollPane(id="stream"):
+                yield textual_widgets.Static("", id="stream-body")
+        yield textual_widgets.DataTable(id="tools", cursor_type="row")
+        with containers.Horizontal(id="body"):
             # markup=False: raw tool args would parse as markup. auto_scroll off: render_state
             # keeps the bottom itself. max_lines is the state's window, so the pane stays gapless.
-            yield RichLog(
+            yield textual_widgets.RichLog(
                 id="log",
                 highlight=False,
                 markup=False,
                 wrap=False,
                 auto_scroll=False,
-                max_lines=MAX_LOG_TAIL,
+                max_lines=state.MAX_LOG_TAIL,
             )
-            yield DiffPane(self._tui.session_dir, id="diff")
-        yield SteerSuggest(id="dash-suggest")  # command hints while typing `/…`
-        yield ResumeOptions(self._presets, self._routes, id="dash-resume")  # while resuming
-        yield SteerInput(id="dash-input")
-        yield Footer()
+            yield _diff_pane.DiffPane(self._tui.session_dir, id="diff")
+        yield composer.SteerSuggest(id="dash-suggest")  # command hints while typing `/…`
+        yield composer.ResumeOptions(
+            self._presets, self._routes, id="dash-resume"
+        )  # while resuming
+        yield composer.SteerInput(id="dash-input")
+        yield textual_widgets.Footer()
 
     def on_resize(self, _event: events.Resize) -> None:
         """Go compact below the row threshold."""
@@ -284,7 +253,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         """Unfold the focused pane's row when compact."""
         self._show_pane_row()
 
-    def approval_dir(self) -> Path:
+    def approval_dir(self) -> pathlib.Path:
         """Return the session dir."""
         return self._tui.session_dir
 
@@ -314,25 +283,29 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
 
     def on_mount(self) -> None:
         """Set the tool columns, hide the diff for an ask or a plan, paint and focus the bar."""
-        self.query_one("#tools", DataTable).add_columns("tool", "args", "ok", "summary")
+        self.query_one("#tools", textual_widgets.DataTable).add_columns(
+            "tool", "args", "ok", "summary"
+        )
         self.diff.display = self._tui.mode not in ("ask", "plan")
         self.render_state()  # later paints are coalesced in the app's tick
-        self.query_one("#dash-input", SteerInput).focus()
+        self.query_one("#dash-input", composer.SteerInput).focus()
 
-    def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
+    def on_steer_input_submitted(self, message: composer.SteerInput.Submitted) -> None:
         """Hand a composer line to the app."""
         self._tui.submit_instruction(message.text)
 
     def action_history_search(self) -> None:
         """Open the prompt history search over the composer."""
-        open_history_search(self, self.query_one("#dash-input", SteerInput), self._tui.logs_path)
+        composer.open_history_search(
+            self, self.query_one("#dash-input", composer.SteerInput), self._tui.logs_path
+        )
 
-    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+    def on_text_area_changed(self, event: textual_widgets.TextArea.Changed) -> None:
         """Refresh the command hints as the composer's text changes."""
         if event.text_area.id != "dash-input":
             return
-        with contextlib.suppress(NoMatches):
-            self.query_one("#dash-suggest", SteerSuggest).show_for(
+        with contextlib.suppress(query.NoMatches):
+            self.query_one("#dash-suggest", composer.SteerSuggest).show_for(
                 event.text_area.text,
                 mode="steer" if self._tui.session_controllable() else "resume",
             )
@@ -365,7 +338,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
 
         try:
             status = clipboard.emit_clipboard(
-                text, clipboard.resolve_method(get_copy_method()), emit
+                text, clipboard.resolve_method(settings.get_copy_method()), emit
             )
         except (OSError, subprocess.CalledProcessError) as exc:
             self.notify(f"copy failed: {exc}", severity="error")
@@ -375,9 +348,9 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     def _scroll_target(self) -> Widget:
         """Return the pane the scroll keys drive: the focused scrollable, else the log."""
         focused = self.focused
-        if isinstance(focused, (ScrollView, ScrollableContainer)):
+        if isinstance(focused, (ScrollView, containers.ScrollableContainer)):
             return focused
-        return self.query_one("#log", RichLog)
+        return self.query_one("#log", textual_widgets.RichLog)
 
     def action_page_up(self) -> None:
         """Scroll the target pane one page up; instant, like the viewers."""
@@ -413,16 +386,16 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     def action_view_logs(self) -> None:
         """Open the whole log; the inline pane is a sliding window."""
         self.app.push_screen(
-            LogScreen(self._tui.logs_path, title=lambda: self._tui.screen_title("logs"))
+            logview.LogScreen(self._tui.logs_path, title=lambda: self._tui.screen_title("logs"))
         )
 
     def on_screen_resume(self) -> None:
         """Re-stamp the title and repaint the light parts on coming back on top."""
         self.app.sub_title = self._tui.run_title()
-        with contextlib.suppress(NoMatches):
+        with contextlib.suppress(query.NoMatches):
             self.render_heartbeat()
 
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+    def on_data_table_row_selected(self, event: textual_widgets.DataTable.RowSelected) -> None:
         """Open a tool row's full args and summary in a modal on Enter."""
         if event.data_table.id != "tools":
             return
@@ -430,10 +403,10 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         if 0 <= event.cursor_row < len(window):
             tc = window[event.cursor_row]
             self.app.push_screen(
-                ToolCallDetailModal(tc.name, tc.ok, tc.args_full, tc.result_summary)
+                modals.ToolCallDetailModal(tc.name, tc.ok, tc.args_full, tc.result_summary)
             )
 
-    def on_tree_node_selected(self, event: Tree.NodeSelected[str | None]) -> None:
+    def on_tree_node_selected(self, event: textual_widgets.Tree.NodeSelected[str | None]) -> None:
         """Filter the panes to the selected task; selecting it again clears the filter."""
         if event.control.id != "plan":
             return
@@ -447,33 +420,37 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         """Repaint the light parts: the header, the composer's labels and the stream pane."""
         tui = self._tui
         s = tui.state
-        mode: ComposerMode = "steer" if tui.session_controllable() else "resume"
-        self.query_one("#dash-input", SteerInput).set_mode(
+        mode: composer.ComposerMode = "steer" if tui.session_controllable() else "resume"
+        self.query_one("#dash-input", composer.SteerInput).set_mode(
             mode=mode,
             ctx_pct=tui.context_pct(),
             continue_as=tui.continue_as,
             needs_new_work=tui.finished_green(),
         )
-        self.query_one("#dash-resume", ResumeOptions).show(mode == "resume")
+        self.query_one("#dash-resume", composer.ResumeOptions).show(mode == "resume")
         self._render_approval()
         active = tui.model_call_in_flight()
         ds, as_of = self._details_state(s)
-        self.query_one("#top", RunHeader).refresh_lines(s, ds, as_of, active=active)
+        self.query_one("#top", _dashboard_header.RunHeader).refresh_lines(
+            s, ds, as_of, active=active
+        )
         if self.has_class("-compact"):
             calls = f"{len(s.tool_calls)} tool call{'' if len(s.tool_calls) == 1 else 's'}"
             if s.tool_calls:
                 last = s.tool_calls[-1]
                 ok = "…" if last.ok is None else ("✓" if last.ok else "✗")
                 calls += f" · last {last.name} {ok}"
-            folded = Text(f"{calls} · Tab unfolds a pane")
-            width = self.query_one("#top", RunHeader).content_size.width
+            folded = rich_text.Text(f"{calls} · Tab unfolds a pane")
+            width = self.query_one("#top", _dashboard_header.RunHeader).content_size.width
             folded.truncate(width or 200, overflow="ellipsis")
-            self.query_one("#summary", Static).update(folded)
+            self.query_one("#summary", textual_widgets.Static).update(folded)
 
         # Rich Text, so model output is never parsed as markup.
-        self.query_one("#stream-body", Static).update(self._stream_story(s, active=active))
+        self.query_one("#stream-body", textual_widgets.Static).update(
+            self._stream_story(s, active=active)
+        )
 
-    def _stream_story(self, s: SessionState, *, active: bool) -> Text:
+    def _stream_story(self, s: state.SessionState, *, active: bool) -> rich_text.Text:
         """Return the stream pane's text: the end story, the live deltas, or the dead state.
 
         Args:
@@ -482,7 +459,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         """
         tui = self._tui
         role = s.last_role
-        st = Text()
+        st = rich_text.Text()
         streaming = (
             active
             and role is not None
@@ -492,7 +469,9 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         if s.finished:
             # How it ended, the closing summary, and a plan's deliverable.
             word, reason = tui.dir_status
-            st.append(status_label(word, reason) + "\n", style=f"bold {status_style(word)}")
+            st.append(
+                format.status_label(word, reason) + "\n", style=f"bold {theme.status_style(word)}"
+            )
             if s.finish_summary and s.end_reason in ("", "finish_session", "finish_planning"):
                 st.append(s.finish_summary, style="dim")
             if plan := tui.plan_md():
@@ -505,15 +484,15 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             if role.streamed_text:
                 st.append(role.streamed_text[-1200:])
         elif tui.dir_status[0] == "waiting":
-            st.append(status_label(*tui.dir_status), style="bold yellow")
+            st.append(format.status_label(*tui.dir_status), style="bold yellow")
         elif active and role is not None:
-            spinner = spinner_frame(tui.spin)
+            spinner = format.spinner_frame(tui.spin)
             secs = tui.seconds_since_event()
             st.append(f"{spinner} {role.role} working… {secs}s", style="dim italic")
         elif tui.dir_status[0] == "starting":
-            st.append("starting", style=f"bold {status_style('starting')}")
-        elif (dead := dead_run_note(*tui.dir_status))[0]:
-            st.append(dead[0] + "\n", style=f"bold {status_style(tui.dir_status[0])}")
+            st.append("starting", style=f"bold {theme.status_style('starting')}")
+        elif (dead := format.dead_run_note(*tui.dir_status))[0]:
+            st.append(dead[0] + "\n", style=f"bold {theme.status_style(tui.dir_status[0])}")
             st.append(dead[1], style="dim")
         else:
             st.append("(no model call in flight)", style="dim")
@@ -528,7 +507,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         sel = self._selected_task_id
         sel_title = next((t.title for t in s.tasks if t.id == sel), "") if sel else ""
         # A border title is markup; the task title is the model's or the user's.
-        filt = f" · task: {escape(sel_title[:28])}" if sel else ""
+        filt = f" · task: {markup.escape(sel_title[:28])}" if sel else ""
 
         ds, as_of = self._details_state(s)
         if self._rendered_tree is None or not (
@@ -537,13 +516,13 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             and self._rendered_tree[2] == as_of
         ):
             self._rendered_tree = (ds.tasks, sel, as_of)
-            tree = self.query_one("#plan", Tree)
+            tree = self.query_one("#plan", textual_widgets.Tree)
             tree.clear()
             tree.border_title = f"tasks{as_of}" if as_of else ""
             for tv in ds.tasks:
                 indent = "  " * tv.depth
                 # The id leads the line: it is what `/retire` takes.
-                label = Text(f"{tv.short_id:>3} {indent}{tv.glyph} {tv.title}")
+                label = rich_text.Text(f"{tv.short_id:>3} {indent}{tv.glyph} {tv.title}")
                 if tv.note:
                     label.append(f"  {tv.note}", style="dim italic")
                 if tv.id == sel:
@@ -551,7 +530,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 tree.root.add_leaf(label, data=tv.id)
             tree.root.expand()
 
-        table = self.query_one("#tools", DataTable)
+        table = self.query_one("#tools", textual_widgets.DataTable)
         if self._rendered_tools is None or not (
             self._rendered_tools[0] is s.tool_calls and self._rendered_tools[1] == sel
         ):
@@ -562,16 +541,16 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             for tc in self._visible_tools:
                 ok = "…" if tc.ok is None else ("✓" if tc.ok else "✗")
                 table.add_row(
-                    Text(tc.name),
-                    Text(clip_cell(tc.args_preview, 90)),
+                    rich_text.Text(tc.name),
+                    rich_text.Text(format.clip_cell(tc.args_preview, 90)),
                     ok,
-                    Text(clip_cell(tc.result_summary, 40)),
+                    rich_text.Text(format.clip_cell(tc.result_summary, 40)),
                 )
             table.border_title = f"tools{filt}" if sel else ""
 
         # The diff is on the monotonic log_count: log_tail is a sliding window, so a length diff
         # freezes once it saturates. The bottom is kept only when the operator was there.
-        log = self.query_one("#log", RichLog)
+        log = self.query_one("#log", textual_widgets.RichLog)
         log.border_title = f"log{filt}" if sel else ""
         if sel != self._log_filter:
             log.clear()

@@ -22,7 +22,9 @@ from textual import app as textual_app
 from textual import screen as textual_screen
 from textual import widgets
 
-from agent6.sessions import ipc
+from agent6.app import stop as app_stop
+from agent6.sessions import ipc, manifest
+from agent6.ui import spawn
 from agent6.ui.tui import _dashboard_header, composer, modals
 from agent6.ui.tui import app as tui_app
 from agent6.viewmodel import state
@@ -766,8 +768,6 @@ def test_finished_run_bar_resumes_with_the_instruction(
 
     The follow-up rides the flag, since resume's stale-state clear would wipe a seeded file.
     """
-    from agent6.ui.tui import app as app_mod
-
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
@@ -782,7 +782,7 @@ def test_finished_run_bar_resumes_with_the_instruction(
         spawned.append((rid, steer))
         return ""
 
-    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
     (tmp_path / "logs.jsonl").write_text(
         "".join(
             json.dumps(e) + "\n"
@@ -817,8 +817,6 @@ def test_finished_run_bar_resumes_with_the_instruction(
 
 def test_end_hold_follows_the_resumed_execution(tmp_path: pathlib.Path, monkeypatch: Any) -> None:
     """Continuing from the foreground run's end hold keeps the same view live."""
-    from agent6.ui.tui import app as app_mod
-
     events = (
         _ev(type="session.start", user_task="finish the parser", mode="run"),
         _ev(type="session.end", reason="finish_session", all_passed=True),
@@ -844,7 +842,7 @@ def test_end_hold_follows_the_resumed_execution(tmp_path: pathlib.Path, monkeypa
             log.write(json.dumps(_ev(type="role.call", role="worker", model="m")) + "\n")
         return ""
 
-    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(tmp_path, exit_on_end=True)
@@ -960,7 +958,6 @@ def test_a_typed_stop_is_the_one_stop(
     import os
 
     from agent6.app import stop
-    from agent6.ui.tui import app as app_mod
 
     calls: list[bool] = []
 
@@ -968,7 +965,7 @@ def test_a_typed_stop_is_the_one_stop(
         calls.append(after_step)
         return stop.StopOutcome(session_dir.name, True, "stopped", f"{session_dir.name} stopped")
 
-    monkeypatch.setattr(app_mod, "stop_session", _fake)
+    monkeypatch.setattr(app_stop, "stop_session", _fake)
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -1394,8 +1391,6 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
     """
     import json
 
-    from agent6.ui.tui import app as app_mod
-
     events = [
         {"type": "session.start", "session_id": "dead-01", "mode": "run", "user_task": "t"},
         {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
@@ -1419,7 +1414,7 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
         spawned.append((rid, steer))
         return ""
 
-    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(tmp_path)
@@ -1723,22 +1718,20 @@ def test_dashboard_does_not_call_a_dead_driverless_run_idle(
     A worker that died launching reads stale, while the unknown role is a dash cached from the
     manifest rather than a manifest read on every heartbeat.
     """
-    from agent6.ui.tui import _dashboard_header as header_mod
-
     (tmp_path / "manifest.json").write_text(
         json.dumps({"mode": "run", "session_id": tmp_path.name, "user_task": "t"}),
         encoding="utf-8",
     )
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
     (tmp_path / "worker.pid").write_text("999999999", encoding="utf-8")
-    real = header_mod.read_manifest
+    real = manifest.read_manifest
     reads: list[int] = []
 
     def _counted(session_dir: pathlib.Path) -> object:
         reads.append(1)
         return real(session_dir)
 
-    monkeypatch.setattr(header_mod, "read_manifest", _counted)
+    monkeypatch.setattr(manifest, "read_manifest", _counted)
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(tmp_path)

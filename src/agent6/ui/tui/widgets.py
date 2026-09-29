@@ -13,15 +13,11 @@ from collections.abc import Iterable
 from typing import Any, Literal
 
 try:
+    from rich import text as rich_text
     from rich.color import Color
     from rich.console import RenderableType
-    from rich.text import Text
-    from textual import events
-    from textual.containers import Horizontal, ScrollableContainer, VerticalScroll
-    from textual.geometry import Region
-    from textual.message import Message
+    from textual import containers, events, geometry, message, widgets
     from textual.widget import Widget
-    from textual.widgets import Input, Select, Static
     from textual.widgets._select import SelectCurrent, SelectOverlay
 except ImportError as e:  # pragma: no cover
     raise SystemExit("The TUI widgets need textual: pip install 'agent6[tui]'") from e
@@ -33,7 +29,7 @@ def _scroll_row_into_view(widget: Widget, row: int) -> None:
     The widget is not itself scrollable, so the ancestor is driven directly.
     """
     for node in widget.ancestors:
-        if isinstance(node, ScrollableContainer):
+        if isinstance(node, containers.ScrollableContainer):
             content_y = (
                 widget.content_region.y
                 + row
@@ -41,7 +37,7 @@ def _scroll_row_into_view(widget: Widget, row: int) -> None:
                 + node.scroll_offset.y
             )
             node.scroll_to_region(
-                Region(0, content_y, 1, 1), animate=False, force=True, x_axis=False
+                geometry.Region(0, content_y, 1, 1), animate=False, force=True, x_axis=False
             )
             return
 
@@ -56,7 +52,7 @@ def focus_neighbor(widget: Widget, direction: int) -> None:
         widget: The control that has the focus.
         direction: 1 for the next control, -1 for the previous.
     """
-    kinds = (ChoiceField, TypeaheadField, Input, ActionItem)
+    kinds = (ChoiceField, TypeaheadField, widgets.Input, ActionItem)
     nav = [w for w in widget.screen.focus_chain if isinstance(w, kinds)]
     for i, w in enumerate(nav):
         if w is widget:
@@ -103,7 +99,7 @@ class ChoiceField(Widget, can_focus=True):
     ChoiceField { height: auto; width: 1fr; text-wrap: nowrap; text-overflow: ellipsis; }
     """
 
-    class Changed(Message):
+    class Changed(message.Message):
         """The selection changed."""
 
         def __init__(self, field: ChoiceField) -> None:
@@ -171,7 +167,7 @@ class ChoiceField(Widget, can_focus=True):
             self._sel = self._cursor = self._options.index(value)
             self.refresh(layout=True)
 
-    def render(self) -> Text:
+    def render(self) -> rich_text.Text:
         """Render the rows: the highlight, the hover bar and the chosen mark.
 
         Returns:
@@ -190,7 +186,7 @@ class ChoiceField(Widget, can_focus=True):
                 hover_bg = f"on {self.app.get_css_variables()['panel']}"
             except Exception:  # pragma: no cover
                 hover_bg = ""
-        out = Text()
+        out = rich_text.Text()
         for i in range(self._row_count):
             is_option = i < len(self._options)
             mark = "[x]" if i == self._sel else "[ ]"
@@ -199,7 +195,7 @@ class ChoiceField(Widget, can_focus=True):
                 pos = self._pos if self._custom_text else len(label)
                 shown, col = _window(label, pos, width - len(mark) - 1)
                 label = f"{shown[:col]}▌{shown[col:]}"
-            line = Text(f"{mark} ")
+            line = rich_text.Text(f"{mark} ")
             line.append(label, style="" if (is_option or self._custom_text) else "dim")
             line.pad_right(max(0, width - line.cell_len))
             if focused and i == self._cursor:
@@ -324,7 +320,7 @@ class TypeaheadField(Widget, can_focus=True):
     }
     """
 
-    class Changed(Message):
+    class Changed(message.Message):
         """The value changed."""
 
         def __init__(self, field: TypeaheadField) -> None:
@@ -389,7 +385,7 @@ class TypeaheadField(Widget, can_focus=True):
             return matches[self._index]
         return self._text
 
-    def render(self) -> Text:
+    def render(self) -> rich_text.Text:
         """Render the text line and, while focused, the suggestions.
 
         Returns:
@@ -401,15 +397,15 @@ class TypeaheadField(Widget, can_focus=True):
             bar = _selection_bar(self.app.current_theme.primary)
         except Exception:  # pragma: no cover
             bar = "bold reverse"
-        out = Text()
+        out = rich_text.Text()
         editing = focused and self._index < 0
         if self._text and editing:
             shown, col = _window(self._text, self._cursor, width)
-            text = Text(f"{shown[:col]}▌{shown[col:]}")
+            text = rich_text.Text(f"{shown[:col]}▌{shown[col:]}")
         elif self._text:
-            text = Text(self._text)
+            text = rich_text.Text(self._text)
         else:
-            text = Text("type to search…", style="dim")
+            text = rich_text.Text("type to search…", style="dim")
             if editing:
                 text.append("▌")
         out.append_text(text)
@@ -420,7 +416,7 @@ class TypeaheadField(Widget, can_focus=True):
             for i, m in enumerate(matches):
                 out.append("\n")
                 # One row per match however long: the value stays intact, only the display clips.
-                row = Text(m, no_wrap=True, overflow="ellipsis")
+                row = rich_text.Text(m, no_wrap=True, overflow="ellipsis")
                 row.pad_right(max(0, width - row.cell_len))
                 if i == self._index:
                     row.stylize(bar)
@@ -519,7 +515,7 @@ class TypeaheadField(Widget, can_focus=True):
             self._moved()
 
 
-class ActionItem(Static):
+class ActionItem(widgets.Static):
     """A flat, focusable, clickable action label; Enter or a click activates it.
 
     Textual's `Button` assumes a three-row box and cannot render flat at height 1.
@@ -527,7 +523,7 @@ class ActionItem(Static):
 
     can_focus = True
 
-    class Activated(Message):
+    class Activated(message.Message):
         """The action was chosen."""
 
         def __init__(self, action: str) -> None:
@@ -551,7 +547,7 @@ class ActionItem(Static):
             self.post_message(self.Activated(self._action))
 
 
-class ScrollPane(VerticalScroll):
+class ScrollPane(containers.VerticalScroll):
     """A scrollable pane that can be tabbed to and maximized; the host updates its child."""
 
     ALLOW_MAXIMIZE = True
@@ -560,7 +556,7 @@ class ScrollPane(VerticalScroll):
 _PICKER_ROWS = 10  # options a Picker's list shows before it scrolls
 
 
-class PickerRow(Horizontal):
+class PickerRow(containers.Horizontal):
     """One line of labelled pickers; a `.picker-label` Static captions the picker after it."""
 
     DEFAULT_CSS = """
@@ -570,7 +566,7 @@ class PickerRow(Horizontal):
     """
 
 
-class Picker(Select[str]):
+class Picker(widgets.Select[str]):
     """A one-row dropdown, sized to its value, whose list has the menus' round border.
 
     The list opens upward, so a row above a composer keeps both visible;

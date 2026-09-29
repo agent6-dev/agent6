@@ -10,41 +10,26 @@ from __future__ import annotations
 
 import contextlib
 import os
-from pathlib import Path
+import pathlib
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
 
-from rich.markup import escape
-from rich.text import Text
-from textual import events
-from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
-from textual.css.query import NoMatches
-from textual.message import Message
-from textual.screen import Screen
-from textual.widgets import Input, Select, Static, TextArea
+from rich import markup
+from rich import text as rich_text
+from textual import app, binding, containers, events, widgets
+from textual import message as textual_message
+from textual import screen as textual_screen
+from textual.css import query
 
-from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS
-from agent6.sessions.ipc import ANSWERED_ELSEWHERE, write_answer
-from agent6.ui.keymap import (
-    APPROVAL_ANSWERS,
-    answer_entry,
-)
-from agent6.ui.tui.menubar import (
-    Menu,
-    MenuItem,
-)
-from agent6.ui.tui.modals import HistorySearchModal
-from agent6.ui.tui.widgets import Picker, PickerRow
-from agent6.viewmodel import approval_parts
-from agent6.viewmodel.state import ApprovalPrompt, SessionState, open_approval_of
-from agent6.viewmodel.tail import tail_events
-from agent6.viewmodel.transcript import (
-    operator_inputs,
-)
+from agent6 import directive
+from agent6.sessions import ipc
+from agent6.ui import keymap
+from agent6.ui.tui import menubar, modals
+from agent6.ui.tui import widgets as tui_widgets
+from agent6.viewmodel import approval_parts, tail, transcript
+from agent6.viewmodel import state as viewmodel_state
 
 if TYPE_CHECKING:
-    from agent6.ui.tui.prompts import PromptDispatcher
+    from agent6.ui.tui import prompts as tui_prompts
 
 ComposerMode = Literal["steer", "resume", "start", "draft"]
 
@@ -89,11 +74,15 @@ def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, s
     if mode == "draft":
         return []
     if mode == "start":
-        offered = {c: h for c, h in STEER_COMMANDS.items() if c == "/parallel"}
+        offered = {c: h for c, h in directive.STEER_COMMANDS.items() if c == "/parallel"}
     elif mode == "resume":
-        offered = {c: h for c, h in STEER_COMMANDS.items() if c not in LIVE_RUN_COMMANDS}
+        offered = {
+            c: h
+            for c, h in directive.STEER_COMMANDS.items()
+            if c not in directive.LIVE_RUN_COMMANDS
+        }
     else:
-        offered = STEER_COMMANDS
+        offered = directive.STEER_COMMANDS
     return [(c, h) for c, h in offered.items() if c.startswith(text)]
 
 
@@ -116,7 +105,7 @@ def complete_steer(text: str, *, mode: ComposerMode) -> str | None:
     return lcp if len(lcp) > len(text) else text
 
 
-class SteerSuggest(Static):
+class SteerSuggest(widgets.Static):
     """The command hints above a composer: one row per matching directive, else hidden."""
 
     ALLOW_SELECT = False
@@ -127,9 +116,9 @@ class SteerSuggest(Static):
     def show_for(self, text: str, *, mode: ComposerMode) -> None:
         """Show the rows matching the composer's text, or hide the line."""
         rows = steer_suggestion_rows(text, mode=mode)
-        body: Text | None = None
+        body: rich_text.Text | None = None
         if rows:
-            body = Text()
+            body = rich_text.Text()
             for i, (cmd, help_) in enumerate(rows):
                 if i:
                     body.append("\n")
@@ -137,7 +126,7 @@ class SteerSuggest(Static):
                 body.append(f"  {help_}", style="dim")
         self.show_text(body)
 
-    def show_text(self, body: Text | None) -> None:
+    def show_text(self, body: rich_text.Text | None) -> None:
         """Show the body as the hint line, or hide the line for None."""
         if body is not None:
             self.update(body)
@@ -160,7 +149,7 @@ class ResumeHost(Protocol):
         ...
 
 
-class ResumeOptions(PickerRow):
+class ResumeOptions(tui_widgets.PickerRow):
     """The row above a resume composer: the preset and the model the next execution runs under.
 
     Shown only while the composer resumes; the picks live on the host app, so both
@@ -179,14 +168,14 @@ class ResumeOptions(PickerRow):
         self._labels = ("", "")
         self._labelled: str | None = None  # the preset pick the labels name; None when stale
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Yield the two labelled pickers."""
         host = self._host()
         self._labels, self._labelled = host.resume_defaults(host.resume_preset), host.resume_preset
-        yield Static("continue under preset", classes="picker-label")
-        yield Picker(self._options(0), value="", allow_blank=False, id="resume-preset")
-        yield Static("model", classes="picker-label")
-        yield Picker(self._options(1), value="", allow_blank=False, id="resume-model")
+        yield widgets.Static("continue under preset", classes="picker-label")
+        yield tui_widgets.Picker(self._options(0), value="", allow_blank=False, id="resume-preset")
+        yield widgets.Static("model", classes="picker-label")
+        yield tui_widgets.Picker(self._options(1), value="", allow_blank=False, id="resume-model")
 
     def _host(self) -> ResumeHost:
         """Return the app the picks live on."""
@@ -197,7 +186,7 @@ class ResumeOptions(PickerRow):
         choices = self._routes if index else self._presets
         return [(self._labels[index], ""), *((c, c) for c in choices)]
 
-    def on_select_changed(self, event: Select.Changed) -> None:
+    def on_select_changed(self, event: widgets.Select.Changed) -> None:
         """Write a pick to the host; a preset pick relabels the model."""
         host, value = self._host(), str(event.value)
         if event.select.id == "resume-model":
@@ -225,38 +214,38 @@ class ResumeOptions(PickerRow):
             return
         old = self._labels
         self._labels, self._labelled = host.resume_defaults(host.resume_preset), host.resume_preset
-        with self.prevent(Select.Changed):  # a relabel is no pick
+        with self.prevent(widgets.Select.Changed):  # a relabel is no pick
             for index, picker_id in enumerate(("#resume-preset", "#resume-model")):
                 if self._labels[index] != old[index]:
-                    self.query_one(picker_id, Select).set_options(self._options(index))
+                    self.query_one(picker_id, widgets.Select).set_options(self._options(index))
         self._sync()
 
     def _sync(self) -> None:
         """Move the pickers to the host's picks."""
         host = self._host()
-        with self.prevent(Select.Changed):
+        with self.prevent(widgets.Select.Changed):
             for wanted, picker_id, choices in (
                 (host.resume_preset, "#resume-preset", self._presets),
                 (host.resume_model, "#resume-model", self._routes),
             ):
-                picker = self.query_one(picker_id, Select)
+                picker = self.query_one(picker_id, widgets.Select)
                 if picker.value != wanted and wanted in ("", *choices):
                     picker.value = wanted
 
 
 # The run-control menu both run views share; every action resolves on the app.
-RUN_MENU = Menu(
+RUN_MENU = menubar.Menu(
     "Run",
     (
-        MenuItem("Search past messages…", "history_search", priority=True),
-        MenuItem("Compact context now", "compact"),
-        MenuItem("Stop after this step", "stop_step"),
-        MenuItem("Stop now", "stop_now"),
-        MenuItem("Resume this session", "resume"),
-        MenuItem("Run this plan", "run_plan"),
-        MenuItem("Fork this session", "fork"),
-        MenuItem("Review this run…", "review_run"),
-        MenuItem("Delete this session…", "delete_session"),
+        menubar.MenuItem("Search past messages…", "history_search", priority=True),
+        menubar.MenuItem("Compact context now", "compact"),
+        menubar.MenuItem("Stop after this step", "stop_step"),
+        menubar.MenuItem("Stop now", "stop_now"),
+        menubar.MenuItem("Resume this session", "resume"),
+        menubar.MenuItem("Run this plan", "run_plan"),
+        menubar.MenuItem("Fork this session", "fork"),
+        menubar.MenuItem("Review this run…", "review_run"),
+        menubar.MenuItem("Delete this session…", "delete_session"),
     ),
 )
 
@@ -271,9 +260,9 @@ _ANSWER_STYLES: dict[str, str] = {
 
 
 # A run view lists these in its own BINDINGS; textual takes bindings only from DOM classes.
-APPROVAL_KEY_BINDINGS: tuple[Binding, ...] = tuple(
-    Binding(entry.key, f"answer('{entry.answer}')", entry.label, show=False)
-    for entry in APPROVAL_ANSWERS
+APPROVAL_KEY_BINDINGS: tuple[binding.Binding, ...] = tuple(
+    binding.Binding(entry.key, f"answer('{entry.answer}')", entry.label, show=False)
+    for entry in keymap.APPROVAL_ANSWERS
 )
 
 
@@ -299,12 +288,12 @@ class ApprovalKeys:
     APPROVAL_LOST: ClassVar[str] = "the run is gone: the answer reached nothing"
     APPROVAL_ROW_HINT: ClassVar[str] = "(Tab out of the bar for the keys; or click)"
 
-    _prompts: PromptDispatcher | None = None
+    _prompts: tui_prompts.PromptDispatcher | None = None
     _row: ApprovalRow | None = None
     _row_id: str = ""
     _answered_from_row: bool = False  # the focus stayed on the approval
 
-    def approval_dir(self) -> Path:
+    def approval_dir(self) -> pathlib.Path:
         """Return the session dir an answer is written to."""
         raise NotImplementedError
 
@@ -315,15 +304,19 @@ class ApprovalKeys:
     def approval_answered(self, verdict: str) -> None:
         """Follow up a written answer: "allowed", "denied" or "answered elsewhere"."""
 
-    def open_approval(self, state: SessionState) -> ApprovalPrompt | None:
+    def open_approval(
+        self, state: viewmodel_state.SessionState
+    ) -> viewmodel_state.ApprovalPrompt | None:
         """Return the oldest unanswered approval this view has not answered already."""
         prompts = self._prompts
         if prompts is None:
-            return open_approval_of(state)
+            return viewmodel_state.open_approval_of(state)
         session_dir = self.approval_dir()
-        return open_approval_of(state, taken=lambda aid: prompts.seen(session_dir, aid))
+        return viewmodel_state.open_approval_of(
+            state, taken=lambda aid: prompts.seen(session_dir, aid)
+        )
 
-    def sync_approval(self, current: ApprovalPrompt | None) -> None:
+    def sync_approval(self, current: viewmodel_state.ApprovalPrompt | None) -> None:
         """Dock one row for the open approval, or none.
 
         A new id gets a fresh row, since a resumed execution reuses prompt ids and the
@@ -333,7 +326,7 @@ class ApprovalKeys:
         Args:
             current: The open approval; None for none, or a run that takes no answer.
         """
-        screen = cast(Screen[Any], self)
+        screen = cast(textual_screen.Screen[Any], self)
         if current is None:
             if self._row is not None:
                 self._row.remove()
@@ -358,7 +351,7 @@ class ApprovalKeys:
             return
         # Answered from the row, the focus stays out of the composer for the next approval.
         self._answered_from_row = self._row.holds_focus()
-        screen = cast(Screen[Any], self)
+        screen = cast(textual_screen.Screen[Any], self)
         verdict = deliver_answer(
             screen,
             session_dir=self.approval_dir(),
@@ -372,25 +365,25 @@ class ApprovalKeys:
             return
         self.approval_answered(verdict)
         if self._answered_from_row and self.APPROVAL_FOCUS_AFTER:
-            with contextlib.suppress(NoMatches):
+            with contextlib.suppress(query.NoMatches):
                 screen.query_one(self.APPROVAL_FOCUS_AFTER).focus()
 
     def action_answer(self, answer: str) -> None:
         """Answer the open approval from a key."""
-        cast(Screen[Any], self).post_message(ApprovalRow.Answered(answer))
+        cast(textual_screen.Screen[Any], self).post_message(ApprovalRow.Answered(answer))
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Return whether an answer key is live: a row offers it and no text field has focus."""
         if action != "answer":
             return True
-        screen = cast(Screen[Any], self)
+        screen = cast(textual_screen.Screen[Any], self)
         rows = screen.query(ApprovalRow)
-        if not rows or isinstance(screen.focused, TextArea | Input):
+        if not rows or isinstance(screen.focused, widgets.TextArea | widgets.Input):
             return False  # a text field keeps its letters
         return rows.first().offers(str(parameters[0]))
 
 
-class SteerInput(TextArea):
+class SteerInput(widgets.TextArea):
     """The composer bar: submits on Enter, Ctrl+J inserts a newline, grows with its content.
 
     Its mode says what Enter does: steer a live run, resume a finished one, start
@@ -410,10 +403,10 @@ class SteerInput(TextArea):
 
     BINDINGS: ClassVar = [
         # TextArea's own undo; ctrl+z is the app's Detach.
-        Binding("ctrl+underscore", "undo", "Undo", show=False),
+        binding.Binding("ctrl+underscore", "undo", "Undo", show=False),
     ]
 
-    class Submitted(Message):
+    class Submitted(textual_message.Message):
         """A line the operator sent."""
 
         def __init__(self, text: str) -> None:
@@ -449,8 +442,8 @@ class SteerInput(TextArea):
         ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
         policy = f"{self.policy} · " if self.policy else ""
         # Border titles are markup: a bracket in a label or a model id would vanish unescaped.
-        title = escape(title)
-        subtitle = escape(f"{policy}{ctx}{keys}")
+        title = markup.escape(title)
+        subtitle = markup.escape(f"{policy}{ctx}{keys}")
         if self.border_title != title:
             self.border_title = title
         if self.border_subtitle != subtitle:
@@ -478,7 +471,7 @@ class SteerInput(TextArea):
                     self.load_text(completed)
                     self.move_cursor(self.document.end)
 
-    def on_text_area_changed(self, _event: TextArea.Changed) -> None:
+    def on_text_area_changed(self, _event: widgets.TextArea.Changed) -> None:
         """Grow or shrink with the content."""
         self._resize()
 
@@ -491,7 +484,9 @@ class SteerInput(TextArea):
             self.styles.height = height
 
 
-def open_history_search(screen: Screen[Any], field: SteerInput, logs_path: Path) -> None:
+def open_history_search(
+    screen: textual_screen.Screen[Any], field: SteerInput, logs_path: pathlib.Path
+) -> None:
     """Pick one of the session's past messages into the composer for editing.
 
     The task, then every steer, read from the journal; newest first, one line
@@ -505,7 +500,7 @@ def open_history_search(screen: Screen[Any], field: SteerInput, logs_path: Path)
     if not field.display:
         screen.notify("this view has no composer to fill", severity="warning")
         return
-    recorded = operator_inputs(tail_events(logs_path, follow=False))
+    recorded = transcript.operator_inputs(tail.tail_events(logs_path, follow=False))
     entries = list(dict.fromkeys(" ".join(t.split()) for t in reversed(recorded)))
     if not entries:
         screen.notify("no past messages this session yet", severity="warning")
@@ -517,10 +512,12 @@ def open_history_search(screen: Screen[Any], field: SteerInput, logs_path: Path)
             field.move_cursor(field.document.end)
             field.focus()
 
-    screen.app.push_screen(HistorySearchModal(entries), fill)
+    screen.app.push_screen(modals.HistorySearchModal(entries), fill)
 
 
-def approval_text(prompt: str, note: str = "approval needed", *, dim: bool = False) -> Text:
+def approval_text(
+    prompt: str, note: str = "approval needed", *, dim: bool = False
+) -> rich_text.Text:
     """Return `? <head>: <note>` over the payload's lines, the command as every view shows it.
 
     Args:
@@ -530,25 +527,27 @@ def approval_text(prompt: str, note: str = "approval needed", *, dim: bool = Fal
     """
     head, payload = approval_parts(prompt)
     if dim:
-        body = Text(f"? {head}: {note}", style="dim")
+        body = rich_text.Text(f"? {head}: {note}", style="dim")
     else:
-        body = Text("? ", style="bold yellow")
+        body = rich_text.Text("? ", style="bold yellow")
         body.append(f"{head}: {note}", style="bold")
     if payload:
         body.append("\n" + "\n".join(f"    {ln}" for ln in payload.splitlines()))
     return body
 
 
-class _AnswerLabel(Static, can_focus=True):
+class _AnswerLabel(widgets.Static, can_focus=True):
     """One answer of the row, `[key] label`: a click answers, and Enter or Space when focused."""
 
     BINDINGS: ClassVar = [
-        Binding("enter", "answer", "Answer", show=False),
-        Binding("space", "answer", "Answer", show=False),
+        binding.Binding("enter", "answer", "Answer", show=False),
+        binding.Binding("space", "answer", "Answer", show=False),
     ]
 
     def __init__(self, key: str, answer: str, label: str, style: str) -> None:
-        super().__init__(Text(f"[{key}] {label}", style=style), classes=f"answer-{answer}")
+        super().__init__(
+            rich_text.Text(f"[{key}] {label}", style=style), classes=f"answer-{answer}"
+        )
         self.answer = answer
 
     def on_click(self) -> None:
@@ -560,7 +559,7 @@ class _AnswerLabel(Static, can_focus=True):
         self.post_message(ApprovalRow.Answered(self.answer))
 
 
-class ApprovalRow(Vertical):
+class ApprovalRow(containers.Vertical):
     """The open approval docked above the composer: the command, when carried, over the answers.
 
     Nothing here takes the focus; Tab or a click moves it in, where every answer is
@@ -575,7 +574,7 @@ class ApprovalRow(Vertical):
     ApprovalRow _AnswerLabel:hover { background: $primary 30%; }
     """
 
-    class Answered(Message):
+    class Answered(textual_message.Message):
         """An answer chosen on the row."""
 
         def __init__(self, answer: str) -> None:
@@ -594,21 +593,21 @@ class ApprovalRow(Vertical):
         self._prompt = prompt
         self._hint = hint
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Yield the command, when carried, and the answers the prompt offers."""
         if self._prompt:
-            yield Static(approval_text(self._prompt))
-        with Horizontal(id="approval-answers"):
-            for entry in APPROVAL_ANSWERS:
+            yield widgets.Static(approval_text(self._prompt))
+        with containers.Horizontal(id="approval-answers"):
+            for entry in keymap.APPROVAL_ANSWERS:
                 if self.offers(entry.answer):
                     yield _AnswerLabel(
                         entry.key, entry.answer, entry.label, _ANSWER_STYLES[entry.answer]
                     )
-            yield Static(Text(self._hint, style="dim"))
+            yield widgets.Static(rich_text.Text(self._hint, style="dim"))
 
     def offers(self, answer: str) -> bool:
         """Return whether the prompt offers the answer; no scope means no session answer."""
-        scoped = {e.answer for e in APPROVAL_ANSWERS if e.standing}
+        scoped = {e.answer for e in keymap.APPROVAL_ANSWERS if e.standing}
         return self._standing or answer not in scoped
 
     def focus_answers(self) -> None:
@@ -625,9 +624,9 @@ class ApprovalRow(Vertical):
 
 
 def deliver_answer(
-    screen: Screen[Any],
+    screen: textual_screen.Screen[Any],
     *,
-    session_dir: Path,
+    session_dir: pathlib.Path,
     prompt_id: str,
     answer: str,
     prompts: Any = None,
@@ -653,9 +652,9 @@ def deliver_answer(
         return ""
     if prompts is not None:
         prompts.claim(session_dir, prompt_id)
-    if write_answer(session_dir, prompt_id, answer):
-        entry = answer_entry(answer)
+    if ipc.write_answer(session_dir, prompt_id, answer):
+        entry = keymap.answer_entry(answer)
         screen.notify(f"answered: {entry.label}")
         return "allowed" if entry.grants else "denied"
-    screen.notify(ANSWERED_ELSEWHERE, severity="warning")
+    screen.notify(ipc.ANSWERED_ELSEWHERE, severity="warning")
     return "answered elsewhere"

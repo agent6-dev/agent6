@@ -167,7 +167,7 @@ depends_on = ["agent6.paths"]
 path = "agent6.ui.tui"
 # agent6.app: /undo forks in-process (app.fork), like ui.acp and ui.web.
 # agent6.git_ops: one branch-tips snapshot per hub poll (the unmerged mark).
-depends_on = ["agent6.app", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.git_ops", "agent6.graph.order", "agent6.machine", "agent6.models.cache", "agent6.models.choices", "agent6.paths", "agent6.portable", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.tools", "agent6.kinds", "agent6.ui.directives", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.spawn", "agent6.viewmodel"]
+depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.git_ops", "agent6.graph.order", "agent6.machine", "agent6.models.cache", "agent6.models.choices", "agent6.paths", "agent6.portable", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.tools", "agent6.kinds", "agent6.ui.directives", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.spawn", "agent6.viewmodel"]
 
 [[modules]]
 # What a composer line does when it is not a steer, for every entry point that

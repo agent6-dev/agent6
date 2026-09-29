@@ -9,70 +9,31 @@ labels and the palette descriptions; the keys are the keymap's.
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass
-from pathlib import Path
 from typing import ClassVar
 
 try:
-    from rich.markup import escape
-    from rich.text import Text
-    from textual import events, on
-    from textual.app import ComposeResult
-    from textual.binding import Binding
-    from textual.containers import Horizontal, Vertical, VerticalScroll
-    from textual.geometry import Region
-    from textual.screen import ModalScreen, Screen
+    import textual
+    from rich import markup, text
+    from textual import app, binding, containers, events, geometry
+    from textual import screen as textual_screen
+    from textual import widgets as textual_widgets
     from textual.widget import Widget
-    from textual.widgets import (
-        Collapsible,
-        DataTable,
-        Footer,
-        Input,
-        Static,
-    )
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise SystemExit("The config page needs textual: pip install 'agent6[tui]'") from e
 
-from agent6.app.confine import resolved_config_values
-from agent6.config import ConfigError
-from agent6.config.io import ConfigLeafValue, format_toml_value
-from agent6.config.layer import EffectiveConfig, load_effective
-from agent6.config.write import (
-    PROVIDER_DEFAULTS,
-    provider_choices,
-    set_config_leaves,
-    set_config_value,
-    unset_config_value,
-)
-from agent6.errors import OperatorError
-from agent6.models.cache import cached_models
-from agent6.models.choices import config_value_choices, model_role_provider
-from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
-from agent6.ui.tui.screen_chrome import (
-    MenuCommands,
-    PaletteCommand,
-    ScreenChrome,
-    menu_palette_commands,
-)
-from agent6.ui.tui.widgets import (
-    FORM_CSS,
-    ActionItem,
-    ChoiceField,
-    TypeaheadField,
-    focus_neighbor,
-)
-from agent6.viewmodel.config_view import (
-    ConfigSetting,
-    ConfigView,
-    build_config_view,
-    display_value,
-    format_value,
-    plain_description,
-)
+from agent6 import errors
+from agent6.app import confine
+from agent6.config import ConfigError, io, layer, write
+from agent6.models import cache
+from agent6.models import choices as models_choices
+from agent6.ui.tui import menubar, screen_chrome, widgets
+from agent6.viewmodel import config_view
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Action:
     """A page action, reachable from the footer, the menus and the command palette.
 
@@ -103,18 +64,18 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
 )
 
 
-def _columns(settings: Iterable[ConfigSetting]) -> tuple[tuple[str, int], ...]:
+def _columns(settings: Iterable[config_view.ConfigSetting]) -> tuple[tuple[str, int], ...]:
     """Return the (label, width) columns the pinned header and every section table share."""
     setting = max((len(_leaf(s)) for s in settings), default=7)
     return (("setting", setting), ("value", 28), ("source", 12))
 
 
-def _leaf(s: ConfigSetting) -> str:
+def _leaf(s: config_view.ConfigSetting) -> str:
     """Return the key under its section, as a row shows it."""
     return s.key.split(".", 1)[1] if "." in s.key else s.key
 
 
-class _NavTable(DataTable[str]):
+class _NavTable(textual_widgets.DataTable[str]):
     """A settings table whose arrow keys hand off to the section headers at its edges.
 
     With the headers arrow-navigable too, the whole config reads as one list.
@@ -153,11 +114,11 @@ def _provider_preset_base_url(key: str) -> str:
     """Return the preset base_url for a known provider's `base_url` setting, else ""."""
     parts = key.split(".")
     if len(parts) == 3 and parts[0] == "providers" and parts[2] == "base_url":
-        return PROVIDER_DEFAULTS.get(parts[1], {}).get("base_url", "")
+        return write.PROVIDER_DEFAULTS.get(parts[1], {}).get("base_url", "")
     return ""
 
 
-class _FormModal[ResultT](ModalScreen[ResultT]):
+class _FormModal[ResultT](textual_screen.ModalScreen[ResultT]):
     """The form modals' shared keys: one vertical arrow chain, and left and right over the actions.
 
     An activated ActionItem dispatches to `action_<id>`.
@@ -166,20 +127,20 @@ class _FormModal[ResultT](ModalScreen[ResultT]):
     def on_key(self, event: events.Key) -> None:
         """Move between fields and actions with the arrow keys."""
         focused = self.focused
-        if event.key in ("left", "right") and isinstance(focused, ActionItem):
-            actions = list(self.query(ActionItem))
+        if event.key in ("left", "right") and isinstance(focused, widgets.ActionItem):
+            actions = list(self.query(widgets.ActionItem))
             step = 1 if event.key == "right" else -1
             actions[(actions.index(focused) + step) % len(actions)].focus()
             event.stop()
-        elif event.key == "up" and isinstance(focused, (Input, ActionItem)):
-            focus_neighbor(focused, -1)
+        elif event.key == "up" and isinstance(focused, (textual_widgets.Input, widgets.ActionItem)):
+            widgets.focus_neighbor(focused, -1)
             event.stop()
-        elif event.key == "down" and isinstance(focused, Input):
-            focus_neighbor(focused, 1)
+        elif event.key == "down" and isinstance(focused, textual_widgets.Input):
+            widgets.focus_neighbor(focused, 1)
             event.stop()
 
-    @on(ActionItem.Activated)
-    def _action_activated(self, event: ActionItem.Activated) -> None:
+    @textual.on(widgets.ActionItem.Activated)
+    def _action_activated(self, event: widgets.ActionItem.Activated) -> None:
         """Dispatch an activated action item to its handler."""
         getattr(self, f"action_{event.action}")()
 
@@ -192,9 +153,9 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
     """
 
     # No Enter to save: Enter on a chooser selects the highlighted option.
-    BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
     CSS = (
-        FORM_CSS
+        widgets.FORM_CSS
         + """
     EditModal { align: center middle; }
     #edit-box {
@@ -209,7 +170,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
 
     def __init__(
         self,
-        setting: ConfigSetting,
+        setting: config_view.ConfigSetting,
         *,
         typeahead: list[str] | None = None,
         fetch: Callable[[], list[str]] | None = None,
@@ -236,23 +197,26 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
     def _apply_suggestions(self, models: list[str]) -> None:
         """Replace the typeahead's suggestions."""
         field = self.query("#edit-value").first()
-        if isinstance(field, TypeaheadField):
+        if isinstance(field, widgets.TypeaheadField):
             field.set_suggestions(models)
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Yield the title, the description, the value field, the target and the actions."""
         s = self._setting
-        with VerticalScroll(id="edit-box"):
-            yield Static(f"Edit {s.key}", id="edit-title")
-            yield Static(
-                Text(
-                    f"type={s.py_type}  ·  default={format_value(s.default)}  ·  source={s.source}",
+        with containers.VerticalScroll(id="edit-box"):
+            yield textual_widgets.Static(f"Edit {s.key}", id="edit-title")
+            yield textual_widgets.Static(
+                text.Text(
+                    f"type={s.py_type}  ·  default={config_view.format_value(s.default)}  "
+                    f"·  source={s.source}",
                     style="dim",
                 )
             )
             if s.description:
                 # Text, never markup: a description names `[git]`.
-                yield Static(Text(plain_description(s.description)), id="edit-description")
+                yield textual_widgets.Static(
+                    text.Text(config_view.plain_description(s.description)), id="edit-description"
+                )
             # The table's display form of a list is not valid TOML, so the box is prefilled with
             # the exact inverse of parse_cli_value; scalars stay bare.
             raw = s.value if s.value is not None else s.default
@@ -260,20 +224,20 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                 raw
                 if isinstance(raw, str)
                 else (
-                    format_toml_value(raw)
+                    io.format_toml_value(raw)
                     if isinstance(raw, (list, tuple, dict))
-                    else format_value(raw)
+                    else config_view.format_value(raw)
                 )
             )
             if self._typeahead is not None:
-                yield TypeaheadField(
+                yield widgets.TypeaheadField(
                     "" if s.value is None else current,
                     self._typeahead,
                     id="edit-value",
                     classes="edit-gap",
                 )
             elif s.choices is not None:
-                yield ChoiceField(
+                yield widgets.ChoiceField(
                     tuple(s.choices),
                     current,
                     allow_custom=True,
@@ -281,7 +245,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                     classes="edit-gap",
                 )
             elif s.py_type == "bool":
-                yield ChoiceField(
+                yield widgets.ChoiceField(
                     ("true", "false"),
                     current if current in ("true", "false") else "false",
                     id="edit-value",
@@ -292,41 +256,47 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                 # A known provider still on the generic default gets its preset host offered.
                 if not s.modified and (preset_url := _provider_preset_base_url(s.key)):
                     initial = preset_url
-                yield Input(
+                yield textual_widgets.Input(
                     value=initial,
-                    placeholder=str(format_value(s.default)),
+                    placeholder=str(config_view.format_value(s.default)),
                     id="edit-value",
                     classes="edit-input edit-gap",
                 )
-            yield Static("save to", classes="edit-label")
+            yield textual_widgets.Static("save to", classes="edit-label")
             target = "repo config" if s.source == "repo" else "global config"
-            yield ChoiceField(("global config", "repo config"), target, id="edit-target")
-            with Horizontal(id="edit-actions"):
-                yield ActionItem("Save", "save")
-                yield ActionItem("Unset override", "unset")
-                yield ActionItem("Cancel", "cancel")
-            yield Static(
-                Text("↑↓ highlight · Space select · Tab field · Esc cancel", style="dim"),
+            yield widgets.ChoiceField(("global config", "repo config"), target, id="edit-target")
+            with containers.Horizontal(id="edit-actions"):
+                yield widgets.ActionItem("Save", "save")
+                yield widgets.ActionItem("Unset override", "unset")
+                yield widgets.ActionItem("Cancel", "cancel")
+            yield textual_widgets.Static(
+                text.Text("↑↓ highlight · Space select · Tab field · Esc cancel", style="dim"),
                 classes="edit-label",
             )
 
     def _new_value(self) -> str:
         """Return the field's value as the TOML text the writer takes."""
         field = self.query_one("#edit-value")
-        value = field.value if isinstance(field, (ChoiceField, TypeaheadField, Input)) else ""
-        return format_toml_value(value) if self._setting.py_type == "str" else value
+        value = (
+            field.value
+            if isinstance(
+                field, (widgets.ChoiceField, widgets.TypeaheadField, textual_widgets.Input)
+            )
+            else ""
+        )
+        return io.format_toml_value(value) if self._setting.py_type == "str" else value
 
-    @on(Input.Submitted)
-    def _input_submitted(self, event: Input.Submitted) -> None:
+    @textual.on(textual_widgets.Input.Submitted)
+    def _input_submitted(self, event: textual_widgets.Input.Submitted) -> None:
         """Advance from a text field on Enter, like Tab."""
-        focus_neighbor(event.input, 1)
+        widgets.focus_neighbor(event.input, 1)
 
     def action_save(self) -> None:
         """Return the save, once; Enter may reach both an action item and Submitted."""
         if self._done:
             return
         self._done = True
-        to_repo = self.query_one("#edit-target", ChoiceField).index == 1
+        to_repo = self.query_one("#edit-target", widgets.ChoiceField).index == 1
         self.dismiss(("save", self._new_value(), to_repo))
 
     def action_unset(self) -> None:
@@ -354,9 +324,9 @@ class ProviderModal(_FormModal[None]):
     """
 
     # No Enter to add: Enter on a chooser selects the highlighted option.
-    BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
     CSS = (
-        FORM_CSS
+        widgets.FORM_CSS
         + """
     ProviderModal { align: center middle; }
     #prov-box {
@@ -368,113 +338,115 @@ class ProviderModal(_FormModal[None]):
     """
     )
 
-    def __init__(self, repo_root: Path) -> None:
+    def __init__(self, repo_root: pathlib.Path) -> None:
         super().__init__()
         self._repo = repo_root
         self._autofilled_baseurl = ""  # the last prefilled base_url; a typed one is never replaced
 
     def on_mount(self) -> None:
         """Focus the name field."""
-        self.query_one("#prov-name", Input).focus()
+        self.query_one("#prov-name", textual_widgets.Input).focus()
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Yield the title, the fields, the target and the actions."""
-        choices = provider_choices()
-        with VerticalScroll(id="prov-box"):
-            yield Static("Add provider", id="prov-title")
+        choices = write.provider_choices()
+        with containers.VerticalScroll(id="prov-box"):
+            yield textual_widgets.Static("Add provider", id="prov-title")
             # Split at the sentence: one line is wider than the box.
-            yield Static(
-                Text(
+            yield textual_widgets.Static(
+                text.Text(
                     "A [providers.<name>] block.\n"
                     "base_url/auth default from the format + deployment when left blank.",
                     style="dim",
                 )
             )
-            yield Input(
+            yield textual_widgets.Input(
                 placeholder="name  (e.g. openrouter, my-azure)",
                 id="prov-name",
                 classes="edit-input edit-gap",
             )
-            yield Static("api_format", classes="edit-label")
-            yield ChoiceField(
+            yield textual_widgets.Static("api_format", classes="edit-label")
+            yield widgets.ChoiceField(
                 tuple(choices["api_format"]), choices["api_format"][0], id="prov-format"
             )
-            yield Static("deployment", classes="edit-label")
-            yield ChoiceField(
+            yield textual_widgets.Static("deployment", classes="edit-label")
+            yield widgets.ChoiceField(
                 tuple(choices["deployment"]), choices["deployment"][0], id="prov-deployment"
             )
-            yield Static("base_url", classes="edit-label")
-            yield Input(
+            yield textual_widgets.Static("base_url", classes="edit-label")
+            yield textual_widgets.Input(
                 placeholder="blank = default for the format/deployment",
                 id="prov-baseurl",
                 classes="edit-input",
             )
-            yield Static("api_key_env", classes="edit-label")
-            yield Input(
+            yield textual_widgets.Static("api_key_env", classes="edit-label")
+            yield textual_widgets.Input(
                 placeholder="blank = secrets.toml by provider name",
                 id="prov-keyenv",
                 classes="edit-input",
             )
-            yield Static("save to", classes="edit-label")
-            yield ChoiceField(("global config", "repo config"), "global config", id="prov-target")
-            with Horizontal(id="prov-actions"):
-                yield ActionItem("Add", "add")
-                yield ActionItem("Cancel", "cancel")
-            yield Static(
-                Text("↑↓ highlight · Space select · Tab field · Esc cancel", style="dim"),
+            yield textual_widgets.Static("save to", classes="edit-label")
+            yield widgets.ChoiceField(
+                ("global config", "repo config"), "global config", id="prov-target"
+            )
+            with containers.Horizontal(id="prov-actions"):
+                yield widgets.ActionItem("Add", "add")
+                yield widgets.ActionItem("Cancel", "cancel")
+            yield textual_widgets.Static(
+                text.Text("↑↓ highlight · Space select · Tab field · Esc cancel", style="dim"),
                 classes="edit-label",
             )
 
     def _selected(self, widget_id: str, fallback: str) -> str:
         """Return a chooser's value, or the fallback when it has none."""
-        field = self.query_one(widget_id, ChoiceField)
+        field = self.query_one(widget_id, widgets.ChoiceField)
         return field.value or fallback
 
-    @on(Input.Submitted)
-    def _input_submitted(self, event: Input.Submitted) -> None:
+    @textual.on(textual_widgets.Input.Submitted)
+    def _input_submitted(self, event: textual_widgets.Input.Submitted) -> None:
         """Advance from a text field on Enter, like Tab."""
-        focus_neighbor(event.input, 1)
+        widgets.focus_neighbor(event.input, 1)
 
-    @on(Input.Changed, "#prov-name")
-    def _prefill_from_preset(self, event: Input.Changed) -> None:
+    @textual.on(textual_widgets.Input.Changed, "#prov-name")
+    def _prefill_from_preset(self, event: textual_widgets.Input.Changed) -> None:
         """Prefill a known provider's api_format and base_url, as `agent6 connect` does.
 
         Only a blank or autofilled base_url is overwritten, never a typed one.
         """
-        preset = PROVIDER_DEFAULTS.get(event.value.strip())
-        baseurl = self.query_one("#prov-baseurl", Input)
+        preset = write.PROVIDER_DEFAULTS.get(event.value.strip())
+        baseurl = self.query_one("#prov-baseurl", textual_widgets.Input)
         if preset is None:
             if self._autofilled_baseurl and baseurl.value == self._autofilled_baseurl:
                 baseurl.value = ""
             self._autofilled_baseurl = ""
             return
-        self.query_one("#prov-format", ChoiceField).select_value(preset["api_format"])
+        self.query_one("#prov-format", widgets.ChoiceField).select_value(preset["api_format"])
         if baseurl.value in ("", self._autofilled_baseurl):
             self._autofilled_baseurl = preset.get("base_url", "")
             baseurl.value = self._autofilled_baseurl
 
     def action_add(self) -> None:
         """Write and validate the entry; an error stays in the form."""
-        name = self.query_one("#prov-name", Input).value.strip()
+        name = self.query_one("#prov-name", textual_widgets.Input).value.strip()
         if not name:
             self.notify("Enter a provider name.", severity="warning")
             return
-        fields: dict[str, ConfigLeafValue] = {
+        fields: dict[str, io.ConfigLeafValue] = {
             "api_format": self._selected("#prov-format", "anthropic")
         }
         dep = self._selected("#prov-deployment", "direct")
         if dep != "direct":
             fields["deployment"] = dep
-        base = self.query_one("#prov-baseurl", Input).value.strip()
+        base = self.query_one("#prov-baseurl", textual_widgets.Input).value.strip()
         if base:
             fields["base_url"] = base
-        keyenv = self.query_one("#prov-keyenv", Input).value.strip()
+        keyenv = self.query_one("#prov-keyenv", textual_widgets.Input).value.strip()
         if keyenv:
             fields["api_key_env"] = keyenv
-        to_repo = self.query_one("#prov-target", ChoiceField).index == 1
+        to_repo = self.query_one("#prov-target", widgets.ChoiceField).index == 1
         try:
-            err = set_config_leaves(self._repo, f"providers.{name}", fields, to_repo=to_repo)
-        except OperatorError as exc:
+            err = write.set_config_leaves(self._repo, f"providers.{name}", fields, to_repo=to_repo)
+        except errors.OperatorError as exc:
             err = str(exc)  # an unwritable config file is a form error, not a crash
         if err:
             self.notify(f"Invalid: {err}", severity="error", timeout=8.0)
@@ -492,7 +464,7 @@ class ProviderModal(_FormModal[None]):
             self.action_cancel()
 
 
-class ConfigScreen(ScreenChrome, Screen[None]):
+class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
     """The config viewer and editor: per-section tables, a filter, provenance, edit and unset."""
 
     CSS = """
@@ -535,35 +507,35 @@ class ConfigScreen(ScreenChrome, Screen[None]):
     ConfigScreen Collapsible > Contents { padding: 0; }
     """
     MENUS: ClassVar = (
-        Menu(
+        menubar.Menu(
             "Config",
             (
-                MenuItem("Refresh", "reload"),
-                MenuItem("Back", "close"),
-                MenuItem("Quit", "quit"),
+                menubar.MenuItem("Refresh", "reload"),
+                menubar.MenuItem("Back", "close"),
+                menubar.MenuItem("Quit", "quit"),
             ),
         ),
-        Menu(
+        menubar.Menu(
             "Edit",
             (
-                MenuItem("Edit setting…", "edit"),
-                MenuItem("Add provider…", "add_provider"),
-                MenuItem("Unset override", "reset"),
+                menubar.MenuItem("Edit setting…", "edit"),
+                menubar.MenuItem("Add provider…", "add_provider"),
+                menubar.MenuItem("Unset override", "reset"),
             ),
         ),
-        Menu(
+        menubar.Menu(
             "View",
             (
-                MenuItem("Filter", "search"),
-                MenuItem("Modified only", "toggle_modified"),
-                MenuItem("Theme…", "choose_theme"),
+                menubar.MenuItem("Filter", "search"),
+                menubar.MenuItem("Modified only", "toggle_modified"),
+                menubar.MenuItem("Theme…", "choose_theme"),
             ),
         ),
-        Menu(
+        menubar.Menu(
             "Help",
             (
-                MenuItem("Keys & actions", "help"),
-                MenuItem("Command palette", "command_palette"),
+                menubar.MenuItem("Keys & actions", "help"),
+                menubar.MenuItem("Command palette", "command_palette"),
             ),
         ),
     )
@@ -573,47 +545,52 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         for a in CONFIG_ACTIONS
         if a.id in {"search", "toggle_modified", "edit", "reload", "help", "close"}
     )
-    BINDINGS: ClassVar = menu_bindings("config", MENUS, footer=FOOTER)
-    COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
+    BINDINGS: ClassVar = menubar.menu_bindings("config", MENUS, footer=FOOTER)
+    COMMANDS: ClassVar = textual_screen.Screen.COMMANDS | {screen_chrome.MenuCommands}
     HELP_TITLE: ClassVar = "agent6 config — keys & actions"
     HELP_HINTS: ClassVar = ("Enter edits the selected setting",)
 
-    def __init__(self, repo_root: Path, config_path: Path | None = None) -> None:
+    def __init__(self, repo_root: pathlib.Path, config_path: pathlib.Path | None = None) -> None:
         super().__init__()
         self.repo_root = repo_root
         self.config_path = config_path
-        self._eff: EffectiveConfig | None = None
-        self._view: ConfigView | None = None
-        self._table_rows: dict[str, list[ConfigSetting]] = {}  # per section, in row order
+        self._eff: layer.EffectiveConfig | None = None
+        self._view: config_view.ConfigView | None = None
+        self._table_rows: dict[
+            str, list[config_view.ConfigSetting]
+        ] = {}  # per section, in row order
         self._modified_only = False
 
-    def palette_commands(self) -> Iterator[PaletteCommand]:
+    def palette_commands(self) -> Iterator[screen_chrome.PaletteCommand]:
         """Yield the menu actions with the registry's descriptions as their help."""
         descriptions = {a.id: a.description for a in CONFIG_ACTIONS}
-        for label, handler, menu_title in menu_palette_commands(self, self.MENUS):
+        for label, handler, menu_title in screen_chrome.menu_palette_commands(self, self.MENUS):
             action = next((i.action for m in self.MENUS for i in m.items if i.label == label), "")
             yield label, handler, descriptions.get(action, menu_title)
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Yield the menu bar, the filter row, the pinned header and one table per section.
 
         The sections are fixed once the view loads; a reload only repopulates rows.
         """
         self._rebuild_view()
-        yield MenuBar(self.MENUS)
-        with Horizontal(id="topbar"):
-            yield Input(placeholder="/  filter settings…", id="search")
-            yield Static("", id="status")
+        yield menubar.MenuBar(self.MENUS)
+        with containers.Horizontal(id="topbar"):
+            yield textual_widgets.Input(placeholder="/  filter settings…", id="search")
+            yield textual_widgets.Static("", id="status")
         # One pinned column header; the section tables hide theirs and share its widths.
-        with Vertical(id="config-card"):
-            yield DataTable(id="col-header")
-            with VerticalScroll(id="settings"):
+        with containers.Vertical(id="config-card"):
+            yield textual_widgets.DataTable(id="col-header")
+            with containers.VerticalScroll(id="settings"):
                 for section in self._sections():
                     table = _NavTable(id=f"tbl-{section}", classes="section-table")
-                    yield Collapsible(
-                        table, title=escape(f"[{section}]"), collapsed=False, id=f"sec-{section}"
+                    yield textual_widgets.Collapsible(
+                        table,
+                        title=markup.escape(f"[{section}]"),
+                        collapsed=False,
+                        id=f"sec-{section}",
                     )
-        yield Footer()
+        yield textual_widgets.Footer()
 
     def _sections(self) -> tuple[str, ...]:
         """Return the view's sections, in order."""
@@ -621,9 +598,11 @@ class ConfigScreen(ScreenChrome, Screen[None]):
 
     def _rebuild_view(self) -> None:
         """Load the effective config and build the view over it."""
-        eff = load_effective(self.repo_root, self.config_path)
+        eff = layer.load_effective(self.repo_root, self.config_path)
         self._eff = eff
-        self._view = build_config_view(eff, resolved=resolved_config_values(eff.config))
+        self._view = config_view.build_config_view(
+            eff, resolved=confine.resolved_config_values(eff.config)
+        )
 
     def _reload(self) -> bool:
         """Re-read the config and repaint; a config invalid on disk keeps the last-good view.
@@ -646,14 +625,14 @@ class ConfigScreen(ScreenChrome, Screen[None]):
 
     def on_mount(self) -> None:
         """Set the shared columns, fill the rows and focus the first table."""
-        header = self.query_one("#col-header", DataTable)
+        header = self.query_one("#col-header", textual_widgets.DataTable)
         header.show_cursor = False
         header.can_focus = False
         columns = _columns(self._view.settings if self._view is not None else ())
         for label, width in columns:
             header.add_column(label, width=width)
         for section in self._sections():
-            table = self.query_one(f"#tbl-{section}", DataTable)
+            table = self.query_one(f"#tbl-{section}", textual_widgets.DataTable)
             table.cursor_type = "row"
             table.show_header = False
             for label, width in columns:
@@ -664,7 +643,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         if tables:
             tables[0].focus()
 
-    def _matches(self, s: ConfigSetting, query: str) -> bool:
+    def _matches(self, s: config_view.ConfigSetting, query: str) -> bool:
         """Return whether a setting passes the filter box and the modified-only toggle."""
         if self._modified_only and not s.modified:
             return False
@@ -679,10 +658,14 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         focused_section: str | None = None
         if isinstance(focused, _NavTable) and focused.id:
             focused_section = focused.id[4:]
-        elif isinstance(parent, Collapsible) and parent.id and parent.id.startswith("sec-"):
+        elif (
+            isinstance(parent, textual_widgets.Collapsible)
+            and parent.id
+            and parent.id.startswith("sec-")
+        ):
             focused_section = parent.id[4:]
-        query = self.query_one("#search", Input).value.strip().lower()
-        by_section: dict[str, list[ConfigSetting]] = {}
+        query = self.query_one("#search", textual_widgets.Input).value.strip().lower()
+        by_section: dict[str, list[config_view.ConfigSetting]] = {}
         for s in self._view.settings:
             if self._matches(s, query):
                 by_section.setdefault(s.section, []).append(s)
@@ -690,27 +673,38 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         for section in self._view.sections:
             rows = by_section.get(section, [])
             self._table_rows[section] = rows
-            table = self.query_one(f"#tbl-{section}", DataTable)
+            table = self.query_one(f"#tbl-{section}", textual_widgets.DataTable)
             table.clear()
             for s in rows:
                 leaf = _leaf(s)
                 src = s.source + (" *" if s.modified else "")
                 # Text, never markup: a value or key may carry brackets.
-                table.add_row(Text(leaf), Text(display_value(s)), Text(src), key=s.key)
+                table.add_row(
+                    text.Text(leaf),
+                    text.Text(config_view.display_value(s)),
+                    text.Text(src),
+                    key=s.key,
+                )
             # Pinned to its row count so only #settings scrolls; height:auto clamps to the
             # viewport in a short window and gives a second scrollbar.
             table.styles.height = max(1, len(rows))
-            self.query_one(f"#sec-{section}", Collapsible).display = bool(rows)
+            self.query_one(f"#sec-{section}", textual_widgets.Collapsible).display = bool(rows)
             shown += len(rows)
         flt = "   ·   modified only" if self._modified_only else ""
-        self.query_one("#status", Static).update(f"{shown} setting{'' if shown == 1 else 's'}{flt}")
+        self.query_one("#status", textual_widgets.Static).update(
+            f"{shown} setting{'' if shown == 1 else 's'}{flt}"
+        )
         if focused_section is not None and focused_section not in self._ordered_sections():
             self._focus_first_setting()
 
-    def _current_setting(self) -> ConfigSetting | None:
+    def _current_setting(self) -> config_view.ConfigSetting | None:
         """Return the setting under the focused table's cursor."""
         focused = self.focused
-        if isinstance(focused, DataTable) and focused.id and focused.id.startswith("tbl-"):
+        if (
+            isinstance(focused, textual_widgets.DataTable)
+            and focused.id
+            and focused.id.startswith("tbl-")
+        ):
             section = focused.id[4:]
             rows = self._table_rows.get(section, [])
             row = focused.cursor_row
@@ -720,16 +714,20 @@ class ConfigScreen(ScreenChrome, Screen[None]):
 
     def _ordered_sections(self) -> list[str]:
         """Return the sections with a visible Collapsible, in display order."""
-        return [s for s in self._sections() if self.query_one(f"#sec-{s}", Collapsible).display]
+        return [
+            s
+            for s in self._sections()
+            if self.query_one(f"#sec-{s}", textual_widgets.Collapsible).display
+        ]
 
     def _section_has_rows(self, section: str) -> bool:
         """Return whether the section is expanded with rows to step into."""
-        col = self.query_one(f"#sec-{section}", Collapsible)
+        col = self.query_one(f"#sec-{section}", textual_widgets.Collapsible)
         return not col.collapsed and self.query_one(f"#tbl-{section}", _NavTable).row_count > 0
 
     def _focus_title(self, section: str) -> None:
         """Focus a section's header, scrolling it into view by one row."""
-        col = self.query_one(f"#sec-{section}", Collapsible)
+        col = self.query_one(f"#sec-{section}", textual_widgets.Collapsible)
         title = next(iter(col.query("CollapsibleTitle")), None)
         if title is not None:
             title.focus(scroll_visible=False)
@@ -751,13 +749,13 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             target: The row just focused; `focus()` updates `self.focused` asynchronously,
                 so reading it here would scroll the old row.
         """
-        settings = self.query_one("#settings", VerticalScroll)
+        settings = self.query_one("#settings", containers.VerticalScroll)
         focused = target if target is not None else self.focused
         if focused is None:
             return
         if isinstance(focused, _NavTable):
             screen_y = focused.region.y + focused.cursor_row  # the header is hidden
-        elif isinstance(focused.parent, Collapsible):
+        elif isinstance(focused.parent, textual_widgets.Collapsible):
             # scroll_to_region leaves the topmost header a line off the top: pin to home.
             first = next((c for c in self.query("#settings Collapsible") if c.display), None)
             if focused.parent is first:
@@ -767,7 +765,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         else:
             return
         content_y = screen_y - settings.region.y + settings.scroll_offset.y
-        settings.scroll_to_region(Region(0, content_y, 1, 1), animate=False)
+        settings.scroll_to_region(geometry.Region(0, content_y, 1, 1), animate=False)
 
     def nav_from_table(self, section: str, direction: int) -> None:
         """Take an arrow from a table's edge: Down to the next header, Up to this section's."""
@@ -799,18 +797,22 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             else:
                 self._focus_title(prev)
         else:  # Up at the topmost header goes back to the filter box
-            self.query_one("#search", Input).focus()
+            self.query_one("#search", textual_widgets.Input).focus()
 
     def on_key(self, event: events.Key) -> None:
         """Step Down out of the filter box; on a header, arrows flow through and Space toggles."""
         focused = self.focused
-        if isinstance(focused, Input) and focused.id == "search":
+        if isinstance(focused, textual_widgets.Input) and focused.id == "search":
             if event.key == "down":
                 self._focus_first_setting()
                 event.stop()
             return
         parent = getattr(focused, "parent", None)
-        if not (isinstance(parent, Collapsible) and parent.id and parent.id.startswith("sec-")):
+        if not (
+            isinstance(parent, textual_widgets.Collapsible)
+            and parent.id
+            and parent.id.startswith("sec-")
+        ):
             return
         if event.key in ("up", "down"):
             self._nav_from_title(parent.id[4:], 1 if event.key == "down" else -1)
@@ -821,7 +823,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
 
     def action_search(self) -> None:
         """Focus the filter box."""
-        self.query_one("#search", Input).focus()
+        self.query_one("#search", textual_widgets.Input).focus()
 
     def _focus_first_setting(self) -> None:
         """Focus the first visible section's first row, or its header."""
@@ -833,7 +835,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             else:
                 self._focus_title(first)
         else:
-            self.query_one("#search", Input).focus()
+            self.query_one("#search", textual_widgets.Input).focus()
 
     def _cancel_search(self) -> bool:
         """Clear an active filter and drop back to the settings.
@@ -841,7 +843,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         Returns:
             Whether there was a filter to back out of; False lets Esc close the page.
         """
-        box = self.query_one("#search", Input)
+        box = self.query_one("#search", textual_widgets.Input)
         if not box.value and (self.focused is not box or not self._ordered_sections()):
             return False
         box.value = ""
@@ -877,7 +879,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
 
         self.app.push_screen(ProviderModal(self.repo_root), reload_config)
 
-    def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
+    def on_data_table_row_selected(self, _event: textual_widgets.DataTable.RowSelected) -> None:
         """Edit the row on Enter or a double click."""
         self.action_edit()
 
@@ -898,8 +900,8 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 self._unset(setting)
                 return
             try:
-                err = set_config_value(self.repo_root, setting.key, raw, to_repo=to_repo)
-            except OperatorError as exc:
+                err = write.set_config_value(self.repo_root, setting.key, raw, to_repo=to_repo)
+            except errors.OperatorError as exc:
                 err = str(exc)
             if err:
                 self.notify(err, severity="error", timeout=8.0)
@@ -909,12 +911,12 @@ class ConfigScreen(ScreenChrome, Screen[None]):
 
         # A model-id field gets a typeahead over the provider's models, cached now and live after.
         eff = self._eff
-        provider = model_role_provider(eff, setting.key) if eff is not None else None
+        provider = models_choices.model_role_provider(eff, setting.key) if eff is not None else None
         if provider is not None and eff is not None:
             modal = EditModal(
                 setting,
-                typeahead=cached_models(provider),
-                fetch=lambda: config_value_choices(eff, setting.key),
+                typeahead=cache.cached_models(provider),
+                fetch=lambda: models_choices.config_value_choices(eff, setting.key),
             )
         else:
             modal = EditModal(setting)
@@ -928,7 +930,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             return
         self._unset(setting)
 
-    def _unset(self, setting: ConfigSetting) -> None:
+    def _unset(self, setting: config_view.ConfigSetting) -> None:
         """Remove the setting from the layer that set it, and say so.
 
         A leaf from a preset or a `--config` file is modified but outside the two
@@ -945,10 +947,10 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             )
             return
         try:
-            err = unset_config_value(
+            err = write.unset_config_value(
                 self.repo_root, setting.key, to_repo=setting.source == "repo"
             ).error
-        except OperatorError as exc:
+        except errors.OperatorError as exc:
             err = str(exc)
         if err:
             self.notify(err, severity="error", timeout=8.0)
@@ -956,12 +958,12 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             self.notify(f"Unset {setting.key} from {setting.source} config")
             self._reload()
 
-    @on(Input.Changed, "#search")
+    @textual.on(textual_widgets.Input.Changed, "#search")
     def _on_search(self) -> None:
         """Refilter as the box changes."""
         self._refresh()
 
-    @on(Input.Submitted, "#search")
+    @textual.on(textual_widgets.Input.Submitted, "#search")
     def _on_search_submit(self) -> None:
         """Step into the settings on Enter, keeping the filter."""
         self._focus_first_setting()

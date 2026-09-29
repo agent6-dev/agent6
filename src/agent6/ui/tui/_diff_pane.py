@@ -10,21 +10,18 @@ in focus.
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
+import pathlib
 
-from rich.text import Text
-from textual.app import ComposeResult
-from textual.message import Message
-from textual.widgets import Checkbox, Select, Static
+from rich import text
+from textual import app, message, widgets
 
-from agent6.git_ops import commit_diff, diff_range
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.ui.tui.widgets import Picker, PickerRow, ScrollPane
-from agent6.viewmodel.format import clip_cell
-from agent6.viewmodel.state import SessionState
+from agent6 import git_ops
+from agent6.sessions import manifest
+from agent6.ui.tui import widgets as tui_widgets
+from agent6.viewmodel import format, state
 
 
-class DiffPane(ScrollPane):
+class DiffPane(tui_widgets.ScrollPane):
     """The diff pane; a picker change posts `StepChanged`, since the header follows the step.
 
     Attributes:
@@ -40,10 +37,10 @@ class DiffPane(ScrollPane):
     DiffPane #diff-body { width: 1fr; height: auto; pointer: text; }
     """
 
-    class StepChanged(Message):
+    class StepChanged(message.Message):
         """The selected step or the cumulative toggle changed."""
 
-    def __init__(self, session_dir: Path, *, id: str) -> None:
+    def __init__(self, session_dir: pathlib.Path, *, id: str) -> None:
         """Bind the pane to a session dir."""
         super().__init__(id=id)
         self._session_dir = session_dir
@@ -52,36 +49,36 @@ class DiffPane(ScrollPane):
         self._nav_steps = -1  # how many steps the selector lists
         self._rendered: tuple[object, ...] | None = None  # the inputs last painted
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Lay out the pane.
 
         Yields:
             The picker row and the body.
         """
-        with PickerRow(id="diff-nav"):
-            yield Picker(
+        with tui_widgets.PickerRow(id="diff-nav"):
+            yield tui_widgets.Picker(
                 [("latest commit", "")],
                 value="",
                 allow_blank=False,
                 opens="down",
                 id="diff-step",
             )
-            yield Checkbox("cumulative", compact=True, id="diff-cumulative", disabled=True)
-        yield Static("", id="diff-body")
+            yield widgets.Checkbox("cumulative", compact=True, id="diff-cumulative", disabled=True)
+        yield widgets.Static("", id="diff-body")
 
     def git_control(self) -> str:
         """Return the manifest's `git_control`; "agent6" when the manifest is unreadable."""
-        with contextlib.suppress(ManifestError):
-            return read_manifest(self._session_dir).git_control
+        with contextlib.suppress(manifest.ManifestError):
+            return manifest.read_manifest(self._session_dir).git_control
         return "agent6"
 
-    def sync_nav(self, s: SessionState) -> None:
+    def sync_nav(self, s: state.SessionState) -> None:
         """Refresh the step selector from the state's commits, newest first.
 
         Hidden while nothing is committed, and under `[git].control = "model"`, which
         has no chain to select from.
         """
-        nav = self.query_one("#diff-nav", PickerRow)
+        nav = self.query_one("#diff-nav", tui_widgets.PickerRow)
         if self.git_control() == "model" or not s.steps:
             nav.display = False
             return
@@ -90,20 +87,20 @@ class DiffPane(ScrollPane):
             self._nav_steps = len(s.steps)
             options = [("latest commit", "")]
             options.extend((st.label, st.sha) for st in reversed(s.steps))
-            select = self.query_one("#diff-step", Select)
+            select = self.query_one("#diff-step", widgets.Select)
             select.set_options(options)
             select.value = self.step_sel if any(v == self.step_sel for _, v in options) else ""
             self._sync_cumulative()
 
     def _step_patch(self, sha: str) -> str:
         if self.cumulative:
-            with contextlib.suppress(ManifestError):
-                base = read_manifest(self._session_dir).base_sha
+            with contextlib.suppress(manifest.ManifestError):
+                base = manifest.read_manifest(self._session_dir).base_sha
                 if base:
-                    return diff_range(Path.cwd(), base, sha) or "(no diff)"
-        return commit_diff(Path.cwd(), sha) or "(no diff)"
+                    return git_ops.diff_range(pathlib.Path.cwd(), base, sha) or "(no diff)"
+        return git_ops.commit_diff(pathlib.Path.cwd(), sha) or "(no diff)"
 
-    def on_select_changed(self, event: Select.Changed) -> None:
+    def on_select_changed(self, event: widgets.Select.Changed) -> None:
         """Follow the step picker."""
         if event.select.id != "diff-step":
             return
@@ -114,12 +111,12 @@ class DiffPane(ScrollPane):
 
     def _sync_cumulative(self) -> None:
         """Disable and clear the cumulative box unless a step is chosen, as the web does."""
-        box = self.query_one("#diff-cumulative", Checkbox)
+        box = self.query_one("#diff-cumulative", widgets.Checkbox)
         box.disabled = not self.step_sel
         if not self.step_sel and box.value:
             box.value = False
 
-    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+    def on_checkbox_changed(self, event: widgets.Checkbox.Changed) -> None:
         """Follow the cumulative toggle."""
         if event.checkbox.id != "diff-cumulative":
             return
@@ -127,7 +124,7 @@ class DiffPane(ScrollPane):
         self.cumulative = bool(event.value)
         self.post_message(self.StepChanged())
 
-    def render_state(self, s: SessionState, *, sel: str | None, filt: str) -> None:
+    def render_state(self, s: state.SessionState, *, sel: str | None, filt: str) -> None:
         """Paint the pane for the state, skipping when none of its inputs changed.
 
         Built as rich Text, so a diff or verify body holding brackets is never parsed
@@ -150,11 +147,11 @@ class DiffPane(ScrollPane):
             if self.git_control() == "model"
             else (f"diff{filt}" if sel else "")
         )
-        self.query_one("#diff-body", Static).update(self._story(s, sel))
+        self.query_one("#diff-body", widgets.Static).update(self._story(s, sel))
 
-    def _story(self, s: SessionState, sel: str | None) -> Text:
+    def _story(self, s: state.SessionState, sel: str | None) -> text.Text:
         verify = s.last_verify
-        dt = Text()
+        dt = text.Text()
         if self.step_sel:
             step = next((st for st in s.steps if st.sha == self.step_sel), None)
             if step is not None:
@@ -174,11 +171,13 @@ class DiffPane(ScrollPane):
         # A running or failed verify outranks the diff, so a failure never hides behind a stale one.
         if verify is not None and verify.exit_code is None:
             dt.append("verify running: ", style="bold")
-            dt.append(clip_cell(" ".join(verify.cmd), 200) + "\n")
+            dt.append(format.clip_cell(" ".join(verify.cmd), 200) + "\n")
             dt.append("…", style="dim")
         elif verify is not None and verify.exit_code != 0:
             dt.append(f"verify exit={verify.exit_code} ", style="bold red")
-            dt.append(f"({verify.duration_s:.1f}s)  {clip_cell(' '.join(verify.cmd), 160)}\n")
+            dt.append(
+                f"({verify.duration_s:.1f}s)  {format.clip_cell(' '.join(verify.cmd), 160)}\n"
+            )
             out = verify.stderr_tail or verify.stdout_tail
             dt.append(out[:2000] or "(no output)")
             if len(out) > 2000:
@@ -193,7 +192,7 @@ class DiffPane(ScrollPane):
         return dt
 
 
-def append_colored_diff(dt: Text, patch: str, *, cap: int = 0) -> None:
+def append_colored_diff(dt: text.Text, patch: str, *, cap: int = 0) -> None:
     """Append a unified diff with its lines coloured, without markup parsing.
 
     Args:

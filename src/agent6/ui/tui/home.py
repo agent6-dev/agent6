@@ -9,16 +9,14 @@ every other verb shells out to the CLI the same way.
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Callable, Iterable
-from pathlib import Path
 from typing import Any, ClassVar
 
 try:
-    from rich.text import Text
-    from textual import events
-    from textual.app import App, ComposeResult, SystemCommand
-    from textual.screen import Screen
-    from textual.widgets import DataTable, Footer
+    from rich import text
+    from textual import app, events, widgets
+    from textual import screen as textual_screen
 except ImportError as e:  # pragma: no cover
     raise ImportError(
         "agent6 TUI requires the 'textual' package (part of the base install)."
@@ -26,42 +24,31 @@ except ImportError as e:  # pragma: no cover
     ) from e
 
 # Reached only once the textual guard above passed.
-from agent6.config import ConfigError
-from agent6.config.layer import available_preset_names, load_effective
-from agent6.git_ops import run_ref_tips
-from agent6.models.choices import available_routes
-from agent6.sessions.layout import LOGS_NAME
-from agent6.ui.spawn import agent6_argv, run_cli_capture
-from agent6.ui.tui.config_page import ConfigScreen
-from agent6.ui.tui.logview import LogScreen
-from agent6.ui.tui.machines import MachinesScreen
-from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
-from agent6.ui.tui.modals import ConfirmModal
-from agent6.ui.tui.new_work import NewWorkScreen
-from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
-from agent6.ui.tui.theme import (
-    PALETTE_CSS,
-    MuxPointerShapes,
-    PlainNotify,
-    setup_theme,
-    status_style,
+from agent6 import git_ops
+from agent6.config import ConfigError, layer
+from agent6.models import choices
+from agent6.sessions import layout
+from agent6.ui import spawn
+from agent6.ui.tui import (
+    config_page,
+    logview,
+    machines,
+    menubar,
+    modals,
+    new_work,
+    screen_chrome,
+    theme,
 )
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
     SessionSummary,
+    format,
     is_winner,
     session_dirs,
     summarize_session_dir,
     task_snippet,
 )
-from agent6.viewmodel.format import (
-    format_when,
-    lane_count,
-    lane_id_cell,
-    listing_status_label,
-    winner_id,
-)
-from agent6.viewmodel.listing import ListingRow, nested_rows
+from agent6.viewmodel import listing as viewmodel_listing
 
 # The poll cadence, the web hub's, so a session that ends while watched stops reading as running.
 _HUB_POLL_S = 4.0
@@ -73,7 +60,7 @@ _NARROW_COLS = 100
 _NARROWEST_COLS = 80
 
 
-def _sync_columns(table: DataTable[Any], width: int) -> tuple[str, ...]:
+def _sync_columns(table: widgets.DataTable[Any], width: int) -> tuple[str, ...]:
     """Set the table's columns for the width, rebuilt only on a change, and empty it for a refill.
 
     Args:
@@ -93,14 +80,16 @@ def _sync_columns(table: DataTable[Any], width: int) -> tuple[str, ...]:
     return labels
 
 
-def _status_cell(summary: SessionSummary, *, narrow: bool = False) -> Text:
+def _status_cell(summary: SessionSummary, *, narrow: bool = False) -> text.Text:
     """Return the status cell in its colour; a narrow table drops the reason."""
     reason = "" if narrow else summary.reason
-    label = listing_status_label(summary.mode, summary.status, reason, unmerged=summary.unmerged)
-    return Text(label, style=status_style(summary.status))
+    label = format.listing_status_label(
+        summary.mode, summary.status, reason, unmerged=summary.unmerged
+    )
+    return text.Text(label, style=theme.status_style(summary.status))
 
 
-class HomeScreen(ScreenChrome, Screen[None]):
+class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
     """The hub view: browse recent sessions, start new work, open the config editor.
 
     Its bindings live on the screen, not the app, so a pushed screen's footer shows
@@ -108,36 +97,36 @@ class HomeScreen(ScreenChrome, Screen[None]):
     """
 
     MENUS: ClassVar = (
-        Menu(
+        menubar.Menu(
             "File",
             (
-                MenuItem("New session", "new_work"),
-                MenuItem("Open selected", "open_selected"),
-                MenuItem("Merge selected run", "merge_selected"),
-                MenuItem("Delete selected run…", "delete_selected"),
-                MenuItem("Prune merged runs…", "prune"),
-                MenuItem("Prune merged runs, squash-merged too…", "prune_squashed"),
-                MenuItem("Clear saved asks…", "clear_asks"),
-                MenuItem("Refresh", "refresh"),
-                MenuItem("Quit", "quit"),
+                menubar.MenuItem("New session", "new_work"),
+                menubar.MenuItem("Open selected", "open_selected"),
+                menubar.MenuItem("Merge selected run", "merge_selected"),
+                menubar.MenuItem("Delete selected run…", "delete_selected"),
+                menubar.MenuItem("Prune merged runs…", "prune"),
+                menubar.MenuItem("Prune merged runs, squash-merged too…", "prune_squashed"),
+                menubar.MenuItem("Clear saved asks…", "clear_asks"),
+                menubar.MenuItem("Refresh", "refresh"),
+                menubar.MenuItem("Quit", "quit"),
             ),
         ),
-        Menu("Config", (MenuItem("Open config", "open_config"),)),
-        Menu("Machines", (MenuItem("Open machines", "open_machines"),)),
-        Menu(
+        menubar.Menu("Config", (menubar.MenuItem("Open config", "open_config"),)),
+        menubar.Menu("Machines", (menubar.MenuItem("Open machines", "open_machines"),)),
+        menubar.Menu(
             "View",
             (
-                MenuItem("View logs", "view_logs"),
-                MenuItem("Fold/expand lanes", "toggle_lanes"),
-                MenuItem("Theme…", "choose_theme"),
-                MenuItem("Copy method…", "choose_copy_method"),
+                menubar.MenuItem("View logs", "view_logs"),
+                menubar.MenuItem("Fold/expand lanes", "toggle_lanes"),
+                menubar.MenuItem("Theme…", "choose_theme"),
+                menubar.MenuItem("Copy method…", "choose_copy_method"),
             ),
         ),
-        Menu(
+        menubar.Menu(
             "Help",
             (
-                MenuItem("Keys & actions", "help"),
-                MenuItem("Command palette", "command_palette"),
+                menubar.MenuItem("Keys & actions", "help"),
+                menubar.MenuItem("Command palette", "command_palette"),
             ),
         ),
     )
@@ -152,40 +141,45 @@ class HomeScreen(ScreenChrome, Screen[None]):
         ("help", "Help"),
         ("quit", "Quit"),
     )
-    BINDINGS: ClassVar = menu_bindings("hub", MENUS, footer=FOOTER)
-    COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
+    BINDINGS: ClassVar = menubar.menu_bindings("hub", MENUS, footer=FOOTER)
+    COMMANDS: ClassVar = textual_screen.Screen.COMMANDS | {screen_chrome.MenuCommands}
     HELP_HINTS: ClassVar = (
         "Enter opens the selected run",
         "Space folds or expands a fan-out's lanes",
         "Pickers: ↑↓ highlight · Space selects",
     )
 
-    def __init__(self, agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        agent6_dir: pathlib.Path,
+        repo_cwd: pathlib.Path,
+        config_path: pathlib.Path | None = None,
+    ) -> None:
         """Bind the hub to the state dir, the repo new sessions launch in and the config path."""
         super().__init__()
         self.agent6_dir = agent6_dir
         self.repo_cwd = repo_cwd  # not derivable from the state dir, which is out of the workspace
         self.config_path = config_path  # stamped into everything the hub spawns or loads
-        self._runs: list[Path] = []
+        self._runs: list[pathlib.Path] = []
         # The poll's rows by session id, so `check_action` never re-folds a session.
         self._summaries: dict[str, SessionSummary] = {}
         # The fan-outs listed, by coordinator id, and the ones the operator expanded.
-        self._fanouts: dict[str, ListingRow] = {}
+        self._fanouts: dict[str, viewmodel_listing.ListingRow] = {}
         self._expanded: set[str] = set()
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> app.ComposeResult:
         """Lay out the hub.
 
         Yields:
             The menu bar, the sessions table and the footer.
         """
-        yield MenuBar(self.MENUS)
-        yield DataTable(id="sessions")
-        yield Footer()
+        yield menubar.MenuBar(self.MENUS)
+        yield widgets.DataTable(id="sessions")
+        yield widgets.Footer()
 
     def on_mount(self) -> None:
         """Fill the table, focus it and start the poll."""
-        table = self.query_one("#sessions", DataTable)
+        table = self.query_one("#sessions", widgets.DataTable)
         table.cursor_type = "row"
         self.action_refresh()
         table.focus()
@@ -206,7 +200,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
 
     def action_refresh(self) -> None:
         """Rebuild the table, keeping the selection by session id, since activity reorders rows."""
-        table = self.query_one("#sessions", DataTable)
+        table = self.query_one("#sessions", widgets.DataTable)
         selected = ""
         if self._runs and 0 <= table.cursor_row < len(self._runs):
             selected = self._runs[table.cursor_row].name
@@ -215,38 +209,40 @@ class HomeScreen(ScreenChrome, Screen[None]):
         labels = _sync_columns(table, self.size.width or _NARROW_COLS)
         # `_runs` stays 1:1 with the rows: a dir that vanished since the listing is dropped from
         # both, or every cursor-indexed action past the gap maps to the wrong session.
-        survivors: list[Path] = []
+        survivors: list[pathlib.Path] = []
         rows: dict[str, SessionSummary] = {}
-        tips = run_ref_tips(self.repo_cwd)
+        tips = git_ops.run_ref_tips(self.repo_cwd)
         dirs = {rd.name: rd for rd in session_dirs(self.agent6_dir) if rd.is_dir()}
-        listing = nested_rows(summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values())
+        listing = viewmodel_listing.nested_rows(
+            summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values()
+        )
         self._fanouts = {row.summary.session_id: row for row in listing if row.lanes}
 
-        pending: list[tuple[str | Text, ...]] = []
+        pending: list[tuple[str | text.Text, ...]] = []
 
-        def add(row: ListingRow, id_cell: str) -> None:
+        def add(row: viewmodel_listing.ListingRow, id_cell: str) -> None:
             # The time is the row's: a fan-out's latest lane activity, as `sessions list` shows it.
             s = row.summary
-            cells: dict[str, str | Text] = {
-                "updated": format_when(row.mtime, short=narrow),
+            cells: dict[str, str | text.Text] = {
+                "updated": format.format_when(row.mtime, short=narrow),
                 "status": _status_cell(s, narrow=narrow),
                 "cost": s.cost_cell,
-                "id": Text(id_cell),
+                "id": text.Text(id_cell),
             }
             pending.append((*(cells[label] for label in labels[:-1]), s.task))
             survivors.append(dirs[s.session_id])
             rows[s.session_id] = s
 
-        def emit(row: ListingRow, depth: int) -> None:
+        def emit(row: viewmodel_listing.ListingRow, depth: int) -> None:
             s = row.summary
-            marked = winner_id(s.session_id, winner=is_winner(dirs[s.session_id]))
+            marked = format.winner_id(s.session_id, winner=is_winner(dirs[s.session_id]))
             if depth:
-                add(row, lane_id_cell(marked, depth))
+                add(row, format.lane_id_cell(marked, depth))
                 for lane in row.lanes:
                     emit(lane, depth + 1)
                 return
             expanded = s.session_id in self._expanded
-            folded = f" ({lane_count(len(row.lanes))})" if row.lanes and not expanded else ""
+            folded = f" ({format.lane_count(len(row.lanes))})" if row.lanes and not expanded else ""
             add(row, marked + folded)
             if expanded:
                 for lane in row.lanes:
@@ -262,7 +258,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
         task_w = max(24, table.scrollable_content_region.width - fixed - 2)
         for *cells, task in pending:
             # A Text cell: the task is typed input and may carry markup brackets.
-            table.add_row(*cells, Text(task_snippet(str(task), max_chars=task_w)))
+            table.add_row(*cells, text.Text(task_snippet(str(task), max_chars=task_w)))
         self._runs = survivors
         self._summaries = rows
         if selected:
@@ -289,7 +285,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
         else:
             self._expanded.add(target)
         self.action_refresh()
-        table = self.query_one("#sessions", DataTable)
+        table = self.query_one("#sessions", widgets.DataTable)
         row = next((i for i, rd in enumerate(self._runs) if rd.name == target), None)
         if row is not None:
             table.move_cursor(row=row)
@@ -309,21 +305,23 @@ class HomeScreen(ScreenChrome, Screen[None]):
 
     def action_open_selected(self) -> None:
         """Exit the hub with the selected session, for the run view to open."""
-        table = self.query_one("#sessions", DataTable)
+        table = self.query_one("#sessions", widgets.DataTable)
         if self._runs and 0 <= table.cursor_row < len(self._runs):
             self.app.exit(self._runs[table.cursor_row])
 
     def action_view_logs(self) -> None:
         """Push the selected session's log view."""
-        table = self.query_one("#sessions", DataTable)
+        table = self.query_one("#sessions", widgets.DataTable)
         if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
             return
         session_dir = self._runs[table.cursor_row]
         self.app.push_screen(
-            LogScreen(session_dir / LOGS_NAME, title=lambda: f"logs · {session_dir.name}")
+            logview.LogScreen(
+                session_dir / layout.LOGS_NAME, title=lambda: f"logs · {session_dir.name}"
+            )
         )
 
-    def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
+    def on_data_table_row_selected(self, _event: widgets.DataTable.RowSelected) -> None:
         """Open the row on Enter or a double click; the table consumes Enter itself."""
         self.action_open_selected()
 
@@ -334,11 +332,11 @@ class HomeScreen(ScreenChrome, Screen[None]):
     def action_new_work(self) -> None:
         """Push the new-session screen."""
         self.app.push_screen(
-            NewWorkScreen(
+            new_work.NewWorkScreen(
                 self.repo_cwd,
                 self.config_path,
-                presets=available_preset_names(self.repo_cwd, self.config_path),
-                routes=available_routes(self.repo_cwd, self.config_path),
+                presets=layer.available_preset_names(self.repo_cwd, self.config_path),
+                routes=choices.available_routes(self.repo_cwd, self.config_path),
             )
         )
 
@@ -364,25 +362,25 @@ class HomeScreen(ScreenChrome, Screen[None]):
             return None if s is not None and s.status in LIVE_STATUS_WORDS else True
         return True
 
-    def on_data_table_row_highlighted(self, _event: DataTable.RowHighlighted) -> None:
+    def on_data_table_row_highlighted(self, _event: widgets.DataTable.RowHighlighted) -> None:
         """Re-ask `check_action`, which textual does only on a bindings refresh."""
         self.refresh_bindings()
 
-    def _selected_dir(self) -> Path | None:
+    def _selected_dir(self) -> pathlib.Path | None:
         """Return the session dir under the cursor, or None on an empty table."""
-        table = self.query_one("#sessions", DataTable)
+        table = self.query_one("#sessions", widgets.DataTable)
         if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
             return None
         return self._runs[table.cursor_row]
 
     def action_merge_selected(self) -> None:
         """Merge the selected session's branch into its base through the CLI, after a confirm."""
-        table = self.query_one("#sessions", DataTable)
+        table = self.query_one("#sessions", widgets.DataTable)
         if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
             return
         session_id = self._runs[table.cursor_row].name
         self.app.push_screen(
-            ConfirmModal(
+            modals.ConfirmModal(
                 f"Merge run {session_id}?",
                 "Runs `agent6 sessions merge` to land this run's branch on its base using your "
                 "git.merge_strategy. Ref plumbing only: the checkout never moves.",
@@ -396,12 +394,12 @@ class HomeScreen(ScreenChrome, Screen[None]):
 
         History only: the branch and its commits are `sessions prune`'s.
         """
-        table = self.query_one("#sessions", DataTable)
+        table = self.query_one("#sessions", widgets.DataTable)
         if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
             return
         session_id = self._runs[table.cursor_row].name
         self.app.push_screen(
-            ConfirmModal(
+            modals.ConfirmModal(
                 f"Delete run {session_id}'s history?",
                 "Runs `agent6 sessions rm`: removes its transcripts, events and manifest from"
                 " the state dir. The run branch and its commits are kept.",
@@ -437,7 +435,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
     def action_prune(self) -> None:
         """Run `agent6 sessions prune` after a confirm; the dialog names what it removes."""
         self.app.push_screen(
-            ConfirmModal(
+            modals.ConfirmModal(
                 "Prune merged runs?",
                 "Runs `agent6 sessions prune`: deletes run branches git can remove as merged"
                 " (reachable from the checked-out branch), merged runs' chain refs, the"
@@ -452,7 +450,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
     def action_prune_squashed(self) -> None:
         """Run `agent6 sessions prune --delete-squashed` after a confirm."""
         self.app.push_screen(
-            ConfirmModal(
+            modals.ConfirmModal(
                 "Prune merged runs, squash-merged too?",
                 "Runs `agent6 sessions prune --delete-squashed`: also force-deletes branches"
                 " and chain refs the manifest confirms were squash-merged into a base that"
@@ -487,7 +485,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
             self.action_refresh()
 
         self.app.push_screen(
-            ConfirmModal(
+            modals.ConfirmModal(
                 "Clear this directory's saved asks?",
                 "Runs `agent6 sessions rm --asks`: removes every saved `agent6 ask` transcript"
                 " for this directory. Asks run elsewhere are untouched.",
@@ -499,7 +497,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
     def action_open_config(self) -> None:
         """Push the config editor, or name `agent6 config fix` when the config is invalid."""
         try:
-            load_effective(self.repo_cwd, self.config_path)
+            layer.load_effective(self.repo_cwd, self.config_path)
         except ConfigError as exc:
             self.app.notify(
                 "Config is invalid, so it can't be opened. Run `agent6 config fix` in a"
@@ -508,14 +506,16 @@ class HomeScreen(ScreenChrome, Screen[None]):
                 timeout=15.0,
             )
             return
-        self.app.push_screen(ConfigScreen(self.repo_cwd, self.config_path))
+        self.app.push_screen(config_page.ConfigScreen(self.repo_cwd, self.config_path))
 
     def action_open_machines(self) -> None:
         """Push the machines screen."""
-        self.app.push_screen(MachinesScreen(self.agent6_dir, self.repo_cwd, self.config_path))
+        self.app.push_screen(
+            machines.MachinesScreen(self.agent6_dir, self.repo_cwd, self.config_path)
+        )
 
 
-class Agent6HomeApp(PlainNotify, MuxPointerShapes, App[Path | None]):
+class Agent6HomeApp(theme.PlainNotify, theme.MuxPointerShapes, app.App[pathlib.Path | None]):
     """The hub app; `run()` returns the session dir to open, or None to quit.
 
     A thin shell around `HomeScreen`, so the hub's key bindings stay screen-scoped.
@@ -523,7 +523,7 @@ class Agent6HomeApp(PlainNotify, MuxPointerShapes, App[Path | None]):
 
     TITLE = "agent6"
     CSS = (
-        PALETTE_CSS
+        theme.PALETTE_CSS
         + """
     Screen { layers: base dropdown; background: $surface; }
     /* The Screen rule matches modals too; this restores their translucent backdrop. */
@@ -543,7 +543,12 @@ class Agent6HomeApp(PlainNotify, MuxPointerShapes, App[Path | None]):
     """
     )
 
-    def __init__(self, agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        agent6_dir: pathlib.Path,
+        repo_cwd: pathlib.Path,
+        config_path: pathlib.Path | None = None,
+    ) -> None:
         """Bind the app to the state dir, the repo and the config path."""
         super().__init__()
         self.agent6_dir = agent6_dir
@@ -552,10 +557,12 @@ class Agent6HomeApp(PlainNotify, MuxPointerShapes, App[Path | None]):
 
     def on_mount(self) -> None:
         """Apply the saved theme before the first paint, then push the hub."""
-        setup_theme(self)
+        theme.setup_theme(self)
         self.push_screen(HomeScreen(self.agent6_dir, self.repo_cwd, self.config_path))
 
-    def get_system_commands(self, screen: Screen[object]) -> Iterable[SystemCommand]:
+    def get_system_commands(
+        self, screen: textual_screen.Screen[object]
+    ) -> Iterable[app.SystemCommand]:
         """Yield textual's palette commands minus the ones the hub's own menus replace."""
         for cmd in super().get_system_commands(screen):
             if cmd.title not in ("Keys", "Screenshot", "Theme"):
@@ -563,39 +570,47 @@ class Agent6HomeApp(PlainNotify, MuxPointerShapes, App[Path | None]):
 
 
 def _run_merge_cli(
-    repo_cwd: Path, session_id: str, config_path: Path | None = None
+    repo_cwd: pathlib.Path, session_id: str, config_path: pathlib.Path | None = None
 ) -> tuple[bool, str]:
     """Return whether `agent6 sessions merge` succeeded on the session, and its output."""
-    return run_cli_capture([*agent6_argv(config_path), "sessions", "merge", session_id], repo_cwd)
+    return spawn.run_cli_capture(
+        [*spawn.agent6_argv(config_path), "sessions", "merge", session_id], repo_cwd
+    )
 
 
 def _run_delete_cli(
-    repo_cwd: Path, session_id: str, config_path: Path | None = None
+    repo_cwd: pathlib.Path, session_id: str, config_path: pathlib.Path | None = None
 ) -> tuple[bool, str]:
     """Return whether `agent6 sessions rm` succeeded on the session, and its output."""
-    ok, msg = run_cli_capture(
-        [*agent6_argv(config_path), "sessions", "rm", "--", session_id], repo_cwd
+    ok, msg = spawn.run_cli_capture(
+        [*spawn.agent6_argv(config_path), "sessions", "rm", "--", session_id], repo_cwd
     )
     return ok, msg or ("removed" if ok else "could not remove")
 
 
 def _run_prune_cli(
-    repo_cwd: Path, *, delete_squashed: bool, config_path: Path | None = None
+    repo_cwd: pathlib.Path, *, delete_squashed: bool, config_path: pathlib.Path | None = None
 ) -> tuple[bool, str]:
     """Return whether `agent6 sessions prune` succeeded, and its output."""
-    argv = [*agent6_argv(config_path), "sessions", "prune"]
+    argv = [*spawn.agent6_argv(config_path), "sessions", "prune"]
     if delete_squashed:
         argv.append("--delete-squashed")
-    ok, msg = run_cli_capture(argv, repo_cwd)
+    ok, msg = spawn.run_cli_capture(argv, repo_cwd)
     return ok, msg or ("pruned" if ok else "prune failed")
 
 
-def _run_clear_asks_cli(repo_cwd: Path, config_path: Path | None = None) -> tuple[bool, str]:
+def _run_clear_asks_cli(
+    repo_cwd: pathlib.Path, config_path: pathlib.Path | None = None
+) -> tuple[bool, str]:
     """Return whether `agent6 sessions rm --asks` succeeded, and its output."""
-    ok, msg = run_cli_capture([*agent6_argv(config_path), "sessions", "rm", "--asks"], repo_cwd)
+    ok, msg = spawn.run_cli_capture(
+        [*spawn.agent6_argv(config_path), "sessions", "rm", "--asks"], repo_cwd
+    )
     return ok, msg or ("saved asks cleared" if ok else "could not clear the saved asks")
 
 
-def run_home(agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> Path | None:
+def run_home(
+    agent6_dir: pathlib.Path, repo_cwd: pathlib.Path, config_path: pathlib.Path | None = None
+) -> pathlib.Path | None:
     """Return the session dir the hub chose to open, or None to quit."""
     return Agent6HomeApp(agent6_dir, repo_cwd, config_path).run()

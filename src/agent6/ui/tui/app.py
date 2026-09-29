@@ -12,91 +12,43 @@ questions, steer, the compact request), the contract every front-end shares.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import os
+import pathlib
 import threading
 import time
 from collections.abc import Iterable
-from dataclasses import dataclass
-from pathlib import Path
 from typing import ClassVar
 
 try:
-    from textual import work
-    from textual.app import App, ScreenStackError, SystemCommand
-    from textual.binding import Binding
-    from textual.css.query import NoMatches
-    from textual.screen import ModalScreen, Screen
+    import textual
+    from textual import app as textual_app
+    from textual import binding
+    from textual import screen as textual_screen
+    from textual.css import query
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise ImportError(
         "agent6 TUI requires the 'textual' package (part of the base install)."
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6.app.fork import create_fork
-from agent6.app.reporter import Reporter
-from agent6.app.stop import stop_session
-from agent6.app.undo import undo_fork
-from agent6.config.layer import available_preset_names
-from agent6.models.choices import available_routes, resume_defaults
-from agent6.paths import mkdir_for_real_user
-from agent6.sessions.ipc import (
-    register_frontend,
-    submit_steer,
-    unregister_frontend,
-)
-from agent6.sessions.layout import LOGS_NAME, bucket_dir, layout_of
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.tools.background import shells_text
-from agent6.ui.directives import submit_composer_line
-from agent6.ui.spawn import (
-    DETACHED_RUN_ENV,
-    agent6_argv,
-    run_cli_capture,
-    run_cli_output,
-    spawn_and_locate,
-    spawn_detached_resume,
-)
-from agent6.ui.tui.composer import SteerInput
-from agent6.ui.tui.conversation import ConversationScreen
-from agent6.ui.tui.dashboard import DashboardScreen
-from agent6.ui.tui.modals import (
-    ConfirmModal,
-    TextModal,
-)
-from agent6.ui.tui.prompts import PromptDispatcher
-from agent6.ui.tui.theme import (
-    PALETTE_CSS,
-    MuxPointerShapes,
-    PlainNotify,
-    setup_theme,
-)
-from agent6.viewmodel import restate
-from agent6.viewmodel.events import SESSION_START_EVENTS
-from agent6.viewmodel.format import status_label
-from agent6.viewmodel.listing import (
-    LIVE_STATUS_WORDS,
-    finished_needs_new_work,
-    needs_new_work,
-    status_for_session_dir,
-    task_snippet,
-)
-from agent6.viewmodel.state import (
-    STREAM_DELTA_EVENTS,
-    SessionState,
-    apply_event,
-    context_fill,
-    fold_session,
-    initial_state,
-    status_facts,
-)
-from agent6.viewmodel.tail import tail_events
+from agent6 import paths
+from agent6.app import fork, reporter, stop, undo
+from agent6.config import layer
+from agent6.models import choices
+from agent6.sessions import ipc, layout
+from agent6.sessions import manifest as sessions_manifest
+from agent6.tools import background
+from agent6.ui import directives, spawn
+from agent6.ui.tui import composer, conversation, dashboard, modals, prompts, theme
+from agent6.viewmodel import events, format, listing, restate, state, tail
 
 # An answer submitted after the worker died: the next resume re-asks the prompt.
 _ANSWER_LOST = "the session is not live; the answer reached nothing (a resume re-asks the prompt)"
 
 # Events that recompute dir_status at once, not on the ~1s heartbeat: the chip and both
 # composer bars route off it, so serving the previous state for a heartbeat lies.
-_STATUS_NOW_EVENTS = SESSION_START_EVENTS | {
+_STATUS_NOW_EVENTS = events.SESSION_START_EVENTS | {
     "session.end",
     "approval.prompt",
     "approval.answer",
@@ -105,7 +57,7 @@ _STATUS_NOW_EVENTS = SESSION_START_EVENTS | {
 }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class TuiExit:
     """How a run view ended.
 
@@ -115,15 +67,15 @@ class TuiExit:
     """
 
     quit_hub: bool = False
-    open_next: Path | None = None
+    open_next: pathlib.Path | None = None
 
 
-class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
+class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiExit]):
     """The run views over one session, following its log live."""
 
     TITLE = "agent6"
     CSS = (
-        PALETTE_CSS
+        theme.PALETTE_CSS
         + """
     Screen { layers: base dropdown; background: $surface; }
     /* The flat Screen rule above also matches ModalScreens, which would make
@@ -141,18 +93,18 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
 
     BINDINGS: ClassVar = [
         # App-level so every screen has it; the hub-aware exit code needs this handler.
-        Binding("ctrl+q", "quit_hub", "Quit", show=False),
+        binding.Binding("ctrl+q", "quit_hub", "Quit", show=False),
         # Ctrl-Z steps away, the run keeps going; priority beats the composer's ctrl+z undo.
-        Binding("ctrl+z", "detach_exit", "Detach", show=True, priority=True),
+        binding.Binding("ctrl+z", "detach_exit", "Detach", show=True, priority=True),
     ]
 
     def __init__(
         self,
-        session_dir: Path,
+        session_dir: pathlib.Path,
         *,
         exit_on_end: bool = False,
         from_hub: bool = False,
-        config_path: Path | None = None,
+        config_path: pathlib.Path | None = None,
     ) -> None:
         super().__init__()
         self.session_dir = session_dir
@@ -161,9 +113,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         self.config_path = config_path
         # From the hub loop, Esc returns to it and q quits it; standalone, both close the view.
         self.from_hub = from_hub
-        self.logs_path = session_dir / LOGS_NAME
-        self.state: SessionState = initial_state()
-        self._prompts = PromptDispatcher(
+        self.logs_path = session_dir / layout.LOGS_NAME
+        self.state: state.SessionState = state.initial_state()
+        self._prompts = prompts.PromptDispatcher(
             self, answerable=self.session_controllable, lost=_ANSWER_LOST
         )
         self._seen_steer = 0
@@ -180,8 +132,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         self.detached = False
         # The (word, reason) the hub row shows too, refreshed on the ~1/s heartbeat; derived,
         # never latched, so a crash then a resume reads as running again.
-        self.dir_status: tuple[str, str] = status_for_session_dir(
-            session_dir, status_facts(self.state)
+        self.dir_status: tuple[str, str] = listing.status_for_session_dir(
+            session_dir, state.status_facts(self.state)
         )
         # The journal prefix folded at open; the reader starts after it.
         self._seed_log_count = 0
@@ -190,8 +142,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         self.fallback_task = ""
         # The session's mode (run, plan, ask), the title word; "run" for a manifest-less dir.
         self.mode = "run"
-        with contextlib.suppress(ManifestError):
-            manifest = read_manifest(session_dir)
+        with contextlib.suppress(sessions_manifest.ManifestError):
+            manifest = sessions_manifest.read_manifest(session_dir)
             self.fallback_task = manifest.user_task
             self.mode = manifest.mode or "run"
         # A run is silent for a whole reasoning turn; the ~1/s repaint tells thinking from hung.
@@ -201,10 +153,12 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         # The preset and model a composer resume continues under ("" is no flag).
         self.resume_preset = ""
         self.resume_model = ""
-        presets = available_preset_names(Path.cwd(), config_path)
-        routes = available_routes(Path.cwd(), config_path)
-        self._dash = DashboardScreen(presets=presets, routes=routes, prompts=self._prompts)
-        self._conv = ConversationScreen(
+        presets = layer.available_preset_names(pathlib.Path.cwd(), config_path)
+        routes = choices.available_routes(pathlib.Path.cwd(), config_path)
+        self._dash = dashboard.DashboardScreen(
+            presets=presets, routes=routes, prompts=self._prompts
+        )
+        self._conv = conversation.ConversationScreen(
             self.logs_path,
             title=self.screen_title,
             presets=presets,
@@ -214,12 +168,14 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
 
     def resume_defaults(self, preset: str) -> tuple[str, str]:
         """Return the resume rows' no-flag labels for a preset."""
-        return resume_defaults(Path.cwd(), self.config_path, self.session_dir, preset=preset)
+        return choices.resume_defaults(
+            pathlib.Path.cwd(), self.config_path, self.session_dir, preset=preset
+        )
 
     def _task_lead(self) -> str:
         """Return the clipped task for a title, or the session name before a task is known."""
         task = self.state.user_task or self.fallback_task
-        return task_snippet(task, max_chars=57) or self.session_dir.name
+        return listing.task_snippet(task, max_chars=57) or self.session_dir.name
 
     def screen_title(self, context: str) -> str:
         """Return a run screen's menu-bar subtitle.
@@ -235,7 +191,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         """
         if self._end_hold:
             return (
-                f"{context} · {self._task_lead()} · {status_label(*self.dir_status)}"
+                f"{context} · {self._task_lead()} · {format.status_label(*self.dir_status)}"
                 " · Ctrl+Q to leave"
             )
         return f"{context} · {self._task_lead()}"
@@ -246,9 +202,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
 
     def on_mount(self) -> None:
         """Claim the session, fold the log on disk, push both views and start the reader."""
-        setup_theme(self)  # apply the saved theme before the first paint
+        theme.setup_theme(self)  # apply the saved theme before the first paint
         # A per-process claim; concurrent web, TUI and attach viewers each hold their own.
-        register_frontend(self.session_dir, os.getpid())
+        ipc.register_frontend(self.session_dir, os.getpid())
         self.sub_title = self.run_title()
         self._seed_from_disk()
         # Pushed, since only the push path loads a screen's CSS; the conversation is installed,
@@ -279,23 +235,27 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             position = end
 
         with contextlib.suppress(OSError):
-            seeded = fold_session(tail_events(self.logs_path, follow=False, on_position=heard))
+            seeded = state.fold_session(
+                tail.tail_events(self.logs_path, follow=False, on_position=heard)
+            )
             self.state = seeded
             self._seen_steer = seeded.steer_requests
             self._seed_log_count = seeded.log_count
             self._reader_start_at = position
-            self.dir_status = status_for_session_dir(self.session_dir, status_facts(seeded))
+            self.dir_status = listing.status_for_session_dir(
+                self.session_dir, state.status_facts(seeded)
+            )
 
     def on_unmount(self) -> None:
         """Stop the reader and drop this process's front-end claim."""
         self._stop.set()
-        unregister_frontend(self.session_dir, os.getpid())
+        ipc.unregister_frontend(self.session_dir, os.getpid())
 
     # --- reader thread -----------------------------------------------
 
     def _reader_loop(self) -> None:
         """Feed the log's new events to the app thread until the view closes."""
-        for event in tail_events(
+        for event in tail.tail_events(
             self.logs_path,
             follow=True,
             # Without this, closing the view on a run that never ends leaks the thread.
@@ -318,13 +278,13 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
 
     def _handle_event(self, event: dict[str, object]) -> None:
         """Fold one event and mark what the next tick repaints."""
-        self.state = apply_event(self.state, event)
+        self.state = state.apply_event(self.state, event)
         self.last_event_at = time.monotonic()
         if event.get("type") == "session.undone" and self.state.undone_to:
             # The fork is the continuation; the message taken back is the operator's to resend.
             self._fill_composers(self.state.undone_text)
             self.notify(f"undone: continue as {self.state.undone_to}; your message is back to edit")
-        if event.get("type") in SESSION_START_EVENTS:
+        if event.get("type") in events.SESSION_START_EVENTS:
             # A boundary restarts the prompt id counters; a stale seen-set would swallow the new
             # session's first prompts and the run would block on a modal that never opens.
             self._prompts.reset()
@@ -339,7 +299,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             self._refresh_dir_status()
         # Replaying a finished run floods hundreds of events on open; the 0.2s tick repaints
         # once, and stream deltas take the light repaint.
-        if event.get("type") in STREAM_DELTA_EVENTS:
+        if event.get("type") in state.STREAM_DELTA_EVENTS:
             self._light_dirty = True
         else:
             self._dirty = True
@@ -355,17 +315,17 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         The covered screen's bar is relabelled too, or the two would disagree until
         its next event-driven paint.
         """
-        status = status_for_session_dir(self.session_dir, status_facts(self.state))
+        status = listing.status_for_session_dir(self.session_dir, state.status_facts(self.state))
         if status != self.dir_status:
             self.dir_status = status
             self._dirty = True
             self._conv.refresh_liveness()
 
-    def _screen_or_none(self) -> Screen[object] | None:
+    def _screen_or_none(self) -> textual_screen.Screen[object] | None:
         """Return the active screen, or None while the stack is empty at startup or teardown."""
         try:
             return self.screen
-        except ScreenStackError:
+        except textual_app.ScreenStackError:
             return None
 
     def _tick(self) -> None:
@@ -392,23 +352,24 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         if not self._stop.is_set() and stack and stack[-1] is self._dash:
             if self._dirty:
                 self._dirty = self._light_dirty = False
-                with contextlib.suppress(NoMatches):
+                with contextlib.suppress(query.NoMatches):
                     self._dash.render_state()
             elif self._light_dirty:
                 self._light_dirty = False
-                with contextlib.suppress(NoMatches):
+                with contextlib.suppress(query.NoMatches):
                     self._dash.render_heartbeat()
         # Once the run ended and no modal is open, hold on the payoff instead of tearing down.
         if (
             self.exit_on_end
             and not self._end_hold
             and (self.state.finished or self.worker_lost)
-            and not (stack and isinstance(stack[-1], ModalScreen))
+            and not (stack and isinstance(stack[-1], textual_screen.ModalScreen))
         ):
             self._end_hold = True
             self.sub_title = self.run_title()
             self.notify(
-                f"{status_label(*self.dir_status)} · Ctrl+Q to leave, or type below to continue"
+                f"{format.status_label(*self.dir_status)} · Ctrl+Q to leave, or type below "
+                "to continue"
                 " the session",
                 timeout=8.0,
             )
@@ -432,19 +393,21 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             action()
             return
         if self.session_controllable():
-            did, said = submit_composer_line(self.session_dir, text)
+            did, said = directives.submit_composer_line(self.session_dir, text)
             self.notify(said, severity="information" if did else "warning")
         else:
             self.resume_with_instruction(text)
 
     def _restate(self) -> None:
         """Show what happened since the last operator message, rendered from the journal."""
-        rendered = restate(list(tail_events(self.logs_path, follow=False)))
-        self.push_screen(TextModal("since your last message", rendered))
+        rendered = restate(list(tail.tail_events(self.logs_path, follow=False)))
+        self.push_screen(modals.TextModal("since your last message", rendered))
 
     def _show_shells(self) -> None:
         """Show the background commands."""
-        self.push_screen(TextModal("background commands", shells_text(self.session_dir)))
+        self.push_screen(
+            modals.TextModal("background commands", background.shells_text(self.session_dir))
+        )
 
     def _typed_stop(self) -> None:
         """Stop the live run without a confirm, as `agent6 stop` does."""
@@ -460,17 +423,17 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         a finished one is forked here and the undone text handed to the composers.
         """
         if self.session_controllable():
-            if submit_steer(self.session_dir, "/undo"):
+            if ipc.submit_steer(self.session_dir, "/undo"):
                 self.notify("undo requested; applies at the next step")
             else:
                 self.notify("could not write the undo request", severity="warning")
             return
         said: list[str] = []
-        result = undo_fork(
+        result = undo.undo_fork(
             None,
             self.session_dir.name,
-            cwd=Path.cwd(),
-            reporter=Reporter(out=said.append, err=said.append),
+            cwd=pathlib.Path.cwd(),
+            reporter=reporter.Reporter(out=said.append, err=said.append),
         )
         if result is None:
             self.notify(said[-1].strip() if said else "undo failed", severity="warning")
@@ -496,8 +459,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
     def _fill_composers(self, text: str) -> None:
         """Put the text in both composer bars, the covered view's too, to edit and resend."""
         for screen, bar_id in ((self._conv, "#conv-input"), (self._dash, "#dash-input")):
-            with contextlib.suppress(NoMatches):
-                screen.query_one(bar_id, SteerInput).load_text(text)
+            with contextlib.suppress(query.NoMatches):
+                screen.query_one(bar_id, composer.SteerInput).load_text(text)
 
     def resume_with_instruction(self, text: str) -> None:
         """Resume this run, or the fork it continues as, with the text as its first steer.
@@ -524,7 +487,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         picked = ", ".join(p for p in picks if p)
         return f" under {picked}" if picked else ""
 
-    @work(thread=True)
+    @textual.work(thread=True)
     def _spawn_resume(self, target: str, *, started: str, steer: str = "") -> None:
         """Spawn the detached resume off the UI thread and post its notice.
 
@@ -535,8 +498,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             started: The notice on success.
             steer: The first instruction, or "".
         """
-        err = spawn_detached_resume(
-            Path.cwd(),
+        err = spawn.spawn_detached_resume(
+            pathlib.Path.cwd(),
             target,
             steer=steer,
             preset=self.resume_preset,
@@ -555,8 +518,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         if stack[-1] is self._conv:
             self._conv.focus_bar()
         elif stack[-1] is self._dash:
-            with contextlib.suppress(NoMatches):
-                self._dash.query_one("#dash-input", SteerInput).focus()
+            with contextlib.suppress(query.NoMatches):
+                self._dash.query_one("#dash-input", composer.SteerInput).focus()
 
     def _steer_request_to_bar(self) -> None:
         """Route an external steer request to the visible composer bar and say why."""
@@ -581,7 +544,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
                 self._stop_session(after_step=False)
 
         self.push_screen(
-            ConfirmModal(
+            modals.ConfirmModal(
                 "Stop this session now?",
                 "Its model call is cut and a running command is handed back; the run ends "
                 "at once and can be resumed later with `agent6 resume`. A worker that does "
@@ -602,7 +565,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
                 self._stop_session(after_step=True)
 
         self.push_screen(
-            ConfirmModal(
+            modals.ConfirmModal(
                 "Stop after this step?",
                 "The current step finishes (its tool results and auto-commit land), "
                 "then the run stops. Resume later with `agent6 resume`.",
@@ -611,10 +574,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             _confirmed,
         )
 
-    @work(thread=True)
+    @textual.work(thread=True)
     def _stop_session(self, *, after_step: bool) -> None:
         """Stop the run off the UI thread, since a stop now waits for the run to end."""
-        out = stop_session(self.session_dir, after_step=after_step)
+        out = stop.stop_session(self.session_dir, after_step=after_step)
         self.call_from_thread(
             self.notify, out.message, severity="information" if out.ok else "warning"
         )
@@ -627,9 +590,15 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
 
         def _confirmed(yes: bool | None) -> None:
             if yes:
-                ok, msg = run_cli_capture(
-                    [*agent6_argv(self.config_path), "sessions", "rm", "--", self.session_dir.name],
-                    Path.cwd(),
+                ok, msg = spawn.run_cli_capture(
+                    [
+                        *spawn.agent6_argv(self.config_path),
+                        "sessions",
+                        "rm",
+                        "--",
+                        self.session_dir.name,
+                    ],
+                    pathlib.Path.cwd(),
                 )
                 self.notify(
                     msg or ("removed" if ok else "could not remove"),
@@ -639,7 +608,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
                     self.action_to_hub()
 
         self.push_screen(
-            ConfirmModal(
+            modals.ConfirmModal(
                 "Delete this session's history?",
                 "Removes its transcripts, events and manifest from the state dir. "
                 "The run branch and its commits are kept.",
@@ -658,7 +627,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             self.notify("nothing to resume: the session is still going", severity="warning")
             return
         target = self.continue_as or self.session_dir.name
-        if not self.continue_as and finished_needs_new_work(self.session_dir):
+        if not self.continue_as and listing.finished_needs_new_work(self.session_dir):
             self.notify(
                 "this run finished; type what to do next below (Enter resumes it with the"
                 " instruction)",
@@ -687,23 +656,23 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         if not plan_md.strip():
             self.notify(f"plan {self.session_dir.name!r} has an empty plan.md", severity="warning")
             return
-        runs = bucket_dir(layout_of(self.session_dir).state_dir, "runs")
-        mkdir_for_real_user(runs)
+        runs = layout.bucket_dir(layout.layout_of(self.session_dir).state_dir, "runs")
+        paths.mkdir_for_real_user(runs)
         self._spawn_run_plan(runs)
 
-    @work(thread=True)
-    def _spawn_run_plan(self, runs: Path) -> None:
+    @textual.work(thread=True)
+    def _spawn_run_plan(self, runs: pathlib.Path) -> None:
         """Spawn the detached `run --from` off the UI thread and post its notice.
 
         Args:
             runs: The runs bucket the new session lands in.
         """
-        new_dir, err = spawn_and_locate(
-            [*agent6_argv(self.config_path), "run", "--from", self.session_dir.name],
-            Path.cwd(),
+        new_dir, err = spawn.spawn_and_locate(
+            [*spawn.agent6_argv(self.config_path), "run", "--from", self.session_dir.name],
+            pathlib.Path.cwd(),
             before={p for p in runs.iterdir() if p.is_dir()},
             list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],
-            env={**os.environ, **DETACHED_RUN_ENV},
+            env={**os.environ, **spawn.DETACHED_RUN_ENV},
         )
         if new_dir is None:
             self.call_from_thread(self.notify, err or "could not start the run", severity="error")
@@ -722,11 +691,11 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         live run it keeps steering this run and the notice says how the fork starts.
         """
         said: list[str] = []
-        child, rc = create_fork(
+        child, rc = fork.create_fork(
             self.config_path,
             self.session_dir.name,
-            cwd=Path.cwd(),
-            reporter=Reporter(out=said.append, err=said.append),
+            cwd=pathlib.Path.cwd(),
+            reporter=reporter.Reporter(out=said.append, err=said.append),
         )
         if rc != 0:
             self.notify(said[-1].strip() if said else "fork failed", severity="error")
@@ -737,7 +706,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         self._continue_child = child
         self.notify(f"forked to {child}; type what it should do below (Enter resumes it)")
         self._conv.refresh_liveness()
-        with contextlib.suppress(NoMatches):
+        with contextlib.suppress(query.NoMatches):
             self._dash.render_heartbeat()
         self._focus_composer()
 
@@ -755,13 +724,19 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         )
         self._review_run()
 
-    @work(thread=True)
+    @textual.work(thread=True)
     def _review_run(self) -> None:
         """Run the review off the UI thread; the modal or the refusal lands from here."""
         try:
-            ok, text = run_cli_output(
-                [*agent6_argv(self.config_path), "sessions", "review", "--", self.session_dir.name],
-                Path.cwd(),
+            ok, text = spawn.run_cli_output(
+                [
+                    *spawn.agent6_argv(self.config_path),
+                    "sessions",
+                    "review",
+                    "--",
+                    self.session_dir.name,
+                ],
+                pathlib.Path.cwd(),
                 timeout_s=900.0,
             )
         finally:
@@ -770,24 +745,26 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             self.call_from_thread(self.notify, text or "review failed", severity="error")
             return
         self.call_from_thread(
-            self.push_screen, TextModal(f"review of {self.session_dir.name}", text)
+            self.push_screen, modals.TextModal(f"review of {self.session_dir.name}", text)
         )
 
     def context_pct(self) -> int | None:
         """Return the context-window fill in percent at the last completed model call."""
-        return context_fill(self.state)
+        return state.context_fill(self.state)
 
     def session_controllable(self) -> bool:
         """Return whether the run can receive operator input over the file bridge.
 
         Parked, stale and every end word route the composer to resume instead.
         """
-        return self.dir_status[0] in LIVE_STATUS_WORDS
+        return self.dir_status[0] in listing.LIVE_STATUS_WORDS
 
     def finished_green(self) -> bool:
         """Return whether the agent finished over a green tree, when a bare resume has no work."""
         s = self.state
-        return needs_new_work(finished=s.finished, end_reason=s.end_reason, all_passed=s.all_passed)
+        return listing.needs_new_work(
+            finished=s.finished, end_reason=s.end_reason, all_passed=s.all_passed
+        )
 
     def model_call_in_flight(self) -> bool:
         """Return whether the live run has a model call awaiting its result."""
@@ -816,13 +793,15 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
 
     def action_detach_exit(self) -> None:
         """Leave the view; the run `agent6 run --tui` fronts detaches at its next step."""
-        if self.exit_on_end and not submit_steer(self.session_dir, "detach"):
+        if self.exit_on_end and not ipc.submit_steer(self.session_dir, "detach"):
             self.notify("could not write the detach request", severity="warning")
             return
         self.detached = True
         self.exit(TuiExit())
 
-    def get_system_commands(self, screen: Screen[object]) -> Iterable[SystemCommand]:
+    def get_system_commands(
+        self, screen: textual_screen.Screen[object]
+    ) -> Iterable[textual_app.SystemCommand]:
         """Yield textual's palette commands minus the four the menus replace."""
         for cmd in super().get_system_commands(screen):
             if cmd.title not in ("Keys", "Screenshot", "Theme", "Quit"):
@@ -830,11 +809,11 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
 
 
 def run_tui(
-    session_dir: Path,
+    session_dir: pathlib.Path,
     *,
     exit_on_end: bool = False,
     from_hub: bool = False,
-    config_path: Path | None = None,
+    config_path: pathlib.Path | None = None,
 ) -> TuiExit:
     """Run the views over a session and print the reattach hint after a detach.
 

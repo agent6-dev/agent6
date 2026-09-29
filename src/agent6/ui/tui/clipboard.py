@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import base64
 import os
+import pathlib
 import subprocess
 import tempfile
 from collections.abc import Callable
-from pathlib import Path
 from typing import Literal
 
 CopyMethod = Literal["auto", "osc52", "osc52-tmux", "osc52-screen", "tmux-buffer"]
@@ -106,9 +106,9 @@ def emit_clipboard(text: str, method: str, write: Callable[[str], None]) -> str:
     return f"via OSC 52 ({wrap}-wrapped)" if wrap else "via OSC 52"
 
 
-def write_transcript_file(text: str) -> Path:
+def write_transcript_file(text: str) -> pathlib.Path:
     """Return the path of a new temp file holding the text."""
     fd, name = tempfile.mkstemp(prefix="agent6-transcript-", suffix=".txt")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(text)
-    return Path(name)
+    return pathlib.Path(name)

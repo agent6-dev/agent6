@@ -11,25 +11,20 @@ will be, and the typed text stays in the composer to fix and resend.
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
+import pathlib
 from typing import ClassVar
 
-from rich.text import Text
-from textual import on, work
-from textual.app import App, ComposeResult
-from textual.containers import Vertical, VerticalScroll
-from textual.css.query import NoMatches
-from textual.screen import Screen
-from textual.widgets import Footer, Select, Static, TextArea
+import textual
+from rich import text as rich_text
+from textual import app as textual_app
+from textual import containers, screen, widgets
+from textual.css import query
 
-from agent6.directive import spec_fragment
-from agent6.kinds import OPERATOR_MODES
-from agent6.models.choices import default_label, default_preset, default_route
-from agent6.ui.spawn import spawn_new_work
-from agent6.ui.tui.composer import SteerInput, SteerSuggest
-from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
-from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
-from agent6.ui.tui.widgets import Picker, PickerRow
+from agent6 import directive, kinds
+from agent6.models import choices
+from agent6.ui import spawn
+from agent6.ui.tui import composer, menubar, screen_chrome
+from agent6.ui.tui import widgets as tui_widgets
 
 _INTRO = (
     "Describe the task (or the question, for ask). Enter starts it; Ctrl-J adds a line.\n"
@@ -38,7 +33,7 @@ _INTRO = (
 )
 
 
-def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> Text | None:
+def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> rich_text.Text | None:
     """Return the suggestion line for a `/parallel` spec fragment under the caret.
 
     Args:
@@ -50,7 +45,7 @@ def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> Text |
         The matching routes, prefix matches first; None when the caret is not in a
         spec token or there is nothing to offer.
     """
-    frag = spec_fragment(text)
+    frag = directive.spec_fragment(text)
     if frag is None or not models:
         return None
     q = frag.lower()
@@ -58,13 +53,17 @@ def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> Text |
     rest = [m for m in models if q in m.lower() and not m.lower().startswith(q)]
     shown = (starts + rest)[:limit]
     if not shown:
-        return Text("no matching model ids", style="dim")
+        return rich_text.Text("no matching model ids", style="dim")
     total = len(starts) + len(rest)
     more = f"  (+{total - len(shown)} more, keep typing)" if total > len(shown) else ""
-    return Text("models: ", style="dim") + Text("  ".join(shown)) + Text(more, style="dim")
+    return (
+        rich_text.Text("models: ", style="dim")
+        + rich_text.Text("  ".join(shown))
+        + rich_text.Text(more, style="dim")
+    )
 
 
-class NewWorkScreen(ScreenChrome, Screen[None]):
+class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     """Type a task, pick a mode, a preset and a model; Enter starts it.
 
     Lives in the hub app: the located session dir is the hub's return value. The
@@ -82,24 +81,30 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
 
     # The composer has the focus: Esc and Ctrl+Q fire before it.
     MENUS: ClassVar = (
-        Menu(
+        menubar.Menu(
             "File",
             (
-                MenuItem("Back", "close", priority=True),
-                MenuItem("Quit", "quit_hub", priority=True),
+                menubar.MenuItem("Back", "close", priority=True),
+                menubar.MenuItem("Quit", "quit_hub", priority=True),
             ),
         ),
-        Menu(
+        menubar.Menu(
             "View",
-            (MenuItem("Theme…", "choose_theme"), MenuItem("Copy method…", "choose_copy_method")),
+            (
+                menubar.MenuItem("Theme…", "choose_theme"),
+                menubar.MenuItem("Copy method…", "choose_copy_method"),
+            ),
         ),
-        Menu(
+        menubar.Menu(
             "Help",
-            (MenuItem("Keys & actions", "help"), MenuItem("Command palette", "command_palette")),
+            (
+                menubar.MenuItem("Keys & actions", "help"),
+                menubar.MenuItem("Command palette", "command_palette"),
+            ),
         ),
     )
-    BINDINGS: ClassVar = menu_bindings("new work", MENUS, footer=(("close", "Back"),))
-    COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
+    BINDINGS: ClassVar = menubar.menu_bindings("new work", MENUS, footer=(("close", "Back"),))
+    COMMANDS: ClassVar = screen.Screen.COMMANDS | {screen_chrome.MenuCommands}
     HELP_TITLE: ClassVar = "agent6 — new session"
     HELP_HINTS: ClassVar = (
         "Enter starts the task; Ctrl-J or Shift+Enter inserts a newline",
@@ -108,8 +113,8 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
 
     def __init__(
         self,
-        repo_cwd: Path,
-        config_path: Path | None = None,
+        repo_cwd: pathlib.Path,
+        config_path: pathlib.Path | None = None,
         *,
         presets: list[str] | None = None,
         routes: list[str] | None = None,
@@ -122,56 +127,64 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         self._routes = routes if routes is not None else []
         self._starting = False
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> textual_app.ComposeResult:
         """Lay out the screen.
 
         Yields:
             The menu bar, the notice pane, the suggestion line, the picker row, the
             composer and the footer.
         """
-        yield MenuBar(self.MENUS)
+        yield menubar.MenuBar(self.MENUS)
         # The empty pane is no tab stop, so Tab reaches the pickers as the intro says.
-        with Vertical(id="draft-main"), VerticalScroll(id="draft-scroll", can_focus=False):
-            yield Static(Text(_INTRO, style="dim italic"), id="draft-notice")
-        yield SteerSuggest(id="draft-suggest")
-        with PickerRow(id="draft-options"):
-            yield Static("mode", classes="picker-label")
-            yield Picker(
-                [(m, m) for m in OPERATOR_MODES], value="run", allow_blank=False, id="draft-mode"
+        with (
+            containers.Vertical(id="draft-main"),
+            containers.VerticalScroll(id="draft-scroll", can_focus=False),
+        ):
+            yield widgets.Static(rich_text.Text(_INTRO, style="dim italic"), id="draft-notice")
+        yield composer.SteerSuggest(id="draft-suggest")
+        with tui_widgets.PickerRow(id="draft-options"):
+            yield widgets.Static("mode", classes="picker-label")
+            yield tui_widgets.Picker(
+                [(m, m) for m in kinds.OPERATOR_MODES],
+                value="run",
+                allow_blank=False,
+                id="draft-mode",
             )
-            yield Static("preset", classes="picker-label")
-            preset = default_preset(self.repo_cwd, self.config_path)
-            yield Picker(
-                [(default_label(preset), ""), *((p, p) for p in self._presets)],
+            yield widgets.Static("preset", classes="picker-label")
+            preset = choices.default_preset(self.repo_cwd, self.config_path)
+            yield tui_widgets.Picker(
+                [(choices.default_label(preset), ""), *((p, p) for p in self._presets)],
                 value="",
                 allow_blank=False,
                 id="draft-preset",
             )
-            yield Static("model", classes="picker-label")
-            route = default_route(self.repo_cwd, self.config_path, "run", "")
-            yield Picker(self._model_options(route), value="", allow_blank=False, id="draft-model")
-        yield SteerInput(id="draft-input")
-        yield Footer()
+            yield widgets.Static("model", classes="picker-label")
+            route = choices.default_route(self.repo_cwd, self.config_path, "run", "")
+            yield tui_widgets.Picker(
+                self._model_options(route), value="", allow_blank=False, id="draft-model"
+            )
+        yield composer.SteerInput(id="draft-input")
+        yield widgets.Footer()
 
     def on_mount(self) -> None:
         """Focus the composer in start mode."""
         self.app.sub_title = "new session"
-        bar = self.query_one("#draft-input", SteerInput)
+        bar = self.query_one("#draft-input", composer.SteerInput)
         bar.set_mode(mode="start")
         bar.focus()
 
     def _model_options(self, route: str) -> list[tuple[str, str]]:
         """Return the model picker's rows: the config default, then every route."""
-        return [(default_label(route), ""), *((r, r) for r in self._routes)]
+        return [(choices.default_label(route), ""), *((r, r) for r in self._routes)]
 
-    @on(Select.Changed, "#draft-mode")
-    @on(Select.Changed, "#draft-preset")
+    @textual.on(widgets.Select.Changed, "#draft-mode")
+    @textual.on(widgets.Select.Changed, "#draft-preset")
     def _follow_route(self) -> None:
         """Reset the model picker to the config default for the mode and preset."""
-        mode = str(self.query_one("#draft-mode", Select).value)
-        preset = str(self.query_one("#draft-preset", Select).value)
-        route = default_route(self.repo_cwd, self.config_path, mode, preset)
-        self.query_one("#draft-model", Select).set_options(self._model_options(route))
+        mode = str(self.query_one("#draft-mode", widgets.Select).value)
+        preset = str(self.query_one("#draft-preset", widgets.Select).value)
+        route = choices.default_route(self.repo_cwd, self.config_path, mode, preset)
+        self.query_one("#draft-model", widgets.Select).set_options(self._model_options(route))
 
     def action_close(self) -> None:
         """Close an open list, else return to the hub."""
@@ -182,37 +195,39 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         """Quit the hub."""
         self.app.exit(None)
 
-    @on(TextArea.Changed, "#draft-input")
-    def _on_task_changed(self, event: TextArea.Changed) -> None:
+    @textual.on(widgets.TextArea.Changed, "#draft-input")
+    def _on_task_changed(self, event: widgets.TextArea.Changed) -> None:
         """Refresh the model suggestions under the caret."""
-        self.query_one("#draft-suggest", SteerSuggest).show_text(
+        self.query_one("#draft-suggest", composer.SteerSuggest).show_text(
             model_suggestions(self._routes, event.text_area.text)
         )
 
-    def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
+    def on_steer_input_submitted(self, message: composer.SteerInput.Submitted) -> None:
         """Start the session with the picked mode, preset and model."""
         if self._starting:
             return
-        mode = str(self.query_one("#draft-mode", Select).value)
-        preset = str(self.query_one("#draft-preset", Select).value)
-        model = str(self.query_one("#draft-model", Select).value)
+        mode = str(self.query_one("#draft-mode", widgets.Select).value)
+        preset = str(self.query_one("#draft-preset", widgets.Select).value)
+        model = str(self.query_one("#draft-model", widgets.Select).value)
         self._starting = True
-        self._notice(Text(f"starting the {mode}…", style="bold cyan"))
+        self._notice(rich_text.Text(f"starting the {mode}…", style="bold cyan"))
         self._start(self.app, mode, message.text, preset, model)
 
-    @work(thread=True, exclusive=True)
-    def _start(self, app: App[object], mode: str, task: str, preset: str, model: str) -> None:
+    @textual.work(thread=True, exclusive=True)
+    def _start(
+        self, app: textual_app.App[object], mode: str, task: str, preset: str, model: str
+    ) -> None:
         """Spawn the session detached and locate it, off the UI thread.
 
         The locate waits for the first event, which can take seconds. The app is
         passed in: a screen dismissed mid-spawn has no parent to reach it through.
         """
-        session_dir, err = spawn_new_work(
+        session_dir, err = spawn.spawn_new_work(
             self.repo_cwd, mode, task, preset=preset, model=model, config_path=self.config_path
         )
         app.call_from_thread(self._started, session_dir, err, task)
 
-    def _started(self, session_dir: Path | None, err: str, task: str) -> None:
+    def _started(self, session_dir: pathlib.Path | None, err: str, task: str) -> None:
         self._starting = False
         if session_dir is not None:
             self.app.exit(session_dir)
@@ -221,12 +236,12 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
             self.app.notify(err or "could not start", severity="error", timeout=8.0)
             return
         # The refusal renders selectable, above the text it refused, back in the composer.
-        self._notice(Text(err or "could not start", style="bold red"))
-        with contextlib.suppress(NoMatches):
-            bar = self.query_one("#draft-input", SteerInput)
+        self._notice(rich_text.Text(err or "could not start", style="bold red"))
+        with contextlib.suppress(query.NoMatches):
+            bar = self.query_one("#draft-input", composer.SteerInput)
             bar.load_text(task)
             bar.move_cursor(bar.document.end)
             bar.focus()
 
-    def _notice(self, text: Text) -> None:
-        self.query_one("#draft-notice", Static).update(text)
+    def _notice(self, text: rich_text.Text) -> None:
+        self.query_one("#draft-notice", widgets.Static).update(text)

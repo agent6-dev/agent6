@@ -16,6 +16,7 @@ from typing import Any
 from textual import widgets
 
 from agent6.sessions import ipc
+from agent6.ui import spawn
 from agent6.ui.tui import app as app_mod
 from agent6.ui.tui import modals
 
@@ -43,7 +44,7 @@ def test_review_this_run_opens_the_cli_review_in_a_modal(
         calls.append(argv[-3:])
         return True, "## Outcome\nfinished green"
 
-    monkeypatch.setattr(app_mod, "run_cli_output", _fake_output)
+    monkeypatch.setattr(spawn, "run_cli_output", _fake_output)
     run = _run_dir(tmp_path, "done-run-AAAAAA", ended=True)
 
     async def scenario() -> None:
@@ -72,7 +73,7 @@ def test_review_of_a_live_run_is_refused_without_a_call(
         calls.append(argv)
         return True, "never"
 
-    monkeypatch.setattr(app_mod, "run_cli_output", _fake_output)
+    monkeypatch.setattr(spawn, "run_cli_output", _fake_output)
     run = _run_dir(tmp_path, "live-run-AAAAAA", ended=False)
     ipc.write_worker_pid(run, os.getpid())
 
@@ -95,7 +96,7 @@ def test_a_refused_review_is_a_notice_not_a_modal(tmp_path: pathlib.Path, monkey
     ) -> tuple[bool, str]:
         return False, "no reviewer route"
 
-    monkeypatch.setattr(app_mod, "run_cli_output", _fake_output)
+    monkeypatch.setattr(spawn, "run_cli_output", _fake_output)
     run = _run_dir(tmp_path, "done-run-BBBBBB", ended=True)
 
     async def scenario() -> None:
@@ -127,7 +128,7 @@ def test_a_second_pick_while_a_review_runs_starts_no_second_call(
         gate.wait(5)
         return True, "## Outcome\nfinished green"
 
-    monkeypatch.setattr(app_mod, "run_cli_output", _slow_output)
+    monkeypatch.setattr(spawn, "run_cli_output", _slow_output)
     run = _run_dir(tmp_path, "done-run-CCCCCC", ended=True)
 
     async def scenario() -> None:

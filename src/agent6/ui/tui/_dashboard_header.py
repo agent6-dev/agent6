@@ -11,29 +11,32 @@ never pushes the status onto a line of its own.
 
 from __future__ import annotations
 
+import pathlib
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from rich.markup import escape
-from rich.text import Text
-from textual.widgets import Static
+from rich import markup, text
+from textual import widgets
 
-from agent6.graph.order import DONE_STATUSES
-from agent6.kinds import SESSION_KINDS
-from agent6.sessions.ipc import listening_ports
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.ui.tui.theme import status_style
-from agent6.viewmodel import manifest_branches, manifest_header, session_compare
-from agent6.viewmodel.format import format_compare, format_usd, spinner_frame, status_label
-from agent6.viewmodel.listing import task_snippet
-from agent6.viewmodel.state import SessionState
+from agent6 import budget as agent6_budget
+from agent6 import kinds
+from agent6.graph import order
+from agent6.sessions import ipc, manifest
+from agent6.ui.tui import theme
+from agent6.viewmodel import (
+    format,
+    listing,
+    manifest_branches,
+    manifest_header,
+    session_compare,
+    state,
+)
 
 if TYPE_CHECKING:
-    from agent6.ui.tui.app import Agent6TUI
+    from agent6.ui.tui import app
 
 
-class RunHeader(Static):
+class RunHeader(widgets.Static):
     """The `#top` lines, repainted by `refresh_lines`."""
 
     def __init__(self) -> None:
@@ -47,11 +50,13 @@ class RunHeader(Static):
         self._start_role_line: str | None = None  # the manifest's driver, before any call
 
     @property
-    def _tui(self) -> Agent6TUI:
+    def _tui(self) -> app.Agent6TUI:
         """The host app; only the dashboard, on `Agent6TUI`, composes this."""
-        return cast("Agent6TUI", self.app)
+        return cast("app.Agent6TUI", self.app)
 
-    def refresh_lines(self, s: SessionState, ds: SessionState, as_of: str, *, active: bool) -> None:
+    def refresh_lines(
+        self, s: state.SessionState, ds: state.SessionState, as_of: str, *, active: bool
+    ) -> None:
         """Repaint the header.
 
         Args:
@@ -65,14 +70,16 @@ class RunHeader(Static):
         role = s.last_role
         beat = ""
         if active and role is not None:
-            spinner = spinner_frame(tui.spin)
+            spinner = format.spinner_frame(tui.spin)
             beat = f" {spinner} {tui.seconds_since_event()}s"
         role_line = f"{role.role} / {role.model}{beat}" if role else self._start_role()
         finished = self._end_label()
         # Tasks and cost are as of the selected step; ctx is live.
-        done_n = sum(1 for t in ds.tasks if t.status in DONE_STATUSES)
+        done_n = sum(1 for t in ds.tasks if t.status in order.DONE_STATUSES)
         step = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
-        cost = f"[b]{format_usd(ds.budget.usd_total, partial=ds.budget.usd_partial)}[/]"
+        cost = (
+            f"[b]{agent6_budget.format_usd(ds.budget.usd_total, partial=ds.budget.usd_partial)}[/]"
+        )
         # This execution's metered spend against its cap: a resume re-arms the cap while
         # usd_total stays cumulative.
         budget = ""
@@ -89,32 +96,34 @@ class RunHeader(Static):
         pct = tui.context_pct()
         ctx = f"   ctx: {pct}%" if pct is not None else ""
         status = f"{finished}   " if finished else ""
-        task = escape(task_snippet(s.user_task or tui.fallback_task, max_chars=120))
-        header = Text.from_markup(
+        task = markup.escape(listing.task_snippet(s.user_task or tui.fallback_task, max_chars=120))
+        header = text.Text.from_markup(
             f"[b]agent6[/]  {status}{step}   cost: {cost}{budget}{as_of}{ctx}\n"
-            f"role: {escape(role_line)} · task: {task}"
-            f"{escape(self._lineage_top())}{escape(self._branch_top())}"
-            f"{escape(self._pins_top(s))}{escape(self._serving_top())}"
-            f"{escape(self._compare_top())}"
+            f"role: {markup.escape(role_line)} · task: {task}"
+            f"{markup.escape(self._lineage_top())}{markup.escape(self._branch_top())}"
+            f"{markup.escape(self._pins_top(s))}{markup.escape(self._serving_top())}"
+            f"{markup.escape(self._compare_top())}"
         )
         lines = header.split("\n")
         if width := self.content_size.width:
             for line in lines:
                 line.truncate(width, overflow="ellipsis")
-        self.update(Text("\n").join(lines))
+        self.update(text.Text("\n").join(lines))
 
     def _end_label(self) -> str:
         """Return the status label in its colour: the hub row's word; "" while running."""
         word, reason = self._tui.dir_status
         if word == "running":
             return ""
-        return f"[b {status_style(word)}]{escape(status_label(word, reason))}[/]"
+        return (
+            f"[b {theme.status_style(word)}]{markup.escape(format.status_label(word, reason))}[/]"
+        )
 
     def _compare_top(self) -> str:
         """Return a lane's compare line, cached once stamped; "" for a non-lane run."""
         if self._compare_line is not None:
             return self._compare_line
-        formatted = format_compare(session_compare(self._tui.session_dir))
+        formatted = format.format_compare(session_compare(self._tui.session_dir))
         if formatted is None:
             return ""  # not cached: a live lane is stamped after its import
         headline, rationale = formatted
@@ -130,14 +139,14 @@ class RunHeader(Static):
         """
         if self._start_role_line is None:
             try:
-                m = read_manifest(self._tui.session_dir)
-            except ManifestError:
+                m = manifest.read_manifest(self._tui.session_dir)
+            except manifest.ManifestError:
                 return "(unknown)"
             driver = m.models.driver
-            if driver is None or m.mode not in SESSION_KINDS:
+            if driver is None or m.mode not in kinds.SESSION_KINDS:
                 self._start_role_line = "(unknown)"
             else:
-                self._start_role_line = f"{SESSION_KINDS[m.mode].role} / {driver.model}"
+                self._start_role_line = f"{kinds.SESSION_KINDS[m.mode].role} / {driver.model}"
         return self._start_role_line
 
     def _lineage_top(self) -> str:
@@ -162,7 +171,9 @@ class RunHeader(Static):
         now = time.monotonic()
         if self._branch_line is not None and (not finished or now < self._branch_recheck_at):
             return self._branch_line
-        line = manifest_branches(self._tui.session_dir, repo=Path.cwd()).get("branch_line", "")
+        line = manifest_branches(self._tui.session_dir, repo=pathlib.Path.cwd()).get(
+            "branch_line", ""
+        )
         if not line:
             return ""  # not cached: a launching run has no manifest yet
         self._branch_line = f"\nbranch: {line}"
@@ -170,7 +181,7 @@ class RunHeader(Static):
         return self._branch_line
 
     @staticmethod
-    def _pins_top(s: SessionState) -> str:
+    def _pins_top(s: state.SessionState) -> str:
         """Return the pinned instructions line."""
         return f"\npins: {' | '.join(s.pins)}" if s.pins else ""
 
@@ -179,7 +190,7 @@ class RunHeader(Static):
 
         A live probe, so "" once the network is gone.
         """
-        ports = listening_ports(self._tui.session_dir)
+        ports = ipc.listening_ports(self._tui.session_dir)
         if not ports:
             return ""
         listed = ", ".join(str(p) for p in ports)

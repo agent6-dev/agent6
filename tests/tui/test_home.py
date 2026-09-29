@@ -15,7 +15,9 @@ import pytest
 from textual.widgets._select import SelectCurrent
 
 from agent6 import paths
+from agent6.models import choices
 from agent6.sessions import ipc
+from agent6.ui import spawn
 from agent6.viewmodel import session_dirs, session_mtime
 from tests.tui._waits import wait_for
 
@@ -212,7 +214,7 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
 
     from textual import widgets
 
-    from agent6.ui.tui import composer, new_work
+    from agent6.ui.tui import composer
     from agent6.ui.tui import home as tui_home
     from agent6.ui.tui import new_work as tui_new_work
 
@@ -232,7 +234,7 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
         started.append((mode, task, preset))
         return tmp_path / "located", ""
 
-    monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
+    monkeypatch.setattr(spawn, "spawn_new_work", _spawn)
 
     async def scenario() -> None:
         app = tui_home.Agent6HomeApp(a6, tmp_path)
@@ -267,7 +269,7 @@ def test_a_start_whose_screen_was_left_still_opens_the_session(
     import asyncio
     import threading
 
-    from agent6.ui.tui import composer, new_work
+    from agent6.ui.tui import composer
     from agent6.ui.tui import home as tui_home
     from agent6.ui.tui import new_work as tui_new_work
 
@@ -289,7 +291,7 @@ def test_a_start_whose_screen_was_left_still_opens_the_session(
             return None, "the test never released the spawn"
         return tmp_path / "located", ""
 
-    monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
+    monkeypatch.setattr(spawn, "spawn_new_work", _spawn)
 
     async def scenario() -> None:
         app = tui_home.Agent6HomeApp(a6, tmp_path)
@@ -321,7 +323,7 @@ def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
     import asyncio
     import threading
 
-    from agent6.ui.tui import composer, new_work
+    from agent6.ui.tui import composer
     from agent6.ui.tui import home as tui_home
     from agent6.ui.tui import new_work as tui_new_work
 
@@ -342,7 +344,7 @@ def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
         gate.wait(timeout=5.0)
         return None, "REFUSING: the tree is dirty"
 
-    monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
+    monkeypatch.setattr(spawn, "spawn_new_work", _spawn)
 
     async def scenario() -> None:
         app = tui_home.Agent6HomeApp(a6, tmp_path)
@@ -376,7 +378,7 @@ def test_new_task_view_keeps_the_text_on_a_refusal(
 
     from textual import widgets
 
-    from agent6.ui.tui import composer, new_work
+    from agent6.ui.tui import composer
     from agent6.ui.tui import home as tui_home
     from agent6.ui.tui import new_work as tui_new_work
 
@@ -393,7 +395,7 @@ def test_new_task_view_keeps_the_text_on_a_refusal(
     ):
         return None, "REFUSING: 1 tracked file has uncommitted changes:\n- [git] seed.txt"
 
-    monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
+    monkeypatch.setattr(spawn, "spawn_new_work", _spawn)
 
     async def scenario() -> None:
         app = tui_home.Agent6HomeApp(a6, tmp_path)
@@ -1001,7 +1003,7 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
 
     from textual import widgets
 
-    from agent6.ui.tui import composer, new_work
+    from agent6.ui.tui import composer
     from agent6.ui.tui import home as tui_home
     from agent6.ui.tui import new_work as tui_new_work
 
@@ -1015,8 +1017,8 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
     def _preset(cwd: pathlib.Path, config_path: object) -> str:
         return "quick"
 
-    monkeypatch.setattr(new_work, "default_route", _route)
-    monkeypatch.setattr(new_work, "default_preset", _preset)
+    monkeypatch.setattr(choices, "default_route", _route)
+    monkeypatch.setattr(choices, "default_preset", _preset)
     started: list[tuple[str, str, str, str]] = []
 
     def _spawn(
@@ -1031,7 +1033,7 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
         started.append((mode, task, preset, model))
         return tmp_path / "located", ""
 
-    monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
+    monkeypatch.setattr(spawn, "spawn_new_work", _spawn)
 
     def label(picker: widgets.Select[str]) -> str:
         return str(picker.query_one(SelectCurrent).label)
@@ -1082,7 +1084,7 @@ def test_new_task_view_model_box_says_none_when_no_route_resolves(
 
     from textual import widgets
 
-    from agent6.ui.tui import composer, new_work
+    from agent6.ui.tui import composer
     from agent6.ui.tui import home as tui_home
     from agent6.ui.tui import new_work as tui_new_work
 
@@ -1093,7 +1095,7 @@ def test_new_task_view_model_box_says_none_when_no_route_resolves(
     def _route(cwd: pathlib.Path, config_path: object, mode: str, preset: str) -> str:
         return resolved.get((mode, preset), "")
 
-    monkeypatch.setattr(new_work, "default_route", _route)
+    monkeypatch.setattr(choices, "default_route", _route)
     started: list[tuple[str, str, str, str]] = []
 
     def _spawn(
@@ -1108,7 +1110,7 @@ def test_new_task_view_model_box_says_none_when_no_route_resolves(
         started.append((mode, task, preset, model))
         return tmp_path / "located", ""
 
-    monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
+    monkeypatch.setattr(spawn, "spawn_new_work", _spawn)
 
     def label(picker: widgets.Select[str]) -> str:
         return str(picker.query_one(SelectCurrent).label)
@@ -1118,7 +1120,7 @@ def test_new_task_view_model_box_says_none_when_no_route_resolves(
         def _no_route(cwd: pathlib.Path, config_path: object, mode: str, preset: str) -> str:
             return ""
 
-        monkeypatch.setattr(new_work, "default_route", _no_route)
+        monkeypatch.setattr(choices, "default_route", _no_route)
         app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()

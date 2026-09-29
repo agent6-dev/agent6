@@ -10,32 +10,28 @@ never the agent config.
 
 from __future__ import annotations
 
-from math import ceil
+import math
 from typing import Any, ClassVar, cast
 
 try:
+    import textual
+    from rich import text
     from rich.color import Color
     from rich.segment import Segment, Segments
     from rich.style import Style
-    from rich.text import Text
-    from textual import events, on
-    from textual.app import App, ComposeResult
-    from textual.binding import Binding
-    from textual.containers import Vertical, VerticalScroll
+    from textual import app as textual_app
+    from textual import binding, containers, events, screen
+    from textual import widgets as textual_widgets
     from textual.notifications import SeverityLevel
-    from textual.screen import ModalScreen
     from textual.scrollbar import ScrollBar, ScrollBarRender
     from textual.theme import Theme
-    from textual.widgets import Static
 except ImportError as e:  # pragma: no cover
     raise SystemExit(
         "The TUI theme support needs textual, a required dependency; reinstall agent6."
     ) from e
 
-from agent6.ui.tui.clipboard import mux_passthrough
-from agent6.ui.tui.settings import DEFAULT_THEME, get_theme, save_theme
-from agent6.ui.tui.widgets import FORM_CSS, ChoiceField
-from agent6.viewmodel.format import StatusLevel, status_level
+from agent6.ui.tui import clipboard, settings, widgets
+from agent6.viewmodel import format
 
 # The branded pair: a deep, low-saturation dark and a soft light.
 AGENT6_DARK = Theme(
@@ -232,7 +228,7 @@ class ThinScrollBarRender(ScrollBarRender):
         thumb_size = max(1.0, window_size / bar_ratio)
         position_ratio = position / (virtual_size - window_size)
         start = int((size - thumb_size) * position_ratio * 2)  # half-cell units
-        end = start + max(2, ceil(thumb_size * 2))  # the thumb spans >= one cell
+        end = start + max(2, math.ceil(thumb_size * 2))  # the thumb spans >= one cell
         before = {"@mouse.down": "scroll_up"}
         after = {"@mouse.down": "scroll_down"}
         grab = {"@mouse.down": "grab"}
@@ -253,7 +249,7 @@ class ThinScrollBarRender(ScrollBarRender):
 
 
 # The Rich style per status level; the CLI's SGR map and the web's pill classes are its siblings.
-STATUS_LEVEL_STYLE: dict[StatusLevel, str] = {
+STATUS_LEVEL_STYLE: dict[format.StatusLevel, str] = {
     "ok": "green",
     "info": "#b48ead",  # mauve, matching the web pill
     "active": "bold cyan",
@@ -265,7 +261,7 @@ STATUS_LEVEL_STYLE: dict[StatusLevel, str] = {
 
 def status_style(status: str) -> str:
     """Return the Rich style a status word renders in, on every TUI surface."""
-    return STATUS_LEVEL_STYLE[status_level(status)]
+    return STATUS_LEVEL_STYLE[format.status_level(status)]
 
 
 class PlainNotify:
@@ -285,8 +281,8 @@ class PlainNotify:
         markup: bool = False,
     ) -> None:
         """Show a toast, with markup off by default."""
-        App.notify(
-            cast(App[Any], self),
+        textual_app.App.notify(
+            cast(textual_app.App[Any], self),
             message,
             title=title,
             severity=severity,
@@ -306,10 +302,10 @@ class MuxPointerShapes:
         """Emit the pointer-shape escape through the driver, wrapped."""
         driver = getattr(self, "_driver", None)
         if driver is not None:
-            driver.write(mux_passthrough(f"\x1b]22;{shape}\x07"))
+            driver.write(clipboard.mux_passthrough(f"\x1b]22;{shape}\x07"))
 
 
-def setup_theme(app: App[Any]) -> None:
+def setup_theme(app: textual_app.App[Any]) -> None:
     """Register the built-in themes, apply the saved one, and persist every change.
 
     Called from `App.on_mount`. The `theme_changed_signal` subscription remembers a
@@ -320,28 +316,28 @@ def setup_theme(app: App[Any]) -> None:
     for theme in (AGENT6_DARK, AGENT6_LIGHT, ALICE, SNOW, ROSE, GRIMM):
         if theme.name not in app.available_themes:
             app.register_theme(theme)
-    wanted = get_theme()
-    app.theme = wanted if wanted in app.available_themes else DEFAULT_THEME
-    app.theme_changed_signal.subscribe(app, lambda theme: save_theme(theme.name))
+    wanted = settings.get_theme()
+    app.theme = wanted if wanted in app.available_themes else settings.DEFAULT_THEME
+    app.theme_changed_signal.subscribe(app, lambda theme: settings.save_theme(theme.name))
 
 
-def open_theme_picker(app: App[Any]) -> None:
+def open_theme_picker(app: textual_app.App[Any]) -> None:
     """Push the theme picker."""
     app.push_screen(ThemePicker())
 
 
-class ThemePicker(ModalScreen[None]):
+class ThemePicker(screen.ModalScreen[None]):
     """A live-previewing theme chooser; Enter and Esc both keep the previewed theme.
 
     `setup_theme`'s signal hook persists the choice, so nothing here writes to disk.
     """
 
     BINDINGS: ClassVar = [
-        Binding("escape", "cancel", "Cancel"),
-        Binding("enter", "confirm", "Use theme"),
+        binding.Binding("escape", "cancel", "Cancel"),
+        binding.Binding("enter", "confirm", "Use theme"),
     ]
     CSS = (
-        FORM_CSS
+        widgets.FORM_CSS
         + """
     ThemePicker { align: center middle; }
     #theme-box {
@@ -357,9 +353,9 @@ class ThemePicker(ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Focus the list without scrolling it, so it opens at the top."""
-        self.query_one(ChoiceField).focus(scroll_visible=False)
+        self.query_one(widgets.ChoiceField).focus(scroll_visible=False)
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> textual_app.ComposeResult:
         """Lay out the picker over every registered theme, sorted.
 
         Yields:
@@ -369,18 +365,20 @@ class ThemePicker(ModalScreen[None]):
         names = sorted(self.app.available_themes)
         if current not in names:
             names.insert(0, current)
-        with Vertical(id="theme-box"):
-            yield Static("Theme", id="theme-title")
-            with VerticalScroll(id="theme-scroll"):  # no button: it would add a focus stop
-                yield ChoiceField(tuple(names), current, id="theme-list")
+        with containers.Vertical(id="theme-box"):
+            yield textual_widgets.Static("Theme", id="theme-title")
+            with containers.VerticalScroll(
+                id="theme-scroll"
+            ):  # no button: it would add a focus stop
+                yield widgets.ChoiceField(tuple(names), current, id="theme-list")
             # Two lines: the 44-wide box would wrap one mid-phrase.
-            yield Static(
-                Text("↑↓ highlight · Space select\nEsc or click outside closes", style="dim"),
+            yield textual_widgets.Static(
+                text.Text("↑↓ highlight · Space select\nEsc or click outside closes", style="dim"),
                 id="theme-hint",
             )
 
-    @on(ChoiceField.Changed)
-    def _preview(self, event: ChoiceField.Changed) -> None:
+    @textual.on(widgets.ChoiceField.Changed)
+    def _preview(self, event: widgets.ChoiceField.Changed) -> None:
         self.app.theme = event.field.value
 
     def action_confirm(self) -> None:

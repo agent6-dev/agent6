@@ -5,8 +5,8 @@
 from __future__ import annotations
 
 import argparse
+import pathlib
 import sys
-from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,17 +27,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    session_dir = Path(args.watch).expanduser().resolve()
+    session_dir = pathlib.Path(args.watch).expanduser().resolve()
     if not session_dir.exists():
         print(f"agent6 tui: run dir does not exist: {session_dir}", file=sys.stderr)
         return 2
 
     try:
-        from agent6.ui.tui.app import run_tui  # noqa: PLC0415  # textual is optional
+        from agent6.ui.tui import app  # noqa: PLC0415  # textual is optional  # noqa: PLC0415  # textual is optional
     except ImportError as e:
         print(f"agent6 tui: {e}", file=sys.stderr)
         return 3
-    run_tui(session_dir, exit_on_end=args.exit_on_end)
+    app.run_tui(session_dir, exit_on_end=args.exit_on_end)
     return 0
 
 

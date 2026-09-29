@@ -487,7 +487,6 @@ banned-from = [
 "src/agent6/prompts/**" = ["ICN003"]
 "src/agent6/ui/{__init__,btw,directives,keymap,mcp_server,notify,spawn,steer}.py" = ["ICN003"]
 "src/agent6/ui/acp/**" = ["ICN003"]
-"src/agent6/ui/tui/**" = ["ICN003"]
 "src/agent6/ui/web/**" = ["ICN003"]
 "docs/{gen_config,gen_contracts,gen_diagrams}.py" = ["ICN003"]
 "docs/screenshots/{build_fixtures,keystroke_overlay,llm_proxy,make_cover,seed,tui_snapshot,web_demo}.py" = ["ANN", "D", "DOC", "ICN003"]

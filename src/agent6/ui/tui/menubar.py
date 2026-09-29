@@ -11,32 +11,29 @@ and by name in the palette.
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
+import itertools
 from collections.abc import Callable
-from dataclasses import dataclass
-from itertools import accumulate, pairwise
 from typing import ClassVar
 
 try:
-    from rich.text import Text
-    from textual import events, on
-    from textual.app import ComposeResult
-    from textual.binding import Binding
-    from textual.containers import Horizontal, Vertical, VerticalScroll
-    from textual.geometry import Offset
-    from textual.message import Message
-    from textual.screen import Screen
+    import textual
+    from rich import text
+    from textual import app as textual_app
+    from textual import binding as textual_binding
+    from textual import containers, events, geometry, message, widgets
+    from textual import screen as textual_screen
     from textual.widget import Widget
-    from textual.widgets import OptionList, Static
     from textual.widgets.option_list import Option
 except ImportError as e:  # pragma: no cover
     raise SystemExit("The menu bar needs textual, a required dependency; reinstall agent6.") from e
 
 
-from agent6.ui.keymap import SCREEN_KEYS
+from agent6.ui import keymap
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MenuItem:
     """One menu row; its key, if any, is `ui.keymap.SCREEN_KEYS`' for the action.
 
@@ -51,7 +48,7 @@ class MenuItem:
     priority: bool = False
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Menu:
     """One menu; the title's first letter is its Alt mnemonic."""
 
@@ -75,7 +72,7 @@ SCROLL_ITEMS: tuple[MenuItem, ...] = (
 
 def menu_bindings(
     screen: str, menus: tuple[Menu, ...], *, footer: tuple[tuple[str, str], ...] = ()
-) -> list[Binding]:
+) -> list[textual_binding.Binding]:
     """Return a screen's bindings from its menus and `SCREEN_KEYS[screen]`.
 
     A comma in the key table joins an action's aliases: the first key carries the
@@ -88,10 +85,10 @@ def menu_bindings(
         footer: The actions the footer shows, in its order, with their labels; every
             other keyed action binds hidden.
     """
-    keys = SCREEN_KEYS[screen]
+    keys = keymap.SCREEN_KEYS[screen]
     shown = dict(footer)
     items = {it.action: it for m in menus for it in m.items}
-    binds: list[Binding] = []
+    binds: list[textual_binding.Binding] = []
     for action in shown:
         assert action in keys, f"{screen}: footer action {action!r} has no key"
     for action in (*shown, *(a for a in keys if a not in shown)):
@@ -101,7 +98,7 @@ def menu_bindings(
         first, *aliases = keys[action].split(",")
         display = "/".join(_key_label(k) for k in (first, *aliases))
         binds.append(
-            Binding(
+            textual_binding.Binding(
                 first,
                 action,
                 shown.get(action, item.label),
@@ -111,12 +108,17 @@ def menu_bindings(
             )
         )
         binds.extend(
-            Binding(alias, action, item.label, show=False, priority=item.priority)
+            textual_binding.Binding(alias, action, item.label, show=False, priority=item.priority)
             for alias in aliases
         )
-    binds.extend(Binding(f"alt+{m.mnemonic}", f"menu('{m.mnemonic}')", show=False) for m in menus)
+    binds.extend(
+        textual_binding.Binding(f"alt+{m.mnemonic}", f"menu('{m.mnemonic}')", show=False)
+        for m in menus
+    )
     if menus:
-        binds.append(Binding("f10", f"menu('{menus[0].mnemonic}')", "Menu", show=True))
+        binds.append(
+            textual_binding.Binding("f10", f"menu('{menus[0].mnemonic}')", "Menu", show=True)
+        )
     return binds
 
 
@@ -163,7 +165,9 @@ def action_keys(source: object) -> dict[str, str]:
     Args:
         source: A screen, or an app (its current screen is used).
     """
-    screen = source if isinstance(source, Screen) else getattr(source, "screen", source)
+    screen = (
+        source if isinstance(source, textual_screen.Screen) else getattr(source, "screen", source)
+    )
     labels: dict[str, list[str]] = {}
     for key, active in getattr(screen, "active_bindings", {}).items():
         if "super" in key:  # textual adds Cmd beside Ctrl; noise on Linux
@@ -175,9 +179,9 @@ def action_keys(source: object) -> dict[str, str]:
     return {action: " / ".join(keys) for action, keys in labels.items()}
 
 
-def _title_text(menu: Menu) -> Text:
+def _title_text(menu: Menu) -> text.Text:
     """Return the menu title with its mnemonic underlined."""
-    t = Text()
+    t = text.Text()
     t.append(menu.title[0], style="underline bold")
     t.append(menu.title[1:])
     return t
@@ -203,7 +207,7 @@ def _menu_options(
     width = label_w + 2 + key_w
     opts: list[Option] = []
     for it, key in zip(items, labels, strict=True):
-        t = Text(it.label)
+        t = text.Text(it.label)
         if key:
             t.pad_right(width - len(it.label) - len(key))
             t.append(key, style="dim")
@@ -224,7 +228,9 @@ def _footer_only_rows(
         menus: The screen's menus.
         keys: Each action's shortcut label.
     """
-    screen = source if isinstance(source, Screen) else getattr(source, "screen", source)
+    screen = (
+        source if isinstance(source, textual_screen.Screen) else getattr(source, "screen", source)
+    )
     covered = {it.action for m in menus for it in m.items}
     rows: list[tuple[str, str]] = []
     for _key, active in getattr(screen, "active_bindings", {}).items():
@@ -236,7 +242,7 @@ def _footer_only_rows(
     return tuple(rows)
 
 
-class HelpScreen(Screen[None]):
+class HelpScreen(textual_screen.Screen[None]):
     """The keys and actions page, generated from a screen's menus and live bindings.
 
     Every menu action with its shortcut, every visible footer binding a menu does
@@ -244,7 +250,9 @@ class HelpScreen(Screen[None]):
     reflow on a resize.
     """
 
-    BINDINGS: ClassVar = [Binding("escape,q,question_mark,f1", "dismiss", "Close", show=False)]
+    BINDINGS: ClassVar = [
+        textual_binding.Binding("escape,q,question_mark,f1", "dismiss", "Close", show=False)
+    ]
     CSS = """
     HelpScreen { background: $surface; }
     #help-title { dock: top; height: 1; padding: 0 1; background: $panel; text-style: bold; }
@@ -285,19 +293,19 @@ class HelpScreen(Screen[None]):
         """Return the item's shortcut label, or ""."""
         return self._keys.get(it.action, "")
 
-    def _sections(self) -> list[tuple[Text, list[tuple[str, str]]]]:
+    def _sections(self) -> list[tuple[text.Text, list[tuple[str, str]]]]:
         """Return a heading and rows per section: each menu, the footer-only keys, the hints."""
         sections = [
             (_title_text(m), [(it.label, self._shortcut(it)) for it in m.items])
             for m in self._menus
         ]
         if self._extra:
-            sections.append((Text("Other keys"), list(self._extra)))
+            sections.append((text.Text("Other keys"), list(self._extra)))
         if self._hints:
-            sections.append((Text("Hints"), [(h, "") for h in self._hints]))
+            sections.append((text.Text("Hints"), [(h, "") for h in self._hints]))
         return sections
 
-    def _columns(self) -> list[list[Static]]:
+    def _columns(self) -> list[list[widgets.Static]]:
         """Pack the sections whole into columns of roughly equal height, in reading order.
 
         Within a column the keys right-align to a shared edge, like the dropdowns.
@@ -309,7 +317,7 @@ class HelpScreen(Screen[None]):
         sizes = [len(rows) + 1 for _, rows in sections]  # +1 per heading
         total = sum(sizes)
         ncols = min(max(1, self.size.width // 50), 3, len(sections))
-        prefix = list(accumulate(sizes))
+        prefix = list(itertools.accumulate(sizes))
         breaks = sorted(
             {
                 min(range(1, len(sections)), key=lambda i: abs(prefix[i - 1] - total * k / ncols))
@@ -317,45 +325,45 @@ class HelpScreen(Screen[None]):
             }
         )
         edges = [0, *breaks, len(sections)]
-        packed = [sections[a:b] for a, b in pairwise(edges) if a < b]
-        out: list[list[Static]] = []
+        packed = [sections[a:b] for a, b in itertools.pairwise(edges) if a < b]
+        out: list[list[widgets.Static]] = []
         for col_sections in packed:
             rows = [r for _, section_rows in col_sections for r in section_rows]
             # Only keyed rows set the edge, so a long hint line cannot push the keys away.
             label_w = max((len(label) for label, key in rows if key), default=0)
             key_w = max((len(key) for _, key in rows), default=0)
             right = label_w + 2 + key_w
-            lines: list[Static] = []
+            lines: list[widgets.Static] = []
             for heading, section_rows in col_sections:
-                lines.append(Static(heading, classes="help-menu"))
+                lines.append(widgets.Static(heading, classes="help-menu"))
                 for label, key in section_rows:
-                    line = Text(label)
+                    line = text.Text(label)
                     if key:
                         line.pad_right(right - len(label) - len(key))
                         line.append(key, style="dim")
-                    lines.append(Static(line))
+                    lines.append(widgets.Static(line))
             out.append(lines)
         return out
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> textual_app.ComposeResult:
         """Lay out the page.
 
         Yields:
             The title, the columns and the footer line.
         """
-        yield Static(self._title, id="help-title")
-        with VerticalScroll(id="help-scroll"), Horizontal(id="help-columns"):
+        yield widgets.Static(self._title, id="help-title")
+        with containers.VerticalScroll(id="help-scroll"), containers.Horizontal(id="help-columns"):
             for column in self._columns():
-                with Vertical(classes="help-col"):
+                with containers.Vertical(classes="help-col"):
                     yield from column
-        yield Static(
-            Text("F10 or Alt+<letter> opens a menu · Esc/q closes this page", style="dim"),
+        yield widgets.Static(
+            text.Text("F10 or Alt+<letter> opens a menu · Esc/q closes this page", style="dim"),
             id="help-foot",
         )
 
     def _focus_scroll(self) -> None:
         """Focus the scroll container, so the page keys scroll at once."""
-        self.query_one("#help-scroll", VerticalScroll).focus()
+        self.query_one("#help-scroll", containers.VerticalScroll).focus()
 
     def on_mount(self) -> None:
         """Focus the scroll container."""
@@ -368,7 +376,7 @@ class HelpScreen(Screen[None]):
         self.call_after_refresh(self._focus_scroll)
 
 
-class _MenuTitle(Static):
+class _MenuTitle(widgets.Static):
     """One clickable title in the bar; a click opens, toggles or switches its menu.
 
     Not focusable: a click then cannot blur the open dropdown, so toggling is a
@@ -392,7 +400,7 @@ class _MenuTitle(Static):
         self._bar().open(self.mnemonic)
 
 
-class _Dropdown(OptionList):
+class _Dropdown(widgets.OptionList):
     """The open menu's item list; closes on Esc or focus loss.
 
     Mounted on the screen, not the bar, so a pick reaches the bar through a
@@ -408,7 +416,7 @@ class _Dropdown(OptionList):
     }
     """
 
-    BINDINGS: ClassVar = [Binding("escape", "close", "Close", show=False)]
+    BINDINGS: ClassVar = [textual_binding.Binding("escape", "close", "Close", show=False)]
 
     def __init__(self, *options: Option, mnemonic: str, on_pick: Callable[[str], None]) -> None:
         """Create the list for a menu, with the callback a pick reaches the bar through."""
@@ -436,8 +444,8 @@ class _Dropdown(OptionList):
             event.stop()
             self._bar().open_adjacent(self.mnemonic, 1 if event.key == "right" else -1)
 
-    @on(OptionList.OptionSelected)
-    def _picked(self, event: OptionList.OptionSelected) -> None:
+    @textual.on(widgets.OptionList.OptionSelected)
+    def _picked(self, event: widgets.OptionList.OptionSelected) -> None:
         """Hand the pick to the bar and close."""
         action = event.option.id
         if action:
@@ -445,7 +453,7 @@ class _Dropdown(OptionList):
         self._bar().close_menu()
 
 
-class MenuBar(Horizontal):
+class MenuBar(containers.Horizontal):
     """The top row: the menu titles on the left, the app title and context on the right."""
 
     DEFAULT_CSS = """
@@ -459,7 +467,7 @@ class MenuBar(Horizontal):
     }
     """
 
-    class Selected(Message):
+    class Selected(message.Message):
         """An item was chosen; the message hop lets the dropdown finish closing first."""
 
         def __init__(self, action: str) -> None:
@@ -489,7 +497,7 @@ class MenuBar(Horizontal):
         # widget and auto-scrolls its container to reveal it.
         self._restore_focus: Widget | None = None
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> textual_app.ComposeResult:
         """Lay out the bar.
 
         Yields:
@@ -497,7 +505,7 @@ class MenuBar(Horizontal):
         """
         for m in self._menus:
             yield _MenuTitle(m)
-        yield Static("", classes="app-title")
+        yield widgets.Static("", classes="app-title")
 
     def on_mount(self) -> None:
         """Mirror the app's title and sub-title into the bar, live."""
@@ -509,7 +517,7 @@ class MenuBar(Horizontal):
         """Repaint the app title as text, never markup: the sub-title carries a typed task."""
         app = self.app
         parts = [p for p in (app.title, app.sub_title) if p]
-        self.query_one(".app-title", Static).update(Text(" — ".join(parts)))
+        self.query_one(".app-title", widgets.Static).update(text.Text(" — ".join(parts)))
 
     def open(self, mnemonic: str) -> None:
         """Open a menu by mnemonic; opening the one already open toggles it shut."""
@@ -533,7 +541,7 @@ class MenuBar(Horizontal):
         opts = _menu_options(menu.items, action_keys(self.screen), self.screen)
         dd = _Dropdown(*opts, mnemonic=mnemonic, on_pick=self._dispatch)
         self.screen.mount(dd)
-        dd.absolute_offset = Offset(title.region.x, title.region.y + 1)
+        dd.absolute_offset = geometry.Offset(title.region.x, title.region.y + 1)
         title.add_class("-open")
         dd.focus()
 
