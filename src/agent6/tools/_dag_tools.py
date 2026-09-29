@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""DAG-as-tool handlers: add_task, update_task, list_tasks. All raise
-ToolError when no curator was wired, so a standalone instantiation works."""
+"""DAG handlers: add_task, update_task and list_tasks.
+
+Each raises ToolError when no curator was wired, so a standalone dispatcher works.
+"""
 
 from __future__ import annotations
 
@@ -33,6 +35,19 @@ from agent6.tools.schema import (
 def add_task(
     curator: GraphCurator | None, run_root_node_id: str | None, raw: dict[str, Any]
 ) -> AddTaskResult:
+    """Add a subtask under the given parent, or under the run's root.
+
+    Args:
+        curator: The graph curator, or None when this run has no graph.
+        run_root_node_id: The parent when the call names none.
+        raw: The tool call's arguments.
+
+    Returns:
+        The new node's id, parent, title and status.
+
+    Raises:
+        ToolError: No curator is wired.
+    """
     if curator is None:
         raise ToolError("DAG curator not available in this run")
     args = DagAddTaskInput.model_validate(raw)
@@ -56,6 +71,19 @@ def add_task(
 
 
 def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTaskResult:
+    """Change a task's status, add dependencies, or both.
+
+    Args:
+        curator: The graph curator, or None when this run has no graph.
+        raw: The tool call's arguments.
+
+    Returns:
+        The node after the change, with a claim note when it was marked in progress.
+
+    Raises:
+        ToolError: No curator is wired, a note comes without a status, the call retires a task
+            the operator queued or the standing goal, or it changes nothing.
+    """
     if curator is None:
         raise ToolError("DAG curator not available in this run")
     args = DagUpdateTaskInput.model_validate(raw)
@@ -67,19 +95,13 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
         if args.status in ("skipped", "obsolete"):
             current = curator.get(args.id)
             if queued_by_operator(current):
-                # A task the operator queued is theirs to withdraw: pass it
-                # when it is done, or leave it open and let the run's end
-                # receipt say it went undone. The curator stays permissive,
-                # because `/retire` is the operator's own route through it.
+                # The curator stays permissive: `/retire` is the operator's own route through it.
                 raise ToolError(
                     f"update_task: {args.id} was queued by the operator, so it is not"
                     " yours to retire; pass it when it is done, or leave it open"
                 )
             if current.standing:
-                # The operator's goal (`--standing`, `/standing`): only they
-                # retire it (`/standing` with a new one, or stopping the run).
-                # The model retiring it converts the never-finishing fallback
-                # into an ordinary early finish.
+                # The model retiring the standing goal would turn the fallback into an early finish.
                 raise ToolError(
                     f"update_task: {args.id} is the operator's standing goal;"
                     " it stays until the operator retires it. Work it when"
@@ -91,8 +113,7 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
             note=args.note,
         )
         node = curator.update_status(intent)
-    # Unknown ids and cycles are rejected by the curator; dispatch()'s generic
-    # wrapper surfaces that rejection to the model as a ToolError.
+    # The curator rejects unknown ids and cycles; dispatch() surfaces that as a ToolError.
     for dep in args.depends_on:
         node = curator.add_dependency(AddDependencyIntent(id=args.id, depends_on=dep))
     if node is None:
@@ -107,9 +128,11 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
 
 
 def _claim_note(curator: GraphCurator, node: TaskNode) -> str:
-    """What marking a task in_progress did to the focus: the harness works the
-    claimed task next while it stays workable, so a claim the frontier cannot
-    honour says so instead of quietly doing nothing."""
+    """Return what marking a task in_progress did to the focus.
+
+    The harness works the claimed task next while it stays workable, so a claim the frontier
+    cannot honour says so instead of quietly doing nothing.
+    """
     if is_focusable_subtask(curator.nodes(), node):
         return "claimed: this is the task the harness works next"
     return (
@@ -119,15 +142,23 @@ def _claim_note(curator: GraphCurator, node: TaskNode) -> str:
 
 
 def list_tasks(curator: GraphCurator | None, raw: dict[str, Any]) -> ListTasksResult:
+    """List the graph's tasks in tree order, optionally filtered by status.
+
+    Args:
+        curator: The graph curator, or None when this run has no graph.
+        raw: The tool call's arguments.
+
+    Returns:
+        The tasks as the model reads them, and their count.
+
+    Raises:
+        ToolError: No curator is wired.
+    """
     if curator is None:
         raise ToolError("DAG curator not available in this run")
     args = DagListTasksInput.model_validate(raw)
-    # Wire surface: to_wire() JSONs each task to the model; the projected shape
-    # (and its list-valued relevant_paths/depends_on) is what tool callers hold.
     out: list[dict[str, Any]] = []
-    # Tree order, the order the frontier executes and every renderer shows:
-    # iterating the map gives insertion order live and filesystem order after a
-    # resume, so the model would read back a plan it had not written.
+    # Tree order is what the frontier executes; map order differs live and after a resume.
     nodes = curator.nodes()
     for node_id in tree_order(nodes):
         node = nodes[node_id]
@@ -142,8 +173,7 @@ def list_tasks(curator: GraphCurator | None, raw: dict[str, Any]) -> ListTasksRe
                 "acceptance": node.acceptance,
                 "relevant_paths": list(node.relevant_paths),
                 "depends_on": list(node.depends_on),
-                # A standing task never passes and never gates a finish, so the
-                # model can tell which open tasks the finish gate counts.
+                # A standing task never passes and never gates a finish.
                 "standing": node.standing,
             }
         )

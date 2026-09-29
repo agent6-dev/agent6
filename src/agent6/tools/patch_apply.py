@@ -1,41 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Strict unified-diff parser and applier (single file per patch).
+r"""Strict parsers and appliers for unified diffs and OpenAI V4A patches, one file per patch.
 
-Accepts standard `diff -u` output:
-
-    --- a/path/to/file
-    +++ b/path/to/file
-    @@ -OLD_START,OLD_COUNT +NEW_START,NEW_COUNT @@
-     context
-    -removed
-    +added
-     context
-
-Design choices (pre-1.0):
-
-- Multi-file patches are accepted at the tool layer (`split_patch_files`
-  cuts them at `diff --git` / V4A file-directive boundaries; the caller
-  applies per file, all-or-nothing). The parse/apply functions here stay
-  single-file. A bare multi-file unified diff WITHOUT `diff --git`
-  separators is still rejected: a `--- ` line is indistinguishable from a
-  removal of `-- comment` content without hunk-structural context.
-- Near-zero fuzz. A hunk matches exactly, or heals through a strict
-  ladder (trailing whitespace; a single uniform indent shift, byte-
-  verified, replacement re-indented to match; a unique exact match away
-  from stale line numbers) with the heal named on the wire. Ambiguity
-  and every looser miss stay hard errors; if any hunk fails, no change
-  is written (all-or-nothing).
-- `--- /dev/null` is allowed and means "create a new file"; the target
-  file must not already exist.
-- `+++ /dev/null` deletes the file; the hunk body must remove the entire
-  on-disk content (the patch asserts what it deletes). V4A
-  `*** Delete File:` deletes by name, per that format's grammar.
-- The `\\ No newline at end of file` marker is honoured: when present
-  on the `-` side, the original file must lack a trailing newline; on
-  the `+` side, the result is written without one.
-- Hunk-header line counts are validated; an inconsistent header is a
-  hard error, not silently fixed.
+`split_patch_files` cuts a multi-file patch at `diff --git` or V4A file-directive boundaries
+and the caller applies per file, all or nothing; a bare multi-file unified diff without
+separators is rejected, since a `--- ` line is indistinguishable from a removal of `-- comment`
+content without hunk structure. A hunk matches exactly or heals through a strict ladder
+(trailing whitespace, one uniform indent shift, a unique exact match away from stale line
+numbers) with the heal named on the wire; ambiguity and every looser miss stay hard errors.
+`--- /dev/null` creates a file that must not exist; `+++ /dev/null` deletes one and its hunks
+must remove the whole content, while V4A `*** Delete File:` deletes by name. The
+`\ No newline at end of file` marker is honoured on both sides, and hunk-header counts are
+validated.
 """
 
 from __future__ import annotations
@@ -59,62 +35,74 @@ class PatchError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class _Hunk:
-    old_start: int  # 1-based line in original file
+    """One hunk of a unified diff.
+
+    Attributes:
+        old_start: The 1-based first line in the original.
+        old_count: The line count on the old side.
+        new_start: The 1-based first line in the result; informational.
+        new_count: The line count on the new side.
+        body: (prefix, text) pairs, prefix one of " ", "-", "+", text without its newline.
+        old_no_newline: The last "-" or " " line lacks a trailing newline in the original.
+        new_no_newline: The last "+" or " " line lacks a trailing newline in the result.
+    """
+
+    old_start: int
     old_count: int
-    new_start: int  # 1-based line in resulting file (informational)
+    new_start: int
     new_count: int
-    # Each entry is (prefix, text). prefix is one of " ", "-", "+".
-    # text has no trailing newline.
     body: tuple[tuple[str, str], ...]
-    # Whether the last "-"-or-" " line lacks a trailing newline in the original.
     old_no_newline: bool
-    # Whether the last "+"-or-" " line lacks a trailing newline in the result.
     new_no_newline: bool
 
 
 @dataclass(frozen=True, slots=True)
 class ParsedPatch:
-    """A successfully-parsed single-file unified diff."""
+    """A parsed single-file unified diff.
 
-    # Path from the `+++` header with the leading `b/` (if any) stripped.
-    # For file creation (`--- /dev/null`), this is the new file's path; for
-    # deletion (`+++ /dev/null`), the old file's path from the `---` header.
+    Attributes:
+        target_path: The `+++` header's path without its `b/`; for a deletion, the `---` header's.
+        is_create: The patch creates the file (`--- /dev/null`).
+        hunks: The hunks in order.
+        is_delete: The patch deletes the file (`+++ /dev/null`); the result must be empty.
+    """
+
     target_path: str
-    # True if the patch creates a new file (i.e. `--- /dev/null`).
     is_create: bool
     hunks: tuple[_Hunk, ...]
-    # True if the patch deletes the file (i.e. `+++ /dev/null`); the applied
-    # result must be empty, and the caller unlinks instead of writing.
     is_delete: bool = False
 
 
-# ---------- parsing ----------
-
-
 def _header_path(value: str) -> str:
-    """The path before a standard unified header's tab-separated timestamp."""
+    """Return the path before a unified header's tab-separated timestamp."""
     return value.strip().partition("\t")[0]
 
 
 def _strip_ab_prefix(header_path: str) -> str:
-    """Strip the conventional `a/` or `b/` prefix from a diff header path.
-
-    `--- a/foo.py` and `+++ b/foo.py` are the format `git diff` emits.
-    Some models also emit bare `--- foo.py`. Accept both.
-    """
+    """Return a header path without the `a/` or `b/` prefix `git diff` puts on it."""
     if header_path.startswith(("a/", "b/")):
         return header_path[2:]
     return header_path
 
 
 def parse_patch(text: str) -> ParsedPatch:  # noqa: C901, PLR0912, PLR0915  # the patch grammar, one branch per line kind
-    """Parse a single-file unified diff. Raises PatchError on malformed input."""
+    """Parse a single-file unified diff.
+
+    Args:
+        text: The patch.
+
+    Returns:
+        The parsed patch.
+
+    Raises:
+        PatchError: The patch is empty, lacks headers, names two files, spans several files,
+            carries a malformed hunk, or declares counts its body does not match.
+    """
     if not text.strip():
         raise PatchError("Empty patch")
 
     lines = text.splitlines()
-    # Locate the `---` and `+++` headers. Skip leading commentary lines (e.g.
-    # `diff --git a/foo b/foo`, `index abc..def 100644`).
+    # Leading `diff --git` and `index` lines are skipped.
     i = 0
     while i < len(lines) and not lines[i].startswith("--- "):
         i += 1
@@ -143,21 +131,15 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: C901, PLR0912, PLR0915  # th
     if not target_path or target_path == "/dev/null":
         raise PatchError(f"Invalid target path in `+++` header: {plus_header!r}")
 
-    # NOTE: multi-file patches are rejected structurally, where a hunk header
-    # is expected (see the `_HUNK_RE` miss below). We must NOT pre-scan raw
-    # lines for `--- ` here: a removal line whose *content* begins with `-- `
-    # (a SQL/Lua/Haskell/Ada comment, say) is encoded as `-` + `-- foo` =
-    # `--- foo` inside a hunk body, and a raw scan would wrongly reject the
-    # legitimate single-file patch as multi-file.
+    # A second file is detected where a hunk header is expected, never by a raw `--- ` scan:
+    # a removed `-- comment` line is encoded `--- comment` inside a hunk body.
     hunks: list[_Hunk] = []
     while i < len(lines):
         line = lines[i]
         if not line.strip():
             i += 1
             continue
-        # A trailing `\ No newline at end of file` marker may live between the
-        # last `+`/`-` line of the previous hunk and the next hunk header
-        # (or end of input). Attribute it to the most recent hunk.
+        # A no-newline marker between hunks belongs to the previous hunk.
         if line.startswith("\\ "):
             if line != _NO_NEWLINE_MARKER:
                 raise PatchError(f"Unexpected patch marker: {line!r}")
@@ -180,9 +162,6 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: C901, PLR0912, PLR0915  # th
             continue
         m = _HUNK_RE.match(line)
         if not m:
-            # A `--- ` line where a hunk header is expected is a real second
-            # file's header (vs a `-`-removal of `-- ...` content, which is
-            # consumed inside a hunk body above and never reaches here).
             if line.startswith("--- "):
                 raise PatchError("Multi-file patches are not supported; submit one file at a time")
             raise PatchError(f"Expected hunk header `@@ -L,N +L,N @@`, got: {line!r}")
@@ -201,8 +180,7 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: C901, PLR0912, PLR0915  # th
             if ln.startswith("\\ "):
                 if ln != _NO_NEWLINE_MARKER:
                     raise PatchError(f"Unexpected patch marker: {ln!r}")
-                # "\ No newline at end of file", applies to the immediately
-                # preceding line. Determine which side based on its prefix.
+                # The marker applies to the preceding line; its prefix says which side.
                 if not body:
                     raise PatchError("`\\ No newline` marker has no preceding line")
                 prev_prefix, _ = body[-1]
@@ -220,9 +198,7 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: C901, PLR0912, PLR0915  # th
                 i += 1
                 continue
             if not ln:
-                # Empty line is a legitimate context line (encoded as " " + "").
-                # Some patch producers strip the leading space on otherwise-empty
-                # lines; accept both shapes.
+                # Some producers strip the leading space of an empty context line.
                 body.append((" ", ""))
                 seen_old += 1
                 seen_new += 1
@@ -269,17 +245,13 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: C901, PLR0912, PLR0915  # th
     )
 
 
-# ---------- application ----------
-
-
 def _split_lines_keepends(text: str) -> tuple[list[str], bool]:
-    """Split *text* into lines without trailing newlines; track final-newline state."""
+    """Return the lines without their newlines, and whether the text ends in one."""
     if text == "":
         return [], False
     has_trailing = text.endswith("\n")
     lines = text.split("\n")
     if has_trailing:
-        # Final element after split is "", drop it.
         lines.pop()
     return lines, has_trailing
 
@@ -287,14 +259,20 @@ def _split_lines_keepends(text: str) -> tuple[list[str], bool]:
 def apply_parsed_patch(  # noqa: PLR0912
     patch: ParsedPatch, original: str | None
 ) -> tuple[str, tuple[str, ...]]:
-    """Apply *patch* to *original* file contents (None means file does not exist).
+    """Apply a parsed patch to a file's content, all or nothing.
 
-    Returns `(new_content, healed)`: `healed` names each hunk the matcher
-    healed rather than matched exactly (`rstrip` trailing whitespace,
-    `indent` a uniform leading-whitespace shift, `moved` a unique exact
-    match away from the anchored line numbers), for the wire to report.
-    Raises PatchError on any context mismatch or impossible-to-apply hunk.
-    All-or-nothing: caller writes the returned string.
+    Args:
+        patch: The parsed patch.
+        original: The file's content, or None when it does not exist.
+
+    Returns:
+        The new content, and the hunks the matcher healed rather than matched exactly
+        (`~rstrip`, `~indent`, `~moved`) for the wire to report.
+
+    Raises:
+        PatchError: A create targets an existing file, an update a missing one, a hunk's
+            context does not match or is ambiguous, or a no-newline marker disagrees with the
+            file's tail.
     """
     if patch.is_create:
         if original is not None:
@@ -312,22 +290,14 @@ def apply_parsed_patch(  # noqa: PLR0912
             )
         base_lines, base_had_trailing = _split_lines_keepends(original)
 
-    # Work on a mutable copy. Apply hunks in original order; track the cumulative
-    # offset between original-file line numbers and current-buffer line numbers.
     buf = list(base_lines)
     healed: list[str] = []
     offset = 0  # buf_index = original_index + offset
-    # Track whether the final newline should be present after all hunks have been
-    # applied. Starts at the file's current state; a hunk that touches the last
-    # line can flip it.
+    # A hunk that touches the last line can flip the final newline.
     result_has_trailing = base_had_trailing
 
     for hunk in patch.hunks:
-        # Map the hunk's 1-based original line to a 0-based buffer index.
-        # Special case: a pure-insertion hunk has `old_count == 0` and its
-        # `old_start` is the line number *after which* to insert (0 meaning
-        # "at the very beginning"). For `old_count > 0`, `old_start` is the
-        # 1-based first line of the replaced range.
+        # A pure insertion's `old_start` is the line after which to insert, 0 for the start.
         buf_start = hunk.old_start + offset if hunk.old_count == 0 else hunk.old_start - 1 + offset
         in_bounds = buf_start >= 0 and buf_start + hunk.old_count <= len(buf)
         if hunk.old_count == 0 and not in_bounds:
@@ -365,14 +335,10 @@ def apply_parsed_patch(  # noqa: PLR0912
                 )
             buf_start, replacement_new, kind = heal
             moved_heal = kind == "moved"
-            # The label leads with the file like the V4A one: a multi-file
-            # patch's "healed" list is unattributable without it.
+            # The label leads with the file, so a multi-file patch's healed list attributes each.
             healed.append(f"{patch.target_path} @@ -{hunk.old_start},{hunk.old_count} ~{kind}")
 
-        # Determine whether this hunk touches the file's tail from the ACTUAL
-        # splice position: a `moved` heal relocates `buf_start` away from the
-        # stale header numbers, which otherwise keeps a hunk healed onto the
-        # tail from carrying its no-newline state (and vice versa).
+        # Judged from the actual splice position: a `moved` heal relocates `buf_start`.
         touches_tail = (
             buf_start == len(buf)
             if hunk.old_count == 0
@@ -386,13 +352,8 @@ def apply_parsed_patch(  # noqa: PLR0912
         buf[buf_start : buf_start + hunk.old_count] = replacement_new
         offset += hunk.new_count - hunk.old_count
         if touches_tail:
-            # The hunk's `new_no_newline` flag is authoritative for the result.
-            # If the hunk didn't declare a no-newline marker on the new side,
-            # the result has a trailing newline (standard diff convention).
-            # A `moved` heal is the exception: it lands where the authored
-            # coordinates never pointed, so the patch expresses no EOF intent
-            # there; the file's tail state stands unless an explicit marker
-            # travels with the block.
+            # The new-side marker is authoritative, except that a `moved` heal lands where the
+            # authored coordinates never pointed, so the tail stands unless a marker travels.
             if moved_heal:
                 if hunk.new_no_newline:
                     result_has_trailing = False
@@ -400,7 +361,6 @@ def apply_parsed_patch(  # noqa: PLR0912
                 result_has_trailing = not hunk.new_no_newline
 
     if not buf:
-        # Empty file, write empty string regardless of trailing-newline state.
         return "", tuple(healed)
     out = "\n".join(buf)
     if result_has_trailing:
@@ -409,9 +369,12 @@ def apply_parsed_patch(  # noqa: PLR0912
 
 
 def _common_shift(actual: list[str], expected: list[str]) -> tuple[str, str] | None:
-    """The single uniform leading-whitespace transform turning *expected* into
-    *actual*: (strip_prefix, add_prefix), byte-verified over every non-blank
-    line. None when no one transform explains all of them."""
+    """Return the one leading-whitespace transform turning the expected lines into the actual.
+
+    Returns:
+        (strip_prefix, add_prefix), verified over every non-blank line, or None when no single
+        transform explains all of them.
+    """
     if len(actual) != len(expected):
         return None
     transform: tuple[str, str] | None = None
@@ -445,6 +408,7 @@ def _common_shift(actual: list[str], expected: list[str]) -> tuple[str, str] | N
 
 
 def _reindent(lines: list[str], strip: str, add: str) -> list[str]:
+    """Return the lines with the leading `strip` of each non-blank line replaced by `add`."""
     out: list[str] = []
     for ln in lines:
         if ln.startswith(strip) and ln.strip():
@@ -457,7 +421,7 @@ def _reindent(lines: list[str], strip: str, add: str) -> list[str]:
 def _replacement_with_actual_context(
     body: tuple[tuple[str, str], ...], actual: list[str]
 ) -> list[str]:
-    """Build a hunk replacement without rewriting its unchanged context."""
+    """Return a hunk's replacement with its context lines taken from disk, not rewritten."""
     out: list[str] = []
     old_index = 0
     for prefix, text in body:
@@ -477,24 +441,28 @@ def _heal_hunk(
     replacement_new: list[str],
     body: tuple[tuple[str, str], ...],
 ) -> tuple[int, list[str], str] | None:
-    """The context-miss ladder for one anchored hunk, strictest first.
+    """Run the context-miss ladder for one anchored hunk, strictest first.
 
-    (new_buf_start, new_replacement, kind) or None. The passes mirror the
-    field (Codex heals trailing whitespace and location; apply_edit heals a
-    uniform indent shift) with this repo's uniqueness discipline:
+    `rstrip`: the on-disk lines equal the expected modulo trailing whitespace, in place.
+    `indent`: one leading-whitespace transform explains every line, in place, and the
+    replacement is re-indented the same way. `moved`: the exact block exists at exactly one
+    other position. Each rung requires uniqueness; ambiguity stays a miss.
 
-    - `rstrip`: on-disk lines equal modulo trailing whitespace, in place.
-    - `indent`: ONE leading-whitespace transform explains every line, in
-      place; the replacement is re-indented by the same transform.
-    - `moved`: the exact expected block exists at EXACTLY ONE other position
-      (stale line numbers); ambiguity stays a hard error.
+    Args:
+        buf: The file's lines.
+        buf_start: The hunk's anchored index.
+        expected_old: The lines the hunk expects.
+        replacement_new: The lines the hunk writes.
+        body: The hunk's (prefix, text) pairs.
+
+    Returns:
+        The index to splice at, the replacement, and the heal's kind; None on a miss.
     """
     count = len(expected_old)
     in_bounds = buf_start >= 0 and buf_start + count <= len(buf)
     actual = buf[buf_start : buf_start + count] if in_bounds else []
     if len(actual) == count and [a.rstrip() for a in actual] == [e.rstrip() for e in expected_old]:
-        # An exact copy elsewhere is the moved rule's business, not a second
-        # whitespace match: counted here, it sent the edit to that copy.
+        # An exact copy elsewhere is the moved rule's business, not a second whitespace match.
         hits = sum(
             window != expected_old
             and [line.rstrip() for line in window] == [line.rstrip() for line in expected_old]
@@ -520,14 +488,14 @@ def _heal_hunk(
 
 
 def _render_lines(lines: list[str], start: int = 1) -> str:
+    """Return the lines numbered from `start`, for an error message."""
     if not lines:
         return "  (empty)"
     return "\n".join(f"  {start + i}| {ln}" for i, ln in enumerate(lines))
 
 
 def _match_failure_detail(lines: list[str], expected: list[str]) -> str:
-    """Counts by accepted match rule, and the closest same-sized on-disk block
-    when it is similar enough to anchor a retry."""
+    """Return the match counts per rule, and the closest on-disk block when it anchors a retry."""
     count = len(expected)
     exact = 0
     rstrip = 0
@@ -560,10 +528,19 @@ def _match_failure_detail(lines: list[str], expected: list[str]) -> str:
 def apply_patch_text(
     patch_text: str, original: str | None
 ) -> tuple[str, str | None, tuple[str, ...]]:
-    """Convenience: parse + apply. Returns (target_path, new_content, healed);
-    new_content None means the patch deletes the file (its hunks removed
-    the entire content, verified), and healed names each hunk the matcher
-    healed rather than matched exactly."""
+    """Parse and apply a single-file unified diff.
+
+    Args:
+        patch_text: The patch.
+        original: The file's content, or None when it does not exist.
+
+    Returns:
+        The target path, the new content (None when the patch deletes the file, its hunks
+        having removed the whole content), and the healed hunks.
+
+    Raises:
+        PatchError: The patch does not parse or apply, or a deletion leaves content behind.
+    """
     patch = parse_patch(patch_text)
     new_content, healed = apply_parsed_patch(patch, original)
     if patch.is_delete:
@@ -576,33 +553,28 @@ def apply_patch_text(
     return patch.target_path, new_content, healed
 
 
-# ---------- OpenAI "*** Begin Patch" (V4A) format ----------
-#
-# GPT / gpt-oss models emit patches in OpenAI's apply_patch format, NOT unified
-# diff: `*** Begin Patch` / `*** End Patch` wrap one or more file directives
-# (`*** Add File:` / `*** Update File:` / `*** Delete File:`); inside an Update,
-# hunks use ` `/`-`/`+` line prefixes with optional `@@ <hint>` section markers
-# and NO `@@ -L,N +L,N @@` line numbers (matching is by context, not position).
-# Without this, every apply_patch from a GPT-family model fails ("got: '@@'")
-# and the model death-spirals on re-reads. We map each context hunk onto the
-# same safe unique-substring replacement apply_edit uses: zero fuzz, all-or-
-# nothing, and a clear error when context is missing or ambiguous.
+# OpenAI's V4A format, which GPT-family models emit: `*** Begin Patch` / `*** End Patch` wrap
+# file directives, and an Update's hunks carry ` `/`-`/`+` prefixes with optional `@@ <hint>`
+# markers and no line numbers, so matching is by context.
 
 
 def is_v4a_patch(text: str) -> bool:
-    """True if *text* looks like an OpenAI `*** Begin Patch` envelope."""
+    """Return whether the text is an OpenAI `*** Begin Patch` envelope."""
     return text.lstrip().startswith("*** Begin Patch")
 
 
 def split_patch_files(text: str) -> list[str]:
-    """Cut a possibly-multi-file patch into single-file patch texts.
+    """Cut a patch into single-file patch texts.
 
-    V4A: one section per `*** Add/Update/Delete File:` directive, each
-    re-wrapped in its own envelope. Unified: one section per `diff --git `
-    boundary (a hunk body line always carries a +/-/space prefix, so a
-    column-0 `diff --git ` is only ever a file boundary). A single-file
-    patch is returned as-is; the per-file parsers keep their own
-    multi-file guards for anything a split cannot see.
+    V4A: one section per file directive, each re-wrapped in its own envelope. Unified: one
+    section per `diff --git ` line, which only ever marks a file boundary since a hunk body line
+    carries a prefix. A single-file patch is returned as is.
+
+    Args:
+        text: The patch.
+
+    Returns:
+        The sections.
     """
     if is_v4a_patch(text):
         raw = text.strip().splitlines()
@@ -629,8 +601,11 @@ def split_patch_files(text: str) -> list[str]:
 
 
 def patch_target_path(text: str) -> str:
-    """Extract the single target path from a patch (either format) without
-    applying it. Raises `PatchError` if no path header is present."""
+    """Return the target path of a single-file patch in either format, without applying it.
+
+    Raises:
+        PatchError: No header names the file.
+    """
     if is_v4a_patch(text):
         for ln in text.splitlines():
             d = _v4a_file_directive(ln)
@@ -656,10 +631,11 @@ _V4A_OPS: dict[str, PatchOp] = {"Add": "create", "Update": "edit", "Delete": "de
 
 
 def patch_op(text: str) -> PatchOp:
-    """What a single-file patch (either format) does to its file, read from
-    the V4A `*** Add/Update/Delete File:` directive or the unified headers
-    (`--- /dev/null` creates, `+++ /dev/null` deletes). Raises `PatchError`
-    when no header names the file."""
+    """Return what a single-file patch in either format does to its file.
+
+    Raises:
+        PatchError: No header names the file.
+    """
     if is_v4a_patch(text):
         for ln in text.splitlines():
             d = _v4a_file_directive(ln)
@@ -679,7 +655,7 @@ def patch_op(text: str) -> PatchOp:
 
 
 def _v4a_file_directive(line: str) -> tuple[str, str] | None:
-    """Parse a `*** <Verb> File: <path>` directive into (verb, path), else None."""
+    """Return the (verb, path) of a `*** <Verb> File: <path>` directive, else None."""
     for verb in ("Add", "Update", "Delete"):
         prefix = f"*** {verb} File:"
         if line.startswith(prefix):
@@ -688,7 +664,14 @@ def _v4a_file_directive(line: str) -> tuple[str, str] | None:
 
 
 def _v4a_delete(path: str, section: list[str], original: str | None) -> tuple[str, None]:
-    """`*** Delete File:` is the bare directive: no content, file must exist."""
+    """Apply a `*** Delete File:` directive, which is bare.
+
+    Returns:
+        The path and None.
+
+    Raises:
+        PatchError: The directive carries content, or the file does not exist.
+    """
     if any(ln.strip() for ln in section):
         raise PatchError(
             f"V4A `*** Delete File: {path}` carries content; a deletion is the bare directive"
@@ -701,14 +684,20 @@ def _v4a_delete(path: str, section: list[str], original: str | None) -> tuple[st
 def apply_v4a_text(
     patch_text: str, original: str | None
 ) -> tuple[str, str | None, tuple[str, ...]]:
-    """Parse and apply a single-file OpenAI V4A patch.
+    """Parse and apply a single-file OpenAI V4A patch, all or nothing.
 
-    Returns `(target_path, new_content, healed)`; None content means
-    `*** Delete File:` (that format deletes by name, no content assertion),
-    and `healed` names each hunk the matcher healed rather than matched
-    exactly. Raises `PatchError` on a malformed envelope, a multi-file
-    patch, a missing/ambiguous context, or a file create/update mismatch.
-    All-or-nothing: the caller writes (or unlinks) from the returned value.
+    Args:
+        patch_text: The patch.
+        original: The file's content, or None when it does not exist.
+
+    Returns:
+        The target path, the new content (None for `*** Delete File:`, which deletes by name),
+        and the healed hunks.
+
+    Raises:
+        PatchError: The envelope is malformed, the patch spans several files or moves one, a
+            create targets an existing file, an update a missing one, or a hunk's context is
+            missing or ambiguous.
     """
     raw = patch_text.strip().splitlines()
     if not raw or raw[0].strip() != "*** Begin Patch":
@@ -717,8 +706,6 @@ def apply_v4a_text(
         raise PatchError("V4A patch must end with `*** End Patch`")
     body = raw[1:-1]
 
-    # Locate the single file directive. Multiple are rejected (one file per call,
-    # same as the unified-diff applier).
     directives = [(i, _v4a_file_directive(ln)) for i, ln in enumerate(body)]
     file_starts = [(i, d) for i, d in directives if d is not None]
     if not file_starts:
@@ -731,8 +718,7 @@ def apply_v4a_text(
     section = body[start_idx + 1 :]
     if any(ln.startswith("*** Move to:") for ln in section):
         raise PatchError("V4A `*** Move to:` is not supported")
-    # Drop the optional marker GPT emits for a hunk that reaches EOF; matching
-    # is whole-file, so it needs no anchor.
+    # The EOF marker needs no anchor: matching is whole-file.
     section = [ln for ln in section if ln.strip() != "*** End of File"]
 
     if verb == "Delete":
@@ -751,7 +737,11 @@ def apply_v4a_text(
 
 
 def _v4a_added_content(path: str, section: list[str]) -> str:
-    """An Add File body is all `+` lines (blank lines tolerated)."""
+    """Return the content of an Add File body, all `+` lines with blank lines tolerated.
+
+    Raises:
+        PatchError: A line carries another prefix.
+    """
     added: list[str] = []
     for ln in section:
         if ln.startswith("+"):
@@ -766,8 +756,15 @@ def _v4a_added_content(path: str, section: list[str]) -> str:
 def _v4a_apply_update(
     path: str, section: list[str], original: str
 ) -> tuple[str, str, tuple[str, ...]]:
-    """Apply an Update File body: locate each hunk (healing per the ladder),
-    splice, and report `(path, content, healed)`."""
+    """Apply an Update File body, locating each hunk by context and healing per the ladder.
+
+    Returns:
+        The path, the new content and the healed hunks.
+
+    Raises:
+        PatchError: The body has no hunks, a hunk has nothing to anchor on, or its context is
+            missing or ambiguous.
+    """
     hunks = _v4a_split_hunks(section)
     if not hunks:
         raise PatchError(f"V4A `*** Update File: {path}` has no hunks")
@@ -796,9 +793,7 @@ def _v4a_apply_update(
         if count == 1:
             content = _v4a_splice(content, matches[0], old_block, new_lines)
             continue
-        # The block itself repeats; the `@@ <section>` hints disambiguate it. We
-        # only apply when the hints pin a SINGLE occurrence -- otherwise the hunk
-        # stays ambiguous and we refuse rather than edit the wrong copy.
+        # The block repeats; the `@@ <section>` hints must pin a single occurrence.
         idx = _v4a_locate_with_hints(content, hints, old_block)
         if idx is None:
             raise PatchError(
@@ -817,10 +812,11 @@ def _v4a_heal(
     new_lines: tuple[str, ...],
     body: tuple[tuple[str, str], ...],
 ) -> tuple[str, str] | None:
-    """The V4A context-miss ladder, strictest first, uniqueness required:
-    `rstrip` (on-disk lines equal modulo trailing whitespace) then `indent`
-    (one leading-whitespace transform explains every line; the new block is
-    re-indented the same way). Ambiguity or anything looser stays a miss."""
+    """Run the V4A context-miss ladder: `rstrip`, then `indent`, each requiring uniqueness.
+
+    Returns:
+        The new content and the heal's kind, or None on a miss.
+    """
     expected = old_block.split("\n")
     lines = content.split("\n")
     count = len(expected)
@@ -849,13 +845,11 @@ def _v4a_heal(
 
 
 def _v4a_splice(content: str, idx: int, old_block: str, new_lines: tuple[str, ...]) -> str:
-    """Replace the block at *idx* with *new_lines*.
+    """Return the content with the block at the index replaced by the new lines.
 
-    The block is line TEXT with no trailing newline, so a pure deletion (no new
-    lines; one empty new line is a blank line, not a deletion) must take the
-    newline that terminated the last removed line with it: leaving it behind
-    puts a stray blank line where the deletion happened, and deleting every
-    line leaves the file as a lone newline."""
+    The block carries no trailing newline, so a pure deletion (no new lines; one empty line is
+    a blank line) takes the newline that terminated the last removed line with it.
+    """
     rest = content[idx + len(old_block) :]
     if not new_lines and rest.startswith("\n"):
         rest = rest[1:]
@@ -865,15 +859,17 @@ def _v4a_splice(content: str, idx: int, old_block: str, new_lines: tuple[str, ..
 def _v4a_split_hunks(
     section: list[str],
 ) -> list[tuple[tuple[str, ...], str, tuple[str, ...], tuple[tuple[str, str], ...]]]:
-    """Split a V4A Update body into `(hints, old_block, new_lines, body)` tuples;
-    `body` keeps the hunk's own lines as `(prefix, text)` pairs for `_v4a_heal`.
+    """Split a V4A Update body into its hunks.
 
-    A `@@ <text>` line is a section LOCATOR HINT for the hunk that follows: its
-    text (typically a `def`/`class` line) names the enclosing region, used to
-    disambiguate when the hunk's own context lines repeat elsewhere in the file.
-    One or more `@@` lines may precede a hunk; an empty `@@` is a bare hunk
-    separator with no hint. Within a hunk, ` `/`-` lines build the old block and
-    ` `/`+` lines build the new block.
+    A `@@ <text>` line is a locator hint for the hunk that follows, naming the enclosing region
+    when the context repeats elsewhere; an empty `@@` is a bare separator.
+
+    Returns:
+        (hints, old_block, new_lines, body) per hunk, where `body` keeps the hunk's own
+        (prefix, text) pairs for `_v4a_heal`.
+
+    Raises:
+        PatchError: A line carries an unknown prefix.
     """
     hunks: list[tuple[list[str], list[str], list[str], list[tuple[str, str]]]] = []
     cur_hints: list[str] = []
@@ -889,9 +885,7 @@ def _v4a_split_hunks(
 
     for ln in section:
         if ln.startswith("@@"):
-            # A `@@` after hunk content starts a NEW hunk; flush the current one
-            # first (which clears its hints). Then record this `@@`'s text as a
-            # locator hint for the hunk now beginning (empty `@@` = no hint).
+            # A `@@` after hunk content starts a new hunk.
             if cur_old or cur_new:
                 flush()
             hint = ln[2:].strip()
@@ -918,12 +912,11 @@ def _v4a_split_hunks(
 
 
 def _v4a_locate_with_hints(content: str, hints: tuple[str, ...], old_block: str) -> int | None:
-    """Index at which to apply *old_block* when it occurs more than once, using
-    the `@@` *hints* to disambiguate. Returns None when the hints do not
-    resolve it to a SINGLE location (the caller then reports the hunk as
-    ambiguous -- we never guess which occurrence to edit). Each hint must appear
-    in order; `old_block` must then occur exactly once at or after the last
-    hint's position."""
+    """Return the index of a repeated block that the `@@` hints pin to one location, else None.
+
+    Each hint must appear in order; the block must then occur exactly once at or after the last
+    hint's position.
+    """
     search_from = 0
     last_hint_pos = 0
     for hint in hints:
@@ -939,11 +932,11 @@ def _v4a_locate_with_hints(content: str, hints: tuple[str, ...], old_block: str)
 
 
 def _line_anchored_indices(content: str, block: str) -> list[int]:
-    """Start indices where *block* occurs aligned to line boundaries: the match
-    must begin at BOF or just after a newline and end at EOF or just before a
-    newline. A V4A hunk block is always whole lines, so a substring match that
-    straddles a line boundary (`-x = 1` inside `x = 10`) is a false positive
-    that would splice mid-line and silently corrupt the file."""
+    """Return the start indices where the block occurs aligned to line boundaries.
+
+    A V4A block is whole lines, so a substring match straddling a boundary (`x = 1` inside
+    `x = 10`) would splice mid-line.
+    """
     out: list[int] = []
     start = 0
     width = len(block)

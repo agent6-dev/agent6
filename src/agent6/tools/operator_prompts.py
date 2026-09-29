@@ -2,11 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """The one gate every prompt to the operator goes through.
 
-`OperatorPrompts` mints the prompt ids, clears a prompt's answer slot, journals
-`approval.prompt` / `question.prompt` before asking and `approval.answer` /
-`question.answer` after, and names the tool call a prompt gates. A front-end
-supplies only the two callables that ANSWER (`Approver`, `Questioner`) and say
-which source answered; it never journals.
+`OperatorPrompts` mints the prompt ids, clears a prompt's answer slot, journals the prompt
+before asking and the answer after, and names the tool call a prompt gates. A front-end
+supplies only the two callables that answer (`Approver`, `Questioner`) and say which source
+answered; it never journals.
 """
 
 from __future__ import annotations
@@ -20,14 +19,11 @@ from typing import Any, Literal, Protocol
 from agent6.sessions.ipc import clear_answer, clear_question_answers, session_allow_set
 from agent6.tools.schema import UserQuestion
 
-# Who answered, as `approval.answer` / `question.answer` journal it. The CLI:
-# "stdin" (its own terminal), "frontend" (a live TUI, web, or attach answering
-# by file), "await-frontend" (parked until one attached), "away-deny" (the
-# detach choice; approvals only), "away-wait" (the park; questions only),
-# "headless-default" (no terminal and no front-end: empty answers). The gate:
-# "session" (a standing grant answered). A machine state: "headless" (nobody to
-# ask: denied, or empty). An editor over ACP: "acp" ("headless" when it declared
-# it cannot be asked).
+# Who answered, as the answer events journal it: the CLI's terminal ("stdin"), a live TUI, web
+# or attach ("frontend"), a park until one attached ("await-frontend"), the detach choice
+# ("away-deny", approvals only; "away-wait", questions only), no terminal and no front-end
+# ("headless-default", empty answers), a standing grant ("session"), a machine state with nobody
+# to ask ("headless"), or an editor over ACP ("acp").
 Source = Literal[
     "stdin",
     "frontend",
@@ -47,25 +43,32 @@ UNANSWERED_NOTE = (
 
 @dataclass(frozen=True, slots=True)
 class ApprovalRequest:
-    """One approval put to the operator, as journaled in `approval.prompt`."""
+    """One approval put to the operator, as journaled in `approval.prompt`.
 
-    # The answer slot's key: a file-bridge front-end answers into
-    # `approvals/<id>.answer`.
+    Attributes:
+        id: The answer slot's key; a file-bridge front-end answers into `approvals/<id>.answer`.
+        prompt: The line shown.
+        scope: What a standing answer grants, "command" or "mcp.<server>"; None offers none, so
+            the operator is asked every time (`fetch`). One scope's grant is never consent for
+            another.
+        call_id: The dispatched tool call the prompt gates; None for a verify the harness runs.
+    """
+
     id: str
     prompt: str
-    # What a standing answer grants: "command" for the command tools,
-    # "mcp.<server>" for one server's. None offers no standing answer, so the
-    # operator is asked every time (`fetch`). Nothing may read one scope's
-    # grant as consent for another.
     scope: str | None
-    # The dispatched tool call the prompt gates; None for one gating no call
-    # (a verify the harness runs itself).
     call_id: int | None
 
 
 @dataclass(frozen=True, slots=True)
 class QuestionRequest:
-    """One `ask_user` (or a pre-run question), as journaled in `question.prompt`."""
+    """One `ask_user` (or a pre-run question), as journaled in `question.prompt`.
+
+    Attributes:
+        id: The answer slot's key.
+        questions: The questions put.
+        call_id: The dispatched tool call the prompt gates; None for a pre-run question.
+    """
 
     id: str
     questions: tuple[UserQuestion, ...]
@@ -74,41 +77,54 @@ class QuestionRequest:
 
 @dataclass(frozen=True, slots=True)
 class ApprovalAnswer:
+    """One approval's answer and who gave it."""
+
     approved: bool
     source: Source
 
 
 @dataclass(frozen=True, slots=True)
 class QuestionAnswer:
-    # Aligned to the request's questions by index; a shorter tuple leaves the
-    # rest unanswered ("").
+    """One question set's answers and who gave them.
+
+    Attributes:
+        answers: Aligned to the request's questions by index; a shorter tuple leaves the rest "".
+        source: Who answered.
+        unseen: Nobody could see the questions (no terminal and no front-end, or a park that
+            ended empty); a person who left them blank is not unseen.
+    """
+
     answers: tuple[str, ...]
     source: Source
-    # Nobody could see the questions: no terminal and no front-end, or a park
-    # that ended empty. A person who left them blank is not unseen.
     unseen: bool = False
 
 
 class Approver(Protocol):
-    """Answers one approval and says who answered."""
+    """Answer one approval and say who answered."""
 
-    def __call__(self, request: ApprovalRequest, /) -> ApprovalAnswer: ...
+    def __call__(self, request: ApprovalRequest, /) -> ApprovalAnswer:
+        """Answer the request."""
+        ...
 
 
 class Questioner(Protocol):
-    """Answers one question set and says who answered."""
+    """Answer one question set and say who answered."""
 
-    def __call__(self, request: QuestionRequest, /) -> QuestionAnswer: ...
+    def __call__(self, request: QuestionRequest, /) -> QuestionAnswer:
+        """Answer the request."""
+        ...
 
 
 class Journal(Protocol):
     """Where the gate's events go: a run's `EventSink.emit`."""
 
-    def __call__(self, event_type: str, /, **fields: Any) -> None: ...
+    def __call__(self, event_type: str, /, **fields: Any) -> None:
+        """Write one event."""
+        ...
 
 
 def unjournaled(event_type: str, /, **fields: Any) -> None:
-    """The default journal: nothing is written (a gate built with no sink)."""
+    """Write nothing: the journal of a gate built with no sink."""
 
 
 def _default_approver(request: ApprovalRequest, /) -> ApprovalAnswer:  # pragma: no cover
@@ -120,9 +136,11 @@ def _default_approver(request: ApprovalRequest, /) -> ApprovalAnswer:  # pragma:
 
 
 def _default_questioner(request: QuestionRequest, /) -> QuestionAnswer:  # pragma: no cover
-    """Fallback for `ask_user` when no front-end is wired: numbered stdin
-    prompts, one per question. A non-TTY/headless stdin answers "" for each so a
-    run never hangs (mirrors ui/cli/_interact.py's default_stdin_questioner)."""
+    """Ask on stdin, one numbered prompt per question, when no front-end is wired.
+
+    Returns:
+        The answers; a stdin that is not a terminal answers "" for each so a run never hangs.
+    """
     if not sys.stdin.isatty():
         return QuestionAnswer(tuple("" for _ in request.questions), "headless-default", unseen=True)
     answers: list[str] = []
@@ -141,10 +159,12 @@ def _default_questioner(request: QuestionRequest, /) -> QuestionAnswer:  # pragm
 class OperatorPrompts:
     """Every prompt to the operator for one execution, journaled once.
 
-    `journal` takes every event the gate writes (a run's `EventSink.emit`).
-    `session_dir` is where the file bridge lives (`sessions.ipc`: the answer
-    slots and the operator's standing choices): the run dir, or a machine
-    state's dir. None keeps no bridge (a bare dispatcher, a test).
+    Args:
+        approver: Answers approvals; stdin when None.
+        questioner: Answers questions; stdin when None.
+        journal: Takes every event the gate writes (a run's `EventSink.emit`).
+        session_dir: Where the file bridge lives (`sessions.ipc`: the answer slots and the
+            operator's standing choices); None keeps no bridge.
     """
 
     def __init__(
@@ -163,14 +183,19 @@ class OperatorPrompts:
         self._questions = itertools.count(1)
 
     def approve(self, prompt: str, *, scope: str | None = None, call_id: int | None = None) -> bool:
-        """Ask, unless a standing grant for *scope* already answers.
+        """Ask, unless a standing grant for the scope already answers.
 
-        The answer slot is cleared BEFORE the prompt is journaled: ids are
-        predictable counters, so an answer written ahead of its prompt (a
-        premature approve POST) must never be the one consumed, and only the
-        process that journals knows the exact moment. `standing` tells every
-        front-end whether to OFFER an "allow all": a button that silently
-        answered only this call would lie about itself.
+        The answer slot is cleared before the prompt is journaled: ids are predictable
+        counters, so an answer written ahead of its prompt must never be the one consumed.
+        The prompt's `standing` tells a front-end whether to offer an "allow all".
+
+        Args:
+            prompt: The line shown.
+            scope: What a standing answer grants; None offers none.
+            call_id: The tool call the prompt gates.
+
+        Returns:
+            Whether the call was approved.
         """
         request = ApprovalRequest(
             id=f"approval-{next(self._approvals)}", prompt=prompt, scope=scope, call_id=call_id
@@ -196,8 +221,19 @@ class OperatorPrompts:
     def ask(
         self, questions: tuple[UserQuestion, ...], *, call_id: int | None = None
     ) -> QuestionAnswer:
-        """Put *questions* to the operator; the answers align to them by index
-        (a question the front-end left unanswered is ""), with who answered."""
+        """Put questions to the operator.
+
+        Args:
+            questions: The questions.
+            call_id: The tool call the prompt gates.
+
+        Returns:
+            The answers aligned to the questions by index ("" for one left unanswered), who
+            answered, and whether anyone saw the questions.
+
+        Raises:
+            ValueError: The questioner returned more answers than questions.
+        """
         request = QuestionRequest(
             id=f"question-{next(self._questions)}", questions=questions, call_id=call_id
         )
@@ -227,6 +263,5 @@ class OperatorPrompts:
 
 
 def unanswered_note(answer: QuestionAnswer) -> str:
-    """What the model is told when nobody saw its questions; "" when someone
-    answered, or declined by leaving them blank."""
+    """Return the note the model reads when nobody saw its questions, else ""."""
     return UNANSWERED_NOTE if answer.unseen else ""

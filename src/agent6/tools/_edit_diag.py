@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Diagnostics for apply_edit / apply_patch: dry-run preview, and on a failed
-match the closest on-disk region so the model can retry without re-reading.
+"""Diagnostics for apply_edit and apply_patch.
+
+The dry-run preview, and on a failed match the closest on-disk region so the model retries
+without re-reading.
 """
 
 from __future__ import annotations
@@ -22,14 +24,23 @@ def preview_result(
     deleting: bool = False,
     healed: tuple[str, ...] = (),
 ) -> PreviewResult:
-    """Build the dry-run response for `apply_edit`/`apply_patch` with
-    `preview=true`. Returns the unified diff (old vs new) and a hunk
-    count, but does NOT write anything to disk. The byte counts are the
-    caller's, measured on disk (`disk_bytes`), so they match an apply's.
+    """Build the dry-run response for an edit tool called with `preview=true`.
 
-    Lets the agent sanity-check a complex multi-edit call
-    before committing to it. Diff is bounded so a preview of a 100k-line
-    rewrite doesn't dump the whole file back into the conversation.
+    Nothing is written. The diff is capped at 8000 characters so a preview of a large rewrite
+    does not dump the whole file into the conversation.
+
+    Args:
+        path: The workspace-relative path.
+        old_text: The file's text before the edit, or None for a new file.
+        new_text: The file's text after the edit.
+        bytes_before: The size on disk before, measured by the caller so it matches an apply.
+        bytes_after: The size on disk after.
+        applied: The edits that would apply, when the caller tracks them.
+        deleting: Whether the edit deletes the file.
+        healed: The edits that only matched after an indent shift.
+
+    Returns:
+        The unified diff, its hunk count and the byte counts.
     """
     old_lines = (old_text or "").splitlines(keepends=True)
     new_lines = new_text.splitlines(keepends=True)
@@ -57,8 +68,7 @@ def preview_result(
     )
 
 
-# Cap the closest-match scan so a failed edit on a very large file does not turn
-# into a quadratic diff. Above this the diagnostic falls back to file shape.
+# Above this the closest-match scan (quadratic) is skipped and the diagnostic gives file shape.
 CLOSEST_MATCH_MAX_LINES = 6000
 
 
@@ -67,10 +77,18 @@ def _leading_ws(s: str) -> str:
 
 
 def _reindent(lines: list[str], old_base: str, new_base: str) -> list[str] | None:
-    """Replace each non-blank line's leading `old_base` with `new_base`,
-    preserving any indentation beyond the base. Blank lines pass through. Returns
-    None if any non-blank line does not start with `old_base` (the shift does
-    not apply cleanly, so it is not safe to guess)."""
+    """Replace each non-blank line's leading `old_base` with `new_base`.
+
+    Indentation beyond the base is kept and blank lines pass through.
+
+    Args:
+        lines: The lines to shift.
+        old_base: The indent each non-blank line must start with.
+        new_base: The indent that replaces it.
+
+    Returns:
+        The shifted lines, or None when a non-blank line does not start with `old_base`.
+    """
     out: list[str] = []
     for ln in lines:
         if not ln.strip():
@@ -83,18 +101,21 @@ def _reindent(lines: list[str], old_base: str, new_base: str) -> list[str] | Non
 
 
 def indent_tolerant_replacement(file_text: str, old_string: str, new_string: str) -> str | None:
-    """Apply an edit whose `old_string` doesn't match verbatim but matches
-    EXACTLY ONE on-disk region up to a uniform leading-indent shift -- the
-    dominant weak-model mistake: correct lines, wrong indent depth. Returns the
-    edited file text, or None whenever it is not provably safe (no match,
-    multiple matches, or a non-uniform diff) so the caller keeps the exact-match
-    error.
+    """Apply an edit whose `old_string` matches exactly one region up to a uniform indent shift.
 
-    Safety gate: the shift derived from the first content line is applied to
-    `old_string` and must reproduce the matched region byte-for-byte before it
-    is applied to `new_string`. So the region is only ever edited when the
-    transform is proven correct for old -> disk; a wrong region cannot be hit.
-    Trailing-whitespace or non-uniform mismatches fail the gate and fall back."""
+    Correct lines at the wrong indent depth is the dominant weak-model mistake. The shift
+    derived from the first content line must reproduce the matched region byte for byte before
+    it is applied to `new_string`, so a wrong region cannot be hit.
+
+    Args:
+        file_text: The file's text.
+        old_string: The text the edit expected, at the wrong indent.
+        new_string: The replacement, at the same wrong indent.
+
+    Returns:
+        The edited text, or None when the shift is not provably safe (no match, several
+        matches, or a non-uniform shift) so the caller keeps the exact-match error.
+    """
     old_lines = old_string.split("\n")
     file_lines = file_text.split("\n")
     n = len(old_lines)
@@ -125,11 +146,16 @@ def indent_tolerant_replacement(file_text: str, old_string: str, new_string: str
 def closest_on_disk_region(file_text: str, old_string: str) -> tuple[int, str, float] | None:
     """Find the file region most similar to a not-found `old_string`.
 
-    Returns `(1-based start line, region text, similarity ratio)` for the best
-    contiguous window with the same line count as `old_string`, or None when
-    the scan is skipped (empty or oversized file). This lets a failed
-    `apply_edit` hand the model the EXACT on-disk text to retry with, instead
-    of telling it to re-read the whole file (the dominant small-model time sink).
+    A failed edit hands the model the exact on-disk text to retry with, instead of telling it
+    to re-read the file.
+
+    Args:
+        file_text: The file's text.
+        old_string: The text the edit expected.
+
+    Returns:
+        The 1-based start line, the region's text and the similarity ratio of the best window
+        with `old_string`'s line count, or None when the file is empty or oversized.
     """
     file_lines = file_text.splitlines()
     if not file_lines or len(file_lines) > CLOSEST_MATCH_MAX_LINES:
@@ -155,9 +181,18 @@ def closest_on_disk_region(file_text: str, old_string: str) -> tuple[int, str, f
 
 
 def edit_mismatch_error(path: str, edit_index: int, file_text: str, old_string: str) -> str:
-    """Build the not-found error for `apply_edit`. Prefers a copy-paste-able
-    closest on-disk region so the model retries directly; falls back to file
-    shape only when no region is similar enough to be useful."""
+    """Build the not-found error for `apply_edit`.
+
+    Args:
+        path: The workspace-relative path.
+        edit_index: The failed edit's 1-based index.
+        file_text: The file's text.
+        old_string: The text the edit expected.
+
+    Returns:
+        The error, carrying the closest on-disk region to retry with, or the file's shape when
+        no region is at least half similar.
+    """
     region_info = closest_on_disk_region(file_text, old_string)
     if region_info is not None and region_info[2] >= 0.5:
         start_line, region, ratio = region_info
@@ -190,8 +225,7 @@ def edit_mismatch_error(path: str, edit_index: int, file_text: str, old_string: 
             f">>>ON_DISK\n"
             f"difference (- your old_string, + on disk):\n{diff}"
         )
-    # No region similar enough: orient with file shape only (no body to copy,
-    # so the model cannot plagiarise a wrong anchor).
+    # File shape only: no body to copy, so the model cannot take a wrong anchor.
     lines = file_text.splitlines()
     head = "\n".join(lines[:5])
     tail = "\n".join(lines[-5:]) if len(lines) > 10 else ""

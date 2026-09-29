@@ -1,17 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Talk to an MCP server the OPERATOR is running, over HTTP.
+"""Talk to an MCP server the operator is running, over HTTP.
 
-The stdio transport has agent6 spawn the server, which means agent6 owns its
-environment, its lifetime and its confinement. For a server that wants a
-browser, a device or a network of its own, that is the wrong owner: the
-operator runs it however they like -- their container, their sandbox, their
-credentials -- and agent6 only connects.
+The stdio transport has agent6 spawn the server and own its environment, lifetime and
+confinement. A server that wants a browser, a device or a network of its own is run by the
+operator however they like, and agent6 only connects.
 
-One request, one response: JSON-RPC over POST, with the same defences the
-`fetch` tool carries (no compression, a streamed cap, a total deadline) plus
-the stdio reader's id check. A response is only this call's answer if it says
-so.
+One request, one response: JSON-RPC over POST, with the defences the `fetch` tool carries (no
+compression, a streamed cap, a total deadline) plus the stdio reader's id check.
 """
 
 from __future__ import annotations
@@ -26,37 +22,29 @@ import httpx2
 
 from agent6.tools.http_body import BodyRefusedError, read_capped
 
-# The same bound the stdio reader applies, and applied the same way: while the
-# body arrives, not after. `response.content` materializes first, so a 400 MiB
-# body reaches 849 MiB of RSS before the check, and a 1 MiB gzip bomb 2 GiB,
-# enough to OOM the process that owns the run and the provider keys.
+# The stdio reader's bound, applied while the body arrives: `response.content` materializes
+# first, so a 400 MiB body reaches 849 MiB of RSS before any check and a 1 MiB gzip bomb 2 GiB.
 MAX_BODY_BYTES = 8 << 20
 
-# How much of a non-2xx body rides into the error message, so a server's
-# explanation reaches the model without a whole capped body behind it.
+# How much of a non-2xx body rides into the error message.
 _MAX_ERROR_DETAIL_CHARS = 2048
 
 
 def _clean_session_id(value: str) -> str:
-    """A server-assigned session id the transport can safely ECHO back in a header, or "".
+    """Return a server-assigned session id the transport can echo in a header, or "".
 
-    The value comes from an operator-run server but crosses the wire, so it is
-    untrusted the same way the token in `_auth` is: a non-ASCII byte makes the
-    HTTP layer raise on the next send with the value IN its message (which
-    reaches stderr, the launch log and the model's context), and a control
-    character rides straight into the outgoing header. The spec restricts a
-    session id to visible ASCII (0x21-0x7E); anything else is dropped so we
-    simply do not echo it, and the caller treats it as a stateless response.
-    Never raises, never quotes the value: a malformed id degrades to no
-    session, it does not take the connection down.
+    The value crosses the wire, so it is untrusted like the token in `_auth`: a non-ASCII byte
+    makes the HTTP layer raise on the next send with the value in its message (which reaches
+    stderr, the launch log and the model's context), and a control character rides into the
+    outgoing header. The spec restricts a session id to visible ASCII (0x21-0x7E); anything
+    else is dropped, never quoted, and the caller treats the response as stateless.
     """
     if value and all("\x21" <= ch <= "\x7e" for ch in value):
         return value
     return ""
 
 
-# The version agent6 negotiates in `initialize`, echoed on every later request
-# as the spec requires.
+# Negotiated in `initialize` and echoed on every later request, as the spec requires.
 PROTOCOL_VERSION = "2024-11-05"
 
 
@@ -65,38 +53,43 @@ class MCPHttpError(Exception):
 
 
 class MCPSessionExpiredError(MCPHttpError):
-    """A stateful server answered a request carrying this transport's session id with 404:
-    the spec's signal that it expired the session. The caller re-initializes.
-    A subclass of MCPHttpError so a plain `except MCPHttpError` still catches
-    it, but the manager can single it out to re-handshake."""
+    """A stateful server answered a request carrying this transport's session id with 404.
+
+    That is the spec's signal that it expired the session; the manager re-initializes.
+    """
 
 
 @dataclass(slots=True)
 class HttpTransport:
-    """A connection to one operator-run MCP server. Not frozen: `session_id`
-    is live connection state the server assigns on `initialize` (the rest is
-    config)."""
+    """A connection to one operator-run MCP server.
+
+    Not frozen: `session_id` is live connection state; the rest is config.
+
+    Attributes:
+        name: The server's name in config.
+        url: The server's endpoint.
+        token_env: The env var holding the bearer token; its value is read here and never
+            logged, written to a transcript or quoted in an error.
+        httpx_trust_env: Whether httpx honours the ambient HTTP(S)_PROXY; off by default so the
+            bearer token never routes to a proxy.
+        session_id: The streamable-HTTP session id the server assigns on `initialize`, echoed
+            on every later request and cleared on the 404 that means it expired; "" for a
+            stateless server.
+    """
 
     name: str
     url: str
-    # The env var holding the bearer token, named in config. The VALUE is read
-    # here and never logged, never written to a transcript, and never part of
-    # an error message.
     token_env: str = ""
-    # Forward httpx's trust_env (default off): the ambient HTTP(S)_PROXY is
-    # ignored, so this server's bearer token never routes to a proxy. See `send`.
     httpx_trust_env: bool = False
-    # The streamable-HTTP session id: captured from the `initialize` response
-    # (see `send`), echoed on every later request (see `_headers`), and cleared
-    # on the 404 that means the server expired it. Stays "" for a stateless
-    # server, which never sends one.
     session_id: str = ""
 
     def _auth(self) -> str:
-        """The bearer header value, or "" -- refusing a token that cannot be
-        one. A stray CR (a token file with CRLF endings) makes the HTTP layer
-        raise with the header VALUE in its message, and that message reaches
-        stderr, the launch log and the model's context."""
+        """Return the bearer header value, or "" when no token is configured.
+
+        Raises:
+            MCPHttpError: The token cannot be a header value; a stray CR would make the HTTP
+                layer raise with the value in its message, which reaches the model's context.
+        """
         token = os.environ.get(self.token_env, "") if self.token_env else ""
         if not token:
             return ""
@@ -113,9 +106,7 @@ class HttpTransport:
             # Streamable HTTP: a server may answer with either.
             "accept": "application/json, text/event-stream",
             "mcp-protocol-version": PROTOCOL_VERSION,
-            # Compression is declined here and refused in `send` if the server
-            # answers with it anyway: the cap counts what ARRIVES, and a
-            # decoded stream would expand past it before any check.
+            # Compression is declined here and refused by read_capped if sent anyway.
             "accept-encoding": "identity",
         }
         if auth := self._auth():
@@ -125,14 +116,23 @@ class HttpTransport:
         return headers
 
     def send(self, payload: dict[str, Any], *, timeout_s: float) -> dict[str, Any] | None:
-        """POST one JSON-RPC message; return the response, or None for a
-        notification the server acknowledged with no body.
+        """POST one JSON-RPC message and return the server's answer.
 
-        `trust_env` is off by default: an ambient `HTTP_PROXY` would otherwise
-        capture this connection -- loopback included, since httpx has no implicit
-        bypass -- sending the bearer token to the proxy while the operator's own
-        server received nothing. `[mcp.servers.<name>].httpx_trust_env` opts a
-        server in (one reachable only through the environment's proxy).
+        `trust_env` is off by default: an ambient `HTTP_PROXY` would otherwise capture this
+        connection, loopback included, sending the bearer token to the proxy.
+        `[mcp.servers.<name>].httpx_trust_env` opts a server in.
+
+        Args:
+            payload: The JSON-RPC message.
+            timeout_s: The total deadline for the request and its body.
+
+        Returns:
+            The response message, or None for a notification acknowledged with no body.
+
+        Raises:
+            MCPSessionExpiredError: The server answered the session id with 404.
+            MCPHttpError: The server is unreachable, answered outside 2xx, or sent a body that
+                is compressed, too large, too slow or not JSON-RPC.
         """
         try:
             with (
@@ -147,9 +147,7 @@ class HttpTransport:
                 ) as response,
             ):
                 if response.status_code == 404 and self.session_id:
-                    # The spec: a 404 to a request bearing a session id means
-                    # the server expired that session. Drop it so the transport does not
-                    # keep echoing a dead id, and signal a re-initialize.
+                    # Dropped so the transport stops echoing a dead id.
                     self.session_id = ""
                     raise MCPSessionExpiredError(
                         f"server {self.name!r} expired its session (HTTP 404)"
@@ -162,9 +160,7 @@ class HttpTransport:
                 except BodyRefusedError as exc:
                     raise MCPHttpError(f"server {self.name!r}: {exc}") from exc
                 if not 200 <= response.status_code < 300:
-                    # A 3xx is no JSON-RPC answer either. The body is the
-                    # server's own words about what went wrong (a rate limit,
-                    # an auth rejection): kept, bounded.
+                    # A 3xx is no JSON-RPC answer either; the body's own words are kept, bounded.
                     detail = body.decode("utf-8", errors="replace").strip()
                     if len(detail) > _MAX_ERROR_DETAIL_CHARS:
                         detail = detail[:_MAX_ERROR_DETAIL_CHARS] + " …[agent6: truncated]"
@@ -172,20 +168,14 @@ class HttpTransport:
                     raise MCPHttpError(
                         f"server {self.name!r} returned HTTP {response.status_code}{suffix}"
                     )
-                # The server assigns the session id on the initialize response;
-                # capture it here and every request after echoes it. A stateless
-                # server sends none, so this leaves session_id "".
+                # A stateless server sends no id, so this leaves session_id "".
                 assigned = _clean_session_id(response.headers.get("mcp-session-id", ""))
                 if assigned:
                     self.session_id = assigned
         except MCPHttpError:
             raise
         except Exception as exc:
-            # Deliberately broad: httpx2.InvalidURL does not derive from
-            # HTTPError, so an operator typo in `url` escapes a narrower catch
-            # and crashes the run instead of being logged and skipped. The
-            # message is the exception's TYPE, never its text, which can quote
-            # a rejected header value back into the run's output.
+            # Broad: httpx2.InvalidURL is no HTTPError. The type only: the text can quote a header.
             raise MCPHttpError(f"server {self.name!r} unreachable ({type(exc).__name__})") from None
         if not body.strip():
             return None  # an accepted notification
@@ -194,7 +184,11 @@ class HttpTransport:
 
 
 def _parse(raw: bytes, *, name: str) -> dict[str, Any]:
-    """The JSON-RPC message in *raw*, whether it arrived bare or as SSE."""
+    """Return the JSON-RPC message in the body, whether it arrived bare or as SSE.
+
+    Raises:
+        MCPHttpError: The body is not a JSON object, or an SSE stream without data.
+    """
     text = raw.decode("utf-8", errors="replace").lstrip("﻿")
     if text.lstrip().startswith(("event:", "data:", "id:", "retry:", ":")):
         text = _sse_data(text, name=name)
@@ -208,14 +202,14 @@ def _parse(raw: bytes, *, name: str) -> dict[str, Any]:
 
 
 def _sse_data(text: str, *, name: str) -> str:
-    """The `data` payload of the first SSE event carrying one.
+    """Return the `data` payload of the first SSE event carrying one.
 
-    A real field parser, not a line scan: an event may open with `id:` or
-    `retry:` (resumability), may carry `data` across several lines the spec
-    says to join with newlines, and its line endings may be CR, LF or CRLF.
-    `str.splitlines()` also splits on U+2028/U+2029/U+0085, which are LEGAL
-    raw characters inside a JSON string, so a tool result containing one is cut
-    in half, every time, and the model could plant one deliberately.
+    An event may open with `id:` or `retry:`, carry `data` across several lines joined with
+    newlines, and end lines with CR, LF or CRLF. `str.splitlines()` is avoided: it also splits
+    on U+2028, U+2029 and U+0085, which are legal inside a JSON string.
+
+    Raises:
+        MCPHttpError: No event carries data.
     """
     data: list[str] = []
     for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):

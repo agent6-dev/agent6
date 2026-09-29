@@ -2,14 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """Read this project's other sessions.
 
-A run, a plan and an ask are all sessions, and their journals sit side by side
-under the project's state dir. Without this the model sees only its own, and
-using what an earlier session worked out means the operator copying it by hand.
-
-Read-only, and confined to the state dir by construction -- a session is named
-by id, resolved against the buckets on disk, so no path from the model reaches
-the filesystem. The journals hold conversations, not credentials: secrets are
-never written to a transcript.
+A run, a plan and an ask are all sessions, and their journals sit side by side under the
+project's state dir. Read-only, and confined to the state dir by construction: a session is
+named by id, resolved against the buckets on disk, so no path from the model reaches the
+filesystem. The journals hold conversations, not credentials.
 """
 
 from __future__ import annotations
@@ -23,30 +19,30 @@ from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout, bu
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.schema import ROSTER_MAX
 
-# What a reader needs from another session: who said what, and from which
-# field. Deltas are the same prose arriving in pieces, so only the settled
-# events are folded. The operator speaks twice: the task, and every steer --
-# without the steers the transcript reads as if the session went that way on
-# its own.
+# Who said what, from which field; settled events only (deltas repeat them), and every steer.
 _SPEAKER = {
     "role.result": ("assistant", "text"),
     "session.start": ("user", "user_task"),
     "loop.steer.injected": ("user", "text"),
 }
 
-# A roster is context the model pays for on every call, so it is capped. The
-# newest sessions are the ones a reader wants; `query` is how you reach an older
-# one. Uncapped, 2000 sessions render ~70k tokens.
-
 
 @dataclass(frozen=True, slots=True)
 class Roster:
-    """What `read_session` lists, and whether it is the whole story."""
+    """The sessions `read_session` lists, newest first.
+
+    The roster is capped at `ROSTER_MAX`: uncapped, 2000 sessions render about 70k tokens.
+
+    Attributes:
+        briefs: The sessions shown.
+        more: Whether older sessions were left out; `query` reaches them.
+    """
 
     briefs: tuple[SessionBrief, ...]
     more: bool
 
     def lines(self) -> tuple[str, ...]:
+        """Return one line per brief, plus a note when the roster was cut."""
         shown = tuple(b.line() for b in self.briefs)
         if not self.more:
             return shown
@@ -55,24 +51,30 @@ class Roster:
 
 @dataclass(frozen=True, slots=True)
 class SessionBrief:
-    """One session as the roster shows it."""
+    """One session as the roster shows it.
+
+    Attributes:
+        id: The session id.
+        mode: The session's mode.
+        task: The first 120 characters of the task.
+        started: The start timestamp.
+        bucket: The bucket the session lives in; re-resolving it per brief makes a query O(N^2).
+    """
 
     id: str
     mode: str
     task: str
     started: str
-    # Which bucket it lives in. Carried rather than re-resolved: looking it up
-    # per brief re-scans every bucket, making a query O(N^2), 44s at 2000
-    # sessions with the loop blocked the whole time.
     bucket: str
 
     def line(self) -> str:
+        """Return the brief's roster line."""
         when = f" · {self.started[:16]}" if self.started else ""
         return f"[{self.id}] {self.mode}{when}: {self.task}"
 
 
 def session_briefs(state_dir: Path) -> list[SessionBrief]:
-    """Every session in this project, newest first."""
+    """Return every session in this project, newest first."""
     found: list[tuple[float, SessionBrief]] = []
     for bucket in SESSION_BUCKETS:
         root = bucket_dir(state_dir, bucket)
@@ -101,10 +103,17 @@ def session_briefs(state_dir: Path) -> list[SessionBrief]:
 
 
 def conversation(layout: SessionLayout, *, max_chars: int) -> str:
-    """*layout*'s conversation as plain text, oldest first, tail-truncated.
+    """Return a session's conversation as plain text, oldest first.
 
-    Truncation keeps the TAIL: a session's conclusion is what a later one
-    usually wants, and the head is the task the roster already carries.
+    Truncation keeps the tail: the conclusion is what a later session wants, and the head is
+    the task the roster already carries.
+
+    Args:
+        layout: The session's layout on disk.
+        max_chars: The cap on the returned text, header included.
+
+    Returns:
+        The conversation, or a note when the journal is unreadable or empty.
     """
     lines: list[str] = []
     journal = layout.logs_path
@@ -133,8 +142,7 @@ def conversation(layout: SessionLayout, *, max_chars: int) -> str:
             lines.append(f"{speaker}: {body}")
     text = "\n\n".join(lines)
     if len(text) > max_chars:
-        # The header counts against the cap: added on top of a max_chars slice,
-        # the result would be longer than the caller asked for.
+        # The header counts against the cap.
         header = "... {cut} earlier characters elided ...\n\n"
         kept = max(max_chars - len(header.format(cut=len(text))), 0)
         text = header.format(cut=len(text) - kept) + text[-kept:] if kept else ""
@@ -142,9 +150,14 @@ def conversation(layout: SessionLayout, *, max_chars: int) -> str:
 
 
 def roster(state_dir: Path, query: str) -> Roster:
-    """The sessions to show, newest first: every one, or those matching *query*.
+    """Return the sessions to show, newest first: every one, or those matching a query.
 
-    A query matches the task or anything said in the session.
+    Args:
+        state_dir: The project's state dir.
+        query: A substring matched against the task or anything said in the session.
+
+    Returns:
+        The roster, cut at `ROSTER_MAX`.
     """
     briefs = session_briefs(state_dir)
     if not query:
@@ -162,11 +175,10 @@ def roster(state_dir: Path, query: str) -> Roster:
 
 
 def _file_contains(path: Path, needle: str) -> bool:
-    """Whether *path* contains *needle*, read in chunks.
+    """Return whether the file contains the needle, reading in chunks.
 
-    A real journal reaches megabytes (every streamed delta is persisted), and
-    reading whole ones into memory to answer a yes/no costs ~1 GB per call
-    across a couple of hundred sessions.
+    A journal reaches megabytes; reading whole ones costs about 1 GB per query over a few
+    hundred sessions.
     """
     overlap = len(needle)
     try:

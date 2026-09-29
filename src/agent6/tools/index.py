@@ -1,27 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tree-sitter symbol index for the LLM-visible navigation tools.
+"""Tree-sitter symbol index for the navigation tools.
 
-Provides a `SymbolIndex` over a project root:
-
-    outline(path)            -> symbol declarations in one file (nested too)
-    find_definition(name)    -> every declaration of `name` across the project
-    find_references(name)    -> every identifier occurrence of `name` (incl. def)
-
-The index is built lazily on the first query, then updated incrementally when
-the caller marks files changed via `mark_changed(path)` / `mark_deleted(path)`.
-Re-parses happen in batch on the next query, so a worker can call `apply_edit`
-many times and pay the parse cost only when it next asks for symbol info.
-
-Languages live in `_LANG_TABLE` (extension -> tree-sitter name + a definitions
-query); an unlisted extension is silently ignored. Matching is
-identifier-level, never inside strings or comments, but cross-file
-*resolution* (which `foo` is the same symbol?) needs a real LSP and is out of
-scope.
-
-The navigation tools over it (`outline`, `find_definition`,
-`find_references`) are wired in `tools/dispatch.py` and `tools/schema.py`;
-adding another tool there takes a security review note.
+`SymbolIndex` answers outline, find_definition and find_references over a project root. It is
+built lazily on the first query and re-parses in batch on the next query the files marked
+changed or found changed by a stat sweep. Languages live in `_LANG_TABLE`; an unlisted suffix
+is ignored. Matching is identifier-level, never inside strings or comments; cross-file
+resolution needs an LSP and is out of scope.
 """
 
 from __future__ import annotations
@@ -40,11 +25,18 @@ from agent6.tools._path_safety import Workspace, contain, read_bytes_contained
 
 @dataclass(frozen=True, slots=True)
 class Symbol:
-    """A definition site. `path` is absolute; `line`/`col` are 1-based,
-    the convention shared by the navigation tools and their LSP twins."""
+    """A definition site.
+
+    Attributes:
+        name: The symbol's name.
+        kind: The capture name of the definition query: function, class, method, struct, ...
+        path: The absolute path.
+        line: The 1-based line.
+        col: The 1-based column.
+    """
 
     name: str
-    kind: str  # 'function' | 'class' | 'method' | 'struct' | 'enum' | ...
+    kind: str
     path: Path
     line: int
     col: int
@@ -52,10 +44,13 @@ class Symbol:
 
 @dataclass(frozen=True, slots=True)
 class Reference:
-    """An identifier occurrence. `path` is absolute; `line`/`col` are 1-based.
+    """An identifier occurrence, the definition site included.
 
-    Includes the definition site itself. Callers that want call-sites-only
-    should subtract the result of `find_definition(name)`.
+    Attributes:
+        name: The identifier.
+        path: The absolute path.
+        line: The 1-based line.
+        col: The 1-based column.
     """
 
     name: str
@@ -63,10 +58,6 @@ class Reference:
     line: int
     col: int
 
-
-# ---------------------------------------------------------------------------
-# Per-language queries
-# ---------------------------------------------------------------------------
 
 _PYTHON_DEFS: Final = """
 (function_definition name: (identifier) @function)
@@ -200,10 +191,7 @@ _CSHARP_DEFS: Final = """
 (operator_declaration
   ["+" "-" "*" "/" "%" "==" "!=" "<" ">" "<=" ">=" "++" "--"
    "!" "~" "&" "|" "^" "<<" ">>" "true" "false"] @method)
-; conversion_operator_declaration (implicit/explicit operator) and
-; indexer_declaration (this[...]) are intentionally NOT captured: they have no
-; name node, so the only available text is the target type / bracket list, which
-; makes a poor, noisy symbol name. The (rarely-navigated) gap is deliberate.
+; conversion_operator_declaration and indexer_declaration have no name node, so they are skipped.
 (property_declaration name: (identifier) @method)
 (event_declaration name: (identifier) @method)
 (field_declaration (modifier "const")
@@ -232,9 +220,7 @@ _PHP_DEFS: Final = """
 (enum_case name: (name) @const)
 """
 
-# Per-language identifier query for references. Different grammars surface
-# names under different node types (rust splits `identifier` vs
-# `type_identifier`; ts adds `property_identifier`).
+# Grammars surface names under different node types (rust type_identifier, ts property_identifier).
 _REF_QUERIES: Final[dict[str, str]] = {
     "python": "(identifier) @id",
     "rust": "[(identifier) (type_identifier)] @id",
@@ -275,7 +261,7 @@ _LANG_TABLE: Final[dict[str, tuple[str, str]]] = {
     ".php": ("php", _PHP_DEFS),
 }
 
-# Directories never indexed. Hard-coded; we are not parsing .gitignore here.
+# Directories never indexed; .gitignore is not parsed.
 _DEFAULT_EXCLUDES: Final[tuple[str, ...]] = (
     ".git",
     ".venv",
@@ -291,13 +277,13 @@ _DEFAULT_EXCLUDES: Final[tuple[str, ...]] = (
 )
 
 
-# ---------------------------------------------------------------------------
-# The index
-# ---------------------------------------------------------------------------
-
-
 class SymbolIndex:
-    """Lazy, incrementally-updated tree-sitter symbol index for a project root."""
+    """A lazy, incrementally updated tree-sitter symbol index over a project root.
+
+    Args:
+        ws: The workspace; a file hidden by its boundary is never indexed.
+        excludes: Directory names never descended into.
+    """
 
     def __init__(
         self,
@@ -308,30 +294,20 @@ class SymbolIndex:
         self._ws = ws
         self._root = ws.root.resolve()
         self._excludes = excludes
-        # path -> per-file caches. Absolute, resolved paths.
+        # Keyed by absolute, resolved path.
         self._symbols: dict[Path, list[Symbol]] = {}
         self._refs: dict[Path, list[Reference]] = {}
         self._scanned = False
         self._dirty: set[Path] = set()
-        # path -> (st_mtime_ns, st_size) recorded at parse time. Used to detect
-        # out-of-band changes/deletions (run_command formatters, rm, git mv, sed)
-        # that never go through mark_changed/mark_deleted.
+        # (st_mtime_ns, st_size) at parse time, so an out-of-band change (a formatter, rm) is seen.
         self._stamps: dict[Path, tuple[int, int]] = {}
-        # lang_name -> (parser, def_query, ref_query). Built on first use.
+        # lang_name -> (parser, def_query, ref_query), built on first use.
         self._parsers: dict[str, tuple[Parser, Query, Query]] = {}
-        # Guards every public reader/mutator so the index can be shared across
-        # the concurrent explore-review seats (one dispatcher, one index, N
-        # ThreadPoolExecutor threads). Re-entrant because public methods call
-        # each other (e.g. queries rely on _ensure_fresh) and _ensure_fresh is
-        # also invoked under the lock.
+        # Shared across the concurrent review seats; re-entrant because queries call each other.
         self._lock = threading.RLock()
 
-    # ------------------------------------------------------------------
-    # Dirty-tracking surface for the dispatcher to call after apply_edit
-    # ------------------------------------------------------------------
-
     def mark_changed(self, path: Path) -> None:
-        """Record that `path` was created or modified; re-parsed on next query."""
+        """Record that the path was created or modified; it is re-parsed on the next query."""
         with self._lock:
             self._dirty.add(path.resolve())
 
@@ -344,24 +320,20 @@ class SymbolIndex:
             self._stamps.pop(p, None)
             self._dirty.discard(p)
 
-    # ------------------------------------------------------------------
-    # Queries
-    # ------------------------------------------------------------------
-
     def outline(self, path: Path) -> list[Symbol]:
-        """Top-level + nested definitions in one file, in source order."""
+        """Return the top-level and nested definitions in one file, in source order."""
         with self._lock:
             self._ensure_fresh()
             p = path.resolve()
             if p not in self._symbols and p.is_file():
-                # On-demand parse for a file we hadn't seen at scan time.
+                # A file the scan had not seen is parsed on demand.
                 self._reparse(p)
             out = list(self._symbols.get(p, []))
             out.sort(key=lambda s: (s.line, s.col))
             return out
 
     def find_definition(self, name: str) -> list[Symbol]:
-        """All definition sites of `name` across the project, in path order."""
+        """Return every definition site of the name across the project, in path order."""
         with self._lock:
             self._ensure_fresh()
             out: list[Symbol] = []
@@ -373,7 +345,7 @@ class SymbolIndex:
             return out
 
     def find_references(self, name: str) -> list[Reference]:
-        """All identifier occurrences of `name` (incl. defs), in path order."""
+        """Return every occurrence of the name, definitions included, in path order."""
         with self._lock:
             self._ensure_fresh()
             out: list[Reference] = []
@@ -384,25 +356,20 @@ class SymbolIndex:
             out.sort(key=lambda r: (str(r.path), r.line, r.col))
             return out
 
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
-
     def _ensure_fresh(self) -> None:
-        # Callers hold self._lock.
+        """Scan on first use, then re-parse what is marked dirty or changed on disk.
+
+        Callers hold the lock. The stat sweep is the source of truth, so the index self-heals
+        whoever mutated the tree.
+        """
         if not self._scanned:
             self._scan_all()
             self._scanned = True
-        # Detect out-of-band changes/deletions (run_command formatters, rm,
-        # git mv, sed) that never went through mark_changed/mark_deleted.
-        # mark_* remain a cheap fast-path; this stat sweep is the source of
-        # truth so the index self-heals regardless of who mutated the tree.
         for p in list(self._symbols.keys()):
             try:
                 st = p.stat()
                 cur = (st.st_mtime_ns, st.st_size)
             except OSError:
-                # File vanished -> evict.
                 self._symbols.pop(p, None)
                 self._refs.pop(p, None)
                 self._stamps.pop(p, None)
@@ -417,10 +384,11 @@ class SymbolIndex:
         self._dirty.clear()
 
     def _scan_all(self) -> None:
-        """Parse every file of a known language under the root, pruning the
-        excluded directories before descending (a `.venv` or `node_modules`
-        is most of a tree's entries) and skipping other suffixes before any
-        path work; `_reparse` applies the boundary to what remains."""
+        """Parse every file of a known language under the root.
+
+        Excluded directories are pruned before descending (a `.venv` or `node_modules` is most
+        of a tree's entries); `_reparse` applies the boundary to what remains.
+        """
         for dirpath, dirnames, filenames in os.walk(self._root):
             dirnames[:] = [d for d in dirnames if d not in self._excludes]
             for name in filenames:
@@ -428,6 +396,7 @@ class SymbolIndex:
                     self._reparse(Path(dirpath, name))
 
     def _reparse(self, path: Path) -> None:
+        """Parse one file into its symbols and references, or evict it."""
         p = path.resolve()
         rel = self._included_rel(p)
         if rel is None or not p.is_file():
@@ -452,9 +421,7 @@ class SymbolIndex:
         try:
             tree = parser.parse(src)
         except Exception:  # tree-sitter errors are opaque; absorb per-file failures
-            # Record the stamp anyway so a persistently-unparseable file is not
-            # re-read and re-parsed on every query (the stat-sweep would keep
-            # flagging it dirty); drop any now-stale symbols/refs.
+            # The stamp is recorded so an unparseable file is not re-read on every query.
             self._symbols.pop(p, None)
             self._refs.pop(p, None)
             self._record_stamp(p)
@@ -496,9 +463,7 @@ class SymbolIndex:
         self._record_stamp(p)
 
     def _record_stamp(self, p: Path) -> None:
-        """Remember (mtime_ns, size) so the stat-sweep treats p as processed.
-        Recorded on BOTH a successful parse and an absorbed parse failure, so a
-        persistently-unparseable file is not re-read on every query."""
+        """Record (mtime_ns, size) so the stat sweep treats the path as processed."""
         try:
             st = p.stat()
             self._stamps[p] = (st.st_mtime_ns, st.st_size)
@@ -506,24 +471,19 @@ class SymbolIndex:
             self._stamps.pop(p, None)
 
     def language_of(self, path: Path) -> str | None:
-        """The grammar that parses *path*, by suffix; None when none does."""
+        """Return the grammar that parses the path, by suffix, or None."""
         return self._lang_for(path)
 
     def indexes(self, path: Path) -> bool:
-        """Whether *path* is inside the indexed workspace: under the root,
-        outside the excluded directories, and not hidden by the boundary."""
+        """Return whether the path is inside the indexed workspace."""
         return self._included_rel(path.resolve()) is not None
 
     def _included_rel(self, p: Path) -> Path | None:
-        """The path relative to root, or None when *p* lies outside it, under
-        an excluded directory, or hidden by the workspace boundary. One answer
-        for all three, so what is in scope and what the contained read walks
-        cannot disagree. Comparing the RELATIVE parts keeps an excluded dirname
-        in an outside ancestor from mattering.
+        """Return the path relative to the root, or None when it is out of scope.
 
-        The boundary check belongs here rather than at the query: a hidden file
-        that reached the index would leak its symbol NAMES and line numbers
-        through find_definition even though nothing could read it.
+        Out of scope: outside the root, under an excluded directory, or hidden by the workspace
+        boundary. The boundary check lives here rather than at the query: a hidden file that
+        reached the index would leak its symbol names and line numbers.
         """
         try:
             rel = p.relative_to(self._root)
@@ -536,14 +496,15 @@ class SymbolIndex:
         return rel
 
     def _lang_for(self, path: Path) -> str | None:
+        """Return the tree-sitter language name for the path's suffix, or None."""
         info = _LANG_TABLE.get(path.suffix)
         return info[0] if info else None
 
     def _parser_for(self, lang_name: str) -> tuple[Parser, Query, Query] | None:
+        """Return the language's parser and queries, built on first use, or None if unknown."""
         cached = self._parsers.get(lang_name)
         if cached is not None:
             return cached
-        # Find the def query for this language (linear scan; tiny table).
         def_src: str | None = None
         for _, (n, q) in _LANG_TABLE.items():
             if n == lang_name:

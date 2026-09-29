@@ -2,12 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """Containment for in-process filesystem access.
 
-Every tool that reads/writes a path in-process (outside
-`agent6.sandbox.jail.run_in_jail`) resolves it through here first: reject an
-absolute path or a `..` component, then require the resolved path to still
-be under *root*. Shared by the fs handlers (read_file / list_dir /
-apply_edit / apply_patch), the navigation handlers (outline / find_*) -- which
-all take an untrusted `path` argument -- and the symbol index they query.
+Every tool that reads or writes a path outside `agent6.sandbox.jail.run_in_jail` resolves it
+here first: an absolute path or a `..` component is refused, and the resolved path must stay
+under its base. The fs handlers, the navigation handlers and the symbol index share it.
 """
 
 from __future__ import annotations
@@ -23,17 +20,21 @@ from agent6.tools.errors import ToolError
 
 
 class NotRegularFileError(ToolError):
-    """The leaf resolved and is inside the boundary, but is a directory, a FIFO
-    or a device. Its own type because callers word the two differently: this is
-    "wrong kind of file", not the containment refusal every other ToolError from
-    :func:`open_contained` reports."""
+    """The leaf is inside the boundary but is a directory, a FIFO or a device.
+
+    Its own type because callers word it differently from a containment refusal.
+    """
 
 
 @dataclass(frozen=True, slots=True)
 class SafePath:
-    """A path that passed containment, carrying the base it was contained
-    against: every read and write walks from `base`, so a `rel_path` can
-    never be paired with the wrong tree."""
+    """A path that passed containment.
+
+    Attributes:
+        base: The tree it was contained against; every read and write walks from it.
+        rel_path: The path relative to the base.
+        abs_path: The base joined with the relative path.
+    """
 
     base: Path
     rel_path: Path
@@ -42,9 +43,14 @@ class SafePath:
 
 @dataclass(frozen=True, slots=True)
 class ContainedEntry:
-    """One entry of a contained listing. `is_dir` follows a symlink, like
-    `Path.is_dir`; a caller that recurses checks `is_symlink` too, because
-    the walk refuses to traverse one."""
+    """One entry of a contained listing.
+
+    Attributes:
+        name: The entry's name.
+        is_dir: Whether it is a directory, following a symlink like `Path.is_dir`.
+        is_symlink: Whether it is a symlink; a caller that recurses checks it, since the walk
+            refuses to traverse one.
+    """
 
     name: str
     is_dir: bool
@@ -52,65 +58,53 @@ class ContainedEntry:
 
 
 def fold_name(name: str) -> str:
-    """A path component as the FILESYSTEM would match it.
+    """Return a path component as a case-insensitive filesystem would match it.
 
-    macOS and Windows match names case-insensitively, and macOS runs agent6
-    unsandboxed, so these in-process refusals are the only thing protecting
-    `.git` and the hidden trees there: comparing exactly, `.GIT/config` opens
-    the real `.git/config` (reproduced on a casefolded ext4). Folded on every
-    platform rather than per-filesystem -- one rule, and the cost where case
-    does matter is refusing a path to a distinct `.GIT`, which nobody has.
+    macOS and Windows match names case-insensitively, and macOS runs agent6 unsandboxed, so
+    these refusals are all that protects `.git` and the hidden trees there: compared exactly,
+    `.GIT/config` opens the real `.git/config`. Folded on every platform, one rule; the cost is
+    refusing a path to a distinct `.GIT`, which nobody has.
     """
     return name.lower()
 
 
 def path_within(target: Path, prefix: Path) -> bool:
-    """*target* IS *prefix* or lies under it, matched the way the filesystem
-    matches names. Whole components only, so `.github` never matches `.git`."""
+    """Return whether the target is the prefix or lies under it, matched by whole components."""
     folded = [fold_name(p) for p in prefix.parts]
     return [fold_name(p) for p in target.parts][: len(folded)] == folded
 
 
 @dataclass(frozen=True, slots=True)
 class Workspace:
-    """The file boundary for everything agent6 does IN-PROCESS.
+    """The file boundary for everything agent6 does in-process.
 
-    Not the sandbox: the sandbox confines child PROCESSES. This is the same
-    policy enforced at the other place an untrusted model reaches files -- the
-    tools, which run in this process and ask nobody's approval. It therefore
-    holds at EVERY isolation level, `none` included: the boundary follows the
-    operator's config values, never the isolation level, because a degradation
-    that widened what the tools may read would invert the whole degrade rule.
+    The sandbox confines child processes; this is the same policy at the other place an
+    untrusted model reaches files, the tools, which ask nobody's approval. It holds at every
+    isolation level, `none` included: the boundary follows the operator's config values, never
+    the isolation level, so a degradation never widens what the tools may read. A relative path
+    is always the workspace's; an absolute one is allowed only inside a grant. The tools that
+    read another tree (a skill, the bundled docs, the run's own state) use `contain` instead.
 
-    `denied` (`[sandbox].hide_paths` plus agent6's own private dirs) is
-    refused for reads and writes alike, and beats every grant. The grants are
-    the operator's `extra_read_paths` / `extra_write_paths`: the same values
-    the jail mounts for commands, so a tool and a command reach the same trees.
-    A relative path is always the workspace's; an absolute one is allowed only
-    inside a grant, which is the only way to name a granted tree at all.
-
-    A path is reached THROUGH a workspace; the tools that deliberately read
-    another tree (a skill, the bundled docs, the run's own state) name their own
-    base with :func:`contain`.
+    Attributes:
+        root: The workspace root.
+        denied: `[sandbox].hide_paths` plus agent6's private dirs, refused for reads and writes
+            alike; a denial beats every grant.
+        read_roots: `extra_read_paths` plus `extra_write_paths`, the trees the jail mounts too.
+        write_roots: `extra_write_paths`.
+        read_only: Files inside a write grant that the harness owns: readable, never written.
+        exempt: agent6's own carve-outs from `denied`, exactly the per-repo memory dir, which
+            is model-writable by design; an exempt path still needs a grant to be reachable.
     """
 
     root: Path
     denied: tuple[Path, ...] = ()
-    # extra_read_paths + extra_write_paths (write implies read).
     read_roots: tuple[Path, ...] = ()
     write_roots: tuple[Path, ...] = ()
-    # Files inside a write grant that the harness owns: readable, never written.
     read_only: tuple[Path, ...] = ()
-    # agent6's own carve-outs from `denied`, not operator surface: today
-    # exactly the per-repo memory dir, a state subtree that is model-writable
-    # BY DESIGN (memory is model-authored context). An exempt path still needs
-    # a grant to be reachable; exemption only lifts the denial.
     exempt: tuple[Path, ...] = ()
 
     def _denying(self, abs_path: Path) -> Path | None:
-        """The denied root covering *abs_path*, or None. ONE owner for the
-        denial verdict: exemption is checked here, so no caller can consult
-        `denied` without it."""
+        """Return the denied root covering the path, or None; the one owner of the verdict."""
         if any(path_within(abs_path, e) for e in self.exempt):
             return None
         for d in self.denied:
@@ -119,12 +113,36 @@ class Workspace:
         return None
 
     def is_denied(self, abs_path: Path) -> bool:
+        """Return whether the path lies under a denied root and no exemption."""
         return self._denying(abs_path) is not None
 
     def resolve_read(self, candidate: str) -> SafePath:
+        """Contain a path for reading.
+
+        Args:
+            candidate: The path the model gave.
+
+        Returns:
+            The contained path.
+
+        Raises:
+            ToolError: The path escapes the workspace and every read grant, or is denied.
+        """
         return self._resolve(candidate, (self.root, *self.read_roots))
 
     def resolve_write(self, candidate: str) -> SafePath:
+        """Contain a path for writing.
+
+        Args:
+            candidate: The path the model gave.
+
+        Returns:
+            The contained path.
+
+        Raises:
+            ToolError: The path escapes the workspace and every write grant, is denied, or is
+                harness-owned.
+        """
         sp = self._resolve(candidate, (self.root, *self.write_roots))
         if sp.abs_path in self.read_only:
             raise ToolError(f"Path is harness-owned and read-only: {candidate!r}")
@@ -140,10 +158,13 @@ class Workspace:
         return sp
 
     def _in_grant(self, candidate: str, bases: tuple[Path, ...]) -> SafePath:
-        """An absolute path, contained against the deepest grant holding it.
+        """Contain an absolute path against the deepest grant holding it.
 
-        Deepest first, so a grant nested inside another walks from the one that
-        really bounds it rather than from an ancestor that also matches.
+        Returns:
+            The path contained against that grant.
+
+        Raises:
+            ToolError: No grant holds the path.
         """
         target = Path(candidate).resolve()
         for base in sorted(bases, key=lambda b: len(b.parts), reverse=True):
@@ -152,21 +173,27 @@ class Workspace:
         raise ToolError(f"Absolute paths are only allowed inside a granted path: {candidate!r}")
 
     def _refuse_denied(self, sp: SafePath, candidate: str) -> None:
-        # Refused, not answered empty: the jail masks because a command cannot
-        # be handed an error, but a tool result can carry one, and inventing
-        # "no such file" for a path that is plainly there is the surface lying.
+        # Refused, not answered empty: a tool result can carry an error where a jail mask cannot.
         d = self._denying(sp.abs_path)
         if d is not None:
             raise ToolError(f"Path is hidden from this run: {candidate!r} (under {d})")
 
 
 def contain(base: Path, candidate: str | Path) -> SafePath:
-    """Contain *candidate* under *base* without resolving symlinks: the
-    descriptor walk is what enforces it, refusing every symlink hop.
+    """Contain a path under a base the caller chose, without resolving symlinks.
 
-    For the bases that are deliberately NOT the workspace -- a skill's own
-    directory, the bundled docs -- where the caller, not the model, chose the
-    tree. Workspace paths go through :class:`Workspace` instead.
+    For a skill's own directory or the bundled docs; the descriptor walk in `open_contained`
+    enforces the containment, refusing every symlink hop.
+
+    Args:
+        base: The tree.
+        candidate: The path inside it.
+
+    Returns:
+        The contained path.
+
+    Raises:
+        ToolError: The path is absolute or contains `..`.
     """
     rel = Path(candidate)
     if rel.is_absolute():
@@ -177,7 +204,18 @@ def contain(base: Path, candidate: str | Path) -> SafePath:
 
 
 def resolve_in_root(root: Path, candidate: str) -> SafePath:
-    """Resolve *candidate* relative to *root* and ensure it stays inside *root*."""
+    """Resolve a path relative to a root and require it to stay inside.
+
+    Args:
+        root: The workspace root.
+        candidate: The path the model gave.
+
+    Returns:
+        The contained path.
+
+    Raises:
+        ToolError: The path is absolute, contains `..`, or resolves outside the root.
+    """
     if candidate.startswith("/"):
         raise ToolError(f"Absolute paths not allowed: {candidate!r}")
     parts = Path(candidate).parts
@@ -192,8 +230,11 @@ def resolve_in_root(root: Path, candidate: str) -> SafePath:
 
 
 def _open_dir(dir_fd: int, name: str, *, create: bool) -> int:
-    """A descriptor for subdirectory *name* of *dir_fd*, created when it is
-    missing and *create*."""
+    """Return a descriptor on a subdirectory, creating it when missing and asked to.
+
+    Raises:
+        FileNotFoundError: The subdirectory is missing and `create` is off.
+    """
     flags = os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW
     try:
         return os.open(name, flags, dir_fd=dir_fd)
@@ -206,30 +247,30 @@ def _open_dir(dir_fd: int, name: str, *, create: bool) -> int:
 
 
 def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) -> int:
-    """Open `sp` one component at a time from a descriptor on its base, each
-    hop relative to the one before it. Returns an fd the caller owns.
+    """Open a contained path one component at a time from a descriptor on its base.
 
-    A :class:`SafePath` resolves and contains a path; opening it again by its
-    full path is a second lookup, and a jailed background command's loop can
-    swap a component for a symlink out of the workspace in between (the
-    workspace is writable, a symlink needs no access to its target, and these
-    tools run IN-PROCESS, outside the jail, as the operator). For a write
-    (`O_CREAT|O_TRUNC`) the host file is already truncated by the time any
-    after-the-fact check can reject it.
+    Opening a contained path again by its full name is a second lookup, and a jailed background
+    command can swap a component for a symlink out of the workspace in between; for a write the
+    host file is truncated before any after-the-fact check. `O_NOFOLLOW` on every hop, the
+    parents this creates included, contains the walk by construction. `..` and an absolute path
+    are refused here too, so containment holds for a hand-built SafePath. Unless `O_DIRECTORY`
+    is asked for, the leaf must be a regular file, checked by `fstat` on the descriptor just
+    opened, never by name. `O_NONBLOCK` keeps the open from blocking on a FIFO swapped in for
+    the leaf; the flag is cleared before the caller reads or writes.
 
-    `O_NOFOLLOW` on every component, including the parents this creates,
-    contains the walk by construction: no hop can traverse a symlink. `..`
-    and an absolute path are refused here as well as at the SafePath, so
-    containment holds even for a hand-built one. Honest callers are unaffected,
-    including one working through an in-repo symlink, whose resolved path names
-    the real target.
+    Args:
+        sp: The contained path.
+        flags: The `os.open` flags.
+        create_parents: Whether to create missing parent directories along the walk.
 
-    Unless `O_DIRECTORY` is asked for, the leaf must be a REGULAR file, and
-    the check is `fstat` on the descriptor just opened -- never a stat by
-    name, which is a second lookup. `O_NONBLOCK` makes the open itself
-    unable to block: a jailed background command can swap the leaf for a FIFO
-    between any check and the open, and `O_NOFOLLOW` stops a symlink but not
-    that. The flag is cleared before the caller reads or writes.
+    Returns:
+        A descriptor the caller owns.
+
+    Raises:
+        ToolError: The path is not relative, contains `..`, or a component became a symlink or
+            is not a directory.
+        NotRegularFileError: The leaf is not a regular file.
+        OSError: The open failed for any other reason.
     """
     rel_path = sp.rel_path
     if rel_path.is_absolute():
@@ -257,10 +298,7 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
             raise
         return fd
     except NotADirectoryError as exc:
-        # O_NOFOLLOW|O_DIRECTORY on a symlink is ENOTDIR on Linux, not ELOOP:
-        # without this probe, a component swapped for a symlink mid-walk (the
-        # race this walk exists to contain) reads as the bland message below.
-        # One lstat, on the error path only.
+        # O_NOFOLLOW|O_DIRECTORY on a symlink is ENOTDIR on Linux, not ELOOP; one lstat names it.
         with contextlib.suppress(OSError):
             if stat.S_ISLNK(os.lstat(at, dir_fd=dir_fd).st_mode):
                 raise ToolError(
@@ -271,8 +309,7 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
         if exc.errno == errno.ELOOP:
             raise ToolError(f"Path became a symlink while it was being used: {rel_path}") from exc
         if exc.errno == errno.ENXIO:
-            # O_WRONLY|O_NONBLOCK on a reader-less FIFO: the one non-regular
-            # leaf the open rejects itself, so the fstat never sees it.
+            # O_WRONLY|O_NONBLOCK on a reader-less FIFO: the open itself rejects the leaf.
             raise NotRegularFileError(f"Not a regular file: {rel_path}") from exc
         raise
     finally:
@@ -280,34 +317,41 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
 
 
 def read_contained(sp: SafePath, *, errors: str = "strict", limit_chars: int | None = None) -> str:
-    """The file's text, read through a descriptor walked from its base.
-    `UnicodeDecodeError` still reaches the caller, which reports it.
+    """Read the file's text through a descriptor walked from its base.
 
-    `limit_chars` bounds the read: at most that many characters are pulled
-    into memory, so a multi-gigabyte file cannot OOM the (unsandboxed) agent.
-    The caller detects truncation by reading `limit_chars + 1` and checking
-    the length. None reads the whole file (for callers that must, like the
-    symbol index parsing a source file)."""
+    Args:
+        sp: The contained path.
+        errors: The decode error handler.
+        limit_chars: The most characters pulled into memory, so a huge file cannot OOM the
+            unsandboxed agent; a caller detects truncation by reading one more. None reads
+            the whole file.
+
+    Returns:
+        The text.
+
+    Raises:
+        UnicodeDecodeError: The file is not valid text under the handler.
+    """
     fd = open_contained(sp, os.O_RDONLY)
     with os.fdopen(fd, encoding="utf-8", errors=errors) as handle:
         return handle.read() if limit_chars is None else handle.read(limit_chars)
 
 
 def read_bytes_contained(sp: SafePath) -> bytes:
-    """The file's bytes, read through a descriptor walked from its base. For a
-    reader that indexes into the source by byte offset (tree-sitter), which the
-    newline translation of a text read would shift."""
+    """Return the file's bytes, read through a descriptor walked from its base.
+
+    For a reader that indexes by byte offset (tree-sitter), which a text read's newline
+    translation would shift.
+    """
     fd = open_contained(sp, os.O_RDONLY)
     with os.fdopen(fd, "rb") as handle:
         return handle.read()
 
 
 def list_contained(sp: SafePath) -> list[ContainedEntry]:
-    """The directory's entries, listed through a descriptor walked from its base.
+    """Return the directory's entries, listed through a descriptor walked from its base.
 
-    The same containment as :func:`read_contained`, for the tools that read a
-    directory rather than a file: a name resolved a second time is a second
-    lookup, so a listing taken by full path can be a host directory's.
+    A listing taken by full path is a second lookup, so it can be a host directory's.
     """
     fd = open_contained(sp, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -318,10 +362,11 @@ def list_contained(sp: SafePath) -> list[ContainedEntry]:
 
 
 def unlink_contained(sp: SafePath) -> None:
-    """Remove the file through a descriptor walk of its parents (the walk
-    :func:`open_contained` does), unlinking the leaf by name relative to the
-    parent's descriptor: a component swapped for a symlink cannot redirect a
-    delete any more than a write."""
+    """Remove the file by name relative to a descriptor walked to its parent.
+
+    Raises:
+        ToolError: The path names the base itself, or a component is not a directory.
+    """
     if not sp.rel_path.name:
         raise ToolError(f"Not a file: {sp.rel_path}")
     parent = SafePath(sp.base, sp.rel_path.parent, sp.abs_path.parent)
@@ -333,11 +378,18 @@ def unlink_contained(sp: SafePath) -> None:
 
 
 def disk_bytes(content: str, *, like: bytes | None) -> bytes:
-    """*content* as a write puts it on disk over *like*, the file's bytes before
-    the write (None for a new file). The file keeps its line ending: a text
-    read translates CRLF to LF, so when *like*'s first line ending is CRLF
-    every line ending in *content* is written as CRLF (one already there is
-    not doubled); any other file, or a new one, gets *content* as it is."""
+    """Encode the content as a write puts it on disk, keeping the file's line ending.
+
+    A text read translates CRLF to LF, so when the file's first line ending is CRLF every line
+    ending in the content is written as CRLF (one already there is not doubled).
+
+    Args:
+        content: The text to write.
+        like: The file's bytes before the write, or None for a new file.
+
+    Returns:
+        The bytes to write.
+    """
     if like is not None:
         i = like.find(b"\n")
         if i > 0 and like[i - 1 : i] == b"\r":
@@ -346,9 +398,17 @@ def disk_bytes(content: str, *, like: bytes | None) -> bytes:
 
 
 def write_contained(sp: SafePath, content: str) -> int:
-    """Replace the file's text (`disk_bytes`) through a descriptor walked from
-    its base, adding any missing parent directories along the same walk;
-    returns the bytes written."""
+    """Replace the file's text through a descriptor walked from its base.
+
+    Missing parent directories are created along the same walk.
+
+    Args:
+        sp: The contained path.
+        content: The new text.
+
+    Returns:
+        The number of bytes written.
+    """
     like = None
     with contextlib.suppress(OSError, ToolError):
         like = read_bytes_contained(sp)

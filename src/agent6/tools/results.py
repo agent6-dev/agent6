@@ -1,19 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Typed tool-handler results: every handler returns one of these frozen values
-instead of a bare dict.
-Each owns two representations, the model-facing `to_wire()` dict and the
-one-line human `summary()`.
+"""Typed tool-handler results.
 
-- `to_wire()`: the dict the loop JSON-dumps into the model's
-  tool_result. This is frozen LLM I/O: keys, key ORDER (dicts preserve
-  insertion order), and value formats are the model-facing contract. Pinned by
-  `tests/unit/test_tool_result_wire.py`.
-- `summary()`: the one-line human string for the log tail / TUI; each
-  result states its own (never inferred from the dict's keys).
-
-Internal values, so frozen dataclasses (not pydantic): the wire dict is
-produced at the boundary, never validated back in.
+Every handler returns one of these frozen values. `to_wire()` is the dict the loop JSON-dumps
+into the model's tool result: keys, key order and value formats are the model-facing contract,
+pinned by `tests/unit/test_tool_result_wire.py`. `summary()` is the one-line human string for
+the log tail and the TUI. Frozen dataclasses, not pydantic: the wire dict is produced at the
+boundary, never validated back in.
 """
 
 from __future__ import annotations
@@ -25,25 +18,21 @@ from typing import Any
 
 
 class ToolResult(abc.ABC):
-    """One tool handler's typed result: it owns the model-facing `to_wire()`
-    dict and its one-line `summary()`."""
+    """One tool handler's typed result."""
 
     __slots__ = ()
 
     @abc.abstractmethod
     def to_wire(self) -> dict[str, Any]:
-        """The model-facing dict, JSON-serialized verbatim by the loop."""
+        """Return the model-facing dict, JSON-serialized verbatim by the loop."""
 
     def summary(self) -> str:
-        """One-line log/TUI summary. Defaults to "ok"."""
+        """Return the one-line log and TUI summary, "ok" unless the result says more."""
         return "ok"
 
 
 def _trunc(truncated: bool) -> str:
     return " (truncated)" if truncated else ""
-
-
-# --- content access ----------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,13 +42,20 @@ class DocsIndexResult(ToolResult):
     available: tuple[str, ...]
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         return {"available": list(self.available)}
 
 
 @dataclass(frozen=True, slots=True)
 class DocsContentResult(ToolResult):
-    """agent6_docs for a named doc. `size` is the doc's full length in chars,
-    so a truncated `content` still names the size it was cut from."""
+    """agent6_docs for a named doc.
+
+    Attributes:
+        name: The doc's name.
+        content: The doc's text, capped.
+        size: The doc's full length in characters, so a cut content still names its size.
+        truncated: Whether the content was cut.
+    """
 
     name: str
     content: str
@@ -67,6 +63,7 @@ class DocsContentResult(ToolResult):
     truncated: bool
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         return {
             "name": self.name,
             "content": self.content,
@@ -77,19 +74,27 @@ class DocsContentResult(ToolResult):
 
 @dataclass(frozen=True, slots=True)
 class ReadFileResult(ToolResult):
+    """read_file's content and line counts.
+
+    Attributes:
+        content: The text returned.
+        size: Its size in bytes.
+        lines_total: The line count of the file, or of the capped prefix when truncated.
+        start_line: The first line returned; None for a full read, with `lines_returned`.
+        lines_returned: The number of lines returned; None for a full read.
+        truncated: The file was larger than the read cap, so the content and the line counts
+            are of the capped prefix only.
+    """
+
     content: str
     size: int
     lines_total: int
-    # Present together only for a partial read (start_line/limit given); a
-    # full read omits both. None is the "full read" sentinel.
     start_line: int | None = None
     lines_returned: int | None = None
-    # The file was larger than the read cap; content and the line counts are of
-    # the capped prefix only. A reader must not treat lines_total as the file's
-    # true length when this is set.
     truncated: bool = False
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         out: dict[str, Any] = {
             "content": self.content,
             "size": self.size,
@@ -103,19 +108,26 @@ class ReadFileResult(ToolResult):
         return out
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         return f"{self.size} bytes{' (truncated)' if self.truncated else ''}"
 
 
 @dataclass(frozen=True, slots=True)
 class ListDirResult(ToolResult):
+    """list_dir's entries.
+
+    Attributes:
+        entries: The visible names, directories with a trailing slash.
+        hidden: How many entries the workspace boundary hides, counted rather than named.
+        truncated: Whether the listing stopped at the cap.
+    """
+
     entries: tuple[str, ...]
-    # Entries the workspace boundary hides. Counted rather than named: the
-    # listing stays true without disclosing what is hidden.
     hidden: int = 0
-    # The listing stops at the cap; the rest is there, unnamed.
     truncated: bool = False
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         out: dict[str, Any] = {"entries": list(self.entries)}
         if self.hidden:
             out["hidden"] = self.hidden
@@ -124,97 +136,104 @@ class ListDirResult(ToolResult):
         return out
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         extra = f", {self.hidden} hidden" if self.hidden else ""
         cut = " (truncated)" if self.truncated else ""
         return f"{len(self.entries)} entries{extra}{cut}"
 
 
-# --- search / navigation -----------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class OutlineResult(ToolResult):
-    # Each symbol row: {name: str, kind: str, line: int, col: int}.
+    """outline's symbol rows, each {name, kind, line, col}."""
+
     symbols: tuple[dict[str, Any], ...]
     truncated: bool
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         return {"symbols": list(self.symbols), "truncated": self.truncated}
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         return f"{len(self.symbols)} symbols{_trunc(self.truncated)}"
 
 
 @dataclass(frozen=True, slots=True)
 class DefinitionsResult(ToolResult):
-    """find_definition's result envelope."""
+    """find_definition's rows, each {name, kind, path, line, col}."""
 
-    # Rows: {name: str, kind: str, path: str, line: int, col: int}.
     definitions: tuple[dict[str, Any], ...]
     truncated: bool
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         return {"definitions": list(self.definitions), "truncated": self.truncated}
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         return f"{len(self.definitions)} definitions{_trunc(self.truncated)}"
 
 
 @dataclass(frozen=True, slots=True)
 class ReferencesResult(ToolResult):
-    """find_references's result envelope."""
+    """find_references's rows, each {name, path, line, col}."""
 
-    # Rows: {name: str, path: str, line: int, col: int}.
     references: tuple[dict[str, Any], ...]
     truncated: bool
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         return {"references": list(self.references), "truncated": self.truncated}
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         return f"{len(self.references)} references{_trunc(self.truncated)}"
-
-
-# --- filesystem writes -------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
 class EditResult(ToolResult):
-    """apply_edit that wrote (not preview)."""
+    """apply_edit that wrote.
+
+    Attributes:
+        applied: The kind of each edit applied, in order.
+        path: The workspace-relative path.
+        created: The write made the file; off the wire, read by the memory use record.
+    """
 
     applied: tuple[str, ...]
     path: str
-    # True when the write made the file (an `overwrite` of a missing path
-    # too). Off the wire: the memory use record reads it, the model reads
-    # `applied`.
     created: bool = False
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         return {"applied": list(self.applied), "path": self.path}
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         return f"applied={list(self.applied)} path={self.path}"
 
 
 @dataclass(frozen=True, slots=True)
 class PatchResult(ToolResult):
-    """apply_patch that wrote (not preview). A multi-file patch carries one
-    (path, bytes_written) row per file in `files`; `path`/`bytes_written`
-    then hold the first file and the total, and a single-file patch leaves
-    `files` empty."""
+    """apply_patch that wrote.
+
+    Attributes:
+        path: The first file's path.
+        bytes_written: The bytes written in all.
+        files: One (path, bytes_written) row per file for a multi-file patch; empty for one file.
+        deleted: The paths the patch deleted, disjoint from `files`.
+        healed: The hunks the matcher healed rather than matched exactly (`~rstrip`, `~indent`,
+            `~moved`), so the model knows its context was off.
+    """
 
     path: str
     bytes_written: int
     files: tuple[tuple[str, int], ...] = ()
-    # Paths this patch DELETED (unified `+++ /dev/null` or V4A
-    # `*** Delete File:`); disjoint from the written `files` rows.
     deleted: tuple[str, ...] = ()
-    # Hunks the matcher HEALED rather than matched exactly (`~rstrip`,
-    # `~indent`, `~moved`): the patch applied, but not verbatim, and the
-    # model should know its context was off.
     healed: tuple[str, ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         wire: dict[str, Any] = {"path": self.path, "bytes_written": self.bytes_written}
         if self.files:
             wire["files"] = [{"path": p, "bytes_written": b} for p, b in self.files]
@@ -225,6 +244,7 @@ class PatchResult(ToolResult):
         return wire
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         if not self.deleted:
             if self.files:
                 return f"patched {len(self.files)} files bytes={self.bytes_written}"
@@ -241,8 +261,19 @@ class PatchResult(ToolResult):
 
 @dataclass(frozen=True, slots=True)
 class PreviewResult(ToolResult):
-    """apply_edit/apply_patch with preview=true: the dry-run diff. apply_edit
-    carries would_apply (the per-edit kinds); apply_patch does not."""
+    """An edit tool's dry run.
+
+    Attributes:
+        path: The first file's path.
+        diff: The unified diff, capped.
+        hunks: The hunk count.
+        bytes_before: The size on disk before.
+        bytes_after: The size on disk after.
+        truncated: Whether the diff was cut.
+        would_apply: The kind of each edit, for apply_edit; None for apply_patch.
+        files: Every previewed path in patch order for a multi-file patch; empty for one file.
+        healed: The hunks the matcher would heal rather than match exactly.
+    """
 
     path: str
     diff: str
@@ -251,12 +282,11 @@ class PreviewResult(ToolResult):
     bytes_after: int
     truncated: bool
     would_apply: tuple[str, ...] | None = None
-    # Multi-file apply_patch preview: every previewed path, in patch order
-    # (`path` holds the first). Empty for a single-file preview.
     files: tuple[str, ...] = ()
     healed: tuple[str, ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         out: dict[str, Any] = {
             "preview": True,
             "path": self.path,
@@ -275,13 +305,9 @@ class PreviewResult(ToolResult):
         return out
 
 
-# --- execution (jail-backed) -------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class FetchResult(ToolResult):
-    """`fetch`: one URL's text. A 30x carries its Location for the model to
-    decide on, since redirects are never followed."""
+    """fetch's response: one URL's text, with a 30x's Location since redirects are not followed."""
 
     url: str
     status: int
@@ -290,6 +316,7 @@ class FetchResult(ToolResult):
     location: str = ""
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         wire: dict[str, Any] = {
             "url": self.url,
             "status": self.status,
@@ -302,17 +329,27 @@ class FetchResult(ToolResult):
         return wire
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         return f"{self.status} · {len(self.body)} bytes"
 
 
 @dataclass(frozen=True, slots=True)
 class ExecResult(ToolResult):
-    """run_command and run_verify_command: the jailed command's outcome.
+    """The jailed command's outcome, for run_command and run_verify_command.
 
-    ONE shape whether the command finished or is still running: a `returncode`
-    of None with a `background_id` set means it outlived its check-in and was
-    handed back, and the model polls it with read_background. Never "a result
-    OR a handle", which would be two shapes for one tool.
+    One shape whether the command finished or is still running: a `returncode` of None with a
+    `background_id` means it outlived its check-in and was handed back.
+
+    Attributes:
+        returncode: The exit code, or None while the command still runs.
+        stdout: The output so far.
+        stderr: The errors so far.
+        duration_s: The wall-clock time until the result.
+        exec_failed: The command could not be started.
+        command: What ran, for a command the model did not choose (a verify gate).
+        background_id: The background job the command continues as, when handed back.
+        timeout_s: The wall-clock cap the runner enforced, 0 when none; with rc 124 it tells a
+            timeout from a failure.
     """
 
     returncode: int | None
@@ -320,19 +357,12 @@ class ExecResult(ToolResult):
     stderr: str
     duration_s: float
     exec_failed: bool
-    # What actually ran, for a command the model did not choose. run_command
-    # already knows its own argv; a verify gate is the operator's (or inferred),
-    # and a worker that cannot see it cannot tell a failure from a stale gate.
     command: tuple[str, ...] = ()
-    # Set when the command outlived its check-in and is still running as this
-    # background job. `returncode` is None until it ends.
     background_id: str = ""
-    # The wall-clock cap the runner enforced, 0 when none. rc=124 is the
-    # jail's documented timeout result; pairing it with the cap on the wire
-    # lets the model tell "killed at 240s" from "tests failed".
     timeout_s: float = 0.0
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         wire: dict[str, Any] = {
             "returncode": self.returncode,
             "stdout": self.stdout,
@@ -351,6 +381,7 @@ class ExecResult(ToolResult):
         return wire
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         if self.background_id:
             return f"still running as {self.background_id} after {self.duration_s:.1f}s"
         if self.returncode == 124 and self.timeout_s > 0:
@@ -360,8 +391,7 @@ class ExecResult(ToolResult):
 
 @dataclass(frozen=True, slots=True)
 class MetricResult(ToolResult):
-    """run_metric_command: the jail outcome plus the parsed score, appended
-    after the exec fields."""
+    """run_metric_command's outcome: the exec fields plus the parsed score."""
 
     returncode: int
     stdout: str
@@ -373,6 +403,14 @@ class MetricResult(ToolResult):
 
     @classmethod
     def from_exec(cls, res: ExecResult, score: float | None) -> MetricResult:
+        """Pair an exec result with its parsed score.
+
+        Returns:
+            The metric result.
+
+        Raises:
+            ValueError: The command was handed back; a score needs a verdict.
+        """
         if res.returncode is None:  # pragma: no cover - the gate sets no check-in
             raise ValueError("a metric command cannot be handed back: a score needs a verdict")
         return cls(
@@ -386,6 +424,7 @@ class MetricResult(ToolResult):
         )
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         wire: dict[str, Any] = {
             "returncode": self.returncode,
             "stdout": self.stdout,
@@ -400,29 +439,35 @@ class MetricResult(ToolResult):
         return wire
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         if self.returncode == 124 and self.timeout_s > 0:
             return f"exit=124 (timed out at {self.timeout_s:.0f}s) in {self.duration_s:.1f}s"
         return f"exit={self.returncode} in {self.duration_s:.1f}s"
 
 
-# --- run control -------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class FinishSessionResult(ToolResult):
+    """finish_session's acknowledgement.
+
+    Attributes:
+        summary_text: The model's summary for the operator.
+        result: The structured payload, when the task named a result schema.
+        stale_gate: The model's proposed verify command, recorded for the operator only.
+    """
+
     summary_text: str
     result: dict[str, Any] | None
     stale_gate: str = ""
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         wire: dict[str, Any] = {
             "acknowledged": True,
             "summary": self.summary_text,
             "result": self.result,
         }
         if self.stale_gate:
-            # Say plainly that nothing changed, so the model does not finish
-            # believing it swapped the gate.
+            # Said plainly, so the model does not finish believing it swapped the gate.
             wire["stale_gate"] = (
                 f"recorded for the operator: {self.stale_gate}."
                 " This run's gate is unchanged and this run does not pass."
@@ -432,41 +477,54 @@ class FinishSessionResult(ToolResult):
 
 @dataclass(frozen=True, slots=True)
 class FinishPlanningResult(ToolResult):
+    """finish_planning's acknowledgement."""
+
     summary_text: str
     plan_bytes: int
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         return {"acknowledged": True, "summary": self.summary_text, "plan_bytes": self.plan_bytes}
 
 
 @dataclass(frozen=True, slots=True)
 class AnswersResult(ToolResult):
+    """ask_user's answers.
+
+    Attributes:
+        answers: Aligned to the questions by index.
+        note: Why the answers are empty when nobody saw the questions.
+        asked: The questions' texts, index-aligned; off the wire, the loop's decision record.
+    """
+
     answers: tuple[str, ...]
-    note: str = ""  # why the answers are empty when nobody saw the questions
-    asked: tuple[str, ...] = ()  # the questions' texts, index-aligned; the loop's decision record
+    note: str = ""
+    asked: tuple[str, ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         wire: dict[str, Any] = {"answers": list(self.answers)}
         if self.note:
             wire["note"] = self.note
         return wire
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         answered = sum(1 for a in self.answers if str(a).strip())
         return f"{answered}/{len(self.answers)} answered"
 
 
-# --- DAG (task graph) --------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class AddTaskResult(ToolResult):
+    """add_task's new node."""
+
     id: str
     parent_id: str | None
     title: str
     status: str
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         return {
             "id": self.id,
             "parent_id": self.parent_id,
@@ -475,20 +533,30 @@ class AddTaskResult(ToolResult):
         }
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         return f"{self.status}: {str(self.title)[:60]}"
 
 
 @dataclass(frozen=True, slots=True)
 class UpdateTaskResult(ToolResult):
+    """update_task's node after the change.
+
+    Attributes:
+        id: The task id.
+        status: The status after the change.
+        title: The task's title.
+        depends_on: The dependencies after the change.
+        note: What the graph did beyond the status: marking a task in_progress claims the focus.
+    """
+
     id: str
     status: str
     title: str
     depends_on: tuple[str, ...] = ()
-    # What the graph did beyond the status, when it did: marking a task
-    # in_progress claims it as the focus.
     note: str = ""
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         wire: dict[str, Any] = {
             "id": self.id,
             "status": self.status,
@@ -500,77 +568,74 @@ class UpdateTaskResult(ToolResult):
         return wire
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         return f"{self.status}: {str(self.title)[:60]}"
 
 
 @dataclass(frozen=True, slots=True)
 class ListTasksResult(ToolResult):
-    # Each task row: {id: str, parent_id: str | None, title: str, status: str,
-    # acceptance: str, relevant_paths: list[str], depends_on: list[str]}.
+    """list_tasks's rows, each {id, parent_id, title, status, acceptance, relevant_paths, ...}."""
+
     tasks: tuple[dict[str, Any], ...]
     count: int
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         return {"tasks": list(self.tasks), "count": self.count}
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         return f"{self.count} tasks"
-
-
-# --- operator knowledge ------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
 class SkillResult(ToolResult):
+    """use_skill's content: one file of one skill."""
+
     skill: str
     file: str
     content: str
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         return {"skill": self.skill, "file": self.file, "content": self.content}
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         return f"skill {self.skill}/{self.file} ({len(self.content)} chars)"
-
-
-# --- MCP passthrough ---------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
 class RawResult(ToolResult):
-    """An operator-configured MCP server's result: an opaque dict forwarded to
-    the model unchanged. agent6 does not know its shape, so the summary is the
-    generic 'ok'."""
+    """An MCP server's result: an opaque dict forwarded to the model unchanged."""
 
     payload: dict[str, Any]
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         return self.payload
-
-
-# --- background commands -----------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
 class BackgroundResult(ToolResult):
-    """A background command tool's result. The roster rides on every one of
-    them: whatever the model asked, it also learns that a command it started
-    has died."""
+    """A background command tool's result.
+
+    The roster rides on every one, so the model also learns that a command it started has died.
+    """
 
     shells: tuple[str, ...]
     output: str | None = None
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         wire: dict[str, Any] = {"shells": list(self.shells)}
         if self.output is not None:
             wire["output"] = self.output
         return wire
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         return self.shells[0] if len(self.shells) == 1 else f"{len(self.shells)} background"
-
-
-# --- other sessions ----------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -581,10 +646,12 @@ class SessionsResult(ToolResult):
     conversation: str | None = None
 
     def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
         wire: dict[str, Any] = {"sessions": list(self.sessions)}
         if self.conversation is not None:
             wire["conversation"] = self.conversation
         return wire
 
     def summary(self) -> str:
+        """Return the one-line summary."""
         return f"{len(self.sessions)} session{'' if len(self.sessions) == 1 else 's'}"

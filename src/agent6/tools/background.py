@@ -34,39 +34,23 @@ from agent6.sandbox.jail import (
 )
 from agent6.sessions.ipc import ProcessIdentity, process_identity, process_is_alive
 
-# The command's own output goes to a file both sides can read: the jail gets
-# the LOG directory read-write, and `exec` applies the redirect to the whole
-# command. argv values ride as positional parameters, never as shell text.
-#
-# Every log lives under ONE root, `<root>/logs/<id>/`, and that root is the
-# only thing granted. The run's jail session grants it when it opens, before
-# any background command exists, which a per-shell grant cannot do. The cost is
-# that a run's background commands share the root and can write each other's
-# logs; the launcher's result and each command's identity stay OUTSIDE it, so a
-# command cannot rewrite its own exit code or its own name (a command that
-# exits 42 reporting "exited 0: npm test (all green)").
-#
-# The grant includes MakeSym, so the agent NEVER resolves that path again: it
-# reads through the descriptor it opened before the jail existed. Opening
-# `out.log` by name, outside the jail and as the operator, lets a command
-# unlink it, symlink it at the operator's secrets, and have the next
-# `read_background` hand them to the model, or point it at a FIFO and hang the
-# loop forever.
+# Every log lives under one root the run's jail session grants read-write when it opens, so a
+# run's background commands can write each other's logs; the launcher's result and each
+# command's identity stay outside it, so a command cannot rewrite its own exit code or name.
+# The grant includes MakeSym, so the agent never resolves a log path again: it reads through the
+# descriptor it opened before the jail existed (a command could symlink `out.log` at a secret).
 _LOG_ROOT = "logs"
 _LOG_NAME = "out.log"
-# How much of a log a read considers. A build can print gigabytes; only the
-# tail is ever returned, so only the tail is read.
+# Only the tail is ever returned, so only the tail is read.
 _TAIL_BYTES = 1 << 20
-# What a surface needs that the run's own memory holds: the command, and when.
-# Written at start so `/shells` and any dashboard widget read the roster off
-# disk like every other run state, rather than needing the dispatcher.
-SHELLS_DIR = "shells"  # under the session dir; every surface reads the roster here
+# Written at start so `/shells` and a dashboard read the roster off disk without the dispatcher.
+SHELLS_DIR = "shells"  # under the session dir
 _META_NAME = "meta.json"
+# argv values ride as positional parameters, never as shell text.
 _REDIRECT = f'exec >"$0/{_LOG_NAME}" 2>&1; exec "$@"'
 
 
-# (argv, extra read-write paths) -> the sandbox policy to run it under. The
-# dispatcher owns policy construction; this module only says what it needs.
+# (argv, extra read-write paths) -> the sandbox policy; the dispatcher owns policy construction.
 PolicyFor = Callable[[tuple[str, ...], tuple[Path, ...]], JailPolicy]
 
 
@@ -76,7 +60,15 @@ class BackgroundError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class ShellView:
-    """One background command as a caller sees it."""
+    """One background command as a caller sees it.
+
+    Attributes:
+        id: The `bg<N>` id.
+        command: The command as shell text.
+        state: "running", "exited", "stopped", "died" or "stop failed".
+        returncode: The exit code, when known.
+        detail: Why the fate is unknown or the stop failed, else "".
+    """
 
     id: str
     command: str
@@ -85,6 +77,7 @@ class ShellView:
     detail: str
 
     def line(self) -> str:
+        """Return the roster line."""
         code = "" if self.returncode is None else f" (exit {self.returncode})"
         detail = f" -- {self.detail}" if self.detail else ""
         return f"[{self.id}] {self.state}{code}: {self.command}{detail}"
@@ -96,8 +89,7 @@ class _Shell:
     command: str
     dir: Path
     job: BackgroundJob | LocalJob | SessionJob
-    # Opened before the command could exist, held for the run: the one handle
-    # to its output that no jailed process can redirect.
+    # Opened before the command could exist: the one handle no jailed process can redirect.
     log_fd: int
     stopped: bool = False
     # Why a stop could not be confirmed, "" when the command is gone.
@@ -105,16 +97,15 @@ class _Shell:
 
 
 def _seq_of(name: str) -> int:
-    """The N in a `bg<N>` directory name, 0 for any other name."""
+    """Return the N in a `bg<N>` directory name, 0 for any other name."""
     return int(name[2:]) if name.startswith("bg") and name[2:].isdigit() else 0
 
 
 def _highest_shell_seq(root: Path) -> int:
-    """The largest `bg<N>` already recorded under *root*, or 0.
+    """Return the largest `bg<N>` already recorded under the root, or 0.
 
-    Both layouts are scanned: `start`/`adopt` create `<root>/bg<N>` and
-    `_open_log` creates `<root>/logs/bg<N>`, and an execution that died between them
-    leaves only one of the two behind.
+    Both `<root>/bg<N>` and `<root>/logs/bg<N>` are scanned: an execution that died between
+    creating them leaves only one behind.
     """
     highest = 0
     for directory in (root, root / _LOG_ROOT):
@@ -125,27 +116,38 @@ def _highest_shell_seq(root: Path) -> int:
 
 
 class BackgroundShells:
-    """The run's background commands. Not thread-safe: one loop drives it."""
+    """The run's background commands. Not thread-safe: one loop drives it.
+
+    Args:
+        root: The shells dir under the session dir.
+    """
 
     def __init__(self, root: Path) -> None:
         self._root = root
         self._shells: dict[str, _Shell] = {}
-        # Continue the numbering rather than restart it: a RESUMED run reuses
-        # the session dir, and `_open_log` refuses an id whose log directory
-        # exists (two commands never share a log). Every command that outlives
-        # the check-in is handed back as a background shell and reaches this.
+        # A resumed run reuses the session dir, and two commands never share a log.
         self._seq = _highest_shell_seq(root)
-        # Eagerly: the run's jail session grants this path when it opens, and a
-        # mount source has to exist by then.
+        # The run's jail session grants this path when it opens, so it must exist by then.
         self.log_root = root / _LOG_ROOT
         mkdir_for_real_user(self.log_root)
 
     def start(
         self, argv: tuple[str, ...], policy_for: PolicyFor, *, session: JailSession | None = None
     ) -> ShellView:
-        """Start *argv* detached. With a *session*, it runs in the run's jail
-        process, so it shares that netns and a later command can reach it;
-        without one it gets a launcher of its own."""
+        """Start a command detached.
+
+        Args:
+            argv: The command.
+            policy_for: Builds the sandbox policy for the wrapped argv and the log dir.
+            session: The run's jail session; the command runs inside it, sharing its netns so
+                a later command can reach it. None gives it a launcher of its own.
+
+        Returns:
+            The command as registered.
+
+        Raises:
+            BackgroundError: The command could not be started or recorded.
+        """
         self._seq += 1
         shell_id = f"bg{self._seq}"
         shell_dir = self._root / shell_id
@@ -159,11 +161,8 @@ class BackgroundShells:
             if session is None:
                 job = start_in_jail(policy, outcome_dir=shell_dir)
             else:
-                # The session is already confined; only the env comes from the
-                # policy. Its grant of the log root is what makes the redirect
-                # land. The escapee baseline is taken BEFORE the command starts,
-                # so its own reparented daemon is this job's and a sibling's is
-                # not.
+                # The session is already confined; only the env comes from the policy.
+                # The baseline precedes the start: a sibling's reparented daemon is not this one's.
                 before = session.child_snapshot()
                 job = SessionJob(
                     session,
@@ -178,13 +177,20 @@ class BackgroundShells:
         return self._register(shell)
 
     def adopt(self, handoff: BackgroundHandoff, *, session: JailSession) -> ShellView:
-        """Register a command the launcher handed back: it is already running,
-        and already writing the log the launcher created for it.
+        """Register a running command the launcher handed back, log and all.
 
-        The counterpart to :meth:`start`, which spawns. A run_command that
-        outlived its check-in becomes an ordinary background job here, so
-        read_background / stop_background / the teardown sweep need no special
-        case for it.
+        A run_command that outlived its check-in becomes an ordinary background job here.
+
+        Args:
+            handoff: The launcher's record of the command.
+            session: The run's jail session the command runs in.
+
+        Returns:
+            The command as registered.
+
+        Raises:
+            BackgroundError: The log could not be opened or the record written; the command is
+                stopped first.
         """
         self._seq += 1
         shell_id = f"bg{self._seq}"
@@ -192,13 +198,11 @@ class BackgroundShells:
         mkdir_for_real_user(shell_dir)
         job = SessionJob(session, handoff.pid, shell_dir, before=handoff.before)
         command = shlex.join(handoff.argv)
-        # The launcher created this with O_EXCL|O_NOFOLLOW under a name no
-        # command can predict (its own pid); this side never resolves it again.
+        # The launcher created the log with O_EXCL|O_NOFOLLOW; this side never resolves it again.
         try:
             log_fd = os.open(handoff.log, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
         except OSError as exc:
-            # Already running and this run's: a registration that refuses it
-            # stops it, or nothing can reach it again.
+            # A registration that refuses a running command stops it, or nothing can reach it again.
             stop_error = job.stop()
             if stop_error:
                 self._shells[shell_id] = _Shell(
@@ -218,15 +222,18 @@ class BackgroundShells:
         return self._register(shell)
 
     def _register(self, shell: _Shell) -> ShellView:
-        """Record and expose *shell*, or stop it if the record cannot be written."""
+        """Record and expose the shell, or stop it when the record cannot be written.
+
+        Returns:
+            The shell's view.
+
+        Raises:
+            BackgroundError: The record could not be written.
+        """
         meta = shell.dir / _META_NAME
         try:
-            # AFTER the start: this file is the whole roster for a surface in
-            # another process, so writing it first would list a command that
-            # never started while read_background denies the id exists.
-            # The host pid rides along for a stop from another process (`agent6
-            # stop` on a worker that no longer answers); a command inside the
-            # session's namespaces has no host pid and dies with the session.
+            # Written after the start: this file is the whole roster for another process.
+            # The host pid serves a stop from another process; a session command has none.
             host = (
                 process_identity(shell.job.pid)
                 if isinstance(shell.job, (LocalJob, BackgroundJob))
@@ -246,8 +253,7 @@ class BackgroundShells:
         except OSError as exc:
             stop_error = shell.job.stop()
             if stop_error:
-                # Keep a command whose stop was not confirmed reachable for a
-                # later stop and the teardown sweep.
+                # A command whose stop was not confirmed stays reachable for the teardown sweep.
                 shell.stop_error = stop_error
                 self._shells[shell.id] = shell
             else:
@@ -262,21 +268,19 @@ class BackgroundShells:
         return self._view(shell)
 
     def _open_log(self, shell_id: str) -> int:
-        """Create this command's log directory and its log, and hand back the
-        one descriptor every later read goes through.
+        """Create the command's log directory and log, and return the one read descriptor.
 
-        Every step is relative to a descriptor on the log root, never by path:
-        that root is granted read-write to every command in the run, so one can
-        plant `<log_root>/bg<N>` as a symlink, and `mkdir(exist_ok=True)` (like
-        its `is_dir()` check) FOLLOWS it, which lets the agent, unconfined and
-        outside the jail, create the log inside a directory a command named.
-        O_NOFOLLOW on the leaf does not cover the path above it. Creating the
-        directory rather than accepting one also means a planted name fails
-        here instead of quietly becoming this command's log.
+        Every step is relative to a descriptor on the log root, never by path: the root is
+        granted read-write to every command in the run, so one can plant `<log_root>/bg<N>` as
+        a symlink, and a `mkdir(exist_ok=True)` would follow it into a directory a command
+        named. O_EXCL makes the log a regular file this process owns; O_CLOEXEC keeps the handle
+        from every child. The command's own `exec >` lands on the same inode.
 
-        O_EXCL: we create the file, so it is a regular file we own. O_CLOEXEC:
-        no child inherits the handle. The command's own `exec >` opens the same
-        path from inside the jail and lands on this inode.
+        Returns:
+            The read descriptor every later read goes through.
+
+        Raises:
+            BackgroundError: The log directory already exists.
         """
         root_fd = os.open(
             self.log_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -307,16 +311,15 @@ class BackgroundShells:
             os.close(root_fd)
 
     def roster(self) -> list[ShellView]:
-        """Every background command this run started, live or not."""
+        """Return every background command this run started, live or not."""
         return [self._view(s) for s in self._shells.values()]
 
     def settle(self) -> None:
         """Observe every command, which is what writes an ending down.
 
-        A model can start a command and never ask again, and only an observed
-        exit reaches disk, so a surface reading the run's shells from elsewhere
-        shows one that ended in seconds as maybe-running for the rest of the
-        run. Called at the turn boundary.
+        Only an observed exit reaches disk, so without this a surface in another process shows
+        a command that ended in seconds as maybe-running for the rest of the run. Called at the
+        turn boundary.
         """
         for shell in self._shells.values():
             shell.job.status()
@@ -329,24 +332,26 @@ class BackgroundShells:
         wait_s: float = 0.0,
         interrupted: Callable[[], bool] = lambda: False,
     ) -> tuple[ShellView, str]:
-        """What the command has printed, optionally after waiting for it to end.
+        """Return the tail of what the command has printed, optionally after waiting for it.
 
-        `wait_s` turns N polls into one call: a caller that wants the result
-        asks for it once instead of spinning, which for an LLM is the
-        difference between one tool call and a dozen turns of tokens. Returns
-        as soon as the command ends, so waiting never costs more than it saves.
+        Args:
+            shell_id: The command's id.
+            tail_lines: The most lines returned.
+            wait_s: How long to wait for the command to end first; it returns as soon as the
+                command ends, so one call replaces a dozen polls.
+            interrupted: Cuts the wait short; the operator's Stop is polled at a step boundary,
+                which a tool call in flight never reaches.
 
-        `interrupted` cuts the wait short. The operator's Stop is a marker file
-        polled at a STEP boundary, and a tool call in flight reaches no
-        boundary -- so without this a Stop pressed during a 15-minute wait sits
-        unread for 15 minutes. The wait is already a poll loop; this only gives
-        it a second reason to end.
+        Returns:
+            The command's view and its output, with a note when the tail cap or the line cap cut it.
+
+        Raises:
+            BackgroundError: The id is unknown.
         """
         shell = self._get(shell_id)
         if wait_s > 0:
             deadline = time.monotonic() + wait_s
-            # Backs off to 2s: the status probe is a round trip to the launcher,
-            # and a command worth waiting on is not worth 3600 of them.
+            # Backs off to 2s: the status probe is a round trip to the launcher.
             pause = 0.1
             while shell.job.status().running and time.monotonic() < deadline:
                 if interrupted():
@@ -376,16 +381,26 @@ class BackgroundShells:
         return self._view(shell), "\n".join(lines)
 
     def stop(self, shell_id: str) -> ShellView:
+        """Kill one command and sweep what it left behind.
+
+        Returns:
+            The command's view after the stop.
+
+        Raises:
+            BackgroundError: The id is unknown.
+        """
         shell = self._get(shell_id)
         self._stop(shell)
         return self._view(shell)
 
     def stop_all(self) -> list[ShellView]:
-        """Kill everything this run started. Idempotent; safe at teardown.
+        """Kill everything this run started; idempotent and safe at teardown.
 
-        Every shell is stopped, not just the live ones: a command that already
-        exited can still have left a detached child behind, and stop() is what
-        sweeps those. Only the ones that WERE running are reported as stopped.
+        Every shell is stopped, not just the live ones: a command that exited can have left a
+        detached child behind.
+
+        Returns:
+            The commands that were still running.
         """
         stopped: list[ShellView] = []
         try:
@@ -400,9 +415,11 @@ class BackgroundShells:
         return stopped
 
     def _stop(self, shell: _Shell) -> bool:
-        """Kill *shell* and sweep what it left behind; True when it was still
-        running. "stopped" is the true word only then: a command that had
-        already exited keeps its own ending."""
+        """Kill the shell and sweep what it left behind.
+
+        Returns:
+            Whether it was still running; a command that had exited keeps its own ending.
+        """
         was_running = shell.job.status().running
         shell.stop_error = shell.job.stop()
         shell.stopped = shell.stopped or was_running
@@ -417,9 +434,7 @@ class BackgroundShells:
 
     def _view(self, shell: _Shell) -> ShellView:
         status = shell.job.status()
-        # A stop that could not be confirmed outranks every other word: the
-        # command may well still be running, and "stopped" (or "running", with
-        # the reason dropped) hides that the operator's stop did not take.
+        # A stop that could not be confirmed outranks every other word: the command may be running.
         if shell.stop_error:
             return ShellView(
                 shell.id, shell.command, "stop failed", status.returncode, shell.stop_error
@@ -428,23 +443,22 @@ class BackgroundShells:
             return ShellView(shell.id, shell.command, "running", None, "")
         if shell.stopped:
             return ShellView(shell.id, shell.command, "stopped", status.returncode, "")
-        # Exited on its own. A launcher that reported no exit code means the
-        # command's fate is unknown -- say so rather than imply a clean exit.
+        # No exit code from the launcher means the fate is unknown, not a clean exit.
         if status.returncode is None:
             return ShellView(shell.id, shell.command, "died", None, status.error)
         return ShellView(shell.id, shell.command, "exited", status.returncode, "")
 
 
 def shells_text(session_dir: Path) -> str:
-    """The roster as one block for a text view; says so when there is none."""
+    """Return the roster as one block for a text view, or a line saying there is none."""
     return "\n".join(roster_from_dir(session_dir / SHELLS_DIR)) or "no background commands this run"
 
 
 def shell_host_processes(root: Path) -> list[ProcessIdentity]:
-    """The live host processes the run's background commands recorded.
+    """Return the live host processes the run's background commands recorded.
 
-    A command inside the session's namespaces records no host identity and
-    dies with the session. A stale record cannot target a recycled pid.
+    A command inside the session's namespaces records no host identity and dies with the
+    session. A stale record cannot target a recycled pid.
     """
     if not root.is_dir():
         return []
@@ -468,11 +482,10 @@ def shell_host_processes(root: Path) -> list[ProcessIdentity]:
 
 
 def roster_from_dir(root: Path) -> list[str]:
-    """The run's background commands, read off disk.
+    """Return the run's background commands as lines, read off disk.
 
-    For surfaces in another process (`/shells`, a dashboard widget): liveness
-    needs the owning process, so this reports what each command WAS and how it
-    ended, and says plainly when it cannot tell.
+    For surfaces in another process: liveness needs the owning process, so this reports what
+    each command was and how it ended, and says when it cannot tell.
     """
     if not root.is_dir():
         return []
@@ -509,8 +522,7 @@ def roster_from_dir(root: Path) -> list[str]:
         if isinstance(code, int):
             lines.append(f"[{d.name}] exited {code}: {command}")
         elif record.get("stopped"):
-            # A stop kills the launcher before it can report a code, so the
-            # stopper records THAT rather than inventing a number.
+            # A stop kills the launcher before it reports a code, so the stopper records the stop.
             lines.append(f"[{d.name}] stopped: {command}")
         else:
             lines.append(f"[{d.name}] ended without a result: {command}")

@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Post-dispatch helpers: the jail passthrough env, metric-score parsing, and
-compacting tool args for the event log.
-"""
+"""Post-dispatch helpers: the jail passthrough env, metric parsing and argument previews."""
 
 from __future__ import annotations
 
@@ -14,16 +12,23 @@ PASSTHROUGH_ENV_KEYS = ("LANG", "LC_ALL", "TERM", "CI")
 
 
 def passthrough_env() -> dict[str, str]:
+    """Return the environment variables a jailed command inherits from the agent."""
     return {k: os.environ[k] for k in PASSTHROUGH_ENV_KEYS if k in os.environ}
 
 
 def parse_metric_score(stdout: str, stderr: str, *, pattern: str) -> float | None:
-    """Apply the metric `pattern` regex to combined stdout+stderr.
+    """Apply the metric regex to the combined output and read its first capture group.
 
-    Shared metric parser; centralised so the harness and tool handler
-    scores from the same command output. Returns `None` on regex compile
-    failure, no-match, or non-numeric capture group - the caller treats
-    that as "no score this turn" and falls back to raw stdout inspection.
+    The harness and the tool handler score the same command output through this one parser.
+
+    Args:
+        stdout: The command's stdout.
+        stderr: The command's stderr.
+        pattern: The regex whose first group is the score.
+
+    Returns:
+        The score, or None when the regex does not compile, does not match, or captures a
+        non-number; the caller treats that as no score this turn.
     """
     combined = f"{stdout}\n{stderr}"
     try:
@@ -35,16 +40,23 @@ def parse_metric_score(stdout: str, stderr: str, *, pattern: str) -> float | Non
     try:
         return float(m.group(1))
     except (ValueError, IndexError, TypeError):
-        # TypeError: an optional/alternation capture group that did not
-        # participate in the match yields None, and float(None) raises it.
+        # TypeError: a capture group that did not take part in the match yields None.
         return None
 
 
 def truncate_args(raw: dict[str, Any], *, max_value_chars: int = 200) -> dict[str, Any]:
-    """Cheap argument preview for telemetry; truncates strings longer than
-    *max_value_chars* and lists longer than 10 items, at every depth (an
-    apply_edit's `edits` is a short list of dicts whose strings hold whole
-    files)."""
+    """Return an argument preview for telemetry, clipped at every depth.
+
+    Strings longer than `max_value_chars` and lists longer than 10 items are clipped (an
+    apply_edit's `edits` is a short list of dicts whose strings hold whole files).
+
+    Args:
+        raw: The tool call's arguments.
+        max_value_chars: The longest string kept whole.
+
+    Returns:
+        The clipped arguments.
+    """
     return {k: _clip_value(v, max_value_chars) for k, v in raw.items()}
 
 

@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tool dispatch: validates incoming LLM tool calls and executes them.
+"""Tool dispatch: validate each LLM tool call and execute it.
 
-File reads/writes resolve through the workspace boundary: *root* (the repo
-cwd) plus the operator's extra grants and the per-repo memory dir. Commands
-run jailed -- the run's `JailSession`, or a per-command `run_in_jail` when no
-session exists. Capability gating (`run_commands = "no" | "ask" | "yes"`) is
-enforced here.
+File reads and writes resolve through the workspace boundary: the repo root plus the operator's
+extra grants and the per-repo memory dir. Commands run jailed, in the run's `JailSession` or a
+per-command `run_in_jail`. The `run_commands` gate ("no", "ask", "yes") is enforced here.
 """
 
 from __future__ import annotations
@@ -126,26 +124,26 @@ from agent6.tools.schema import (
 )
 from agent6.tools.sessions import conversation, roster
 
-# A backslash before a character JSON defines no escape for: a regex the
-# model typed inside a JSON string, meant literally.
+# A backslash JSON defines no escape for: a regex the model typed inside a JSON string.
 _LONE_BACKSLASH = re.compile(r'\\(?!["\\/bfnrtu])')
 
 
 def _coerce_stringified_args(
     raw_input: dict[str, Any], exc: ValidationError
 ) -> dict[str, Any] | None:
-    """Recover a tool call whose structured argument arrived as a JSON string.
+    """Recover a tool call whose array or object argument arrived as a JSON string.
 
-    Weak models occasionally serialize an array/object argument to a string
-    (e.g. apply_edit `edits` arriving as `'[{...}]'`), wasting a
-    round-trip on a validation error the model must repair. For each top-level field named in the
-    validation error whose provided value is a str, parse the string's head
-    as JSON (`raw_decode` tolerates trailing junk like a leaked closing
-    tag; a backslash JSON does not escape reads literally) and substitute the
-    parsed value when it is a container. Fields the
-    schema really declares as strings are unaffected: a wrong substitution
-    fails re-validation and the caller re-raises the original error. Returns
-    the coerced copy of `raw_input`, or None when nothing was coercible.
+    For each top-level field the validation error names whose value is a str, the string's head
+    is parsed as JSON (`raw_decode` tolerates trailing junk; a lone backslash reads literally)
+    and substituted when it is a container. A field the schema declares as a string is safe: a
+    wrong substitution fails re-validation and the caller re-raises the original error.
+
+    Args:
+        raw_input: The arguments as they arrived.
+        exc: The validation error they raised.
+
+    Returns:
+        A coerced copy, or None when nothing was coercible.
     """
     decoder = json.JSONDecoder()
     coerced: dict[str, Any] | None = None
@@ -183,11 +181,12 @@ _JSON_WORDS = {
 
 
 def invalid_arguments(exc: ValidationError) -> str:
-    """One line per real argument problem, for the model and the log: the
-    dotted field, then the message without pydantic's "Value error, " lead
-    and docs URL, a container's in JSON's words. A container error caused by
-    an invalid item ("edits: expected a non-empty array" beside the item's
-    own line) is dropped: the item's line already says what to fix."""
+    """Return one line per real argument problem, for the model and the log.
+
+    Each line is the dotted field and the message without pydantic's "Value error, " lead and
+    docs URL, a container's in JSON's words. A container error caused by an invalid item is
+    dropped: the item's own line says what to fix.
+    """
     errors = exc.errors(include_url=False)
     item_locs = [tuple(e["loc"]) for e in errors]
     parts: list[str] = []
@@ -206,16 +205,12 @@ def invalid_arguments(exc: ValidationError) -> str:
     return "invalid arguments: " + "; ".join(parts)
 
 
-# Execution tools whose stdout/stderr IS the diagnostic signal. Their tool.result
-# event carries a capped output tail (like verify.end) so logs.jsonl shows
-# the command's output for quick observability -- not just a one-line summary --
-# without opening the transcripts (where the full, uncapped output always lives).
+# Tools whose tool.result event carries a capped output tail, so logs.jsonl shows the output.
 _EXEC_OUTPUT_TOOLS = frozenset({RunCommandInput.TOOL_NAME, RunMetricInput.TOOL_NAME})
 _TOOL_OUTPUT_TAIL = 2000  # chars, matching verify.end's stdout_tail/stderr_tail
 
 
-# An MCP approval prompt carries the FULL arguments up to this bound; past it
-# the complete payload goes to a session-dir file the prompt points at.
+# An MCP approval prompt carries the full arguments up to this bound, then a session-dir file.
 _PAYLOAD_IDS = itertools.count(1)
 _APPROVAL_PROMPT_MAX_CHARS = 4096
 
@@ -224,12 +219,12 @@ _READ_HEAD_CHARS = 300
 
 
 def _output_tails(name: str, result: ToolResult) -> dict[str, Any]:
-    """Capped output excerpts an execution/read tool's result carries into its
-    tool.result event, else {}. Commands get stdout/stderr tails; read_file
-    gets a head preview + the true line count, so logs.jsonl shows what was
-    read without opening the transcripts; an edit or patch names the paths it
-    wrote, so a resume can tell the run's own untracked files from the
-    operator's."""
+    """Return the excerpts a tool's result carries into its tool.result event, else {}.
+
+    A command gets its output tails; read_file a head preview and the line count; an edit or
+    patch the paths it wrote, so a resume can tell the run's own untracked files from the
+    operator's.
+    """
     if isinstance(result, EditResult):
         return {"paths": [result.path]}
     if isinstance(result, PatchResult):
@@ -250,16 +245,14 @@ def _output_tails(name: str, result: ToolResult) -> dict[str, Any]:
 
 
 def _clip_tail(text: str, limit: int = 20_000) -> str:
-    """The last `limit` chars, prefixed by a marker naming what was dropped
-    (the read_background rendering does the same per line); an unmarked clip
-    reads as the complete output."""
+    """Return the last `limit` chars behind a marker naming what was dropped."""
     if len(text) <= limit:
         return text
     return f"... {len(text) - limit} earlier chars clipped ...\n" + text[-limit:]
 
 
 def _exec_result(res: CommandResult, *, timeout_s: float = 0.0) -> ExecResult:
-    """The model's view of a finished command: the tails of both streams."""
+    """Return the model's view of a finished command: the tails of both streams."""
     return ExecResult(
         returncode=res.returncode,
         stdout=_clip_tail(res.stdout),
@@ -270,14 +263,8 @@ def _exec_result(res: CommandResult, *, timeout_s: float = 0.0) -> ExecResult:
     )
 
 
-# Every tool that runs a command in the jail. They all execute model-influenced
-# argv with the same reach, so one knob governs them: `run_commands = "no"`
-# hides them, "ask" prompts (the session-allow marker keeps that to one prompt
-# per run), "yes" runs. run_verify_command is here too -- its argv is the
-# operator's when configured, but INFERRED from a file the model can edit when
-# it is not, and either way it is a command in the same sandbox. So is
-# run_metric_command: the operator's argv, run in that same jail, as often as
-# the model asks.
+# Every tool that runs a command in the jail, governed by the one `run_commands` knob: the
+# verify and metric commands are inferred from or run at the model's asking in the same sandbox.
 _COMMAND_TOOLS = frozenset(
     {
         RunCommandInput.TOOL_NAME,
@@ -287,10 +274,8 @@ _COMMAND_TOOLS = frozenset(
     }
 )
 
-# Bench / A-B arm for the symbol-tool surface, keyed by AGENT6_SYMBOL_TOOLS:
-# "none" hides the three symbol tools (the rg-via-run_command floor). Unset
-# or unknown hides nothing (the full surface); the bench harness validates
-# the arm name, so a stray value cannot silently select an arm.
+# Bench arms keyed by AGENT6_SYMBOL_TOOLS: "none" hides the symbol tools; unset or unknown hides
+# nothing, and the bench harness validates the arm name.
 _SYMBOL_TOOL_ARMS: dict[str, frozenset[str]] = {
     "none": frozenset(
         {
@@ -303,11 +288,32 @@ _SYMBOL_TOOL_ARMS: dict[str, frozenset[str]] = {
 
 
 def _roster(shells: BackgroundShells) -> tuple[str, ...]:
+    """Return the background roster as lines."""
     return tuple(v.line() for v in shells.roster())
 
 
 class ToolDispatcher:
-    """Runtime tool dispatcher. Constructed once per harness run."""
+    """The tool dispatcher of one execution, or of a bare caller such as a review seat.
+
+    Args:
+        root: The workspace root.
+        config: The run's config.
+        isolation: The resolved isolation level; read by the prompt builder too.
+        prompts: The operator gate; a bare dispatcher gets one over its own journal.
+        events: The run's event sink; None emits nothing.
+        curator: The task graph; None answers "no curator" from the DAG tools.
+        run_root_node_id: The parent `add_task` falls back to.
+        mcp_manager: The MCP servers; None routes no `mcp__` name.
+        extra_protect_paths: Paths every jail re-binds read-only and the edit tools refuse,
+            such as a running machine's own bundle; read by the prompt assembly too.
+        worktree_git_dir: The repository git dir recorded for a fork's linked worktree.
+        mode: The mode whose tool surface the dispatcher enforces as its backstop.
+        state_dir: The per-repo state dir, for the sessions roster and the memory grant.
+        session_dir: The run's dir, for background commands, the file bridge and the
+            effective command policy; None leaves them unwired.
+        use_jail_session: Whether one jail process serves every command of the run.
+        session_net: The run's session network; None makes the dispatcher's own.
+    """
 
     def __init__(
         self,
@@ -330,93 +336,42 @@ class ToolDispatcher:
     ) -> None:
         self._root = root.resolve()
         self._config = config
-        # The in-process file boundary. Every path-taking read/write tool
-        # resolves through it, so the hidden set holds at every isolation level.
-        # The per-repo memory dir rides along when state is wired: memory files
-        # are read and edited with the ordinary tools (in-process only; the
-        # jail never mounts it).
+        # Memory files are read and edited with the ordinary tools, in-process only.
         mem = memory_dir(state_dir) if state_dir is not None else None
         if mem is not None:
-            # The grant's target must exist: the model cannot mkdir outside
-            # the jail, so a fresh repo's FIRST organic memory write would
-            # fail with ENOENT.
+            # The grant's target must exist: the model cannot mkdir outside the jail.
             mkdir_for_real_user(mem)
         self._ws = workspace_for(config, self._root, memory_dir=mem)
-        # Public: the prompt builder reads it so the system prompt describes
-        # THIS dispatcher's command behaviour (hardened-only caveats).
         self.isolation: IsolationLevel = isolation
-        # In plan mode the LLM's tool list already omits apply_edit/apply_patch;
-        # this is the defense-in-depth backstop so the dispatcher itself refuses
-        # a source mutation even if something dispatched one directly.
         self._mode: Literal["run", "plan", "ask", "machine"] = mode
-        # next() is atomic under the GIL; seats on the shared dispatcher get
-        # distinct ids without a lock.
+        # next() is atomic under the GIL, so seats on a shared dispatcher need no lock.
         self._call_seq = itertools.count(1)
-        # Extra read-only paths layered into every run_command jail on top of
-        # the strict-isolation protect_git bind (e.g. a running machine's own
-        # .asm.toml + scripts bundle, so an agent state can't rewrite them
-        # mid-run).
-        # Also read by the prompt assembly: under hardened, Landlock carves the
-        # workspace around these and denies new top-level entries.
         self.extra_protect_paths = extra_protect_paths
-        # The repository git dir agent6 recorded for a fork's linked worktree
-        # (jail_policy grants it once the worktree's pointer still resolves
-        # to it); None for every other checkout.
         self._worktree_git_dir = worktree_git_dir
         self._events = events
-        # The gate every approval and ask_user goes through: it journals the
-        # prompt/answer pair and names the call it gates. A bare dispatcher
-        # (a one-off tool, tests) gets one over its own journal and the stdin
-        # fallbacks.
         self._prompts = prompts or OperatorPrompts(journal=self._emit, session_dir=session_dir)
-        # The call being dispatched on this thread, stamped on the prompts its
-        # handler raises. Per thread: concurrent review seats share one
-        # dispatcher, and a shared attribute would stamp seat A's prompt with
-        # seat B's call.
+        # The call being dispatched, per thread: concurrent review seats share one dispatcher.
         self._gating = threading.local()
-        # Seconds spent blocked on the operator (approvals, ask_user). The loop
-        # subtracts them from its wall clock: waiting for a human is not the
-        # model stalling.
+        # Seconds blocked on the operator; the loop subtracts them from its wall clock.
         self.operator_wait_s = 0.0
-        # Optional in-process GraphCurator + root-task id for the DAG-as-tool
-        # surface. When wired, the dispatcher exposes add_task /
-        # update_task / list_tasks.
         self._curator = curator
-        # Read by the tool list: the three DAG tools answer "no curator" for
-        # a run built without one (a machine agent state).
+        # Read by the tool list: the DAG tools answer "no curator" for a run built without one.
         self.dag_available = curator is not None
         self._run_root_node_id = run_root_node_id
-        # Optional MCP (Model Context Protocol) manager. When
-        # set, `dispatch` routes any tool name starting with the MCP
-        # prefix to the manager. Discovered tool names are also added
-        # to `available_tool_names()` so the harness exposes them.
         self._mcp_manager = mcp_manager
-        # Per-repo state dir: sessions roster reads plus the memory grant
-        # above. None (tests, review/one-off dispatchers) leaves both off.
         self._state_dir = state_dir
-        # Background commands live under the run dir so they die with the run
-        # and `sessions rm` clears them. None (tests, review dispatchers) leaves
-        # them unwired: the tools raise ToolError, like the DAG tools.
+        # Background commands live under the run dir so they die with the run.
         self._shells = (
             BackgroundShells(session_dir / SHELLS_DIR) if session_dir is not None else None
         )
-        # One jail process for the whole run, opened on the first jailed
-        # command and closed at teardown, so a run's commands share a netns, a
-        # PID namespace and a /tmp and pay the setup once. RUN-SCOPED: a bare
-        # dispatcher (a one-off tool, an embedder) has no run to scope it to
-        # and keeps the per-command launcher.
+        # One jail process per run, so its commands share a netns, a PID namespace and a /tmp.
         self._use_session = use_jail_session
         self._session_net = session_net
         self._own_session_net: SessionNetwork | None = None
         self._session: JailSession | None = None
         self._session_failed = False
-        # Two threads racing the lazy open would each start a launcher and one
-        # would be dropped on the floor -- a leaked jail process, its
-        # namespaces, and (under `session`) its network holder, with nothing
-        # left holding a handle to close them.
+        # Two threads racing the lazy open would leak a jail process and its namespaces.
         self._session_lock = threading.Lock()
-        # The run's dir, for the effective command policy: the operator's
-        # session choice and away-mode live there and can change mid-run.
         self._session_dir = session_dir
         self._handlers: dict[str, Callable[[dict[str, Any]], ToolResult]] = {
             Agent6DocsInput.TOOL_NAME: agent6_docs,
@@ -441,47 +396,32 @@ class ToolDispatcher:
             FetchInput.TOOL_NAME: self._fetch,
             ReadBackgroundInput.TOOL_NAME: self._read_background,
             StopBackgroundInput.TOOL_NAME: self._stop_background,
-            # run_metric: LLM-exposed via LOOP_EXTRA_TOOLS so the
-            # loop can call it after a successful verify when
-            # [harness.metric] is configured.
             RunMetricInput.TOOL_NAME: self._run_metric,
-            # finish_session signals the loop should exit. Handler
-            # just echoes the summary; the harness checks for this tool name
-            # in resp.tool_uses and terminates after dispatching it.
             FinishSessionInput.TOOL_NAME: finish_session,
             FinishPlanningInput.TOOL_NAME: finish_planning,
             AskUserInput.TOOL_NAME: self._ask_user,
-            # DAG-as-tool. Handlers raise ToolError if no curator was
-            # wired (so standalone tests can omit it).
             DagAddTaskInput.TOOL_NAME: lambda raw: add_task(
                 self._curator, self._run_root_node_id, raw
             ),
             DagUpdateTaskInput.TOOL_NAME: lambda raw: update_task(self._curator, raw),
             DagListTasksInput.TOOL_NAME: lambda raw: list_tasks(self._curator, raw),
-            # Operator-installed skills; resolved lazily from config + the
-            # data dir on first use (see _resolved_skills).
             UseSkillInput.TOOL_NAME: lambda raw: use_skill(self.resolved_skills, raw),
         }
         self._index: SymbolIndex | None = None
-        # Guards the lazy build of self._index so concurrent explore-review
-        # seats (sharing one dispatcher across ThreadPoolExecutor threads)
-        # can't double-build it.
+        # Concurrent review seats must not double-build the index.
         self._index_lock = threading.Lock()
-        # Operator-installed skills, resolved once on first use (a disk scan
-        # of the configured skill dirs). None = not yet resolved.
+        # Resolved once on first use, a disk scan of the configured skill dirs.
         self._skills_cache: ResolvedSkills | None = None
 
     def set_run_root_node_id(self, node_id: str | None) -> None:
-        """Harness sets this after seeding the run's root task.
-        `add_task` with parent_id=None falls back to this as the parent."""
+        """Set the parent `add_task` falls back to, once the harness has seeded the root task."""
         self._run_root_node_id = node_id
 
     def command_policy(self) -> str:
-        """ "no" | "ask" | "yes" for this run, right now.
+        """Return the run's command policy right now: "no", "ask" or "yes".
 
-        Re-read rather than cached: an operator who denies for the session
-        mid-run withdraws the tools from the next turn, and one who allows for
-        the session stops being prompted from the next call.
+        Re-read rather than cached: an operator who denies for the session mid-run withdraws
+        the tools from the next turn.
         """
         configured = self._config.sandbox.run_commands
         if self._session_dir is None:
@@ -489,20 +429,15 @@ class ToolDispatcher:
         return effective_run_commands(configured, self._session_dir)
 
     def metric_configured(self) -> bool:
-        """Whether `[harness.metric]` gives `run_metric_command` anything to
-        run. The loop exposes that tool as an extra, outside
-        `available_tool_names`, so it asks this instead."""
+        """Return whether `[harness.metric]` gives `run_metric_command` anything to run."""
         return self._config.harness.metric is not None
 
     def tool_is_withheld(self, name: str) -> bool:
-        """Whether the model is denied *name*, extras included. The tool list is
-        built from the mode's surface, which carries tools that are not in
-        ALL_TOOLS (`run_metric_command`), so `available_tool_names` cannot
-        answer for them."""
+        """Return whether the model is denied the tool, extras included."""
         return name in _COMMAND_TOOLS and self.command_policy() == "no"
 
     def _tool_refusal(self, name: str) -> str | None:
-        """Why a built-in tool is dynamically withheld, or None when offered."""
+        """Return why a built-in tool is withheld right now, or None when it is offered."""
         if self.tool_is_withheld(name):
             return "not available (run_commands = 'no')"
         # `fetch` is redundant when a jailed command already has the network.
@@ -515,29 +450,26 @@ class ToolDispatcher:
         return None
 
     def available_tool_names(self) -> tuple[str, ...]:
+        """Return the base tools on offer right now, MCP tools included, sorted."""
         names = [cls.TOOL_NAME for cls in ALL_TOOLS if self._tool_refusal(cls.TOOL_NAME) is None]
-        # No verify_command (and none inferred) -> a gateless run: hide
-        # run_verify_command rather than offer a tool that would error.
+        # A gateless run hides run_verify_command rather than offer a tool that would error.
         if not self._config.harness.verify_command:
             names = [n for n in names if n != RunVerifyInput.TOOL_NAME]
         names.extend(d.qualified_name for d in self.mcp_descriptors())
         return tuple(sorted(names))
 
     def mcp_denied(self, server: str) -> bool:
-        """Whether the operator answered "deny all" for *server* this session.
+        """Return whether the operator answered "deny all" for the server this session.
 
-        Read at both gates, like `command_policy`: the tool list drops the
-        server so the model stops spending turns on a door that will not open,
-        and the call gate refuses it because withdrawal is not refusal -- the
-        model still has the previous turn's list in context.
+        Read at both gates: the tool list drops the server, and the call gate refuses it, since
+        the model still has the previous turn's list in context.
         """
         if self._session_dir is None:
             return False
         return session_deny_set(self._session_dir, f"{MCP_SCOPE_PREFIX}{server}")
 
     def mcp_descriptors(self) -> tuple[MCPToolDescriptor, ...]:
-        """The MCP tools on offer right now, minus any server the operator denied
-        for the session."""
+        """Return the MCP tools on offer right now, minus any server denied for the session."""
         if self._mcp_manager is None:
             return ()
         return tuple(
@@ -545,23 +477,27 @@ class ToolDispatcher:
         )
 
     def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-        # Returns the typed result; the caller serializes it with to_wire() at
-        # the single wire boundary (the loop / review seat / mcp server).
-        # Emit `tool.call` UP FRONT, before any guard, so EVERY dispatched tool
-        # -- including ones a guard rejects (unknown name, disabled, wrong mode)
-        # -- produces a matching `tool.result(ok=...)` pair. Otherwise a reader
-        # sees a `loop.tool.call` with no result and has to guess what happened.
-        # The emit + the ok flag live here in the dispatcher (not gated on the
-        # model), so a prompt injection cannot suppress the event or fake
-        # success; rejection reasons come from these hardcoded guards, not from
-        # model-supplied content.
-        # The finish tools' `summary` is the human end-of-run statement (shown on
-        # the done line + in `watch`); keep it whole. Generic args stay clipped.
+        """Execute one tool call, journaling a `tool.call` and `tool.result` pair around it.
+
+        The pair is emitted here, before any guard and outside the model's reach, so a
+        rejected call still produces its result and a prompt injection cannot fake success.
+
+        Args:
+            name: The tool's name.
+            raw_input: The model's arguments.
+
+        Returns:
+            The typed result; the caller serializes it at the wire boundary.
+
+        Raises:
+            ToolError: The call was refused, its arguments invalid, or the handler failed.
+            OperatorCommandUnexecutableError: An operator verify or metric command cannot run in
+                the jail; the loop aborts rather than surface it to the model.
+        """
+        # The finish tools' `summary` is the human end-of-run statement: kept whole.
         max_chars = 2000 if name in ("finish_session", "finish_planning") else 200
         preview = truncate_args(raw_input, max_value_chars=max_chars)
-        # Correlation id shared by this dispatch's call/result pair: concurrent
-        # review seats interleave events through the one shared sink, and
-        # name-based pairing cross-stamps same-name calls.
+        # Concurrent review seats interleave events, and name-based pairing cross-stamps calls.
         cid = next(self._call_seq)
         self._emit("tool.call", name=name, args=preview, call_id=cid)
         outer = self._gating_call_id()
@@ -572,10 +508,6 @@ class ToolDispatcher:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise
         except OperatorCommandUnexecutableError as exc:
-            # Not a model-fixable tool error: an operator verify/metric command
-            # that cannot execute in the jail. Record the failed result for the
-            # audit trail, then propagate (NOT wrapped as ToolError) so the loop
-            # aborts the run loudly instead of surfacing it as a normal failure.
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise
         except ValidationError as exc:
@@ -598,17 +530,17 @@ class ToolDispatcher:
         return result
 
     def _dispatch_inner(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-        """Resolve + execute a tool. Raises ToolError on a rejected/failed call;
-        the caller (`dispatch`) owns the tool.call/tool.result events."""
-        # MCP routing happens BEFORE the built-in handler check so mcp__* names
-        # don't collide with the built-in "Unknown tool" error path.
+        """Resolve and execute a tool; `dispatch` owns the events around it.
+
+        Returns:
+            The handler's result.
+
+        Raises:
+            ToolError: The tool is unknown, withheld, outside the mode's surface, or failed.
+        """
         if name.startswith(MCP_TOOL_PREFIX):
             if not session_kind(self._mode).edits:
-                # MCP tools are arbitrary external capabilities agent6 cannot
-                # classify as read-only, so every non-run mode refuses them --
-                # the same dispatcher backstop the built-in mutating tools get,
-                # covering the withheld edit/DAG tools of plan/ask and
-                # the machine-authoring "do not edit or run anything" contract.
+                # An MCP tool cannot be classified as read-only, so every non-run mode refuses it.
                 raise ToolError(f"not available in {self._mode} mode (run mode only)")
             if self._mcp_manager is None:
                 raise ToolError("MCP is not configured")
@@ -622,31 +554,26 @@ class ToolDispatcher:
         if (refusal := self._tool_refusal(name)) is not None:
             raise ToolError(refusal)
         if name not in mode_tools(self._mode).permitted:
-            # Backstop the mode's tool surface at the dispatcher, not just by
-            # omitting tools from the LLM's list: a tool-list regression or a
-            # hallucinated name must not mutate the repo or run commands
-            # (including the approval-gate-free metric command) from a
-            # read-only mode, or pause a non-run loop (ask_user). Enforcing
-            # membership in the same surface `tool_definitions` exposes means
-            # the two cannot drift.
+            # The backstop: a hallucinated name must not mutate the repo from a read-only mode.
             raise ToolError(f"not available in {self._mode} mode")
         return self._run_handler(name, raw_input)
 
     def _run_handler(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-        """Execute the handler, retrying once with stringified-JSON args coerced."""
-        # The provider couldn't parse the tool-call arguments as JSON and left the
-        # `_raw_arguments` sentinel (after a lenient re-parse already failed). A
-        # schema error about "_raw_arguments extra fields" would misdirect the
-        # model; tell it plainly the JSON was malformed so it resends in one shot.
+        """Execute the handler, retrying once with stringified JSON arguments coerced.
+
+        Returns:
+            The handler's result.
+
+        Raises:
+            ToolError: The provider could not parse the arguments as JSON.
+            ValidationError: The arguments do not fit the schema, after the coercion too.
+        """
+        # The provider left the `_raw_arguments` sentinel; a schema error about it would misdirect.
         if set(raw_input) == {"_raw_arguments"}:
             raw = raw_input.get("_raw_arguments")
             raw_len = len(raw) if isinstance(raw, str) else 0
             if raw_len > 20_000:
-                # Not a formatting slip: the arguments ran away (observed: a
-                # model emitting a 117KB pattern of one alternation repeated
-                # until the output-token ceiling cut the JSON string mid-way).
-                # "Resend" feedback makes such a model regenerate the same
-                # runaway; name the actual problem instead.
+                # The arguments ran away to the output-token ceiling; "resend" would repeat that.
                 raise ToolError(
                     "the arguments were cut off mid-generation"
                     f" ({raw_len // 1000} KB, truncated before the JSON closed)."
@@ -668,25 +595,20 @@ class ToolDispatcher:
             try:
                 return self._handlers[name](coerced)
             except ValidationError:
-                # The coercion guessed wrong; the original shape error is the
-                # honest one to surface.
+                # The coercion guessed wrong; the original error is the honest one.
                 raise exc from None
 
     def _emit(self, event_type: str, /, **fields: Any) -> None:
+        """Write one event to the sink, when there is one."""
         if self._events is not None:
             self._events.emit(event_type, **fields)
 
     def _gating_call_id(self) -> int | None:
-        """The call this thread is dispatching; None outside a dispatch (a
-        verify the harness runs itself)."""
+        """Return the call this thread is dispatching, or None outside a dispatch."""
         return getattr(self._gating, "call_id", None)
 
-    # ----- handlers -----
-
-    # ----- tree-sitter index handlers -----
-
     def symbol_index(self) -> SymbolIndex:
-        """Build the dispatcher's shared symbol index once."""
+        """Return the dispatcher's shared symbol index, built once."""
         if self._index is None:
             with self._index_lock:
                 if self._index is None:
@@ -696,18 +618,13 @@ class ToolDispatcher:
     def settle_background(self) -> None:
         """Write down the ending of any background command that has finished.
 
-        For the loop's turn boundary: only an observed exit reaches disk, and
-        the model need never ask again after starting one.
+        Called at the turn boundary: only an observed exit reaches disk.
         """
         if self._shells is not None:
             self._shells.settle()
 
     def close(self) -> None:
-        """Release subprocess resources.
-
-        Idempotent. Safe to call from CLI teardown alongside
-        `mcp_manager.close()`.
-        """
+        """Stop the background commands and close the jail session; idempotent."""
         if self._shells is not None:
             self._shells.stop_all()
         with self._session_lock:
@@ -721,18 +638,19 @@ class ToolDispatcher:
             self._own_session_net = None
 
     def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
-        """Adopt a verify command mid-run: the loop's gateless adoption after
-        the tree materializes (see Harness._maybe_adopt_verify). Same trust
-        as preflight's in-memory injection: derived from the repo's own
-        AGENTS.md fence or project signals, operator-origin, never persisted.
+        """Adopt a verify command mid-run, once a gateless run's tree has materialized.
 
-        False (nothing adopted) when a bare argv[0] does not resolve on the
-        jail PATH: adopting a gate the sandbox cannot execute would turn a
-        would-be honest settle into an unexecutable-verify abort. Path-form
-        commands are accepted as-is (they resolve against the mounted cwd)."""
+        The same trust as preflight's injection: derived from the repo's own AGENTS.md fence or
+        project signals, never persisted.
+
+        Args:
+            argv: The command.
+
+        Returns:
+            Whether it was adopted; False when commands are withheld or a bare argv[0] does not
+            resolve on the jail PATH, since a gate the sandbox cannot run would abort the run.
+        """
         if self.command_policy() == "no":
-            # Every command tool is withheld, the gate included. Adopting one
-            # would gate the run on something it can never run.
             return False
         exe = argv[0]
         if "/" not in exe and shutil.which(exe, path=jail_search_path()) is None:
@@ -741,29 +659,25 @@ class ToolDispatcher:
         return True
 
     def drop_verify_command(self) -> None:
-        """Un-adopt: the gate proved unrunnable, the run is gateless again."""
+        """Drop the verify command: the gate proved unrunnable, so the run is gateless again."""
         self._config = self._config.with_verify_command(())
 
     def _approve_mcp_call(self, name: str, raw_input: dict[str, Any]) -> None:
-        """Gate one MCP tool call on its server's `approve`, or raise ToolDeniedError.
+        """Gate one MCP tool call on its server's `approve`.
 
-        A server's tools are arbitrary external capabilities, so they are asked
-        about like a command -- but on their OWN scope: "allow all" for one
-        server grants that server, never the command tools and never a sibling
-        server. `approve = "yes"` (or `--auto-approve`) is the standing consent.
-        The ARGUMENTS are in the prompt because they are the whole risk: the
-        server's actions are fixed, what the model chose to send is not. They go
-        in WHOLE, never the log preview: a clipped arg is consent to an
-        operation the operator never saw.
+        A server's tools are asked about like a command, on their own scope: "allow all" for one
+        server grants that server alone. The arguments are in the prompt whole, never clipped,
+        because they are the whole risk: a clipped argument is consent to an operation the
+        operator never saw.
+
+        Raises:
+            ToolError: The server is not configured (the scope becomes a filename, and the LLM
+                chooses tool names), or was denied for the session.
+            ToolDeniedError: The operator did not approve.
         """
         server, _tool = split_tool_name(name)
         entry = self._config.mcp.servers.get(server)
         if entry is None:
-            # The scope becomes a filename, and the LLM chooses tool names: a
-            # call to `mcp__../../tmp/x__t` would otherwise prompt about, and
-            # then record a grant for, a "server" that is a path. Only a
-            # configured name is a server, and the manager would refuse this
-            # call anyway.
             raise ToolError(f"unknown MCP server in {name!r}")
         if self.mcp_denied(server):
             raise ToolError(f"not available ({server!r} was denied for this session)")
@@ -771,15 +685,8 @@ class ToolDispatcher:
             return
         args = json.dumps(raw_input, ensure_ascii=False, sort_keys=True)
         if len(args) > _APPROVAL_PROMPT_MAX_CHARS and self._session_dir is not None:
-            # Full args are the consent rule -- but a wall of text is as
-            # unread as a clipped one. Past the bound, the COMPLETE payload
-            # goes to a file (the session dir a jailed command cannot reach)
-            # and the prompt carries the head plus where to read the rest.
-            # With no session dir the full text stays in the prompt: hiding
-            # any of it with nowhere to point is the worse trade.
-            # One file per prompt: concurrent review seats share a dispatcher,
-            # and one shared name has the operator reading call B's payload
-            # while approving call A.
+            # A wall of text is as unread as a clip: the complete payload goes to a file a jailed
+            # command cannot reach, one per prompt since review seats share a dispatcher.
             full = self._session_dir / f"approval_payload-{next(_PAYLOAD_IDS)}.json"
             full.write_text(args, encoding="utf-8")
             args = (
@@ -792,6 +699,7 @@ class ToolDispatcher:
             )
 
     def _approve(self, prompt: str, *, scope: str | None = None) -> bool:
+        """Return the operator's answer to an approval, counting the wait as operator time."""
         started = time.monotonic()
         try:
             return self._prompts.approve(prompt, scope=scope, call_id=self._gating_call_id())
@@ -799,9 +707,11 @@ class ToolDispatcher:
             self.operator_wait_s += time.monotonic() - started
 
     def _not_approved(self, name: str) -> ToolDeniedError:
-        """The gate cannot tell a human "no" from an unattended run's auto-deny,
-        so the message blames neither and names the knob; a stop requested
-        while the approval waited is the one cause it can name."""
+        """Return the refusal for an unapproved command.
+
+        The gate cannot tell a human "no" from an unattended run's auto-deny, so the message
+        names the knob; a stop requested while the approval waited is the one cause it can name.
+        """
         if self._session_dir is not None and stop_request_pending(self._session_dir):
             return ToolDeniedError(
                 f"{name} not run: the run was asked to stop while awaiting approval"
@@ -809,26 +719,30 @@ class ToolDispatcher:
         return ToolDeniedError(f"{name} not approved (sandbox.run_commands='ask')")
 
     def _run_verify(self, raw: dict[str, Any]) -> ExecResult:
+        """Return the gate's outcome, run at the model's asking."""
         RunVerifyInput.model_validate(raw)
         return self.run_verify()
 
     def run_verify(self, extra_argv: tuple[str, ...] = ()) -> ExecResult:
-        """Run the gate: the model's `run_verify_command` and the harness's
-        `verify_when` certification share this one path, approvals included.
-        *extra_argv* appends to the configured command (the harness's scoped
-        fallback passes the selected test paths); the result's `command`
-        carries the argv that actually ran."""
+        """Run the gate; the model's `run_verify_command` and the harness share this path.
+
+        Args:
+            extra_argv: Appended to the configured command (the harness's scoped fallback
+                passes the selected test paths).
+
+        Returns:
+            The outcome, its `command` naming the argv that ran so the worker can tell which
+            gate judged it.
+
+        Raises:
+            ToolDeniedError: The operator did not approve.
+            OperatorCommandUnexecutableError: The command cannot run in the jail.
+        """
         argv = self._config.harness.verify_command + extra_argv
         self._approve_command("run_verify_command", argv)
-        # per-call timeout from config. Defaults to the jail's
-        # general 600s but bench configs crank it down so infinite-loop
-        # edits fail fast instead of burning ~10 min of wall per attempt.
         timeout_s = self._config.harness.verify_timeout_s
         self._emit("verify.start", cmd=list(argv), timeout_s=timeout_s)
         res = self._run_argv_in_jail(argv, label="verify_command", timeout_s=timeout_s)
-        # Name the gate in the result: it is the operator's command, or one
-        # inferred from the repo, so the worker cannot otherwise tell WHICH
-        # thing judged it -- or that it is judging the wrong thing (stale_gate).
         res = replace(res, command=argv)
         self._emit(
             "verify.end",
@@ -853,12 +767,18 @@ class ToolDispatcher:
         return res
 
     def _approve_command(self, name: str, argv: tuple[str, ...]) -> None:
+        """Gate a command on the run's policy.
+
+        Raises:
+            ToolDeniedError: The policy is "ask" and the operator did not approve.
+        """
         if self.command_policy() == "ask" and not self._approve(
             f"Allow {name}: {shlex.join(argv)}", scope=COMMAND_SCOPE
         ):
             raise self._not_approved(name)
 
     def _run_command(self, raw: dict[str, Any]) -> ExecResult:
+        """Return the outcome of a command the model chose, or its handle when detached."""
         args = RunCommandInput.model_validate(raw)
         self._approve_command("run_command", args.argv)
         if args.background:
@@ -866,12 +786,16 @@ class ToolDispatcher:
         return self._run_model_command(args.argv)
 
     def _start_detached(self, argv: tuple[str, ...]) -> ExecResult:
-        """`background: true` -- the same hand-back, at a check-in of zero.
+        """Start a command detached: the same hand-back as a check-in, at zero seconds.
 
-        Only a session that EDITS owns a background command's lifetime: every
-        other mode is a short read-only pass, and a command killed at its end
-        would be started for nothing. Derived from the same tool set that
-        withholds read_background there, so the two cannot disagree.
+        Only a session that edits owns a background command's lifetime, derived from the same
+        tool set that withholds read_background elsewhere.
+
+        Returns:
+            The hand-back, with no output yet.
+
+        Raises:
+            ToolError: The mode cannot read a hand-back, or the command could not start.
         """
         if ReadBackgroundInput.TOOL_NAME not in mode_tools(self._mode).permitted:
             raise ToolError(
@@ -897,15 +821,17 @@ class ToolDispatcher:
         )
 
     def _run_model_command(self, argv: tuple[str, ...]) -> ExecResult:
-        """A command the MODEL chose: where the mode can read a hand-back, no
-        wall-clock kill and a hand-back instead of a guess about whether a
-        long one is stuck; elsewhere the bounded run with its timeout.
+        """Run a command the model chose, handing it back at the check-in where the mode can.
 
-        The check-in needs a session (something must stay alive to own the
-        running command), a background roster to hand it to, and a mode whose
-        tools can read and stop the hand-back (`_start_detached`'s rule: plan
-        and ask withhold both); without any of these this is an ordinary
-        bounded run.
+        The check-in needs a jail session to own the running command, a background roster to
+        hand it to, and a mode whose tools can read the hand-back; otherwise this is a bounded
+        run with its timeout.
+
+        Returns:
+            The outcome, or the hand-back with the output so far.
+
+        Raises:
+            ToolError: The jail is unavailable.
         """
         session = self._run_session()
         shells = self._shells
@@ -925,9 +851,7 @@ class ToolDispatcher:
                 timeout_s=0.0,  # the check-in replaces the kill
                 checkin_s=checkin,
                 log_dir=str(shells.log_root),
-                # A Stop mid-command asks for the hand-back NOW. The operator's
-                # gates (verify, metric) go through `_run_argv_in_jail`, which
-                # has no check-in to jump to and its own timeout_s.
+                # A Stop mid-command asks for the hand-back now.
                 interrupted=self._operator_wants_out,
             )
         except JailUnavailableError as exc:
@@ -946,34 +870,41 @@ class ToolDispatcher:
         )
 
     def _operator_wants_out(self) -> bool:
-        """Whether the operator has asked this run to stop or abort.
+        """Return whether the operator has asked this run to stop or abort.
 
-        Only consulted to cut a WAIT short. The run still ends at its own
-        boundary; this just stops a tool call from sitting on the request for
-        up to the whole check-in interval.
+        Consulted only to cut a wait short; the run still ends at its own boundary.
         """
         if self._session_dir is None:
             return False
         return stop_request_pending(self._session_dir) or steer_answer_is_abort(self._session_dir)
 
     def _background(self) -> BackgroundShells:
+        """Return the background roster.
+
+        Raises:
+            ToolError: No run directory was wired.
+        """
         if self._shells is None:
             raise ToolError("background commands need a run directory; none was wired")
         return self._shells
 
     def _fetch(self, raw: dict[str, Any]) -> FetchResult:
+        """Fetch one URL: an allow-listed host reads, any other asks.
+
+        Returns:
+            The response.
+
+        Raises:
+            ToolError: The URL or the response was refused.
+            ToolDeniedError: The host is off the list and the operator did not approve.
+        """
         args = FetchInput.model_validate(raw)
         try:
             checked = check_url(args.url)
         except FetchRefusedError as exc:
             raise ToolError(str(exc)) from exc
-        # On the list: read it. Off the list: ask. The list IS the standing
-        # approval, and a prompt per doc read only trains a reflexive yes --
-        # but a GET can carry data out in its path, so a host the operator
-        # never named is their call, and an absent one is a no (the away-mode
-        # approver refuses without waiting). Nothing has resolved yet: the DNS
-        # query itself carries the hostname out, so `fetch` runs it behind
-        # this gate.
+        # The list is the standing approval; a GET can carry data out, so an unnamed host is the
+        # operator's call. Nothing has resolved yet: the DNS query itself carries the name out.
         if not host_allowed(checked.host, self._config.sandbox.fetch_hosts) and not self._approve(
             f"Allow fetch: {checked.prompt()}"
         ):
@@ -993,6 +924,14 @@ class ToolDispatcher:
         )
 
     def _read_session(self, raw: dict[str, Any]) -> SessionsResult:
+        """List the project's sessions, and read one's conversation when asked.
+
+        Returns:
+            The roster, with the conversation when an id was given.
+
+        Raises:
+            ToolError: No state dir was wired, or the session does not exist.
+        """
         args = ReadSessionInput.model_validate(raw)
         if self._state_dir is None:
             raise ToolError("read_session needs the project state dir; none was wired")
@@ -1007,6 +946,14 @@ class ToolDispatcher:
         )
 
     def _read_background(self, raw: dict[str, Any]) -> BackgroundResult:
+        """Read a background command's output, or the roster when no id is given.
+
+        Returns:
+            The roster, with the output when an id was given.
+
+        Raises:
+            ToolError: No run directory was wired, or the id is unknown.
+        """
         args = ReadBackgroundInput.model_validate(raw)
         shells = self._background()
         if not args.id:
@@ -1024,6 +971,14 @@ class ToolDispatcher:
         return BackgroundResult(shells=_roster(shells), output=output)
 
     def _stop_background(self, raw: dict[str, Any]) -> BackgroundResult:
+        """Stop a background command.
+
+        Returns:
+            The roster after the stop.
+
+        Raises:
+            ToolError: No run directory was wired, or the id is unknown.
+        """
         args = StopBackgroundInput.model_validate(raw)
         shells = self._background()
         try:
@@ -1033,6 +988,7 @@ class ToolDispatcher:
         return BackgroundResult(shells=_roster(shells))
 
     def _ask_user(self, raw: dict[str, Any]) -> ToolResult:
+        """Return the operator's answers to the model's questions, counting the wait as theirs."""
         args = AskUserInput.model_validate(raw)
         started = time.monotonic()
         try:
@@ -1046,11 +1002,10 @@ class ToolDispatcher:
         )
 
     def resolved_skills(self) -> ResolvedSkills:
-        """Discover + state-resolve operator skills, once per dispatcher.
+        """Return the operator's skills, resolved once per dispatcher.
 
-        Same source of truth as the loop's system-prompt index:
-        `[skills].extra_dirs` first, then the installed dir under the user
-        data dir. An off switch resolves to nothing.
+        The same source as the system prompt's index: `[skills].extra_dirs`, then the installed
+        dir under the user data dir. An off switch resolves to nothing.
         """
         if self._skills_cache is None:
             self._skills_cache = operator_skills(
@@ -1062,19 +1017,21 @@ class ToolDispatcher:
         return self._skills_cache
 
     def skills_available(self) -> bool:
-        """True when at least one enabled/always skill exists; gates whether
-        `use_skill` is exposed in the loop's tool list."""
+        """Return whether at least one enabled or always skill exists."""
         resolved = self.resolved_skills()
         return bool(resolved.enabled or resolved.always)
 
     def _run_metric(self, raw: dict[str, Any]) -> MetricResult:
-        """Run `cfg.harness.metric.command` in the jail.
+        """Run the configured metric command in the jail and parse its score.
 
-        Return shape mirrors `_run_argv_in_jail` (returncode / stdout /
-        stderr / duration_s) plus `score`: the `pattern` regex's first
-        capture group as a float, or null when it does not match or parse (the
-        agent can then grep stdout itself). Raises ToolError when no metric is
-        configured.
+        Returns:
+            The outcome plus the score: the pattern's first capture group as a float, or None
+            when it does not match or parse.
+
+        Raises:
+            ToolError: No metric is configured, or the jail is unavailable.
+            ToolDeniedError: The operator did not approve.
+            OperatorCommandUnexecutableError: The command cannot run in the jail.
         """
         RunMetricInput.model_validate(raw)
         metric_cfg = self._config.harness.metric
@@ -1094,8 +1051,7 @@ class ToolDispatcher:
                 "host, use a path inside the workspace, or grant its real directory "
                 "via sandbox.extra_read_paths."
             )
-        # Scored from the unclipped outcome: the display clip drops a score
-        # printed early, and its marker's own count matches a loose pattern.
+        # Scored from the unclipped outcome: the display clip's marker matches a loose pattern.
         score = parse_metric_score(outcome.stdout, outcome.stderr, pattern=metric_cfg.pattern)
         res = _exec_result(outcome, timeout_s=timeout_s)
         self._emit(
@@ -1116,6 +1072,7 @@ class ToolDispatcher:
         timeout_s: float | None = None,
         extra_rw_paths: tuple[Path, ...] = (),
     ) -> JailPolicy:
+        """Return the jail policy for an argv, with this dispatcher's protect paths and git dir."""
         return jail_policy(
             self._root,
             self._config,
@@ -1128,13 +1085,10 @@ class ToolDispatcher:
         )
 
     def _net(self) -> SessionNetwork | None:
-        """The session network this dispatcher's commands join, or None.
+        """Return the session network this dispatcher's commands join.
 
-        The RUN owns one when there is a run, so its commands and its MCP
-        servers share it. A dispatcher built without one (a machine agent
-        state, `agent6 review`, agent6-as-an-MCP-server, a test) makes its own
-        rather than refusing: its commands still reach each other, which is
-        what `session` promises, and nothing else can reach in.
+        The run owns one when there is a run, shared with its MCP servers. A dispatcher built
+        without one makes its own, so its commands still reach each other.
         """
         if self._session_net is not None:
             return self._session_net
@@ -1143,20 +1097,13 @@ class ToolDispatcher:
         return self._own_session_net
 
     def _run_session(self) -> JailSession | None:
-        """The run's jail process, or None to give each command its own.
+        """Return the run's jail process, or None to give each command its own.
 
-        Every isolation level, `none` included: the launcher owns output
-        capture and the background lifecycle, so serving them from one process
-        keeps that one implementation instead of a per-level copy, and hardened
-        stops paying Landlock + seccomp setup on every command. A session that
-        cannot start (an older bundled launcher, a platform with no launcher at
-        all) answers None once and is not retried, so the per-command path --
-        and, under `none`, the plain subprocess -- remains the fallback rather
-        than the run failing.
-
-        Its confinement is fixed when it opens, so the policy is the run's, not
-        the first command's: every command in the run gets the same one, and
-        the background log root is granted before any command asks for it.
+        Every isolation level uses it, `none` included: the launcher owns output capture and the
+        background lifecycle. A session that cannot start answers None once and is not retried,
+        so the per-command path stays the fallback. Its confinement is fixed when it opens, so
+        the policy is the run's, not the first command's, and the background log root is
+        granted before any command asks for it.
         """
         if not self._use_session:
             return None
@@ -1168,10 +1115,7 @@ class ToolDispatcher:
                     net = self._net() if policy.network == "session" else None
                     self._session = JailSession.open(policy, session_net=net)
                     if self._session.startup_stderr:
-                        # The run's jail came up degraded but runs (e.g. rootless
-                        # podman refusing the /proc mount, so $ORIGIN toolchains
-                        # will not start). Say so ONCE, here at the run's single
-                        # session open -- not per command, where it would repeat.
+                        # A degraded jail (rootless podman refusing /proc) is said once, here.
                         self._emit("jail.degraded", detail=self._session.startup_stderr)
                 except (JailUnavailableError, OSError):
                     self._session_failed = True
@@ -1184,15 +1128,24 @@ class ToolDispatcher:
         label: str,
         timeout_s: float | None = None,
     ) -> tuple[CommandResult, float]:
-        """Run *argv* in the jail and return the unclipped outcome with the
-        timeout the policy resolved: `_run_argv_in_jail` clips both streams
-        for display, and a caller that parses the output (the metric score)
-        needs the real bytes."""
+        """Run an argv in the jail without a check-in.
+
+        Args:
+            argv: The command.
+            label: The tool's name, for the error.
+            timeout_s: The wall-clock limit; the policy's default when None.
+
+        Returns:
+            The unclipped outcome (a caller parsing the metric score needs the real bytes) and
+            the timeout the policy resolved.
+
+        Raises:
+            ToolError: The jail is unavailable.
+        """
         try:
             policy = self._jail_policy(argv, timeout_s=timeout_s)
             session = self._run_session()
-            # No check-in: this is the operator's gate (verify, metric, the
-            # baseline re-run) and the loop needs a verdict, not a handle.
+            # The operator's gate needs a verdict, not a handle.
             outcome = (
                 session.run(argv, env=policy.env, timeout_s=policy.timeout_s)
                 if session is not None
@@ -1213,5 +1166,6 @@ class ToolDispatcher:
         label: str,
         timeout_s: float | None = None,
     ) -> ExecResult:
+        """Return the model's view of an argv run in the jail."""
         outcome, timeout = self._run_argv_raw(argv, label=label, timeout_s=timeout_s)
         return _exec_result(outcome, timeout_s=timeout)

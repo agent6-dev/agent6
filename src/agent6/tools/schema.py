@@ -13,23 +13,20 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 from agent6.graph.models import NodeStatus
 from agent6.kinds import session_kind
 
-# Caps the tool descriptions quote, so the number the model reads and the
-# number the handler enforces cannot disagree.
+# Caps the tool descriptions quote, so the model and the handler read one number.
 LIST_DIR_CAP = 1_000
 ROSTER_MAX = 40
 
-# Derived from the NodeStatus Literal so the task-status vocabulary has ONE
-# owner (a new status can't silently drift the tool schema). Same order, so
-# the pattern the model sees is stable; pinned in
-# tests/unit/test_tool_schema_wire.py.
+# Derived from the NodeStatus Literal, in its order, so the vocabulary has one owner.
 _STATUS_PATTERN = f"^({'|'.join(get_args(NodeStatus))})$"
 
-# A task id as the graph assigns it: the run's own count, zero-padded. Bounded
-# rather than fixed-width, because the number grows a digit past the padding.
+# A task id as the graph assigns it, bounded, not fixed-width: the count outgrows the padding.
 TaskId = Annotated[str, StringConstraints(min_length=1, max_length=26)]
 
 
 class _ToolInput(BaseModel):
+    """The base of every tool's arguments: strict, frozen, and named for the tool list."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     TOOL_NAME: ClassVar[str] = ""
@@ -37,6 +34,8 @@ class _ToolInput(BaseModel):
 
 
 class ReadFileInput(_ToolInput):
+    """The `read_file` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "read_file"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read a UTF-8 text file. `path` is repo-root-relative (absolute only"
@@ -50,6 +49,8 @@ class ReadFileInput(_ToolInput):
 
 
 class Agent6DocsInput(_ToolInput):
+    """The `agent6_docs` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "agent6_docs"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "agent6's own documentation (README, USAGE, CONFIG, SECURITY,"
@@ -61,6 +62,8 @@ class Agent6DocsInput(_ToolInput):
 
 
 class ListDirInput(_ToolInput):
+    """The `list_dir` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "list_dir"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "List immediate entries in a directory (non-recursive). `path` is "
@@ -74,6 +77,8 @@ class ListDirInput(_ToolInput):
 
 
 class ApplyEditInput(_ToolInput):
+    """The `apply_edit` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "apply_edit"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Edit one file. One edit: old_string and new_string (kind optional) at the"
@@ -90,7 +95,7 @@ class ApplyEditInput(_ToolInput):
     )
 
     path: str = Field(min_length=1)
-    # The Claude Code Edit shape, one edit at the top level; several ride `edits`.
+    # One edit at the top level (the Claude Code Edit shape); several ride `edits`.
     old_string: str = ""
     new_string: str = ""
     kind: str = Field(default="", pattern="^(|replace|create|overwrite)$")
@@ -100,8 +105,14 @@ class ApplyEditInput(_ToolInput):
     @model_validator(mode="before")
     @classmethod
     def _one_edit_at_the_top(cls, data: Any) -> Any:
-        """Fold a flat pair into `edits` as its one edit; both forms at once
-        is a refusal, since one would silently win."""
+        """Fold a flat pair into `edits` as its one edit.
+
+        Returns:
+            The data with the pair folded, or as given.
+
+        Raises:
+            ValueError: Both forms were given at once; one would silently win.
+        """
         if not isinstance(data, dict):
             return data
         flat = {k: data[k] for k in ("old_string", "new_string", "kind") if k in data}
@@ -115,18 +126,20 @@ class ApplyEditInput(_ToolInput):
 
     @model_validator(mode="after")
     def _check_whole_file_edit_is_sole(self) -> ApplyEditInput:
+        """Require at least one edit, and a whole-file edit to be the only one.
+
+        Returns:
+            The input unchanged.
+
+        Raises:
+            ValueError: No edits, or a `create` or `overwrite` beside other edits, which the
+                handler's exists guard covers for the first edit only.
+        """
         if not self.edits:
             raise ValueError(
                 "give old_string and new_string for one edit, or `edits`, an array of"
                 " {old_string, new_string, kind?}, for several"
             )
-        # `create` and `overwrite` write the whole file from `new_string`, so
-        # combining either with other edits is nonsensical: the dispatcher's
-        # create branch only guards "file already exists" for the FIRST edit,
-        # so a `create` placed after a `replace` would skip that guard and
-        # silently overwrite the file (discarding the prior edits). Require a
-        # whole-file edit to be the sole edit and fail loud at the trust
-        # boundary instead.
         whole = [e.kind for e in self.edits if e.kind in WHOLE_FILE_KINDS]
         if len(self.edits) > 1 and whole:
             raise ValueError(
@@ -139,6 +152,8 @@ class ApplyEditInput(_ToolInput):
 
 
 class ApplyPatchInput(_ToolInput):
+    """The `apply_patch` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "apply_patch"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Patch files. Accepts a standard unified diff (`--- a/PATH`,"
@@ -159,21 +174,23 @@ class ApplyPatchInput(_ToolInput):
     preview: bool = False
 
 
-# The edit kinds that write the whole file from `new_string`: `create` refuses
-# an existing file (a model that thinks the file is new must not clobber it),
-# `overwrite` states the intent to replace one whole (a rewrite from a stub,
-# where a replace would need the byte-exact old text).
+# The kinds that write the whole file from `new_string`: `create` refuses an existing file.
 WHOLE_FILE_KINDS = frozenset({"create", "overwrite"})
 
 
 class EditPair(BaseModel):
+    """One edit of an apply_edit call.
+
+    Attributes:
+        kind: "replace", "create" or "overwrite"; an omitted kind resolves from the pair itself,
+            to `create` (never `overwrite`) for an empty old_string, so a model that thinks a
+            file is new still cannot clobber one that exists.
+        old_string: The text to replace, exactly once in the file; empty for a whole-file kind.
+        new_string: The replacement, or the whole file.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    # Omitting the discriminator is the common small-model shape, so it is
-    # resolved from the pair itself rather than rejected: an empty old_string
-    # can only mean "write this whole file", and a non-empty one can only mean
-    # a replace. An omitted kind resolves to `create`, never `overwrite`, so a
-    # model that thinks a file is new still cannot clobber one that exists.
     kind: str = Field(default="", pattern="^(|replace|create|overwrite)$")
     old_string: str = ""
     new_string: str
@@ -181,24 +198,33 @@ class EditPair(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _resolve_kind(cls, data: Any) -> Any:
-        """Fill an omitted `kind` from the pair's shape (see the field)."""
+        """Fill an omitted `kind` from the pair's shape.
+
+        Returns:
+            The data with `kind` set.
+        """
         if isinstance(data, dict) and not data.get("kind"):
             data = {**data, "kind": "replace" if data.get("old_string") else "create"}
         return data
 
     @model_validator(mode="after")
     def _check_shape(self) -> EditPair:
-        # kind="replace" with an empty old_string would match anywhere (or
-        # nowhere depending on str.count semantics); reject it loud so the
-        # model gets a clear error instead of a silent corruption.
+        """Refuse a replace with an empty old_string, or a whole-file kind with one.
+
+        Returns:
+            The pair unchanged.
+
+        Raises:
+            ValueError: The pair's fields disagree with its kind.
+        """
+        # An empty old_string would match anywhere.
         if self.kind == "replace" and self.old_string == "":
             raise ValueError(
                 "old_string must be non-empty for kind='replace'. For a file that does not"
                 " exist yet use kind='create'; to rewrite one whole, kind='overwrite'; to"
                 " add at the end of one, use its last line as old_string"
             )
-        # A whole-file kind ignores old_string; reject a non-empty value to
-        # catch the common LLM mistake of pasting context into the wrong field.
+        # A whole-file kind ignores old_string; a non-empty one is context in the wrong field.
         if self.kind in WHOLE_FILE_KINDS and self.old_string != "":
             raise ValueError(
                 f"old_string must be empty for kind={self.kind!r}, which writes the whole"
@@ -209,6 +235,8 @@ class EditPair(BaseModel):
 
 
 class RunVerifyInput(_ToolInput):
+    """The `run_verify_command` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "run_verify_command"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Run this run's verify command in the sandbox: the operator's, or one"
@@ -217,6 +245,8 @@ class RunVerifyInput(_ToolInput):
 
 
 class RunCommandInput(_ToolInput):
+    """The `run_command` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "run_command"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Run a command in the sandbox. argv is an array of strings, no shell."
@@ -239,6 +269,8 @@ class RunCommandInput(_ToolInput):
 
 
 class FetchInput(_ToolInput):
+    """The `fetch` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "fetch"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Fetch an https URL (GET; other schemes are refused). Returns status,"
@@ -250,6 +282,8 @@ class FetchInput(_ToolInput):
 
 
 class ReadSessionInput(_ToolInput):
+    """The `read_session` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "read_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read another session's transcript summary by id; with no id, list the"
@@ -264,6 +298,8 @@ class ReadSessionInput(_ToolInput):
 
 
 class ReadBackgroundInput(_ToolInput):
+    """The `read_background` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "read_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read a background command's output. `id` from run_command's"
@@ -276,13 +312,13 @@ class ReadBackgroundInput(_ToolInput):
 
     id: str = ""
     tail_lines: int = Field(default=200, ge=1, le=2000)
-    # None = the operator's configured check-in; 0 = look without waiting. The
-    # interval has ONE owner ([harness].command_checkin_s), so the default is
-    # resolved by the dispatcher rather than duplicated here.
+    # None: the configured check-in ([harness].command_checkin_s), resolved by the dispatcher.
     wait_s: float | None = Field(default=None, ge=0.0)
 
 
 class StopBackgroundInput(_ToolInput):
+    """The `stop_background` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "stop_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Stop a background command by background_id. Returns the background roster with"
@@ -293,6 +329,8 @@ class StopBackgroundInput(_ToolInput):
 
 
 class RunMetricInput(_ToolInput):
+    """The `run_metric_command` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "run_metric_command"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Run the configured metric command. Returns the parsed score. The"
@@ -301,6 +339,8 @@ class RunMetricInput(_ToolInput):
 
 
 class FinishSessionInput(_ToolInput):
+    """The `finish_session` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "finish_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "End the run cleanly. summary: for the operator, what was done and"
@@ -330,6 +370,8 @@ class FinishSessionInput(_ToolInput):
 
 
 class FinishPlanningInput(_ToolInput):
+    """The `finish_planning` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "finish_planning"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "End the planning pass. `plan_markdown` is the plan document, in the"
@@ -338,10 +380,7 @@ class FinishPlanningInput(_ToolInput):
         " for the operator. Tool calls after it are not executed."
     )
 
-    # Per-field descriptions so the disambiguation lives IN the JSON schema the
-    # model fills, not only in the prose above: models put the whole plan into
-    # `summary` (listed first, and a natural sink for "primary output"),
-    # leaving a degenerate plan.md that still passes min_length=1.
+    # Per-field descriptions: models put the whole plan into `summary` and leave plan.md a stub.
     summary: str = Field(
         min_length=1,
         description=(
@@ -361,12 +400,9 @@ class FinishPlanningInput(_ToolInput):
     )
 
 
-# DAG-as-tool surface. Lets the agent maintain its own task
-# breakdown in the persistent curator-backed graph. Survives crashes via
-# <run-dir>/graph.jsonl; operator can inspect via `agent6 attach`.
-
-
 class DagAddTaskInput(_ToolInput):
+    """The `add_task` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "add_task"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Add a subtask to the persistent task graph."
@@ -378,7 +414,7 @@ class DagAddTaskInput(_ToolInput):
     )
 
     title: str = Field(min_length=1)
-    # None means "under the run root"; the length bound rejects "".
+    # None means under the run root; the length bound rejects "".
     parent_id: str | None = Field(default=None, min_length=1, max_length=26)
     # A sibling under the same parent; the task lands right after it.
     after: str | None = Field(default=None, min_length=1, max_length=26)
@@ -389,6 +425,8 @@ class DagAddTaskInput(_ToolInput):
 
 
 class DagUpdateTaskInput(_ToolInput):
+    """The `update_task` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "update_task"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Update a task: status (in_progress marks the task being worked, which"
@@ -407,18 +445,21 @@ class DagUpdateTaskInput(_ToolInput):
 
 
 class DagListTasksInput(_ToolInput):
+    """The `list_tasks` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "list_tasks"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "List the task graph: ids, titles, statuses, parents, acceptance and"
         " dependencies. `status` keeps only the tasks in that status."
     )
 
-    # The same status enum update_task uses, so a typo is a schema rejection
-    # rather than an empty result.
+    # The same status enum update_task uses, so a typo is a schema rejection, not an empty result.
     status: str | None = Field(default=None, pattern=_STATUS_PATTERN)
 
 
 class UseSkillInput(_ToolInput):
+    """The `use_skill` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "use_skill"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Load an installed skill's full instructions by name (from the <skills>"
@@ -431,6 +472,8 @@ class UseSkillInput(_ToolInput):
 
 
 class OutlineInput(_ToolInput):
+    """The `outline` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "outline"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Structural outline of a source file: top-level and nested defs,"
@@ -441,6 +484,8 @@ class OutlineInput(_ToolInput):
 
 
 class FindDefinitionInput(_ToolInput):
+    """The `find_definition` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "find_definition"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Find where a symbol is defined (tree-sitter; excludes strings and"
@@ -451,6 +496,8 @@ class FindDefinitionInput(_ToolInput):
 
 
 class FindReferencesInput(_ToolInput):
+    """The `find_references` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "find_references"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "List references to a symbol across the repo (tree-sitter; excludes"
@@ -461,12 +508,16 @@ class FindReferencesInput(_ToolInput):
 
 
 class UserQuestion(BaseModel):
+    """One question of an ask_user call.
+
+    Attributes:
+        question: A sentence, capped: it reaches the journal, an ACP permission title, the TUI
+            and the web composer verbatim.
+        options: Up to ten labels for a choice.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    # Operator-facing model text, capped like every other model-written string
-    # in this file: it reaches the journal, an ACP permission title, the TUI
-    # modal and the web composer verbatim, and a model that runs away writes
-    # every one of them. A question is a sentence and an option is a label.
     question: str = Field(min_length=1, max_length=2_000)
     options: tuple[Annotated[str, StringConstraints(max_length=200)], ...] = Field(
         default=(), max_length=10
@@ -474,6 +525,8 @@ class UserQuestion(BaseModel):
 
 
 class AskUserInput(_ToolInput):
+    """The `ask_user` tool's arguments."""
+
     TOOL_NAME: ClassVar[str] = "ask_user"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Ask the operator and wait; a question written as plain text reaches"
@@ -491,8 +544,11 @@ class AskUserInput(_ToolInput):
     @model_validator(mode="before")
     @classmethod
     def _accept_flat_single_question(cls, data: Any) -> Any:
-        # A model that sends a lone question flat (question=..., options=...) rather
-        # than wrapping it in `questions` still works -- fold it into the list.
+        """Fold a lone question sent flat (question=..., options=...) into `questions`.
+
+        Returns:
+            The data with the question folded, or as given.
+        """
         if isinstance(data, dict) and "questions" not in data and "question" in data:
             q: dict[str, Any] = {"question": data.get("question")}
             if "options" in data:
@@ -520,9 +576,7 @@ ALL_TOOLS: tuple[type[_ToolInput], ...] = (
     StopBackgroundInput,
 )
 
-# Extra tools exposed only to the single-loop harness. Kept separate from
-# ALL_TOOLS so the read-only ToolDispatcher surface used by tests and external
-# callers does not advertise loop-only control tools.
+# The run loop's control tools, out of ALL_TOOLS so the bare dispatcher does not advertise them.
 LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     RunMetricInput,
     FinishSessionInput,
@@ -530,16 +584,11 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     DagAddTaskInput,
     DagUpdateTaskInput,
     DagListTasksInput,
-    # Operator-installed skills (hidden by the dispatcher when none are
-    # installed or [skills].enabled is off).
+    # Hidden by the dispatcher when no skill is installed or [skills].enabled is off.
     UseSkillInput,
 )
 
-# Tool list for plan mode (`agent6 plan`). Excludes the
-# execution-mode terminal tool (`finish_session`) and the metric tool
-# (planning never iterates a metric); adds `finish_planning` instead.
-# Plan-mode also filters `apply_edit` / `apply_patch` out of `ALL_TOOLS`
-# (mode_tools below) so a planner cannot accidentally mutate source.
+# Plan mode: `finish_planning` in place of `finish_session`, and no metric tool.
 PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     DagAddTaskInput,
     DagUpdateTaskInput,
@@ -547,28 +596,26 @@ PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     FinishPlanningInput,
 )
 
-# Tool list for ask mode (`agent6 ask`). Edit-free Q&A: like plan it filters
-# `apply_edit`/`apply_patch` out of `ALL_TOOLS` (mode_tools below), and it
-# exposes NO control tools (no DAG, no finish_planning, no finish_session -- the
-# agent answers by emitting its final message as prose, a "silent finish"). It
-# DOES add `agent6_docs` so it can answer "how do I use agent6" questions.
+# Ask mode: no control tools (the answer is the final message), plus agent6's own docs.
 ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (Agent6DocsInput,)
 
-# Tool list for a read-only machine `agent` state (the dispatcher's "machine"
-# mode): navigation plus `finish_session`, whose `result` carries the state's
-# structured output; no edit/patch/verify/run_command/DAG/metric tools, which
-# only tempt a weak model into writing files or spelunking the repo.
+# A machine `agent` state: navigation plus `finish_session`, whose `result` carries the output.
 MACHINE_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (FinishSessionInput,)
 
 
 @dataclass(frozen=True, slots=True)
 class ModeTools:
-    """One mode's LLM tool surface: `base` (ALL_TOOLS minus the mode's blocked
-    mutators) plus `extras` (its control tools). `tool_definitions` exposes
-    exactly `base + extras`; the dispatcher refuses names outside `permitted`
-    as its backstop, so exposure and enforcement cannot drift apart.
-    `permitted` is `names` plus agent6_docs, which is exposed only in ask
-    (elsewhere it is tool-list noise) but safe to execute anywhere."""
+    """One mode's LLM tool surface.
+
+    The dispatcher exposes exactly `base + extras` and refuses names outside `permitted` as its
+    backstop, so exposure and enforcement cannot drift apart.
+
+    Attributes:
+        base: ALL_TOOLS minus the mode's blocked tools.
+        extras: The mode's control tools.
+        names: The names of `base` and `extras`.
+        permitted: `names` plus agent6_docs, exposed only in ask but safe to execute anywhere.
+    """
 
     base: tuple[type[_ToolInput], ...]
     extras: tuple[type[_ToolInput], ...]
@@ -576,9 +623,7 @@ class ModeTools:
     permitted: frozenset[str]
 
 
-# The mode-specific additions. Everything else about a mode is read off its
-# `SessionKind`; these are the one thing a record cannot carry, being tool
-# classes this module defines.
+# The one thing a `SessionKind` cannot carry: tool classes this module defines.
 _EXTRA_TOOLS: dict[str, tuple[type[_ToolInput], ...]] = {
     "plan": PLAN_EXTRA_TOOLS,
     "ask": ASK_EXTRA_TOOLS,
@@ -589,21 +634,14 @@ _EXTRA_TOOLS: dict[str, tuple[type[_ToolInput], ...]] = {
 
 @cache
 def mode_tools(mode: str) -> ModeTools:
+    """Return the tool surface of a mode, derived from its `SessionKind`."""
     kind = session_kind(mode)
     extras = _EXTRA_TOOLS.get(mode, LOOP_EXTRA_TOOLS)
     blocked: set[str] = set()
     if not kind.edits:
-        # Read-only modes: no in-process file mutation.
         blocked = {ApplyEditInput.TOOL_NAME, ApplyPatchInput.TOOL_NAME}
     if not kind.runs_commands:
-        # Machine authoring / agent states additionally never run commands:
-        # the deliverable is the finish_session payload, and command tools only
-        # tempt a weak model into spelunking.
-        # `ask` keeps run_command for read-only, approval-gated investigation.
-        # read_session and fetch go with them: a machine state answers about
-        # ITS input, so this project's run history is not its business, and
-        # neither is the network -- a deliverable assembled from a page the
-        # state fetched is not the deliverable the operator asked for.
+        # A machine state answers about its input: neither this project's history nor the network.
         blocked |= {
             RunVerifyInput.TOOL_NAME,
             RunCommandInput.TOOL_NAME,
@@ -611,9 +649,7 @@ def mode_tools(mode: str) -> ModeTools:
             FetchInput.TOOL_NAME,
         }
     if not kind.edits:
-        # Only a session that edits owns a background command's lifetime: every
-        # other mode is a short read-only pass, and a command killed at its end
-        # would be started for nothing.
+        # Only a session that edits owns a background command's lifetime.
         blocked |= {
             ReadBackgroundInput.TOOL_NAME,
             StopBackgroundInput.TOOL_NAME,
@@ -629,10 +665,18 @@ def mode_tools(mode: str) -> ModeTools:
 
 
 def _strip_titles(node: Any, *, keys_are_names: bool = False) -> Any:
-    """Drop pydantic's auto "title" keys: they duplicate the field name in
-    Title Case and carry no signal on the wire (~1.6k chars across the
-    surface). Only schema-level titles go: inside a `properties` (or `$defs`)
-    map the keys are field names, and a field NAMED title (add_task's) stays."""
+    """Drop pydantic's auto "title" keys, about 1.6k characters across the surface.
+
+    Only schema-level titles go: inside a `properties` or `$defs` map the keys are field names,
+    so add_task's `title` field stays.
+
+    Args:
+        node: The schema node.
+        keys_are_names: Whether the node's keys are field names rather than schema keys.
+
+    Returns:
+        The node without schema-level titles.
+    """
     if isinstance(node, dict):
         out: dict[str, Any] = {}
         for k, v in node.items():
@@ -646,11 +690,12 @@ def _strip_titles(node: Any, *, keys_are_names: bool = False) -> Any:
 
 
 def wire_schema(cls: type[_ToolInput]) -> dict[str, Any]:
-    """The JSON schema of *cls* as the model receives it: pydantic's, minus the
-    title noise and the model-level descriptions it derives from class
-    docstrings, with "type" present (the API wants the schema bare, not
-    wrapped). The one builder behind the loop's tool list and the descriptor
-    dump below, so what tests pin is what the model gets."""
+    """Return the JSON schema of a tool as the model receives it.
+
+    Pydantic's schema minus the title noise and the model-level descriptions it derives from
+    class docstrings, with "type" present. The one builder behind the loop's tool list and the
+    descriptor dump, so what tests pin is what the model gets.
+    """
     schema = _strip_titles(cls.model_json_schema())
     schema.pop("description", None)
     for model in schema.get("$defs", {}).values():
@@ -660,7 +705,7 @@ def wire_schema(cls: type[_ToolInput]) -> dict[str, Any]:
 
 
 def schemas_as_provider_tools() -> list[dict[str, Any]]:
-    """Emit Anthropic-API-shape tool descriptors. (kept dict-typed to avoid circular import)"""
+    """Return ALL_TOOLS as Anthropic-shape tool descriptors, dict-typed to avoid an import cycle."""
     return [
         {
             "name": cls.TOOL_NAME,

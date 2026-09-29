@@ -48,9 +48,9 @@ Hold a session's end and the snapshot a resume re-enters.
 
 [`agent6.tools.results`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/results.py) &middot; abstract base + 23 frozen result types
 
-Typed tool-handler results: every handler returns one of these frozen values instead of a bare dict. Each owns two representations, the model-facing `to_wire()` dict and the one-line human `summary()`.
+Typed tool-handler results.
 
-**ToolResult** &mdash; One tool handler's typed result: it owns the model-facing `to_wire()` dict and its one-line `summary()`.
+**ToolResult** &mdash; One tool handler's typed result.
 
 Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`
 

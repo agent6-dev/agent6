@@ -1,40 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Minimal stdio MCP (Model Context Protocol) client.
+"""Minimal MCP (Model Context Protocol) client over stdio or HTTP.
 
-agent6 spawns each configured MCP server as a long-lived subprocess and
-talks JSON-RPC 2.0 over stdin/stdout. Only the subset the loop needs is
-implemented:
+agent6 spawns each configured stdio server as a long-lived subprocess and speaks JSON-RPC 2.0
+over its pipes: `initialize`, `notifications/initialized`, `tools/list` and `tools/call`.
+Incoming notifications and server-initiated requests are dropped, and no other capability is
+advertised.
 
-* `initialize` (handshake).
-* `notifications/initialized` (we send it; we ignore incoming
-  notifications).
-* `tools/list` (discover tools at startup).
-* `tools/call` (dispatch one tool call).
-
-Anything else the server might send (`logging/*`, `prompts/*`,
-`resources/*`, server-side `ping`) is silently dropped on the
-client side, we do not advertise the corresponding capabilities.
-
-Threat model
-============
-
-Each MCP server is spawned as a jailed child by default (its own
-`[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts out) under
-a curated env that NEVER carries the provider API keys; `pass_env` adds
-named vars, and config refuses a `pass_env` naming a provider key. The
-argv comes exclusively from your config (`[mcp.servers.<name>] command =
-[...]`); the LLM cannot influence it.
-
-What the LLM *can* influence is the *arguments* to `tools/call` once
-a server is connected. The MCP server is responsible for validating
-those, agent6 forwards them verbatim. Operators should treat each MCP
-server as a tool surface as serious as any agent6 built-in tool.
-
-A misbehaving server (crash, hang, malformed JSON, oversized reply)
-must not take the agent down. Each `call_tool` is wrapped in a
-timeout and a try/except; the manager surfaces a clean `MCPError` to
-the dispatcher, which converts it to a `tool.result ok=false` event.
+Threat model: a server is a jailed child by default (its own `[mcp.servers.<name>.sandbox]`
+policy; `unconfined = true` opts out) under a curated env that never carries the provider API
+keys; `pass_env` adds named vars, and config refuses one naming a provider key. The argv comes
+from the operator's config alone. The LLM influences only the arguments of `tools/call`, which
+the server validates and agent6 forwards verbatim. A crashing, hanging, malformed or oversized
+server never takes the agent down: every call has a timeout and surfaces an `MCPError`, which
+the dispatcher turns into a failed tool result.
 """
 
 from __future__ import annotations
@@ -62,35 +41,27 @@ from agent6.sandbox.jail import (
 )
 from agent6.tools.mcp_http import HttpTransport, MCPHttpError, MCPSessionExpiredError
 
-# MCP protocol version we speak. The spec is versioned by date string;
-# we negotiate this in `initialize` and accept whatever the server says
-# back (we don't validate compatibility beyond "we got a result").
+# Negotiated in `initialize`; whatever the server answers is accepted.
 _MCP_PROTOCOL_VERSION = "2024-11-05"
 
-# Anything longer than this on a single line is treated as a protocol
-# error and the line is dropped. 8 MiB is generous for a tools/list
-# response on a server with a few dozen tools.
+# A longer line is a protocol error and is dropped; 8 MiB covers a tools/list of dozens of tools.
 _MAX_LINE_BYTES = 8 * 1024 * 1024
 
-# Under the transport cap, a compromised (or buggy) operator-run server can
-# still emit multi-MiB tool descriptions and results. Unbounded, a description
-# rides in EVERY provider request's tools array and a result floods the
-# context: the run breaks every turn instead of degrading. Bound both at this
-# trust boundary; the marker says what was cut. The result cap matches
-# fetch.MAX_BYTES, the largest single payload any built-in tool returns.
-_MAX_INLINE_TEXT_CHARS = 2048  # tool descriptions + error detail
+# A description rides in every provider request and a result floods the context, so both are
+# bounded at this trust boundary; the result cap matches fetch.MAX_BYTES.
+_MAX_INLINE_TEXT_CHARS = 2048  # tool descriptions and error detail
 _MAX_RESULT_CHARS = 1 << 20
 
 
 def _bounded_inline_text(text: str) -> str:
+    """Return the text cut at the inline cap, with a marker saying so."""
     if len(text) <= _MAX_INLINE_TEXT_CHARS:
         return text
     return text[:_MAX_INLINE_TEXT_CHARS] + " …[agent6: truncated]"
 
 
 def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
-    """Degrade an oversized tools/call result instead of flooding the run:
-    keep the text content up to the cap, drop everything else, and say so."""
+    """Return an oversized tools/call result cut to its text content up to the cap, marked."""
     blob = json.dumps(result, ensure_ascii=False, default=str)
     if len(blob) <= _MAX_RESULT_CHARS:
         return result
@@ -108,25 +79,23 @@ def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": f"{note}\n{kept}".rstrip()}]}
 
 
-# Prefix every MCP tool name with this + the server name so collisions
-# with built-in tools (and across servers) are structurally impossible.
-# Sonnet / GPT-4o / Kimi all accept `[A-Za-z0-9_]+` tool names of
-# 64-128 chars; double-underscore segmentation keeps the prefix human-
-# parseable in transcripts.
+# The prefix plus the server name makes a collision with a built-in or another server impossible.
 MCP_TOOL_PREFIX = "mcp__"
 
 
 def tool_count(n: int) -> str:
+    """Return "N tool" or "N tools"."""
     return f"{n} tool{'' if n == 1 else 's'}"
 
 
 def split_tool_name(qualified_name: str) -> tuple[str, str]:
-    """`mcp__<server>__<tool>` -> (server, tool).
+    """Return the (server, tool) of a `mcp__<server>__<tool>` name.
 
-    Splits on the FIRST double-underscore after the prefix, so a tool name that
-    contains "__" itself survives intact (server names cannot: see
-    `mcp_server_name_refusal`). One parser, because the dispatcher needs the
-    server to know whose approval rule applies and the manager needs it to route.
+    The split is on the first double underscore after the prefix, so a tool name containing
+    "__" survives; a server name cannot contain one (`mcp_server_name_refusal`).
+
+    Raises:
+        MCPError: The name lacks the prefix or the separator.
     """
     if not qualified_name.startswith(MCP_TOOL_PREFIX):
         raise MCPError(f"not an MCP tool name: {qualified_name!r}")
@@ -138,21 +107,13 @@ def split_tool_name(qualified_name: str) -> tuple[str, str]:
     return server_name, tool_name
 
 
-# A server-advertised tool name is spliced into the LLM-visible
-# `mcp__<server>__<tool>`; the provider tool-name grammar is
-# `[A-Za-z0-9_-]{1,64}`. A name with whitespace/dots/other chars would make
-# the qualified name an invalid tool definition (rejected by the API) or shadow
-# a built-in, so tools whose names don't match are skipped at registration.
-# Matched with fullmatch, not `$`: `$` also matches just before a terminal
-# newline, so `foo\n` would pass and splice a newline into the tool name.
+# The provider tool-name grammar; a tool outside it is skipped at registration. Matched with
+# fullmatch, since `$` also matches before a terminal newline.
 _VALID_MCP_TOOL_NAME = re.compile(r"[A-Za-z0-9_-]+")
 
-# The 64-char cross-provider bound from that grammar, applied to the WHOLE
-# qualified name (prefix + operator server name + separators + tool name):
-# one over-limit entry would invalidate the entire tools array.
+# The cross-provider bound on the whole qualified name; one over-limit entry breaks the tools array.
 _MAX_QUALIFIED_TOOL_NAME_LEN = 64
-# Pages a tools/list may span: a server minting fresh cursors forever would
-# otherwise hold the handshake and grow the roster without bound.
+# A server minting fresh cursors forever would otherwise hold the handshake.
 _MAX_TOOL_PAGES = 64
 
 
@@ -164,14 +125,20 @@ class MCPTimeoutError(MCPError):
     """A request the server did not answer within its timeout."""
 
 
-class MCPRestarted(MCPError):  # noqa: N818  # a signal, not an error  # a signal, not an error
+class MCPRestarted(MCPError):  # noqa: N818  # a signal, not an error
     """A request cut short because another caller's timeout replaced the server."""
 
 
 @dataclass(frozen=True, slots=True)
 class MCPToolDescriptor:
-    """One tool advertised by one MCP server. `qualified_name` is what
-    the LLM sees and what the dispatcher routes on."""
+    """One tool advertised by one MCP server.
+
+    Attributes:
+        server_name: The server's name in config.
+        tool_name: The name the server advertised.
+        description: The server's description, bounded.
+        input_schema: The JSON schema of the arguments.
+    """
 
     server_name: str
     tool_name: str
@@ -180,14 +147,16 @@ class MCPToolDescriptor:
 
     @property
     def qualified_name(self) -> str:
+        """The `mcp__<server>__<tool>` name the LLM sees and the dispatcher routes on."""
         return f"{MCP_TOOL_PREFIX}{self.server_name}__{self.tool_name}"
 
 
 @dataclass(frozen=True, slots=True)
 class MCPStartFailure:
-    """A configured server that is not there. Recorded rather than only logged:
-    a log line goes wherever the front-end's stderr goes, which under an editor
-    is a pane nobody is watching."""
+    """A configured server that did not start.
+
+    Recorded rather than only logged: under an editor, stderr is a pane nobody watches.
+    """
 
     name: str
     error: str
@@ -199,20 +168,25 @@ def _spawn_server(
     pass_env: tuple[str, ...],
     session_net: SessionNetwork | None = None,
 ) -> JailedProcess:
-    """Start one stdio server: through the jail when it has a policy, at the
-    spawner's `none` level when the operator opted it out.
+    """Start one stdio server through the jail, or at the `none` level when opted out.
 
-    The confined path is `spawn_in_jail`, the same launcher and the same
-    JailPolicy a jailed command gets: a second confinement stack would drift
-    (no seccomp, no private /proc, no hidden-path masking).
+    Both paths are `spawn_in_jail`, the launcher and policy a jailed command gets; a second
+    confinement stack would drift. Stderr is a pipe the caller drains, capped: everything that
+    goes wrong before the handshake says so there and nowhere else, and an undrained pipe blocks
+    the writer at 64 KB.
 
-    Stderr is a PIPE the caller drains, not /dev/null: everything that can go
-    wrong before the handshake -- a command that does not exist, a grant the
-    kernel refused, the launcher's own setup -- says so there and nowhere
-    else; discarded, every one of those reads as the same "died before
-    responding to initialize". Drained rather than collected, and
-    capped: an undrained pipe blocks the writer at 64 KB, and a file grows
-    until the disk is gone.
+    Args:
+        command: The server's argv from config.
+        policy: The sandbox policy, or None for an unconfined server.
+        pass_env: The env vars an unconfined server keeps by name.
+        session_net: The run's session network, for a policy that joins it.
+
+    Returns:
+        The running process.
+
+    Raises:
+        JailUnavailableError: The jail cannot confine the server.
+        OSError: The command could not be started.
     """
     if policy is not None:
         return spawn_in_jail(
@@ -222,12 +196,8 @@ def _spawn_server(
             stderr=subprocess.PIPE,
             session_net=session_net,
         )
-    # The opt-out is the `none` level of the same spawner: its own session (a
-    # terminal Ctrl-C must not take a server down), tied to the agent by
-    # PDEATHSIG, and registered so a sibling's escapee sweep spares it. A
-    # curated env, not this process's: the full one carries the provider API
-    # keys, and an MCP server is third-party code that may log or forward what
-    # it was given. A server that needs a token names it in `pass_env`.
+    # The opt-out is the same spawner's `none` level: its own session, tied to the agent by
+    # PDEATHSIG, registered so a sibling's sweep spares it. A curated env keeps provider keys out.
     unconfined = JailPolicy(
         cwd=Path.cwd(),
         argv=command,
@@ -246,7 +216,20 @@ def _result_of(
     method: str,
     redact: Callable[[str], str] | None = None,
 ) -> Any:
-    """The `result` of a JSON-RPC response, or raise its `error`."""
+    """Return the `result` of a JSON-RPC response.
+
+    Args:
+        response: The message.
+        name: The server's name, for the error.
+        method: The method called, for the error.
+        redact: Strips credential values from the error text.
+
+    Returns:
+        The result, or None when the response carries none.
+
+    Raises:
+        MCPError: The response carries an `error`.
+    """
     if "error" in response:
         err = response["error"]
         detail = err.get("message", "(no message)") if isinstance(err, dict) else err
@@ -260,83 +243,81 @@ def _result_of(
 
 @dataclass(frozen=True, slots=True)
 class MCPServerSpec:
-    """What starting one MCP server needs: the config's shape, at the boundary."""
+    """What starting one MCP server needs: the config's shape, at the boundary.
+
+    Attributes:
+        name: The server's name in config.
+        command: The argv to spawn.
+        startup_timeout_s: The handshake's timeout.
+        call_timeout_s: Each tool call's timeout.
+        pass_env: The env vars the server needs by name; naming each keeps a provider key out.
+        http: The transport for a server the operator runs, in place of `command`.
+        policy: The sandbox policy, built by the caller from the same `jail_policy` a command
+            uses; None for `[mcp.servers.<n>.sandbox].unconfined`.
+    """
 
     name: str
     command: tuple[str, ...]
     startup_timeout_s: float
     call_timeout_s: float
-    # Environment variables this server needs BY NAME. Everything else comes
-    # from the curated base; naming each one is what keeps a provider key out.
     pass_env: tuple[str, ...] = ()
-    # Set instead of `command` for a server the operator runs.
     http: HttpTransport | None = None
-    # The sandbox this server runs under, or None for an unconfined one
-    # (`[mcp.servers.<n>.sandbox].unconfined`). Built by the caller from the
-    # same `jail_policy` a command uses.
     policy: JailPolicy | None = None
 
 
 @dataclass
 class _MCPServer:
-    """One running MCP server. Owns its subprocess + an id counter +
-    a stdout-reader thread that publishes responses into `_pending`
-    keyed by request id."""
+    """One running MCP server: its process, an id counter and a reader thread.
+
+    Attributes:
+        name: The server's name in config.
+        command: The argv to spawn.
+        startup_timeout_s: The handshake's timeout.
+        call_timeout_s: Each tool call's timeout.
+        pass_env: The env vars the server keeps by name.
+        policy: The sandbox policy; None is the operator's explicit `unconfined = true`.
+        session_net: The run's session network, for a policy that joins it.
+        http: The transport for a server the operator runs; agent6 then owns none of its
+            environment, lifetime or confinement.
+    """
 
     name: str
     command: tuple[str, ...]
     startup_timeout_s: float
     call_timeout_s: float
     pass_env: tuple[str, ...] = ()
-    # The sandbox this server runs under; None is the operator's explicit
-    # `unconfined = true`.
     policy: JailPolicy | None = None
-    # The run's session network, for a server whose policy joins it.
     session_net: SessionNetwork | None = None
-    # Set instead of `command` for a server the OPERATOR runs: agent6 connects
-    # rather than spawning, so it owns none of that server's environment,
-    # lifetime or confinement.
     http: HttpTransport | None = None
     _proc: JailedProcess | None = None
-    # The tail of this server's stderr, drained by a thread and read only to
-    # explain a failure.
+    # The tail of stderr, drained by a thread and read only to explain a failure.
     _errors: list[bytes] = field(default_factory=list)
-    # Pids the sweep of each close could not kill: a restart's and a failed
-    # handshake's survivors reach the manager with the last close's.
+    # Pids the sweep of each close could not kill, handed to the manager with the last close's.
     _survivors: set[int] = field(default_factory=set)
     _next_id: int = 1
     _id_lock: threading.Lock = field(default_factory=threading.Lock)
-    # Serializes stdin writes: concurrent tools/call threads (explore-review
-    # seats share one dispatcher) interleave pipe writes larger than PIPE_BUF,
-    # corrupting the JSON-RPC framing for every in-flight request.
+    # Concurrent tools/call threads would interleave pipe writes larger than PIPE_BUF.
     _stdin_lock: threading.Lock = field(default_factory=threading.Lock)
-    # One slot per in-flight request: _request registers `id -> None` before
-    # writing, the reader fills ONLY registered slots, and the requester's
-    # finally clears its slot -- so a reply landing after a timeout (or a
-    # duplicate/unsolicited response shape) is dropped, and _pending is
-    # bounded by the number of concurrently outstanding requests.
+    # One slot per in-flight request, registered before the write and filled only while
+    # registered, so a late or unsolicited reply is dropped and the map stays bounded.
     _pending: dict[int, dict[str, Any] | None] = field(default_factory=dict)
     _pending_cv: threading.Condition = field(default_factory=threading.Condition)
     _reader: threading.Thread | None = None
     _stderr_reader: threading.Thread | None = None
     _reader_stop: threading.Event = field(default_factory=threading.Event)
     _tools: tuple[MCPToolDescriptor, ...] = ()
-    # Bumped under `_restart_lock` by the caller whose timed-out call replaces
-    # the process (`_restart`): a request in flight under another caller ends
-    # as MCPRestarted the moment it changes, and a second timed-out caller
-    # finds the restart already done. The lock also holds a new call back
-    # until a restart's handshake is complete.
+    # Bumped under `_restart_lock` by the caller whose timed-out call replaces the process: a
+    # request in flight under another caller ends as MCPRestarted the moment it changes.
     _generation: int = 0
     _restart_lock: threading.Lock = field(default_factory=threading.Lock)
-    # Releases the keeper thread a restart spawned the process from (see
-    # `_restart`); set by `close`.
+    # Releases the keeper thread a restart spawned the process from; set by `close`.
     _keeper_release: threading.Event | None = None
 
     def _redact_secrets(self, text: str) -> str:
-        """Strip passed stdio and HTTP credential values from a diagnostic.
+        """Return a diagnostic with the passed credential values stripped.
 
-        A third-party server may echo one through stderr or a protocol error,
-        both of which can reach the transcript and durable journal.
+        A third-party server may echo one through stderr or a protocol error, both of which
+        can reach the transcript and the journal.
         """
         names = self.pass_env
         if self.http is not None and self.http.token_env:
@@ -348,14 +329,18 @@ class _MCPServer:
         return text
 
     def _stderr_tail(self, *, settle: bool = False) -> str:
+        """Return the redacted tail of stderr, after a short join of its drainer when asked."""
         if settle and self._stderr_reader is not None:
             self._stderr_reader.join(timeout=0.1)
         return self._redact_secrets(stderr_tail(self._errors))
 
     def start(self) -> None:
-        """Spawn the subprocess and pump it through `initialize` +
-        `tools/list`. Raises `MCPError` if anything in the handshake
-        fails, leaving the subprocess terminated."""
+        """Spawn the process, or connect over HTTP, and run the handshake.
+
+        Raises:
+            MCPError: The server is already started, could not be spawned, or failed the
+                handshake; the process is terminated.
+        """
         if self._proc is not None:
             raise MCPError(f"server {self.name!r} already started")
         if self.http is not None:
@@ -375,8 +360,7 @@ class _MCPServer:
                 daemon=True,
             )
             self._stderr_reader.start()
-        # Start the reader before issuing the first request so the initialize
-        # response cannot race the reader thread.
+        # The reader starts before the first request so the initialize response cannot race it.
         self._reader = threading.Thread(
             target=self._read_loop,
             name=f"mcp-reader[{self.name}]",
@@ -386,7 +370,11 @@ class _MCPServer:
         self._handshake()
 
     def _list_tools(self) -> list[Any]:
-        """Every page of `tools/list`, followed through `nextCursor`."""
+        """Return every page of `tools/list`, followed through `nextCursor`.
+
+        Raises:
+            MCPError: A page has no tools array, an invalid cursor, or the pages exceed the cap.
+        """
         tools_raw: list[Any] = []
         cursor = ""
         seen_cursors: set[str] = set()
@@ -410,7 +398,11 @@ class _MCPServer:
             cursor = next_cursor
 
     def _handshake(self) -> None:
-        """`initialize` + `tools/list`, the same either way the bytes move."""
+        """Run `initialize` then `tools/list` and register the valid tools, over either transport.
+
+        Raises:
+            MCPError: A request failed; the server is closed first.
+        """
         try:
             init_result = self._request(
                 "initialize",
@@ -437,11 +429,7 @@ class _MCPServer:
             if not isinstance(tname, str) or not tname:
                 continue
             if not _VALID_MCP_TOOL_NAME.fullmatch(tname) or tname in seen:
-                # Skip tools whose names can't form a valid provider tool name
-                # (mcp__<server>__<tool> must be [A-Za-z0-9_-]) and duplicates
-                # of an already-registered name (first wins): either would
-                # break the whole tools array at call time. Silently skip,
-                # consistent with the non-string-name skip just above.
+                # An invalid or duplicate name would break the whole tools array; first wins.
                 continue
             desc = entry.get("description")
             schema = entry.get("inputSchema")
@@ -454,8 +442,6 @@ class _MCPServer:
                 input_schema=schema,
             )
             if len(qualified.qualified_name) > _MAX_QUALIFIED_TOOL_NAME_LEN:
-                # Providers cap tool names at 64 chars; registering this one
-                # would 400 every request carrying the tools array.
                 continue
             seen.add(tname)
             descs.append(qualified)
@@ -463,16 +449,28 @@ class _MCPServer:
 
     @property
     def tools(self) -> tuple[MCPToolDescriptor, ...]:
+        """The tools registered at the handshake."""
         return self._tools
 
     def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        # The name rides in from the LLM: a name outside the negotiated set
-        # (filtered at registration, or never advertised by the server) is
-        # refused before any request leaves agent6.
+        """Call one advertised tool, restarting a stdio server that times out.
+
+        Args:
+            tool_name: The name the server advertised; one outside the registered set is
+                refused before any request leaves agent6.
+            arguments: The LLM's arguments, forwarded verbatim.
+
+        Returns:
+            The tools/call result, bounded.
+
+        Raises:
+            MCPError: The tool is not advertised, the server is not running, the call timed
+                out, the tool reported an error, or the server was restarted under the call
+                twice.
+        """
         if tool_name not in {d.tool_name for d in self._tools}:
             raise MCPError(f"server {self.name!r} did not advertise tool {tool_name!r}")
-        # Once more when another caller's timeout replaced the server under
-        # this call; a call the fresh server loses the same way gives up.
+        # Once more when another caller's timeout replaced the server under this call.
         for _ in range(2):
             with self._restart_lock:
                 if self._proc is None and self.http is None:
@@ -487,10 +485,13 @@ class _MCPServer:
         raise MCPError(f"server {self.name!r} was restarted under tools/call twice; giving up")
 
     def _restart(self, generation: int) -> str:
-        """Replace the process after a timed-out call (a stdio server still
-        busy with the call it never answered cannot take the next one; agent6
-        owns the spawn), once per generation, and say what happened for the
-        call's error."""
+        """Replace the process after a timed-out call, once per generation.
+
+        A stdio server still busy with the call it never answered cannot take the next one.
+
+        Returns:
+            What happened, for the call's error.
+        """
         with self._restart_lock:
             if self._generation != generation:
                 return "the server was already restarted by another call"
@@ -498,10 +499,8 @@ class _MCPServer:
             self.close()
             self._reader_stop.clear()
             self._errors = []
-            # PDEATHSIG ties a child to the THREAD that forked it (the launcher's
-            # own tie and `die_with_parent` alike), and this caller may be a pool
-            # worker about to end: the spawn runs on a keeper thread that lives
-            # as long as this process does.
+            # PDEATHSIG ties a child to the thread that forked it, and this caller may be a
+            # pool worker about to end: the spawn runs on a keeper thread that outlives it.
             release = threading.Event()
             spawned = threading.Event()
             failure: list[MCPError] = []
@@ -522,6 +521,14 @@ class _MCPServer:
             return "the server was restarted"
 
     def _call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Send one tools/call.
+
+        Returns:
+            The result, bounded.
+
+        Raises:
+            MCPError: The result is not a dict, or the tool reported an error.
+        """
         result = self._request(
             "tools/call",
             {"name": tool_name, "arguments": arguments},
@@ -530,9 +537,7 @@ class _MCPServer:
         if not isinstance(result, dict):
             raise MCPError(f"server {self.name!r} tools/call returned non-dict result")
         if result.get("isError") is True:
-            # MCP tool-execution failure: the spec returns it as a SUCCESSFUL
-            # JSON-RPC result with isError=true (not a JSON-RPC error), so
-            # surface it as an error here to match built-in tool semantics.
+            # The spec reports a tool failure as a successful result with isError=true.
             content = result.get("content")
             text = ""
             if isinstance(content, list):
@@ -546,13 +551,13 @@ class _MCPServer:
         return _bounded_result(result)
 
     def close(self) -> frozenset[int]:
-        """Best-effort shutdown. Idempotent. Never raises. Returns the pids the
-        escapee sweep of this and every earlier close could not kill: the
-        caller says so.
+        """Shut the server down; idempotent, never raises.
 
-        An HTTP server is the operator's: agent6 did not start it and must not
-        stop it. There is nothing to tear down but the connection, which each
-        request already closes.
+        An HTTP server is the operator's and is not stopped; each request already closed its
+        connection.
+
+        Returns:
+            The pids the escapee sweep of this and every earlier close could not kill.
         """
         self._reader_stop.set()
         if self._keeper_release is not None:
@@ -563,30 +568,27 @@ class _MCPServer:
         if proc is None:
             return frozenset(self._survivors)
         try:
-            # The handle takes the whole process group down and sweeps the
-            # server's setsid escapees, which signalling the launcher pid
-            # alone would miss.
+            # The handle takes the process group down and sweeps the setsid escapees.
             self._survivors |= proc.close()
             return frozenset(self._survivors)
         finally:
-            # Wake any thread blocked on _pending_cv so it can exit
-            # cleanly instead of hanging on a server this teardown just killed.
+            # A thread blocked on a request must not hang on a server this teardown killed.
             with self._pending_cv:
                 self._pending_cv.notify_all()
 
-    # ----- internals -----
-
     def _allocate_id(self) -> int:
+        """Return the next request id."""
         with self._id_lock:
             req_id = self._next_id
             self._next_id += 1
             return req_id
 
     def _reinitialize(self) -> None:
-        """Re-run just the `initialize` handshake after a session expiry: the
-        transport captures the fresh session id, and the tool list does not
-        change, so there is nothing to re-list. HTTP only (a stdio server has
-        no session to expire)."""
+        """Re-run `initialize` after an HTTP session expiry; the tool list does not change.
+
+        Raises:
+            MCPError: The server returned a non-dict result.
+        """
         init = self._request(
             "initialize",
             {
@@ -607,6 +609,21 @@ class _MCPServer:
         *,
         timeout_s: float,
     ) -> Any:
+        """Send one request and wait for its response.
+
+        Args:
+            method: The JSON-RPC method.
+            params: The parameters.
+            timeout_s: How long to wait.
+
+        Returns:
+            The response's `result`.
+
+        Raises:
+            MCPTimeoutError: No response arrived in time.
+            MCPRestarted: Another caller replaced the server while this request was in flight.
+            MCPError: The server died, sent no or someone else's response, or returned an error.
+        """
         req_id = self._allocate_id()
         payload = {
             "jsonrpc": "2.0",
@@ -615,15 +632,11 @@ class _MCPServer:
             "params": params,
         }
         if self.http is not None:
-            # HTTP pairs request and response itself: no pending slot, no
-            # reader thread, no id collision with a server-initiated request.
+            # HTTP pairs request and response itself: no pending slot, no reader thread.
             try:
                 response = self.http.send(payload, timeout_s=timeout_s)
             except MCPSessionExpiredError:
-                # The server dropped this client's session (the transport already cleared
-                # the id). Re-initialize per the spec and retry this request
-                # once. The re-initialize carries no session id, so its own
-                # 404 (if any) is a plain error and cannot loop back here.
+                # Retried once; the re-initialize carries no session id, so it cannot loop back.
                 self._reinitialize()
                 try:
                     response = self.http.send(payload, timeout_s=timeout_s)
@@ -633,11 +646,8 @@ class _MCPServer:
                 raise self._http_error(exc) from exc
             if response is None:
                 raise MCPError(f"server {self.name!r} sent no response to {method}")
-            # The same two checks the stdio reader applies, for the same
-            # reason: a keepalive frame, a server-initiated request
-            # (sampling/createMessage, roots/list) or a multiplexing gateway
-            # can put SOMEONE ELSE'S message first, and taking it hands the
-            # model another request's answer as this call's result.
+            # The stdio reader's checks: a server-initiated request or a gateway can put someone
+            # else's message first, and taking it hands the model another call's answer.
             if "method" in response:
                 raise MCPError(
                     f"server {self.name!r} answered {method} with its own"
@@ -661,23 +671,15 @@ class _MCPServer:
                         raise MCPRestarted(f"server {self.name!r} was restarted under {method}")
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
-                        # Its own words if it left any, exactly as the died-
-                        # first arm below reports them: a server that logs its
-                        # reason and then waits on stdin (the common shape)
-                        # otherwise reads as a bare timeout pointing at the
-                        # sandbox grants.
+                        # A server that logs its reason then waits on stdin would read as a timeout.
                         said = self._stderr_tail()
                         detail = f": {said}" if said else ""
                         raise MCPTimeoutError(
                             f"server {self.name!r} timed out after"
                             f" {timeout_s:.1f}s on {method}{detail}"
                         )
-                    # If the reader thread died (server crashed mid-call)
-                    # the call would otherwise wait the full timeout for nothing.
+                    # A server that crashed mid-call would otherwise cost the full timeout.
                     if self._reader is not None and not self._reader.is_alive():
-                        # Its own words if it left any: a command that does not
-                        # exist, a refused grant, the launcher's setup failure
-                        # all read the same from out here otherwise.
                         said = self._stderr_tail(settle=True)
                         detail = f": {said}" if said else ""
                         raise MCPError(
@@ -690,7 +692,11 @@ class _MCPServer:
         return _result_of(response, name=self.name, method=method, redact=self._redact_secrets)
 
     def _notify(self, method: str, params: dict[str, Any]) -> None:
-        # JSON-RPC notifications have no id and expect no response.
+        """Send a notification, which has no id and expects no response.
+
+        Raises:
+            MCPError: The transport failed.
+        """
         payload = {"jsonrpc": "2.0", "method": method, "params": params}
         if self.http is not None:
             try:
@@ -701,11 +707,15 @@ class _MCPServer:
         self._write_line(payload)
 
     def _http_error(self, exc: MCPHttpError) -> MCPError:
-        """A transport failure as the MCPError every caller handles, its text
-        redacted: a server or proxy can echo the bearer token back."""
+        """Return a transport failure as the MCPError every caller handles, its text redacted."""
         return MCPError(self._redact_secrets(str(exc)))
 
     def _write_line(self, obj: dict[str, Any]) -> None:
+        """Write one JSON-RPC message to the server's stdin.
+
+        Raises:
+            MCPError: The server is HTTP, gone, or its stdin closed.
+        """
         proc = self._proc
         if self.http is not None:
             raise MCPError(f"server {self.name!r} is HTTP; _write_line is the stdio path")
@@ -722,25 +732,21 @@ class _MCPServer:
             raise MCPError(f"server {self.name!r} stdin closed: {exc}{detail}") from exc
 
     def _read_loop(self) -> None:
+        """Publish each response line into its pending slot until EOF or stop."""
         proc = self._proc
         if proc is None or proc.stdout is None:
             return
         stream = proc.stdout
         while not self._reader_stop.is_set():
             try:
-                # Bound the read: an unbounded readline() would buffer an entire
-                # multi-GiB line from a runaway/malicious server into memory
-                # BEFORE any size check, OOM'ing the agent. Cap at the limit + 1
-                # so the reader can detect (and drain) an oversized line.
+                # Bounded: an unbounded readline() would buffer a multi-GiB line before any check.
                 raw = stream.readline(_MAX_LINE_BYTES + 1)
             except (OSError, ValueError):
                 break
             if not raw:
                 break  # EOF
             if len(raw) > _MAX_LINE_BYTES:
-                # Oversized: drain the rest of this line (up to its newline) in
-                # bounded chunks, discarding, then drop the whole payload.
-                # Refusing to parse is safer than OOM on a runaway server.
+                # The rest of the line is drained in bounded chunks and the payload dropped.
                 while raw and not raw.endswith(b"\n"):
                     raw = stream.readline(_MAX_LINE_BYTES + 1)
                 continue
@@ -751,12 +757,8 @@ class _MCPServer:
             if not isinstance(msg, dict):
                 continue
             req_id = msg.get("id")
-            # We only consume responses: messages that carry an id this client sent
-            # and have no "method" key. A message with both an int id and a
-            # "method" is a server-INITIATED request (e.g. sampling/createMessage,
-            # roots/list, elicitation/create); its id is the server's own counter
-            # and can collide with one of ours, so it must NOT be stored as a
-            # response. Notifications (no id) and server requests are ignored.
+            # A message with an id and a "method" is a server-initiated request whose id can
+            # collide with one of ours; it and every notification are ignored.
             if isinstance(req_id, int) and "method" not in msg:
                 with self._pending_cv:
                     if req_id in self._pending:
@@ -766,22 +768,18 @@ class _MCPServer:
 
 @dataclass
 class MCPManager:
-    """Owns N MCP server subprocesses for one agent6 run; closed by the
-    lifecycle that built it.
+    """The MCP servers of one run, closed by the lifecycle that built it.
 
-    `start` takes one `MCPServerSpec` per server rather than the `Config`
-    types, so a caller can build one without the config validator.
+    Attributes:
+        failures: The configured servers that did not start, in configuration order.
+        networks: The network each started server got, by name: the resolved word,
+            `unconfined`, or `remote (not jailed)` for a `url` server.
     """
 
     _servers: dict[str, _MCPServer] = field(default_factory=dict)
     # A failed start's survivors, handed back by the next close.
     _survivors: set[int] = field(default_factory=set)
-    # Configured servers that did not start, in configuration order.
     failures: tuple[MCPStartFailure, ...] = ()
-    # The network each started server got, by name: the RESOLVED word (`auto`
-    # means nothing to a reader wondering why their browser server cannot see
-    # the app), `unconfined`, or `remote (not jailed)` for a `url` server, the
-    # operator's own process on whatever network it has.
     networks: dict[str, str] = field(default_factory=dict)
 
     @classmethod
@@ -792,6 +790,20 @@ class MCPManager:
         logger: Callable[[str], None] | None = None,
         session_net: SessionNetwork | None = None,
     ) -> MCPManager:
+        """Start every configured server, recording the ones that fail.
+
+        Args:
+            configs: One spec per server, so a caller can build one without the config
+                validator.
+            logger: Takes one line per server started or failed.
+            session_net: The run's session network, for a policy that joins it.
+
+        Returns:
+            The manager.
+
+        Raises:
+            MCPError: Two servers share a name.
+        """
         mgr = cls()
         failures: list[MCPStartFailure] = []
         for spec in configs:
@@ -811,10 +823,7 @@ class MCPManager:
             try:
                 srv.start()
             except MCPError as exc:
-                # One bad server shouldn't take the whole agent down; it is
-                # recorded and skipped, and the run simply does not see its
-                # tools. The caller turns the record into a journal event, so
-                # the absence reaches the conversation and not only a log.
+                # Recorded and skipped; the caller turns the record into a journal event.
                 failures.append(MCPStartFailure(name=name, error=str(exc)))
                 if logger is not None:
                     logger(f"[mcp] failed to start {name!r}: {exc}")
@@ -829,8 +838,6 @@ class MCPManager:
                 else srv.policy.network
             )
             if logger is not None:
-                # Named every time, for every server, so nobody has to know
-                # to go looking.
                 logger(
                     f"[mcp] started {name!r} ({tool_count(len(srv.tools))},"
                     f" network: {mgr.networks[name]})"
@@ -839,12 +846,25 @@ class MCPManager:
         return mgr
 
     def descriptors(self) -> tuple[MCPToolDescriptor, ...]:
+        """Return every started server's tools."""
         out: list[MCPToolDescriptor] = []
         for srv in self._servers.values():
             out.extend(srv.tools)
         return tuple(out)
 
     def call(self, qualified_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Route a qualified tool name to its server and call the tool.
+
+        Args:
+            qualified_name: The `mcp__<server>__<tool>` name.
+            arguments: The LLM's arguments.
+
+        Returns:
+            The tools/call result, bounded.
+
+        Raises:
+            MCPError: The name is malformed, the server is unknown, or the call failed.
+        """
         server_name, tool_name = split_tool_name(qualified_name)
         srv = self._servers.get(server_name)
         if srv is None:
@@ -852,8 +872,11 @@ class MCPManager:
         return srv.call_tool(tool_name, arguments)
 
     def close(self) -> frozenset[int]:
-        """Close every server; the pids their sweeps could not kill come back,
-        a failed start's included, once."""
+        """Close every server.
+
+        Returns:
+            The pids the sweeps could not kill, a failed start's included, reported once.
+        """
         for srv in self._servers.values():
             self._survivors |= srv.close()
         self._servers.clear()

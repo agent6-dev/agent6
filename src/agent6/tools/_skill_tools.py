@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Skill content lookup (use_skill): pull a curated skill's instructions into
-context. Reads stay inside the skill's own directory, through the same
-component-walked descriptor the workspace tools use (no hop may be a
-symlink)."""
+"""Skill content lookup (use_skill).
+
+Reads stay inside the skill's own directory, through the same component-walked descriptor the
+workspace tools use: no hop may be a symlink.
+"""
 
 from __future__ import annotations
 
@@ -19,9 +20,20 @@ from agent6.tools.schema import UseSkillInput
 
 
 def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any]) -> SkillResult:
+    """Return a skill's instructions, or one of its files, for the model's context.
+
+    Args:
+        resolve_skills: Loads the enabled skills; called only after the arguments validate.
+        raw: The tool call's arguments.
+
+    Returns:
+        The skill's SKILL.md text, or the named file's content.
+
+    Raises:
+        ToolError: The skill is unknown or disabled, the file is missing, escapes the skill
+            directory, is not a regular file, cannot be read, or exceeds 256 KiB.
+    """
     args = UseSkillInput.model_validate(raw)
-    # Resolve after validation: the first-use disk scan never happens for a
-    # rejected call.
     resolved = resolve_skills()
     by_name = {s.name: s for s in (*resolved.enabled, *resolved.always)}
     skill = by_name.get(args.name)
@@ -32,18 +44,13 @@ def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any])
         )
     if args.file is None:
         return SkillResult(skill=skill.name, file="SKILL.md", content=skill.text)
-    # Supplementary files stay inside the skill's own directory, opened with
-    # the same component walk the workspace tools use (open_contained): the
-    # containment check and the read are one lookup, and no hop traverses a
-    # symlink -- a skill shipping `reference.md -> secrets.toml` serves a
-    # refusal, not the operator's keys.
+    # Containment and the read are one lookup: `reference.md -> secrets.toml` serves a refusal.
     try:
         fd = open_contained(contain(skill.dir, args.file), os.O_RDONLY)
     except FileNotFoundError:
         raise ToolError(f"no such file in skill {skill.name!r}: {args.file!r}") from None
     except NotRegularFileError:
-        # A directory (or a FIFO a hostile skill dir planted): refused by the
-        # open itself, so it never reaches the read below.
+        # A directory or a FIFO a hostile skill dir planted: refused by the open itself.
         raise ToolError(f"no such file in skill {skill.name!r}: {args.file!r}") from None
     except ToolError as exc:  # absolute, `..`, or a symlink component
         raise ToolError(f"{args.file!r} escapes the skill directory") from exc
