@@ -122,6 +122,29 @@ def test_a_leg_that_touched_nothing_writes_no_record(tmp_path: Path) -> None:
     assert not use_path(tmp_path).exists()
 
 
+def test_a_resumed_leg_starts_its_own_count_with_the_nudge_flags_carried() -> None:
+    """The nudge flags are run-lifetime (the snapshot); the touched facts are
+    leg-local: a resumed leg records only what it touches itself."""
+    from agent6.workflows._loop_state import restore_completion_state
+    from agent6.workflows._session_state import SessionSnapshot
+
+    snap = SessionSnapshot(
+        system="s",
+        messages=[],
+        tool_calls=0,
+        next_iteration=3,
+        root_task_id=None,
+        original_task="go",
+        verify_command=(),
+        memory_written=True,
+        memory_flip_nudged=True,
+    )
+    state = _state()
+    restore_completion_state(state, snap)
+    assert (state.memory.written, state.memory.flip_nudged) == (True, True)
+    assert (state.memory.wrote, state.memory.read) == ([], {})
+
+
 def test_finish_records_the_use(tmp_path: Path) -> None:
     """Every end goes through `_finish`, so the record lands whichever way a
     leg ends; a write fault there must not break the end."""
