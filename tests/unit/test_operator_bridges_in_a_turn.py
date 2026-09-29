@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.harness._chain import RunChain
-from agent6.harness._steer import OperatorBridge
+from agent6.harness._operator import OperatorBridge
 from agent6.harness.loop import Harness
 from agent6.providers.types import ProviderResponse
 from agent6.sessions.ipc import drain_requests, queue_request

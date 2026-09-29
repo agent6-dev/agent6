@@ -30,6 +30,7 @@ from agent6.harness._finish_gates import (
 )
 from agent6.harness._guards import SettledGuard, settled_end, verify_settled
 from agent6.harness._metric import MetricGuard, metric_plateau
+from agent6.harness._operator import OperatorBridge
 from agent6.harness._provider_call import (
     CallSettings,
     ProviderCaller,
@@ -39,7 +40,6 @@ from agent6.harness._provider_call import (
 from agent6.harness._quiet_turns import QuietGuard
 from agent6.harness._review import Reviewer, ReviewSettings
 from agent6.harness._snapshot import SNAPSHOT_VERSION, End
-from agent6.harness._steer import OperatorBridge
 from agent6.harness._verify_verdict import VerifyVerdict
 from agent6.harness.loop import Harness, LoopState, TurnState
 from agent6.providers import ProviderError, ProviderResponse
@@ -4533,7 +4533,7 @@ def test_steer_pin_records_and_injects_marked_notice() -> None:
 def test_steer_pin_over_cap_delivers_as_ordinary_steer() -> None:
     """A pin past the total cap still reaches the model NOW as a plain steer;
     only the survives-compaction durability is refused, loudly."""
-    from agent6.harness._steer import PINS_MAX_CHARS
+    from agent6.harness._operator import PINS_MAX_CHARS
 
     ev = _EventCapture()
     st = _state(pins=["x" * (PINS_MAX_CHARS - 10)])

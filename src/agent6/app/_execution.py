@@ -52,11 +52,11 @@ from agent6.events import EventSink, EventWriteError
 from agent6.git_ops import chain_ref_for
 from agent6.harness._chain import RunChain, commit_identity
 from agent6.harness._compaction import CompactionSettings
+from agent6.harness._operator import OperatorBridge
 from agent6.harness._prompt_revision import RevisionSettings
 from agent6.harness._provider_call import CallSettings
 from agent6.harness._review import ReviewSettings
 from agent6.harness._snapshot import SessionEndReason
-from agent6.harness._steer import OperatorBridge
 from agent6.harness.loop import Harness, ResumeError, SessionResult
 from agent6.paths import chown_to_real_user
 from agent6.providers import Provider, TranscriptSink

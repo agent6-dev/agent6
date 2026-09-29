@@ -1128,7 +1128,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     huge --pin then rode every restart and permanently wedged /pin) and the
     non-empty check (--pin '' seeded a blank pin). Seeding now goes through the
     same try_pin owner /pin uses."""
-    from agent6.harness._steer import PINS_MAX_CHARS
+    from agent6.harness._operator import PINS_MAX_CHARS
     from agent6.providers import ProviderResponse
 
     provider = MagicMock()

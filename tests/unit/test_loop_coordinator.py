@@ -26,8 +26,8 @@ from agent6.graph.curator import CuratorError
 from agent6.graph.models import TaskNode
 from agent6.harness import _chain as chain_mod
 from agent6.harness._chain import RunChain
+from agent6.harness._operator import OperatorBridge
 from agent6.harness._provider_call import CallSettings
-from agent6.harness._steer import OperatorBridge
 from agent6.harness.loop import Harness
 from agent6.harness.subrun import LaneResult, LaneSpec, LaneTask
 from agent6.providers import ProviderResponse

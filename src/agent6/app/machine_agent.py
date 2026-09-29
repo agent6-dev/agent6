@@ -68,7 +68,7 @@ from agent6.git_ops import (
 from agent6.git_ops import status as git_status
 from agent6.harness._chain import RunChain, commit_identity
 from agent6.harness._compaction import CompactionSettings
-from agent6.harness._steer import OperatorBridge
+from agent6.harness._operator import OperatorBridge
 from agent6.harness.loop import Harness
 from agent6.harness.subrun import SubrunError, clone_workspace
 from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload

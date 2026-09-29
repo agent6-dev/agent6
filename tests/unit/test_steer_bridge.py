@@ -18,8 +18,8 @@ import pytest
 
 from agent6.events import EventSink
 from agent6.harness._chain import RunChain
+from agent6.harness._operator import OperatorBridge
 from agent6.harness._provider_call import CallSettings
-from agent6.harness._steer import OperatorBridge
 from agent6.sessions.ipc import (
     request_steer,
     steer_request_pending,

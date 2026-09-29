@@ -21,8 +21,8 @@ from agent6.graph.curator import GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNode, TaskNodeDraft
 from agent6.harness._chain import RunChain
 from agent6.harness._dag_focus import current_task_banner
+from agent6.harness._operator import OperatorBridge
 from agent6.harness._prompt_revision import RevisionSettings
-from agent6.harness._steer import OperatorBridge
 from agent6.harness.loop import Harness, LoopState
 from agent6.providers.types import ProviderError
 from agent6.sessions.ipc import OperatorRequest, drain_requests, queue_request

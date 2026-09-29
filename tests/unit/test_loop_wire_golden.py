@@ -34,7 +34,7 @@ from typing import Any
 from agent6.harness._chain import RunChain
 from agent6.harness._compaction import CompactionSettings
 from agent6.harness._conversation import Conversation
-from agent6.harness._steer import OperatorBridge
+from agent6.harness._operator import OperatorBridge
 from agent6.harness.loop import Harness
 from agent6.providers import ProviderResponse
 from agent6.tools.mcp_client import MCPToolDescriptor

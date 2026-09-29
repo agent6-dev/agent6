@@ -28,7 +28,7 @@ import pytest
 
 from agent6.budget import BudgetTracker
 from agent6.harness._chain import RunChain
-from agent6.harness._steer import OperatorBridge
+from agent6.harness._operator import OperatorBridge
 from agent6.paths import state_dir
 from agent6.ui.cli._repl import REPL_HELP
 from agent6.ui.cli.run import build_repl_hook  # pyright: ignore[reportPrivateUsage]

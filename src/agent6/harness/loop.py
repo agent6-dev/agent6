@@ -94,6 +94,7 @@ from agent6.harness._nudges import (
     PLAN_ON_DISK_HEADER,
     tool_error_signature,
 )
+from agent6.harness._operator import PINS_MAX_CHARS, OperatorBridge, Steering, try_pin
 from agent6.harness._operator_tasks import OperatorTasks
 from agent6.harness._panel import (
     review_notice,
@@ -128,7 +129,6 @@ from agent6.harness._snapshot import (
     write_turn_marker,
 )
 from agent6.harness._standing import Standing
-from agent6.harness._steer import PINS_MAX_CHARS, OperatorBridge, Steering, try_pin
 from agent6.harness._toolset import (
     build_readonly_review_tools,
     tool_definitions,

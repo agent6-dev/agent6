@@ -21,8 +21,8 @@ from unittest.mock import MagicMock
 
 from agent6.events import EventSink
 from agent6.harness._chain import RunChain
+from agent6.harness._operator import OperatorBridge
 from agent6.harness._provider_call import CallSettings
-from agent6.harness._steer import OperatorBridge
 from agent6.harness.loop import Harness
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
