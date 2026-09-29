@@ -120,8 +120,12 @@ def read_use(state_dir: Path) -> dict[str, MemoryUse]:
             ):
                 continue
             fields["writers"] = tuple(cast("list[str]", writers))
+        else:
+            # The record's first shape held the first and the last writer only.
+            known = [fields.get("created_by", ""), fields.get("updated_by", "")]
+            fields["writers"] = tuple(dict.fromkeys(w for w in known if isinstance(w, str) and w))
         if all(
-            isinstance(v, int if k == "reads" else (tuple if k == "writers" else str))
+            (type(v) is int) if k == "reads" else isinstance(v, tuple if k == "writers" else str)
             for k, v in fields.items()
         ):
             out[name] = MemoryUse(**fields)
@@ -469,6 +473,13 @@ def index_text(state_dir: Path) -> str:
         return ""
 
 
+def is_memory_name(name: str) -> bool:
+    """Whether *name* is a fact name the store accepts (lowercase letters,
+    digits and dashes), the one rule `memory add`, the loop's use count and
+    the orphan list share."""
+    return _NAME_RE.fullmatch(name) is not None
+
+
 def _check_name(name: str) -> str:
     if _NAME_RE.fullmatch(name) is None:
         raise MemoryStoreError(
@@ -499,9 +510,7 @@ def unindexed_names(state_dir: Path) -> tuple[str, ...]:
         files = sorted(p.stem for p in memory_dir(state_dir).glob("*.md"))
     except OSError:
         return ()
-    return tuple(
-        n for n in files if n not in named and n not in (INDEX_NAME[:-3], DECISIONS_NAME[:-3])
-    )
+    return tuple(n for n in files if n not in named and is_memory_name(n))
 
 
 def _index_hook(index_lines: list[str], name: str) -> str | None:

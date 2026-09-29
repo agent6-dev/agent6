@@ -95,6 +95,36 @@ def test_an_edit_under_the_store_records_the_fact_name(tmp_path: Path) -> None:
     assert state.memory.wrote == []
 
 
+def test_a_state_dir_behind_a_symlink_still_counts(tmp_path: Path) -> None:
+    """The model is told the store's unresolved path (a symlinked
+    XDG_STATE_HOME); the check resolved the model's path against the
+    unresolved store, so every memory edit counted as workspace work."""
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    wf = _wf(link)
+    state = _state()
+    store = memory_dir(link)
+    _read(wf, state, str(store / "quirk.md"))
+    _edit(wf, state, str(store / "quirk.md"))
+    assert state.memory.read == {"quirk": 1}
+    assert state.memory.wrote == ["quirk"]
+    assert state.memory.written is True
+
+
+def test_only_names_the_store_accepts_are_counted(tmp_path: Path) -> None:
+    """A read of `<store>/Quirk.md` recorded a `Quirk` entry the list can never
+    show: the name rule (`memory add`'s) filters the facts a call touched."""
+    wf = _wf(tmp_path)
+    state = _state()
+    store = memory_dir(tmp_path)
+    _read(wf, state, str(store / "Quirk.md"))
+    _read(wf, state, str(store / "notes.txt"))
+    _read(wf, state, str(store / "ok-name.md"))
+    assert state.memory.read == {"ok-name": 1}
+
+
 def test_no_store_means_nothing_is_counted() -> None:
     wf = _wf(None)
     state = _state()

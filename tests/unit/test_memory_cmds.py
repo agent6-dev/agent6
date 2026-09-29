@@ -97,6 +97,48 @@ def test_list_shows_who_wrote_and_read_each_fact(
     assert "read 3 times, last 1970-01-02 by run-a" in out
 
 
+def test_list_names_orphans_when_the_index_is_absent_or_blank(
+    env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The one orphan whose line went was the only entry: the list said
+    "no memories" and named nothing to prune."""
+    from agent6.memory import index_path, memory_dir
+
+    _cmd_memory_add("only", "The only fact.")
+    state = state_dir(Path.cwd())
+    index_path(state).unlink()
+    assert (memory_dir(state) / "only.md").is_file()
+    capsys.readouterr()
+    assert _cmd_memory_list() == 0
+    out = capsys.readouterr().out
+    assert "no memories" in out
+    assert "not in the index (no run sees them; `memory rm` deletes): only" in out
+
+
+def test_format_use_says_each_state_plainly() -> None:
+    from agent6.memory import MemoryUse
+    from agent6.ui.cli.memory_cmds import format_use
+
+    assert format_use(MemoryUse()) == "never read"
+    assert format_use(MemoryUse(created_by="run-a", created_at="2026-01-01 00:00Z")) == (
+        "written 2026-01-01 by run-a, never read"
+    )
+    assert format_use(
+        MemoryUse(
+            created_by="run-a",
+            created_at="2026-01-01 00:00Z",
+            updated_by="run-b",
+            updated_at="2026-01-02 00:00Z",
+            reads=1,
+            read_by="run-c",
+            read_at="2026-01-03 00:00Z",
+        )
+    ) == (
+        "written 2026-01-01 by run-a, edited 2026-01-02 by run-b,"
+        " read once, last 2026-01-03 by run-c"
+    )
+
+
 def test_list_names_the_files_the_index_no_longer_lists(
     env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

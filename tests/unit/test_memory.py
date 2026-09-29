@@ -571,6 +571,33 @@ def test_read_use_tolerates_a_missing_or_misshapen_record(tmp_path: Path) -> Non
     assert read_use(tmp_path)["u"].writers == ("run-a",)
 
 
+def test_read_use_fills_writers_for_an_entry_recorded_before_the_list_existed(
+    tmp_path: Path,
+) -> None:
+    """An entry with `created_by`/`updated_by` and no `writers` key (the
+    record's first shape) credited its session with no write in a review."""
+    use_path(tmp_path).write_text(
+        '{"a": {"created_by": "run-x", "updated_by": "run-y", "reads": 0},'
+        ' "b": {"created_by": "run-x", "updated_by": "run-x"},'
+        ' "c": {"reads": true}}',
+        encoding="utf-8",
+    )
+    use = read_use(tmp_path)
+    assert use["a"].writers == ("run-x", "run-y")
+    assert use["b"].writers == ("run-x",)
+    assert "c" not in use  # a bool is not a count
+
+
+def test_unindexed_names_lists_only_names_rm_can_take(tmp_path: Path) -> None:
+    from agent6.memory import unindexed_names
+
+    d = memory_dir(tmp_path)
+    d.mkdir(parents=True)
+    for name in ("Draft.md", "ok.md", "notes.txt"):
+        (d / name).write_text("x\n", encoding="utf-8")
+    assert unindexed_names(tmp_path) == ("ok",)
+
+
 def test_index_name_reads_the_entry_a_line_names() -> None:
     assert index_name("- build-quirk: Needs FOO=1.") == "build-quirk"
     assert index_name("* other-fact : x") == "other-fact"

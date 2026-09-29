@@ -40,10 +40,9 @@ from agent6.graph.models import (
 )
 from agent6.graph.order import OPEN_STATUSES
 from agent6.memory import (
-    DECISIONS_NAME,
-    INDEX_NAME,
     decisions_path,
     decisions_text,
+    is_memory_name,
     memory_dir,
     record_decision,
     record_use,
@@ -1103,8 +1102,9 @@ class Workflow:
         path reaches it (a result's path is store-relative, and matching on it
         never fires). `apply_patch` normally carries no `path` and names its
         files in the headers; every one must be under the store (a patch over
-        the store and the workspace together is workspace work). The index and
-        the rulings are not facts: a call about them alone answers ()."""
+        the store and the workspace together is workspace work). A fact is a
+        file the store's name rule accepts; the index, the rulings and any
+        other file are not, so a call about them alone answers ()."""
         if self.state_dir is None or not isinstance(tool_input, dict):
             return None
         paths = [str(tool_input["path"])] if tool_input.get("path") else []
@@ -1116,16 +1116,16 @@ class Workflow:
                 return None
         if not paths or not all(p.startswith("/") for p in paths):
             return None
-        store = memory_dir(self.state_dir)
+        # Both sides resolved: the model is told the store's unresolved path
+        # (a symlinked state home), and a resolved path never sits under it.
+        store = memory_dir(self.state_dir).resolve()
         resolved = [Path(p).resolve() for p in paths]
         if not all(p.is_relative_to(store) for p in resolved):
             return None
         return tuple(
             p.stem
             for p in resolved
-            if p.parent == store
-            and p.suffix == ".md"
-            and p.name not in (INDEX_NAME, DECISIONS_NAME)
+            if p.parent == store and p.suffix == ".md" and is_memory_name(p.stem)
         )
 
     def _record_memory_use(self, state: LoopState) -> None:
