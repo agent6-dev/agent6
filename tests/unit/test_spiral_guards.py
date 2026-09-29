@@ -5,7 +5,7 @@ relies on, pinned at the object so call sites cannot drift."""
 
 from __future__ import annotations
 
-from agent6.harness._spiral_guards import SpiralGuard
+from agent6.harness._spiral import SpiralGuard
 
 
 def test_repeat_streak_extends_and_resets() -> None:
