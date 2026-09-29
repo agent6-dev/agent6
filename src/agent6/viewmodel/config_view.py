@@ -8,25 +8,19 @@ renderers stay thin. Loading, merging and writing config stays in `agent6.config
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import textwrap
 import types
-from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
-from pydantic import BaseModel
-from pydantic_core import PydanticUndefined
+import pydantic
+import pydantic_core
 
-from agent6.config.layer import (
-    SECTION_ORDER,
-    EffectiveConfig,
-    Layer,
-    config_leaves,
-    preset_names,
-)
+from agent6.config import layer as config_layer
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ConfigSetting:
     """One config leaf, described for display and editing.
 
@@ -57,7 +51,7 @@ class ConfigSetting:
     description: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ConfigView:
     """The whole effective config as a flat, section-ordered list of settings.
 
@@ -69,7 +63,7 @@ class ConfigView:
 
     settings: tuple[ConfigSetting, ...]
     sections: tuple[str, ...]
-    layers: tuple[Layer, ...]
+    layers: tuple[config_layer.Layer, ...]
 
 
 def _unwrap_optional(ann: Any) -> Any:
@@ -89,15 +83,15 @@ def _literal_choices(ann: Any) -> tuple[str, ...] | None:
     return None
 
 
-def _nested_model(ann: Any) -> type[BaseModel] | None:
+def _nested_model(ann: Any) -> type[pydantic.BaseModel] | None:
     """Return the pydantic model an annotation names, None for any other annotation."""
     ann = _unwrap_optional(ann)
-    if isinstance(ann, type) and issubclass(ann, BaseModel):
+    if isinstance(ann, type) and issubclass(ann, pydantic.BaseModel):
         return ann
     return None
 
 
-def _value_models(ann: Any) -> tuple[type[BaseModel], ...]:
+def _value_models(ann: Any) -> tuple[type[pydantic.BaseModel], ...]:
     """Return the models a `dict` field's values take.
 
     Args:
@@ -120,7 +114,7 @@ def _value_models(ann: Any) -> tuple[type[BaseModel], ...]:
 
 
 def _merge_field_schema(
-    models: tuple[type[BaseModel], ...], parts: list[str]
+    models: tuple[type[pydantic.BaseModel], ...], parts: list[str]
 ) -> tuple[str, tuple[str, ...] | None, Any, str] | None:
     """Resolve a field across discriminated-union members, merging their choices.
 
@@ -161,7 +155,7 @@ def _type_label(ann: Any) -> str:
         return "list"
     if origin is dict:
         return "table"
-    if isinstance(ann, type) and issubclass(ann, BaseModel):
+    if isinstance(ann, type) and issubclass(ann, pydantic.BaseModel):
         # An unset optional section groups with the other structured leaves.
         return "table"
     if isinstance(ann, type):
@@ -170,7 +164,7 @@ def _type_label(ann: Any) -> str:
 
 
 def _field_schema(
-    model_cls: type[BaseModel], parts: list[str]
+    model_cls: type[pydantic.BaseModel], parts: list[str]
 ) -> tuple[str, tuple[str, ...] | None, Any, str] | None:
     """Walk a model down a dotted path to a leaf field's schema.
 
@@ -189,7 +183,7 @@ def _field_schema(
     ann = fi.annotation
     if len(parts) == 1:
         default = fi.default
-        if default is PydanticUndefined:
+        if default is pydantic_core.PydanticUndefined:
             default = fi.default_factory() if fi.default_factory is not None else None
         return _type_label(ann), _literal_choices(ann), default, fi.description or ""
     nested = _nested_model(ann)
@@ -201,7 +195,7 @@ def _field_schema(
     return None
 
 
-def _configured_choices(eff: EffectiveConfig, leaf: str) -> tuple[str, ...] | None:
+def _configured_choices(eff: config_layer.EffectiveConfig, leaf: str) -> tuple[str, ...] | None:
     """Return the choices only the effective config can state.
 
     Every editor's picker and TAB completion read them from here; the model ids of a
@@ -216,7 +210,7 @@ def _configured_choices(eff: EffectiveConfig, leaf: str) -> tuple[str, ...] | No
         `models.<role>.provider` leaf, else None.
     """
     if leaf == "preset":
-        return eff.presets or tuple(preset_names(eff.layers))
+        return eff.presets or tuple(config_layer.preset_names(eff.layers))
     parts = leaf.split(".")
     if len(parts) == 3 and parts[0] == "models" and parts[2] == "provider":
         return tuple(sorted(eff.config.providers)) or None
@@ -224,7 +218,7 @@ def _configured_choices(eff: EffectiveConfig, leaf: str) -> tuple[str, ...] | No
 
 
 def build_config_view(
-    eff: EffectiveConfig, *, resolved: dict[str, Any] | None = None
+    eff: config_layer.EffectiveConfig, *, resolved: dict[str, Any] | None = None
 ) -> ConfigView:
     """Build the flat view every UI renders from the effective config.
 
@@ -239,12 +233,12 @@ def build_config_view(
         The view.
     """
     resolved = resolved or {}
-    leaves = config_leaves(eff.config)
+    leaves = config_layer.config_leaves(eff.config)
     by_section: dict[str, list[str]] = {}
     for leaf in leaves:
         by_section.setdefault(leaf.split(".", 1)[0], []).append(leaf)
-    ordered = [s for s in SECTION_ORDER if s in by_section]
-    ordered += [s for s in by_section if s not in SECTION_ORDER]
+    ordered = [s for s in config_layer.SECTION_ORDER if s in by_section]
+    ordered += [s for s in by_section if s not in config_layer.SECTION_ORDER]
 
     settings: list[ConfigSetting] = []
     for section in ordered:
@@ -364,7 +358,7 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
 
 
 def render_key_detail(
-    eff: EffectiveConfig,
+    eff: config_layer.EffectiveConfig,
     keys: list[str],
     *,
     resolved: dict[str, Any] | None = None,
@@ -416,7 +410,7 @@ def render_key_detail(
 
 
 def render_show(
-    eff: EffectiveConfig,
+    eff: config_layer.EffectiveConfig,
     *,
     as_json: bool = False,
     resolved: dict[str, Any] | None = None,

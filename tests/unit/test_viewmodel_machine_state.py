@@ -13,7 +13,7 @@ import pytest
 
 from agent6.machine import journal as machine_journal
 from agent6.machine import load_machine
-from agent6.viewmodel import machine_state
+from agent6.viewmodel import machine_state, tail
 
 # A branch -> terminal machine: two states, no I/O, valid to load.
 TINY = """
@@ -213,8 +213,6 @@ def test_the_wire_form_reads_the_journal_once(tmp_path: pathlib.Path) -> None:
     Asking `machine_verb_refusals` for them re-read the journal and re-folded the machine, so every
     SSE frame did the work twice (50 ms -> 9 ms per frame on a 5,000-event journal).
     """
-    import agent6.viewmodel.machine_state as mod
-
     spec = _spec(tmp_path)
     live = machine_state.fold_machine(spec, [])
     d = tmp_path / "inst"
@@ -228,11 +226,11 @@ def test_the_wire_form_reads_the_journal_once(tmp_path: pathlib.Path) -> None:
         reads += 1
         return real_read(self)
 
-    mod.MachineJournal.read = counting_read  # type: ignore[method-assign]
+    machine_journal.MachineJournal.read = counting_read  # type: ignore[method-assign]
     try:
         d_out = machine_state.machine_state_as_dict(live, d)
     finally:
-        mod.MachineJournal.read = real_read  # type: ignore[method-assign]
+        machine_journal.MachineJournal.read = real_read  # type: ignore[method-assign]
 
     assert d_out["refusals"]["stop"] == ""
     assert reads == 0, f"the wire form re-read the journal {reads} time(s)"
@@ -458,8 +456,6 @@ def test_verb_refusals_fold_no_state_log_unless_a_live_execution_could_read(
     tmp_path: pathlib.Path,
 ) -> None:
     """The refusals fold the newest state log only for a live, unended machine."""
-    import agent6.viewmodel.machine_state as mod
-
     d = tmp_path / "inst"
     d.mkdir()
     (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -469,14 +465,14 @@ def test_verb_refusals_fold_no_state_log_unless_a_live_execution_could_read(
     log.parent.mkdir(parents=True)
     log.write_text('{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8")
     folds = 0
-    real_tail = mod.tail_events
+    real_tail = tail.tail_events
 
     def counting_tail(*args: Any, **kwargs: Any) -> Any:
         nonlocal folds
         folds += 1
         return real_tail(*args, **kwargs)
 
-    mod.tail_events = counting_tail  # type: ignore[assignment]
+    tail.tail_events = counting_tail  # type: ignore[assignment]
     try:
         machine_state.machine_verb_refusals(d, "tiny")  # stopped: no worker
         assert folds == 0
@@ -491,7 +487,7 @@ def test_verb_refusals_fold_no_state_log_unless_a_live_execution_could_read(
         machine_state.machine_verb_refusals(d, "tiny")  # ended
         assert folds == 1
     finally:
-        mod.tail_events = real_tail
+        tail.tail_events = real_tail
 
 
 def test_an_unreadable_summary_keeps_its_reason_to_one_line(
@@ -539,7 +535,6 @@ def test_the_wire_form_carries_the_status_level(tmp_path: pathlib.Path) -> None:
 
 def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: pathlib.Path) -> None:
     """The held fold reads appended bytes only, follows a newer state, restarts on a rewrite."""
-    import agent6.viewmodel.machine_state as mod
     from agent6.viewmodel import tail
 
     d = tmp_path / "inst"
@@ -553,7 +548,8 @@ def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: path
     def no_full_read(*_a: object, **_k: object) -> Any:
         raise AssertionError("the whole log was read again")
 
-    mod.tail_events = no_full_read  # type: ignore[assignment]
+    real_tail = tail.tail_events
+    tail.tail_events = no_full_read  # type: ignore[assignment]
     try:
         with log.open("a", encoding="utf-8") as fh:
             fh.write('{"type":"question.prompt","id":"q1","questions":[{"question":"?"}]}\n')
@@ -573,7 +569,7 @@ def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: path
         fold.refresh(d)
         assert fold.execution() == machine_state.AgentExecution(open=False, blocked_in="")
     finally:
-        mod.tail_events = tail.tail_events
+        tail.tail_events = real_tail
 
 
 def test_the_wire_form_names_a_stopped_machine_as_resumable(tmp_path: pathlib.Path) -> None:

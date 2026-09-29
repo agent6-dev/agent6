@@ -9,37 +9,19 @@ CLI, TUI and web listings cannot disagree.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
+import pathlib
 import time
 from collections.abc import Container, Iterable, Mapping, Sequence
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.git_ops import chain_ref_for
-from agent6.sessions.ipc import read_worker_pid, worker_is_alive
-from agent6.sessions.layout import (
-    HUB_BUCKETS,
-    LOGS_NAME,
-    MANIFEST_NAME,
-    bucket_dir,
-    session_has_record,
-)
-from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
-from agent6.task_text import task_headline
-from agent6.viewmodel.events import event_epoch
-from agent6.viewmodel.format import (
-    clip_cell,
-    format_age,
-    format_cost_cell,
-    format_model_route,
-    format_when,
-    listing_status_label,
-    status_level,
-    winner_id,
-)
+from agent6 import git_ops, task_text
+from agent6.sessions import ipc, layout
+from agent6.sessions import manifest as sessions_manifest
+from agent6.viewmodel import events, format
 
 
-def session_mtime(session_dir: Path) -> float:
+def session_mtime(session_dir: pathlib.Path) -> float:
     """Return a session's last-activity time as epoch seconds.
 
     The journal's mtime, else the manifest's, else the dir's; never the dir's first,
@@ -51,7 +33,11 @@ def session_mtime(session_dir: Path) -> float:
     Returns:
         The mtime, 0.0 when none of the three can be read.
     """
-    for candidate in (session_dir / LOGS_NAME, session_dir / MANIFEST_NAME, session_dir):
+    for candidate in (
+        session_dir / layout.LOGS_NAME,
+        session_dir / sessions_manifest.MANIFEST_NAME,
+        session_dir,
+    ):
         try:
             return candidate.stat().st_mtime
         except OSError:
@@ -59,7 +45,9 @@ def session_mtime(session_dir: Path) -> float:
     return 0.0
 
 
-def session_dirs(state_dir: Path, buckets: Iterable[str] = HUB_BUCKETS) -> list[Path]:
+def session_dirs(
+    state_dir: pathlib.Path, buckets: Iterable[str] = layout.HUB_BUCKETS
+) -> list[pathlib.Path]:
     """Return every session dir a listing shows, newest first by last activity.
 
     Args:
@@ -69,16 +57,16 @@ def session_dirs(state_dir: Path, buckets: Iterable[str] = HUB_BUCKETS) -> list[
     Returns:
         The session dirs, husks skipped.
     """
-    dirs: list[Path] = []
+    dirs: list[pathlib.Path] = []
     for name in buckets:
-        bucket = bucket_dir(state_dir, name)
+        bucket = layout.bucket_dir(state_dir, name)
         if bucket.is_dir():
             dirs.extend(p for p in bucket.iterdir() if p.is_dir() and not is_session_husk(p))
     dirs.sort(key=session_mtime, reverse=True)
     return dirs
 
 
-def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
+def newest_session_dir(buckets: Iterable[pathlib.Path]) -> pathlib.Path | None:
     """Return the most recently active session dir across the given bucket dirs.
 
     Husks are skipped: a crash-orphaned dir is newer than the real runs, and returning
@@ -90,7 +78,7 @@ def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
     Returns:
         The newest session dir by last activity, or None when no bucket holds one.
     """
-    runs: list[Path] = []
+    runs: list[pathlib.Path] = []
     for bucket in buckets:
         if bucket.is_dir():
             runs.extend(p for p in bucket.iterdir() if p.is_dir() and not is_session_husk(p))
@@ -108,23 +96,25 @@ def task_snippet(text: str, max_chars: int | None = None) -> str:
     Returns:
         The task's headline, else its first non-blank line.
     """
-    snip = task_headline(text) or next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+    snip = task_text.task_headline(text) or next(
+        (ln.strip() for ln in text.splitlines() if ln.strip()), ""
+    )
     if max_chars is not None and len(snip) > max_chars:
         snip = snip[: max_chars - 1] + "…"
     return snip
 
 
-def is_session_husk(session_dir: Path) -> bool:
+def is_session_husk(session_dir: pathlib.Path) -> bool:
     """Return whether a session dir never started: no manifest, no log, no live worker.
 
     A dir with a live worker is a just-launched run in its pre-manifest preflight
     window and stays listed as "starting". Listings skip husks, and an id lookup must
     not let one shadow a real run of the same id in another bucket.
     """
-    return not session_has_record(session_dir) and not worker_is_alive(session_dir)
+    return not layout.session_has_record(session_dir) and not ipc.worker_is_alive(session_dir)
 
 
-def session_compare(session_dir: Path) -> CompareStamp | None:
+def session_compare(session_dir: pathlib.Path) -> sessions_manifest.CompareStamp | None:
     """Return the fan-out compare stamp on a lane's manifest.
 
     The event fold does not carry it, so every run view reads it from here.
@@ -137,19 +127,19 @@ def session_compare(session_dir: Path) -> CompareStamp | None:
         manifest.
     """
     try:
-        manifest = read_manifest(session_dir)
-    except ManifestError:
+        manifest = sessions_manifest.read_manifest(session_dir)
+    except sessions_manifest.ManifestError:
         return None
     return manifest.compare
 
 
-def is_winner(session_dir: Path) -> bool:
+def is_winner(session_dir: pathlib.Path) -> bool:
     """Return whether a run is its fan-out's compare winner."""
     compare = session_compare(session_dir)
     return compare is not None and compare.winner
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionSummary:
     """One listing row: everything a hub or `sessions list` needs, uncolored.
 
@@ -201,10 +191,10 @@ class SessionSummary:
         """The cost cell: plan points once a subscription plan answered a call, else USD."""
         metered = self.plan_used_percent > 0 or self.plan_consumed > 0
         points = self.plan_consumed if metered else None
-        return format_cost_cell(self.cost_usd, partial=self.usd_partial, plan_points=points)
+        return format.format_cost_cell(self.cost_usd, partial=self.usd_partial, plan_points=points)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ListingRow:
     """One listing row: a session and the fan-out lanes nested under it, rows themselves."""
 
@@ -254,7 +244,7 @@ def _lane_order(lane: SessionSummary) -> tuple[int, str]:
 
 
 def lanes_of(
-    state_dir: Path, coordinator: str, *, branch_tips: Mapping[str, str] | None = None
+    state_dir: pathlib.Path, coordinator: str, *, branch_tips: Mapping[str, str] | None = None
 ) -> list[SessionSummary]:
     """Return the lanes whose manifests name a coordinator, in lane order.
 
@@ -291,7 +281,7 @@ def row_json(row: ListingRow, *, winners: Container[str]) -> dict[str, object]:
         lanes=[row_json(ln, winners=winners) for ln in row.lanes],
     )
     out["mtime"] = row.mtime
-    out["when"] = format_when(row.mtime) if row.mtime else ""
+    out["when"] = format.format_when(row.mtime) if row.mtime else ""
     return out
 
 
@@ -319,10 +309,10 @@ def summary_row(
         "task_line": task_snippet(s.task),
         "status": s.status,
         "reason": s.reason,
-        "label": listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
-        "level": status_level(s.status),
+        "label": format.listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
+        "level": format.status_level(s.status),
         "mtime": s.mtime,
-        "when": format_when(s.mtime) if s.mtime else "",
+        "when": format.format_when(s.mtime) if s.mtime else "",
         "cost_usd": s.cost_usd,
         "usd_partial": s.usd_partial,
         "plan_consumed": s.plan_consumed,
@@ -330,7 +320,7 @@ def summary_row(
         "cost": s.cost_cell,
         "model": s.model,
         "model_from_flag": s.model_from_flag,
-        "id_cell": winner_id(s.session_id, winner=winner),
+        "id_cell": format.winner_id(s.session_id, winner=winner),
         "unmerged": s.unmerged,
         "verify_ok": s.verify_ok,
         "winner": winner,
@@ -403,7 +393,7 @@ OPERATOR_ANSWER_EVENTS = frozenset({"approval.answer", "question.answer"})
 PARKED_WORD = "parked"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class StatusFacts:
     """The event-derived inputs to `status_for_session_dir`.
 
@@ -436,7 +426,7 @@ class StatusFacts:
     unattended_questions: int = 0
 
 
-def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, str]:
+def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tuple[str, str]:
     """Decide the status word and detail for a session that has a dir on disk.
 
     The dir supplies what events cannot: a parked submission (the manifest) and
@@ -463,20 +453,20 @@ def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, 
         if not reason and (n := facts.unattended_questions):
             reason = f"{n} question{'s' if n != 1 else ''} unanswered"
         return word, reason
-    if facts.operator_blocked and worker_is_alive(session_dir):
+    if facts.operator_blocked and ipc.worker_is_alive(session_dir):
         # Before session.start too: a run asks about uncommitted changes before it starts.
         if facts.blocked_kind and facts.blocked_since_ep is not None:
-            age = format_age(time.time() - facts.blocked_since_ep)
+            age = format.format_age(time.time() - facts.blocked_since_ep)
             return "waiting", f"{facts.blocked_kind} {age}"
         return "waiting", "needs answer"
     if not facts.started:
         return _unstarted_status(session_dir)
-    if not worker_is_alive(session_dir):
+    if not ipc.worker_is_alive(session_dir):
         return "stale", ""
     return "running", ""
 
 
-def _unstarted_status(session_dir: Path) -> tuple[str, str]:
+def _unstarted_status(session_dir: pathlib.Path) -> tuple[str, str]:
     """Decide the status of a session before any session.start.
 
     A live worker is still in preflight ("starting"). Without one, the dir is a parked
@@ -490,16 +480,16 @@ def _unstarted_status(session_dir: Path) -> tuple[str, str]:
     Returns:
         The `(word, detail)` pair.
     """
-    if worker_is_alive(session_dir):
+    if ipc.worker_is_alive(session_dir):
         return "starting", ""
-    if (session_dir / MANIFEST_NAME).is_file():
+    if (session_dir / sessions_manifest.MANIFEST_NAME).is_file():
         try:
-            manifest = read_manifest(session_dir)
-        except ManifestError as exc:
-            return "unreadable", clip_cell(str(exc), 60)
+            manifest = sessions_manifest.read_manifest(session_dir)
+        except sessions_manifest.ManifestError as exc:
+            return "unreadable", format.clip_cell(str(exc), 60)
         if manifest.parked_task:
             return PARKED_WORD, manifest.parked_reason
-    if read_worker_pid(session_dir) is not None:
+    if ipc.read_worker_pid(session_dir) is not None:
         return "stale", "died launching"
     return "created", ""
 
@@ -529,17 +519,17 @@ def produced_result(status: str) -> bool:
 LIVE_STATUS_WORDS = frozenset({"running", "starting", "waiting"})
 
 
-def session_is_live(session_dir: Path) -> bool:
+def session_is_live(session_dir: pathlib.Path) -> bool:
     """Return whether anything will read what the operator writes to this session.
 
     Derived from the status word, so a surface cannot disagree with the label it shows.
     """
-    logs = session_dir / LOGS_NAME
+    logs = session_dir / layout.LOGS_NAME
     facts = scan_session_log(logs).status_facts() if logs.is_file() else StatusFacts()
     return status_for_session_dir(session_dir, facts)[0] in LIVE_STATUS_WORDS
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class LogScan:
     """One tolerant pass over a session's journal, behind the hub listing and `sessions show`.
 
@@ -695,9 +685,9 @@ def needs_new_work(*, finished: bool, end_reason: str, all_passed: bool | None) 
     return finished and end_reason == "finish_session" and all_passed is not False
 
 
-def finished_needs_new_work(session_dir: Path) -> bool:
+def finished_needs_new_work(session_dir: pathlib.Path) -> bool:
     """Return `needs_new_work` over the run's log, for a verb that holds only the dir."""
-    scan = scan_session_log(session_dir / LOGS_NAME)
+    scan = scan_session_log(session_dir / layout.LOGS_NAME)
     return needs_new_work(
         finished=scan.finished, end_reason=scan.end_reason, all_passed=scan.all_passed
     )
@@ -712,7 +702,7 @@ def needs_new_work_refusal(session_id: str) -> str:
     )
 
 
-def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915  # one branch per event type
+def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915  # one branch per event type
     """Fold a session's journal into a `LogScan`.
 
     A live writer can leave a torn multibyte tail, so the file is decoded with
@@ -759,7 +749,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915  # 
                 if not isinstance(ev, dict):
                     continue
                 etype = ev.get("type")
-                ep = event_epoch(ev.get("ts"))
+                ep = events.event_epoch(ev.get("ts"))
                 if ep is not None:
                     last_ep = ep
                     if first_ep is None:
@@ -878,7 +868,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915  # 
 
 
 def summarize_session_dir(
-    session_dir: Path, *, branch_tips: Mapping[str, str] | None = None
+    session_dir: pathlib.Path, *, branch_tips: Mapping[str, str] | None = None
 ) -> SessionSummary:
     """Fold a session dir's journal and manifest into one listing row.
 
@@ -894,11 +884,11 @@ def summarize_session_dir(
     Returns:
         The row.
     """
-    logs = session_dir / LOGS_NAME
+    logs = session_dir / layout.LOGS_NAME
     scan = scan_session_log(logs) if logs.is_file() else LogScan()
-    manifest: SessionManifest | None = None
-    with contextlib.suppress(ManifestError):
-        manifest = read_manifest(session_dir)
+    manifest: sessions_manifest.SessionManifest | None = None
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        manifest = sessions_manifest.read_manifest(session_dir)
     mode, task = scan.mode, scan.task
     if manifest is not None:
         # A log with no session.start yet (preflight, `fork --no-run`, a fork) names no mode.
@@ -925,7 +915,7 @@ def summarize_session_dir(
         tips = {
             tip
             for tip in (
-                branch_tips.get(chain_ref_for(manifest.session_id)),
+                branch_tips.get(git_ops.chain_ref_for(manifest.session_id)),
                 branch_tips.get(manifest.run_branch or ""),
             )
             if tip
@@ -950,6 +940,6 @@ def summarize_session_dir(
         plan_consumed=scan.plan_consumed,
         plan_cap=scan.plan_cap,
         plan_used_percent=scan.plan_used_percent,
-        model=format_model_route(manifest.models.driver) if manifest is not None else "",
+        model=format.format_model_route(manifest.models.driver) if manifest is not None else "",
         model_from_flag=manifest.models.driver_from_flag if manifest is not None else False,
     )

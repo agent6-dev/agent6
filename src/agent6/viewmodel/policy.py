@@ -8,14 +8,14 @@ so the CLI banner, the TUI composer and the web header cannot drift apart.
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 import shlex
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.sessions import manifest
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionPolicy:
     """What a session was launched under.
 
@@ -75,7 +75,7 @@ class SessionPolicy:
         return " · ".join(parts)
 
 
-def session_policy(session_dir: Path) -> SessionPolicy:
+def session_policy(session_dir: pathlib.Path) -> SessionPolicy:
     """Fold a session dir's manifest into its policy facts.
 
     Args:
@@ -85,8 +85,8 @@ def session_policy(session_dir: Path) -> SessionPolicy:
         The policy, all-empty when the manifest cannot be read.
     """
     try:
-        m = read_manifest(session_dir)
-    except ManifestError:
+        m = manifest.read_manifest(session_dir)
+    except manifest.ManifestError:
         return SessionPolicy("", "", "", (), "")
     driver = m.models.driver
     return SessionPolicy(

@@ -12,17 +12,16 @@ live tailers feed the same fold one event at a time.
 
 from __future__ import annotations
 
+import dataclasses
 import difflib
 import re
 import shlex
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, replace
 from typing import Any, Literal
 
-from agent6.kinds import is_side_role
-from agent6.viewmodel.events import SESSION_START_EVENTS, as_int, event_epoch, tool_result_ok
-from agent6.viewmodel.format import format_usd, lane_count, status_label
-from agent6.viewmodel.listing import status_word
+from agent6 import budget, kinds
+from agent6.viewmodel import events as viewmodel_events
+from agent6.viewmodel import format, listing
 
 # Default-deny: CSI alone would let an OSC 52 clipboard write and DCS/SOS/PM/APC payloads
 # through, and a C1 byte opens the same doors 8-bit. Sequences drop whole; \n and \t stay.
@@ -120,7 +119,7 @@ def operator_inputs(events: Iterable[dict[str, Any]]) -> list[str]:
     return out
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class TranscriptItem:
     """One rendered conversation step; only the fields its `kind` needs are set.
 
@@ -241,7 +240,7 @@ def _parallel_dispatched_body(event: dict[str, Any]) -> str:
     n = len(tasks)
     lanes = event.get("lanes")
     if isinstance(lanes, int) and not isinstance(lanes, bool):
-        what = lane_count(lanes) + (f" for {n} tasks" if n > 1 else "")
+        what = format.lane_count(lanes) + (f" for {n} tasks" if n > 1 else "")
     else:
         what = f"{n} parallel task{'' if n == 1 else 's'}"
     head = (
@@ -267,7 +266,7 @@ def _parallel_compared_body(event: dict[str, Any]) -> str:
     lines = [head]
     for rank, r in enumerate(rows, start=1):
         cost = r.get("cost_usd")
-        cost_s = format_usd(float(cost)) if isinstance(cost, (int, float)) else "?"
+        cost_s = budget.format_usd(float(cost)) if isinstance(cost, (int, float)) else "?"
         lines.append(f"{rank}. {r.get('session_id', '?')}  {r.get('verify', '?')}  {cost_s}")
     return "\n".join(lines)
 
@@ -366,8 +365,8 @@ def _standing_set_body(event: dict[str, Any]) -> str:
 
 def _compact_done_body(event: dict[str, Any]) -> str:
     """Return the line for a tier-2 compaction: the summary's size and the turns kept."""
-    chars = as_int(event.get("summary_chars"))
-    kept = as_int(event.get("kept_turns"))
+    chars = viewmodel_events.as_int(event.get("summary_chars"))
+    kept = viewmodel_events.as_int(event.get("kept_turns"))
     return f"context compacted: {chars:,}-char summary, {kept} recent turns kept verbatim"
 
 
@@ -462,11 +461,11 @@ class TranscriptFold:
         Returns:
             True when the event carried only receipt state.
         """
-        if (ep := event_epoch(event.get("ts"))) is not None:
+        if (ep := viewmodel_events.event_epoch(event.get("ts"))) is not None:
             self._last_ep = ep
             if self._first_ep is None:
                 self._first_ep = ep
-        if etype in SESSION_START_EVENTS:
+        if etype in viewmodel_events.SESSION_START_EVENTS:
             self._mode = str(event.get("mode", "")) or self._mode
             # The receipt is the execution's own.
             self._first_ep = ep
@@ -496,7 +495,7 @@ class TranscriptFold:
         commits = f"{self._commits} commit{'' if self._commits == 1 else 's'}"
         parts = []
         if self._usd:
-            parts.append(format_usd(self._usd, partial=self._usd_partial))
+            parts.append(budget.format_usd(self._usd, partial=self._usd_partial))
         if self._first_ep is not None and self._last_ep is not None:
             parts.append(f"{max(0, round(self._last_ep - self._first_ep))}s")
         # An ask or a plan never commits, so "0 commits" there is noise.
@@ -592,7 +591,7 @@ class TranscriptFold:
             if body:
                 out.append(TranscriptItem(kind, body=body))
             return out
-        if etype in SESSION_START_EVENTS:
+        if etype in viewmodel_events.SESSION_START_EVENTS:
             return self.settle_open_calls("the run ended")
         if etype == "session.end":
             out = self.settle_open_calls("the run ended")
@@ -600,7 +599,7 @@ class TranscriptFold:
             counts = self._receipt_detail()
             reason = str(event.get("reason", ""))
             all_passed = event.get("all_passed")
-            word, detail = status_word(
+            word, detail = listing.status_word(
                 finished=True,
                 all_passed=all_passed if isinstance(all_passed, bool) else None,
                 end_reason=reason,
@@ -616,7 +615,7 @@ class TranscriptFold:
                     # The gate's tri-state: a stop or a gateless finish is neither pass nor fail.
                     ok=all_passed if isinstance(all_passed, bool) else None,
                     detail=counts,
-                    name=status_label(word, detail),
+                    name=format.status_label(word, detail),
                 )
             )
             return out
@@ -624,7 +623,7 @@ class TranscriptFold:
 
     def _is_side_call(self, event: dict[str, Any]) -> bool:
         """Return whether the result is a side call's."""
-        return is_side_role(str(event.get("role", "")))
+        return kinds.is_side_role(str(event.get("role", "")))
 
     def _flush_message(self, *, settled: str = "") -> list[TranscriptItem]:
         """Emit the buffered thinking and text as items.
@@ -668,7 +667,7 @@ class TranscriptFold:
         out: list[TranscriptItem] = []
         if key in self._pending:
             first, _preview = self._pending.pop(key)
-            out.append(replace(first, ok=False, detail="no result (superseded)"))
+            out.append(dataclasses.replace(first, ok=False, detail="no result (superseded)"))
         pending = TranscriptItem("tool", name=name, arg=salient_arg(args), call_id=str(key))
         self._pending[key] = (pending, _call_preview(name, args))
         self._verify = None
@@ -701,7 +700,7 @@ class TranscriptFold:
     def _redetail(self, key: int, detail: str) -> TranscriptItem:
         """Return the pending call's item with a new detail, kept as the pending one."""
         pending, preview = self._pending[key]
-        marked = replace(pending, detail=detail)
+        marked = dataclasses.replace(pending, detail=detail)
         self._pending[key] = (marked, preview)
         return marked
 
@@ -723,7 +722,7 @@ class TranscriptFold:
             ok, detail = self._verify
             self._verify = None
         else:
-            ok = tool_result_ok(event.get("ok"))
+            ok = viewmodel_events.tool_result_ok(event.get("ok"))
             detail = str(event.get("summary", "")).strip()
         # A failed tool's tail is why; a passed one's is its substance.
         if not ok:
@@ -737,7 +736,7 @@ class TranscriptFold:
         else:
             tail = call_preview
         return [
-            replace(
+            dataclasses.replace(
                 pending,
                 ok=ok,
                 detail=scrub_terminal_controls(detail),
@@ -756,7 +755,7 @@ class TranscriptFold:
             The settled items.
         """
         out = [
-            replace(pending, ok=False, detail=f"no result ({why})")
+            dataclasses.replace(pending, ok=False, detail=f"no result ({why})")
             for pending, _preview in self._pending.values()
         ]
         self._pending.clear()

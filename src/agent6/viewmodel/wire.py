@@ -7,26 +7,20 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any
 
-from agent6.git_ops import branch_exists, chain_ref_for, chain_tip, is_ancestor, merge_stamp_holds
+from agent6 import budget, git_ops
 from agent6.machine import MachineJournal, load_machine
-from agent6.sessions.ipc import worker_is_alive
-from agent6.sessions.layout import LOGS_NAME
-from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
-from agent6.viewmodel.format import format_branch, format_compare, format_lineage, format_usd
-from agent6.viewmodel.machine_state import (
-    AgentExecution,
-    fold_machine,
-    machine_spend,
-    machine_state_as_dict,
-)
-from agent6.viewmodel.state import fold_session, fold_until_commit, session_state_as_dict
-from agent6.viewmodel.tail import tail_events
+from agent6.sessions import ipc, layout
+from agent6.sessions import manifest as sessions_manifest
+from agent6.viewmodel import format, machine_state, tail
+from agent6.viewmodel import state as viewmodel_state
 
 
-def existing_run_branch(manifest: SessionManifest, repo: Path | None) -> str:
+def existing_run_branch(
+    manifest: sessions_manifest.SessionManifest, repo: pathlib.Path | None
+) -> str:
     """Return the run's branch while it exists, else "".
 
     The manifest names the branch at run start and git creates it at the first
@@ -40,12 +34,12 @@ def existing_run_branch(manifest: SessionManifest, repo: Path | None) -> str:
         The branch name, or "" when the manifest names none or the repo lacks it.
     """
     name = manifest.run_branch or ""
-    if not name or (repo is not None and not branch_exists(repo, name)):
+    if not name or (repo is not None and not git_ops.branch_exists(repo, name)):
         return ""
     return name
 
 
-def commits_ref(manifest: SessionManifest, repo: Path) -> str:
+def commits_ref(manifest: sessions_manifest.SessionManifest, repo: pathlib.Path) -> str:
     """Return the ref holding the run's commits, what merge, diff and the footer read.
 
     The chain is the record and the branch a view of it: an operator's commit on the
@@ -60,15 +54,17 @@ def commits_ref(manifest: SessionManifest, repo: Path) -> str:
         The run branch while it exists and still covers the chain, else the chain ref
         while it has a tip, else "" (the run recorded nothing).
     """
-    chain = chain_ref_for(manifest.session_id)
-    head = chain_tip(repo, chain)
+    chain = git_ops.chain_ref_for(manifest.session_id)
+    head = git_ops.chain_tip(repo, chain)
     branch = existing_run_branch(manifest, repo)
-    if branch and (head is None or is_ancestor(repo, head, branch)):
+    if branch and (head is None or git_ops.is_ancestor(repo, head, branch)):
         return branch
     return chain if head is not None else ""
 
 
-def manifest_branches(session_dir: Path, *, repo: Path | None = None) -> dict[str, str]:
+def manifest_branches(
+    session_dir: pathlib.Path, *, repo: pathlib.Path | None = None
+) -> dict[str, str]:
     """Return the run header's branch facts from the session's manifest.
 
     The event fold does not carry them, and an operator needs to see where a run's
@@ -85,13 +81,15 @@ def manifest_branches(session_dir: Path, *, repo: Path | None = None) -> dict[st
         (their one wording), each present when known; empty for a run with no manifest.
     """
     try:
-        manifest = read_manifest(session_dir)
-    except ManifestError:
+        manifest = sessions_manifest.read_manifest(session_dir)
+    except sessions_manifest.ManifestError:
         return {}
     return branch_facts(manifest, repo)
 
 
-def branch_facts(manifest: SessionManifest, repo: Path | None) -> dict[str, str]:
+def branch_facts(
+    manifest: sessions_manifest.SessionManifest, repo: pathlib.Path | None
+) -> dict[str, str]:
     """Return `manifest_branches` for a manifest already read.
 
     Args:
@@ -112,7 +110,7 @@ def branch_facts(manifest: SessionManifest, repo: Path | None) -> dict[str, str]
     stamp = manifest.merged
     merged_into = ""
     if stamp and stamp.into:
-        holds = repo is None or merge_stamp_holds(
+        holds = repo is None or git_ops.merge_stamp_holds(
             repo, manifest.session_id, manifest.run_branch or "", stamp.tip
         )
         merged_into = stamp.into if holds else ""
@@ -120,13 +118,15 @@ def branch_facts(manifest: SessionManifest, repo: Path | None) -> dict[str, str]
         out["merged_into"] = merged_into
     # The line names the manifest's branch when merged, pruned or not, else the existing one.
     named = (manifest.run_branch or "") if merged_into else run_branch
-    line = format_branch(named, manifest.base_branch or "", merged_into)
+    line = format.format_branch(named, manifest.base_branch or "", merged_into)
     if line:
         out["branch_line"] = line
     return out
 
 
-def manifest_header(session_dir: Path, *, repo: Path | None = None) -> dict[str, Any]:
+def manifest_header(
+    session_dir: pathlib.Path, *, repo: pathlib.Path | None = None
+) -> dict[str, Any]:
     """Return the session-header fields the event fold does not carry.
 
     Merged into every session snapshot, one-shot and streamed, so the header a page
@@ -142,20 +142,20 @@ def manifest_header(session_dir: Path, *, repo: Path | None = None) -> dict[str,
         run with no readable manifest.
     """
     try:
-        m = read_manifest(session_dir)
-    except ManifestError:
+        m = sessions_manifest.read_manifest(session_dir)
+    except sessions_manifest.ManifestError:
         return {}
     header: dict[str, Any] = dict(branch_facts(m, repo))
     header["git_control"] = m.git_control
     header["base_sha"] = m.base_sha
-    lineage = format_lineage(m.parent_session_id, m.forked_from_turn, m.forked_from_sha)
+    lineage = format.format_lineage(m.parent_session_id, m.forked_from_turn, m.forked_from_sha)
     if lineage:
         header["forked_from"] = lineage
     if m.worktree is not None:
         header["worktree"] = str(m.worktree)
     if m.compare is not None:
         header["compare"] = m.compare.model_dump(mode="json")
-        line, _rationale = format_compare(m.compare) or ("", "")
+        line, _rationale = format.format_compare(m.compare) or ("", "")
         header["compare"]["line"] = line
     return header
 
@@ -165,7 +165,7 @@ class UnknownStepError(ValueError):
 
 
 def session_snapshot(
-    session_dir: Path, *, repo: Path | None = None, step: str = ""
+    session_dir: pathlib.Path, *, repo: pathlib.Path | None = None, step: str = ""
 ) -> dict[str, Any]:
     """Fold a session's state into the wire dict.
 
@@ -185,24 +185,24 @@ def session_snapshot(
     Raises:
         UnknownStepError: `step` is none of the run's commits.
     """
-    events = tail_events(session_dir / LOGS_NAME, follow=False)
+    events = tail.tail_events(session_dir / layout.LOGS_NAME, follow=False)
     as_of: dict[str, Any] | None = None
     if step:
-        at = fold_until_commit(events, step)
+        at = viewmodel_state.fold_until_commit(events, step)
         if at is None:
             raise UnknownStepError(f"no commit {step} in this run")
         state = at
         as_of = {"iteration": at.steps[-1].iteration, "sha": at.steps[-1].sha}
     else:
-        state = fold_session(events)
-    snap = session_state_as_dict(state, session_dir)
+        state = viewmodel_state.fold_session(events)
+    snap = viewmodel_state.session_state_as_dict(state, session_dir)
     snap["as_of"] = as_of
     snap.update(manifest_header(session_dir, repo=repo))
     return snap
 
 
 def machine_snapshot(
-    machine_dir: Path, *, execution: AgentExecution | None = None
+    machine_dir: pathlib.Path, *, execution: machine_state.AgentExecution | None = None
 ) -> dict[str, Any]:
     """Fold a machine instance's state into the wire dict.
 
@@ -222,13 +222,15 @@ def machine_snapshot(
     """
     spec = load_machine(machine_dir / "machine.asm.toml")
     events = MachineJournal(machine_dir).read()
-    ms = fold_machine(spec, events)
-    d = machine_state_as_dict(ms, machine_dir, execution=execution)
-    spend, in_flight = machine_spend(events, machine_dir, alive=worker_is_alive(machine_dir))
+    ms = machine_state.fold_machine(spec, events)
+    d = machine_state.machine_state_as_dict(ms, machine_dir, execution=execution)
+    spend, in_flight = machine_state.machine_spend(
+        events, machine_dir, alive=ipc.worker_is_alive(machine_dir)
+    )
     d["spend"] = {
         "usd": spend.usd,
         "usd_partial": spend.partial,
-        "text": format_usd(spend.usd, partial=spend.partial),
+        "text": budget.format_usd(spend.usd, partial=spend.partial),
         "input_tokens": spend.input_tokens,
         "output_tokens": spend.output_tokens,
         "in_flight_state": in_flight,

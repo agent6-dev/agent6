@@ -12,11 +12,11 @@ snapshots are not double-printed and a compaction restart shows as a marker.
 
 from __future__ import annotations
 
+import collections
+import dataclasses
 import json
+import pathlib
 import re
-from collections import Counter
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from agent6.providers import result_text
@@ -28,7 +28,7 @@ _GIST_MARKER_PREFIX = ELISION_MARKER_PREFIX + " (distilled)"
 _ELIDED_IDENTITY_RE = re.compile(r": the result of (.+?) was replaced")
 
 
-@dataclass
+@dataclasses.dataclass
 class Turn:
     """One normalized conversation turn, provider-agnostic.
 
@@ -47,7 +47,7 @@ class Turn:
     role: str
     text: str = ""
     thinking: str = ""
-    tool_calls: list[tuple[str, str]] = field(default_factory=list)
+    tool_calls: list[tuple[str, str]] = dataclasses.field(default_factory=list)
     tool_name: str = ""
     seq: int = 0
 
@@ -62,7 +62,7 @@ def transcript_seq(t: dict[str, Any]) -> int:
     return seq if isinstance(seq, int) else 0
 
 
-def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
+def load_transcripts(transcripts_dir: pathlib.Path) -> list[dict[str, Any]]:
     """Load every transcript under a session's transcripts dir, in seq order, all seats.
 
     Args:
@@ -378,7 +378,7 @@ def _elision_marker(prev: list[Any], msgs: list[Any], upto: int) -> str:
         cur_m, prev_m = msgs[i], prev[i]
         if not isinstance(cur_m, dict) or not isinstance(prev_m, dict):
             continue
-        before = Counter(_elision_identity(s) for s in _elided_strings(prev_m))
+        before = collections.Counter(_elision_identity(s) for s in _elided_strings(prev_m))
         for s in _elided_strings(cur_m):
             ident = _elision_identity(s)
             if before[ident] > 0:

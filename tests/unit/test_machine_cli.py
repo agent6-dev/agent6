@@ -12,7 +12,9 @@ import subprocess
 import pytest
 
 from agent6 import paths
+from agent6.app import _setup, machine_agent
 from agent6.machine import MachineJournal
+from agent6.sandbox import detect
 from agent6.sessions import ipc
 from agent6.ui.cli import main
 
@@ -316,7 +318,7 @@ def test_uncommitted_refusal_logs_a_git_error_instead_of_silently_failing(
     def _boom(*_a: object, **_k: object) -> bool:
         raise git_ops.GitError("git index is corrupt")
 
-    monkeypatch.setattr(machine_run, "paths_dirty", _boom)
+    monkeypatch.setattr(git_ops, "paths_dirty", _boom)
     assert machine_run.uncommitted_refusal(f, tmp_path) is None  # fail-open preserved
     err = capsys.readouterr().err
     assert "could not check" in err and "git index is corrupt" in err
@@ -898,7 +900,6 @@ def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A state that pins both provider and model is runnable without a worker default."""
-    from agent6.app.machine import run as run_mod
     from agent6.machine import AgentExecResult
 
     monkeypatch.chdir(tmp_path)
@@ -923,7 +924,7 @@ def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
 
         return run
 
-    monkeypatch.setattr(run_mod, "build_machine_agent_runner", build)
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", build)
     assert main(["--config", str(cfg), "machine", "run", str(machine)]) == 0
 
 
@@ -1242,8 +1243,6 @@ def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
 
     A parked or dead instance gets the note and exit 0, never a marker that ambushes the next run.
     """
-    from agent6.viewmodel import machine_state as machine_state_mod
-
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
@@ -1267,7 +1266,7 @@ def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
     def _alive(_root: pathlib.Path) -> bool:
         return True
 
-    monkeypatch.setattr(machine_state_mod, "worker_is_alive", _alive)  # the verb gate's owner
+    monkeypatch.setattr(ipc, "worker_is_alive", _alive)  # the verb gate's owner
     assert main(["machine", "stop", "waiter_delayed"]) == 0
     assert "stop requested" in capsys.readouterr().out
     assert (wroot / "stop").is_file()
@@ -1326,9 +1325,6 @@ def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`machine run` makes the same protect_git check `run` and `ask` make (`config_refusal`)."""
-    from agent6.app import _session as session_mod
-    from agent6.app.machine import run as run_mod
-
     cfg_home = tmp_path / "cfg"
     (cfg_home / "agent6").mkdir(parents=True, exist_ok=True)
     (cfg_home / "agent6" / "config.toml").write_text(
@@ -1343,12 +1339,12 @@ def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
     class _Env:
         detected_isolation = "hardened"
 
-    monkeypatch.setattr(run_mod, "detect_env", _Env)
+    monkeypatch.setattr(_setup, "detect_env", _Env)
 
     def _hardened(_req: str, _env: object) -> str:
         return "hardened"
 
-    monkeypatch.setattr(session_mod, "resolve_isolation", _hardened)
+    monkeypatch.setattr(detect, "resolve_isolation", _hardened)
     f = workspace / "probe.asm.toml"
     f.write_text(TOOL_PROBE_MACHINE, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 2
@@ -1360,9 +1356,6 @@ def test_run_refuses_a_state_dir_inside_the_workspace(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`machine run` refuses a state base inside the workspace, as `run` does."""
-    from agent6.app import _session as session_mod
-    from agent6.app.machine import run as run_mod
-
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "inside-state"))
     monkeypatch.chdir(tmp_path)
@@ -1370,12 +1363,12 @@ def test_run_refuses_a_state_dir_inside_the_workspace(
     class _Env:
         detected_isolation = "strict"
 
-    monkeypatch.setattr(run_mod, "detect_env", _Env)
+    monkeypatch.setattr(_setup, "detect_env", _Env)
 
     def _strict(_req: str, _env: object) -> str:
         return "strict"
 
-    monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _strict)
     f = tmp_path / "probe.asm.toml"
     f.write_text(TOOL_PROBE_MACHINE, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 2

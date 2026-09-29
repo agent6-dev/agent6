@@ -552,8 +552,6 @@ def test_machine_stop_notes_ended_and_marks_a_live_one(tmp_path: pathlib.Path) -
     """
     from unittest import mock
 
-    from agent6.viewmodel import machine_state as machine_state_mod
-
     inst = _ended_machine(tmp_path, "tiny")
     ok, msg = actions.machine_stop(tmp_path, "tiny")
     assert ok and "ended" in msg and "nothing to stop" in msg  # done, as the CLI answers
@@ -572,9 +570,7 @@ def test_machine_stop_notes_ended_and_marks_a_live_one(tmp_path: pathlib.Path) -
     (inst / "journal.jsonl").write_text(begin, encoding="utf-8")
     ok, msg = actions.machine_stop(tmp_path, "tiny")
     assert ok and "not running" in msg
-    with mock.patch.object(
-        machine_state_mod, "worker_is_alive", return_value=True
-    ):  # the gate's owner
+    with mock.patch.object(ipc, "worker_is_alive", return_value=True):  # the gate's owner
         ok, msg = actions.machine_stop(tmp_path, "tiny")
     assert ok and "stop requested" in msg
     assert (inst / "stop").is_file()

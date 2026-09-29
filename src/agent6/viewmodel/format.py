@@ -13,8 +13,8 @@ from __future__ import annotations
 import time
 from typing import Literal
 
-from agent6.budget import format_usd
-from agent6.sessions.manifest import CompareStamp, ModelBrief
+from agent6 import budget
+from agent6.sessions import manifest
 
 # Text characters, not graphics, so every terminal font renders them.
 TASK_STATUS_GLYPH = {
@@ -27,7 +27,7 @@ TASK_STATUS_GLYPH = {
 }
 
 
-def format_model_route(driver: ModelBrief | None) -> str:
+def format_model_route(driver: manifest.ModelBrief | None) -> str:
     """Return a manifest driver as provider/model, or its model alone, or ""."""
     if driver is None or not driver.model:
         return ""
@@ -156,7 +156,7 @@ def format_cost_cell(usd: float, *, partial: bool = False, plan_points: float | 
         return f"{plan_points:g}pt"
     if usd <= 0 and not partial:
         return ""
-    return format_usd(usd, partial=partial)
+    return budget.format_usd(usd, partial=partial)
 
 
 def budget_usd_text(
@@ -174,11 +174,13 @@ def budget_usd_text(
         The cumulative figure, then this execution's spend against its cap when earlier
         executions spent; `(unlimited)` for a cap of -1.
     """
-    text = format_usd(usd_total, partial=partial)
+    text = budget.format_usd(usd_total, partial=partial)
     if usd_cap > 0:
-        cap = format_usd(usd_cap)
+        cap = budget.format_usd(usd_cap)
         if usd_prior_executions > 0:
-            execution = format_usd(max(0.0, usd_total - usd_prior_executions), partial=partial)
+            execution = budget.format_usd(
+                max(0.0, usd_total - usd_prior_executions), partial=partial
+            )
             return f"{text} · execution {execution} / {cap}"
         return f"{text} / {cap}"
     return f"{text} (unlimited)" if usd_cap == -1 else text
@@ -229,7 +231,7 @@ def format_lineage(parent: str | None, turn: int | None, sha: str | None) -> str
     return f"{parent}@turn {turn}{sha_note}"
 
 
-def format_compare(compare: CompareStamp | None) -> tuple[str, str] | None:
+def format_compare(compare: manifest.CompareStamp | None) -> tuple[str, str] | None:
     """Word a lane's fan-out compare outcome.
 
     Args:
@@ -248,7 +250,7 @@ def format_compare(compare: CompareStamp | None) -> tuple[str, str] | None:
     if compare.ranked_by:
         by = compare.ranked_by
         if compare.judge_cost_usd > 0 or compare.judge_cost_partial:
-            cost = format_usd(compare.judge_cost_usd, partial=compare.judge_cost_partial)
+            cost = budget.format_usd(compare.judge_cost_usd, partial=compare.judge_cost_partial)
             by += f" ({cost})"
         parts.append(by)
     return " · ".join(parts), compare.rationale

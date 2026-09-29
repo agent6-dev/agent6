@@ -10,36 +10,24 @@ folds through `SessionState`.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
+import pathlib
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Any, Literal
 
-from agent6.machine import MachineError, MachineResult, load_machine
-from agent6.machine.journal import (
-    AgentFact,
-    AttemptSpend,
-    JournalError,
-    MachineEnd,
-    MachineJournal,
-    MachineNotify,
-    PendingWait,
-    StepEvent,
-    ToolFact,
-)
-from agent6.machine.spec import MachineSpec
-from agent6.sessions.ipc import worker_is_alive
-from agent6.sessions.layout import LOGS_NAME, machines_root
-from agent6.viewmodel.format import format_transition, machine_state_mark, status_level
-from agent6.viewmodel.state import SessionState, apply_event, fold_session, initial_state
-from agent6.viewmodel.tail import LogTail, tail_events
+from agent6.machine import MachineError, MachineResult, journal, load_machine
+from agent6.machine import spec as machine_spec
+from agent6.sessions import ipc, layout
+from agent6.viewmodel import format
+from agent6.viewmodel import state as viewmodel_state
+from agent6.viewmodel import tail as viewmodel_tail
 
 # Front-ends render notifications as ephemeral surfaces, so only the tail travels.
 _NOTIFY_KEEP = 20
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MachineStateView:
     """One state in the overview: its name, kind and position.
 
@@ -60,11 +48,11 @@ class MachineStateView:
     def __post_init__(self) -> None:
         """Fill `mark` from the position flags when the caller left it empty."""
         if not self.mark:
-            mark = machine_state_mark(is_current=self.is_current, is_visited=self.is_visited)
+            mark = format.machine_state_mark(is_current=self.is_current, is_visited=self.is_visited)
             object.__setattr__(self, "mark", mark)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class TransitionView:
     """One journaled transition: state --label--> goto.
 
@@ -86,7 +74,7 @@ class TransitionView:
     line: str = ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class NotificationView:
     """One journaled `machine.notify` (a state's `notify` message), in order."""
 
@@ -96,7 +84,7 @@ class NotificationView:
     level: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MachineState:
     """A machine instance's folded watch view.
 
@@ -126,19 +114,19 @@ class MachineState:
         return next((s.kind for s in self.states if s.is_current), None)
 
 
-def _transition_view(s: StepEvent) -> TransitionView:
+def _transition_view(s: journal.StepEvent) -> TransitionView:
     """Return a step event as its view, with the detail and line rendered."""
     detail = _fact_detail(s)
-    line = format_transition(s.seq, s.state, s.label, s.goto, detail)
+    line = format.format_transition(s.seq, s.state, s.label, s.goto, detail)
     return TransitionView(
         seq=s.seq, state=s.state, label=s.label, goto=s.goto, detail=detail, line=line
     )
 
 
-def _fact_detail(step: StepEvent) -> str:
+def _fact_detail(step: journal.StepEvent) -> str:
     """Return bounded failure evidence for one transition, "" on success."""
     fact = step.fact
-    if isinstance(fact, ToolFact) and (fact.exit_code != 0 or fact.timed_out):
+    if isinstance(fact, journal.ToolFact) and (fact.exit_code != 0 or fact.timed_out):
         tail = next(
             (
                 ln.strip()
@@ -149,12 +137,12 @@ def _fact_detail(step: StepEvent) -> str:
         )
         head = "timed out" if fact.timed_out else f"exit {fact.exit_code}"
         return f"{head}: {tail[:160]}" if tail else head
-    if isinstance(fact, AgentFact) and fact.outcome != "ok":
+    if isinstance(fact, journal.AgentFact) and fact.outcome != "ok":
         return f"{fact.outcome}: {fact.reason}"[:160]
     return ""
 
 
-def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
+def fold_machine(spec: machine_spec.MachineSpec, events: Sequence[object]) -> MachineState:
     """Fold a machine journal into its watch view.
 
     Args:
@@ -165,8 +153,8 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
         The state: `current` is the last transition's goto, else the initial state;
         a state is visited when any transition entered or left it.
     """
-    steps = [e for e in events if isinstance(e, StepEvent)]
-    end = next((e for e in reversed(events) if isinstance(e, MachineEnd)), None)
+    steps = [e for e in events if isinstance(e, journal.StepEvent)]
+    end = next((e for e in reversed(events) if isinstance(e, journal.MachineEnd)), None)
     current = steps[-1].goto if steps else spec.initial
     visited: set[str] = set()
     for s in steps:
@@ -182,7 +170,7 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
     )
     transitions = tuple(_transition_view(s) for s in steps)
     ended = MachineResult.from_end(end) if end is not None else None
-    notes = [e for e in events if isinstance(e, MachineNotify)]
+    notes = [e for e in events if isinstance(e, journal.MachineNotify)]
     notifications = tuple(
         NotificationView(ts=n.ts, state=n.state, message=n.message, level=n.level)
         for n in notes[-_NOTIFY_KEEP:]
@@ -228,7 +216,7 @@ def machine_status_word(
     return "stopped"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class AgentExecution:
     """The newest agent state's execution as the operator verbs see it.
 
@@ -242,7 +230,7 @@ class AgentExecution:
     blocked_in: str = ""
 
 
-def execution_of(state: SessionState, log: Path) -> AgentExecution:
+def execution_of(state: viewmodel_state.SessionState, log: pathlib.Path) -> AgentExecution:
     """Return the execution a folded state log describes.
 
     Args:
@@ -259,7 +247,7 @@ def execution_of(state: SessionState, log: Path) -> AgentExecution:
     )
 
 
-def newest_agent_execution(machine_dir: Path) -> AgentExecution:
+def newest_agent_execution(machine_dir: pathlib.Path) -> AgentExecution:
     """Return the newest state log's execution from one fold of that log.
 
     A poll loop holds a `NewestExecutionFold` instead.
@@ -273,7 +261,9 @@ def newest_agent_execution(machine_dir: Path) -> AgentExecution:
     log = newest_state_log(machine_dir)
     if log is None:
         return AgentExecution()
-    return execution_of(fold_session(tail_events(log, follow=False)), log)
+    return execution_of(
+        viewmodel_state.fold_session(viewmodel_tail.tail_events(log, follow=False)), log
+    )
 
 
 class NewestExecutionFold:
@@ -288,11 +278,11 @@ class NewestExecutionFold:
     """
 
     def __init__(self) -> None:
-        self._log: Path | None = None
-        self._tail: LogTail | None = None
-        self.state: SessionState = initial_state()
+        self._log: pathlib.Path | None = None
+        self._tail: viewmodel_tail.LogTail | None = None
+        self.state: viewmodel_state.SessionState = viewmodel_state.initial_state()
 
-    def refresh(self, machine_dir: Path) -> Path | None:
+    def refresh(self, machine_dir: pathlib.Path) -> pathlib.Path | None:
         """Fold what the newest state log gained since the last refresh.
 
         Args:
@@ -303,17 +293,21 @@ class NewestExecutionFold:
         """
         log = newest_state_log(machine_dir)
         if log != self._log:
-            self._log, self._tail, self.state = log, LogTail(log) if log else None, initial_state()
+            self._log, self._tail, self.state = (
+                log,
+                viewmodel_tail.LogTail(log) if log else None,
+                viewmodel_state.initial_state(),
+            )
         if self._tail is not None:
             events = self._tail.read()
             if self._tail.rewound:
-                self.state = initial_state()
+                self.state = viewmodel_state.initial_state()
             for event in events:
-                self.state = apply_event(self.state, event)
+                self.state = viewmodel_state.apply_event(self.state, event)
         return log
 
     @property
-    def log(self) -> Path | None:
+    def log(self) -> pathlib.Path | None:
         """The state log the held fold describes, None before any exists."""
         return self._log
 
@@ -322,7 +316,7 @@ class NewestExecutionFold:
         return execution_of(self.state, self._log) if self._log is not None else AgentExecution()
 
 
-def armed_wait(machine_dir: Path, ms: MachineState) -> PendingWait | None:
+def armed_wait(machine_dir: pathlib.Path, ms: MachineState) -> journal.PendingWait | None:
     """Return the persisted wait record when it belongs to this visit of the current state.
 
     The engine's own test: the record names `ms.current` and its transition count.
@@ -337,13 +331,13 @@ def armed_wait(machine_dir: Path, ms: MachineState) -> PendingWait | None:
     Raises:
         JournalError: The wait record is corrupt.
     """
-    pending = MachineJournal(machine_dir).read_pending_wait()
+    pending = journal.MachineJournal(machine_dir).read_pending_wait()
     if pending is None or pending.state != ms.current or pending.seq != len(ms.transitions):
         return None
     return pending
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class InstanceProbes:
     """What an instance dir says beside its fold.
 
@@ -392,7 +386,7 @@ class InstanceProbes:
 
 
 def probe_instance(
-    machine_dir: Path, ms: MachineState, *, execution: AgentExecution | None = None
+    machine_dir: pathlib.Path, ms: MachineState, *, execution: AgentExecution | None = None
 ) -> InstanceProbes:
     """Probe an instance dir beside its fold.
 
@@ -405,19 +399,19 @@ def probe_instance(
     Returns:
         The probes.
     """
-    alive = worker_is_alive(machine_dir)
+    alive = ipc.worker_is_alive(machine_dir)
     if execution is None:
         execution = (
             newest_agent_execution(machine_dir) if ms.ended is None and alive else AgentExecution()
         )
     try:
         parked = armed_wait(machine_dir, ms) is not None
-    except JournalError as exc:
+    except journal.JournalError as exc:
         return InstanceProbes(alive=alive, parked=True, execution=execution, wait_error=str(exc))
     return InstanceProbes(alive=alive, parked=parked, execution=execution)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MachineSummary:
     """One machine-instance row: what a hub or `machine list` shows, uncolored.
 
@@ -438,7 +432,7 @@ class MachineSummary:
     mtime: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Spend:
     """A dollar and token spend, summable so booked and live spend fold.
 
@@ -471,7 +465,7 @@ class Spend:
         )
 
 
-def read_budget_totals(log_path: Path, *, from_offset: int = 0) -> Spend:
+def read_budget_totals(log_path: pathlib.Path, *, from_offset: int = 0) -> Spend:
     """Read the latest running budget totals from an agent state's event log.
 
     Each `budget.update` carries cumulative totals from its call's own tracker, so
@@ -516,7 +510,9 @@ def state_dir_seq(dir_name: str) -> int | None:
     return int(head) if head.isdigit() else None
 
 
-def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple[Spend, str]:
+def machine_spend(
+    events: Sequence[object], root: pathlib.Path, *, alive: bool
+) -> tuple[Spend, str]:
     """Sum a machine instance's spend, the in-flight state's live figure included.
 
     A state books its StepEvent only when it completes, so the running state's log
@@ -534,18 +530,18 @@ def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple
     total = Spend()
     step_seqs: set[int] = set()
     for event in events:
-        if isinstance(event, StepEvent):
+        if isinstance(event, journal.StepEvent):
             step_seqs.add(event.seq)
-            if isinstance(event.fact, AgentFact):
+            if isinstance(event.fact, journal.AgentFact):
                 total += Spend(
                     event.fact.usd,
                     event.fact.input_tokens,
                     event.fact.output_tokens,
                     event.fact.usd_partial,
                 )
-        elif isinstance(event, AttemptSpend):
+        elif isinstance(event, journal.AttemptSpend):
             total += Spend(event.usd, event.input_tokens, event.output_tokens, event.usd_partial)
-        elif isinstance(event, MachineEnd):
+        elif isinstance(event, journal.MachineEnd):
             # An unbooked slice rides on the end; gating on its usd would drop an unpriced one.
             total += Spend(event.usd, event.input_tokens, event.output_tokens, event.usd_partial)
     inflight_state = ""
@@ -558,7 +554,7 @@ def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple
     return total, inflight_state
 
 
-def machine_mtime(machine_dir: Path) -> float:
+def machine_mtime(machine_dir: pathlib.Path) -> float:
     """Return the instance's last activity: the journal's mtime, else the dir's, else 0.0."""
     for candidate in (machine_dir / "journal.jsonl", machine_dir):
         try:
@@ -568,16 +564,16 @@ def machine_mtime(machine_dir: Path) -> float:
     return 0.0
 
 
-def machine_instance_dirs(state_dir: Path) -> list[Path]:
+def machine_instance_dirs(state_dir: pathlib.Path) -> list[pathlib.Path]:
     """Return every machine instance dir under the state dir, newest first."""
-    root = machines_root(state_dir)
+    root = layout.machines_root(state_dir)
     if not root.is_dir():
         return []
     dirs = [d for d in root.iterdir() if d.is_dir() and (d / "machine.asm.toml").is_file()]
     return sorted(dirs, key=machine_mtime, reverse=True)
 
 
-def summarize_machine_dir(machine_dir: Path) -> MachineSummary:
+def summarize_machine_dir(machine_dir: pathlib.Path) -> MachineSummary:
     """Fold an instance dir's spec and journal into its listing row.
 
     Args:
@@ -590,7 +586,7 @@ def summarize_machine_dir(machine_dir: Path) -> MachineSummary:
     mtime = machine_mtime(machine_dir)
     try:
         spec = load_machine(machine_dir / "machine.asm.toml")
-        ms = fold_machine(spec, MachineJournal(machine_dir).read())
+        ms = fold_machine(spec, journal.MachineJournal(machine_dir).read())
     except (MachineError, OSError) as exc:
         first_line = str(exc).split("\n", 1)[0]
         return MachineSummary(machine_dir.name, "", "", "unreadable", first_line, mtime)
@@ -608,9 +604,9 @@ def summarize_machine_dir(machine_dir: Path) -> MachineSummary:
     )
 
 
-def machine_files(cwd: Path) -> list[Path]:
+def machine_files(cwd: pathlib.Path) -> list[pathlib.Path]:
     """Return the `.asm.toml` files a hub offers, from the cwd and its `machines/` subdir."""
-    found: set[Path] = set(cwd.glob("*.asm.toml"))
+    found: set[pathlib.Path] = set(cwd.glob("*.asm.toml"))
     sub = cwd / "machines"
     if sub.is_dir():
         found.update(sub.glob("*.asm.toml"))
@@ -684,7 +680,7 @@ def verb_refusals(
     }
 
 
-def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str]:
+def machine_verb_refusals(machine_dir: pathlib.Path, name: str) -> dict[MachineVerb, str]:
     """Return `verb_refusals` over an instance dir, reading the journal itself.
 
     Args:
@@ -698,8 +694,8 @@ def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str
         return dict.fromkeys(MACHINE_VERBS, f"no machine {name!r}")
     try:
         spec = load_machine(machine_dir / "machine.asm.toml")
-        ms = fold_machine(spec, MachineJournal(machine_dir).read())
-    except (MachineError, JournalError) as exc:
+        ms = fold_machine(spec, journal.MachineJournal(machine_dir).read())
+    except (MachineError, journal.JournalError) as exc:
         return dict.fromkeys(MACHINE_VERBS, f"machine {name!r}: {exc}")
     return probe_instance(machine_dir, ms).refusals(name, ms)
 
@@ -721,7 +717,7 @@ def wait_line(machine_id: str, state: str, wake_at: str) -> str:
     return f"waiting in {state!r} for a poke: {poke}"
 
 
-def verb_answer(machine_dir: Path, name: str, verb: MachineVerb) -> tuple[bool, str]:
+def verb_answer(machine_dir: pathlib.Path, name: str, verb: MachineVerb) -> tuple[bool, str]:
     """Answer a verb before it acts, for every surface.
 
     Args:
@@ -736,18 +732,18 @@ def verb_answer(machine_dir: Path, name: str, verb: MachineVerb) -> tuple[bool, 
     if not machine_dir.is_dir():
         return False, f"no machine {name!r}"
     try:
-        MachineJournal(machine_dir).read()
-    except JournalError as exc:
+        journal.MachineJournal(machine_dir).read()
+    except journal.JournalError as exc:
         return False, f"machine {name!r}: {exc}"
     return True, machine_verb_refusal(machine_dir, name, verb)
 
 
-def machine_verb_refusal(machine_dir: Path, name: str, verb: MachineVerb) -> str:
+def machine_verb_refusal(machine_dir: pathlib.Path, name: str, verb: MachineVerb) -> str:
     """Return why one verb cannot reach a machine now, "" when it can."""
     return machine_verb_refusals(machine_dir, name)[verb]
 
 
-def machine_word_for_dir(ms: MachineState, machine_dir: Path) -> str:
+def machine_word_for_dir(ms: MachineState, machine_dir: pathlib.Path) -> str:
     """Return the status word for an instance with a dir on disk, its probes fed in."""
     return probe_instance(machine_dir, ms).status_word(ms)
 
@@ -760,25 +756,25 @@ def notification_key(n: NotificationView) -> tuple[str, str, str]:
     return (n.ts, n.state, n.message)
 
 
-def newest_state_log(root: Path) -> Path | None:
+def newest_state_log(root: pathlib.Path) -> pathlib.Path | None:
     """Return the newest agent state's journal, the one a watcher follows live, or None."""
     states = root / "states"
     if not states.is_dir():
         return None
 
-    def seq_of(p: Path) -> int:
+    def seq_of(p: pathlib.Path) -> int:
         """Return the dir's seq, -1 for a dir without one."""
         head = p.name.split("-", 1)[0]
         return int(head) if head.isdigit() else -1
 
     for d in sorted((p for p in states.iterdir() if p.is_dir()), key=seq_of, reverse=True):
-        log = d / LOGS_NAME
+        log = d / layout.LOGS_NAME
         if log.is_file():
             return log
     return None
 
 
-def read_complete_lines(path: Path, offset: int) -> tuple[list[str], int]:
+def read_complete_lines(path: pathlib.Path, offset: int) -> tuple[list[str], int]:
     """Read the complete lines a file gained past a byte offset.
 
     Reads bytes: a poll can hit EOF inside a multibyte sequence, where a text-mode
@@ -807,7 +803,7 @@ def read_complete_lines(path: Path, offset: int) -> tuple[list[str], int]:
     return lines, pos
 
 
-@dataclass
+@dataclasses.dataclass
 class MachineWatchCursor:
     """What a live machine watcher has already surfaced.
 
@@ -824,7 +820,7 @@ class MachineWatchCursor:
 
     seen_steps: int = 0
     seen_notifications: set[tuple[str, str, str]] | None = None
-    log_path: Path | None = None
+    log_path: pathlib.Path | None = None
     log_offset: int = 0
 
     def seed_notifications(self, ms: MachineState) -> None:
@@ -849,7 +845,7 @@ class MachineWatchCursor:
                 out.append(n)
         return out
 
-    def advance_log(self, root: Path) -> tuple[Path | None, bool]:
+    def advance_log(self, root: pathlib.Path) -> tuple[pathlib.Path | None, bool]:
         """Follow the newest per-state log under the instance dir.
 
         Args:
@@ -874,7 +870,10 @@ class MachineWatchCursor:
 
 
 def machine_state_as_dict(
-    ms: MachineState, machine_dir: Path | None = None, *, execution: AgentExecution | None = None
+    ms: MachineState,
+    machine_dir: pathlib.Path | None = None,
+    *,
+    execution: AgentExecution | None = None,
 ) -> dict[str, Any]:
     """Return the wire form of a `MachineState`, what `attach --json` and the web serialize.
 
@@ -889,11 +888,11 @@ def machine_state_as_dict(
         The state's fields, plus `status`, `level`, `refusals` and, for a stopped
         machine, `worker_lost`.
     """
-    d = asdict(ms)
+    d = dataclasses.asdict(ms)
     if machine_dir is not None:
         probes = probe_instance(machine_dir, ms, execution=execution)
         d["status"] = probes.status_word(ms)
-        d["level"] = status_level(d["status"])
+        d["level"] = format.status_level(d["status"])
         if d["status"] == "stopped":
             # Resumable, and the wire says so; `ended` stays a durable MachineEnd.
             d["worker_lost"] = {"reason": "no worker running", "state": ms.current}

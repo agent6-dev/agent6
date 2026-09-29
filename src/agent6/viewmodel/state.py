@@ -13,42 +13,23 @@ reads the dir's status probes and manifest.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
+import pathlib
 from collections.abc import Callable, Iterable
-from dataclasses import asdict, dataclass, field, replace
-from pathlib import Path
 from typing import Any, Literal
 
-from agent6.graph.models import owner_note
-from agent6.models.registry import context_window
-from agent6.sessions.ipc import listening_ports
-from agent6.sessions.layout import LOGS_NAME
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.tools.background import SHELLS_DIR, roster_from_dir
-from agent6.viewmodel import events
-from agent6.viewmodel.format import (
-    TASK_STATUS_GLYPH,
-    budget_usd_text,
-    dead_run_note,
-    short_task_id,
-    status_label,
-)
-from agent6.viewmodel.listing import (
-    LIVE_STATUS_WORDS,
-    StatusFacts,
-    needs_new_work,
-    status_for_session_dir,
-    status_word,
-    task_snippet,
-)
-from agent6.viewmodel.log_line import format_log_line, render_args
-from agent6.viewmodel.policy import session_policy
-from agent6.viewmodel.transcript import scrub_terminal_controls
+from agent6.graph import models
+from agent6.models import registry
+from agent6.sessions import ipc, layout
+from agent6.sessions import manifest as sessions_manifest
+from agent6.tools import background
+from agent6.viewmodel import events, format, listing, log_line, policy, transcript
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class TaskNodeView:
     """One node of the live task tree, flattened in DFS pre-order with its depth.
 
@@ -84,10 +65,10 @@ class TaskNodeView:
         """Fill `glyph` from the status when the caller left it empty."""
         if not self.glyph:
             status = "in_progress" if self.is_cursor else self.status
-            object.__setattr__(self, "glyph", TASK_STATUS_GLYPH.get(status, "·"))
+            object.__setattr__(self, "glyph", format.TASK_STATUS_GLYPH.get(status, "·"))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ToolCallView:
     """One tool call in the bounded history.
 
@@ -110,7 +91,7 @@ class ToolCallView:
     call_id: int | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class LogLine:
     """One log line plus the task in focus when it was emitted, so a viewer can filter."""
 
@@ -118,7 +99,7 @@ class LogLine:
     task_id: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class DiffView:
     """One auto-commit diff plus the task in focus when it landed."""
 
@@ -127,7 +108,7 @@ class DiffView:
     sha: str = ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class VerifyView:
     """The last verify gate run.
 
@@ -146,7 +127,7 @@ class VerifyView:
     stderr_tail: str = ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class BudgetView:
     """The run's spend as every surface shows it.
 
@@ -187,7 +168,7 @@ class BudgetView:
     plan_resets_at: float = 0.0
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RoleCall:
     """The last model call and what it streamed.
 
@@ -213,7 +194,7 @@ class RoleCall:
     streamed_thinking: str = ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class CommitStep:
     """One per-step commit of the run, which the dashboards select among."""
 
@@ -246,7 +227,7 @@ def approval_parts(prompt: str) -> tuple[str, str]:
     return prompt, ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ApprovalPrompt:
     """One approval the run asked for.
 
@@ -277,7 +258,7 @@ class ApprovalPrompt:
         return approval_parts(self.prompt)[1]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Question:
     """One question within an `ask_user` prompt.
 
@@ -290,7 +271,7 @@ class Question:
     options: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class QuestionPrompt:
     """An `ask_user` prompt: related questions the operator answers together.
 
@@ -313,7 +294,7 @@ class QuestionPrompt:
     asked_ep: float | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionState:
     """A session's folded state, the read model every front-end paints.
 
@@ -361,7 +342,7 @@ class SessionState:
     last_role: RoleCall | None = None
     tool_calls: tuple[ToolCallView, ...] = ()
     last_verify: VerifyView | None = None
-    budget: BudgetView = field(default_factory=BudgetView)
+    budget: BudgetView = dataclasses.field(default_factory=BudgetView)
     pending_approvals: tuple[ApprovalPrompt, ...] = ()
     pending_questions: tuple[QuestionPrompt, ...] = ()
     log_tail: tuple[LogLine, ...] = ()
@@ -436,21 +417,21 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
     """
     etype = event.get("type", "")
     if not state.session_id and event.get("session_id"):
-        state = replace(state, session_id=str(event["session_id"]))
+        state = dataclasses.replace(state, session_id=str(event["session_id"]))
     # The event's own ts, so replayed history measures idle time from when the run last spoke.
     if (ep := events.event_epoch(event.get("ts"))) is not None:
-        state = replace(state, last_event_ep=ep)
+        state = dataclasses.replace(state, last_event_ep=ep)
     if etype not in STREAM_DELTA_EVENTS and etype not in LOG_NOISE_EVENTS:
         # cursor_task_id is the focus task: graph.update lands before a turn's calls.
-        entry = LogLine(format_log_line(event), state.cursor_task_id)
+        entry = LogLine(log_line.format_log_line(event), state.cursor_task_id)
         new_log = _push_bounded(state.log_tail, entry, MAX_LOG_TAIL)
-        state = replace(state, log_tail=new_log, log_count=state.log_count + 1)
+        state = dataclasses.replace(state, log_tail=new_log, log_count=state.log_count + 1)
 
     match events.parse_event(event):
         case events.SessionStart(user_task=task):
             # The ask REPL re-runs on one log, so a second start clears the prior end.
             # No banking, unlike ResumeStart: the REPL's one tracker is already cumulative.
-            return replace(
+            return dataclasses.replace(
                 state,
                 user_task=task,
                 started=True,
@@ -465,7 +446,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
 
         case events.ResumeStart():
             # The new execution's counters start fresh: bank the spend, zero the rest.
-            return replace(
+            return dataclasses.replace(
                 state,
                 started=True,
                 finished=False,
@@ -475,7 +456,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 last_verify=None,
                 pending_approvals=_answered_only(state.pending_approvals),
                 pending_questions=_answered_only(state.pending_questions),
-                budget=replace(
+                budget=dataclasses.replace(
                     state.budget,
                     usd_prior_executions=state.budget.usd_total,
                     input_total=0,
@@ -491,7 +472,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             )
 
         case events.GraphUpdate(nodes=nodes, cursor=cursor):
-            return replace(
+            return dataclasses.replace(
                 state,
                 tasks=task_tree_views(nodes, cursor),
                 cursor_task_id=cursor,
@@ -501,11 +482,11 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             if not sha:
                 return state
             step = CommitStep(iteration=iteration, sha=sha, subject=subject)
-            return replace(state, steps=(*state.steps, step))
+            return dataclasses.replace(state, steps=(*state.steps, step))
 
         case events.DiffUpdated(patch=patch, sha=sha):
             entry = DiffView(patch=patch, task_id=state.cursor_task_id, sha=sha)
-            return replace(
+            return dataclasses.replace(
                 state,
                 latest_diff=patch,
                 recent_diffs=_push_bounded(state.recent_diffs, entry, _MAX_DIFF_HISTORY),
@@ -513,7 +494,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
 
         case events.RoleCall(role=role, model=model, provider=provider):
             prior = state.last_role
-            return replace(
+            return dataclasses.replace(
                 state,
                 last_role=RoleCall(
                     role=role,
@@ -532,20 +513,20 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             last = state.last_role
             if last is None or not last.in_flight or not piece:
                 return state
-            joined = scrub_terminal_controls(last.streamed_text + piece)
-            return replace(
+            joined = transcript.scrub_terminal_controls(last.streamed_text + piece)
+            return dataclasses.replace(
                 state,
-                last_role=replace(last, streamed_text=joined[-_STREAM_TAIL:]),
+                last_role=dataclasses.replace(last, streamed_text=joined[-_STREAM_TAIL:]),
             )
 
         case events.RoleThinkingDelta(text=piece):
             last = state.last_role
             if last is None or not last.in_flight or not piece:
                 return state
-            joined = scrub_terminal_controls(last.streamed_thinking + piece)
-            return replace(
+            joined = transcript.scrub_terminal_controls(last.streamed_thinking + piece)
+            return dataclasses.replace(
                 state,
-                last_role=replace(last, streamed_thinking=joined[-_STREAM_TAIL:]),
+                last_role=dataclasses.replace(last, streamed_thinking=joined[-_STREAM_TAIL:]),
             )
 
         case events.RoleResult(tokens_in=tin, cache_read=cr, cache_creation=cc):
@@ -553,9 +534,9 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             if last is None:
                 return state
             ctx = tin + cr + cc
-            return replace(
+            return dataclasses.replace(
                 state,
-                last_role=replace(
+                last_role=dataclasses.replace(
                     last, in_flight=False, ctx_tokens=ctx if ctx > 0 else last.ctx_tokens
                 ),
             )
@@ -563,8 +544,8 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
         case events.ToolCall(name=name, args=raw_args, call_id=cid):
             tc = ToolCallView(
                 name=name,
-                args_preview=render_args(raw_args),
-                args_full=render_args(raw_args, max_value=4000),
+                args_preview=log_line.render_args(raw_args),
+                args_full=log_line.render_args(raw_args, max_value=4000),
                 ok=None,
                 task_id=state.cursor_task_id,
                 call_id=cid,
@@ -572,7 +553,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             finish_summary = state.finish_summary
             if name in ("finish_session", "finish_planning") and isinstance(raw_args, dict):
                 finish_summary = str(raw_args.get("summary", "")).strip() or finish_summary
-            return replace(
+            return dataclasses.replace(
                 state,
                 tool_calls=_push_bounded(state.tool_calls, tc, _MAX_TOOL_HISTORY),
                 finish_summary=finish_summary,
@@ -585,8 +566,10 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 # Concurrent seats interleave events, so the matching call may not be the last.
                 for i in range(len(state.tool_calls) - 1, -1, -1):
                     if state.tool_calls[i].call_id == cid:
-                        updated = replace(state.tool_calls[i], ok=ok, result_summary=summary)
-                        return replace(
+                        updated = dataclasses.replace(
+                            state.tool_calls[i], ok=ok, result_summary=summary
+                        )
+                        return dataclasses.replace(
                             state,
                             tool_calls=(
                                 *state.tool_calls[:i],
@@ -598,19 +581,19 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             last = state.tool_calls[-1]
             if last.name != name:
                 return state
-            updated_last = replace(last, ok=ok, result_summary=summary)
-            return replace(
+            updated_last = dataclasses.replace(last, ok=ok, result_summary=summary)
+            return dataclasses.replace(
                 state,
                 tool_calls=(*state.tool_calls[:-1], updated_last),
             )
 
         case events.VerifyStart(cmd=cmd):
-            return replace(state, last_verify=VerifyView(cmd=cmd))
+            return dataclasses.replace(state, last_verify=VerifyView(cmd=cmd))
 
         case events.VerifyEnd(
             cmd=cmd, exit_code=code, duration_s=dur, stdout_tail=out, stderr_tail=err
         ):
-            return replace(
+            return dataclasses.replace(
                 state,
                 last_verify=VerifyView(
                     cmd=cmd, exit_code=code, duration_s=dur, stdout_tail=out, stderr_tail=err
@@ -633,7 +616,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             plan_resets_at=plan_resets,
         ):
             # The event's usd_total is this execution's; the view's is cumulative.
-            return replace(
+            return dataclasses.replace(
                 state,
                 budget=BudgetView(
                     input_total=it,
@@ -655,14 +638,14 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
 
         case events.ApprovalPrompt(id=aid, prompt=prompt, standing=standing, asked_ep=asked_ep):
             ap = ApprovalPrompt(id=aid, prompt=prompt, standing=standing, asked_ep=asked_ep)
-            return replace(state, pending_approvals=(*state.pending_approvals, ap))
+            return dataclasses.replace(state, pending_approvals=(*state.pending_approvals, ap))
 
         case events.ApprovalAnswer(id=wanted_id, approved=approved):
             new = tuple(
-                replace(a, answered=True, approved=approved) if a.id == wanted_id else a
+                dataclasses.replace(a, answered=True, approved=approved) if a.id == wanted_id else a
                 for a in state.pending_approvals
             )
-            return replace(state, pending_approvals=new)
+            return dataclasses.replace(state, pending_approvals=new)
 
         case events.QuestionPrompt(id=qid, questions=qs, asked_ep=asked_ep):
             questions = tuple(Question(question=q.question, options=q.options) for q in qs)
@@ -672,44 +655,44 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 from_harness=not state.started or state.finished,
                 asked_ep=asked_ep,
             )
-            return replace(state, pending_questions=(*state.pending_questions, qp))
+            return dataclasses.replace(state, pending_questions=(*state.pending_questions, qp))
 
         case events.QuestionAnswer(id=wanted, answers=answers, unseen=unseen):
             new_q = tuple(
-                replace(q, answered=True, answers=answers) if q.id == wanted else q
+                dataclasses.replace(q, answered=True, answers=answers) if q.id == wanted else q
                 for q in state.pending_questions
             )
             # Counted per event: prompt ids restart on every execution.
-            return replace(
+            return dataclasses.replace(
                 state,
                 pending_questions=new_q,
                 unattended_questions=state.unattended_questions + (1 if unseen else 0),
             )
 
         case events.PinAdded(text=text):
-            return replace(state, pins=(*state.pins, text))
+            return dataclasses.replace(state, pins=(*state.pins, text))
 
         case events.PinsRestored(pins=pins):
-            return replace(state, pins=pins)
+            return dataclasses.replace(state, pins=pins)
 
         case events.CompactRestored(elided=elided, gists=gists):
-            return replace(state, compact_elided=elided, compact_gists_live=gists)
+            return dataclasses.replace(state, compact_elided=elided, compact_gists_live=gists)
 
         case events.CompactDropped(n=n):
-            return replace(state, compact_elided=state.compact_elided + n)
+            return dataclasses.replace(state, compact_elided=state.compact_elided + n)
 
         case events.CompactGists(gisted=gisted, demoted=demoted):
             live = max(0, state.compact_gists_live + gisted - demoted)
-            return replace(state, compact_gists_live=live)
+            return dataclasses.replace(state, compact_gists_live=live)
 
         case events.CompactSummarised():
-            return replace(state, compact_elided=0, compact_gists_live=0)
+            return dataclasses.replace(state, compact_elided=0, compact_gists_live=0)
 
         case events.SteerRequested():
-            return replace(state, steer_requests=state.steer_requests + 1)
+            return dataclasses.replace(state, steer_requests=state.steer_requests + 1)
 
         case events.SessionEnd(all_passed=all_passed, reason=reason, scoped=scoped):
-            return replace(
+            return dataclasses.replace(
                 state,
                 finished=True,
                 all_passed=all_passed,
@@ -718,7 +701,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             )
 
         case events.SessionUndone(new_session_id=new_id, undone_text=text):
-            return replace(state, undone_to=new_id, undone_text=text)
+            return dataclasses.replace(state, undone_to=new_id, undone_text=text)
 
         case events.RawEvent():
             return state
@@ -756,12 +739,12 @@ def task_tree_views(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNode
                 is_cursor=(nid == cursor),
                 created_by=created_by,
                 standing=standing,
-                note=owner_note(
+                note=models.owner_note(
                     created_by=created_by,
                     parent_id=str(parent_id) if isinstance(parent_id, str) else None,
                     standing=standing,
                 ),
-                short_id=short_task_id(nid),
+                short_id=format.short_task_id(nid),
             )
         )
         children = node.get("children", ())
@@ -826,22 +809,24 @@ def open_approval_of(
     )
 
 
-def open_approval(session_dir: Path) -> ApprovalPrompt | None:
+def open_approval(session_dir: pathlib.Path) -> ApprovalPrompt | None:
     """Return the run's open approval from its journal, or None when none is open."""
-    from agent6.viewmodel.tail import tail_events  # noqa: PLC0415  # cycle at import time
+    from agent6.viewmodel import tail  # noqa: PLC0415  # cycle at import time  # noqa: PLC0415  # cycle at import time
 
-    return open_approval_of(fold_session(tail_events(session_dir / LOGS_NAME, follow=False)))
+    return open_approval_of(
+        fold_session(tail.tail_events(session_dir / layout.LOGS_NAME, follow=False))
+    )
 
 
-def open_question(session_dir: Path) -> QuestionPrompt | None:
+def open_question(session_dir: pathlib.Path) -> QuestionPrompt | None:
     """Return the run's oldest unanswered `ask_user` prompt, or None when none is open.
 
     Every surface that writes an answer file checks against it, so an answer list of
     the wrong length is refused rather than thrown away by the asking side.
     """
-    from agent6.viewmodel.tail import tail_events  # noqa: PLC0415  # cycle at import time
+    from agent6.viewmodel import tail  # noqa: PLC0415  # cycle at import time  # noqa: PLC0415  # cycle at import time
 
-    state = fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
+    state = fold_session(tail.tail_events(session_dir / layout.LOGS_NAME, follow=False))
     return next((q for q in state.pending_questions if not q.answered), None)
 
 
@@ -866,7 +851,7 @@ def fold_until_commit(events: Iterable[dict[str, Any]], sha: str) -> SessionStat
     return None
 
 
-def status_facts(state: SessionState) -> StatusFacts:
+def status_facts(state: SessionState) -> listing.StatusFacts:
     """Return the fold's answers to the status questions.
 
     The typed twin of `LogScan.status_facts`; the two agree on the same log.
@@ -881,7 +866,7 @@ def status_facts(state: SessionState) -> StatusFacts:
         ("approval", a.asked_ep) for a in state.pending_approvals if not a.answered
     ] + [("question", q.asked_ep) for q in state.pending_questions if not q.answered]
     oldest = min(pending, key=lambda p: p[1] if p[1] is not None else float("inf"), default=None)
-    return StatusFacts(
+    return listing.StatusFacts(
         started=state.started,
         finished=state.finished,
         all_passed=state.all_passed,
@@ -900,7 +885,7 @@ def status_facts(state: SessionState) -> StatusFacts:
 @functools.lru_cache(maxsize=64)
 def _window(provider: str, model: str) -> int | None:
     """Return the model's context window, memoised since every surface asks per heartbeat."""
-    return context_window(provider, model)
+    return registry.context_window(provider, model)
 
 
 def context_fill(state: SessionState) -> int | None:
@@ -924,7 +909,9 @@ def context_fill(state: SessionState) -> int | None:
     return min(100, round(100 * role.ctx_tokens / window))
 
 
-def session_state_as_dict(state: SessionState, session_dir: Path | None = None) -> dict[str, Any]:
+def session_state_as_dict(
+    state: SessionState, session_dir: pathlib.Path | None = None
+) -> dict[str, Any]:
     """Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
     Args:
@@ -941,12 +928,12 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
         `dead_state`, `operator_blocked`, the rendered budget text, approval parts and
         step labels, and `log_tail` as plain strings.
     """
-    d = asdict(state)
+    d = dataclasses.asdict(state)
     d["context_pct"] = context_fill(state)
-    d["needs_new_work"] = needs_new_work(
+    d["needs_new_work"] = listing.needs_new_work(
         finished=state.finished, end_reason=state.end_reason, all_passed=state.all_passed
     )
-    d["budget"]["usd_text"] = budget_usd_text(
+    d["budget"]["usd_text"] = format.budget_usd_text(
         state.budget.usd_total,
         partial=state.budget.usd_partial,
         usd_cap=state.budget.usd_cap,
@@ -959,25 +946,25 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     current = open_approval_of(state)
     d["open_approval"] = None if current is None else current.id
     if session_dir is not None:
-        word, reason = status_for_session_dir(session_dir, status_facts(state))
-        d["live"] = word in LIVE_STATUS_WORDS
-        d["policy"] = session_policy(session_dir).line()
+        word, reason = listing.status_for_session_dir(session_dir, status_facts(state))
+        d["live"] = word in listing.LIVE_STATUS_WORDS
+        d["policy"] = policy.session_policy(session_dir).line()
         # A forked execution's log opens at loop.resume.start and folds its identity empty.
         d["session_id"] = d["session_id"] or session_dir.name
         d["mode"] = d.get("mode") or ""
-        with contextlib.suppress(ManifestError):
-            manifest = read_manifest(session_dir)
+        with contextlib.suppress(sessions_manifest.ManifestError):
+            manifest = sessions_manifest.read_manifest(session_dir)
             d["user_task"] = d["user_task"] or manifest.user_task
             d["mode"] = d["mode"] or manifest.mode
-        d["ports"] = listening_ports(session_dir)
+        d["ports"] = ipc.listening_ports(session_dir)
         # On every frame: the run view streams from this dict.
-        d["shells"] = roster_from_dir(session_dir / SHELLS_DIR)
+        d["shells"] = background.roster_from_dir(session_dir / background.SHELLS_DIR)
         if d["mode"] == "plan":
             with contextlib.suppress(OSError):
                 d["plan_md"] = (session_dir / "plan.md").read_text(encoding="utf-8")
     else:
         d["live"] = None
-        word, reason = status_word(
+        word, reason = listing.status_word(
             finished=state.finished,
             all_passed=state.all_passed,
             end_reason=state.end_reason,
@@ -985,9 +972,9 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
             gate_red=status_facts(state).gate_red,
         )
     d["status"] = word
-    d["status_label"] = status_label(word, reason)
-    d["task_line"] = task_snippet(d["user_task"])
-    d["dead_state"] = dead_run_note(word, reason)[0]
+    d["status_label"] = format.status_label(word, reason)
+    d["task_line"] = listing.task_snippet(d["user_task"])
+    d["dead_state"] = format.dead_run_note(word, reason)[0]
     # From the fold, so a dir-less consumer still gets the "blocked, not working" signal.
     d["operator_blocked"] = status_facts(state).operator_blocked
     d["log_tail"] = [line.text for line in state.log_tail]

@@ -15,9 +15,9 @@ place, where a pydantic model would impose its own coercion and failure semantic
 
 from __future__ import annotations
 
+import dataclasses
+import datetime
 import json
-from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 # A fresh run emits session.start; a resumed execution emits only loop.resume.start.
@@ -41,7 +41,7 @@ def event_epoch(value: object) -> float | None:
         return float(value)
     if isinstance(value, str):
         try:
-            return datetime.fromisoformat(value).timestamp()
+            return datetime.datetime.fromisoformat(value).timestamp()
         except ValueError:
             return None
     return None
@@ -90,19 +90,19 @@ def as_int(value: object) -> int:
         return 0
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionStart:
     """session.start: a fresh run began on the task text."""
 
     user_task: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ResumeStart:
     """loop.resume.start: a finished or stopped run restarts in place."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class GraphUpdate:
     """graph.update: the task tree and its cursor.
 
@@ -116,7 +116,7 @@ class GraphUpdate:
     cursor: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class DiffUpdated:
     """diff.updated: the run's cumulative patch and the commit it reaches."""
 
@@ -124,7 +124,7 @@ class DiffUpdated:
     sha: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class AutoCommit:
     """One per-step commit on the run's chain (`loop.auto_commit`)."""
 
@@ -133,7 +133,7 @@ class AutoCommit:
     subject: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RoleCall:
     """role.call: a model call began for a role."""
 
@@ -142,7 +142,7 @@ class RoleCall:
     provider: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RoleResult:
     """role.result: a model call returned, with its input token counts."""
 
@@ -151,21 +151,21 @@ class RoleResult:
     cache_creation: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RoleTextDelta:
     """role.text_delta: a streamed piece of the assistant's text."""
 
     text: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RoleThinkingDelta:
     """role.thinking_delta: a streamed piece of the assistant's thinking."""
 
     text: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ToolCall:
     """tool.call: a tool was dispatched.
 
@@ -181,7 +181,7 @@ class ToolCall:
     call_id: int | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ToolResult:
     """tool.result: a tool returned.
 
@@ -198,14 +198,14 @@ class ToolResult:
     call_id: int | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class VerifyStart:
     """verify.start: the verify gate began running its command."""
 
     cmd: tuple[str, ...]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class VerifyEnd:
     """verify.end: the verify gate finished, with its exit code and output tails."""
 
@@ -216,7 +216,7 @@ class VerifyEnd:
     stderr_tail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class BudgetUpdate:
     """budget.update: the cumulative token and spend figures.
 
@@ -252,7 +252,7 @@ class BudgetUpdate:
     plan_resets_at: float = 0.0
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ApprovalPrompt:
     """approval.prompt: the run is waiting for an operator's yes or no.
 
@@ -274,7 +274,7 @@ class ApprovalPrompt:
     call_id: int | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ApprovalAnswer:
     """approval.answer: an operator answered an approval prompt."""
 
@@ -282,7 +282,7 @@ class ApprovalAnswer:
     approved: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class EventQuestion:
     """One question of a question.prompt, with its offered options."""
 
@@ -290,7 +290,7 @@ class EventQuestion:
     options: tuple[str, ...]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class QuestionPrompt:
     """question.prompt: the run is waiting for an operator's answers.
 
@@ -307,7 +307,7 @@ class QuestionPrompt:
     call_id: int | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class QuestionAnswer:
     """question.answer: the answers to a question prompt.
 
@@ -322,14 +322,14 @@ class QuestionAnswer:
     unseen: bool = False
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class PinAdded:
     """loop.pin.added: an operator /pin instruction was recorded."""
 
     text: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class PinsRestored:
     """loop.pin.restored: a resume or fork execution restored the snapshot's pins.
 
@@ -339,7 +339,7 @@ class PinsRestored:
     pins: tuple[str, ...]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class CompactRestored:
     """loop.compact.restored: the elision markers a restored context carries.
 
@@ -350,7 +350,7 @@ class CompactRestored:
     gists: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class CompactDropped:
     """loop.compact.dropped: tier-1 elision, with the elided call identities."""
 
@@ -358,7 +358,7 @@ class CompactDropped:
     calls: tuple[str, ...]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class CompactGists:
     """loop.compact.gists: gists created and demoted in a tier-1 pass."""
 
@@ -366,7 +366,7 @@ class CompactGists:
     demoted: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class CompactSummarised:
     """loop.compact.summarise.done: a tier-2 restart replaced the history.
 
@@ -374,12 +374,12 @@ class CompactSummarised:
     """
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SteerRequested:
     """session.steer_requested: an operator Ctrl-C mid-run."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionEnd:
     """session.end: the execution ended.
 
@@ -396,7 +396,7 @@ class SessionEnd:
     scoped: bool = False
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionUndone:
     """session.undone: /undo forked this run.
 
@@ -407,7 +407,7 @@ class SessionUndone:
     undone_text: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RawEvent:
     """Any event the fold does not consume: telemetry, unknown types, a line with no type.
 
@@ -415,7 +415,7 @@ class RawEvent:
     """
 
     type: str
-    raw: dict[str, Any] = field(default_factory=dict)
+    raw: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
 Event = (

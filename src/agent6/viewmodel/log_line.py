@@ -7,8 +7,7 @@ from __future__ import annotations
 import shlex
 from typing import Any
 
-from agent6.viewmodel import events
-from agent6.viewmodel.transcript import scrub_terminal_controls
+from agent6.viewmodel import events, transcript
 
 
 def _edit_kind(edit: dict[str, object]) -> str:
@@ -209,5 +208,5 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
     # The scrubber keeps newlines for transcripts; a provider error's SSE dump would paint rows.
     if not salient:
         return line
-    scrubbed = scrub_terminal_controls(f"{line} {salient}")
+    scrubbed = transcript.scrub_terminal_controls(f"{line} {salient}")
     return " ".join(scrubbed.split("\n"))

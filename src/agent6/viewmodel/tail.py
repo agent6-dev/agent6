@@ -5,14 +5,14 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import time
 from collections.abc import Callable, Iterator
-from pathlib import Path
 from typing import Any
 
 
 def tail_events(
-    path: Path,
+    path: pathlib.Path,
     *,
     poll_s: float = 0.25,
     follow: bool = True,
@@ -113,7 +113,7 @@ def _complete_lines(buffer: bytes, base: int) -> tuple[list[tuple[int, dict[str,
     return parsed, lines[-1]
 
 
-def journal_size(path: Path) -> int:
+def journal_size(path: pathlib.Path) -> int:
     """Return the journal's size in bytes, 0 when it does not exist yet."""
     try:
         return path.stat().st_size
@@ -143,7 +143,7 @@ class LogTail:
             and started over from its head, so a holder folding the events starts over too.
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: pathlib.Path) -> None:
         self._path = path
         self._pos = 0
         self._pending = b""

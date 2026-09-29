@@ -11,15 +11,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from agent6.viewmodel.transcript import (
-    CALL,
-    COMMIT,
-    DONE,
-    OPERATOR,
-    RESULT,
-    THINK,
-    TranscriptItem,
-)
+from agent6.viewmodel import transcript
 
 StyleName = Literal[
     "thinking",
@@ -52,7 +44,7 @@ TAIL_CLIP = 120
 DETAIL_CLIP = 120
 
 
-def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
+def _tool_lines(item: transcript.TranscriptItem, *, expanded: bool) -> list[Line]:
     """Render a tool call: the head, then the result under it.
 
     The result glyph carries the pass or fail colour; the detail is its own neutral
@@ -66,7 +58,7 @@ def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
         The lines; an in-flight call is its head alone, marked running.
     """
     head_style: StyleName = "verify" if item.name == "run_verify_command" else "call"
-    head: Line = [(f"{CALL} {item.name}", head_style)]
+    head: Line = [(f"{transcript.CALL} {item.name}", head_style)]
     if item.arg:
         head.append((f"  {item.arg}", "arg"))
     if item.ok is None:
@@ -76,13 +68,16 @@ def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
     detail_lines = item.detail.split("\n")
     long = len(detail_lines) > 1 or len(detail_lines[0]) > DETAIL_CLIP
     if expanded and long:
-        lines: list[Line] = [head, [(f"  {RESULT} ", glyph), (detail_lines[0], "detail")]]
+        lines: list[Line] = [
+            head,
+            [(f"  {transcript.RESULT} ", glyph), (detail_lines[0], "detail")],
+        ]
         lines.extend([(f"      {ln}", "detail")] for ln in detail_lines[1:])
     else:
         reason = detail_lines[0]
         if len(reason) > DETAIL_CLIP:
             reason = reason[: DETAIL_CLIP - 1] + "…"
-        result: Line = [(f"  {RESULT} ", glyph), (reason, "detail")]
+        result: Line = [(f"  {transcript.RESULT} ", glyph), (reason, "detail")]
         extra = len(detail_lines) - 1
         if extra:
             result.append((f"  (+{extra} more line{'' if extra == 1 else 's'})", "more"))
@@ -97,7 +92,7 @@ def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
     return lines
 
 
-def _thinking_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
+def _thinking_lines(item: transcript.TranscriptItem, *, expanded: bool) -> list[Line]:
     """Render a reasoning block.
 
     Args:
@@ -110,20 +105,20 @@ def _thinking_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
     """
     if expanded:
         body_lines = item.body.split("\n")
-        out: list[Line] = [[(f"{THINK} ", "think-marker"), (body_lines[0], "thinking")]]
+        out: list[Line] = [[(f"{transcript.THINK} ", "think-marker"), (body_lines[0], "thinking")]]
         out.extend([(f"  {ln}", "thinking")] for ln in body_lines[1:])
         return out
     n = item.body.count("\n") + 1
     first = next((ln.strip() for ln in item.body.split("\n") if ln.strip()), "")
     if len(first) > DETAIL_CLIP:
         first = first[: DETAIL_CLIP - 1] + "…"
-    line: Line = [(f"{THINK} ", "think-marker"), (first, "thinking")]
+    line: Line = [(f"{transcript.THINK} ", "think-marker"), (first, "thinking")]
     if n > 1:
         line.append((f"  (+{n - 1} more line{'' if n == 2 else 's'})", "more"))
     return [line]
 
 
-def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
+def item_lines(item: transcript.TranscriptItem, *, detail: DetailLevel) -> list[Line]:
     """Render one folded conversation item as styled lines.
 
     Args:
@@ -144,10 +139,10 @@ def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
         lines.extend(_tool_lines(item, expanded=detail == "expanded"))
     elif item.kind == "operator":
         body_lines = item.body.split("\n")
-        lines.append([(f"{OPERATOR} ", "operator"), (body_lines[0], "operator")])
+        lines.append([(f"{transcript.OPERATOR} ", "operator"), (body_lines[0], "operator")])
         lines.extend([(f"  {ln}", "operator")] for ln in body_lines[1:])
     elif item.kind == "commit":
-        lines.append([(f"{COMMIT} commit  {item.detail}", "commit")])
+        lines.append([(f"{transcript.COMMIT} commit  {item.detail}", "commit")])
     elif item.kind == "marker":
         body_lines = item.body.split("\n")
         lines.append([(f"── {body_lines[0]} ──", "marker")])
@@ -156,7 +151,7 @@ def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
         # Neutral for an end no gate judged: a gateless finish, a stop, an undo.
         badge: Line = [
             (
-                f"{DONE} {item.name}",
+                f"{transcript.DONE} {item.name}",
                 "done-ok" if item.ok else "done-fail" if item.ok is False else "done-neutral",
             )
         ]

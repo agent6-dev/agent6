@@ -25,8 +25,8 @@ Modules:
 
 from __future__ import annotations
 
-from agent6.viewmodel.events import event_epoch
-from agent6.viewmodel.listing import (
+from agent6.viewmodel.events import event_epoch  # noqa: ICN003  # re-export
+from agent6.viewmodel.listing import (  # noqa: ICN003  # re-export
     LIVE_STATUS_WORDS,
     LogScan,
     SessionSummary,
@@ -47,8 +47,8 @@ from agent6.viewmodel.listing import (
     summary_row,
     task_snippet,
 )
-from agent6.viewmodel.log_line import format_log_line
-from agent6.viewmodel.machine_state import (
+from agent6.viewmodel.log_line import format_log_line  # noqa: ICN003  # re-export
+from agent6.viewmodel.machine_state import (  # noqa: ICN003  # re-export
     AgentExecution,
     InstanceProbes,
     MachineState,
@@ -76,8 +76,8 @@ from agent6.viewmodel.machine_state import (
     summarize_machine_dir,
     verb_answer,
 )
-from agent6.viewmodel.policy import session_policy
-from agent6.viewmodel.state import (
+from agent6.viewmodel.policy import session_policy  # noqa: ICN003  # re-export
+from agent6.viewmodel.state import (  # noqa: ICN003  # re-export
     MAX_LOG_TAIL,
     ApprovalPrompt,
     BudgetView,
@@ -97,8 +97,8 @@ from agent6.viewmodel.state import (
     status_facts,
     task_tree_views,
 )
-from agent6.viewmodel.tail import LogTail, tail_events
-from agent6.viewmodel.transcript import (
+from agent6.viewmodel.tail import LogTail, tail_events  # noqa: ICN003  # re-export
+from agent6.viewmodel.transcript import (  # noqa: ICN003  # re-export
     TranscriptFold,
     TranscriptItem,
     fold_transcript,
@@ -107,7 +107,7 @@ from agent6.viewmodel.transcript import (
     salient_arg,
     worker_models,
 )
-from agent6.viewmodel.wire import (
+from agent6.viewmodel.wire import (  # noqa: ICN003  # re-export
     UnknownStepError,
     existing_run_branch,
     machine_snapshot,
