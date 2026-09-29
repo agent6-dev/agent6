@@ -68,7 +68,7 @@ from agent6.git_ops import (
     run_branch_for,
 )
 from agent6.git_ops import status as git_status
-from agent6.memory import merge_decisions, merge_memory, seed_store
+from agent6.memory import merge_decisions, merge_memory, merge_use, seed_store
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, mkdir_for_real_user, repo_id, state_dir
 from agent6.sessions.ipc import (
@@ -805,6 +805,7 @@ def carry_back(
         reporter.note(f"lane {lane}: {carried} recorded decision(s) carried over{already}")
     held_dir = dest / "memory-held"
     merge = merge_memory(lane_state, origin_state, held_dir=held_dir)
+    used, read = merge_use(lane_state, origin_state, written=(*merge.carried, *merge.updated))
     parts = [
         f"{len(names)} {word}"
         for word, names in (
@@ -819,6 +820,8 @@ def carry_back(
         parts.append(
             f"held back (changed here too, or the name is taken): {', '.join(merge.held)}{kept}"
         )
+    if used or read:
+        parts.append(f"use record carried for {max(used, read)}")
     if parts:
         reporter.note(f"lane {lane}: memory {', '.join(parts)}")
 

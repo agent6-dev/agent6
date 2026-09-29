@@ -16,7 +16,7 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Collection, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -188,6 +188,58 @@ def _record_use_unlocked(
             read_at=stamp,
         )
     _write_use(state_dir, use)
+
+
+def merge_use(
+    src_state_dir: Path, dst_state_dir: Path, *, written: Collection[str]
+) -> tuple[int, int]:
+    """Carry a lane's use record into the origin's at import, before the
+    lane's state dir goes: its writes of the facts *written* (the names
+    `merge_memory` carried or updated) and its reads of facts the origin
+    holds. Returns (entries whose writers were carried, entries whose reads
+    were folded)."""
+    theirs_all = read_use(src_state_dir)
+    if not theirs_all:
+        return 0, 0
+    with _locked_memory(dst_state_dir):
+        ours_all = read_use(dst_state_dir)
+        held = {p.stem for p in memory_dir(dst_state_dir).glob("*.md")}
+        carried = folded = 0
+        for name, theirs in theirs_all.items():
+            ours = ours_all.get(name, MemoryUse())
+            changed = False
+            if name in written and theirs.writers:
+                ours = MemoryUse(
+                    created_by=ours.created_by or theirs.created_by,
+                    created_at=ours.created_at or theirs.created_at,
+                    updated_by=theirs.updated_by or ours.updated_by,
+                    updated_at=theirs.updated_at or ours.updated_at,
+                    writers=tuple(dict.fromkeys((*ours.writers, *theirs.writers))),
+                    reads=ours.reads,
+                    read_by=ours.read_by,
+                    read_at=ours.read_at,
+                )
+                carried += 1
+                changed = True
+            if theirs.reads and (name in written or name in held):
+                later = theirs if theirs.read_at >= ours.read_at else ours
+                ours = MemoryUse(
+                    created_by=ours.created_by,
+                    created_at=ours.created_at,
+                    updated_by=ours.updated_by,
+                    updated_at=ours.updated_at,
+                    writers=ours.writers,
+                    reads=ours.reads + theirs.reads,
+                    read_by=later.read_by,
+                    read_at=later.read_at,
+                )
+                folded += 1
+                changed = True
+            if changed:
+                ours_all[name] = ours
+        if carried or folded:
+            _write_use(dst_state_dir, ours_all)
+    return carried, folded
 
 
 def _write_use(state_dir: Path, use: Mapping[str, MemoryUse]) -> None:

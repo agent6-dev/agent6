@@ -603,3 +603,42 @@ def test_index_name_reads_the_entry_a_line_names() -> None:
     assert index_name("* other-fact : x") == "other-fact"
     assert index_name("not an entry") is None
     assert index_name("- Bad Name: x") is None
+
+
+def test_merge_use_carries_a_lanes_record_into_the_origin(tmp_path: Path) -> None:
+    """A --parallel lane's use record died with its state dir: the origin
+    never named the lane as a fact's writer or reader."""
+    from agent6.memory import merge_use
+
+    origin, lane = tmp_path / "origin", tmp_path / "lane"
+    record_use(origin, session="run-o", wrote=("shared",), read={"shared": 1}, when=0.0)
+    record_use(
+        lane, session="lane-1", wrote=("shared", "fresh"), read={"shared": 2, "gone": 1}, when=60.0
+    )
+    merged, reads = merge_use(lane, origin, written=("shared", "fresh"))
+    assert (merged, reads) == (2, 1)  # two writers carried; one fact read (gone was never held)
+    use = read_use(origin)
+    assert use["shared"].writers == ("run-o", "lane-1")
+    assert (use["shared"].created_by, use["shared"].updated_by) == ("run-o", "lane-1")
+    assert (use["shared"].reads, use["shared"].read_by) == (3, "lane-1")
+    assert use["fresh"].created_by == "lane-1"
+    assert "gone" not in use  # a read of a fact the origin never held travels nowhere
+    # Nothing to carry leaves the origin alone.
+    assert merge_use(tmp_path / "empty", origin, written=()) == (0, 0)
+
+
+def test_carry_back_lands_a_lanes_use_record(tmp_path: Path) -> None:
+    """The lane import carried the facts and the rulings and dropped the use
+    record with the lane's state dir."""
+    from agent6.app.parallel import carry_back
+    from agent6.app.reporter import Reporter
+
+    origin, lane, dest = tmp_path / "origin", tmp_path / "lane", tmp_path / "dest"
+    add(lane, "lane-fact", "A fact the lane found.")
+    record_use(lane, session="lane-1", wrote=("lane-fact",), read={"lane-fact": 2})
+    said: list[str] = []
+    carry_back(lane, origin, dest, lane=1, reporter=Reporter(out=said.append, err=said.append))
+    use = read_use(origin)
+    assert use["lane-fact"].writers == ("operator", "lane-1")
+    assert use["lane-fact"].reads == 2
+    assert any("use record carried for 1" in line for line in said)
