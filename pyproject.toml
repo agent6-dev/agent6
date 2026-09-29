@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agent6 = "agent6.ui.cli:cli_main"
+agent6 = "agent6.ui.cli.entry:cli_main"
 
 [build-system]
 requires = ["hatchling"]
@@ -355,6 +355,7 @@ banned-from = [
     "agent6.ui.cli.completions_cmd",
     "agent6.ui.cli.config_cmds",
     "agent6.ui.cli.connect",
+    "agent6.ui.cli.entry",
     "agent6.ui.cli.fork",
     "agent6.ui.cli.history_cmds",
     "agent6.ui.cli.init_cmds",
@@ -480,6 +481,9 @@ banned-from = [
 # `*` crosses `/` in a per-file pattern, so single modules are listed by name.
 "docs/screenshots/{build_fixtures,keystroke_overlay,llm_proxy,make_cover,seed,tui_snapshot,web_demo}.py" = ["ANN", "D", "DOC", "ICN003"]
 # gen_contracts.py embeds the artifact's CSS/SVG/HTML as strings; line length is moot there.
+# The CLI dispatchers import their command modules lazily, so `--help` and completion
+# start without the engine.
+"src/agent6/ui/cli/entry.py" = ["PLC0415"]
 "docs/gen_contracts.py" = ["E501"]
 "docs/screenshots/keystroke_overlay.py" = ["PLR0912", "PLR1730"]
 # web_demo.py embeds a block of cursor/animation JS as a string; line length is moot there.

@@ -14,7 +14,7 @@ from agent6 import paths
 from agent6.app import _setup
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import _session_prompt as prompt_mod
-from agent6.ui.cli import resume
+from agent6.ui.cli import entry, resume
 
 
 def _seed_session(
@@ -63,7 +63,7 @@ def test_follow_up_executions_run_under_the_invocations_flags(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A follow-up at "next:" carries the run's overrides, such as `--max-usd`."""
-    from agent6.ui import cli
+    from agent6.ui.cli import entry
 
     layout = _seed_session(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)
@@ -78,7 +78,7 @@ def test_follow_up_executions_run_under_the_invocations_flags(
     answers = iter(["and a test", "/exit"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
     args = _run_args(max_usd=0.10, auto_approve=True)
-    assert cli._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
+    assert entry._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
     (execution,) = seen
     assert execution["steer"] == "and a test"
     assert execution["budget_overrides"] == _setup.BudgetOverrides.from_args(args)
@@ -154,7 +154,7 @@ def test_no_terminal_ends_the_session_as_before(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A headless run has nobody to type, so it ends instead of blocking on the prompt."""
-    from agent6.ui.cli import _prompt_for_the_next_input  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import entry
 
     # A real session dir, so the tty guard is the only short-circuit; patch what `cli` imports.
     layout = _seed_session(tmp_path, monkeypatch)
@@ -167,7 +167,7 @@ def test_no_terminal_ends_the_session_as_before(
         return 0
 
     monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
-    assert _prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0
+    assert entry._prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0
     assert not called
 
 
@@ -175,9 +175,9 @@ def test_ask_sessions_do_not_prompt() -> None:
     """`agent6 ask` stays a one-shot; the follow-up prompt is scoped to run and plan sessions."""
     import inspect
 
-    from agent6.ui.cli import _dispatch_ask  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import entry
 
-    assert "_prompt_for_the_next_input" not in inspect.getsource(_dispatch_ask)
+    assert "entry._prompt_for_the_next_input" not in inspect.getsource(entry._dispatch_ask)
 
 
 def test_a_backgrounded_run_is_not_stopped_by_the_prompt(
@@ -209,11 +209,9 @@ def test_a_refused_runs_discarded_id_ends_quietly(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A refusal discards its husk, and the follow-up prompt ends with the refusal's exit code."""
-    from agent6.ui import cli
-
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
-    assert cli._prompt_for_the_next_input(_run_args(), 2, "gone-run-QQQQQQ") == 2  # pyright: ignore[reportPrivateUsage]
+    assert entry._prompt_for_the_next_input(_run_args(), 2, "gone-run-QQQQQQ") == 2  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.parametrize(("mode", "asks"), [("run", True), ("plan", True), ("ask", False)])
@@ -222,8 +220,6 @@ def test_a_resumed_execution_ends_by_asking_like_a_fresh_one(
 ) -> None:
     """A resumed run or plan asks "next:" the way a run does; a resumed ask stays a one-shot."""
     import json
-
-    from agent6.ui import cli
 
     layout = _seed_session(tmp_path, monkeypatch, session_id="resumed-run-AAAAAA")
     (layout.session_dir / "manifest.json").write_text(
@@ -245,7 +241,7 @@ def test_a_resumed_execution_ends_by_asking_like_a_fresh_one(
 
     monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
     args = _run_args(session_id="resumed-run", force=False, tui=False, preset="", steer="")
-    assert cli._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
+    assert entry._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
     assert asked == (["resumed-run-AAAAAA"] if asks else [])
 
 
@@ -254,8 +250,6 @@ def test_resume_prompt_stays_on_the_session_selected_at_dispatch(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, target: str
 ) -> None:
     """A follow-up stays with the selected session when a concurrent session becomes newest."""
-    from agent6.ui import cli
-
     selected = _seed_session(tmp_path, monkeypatch, session_id="resumed-run-AAAAAA")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
@@ -273,7 +267,7 @@ def test_resume_prompt_stays_on_the_session_selected_at_dispatch(
 
     monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
     args = _run_args(session_id=target, force=False, tui=False, preset="", steer="")
-    assert cli._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
+    assert entry._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
     assert prompted == [selected.session_id]
 
 
@@ -281,8 +275,6 @@ def test_a_refused_execution_does_not_prompt_on_an_existing_session(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A refused run whose explicit id points at an older session gets no follow-up prompt."""
-    from agent6.ui import cli
-
     layout = _seed_session(tmp_path, monkeypatch, session_id="existing-run-AAAAAA")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
@@ -316,9 +308,9 @@ def test_a_refused_execution_does_not_prompt_on_an_existing_session(
     )
     plan_args = _run_args(**common, plan_command="run", task="new plan")
     resume_args = _run_args(**common, interactive=False, force=False, steer="")
-    assert cli._dispatch_run(run_args) == 2  # pyright: ignore[reportPrivateUsage]
-    assert cli._dispatch_plan(plan_args) == 2  # pyright: ignore[reportPrivateUsage]
-    assert cli._dispatch_resume(resume_args) == 2  # pyright: ignore[reportPrivateUsage]
+    assert entry._dispatch_run(run_args) == 2  # pyright: ignore[reportPrivateUsage]
+    assert entry._dispatch_plan(plan_args) == 2  # pyright: ignore[reportPrivateUsage]
+    assert entry._dispatch_resume(resume_args) == 2  # pyright: ignore[reportPrivateUsage]
 
 
 def test_a_execution_that_undoes_or_detaches_ends_the_asking(
@@ -353,8 +345,6 @@ def test_a_detached_run_is_not_followed_by_the_prompt(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """After `/detach` there is nothing to follow up on: the run continues in the background."""
-    from agent6.ui import cli
-
     layout = _seed_session(tmp_path, monkeypatch, session_id="detached-run-AAAAAA")
     (layout.session_dir / "logs.jsonl").write_text(
         '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n'
@@ -369,7 +359,7 @@ def test_a_detached_run_is_not_followed_by_the_prompt(
 
     monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", _must_not_prompt)
     args = _run_args()
-    assert cli._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
+    assert entry._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
 
 
 def test_a_parked_start_is_not_followed_by_the_prompt(
@@ -377,8 +367,6 @@ def test_a_parked_start_is_not_followed_by_the_prompt(
 ) -> None:
     """A start that parked never ran; the resume line it printed is the next step."""
     import json
-
-    from agent6.ui import cli
 
     layout = _seed_session(tmp_path, monkeypatch, session_id="parked-run-AAAAAA")
     (layout.session_dir / "manifest.json").write_text(
@@ -402,7 +390,7 @@ def test_a_parked_start_is_not_followed_by_the_prompt(
         return 0
 
     monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
-    assert cli._prompt_for_the_next_input(_run_args(), 2, layout.session_id) == 2  # pyright: ignore[reportPrivateUsage]
+    assert entry._prompt_for_the_next_input(_run_args(), 2, layout.session_id) == 2  # pyright: ignore[reportPrivateUsage]
     assert asked == []
 
 
@@ -410,8 +398,6 @@ def test_an_undone_run_is_not_followed_by_the_prompt(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """/undo names the fork as the continuation; the undone run gets no "next:" prompt."""
-    from agent6.ui import cli
-
     layout = _seed_session(tmp_path, monkeypatch, session_id="undone-run-AAAAAA")
     with (layout.session_dir / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "session.undone", "new_session_id": "fork-BBBBBB"}\n')
@@ -425,7 +411,7 @@ def test_an_undone_run_is_not_followed_by_the_prompt(
         return 0
 
     monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
-    assert cli._prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
+    assert entry._prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
     assert asked == []
 
 
@@ -456,7 +442,6 @@ def test_i_with_tui_is_refused_before_a_execution_starts(
     """`-i` with `--tui` is refused up front for `run` and `resume`: both want the terminal."""
     import agent6.ui.cli.resume as resume_mod
     import agent6.ui.cli.run as run_mod
-    from agent6.ui import cli
 
     def _never(*_a: object, **_k: object) -> int:
         raise AssertionError("the execution must not start")
@@ -476,9 +461,9 @@ def test_i_with_tui_is_refused_before_a_execution_starts(
         pins=[],
         decompose=False,
     )
-    assert cli._dispatch_run(run_args) == 2  # pyright: ignore[reportPrivateUsage]
+    assert entry._dispatch_run(run_args) == 2  # pyright: ignore[reportPrivateUsage]
     resume_args = _run_args(interactive=True, tui=True, session_id="runny-one-AAAAAA", steer="")
-    assert cli._dispatch_resume(resume_args) == 2  # pyright: ignore[reportPrivateUsage]
+    assert entry._dispatch_resume(resume_args) == 2  # pyright: ignore[reportPrivateUsage]
     err = capsys.readouterr().err
     assert err.count("-i cannot combine with --tui") == 2
 

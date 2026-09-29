@@ -116,7 +116,7 @@ def test_a_crash_report_naming_model_text_prints_scrubbed(
     def crash(_argv: list[str] | None = None) -> int:
         raise RuntimeError(f"file {OSC52}gone")
 
-    monkeypatch.setattr("agent6.ui.cli.main", crash)
+    monkeypatch.setattr("agent6.ui.cli.entry.main", crash)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     assert cli_main(["sessions", "dir"]) == 1
     err = capsys.readouterr().err

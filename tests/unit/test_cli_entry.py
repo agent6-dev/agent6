@@ -14,8 +14,7 @@ import pytest
 
 from agent6 import errors
 from agent6.config import ConfigError
-from agent6.ui import cli
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import cli_main, entry
 
 _CRASH_MARKERS = ("unexpected", "full traceback", "report this")
 
@@ -24,7 +23,7 @@ def test_cli_main_passes_through_return_code(monkeypatch: pytest.MonkeyPatch) ->
     def _ok(_argv: list[str] | None = None) -> int:
         return 3
 
-    monkeypatch.setattr(cli, "main", _ok)
+    monkeypatch.setattr(entry, "main", _ok)
     assert cli_main() == 3
 
 
@@ -34,7 +33,7 @@ def test_cli_main_converts_unexpected_exception_to_friendly_error(
     def _boom(_argv: list[str] | None = None) -> int:
         raise RuntimeError("kaboom")
 
-    monkeypatch.setattr(cli, "main", _boom)
+    monkeypatch.setattr(entry, "main", _boom)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     rc = cli_main()
     assert rc == 1
@@ -56,7 +55,7 @@ def test_an_operator_error_refuses_without_a_crash_report(
     def _bad(_argv: list[str] | None = None) -> int:
         raise errors.OperatorError("no such machine file: overlay.toml")
 
-    monkeypatch.setattr(cli, "main", _bad)
+    monkeypatch.setattr(entry, "main", _bad)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     assert cli_main() == 2
     captured = capsys.readouterr()
@@ -71,7 +70,7 @@ def test_a_config_error_is_an_operator_error(
     def _bad(_argv: list[str] | None = None) -> int:
         raise ConfigError("Config file is not valid TOML (/x/config.toml): line 1")
 
-    monkeypatch.setattr(cli, "main", _bad)
+    monkeypatch.setattr(entry, "main", _bad)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     assert cli_main() == 2
     err = capsys.readouterr().err
@@ -123,7 +122,7 @@ def test_cli_main_reraises_under_debug(monkeypatch: pytest.MonkeyPatch) -> None:
     def _boom(_argv: list[str] | None = None) -> int:
         raise RuntimeError("kaboom")
 
-    monkeypatch.setattr(cli, "main", _boom)
+    monkeypatch.setattr(entry, "main", _boom)
     monkeypatch.setenv("AGENT6_DEBUG", "1")
     with pytest.raises(RuntimeError, match="kaboom"):
         cli_main()
@@ -135,6 +134,6 @@ def test_cli_main_handles_keyboard_interrupt(
     def _interrupt(_argv: list[str] | None = None) -> int:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(cli, "main", _interrupt)
+    monkeypatch.setattr(entry, "main", _interrupt)
     assert cli_main() == 130
     assert "interrupted" in capsys.readouterr().err

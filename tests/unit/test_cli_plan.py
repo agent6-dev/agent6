@@ -9,7 +9,7 @@ import pathlib
 import pytest
 
 from agent6 import errors, paths
-from agent6.ui.cli import cli_main, main
+from agent6.ui.cli import cli_main, entry, main
 
 
 def _seed_plan(tmp_path: pathlib.Path, session_id: str, body: str) -> pathlib.Path:
@@ -73,9 +73,9 @@ def test_plan_show_omit_id_uses_most_recent_plan(
 def test_from_plan_task_leads_with_the_plan_title() -> None:
     # The run's task reads as the plan, not the 'The following plan was prepared...' boilerplate.
     from agent6 import task_text
-    from agent6.ui.cli import _from_plan_task  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import entry
 
-    task = _from_plan_task("# Plan: Add a --count flag\n\n1. do it", "serene-geyser-NP20")
+    task = entry._from_plan_task("# Plan: Add a --count flag\n\n1. do it", "serene-geyser-NP20")
     assert task.startswith("Execute the prepared plan: Add a --count flag")
     assert "1. do it" in task  # the full plan is still fed to the agent
     # The recorded task is the headline alone; no session id or plan text reaches a listing.
@@ -171,7 +171,7 @@ def test_run_from_a_plan_with_no_task_runs_that_plan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`run --from <plan>` with no task runs the plan's own text, without digesting it twice."""
-    from agent6.ui import cli
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: do it\n\n1. step\n")
@@ -185,7 +185,7 @@ def test_run_from_a_plan_with_no_task_runs_that_plan(
         return rc
 
     monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _fake_run)
-    monkeypatch.setattr(cli, "_prompt_for_the_next_input", _no_prompt)
+    monkeypatch.setattr(entry, "_prompt_for_the_next_input", _no_prompt)
     assert main(["run", "--from", "happy-tree-abcd"]) == 0
     assert "do it" in str(seen["task"]) and "1. step" in str(seen["task"])
     assert seen["seed_from"] == ""
@@ -287,8 +287,6 @@ def test_an_unreadable_plan_refuses_in_plan_show_too(
 
 def test_plan_takes_tui_like_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """`agent6 plan --tui "<task>"` opens the TUI on the planning run as `run --tui` does."""
-    from agent6.ui import cli
-
     seen: dict[str, object] = {}
 
     def _fake_run(_cfg: object, task: str, **kw: object) -> int:
@@ -300,7 +298,7 @@ def test_plan_takes_tui_like_run(monkeypatch: pytest.MonkeyPatch) -> None:
     def _no_prompt(_args: object, rc: int, _sid: str) -> int:
         return rc
 
-    monkeypatch.setattr(cli, "_prompt_for_the_next_input", _no_prompt)
+    monkeypatch.setattr(entry, "_prompt_for_the_next_input", _no_prompt)
     assert main(["plan", "--tui", "lay out the work"]) == 0
     assert seen["task"] == "lay out the work"
     assert seen["mode"] == "plan" and seen["tui"] is True

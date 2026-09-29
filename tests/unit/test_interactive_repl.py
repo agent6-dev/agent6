@@ -20,7 +20,7 @@ from agent6 import budget, paths
 from agent6.harness import _chain, _operator
 from agent6.sessions import ipc as sessions_ipc
 from agent6.ui import steer
-from agent6.ui.cli import _repl
+from agent6.ui.cli import _repl, entry
 
 
 def _init_repo(path: pathlib.Path) -> None:
@@ -388,7 +388,7 @@ def test_i_on_a_pipe_refuses_up_front(
     """-i on a pipe refuses before anything runs, for run, resume and ask alike: it needs a TTY."""
     from agent6.ui import cli
 
-    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(entry.sys.stdin, "isatty", lambda: False)
 
     def _must_not_run(*_a: object, **_k: object) -> int:
         pytest.fail("the run must not start")
