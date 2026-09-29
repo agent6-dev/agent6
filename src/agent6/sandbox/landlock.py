@@ -1,15 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Minimal ctypes wrapper for the Linux Landlock LSM: the ABI probe.
+"""Probe the Linux Landlock ABI version through ctypes.
 
-`landlock_abi()` feeds isolation resolution (sandbox.detect). Landlock rules
-themselves are applied by the jail launcher (jail/src/main.rs), never to the
-agent process (see app/confine.py).
-
-References:
-- Documentation/userspace-api/landlock.rst in the Linux kernel tree
-- man 7 landlock
-- include/uapi/linux/landlock.h
+`landlock_abi` feeds isolation resolution in `sandbox.detect`. Landlock rules are
+applied by the jail launcher (`jail/src/main.rs`), never to the agent process
+(`app/confine.py`). References: `Documentation/userspace-api/landlock.rst`,
+`man 7 landlock`, `include/uapi/linux/landlock.h`.
 """
 
 from __future__ import annotations
@@ -19,15 +15,11 @@ import ctypes.util
 import errno
 import os
 
-# syscall numbers (x86_64 / aarch64, Linux added these uniformly)
+# The syscall numbers are the same on x86_64 and aarch64.
 _SYS_landlock_create_ruleset = 444
 _SYS_landlock_add_rule = 445
 _SYS_landlock_restrict_self = 446
 
-# struct landlock_ruleset_attr {
-#     __u64 handled_access_fs;
-#     __u64 handled_access_net;   // ABI v4+
-# };
 _LANDLOCK_CREATE_RULESET_VERSION = 1 << 0
 
 
@@ -36,18 +28,26 @@ class LandlockError(Exception):
 
 
 def _libc() -> ctypes.CDLL:
+    """Return libc loaded with errno tracking."""
     libc_path = ctypes.util.find_library("c") or "libc.so.6"
     return ctypes.CDLL(libc_path, use_errno=True)
 
 
 def _syscall(nr: int, *args: int) -> int:
-    """Invoke `syscall(nr, args...)` treating each arg as a 64-bit value.
+    """Invoke `syscall(nr, args...)` with every argument as a 64-bit value.
 
-    ctypes defaults to passing int args as 32-bit `int`, which silently
-    truncates pointers and large flag values on 64-bit kernels (manifests
-    as EFAULT or EINVAL). We force every variadic slot through c_ulong /
-    c_void_p instead. Callers may pass either Python ints (treated as
-    unsigned 64-bit) or address-of buffers.
+    ctypes passes a bare int as a 32-bit `int`, which truncates pointers and large
+    flag values on 64-bit kernels (EFAULT or EINVAL).
+
+    Args:
+        nr: The syscall number.
+        *args: Unsigned 64-bit values or buffer addresses.
+
+    Returns:
+        The syscall's result.
+
+    Raises:
+        OSError: The syscall failed; errno is set.
     """
     libc = _libc()
     libc.syscall.restype = ctypes.c_long
@@ -62,7 +62,14 @@ def _syscall(nr: int, *args: int) -> int:
 
 
 def landlock_abi() -> int:
-    """Return the Landlock ABI version supported by the running kernel, or 0."""
+    """Return the Landlock ABI version the running kernel supports, or 0.
+
+    Returns:
+        The ABI version; 0 when the kernel lacks Landlock.
+
+    Raises:
+        LandlockError: The probe failed for a reason other than a missing Landlock.
+    """
     try:
         return _syscall(
             _SYS_landlock_create_ruleset,

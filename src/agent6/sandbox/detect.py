@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Environment + kernel detection for the sandbox.
+"""Detect the host's kernel, container and confinement capabilities.
 
-Read-only, and a leaf: imports only `agent6.kinds` and the sibling `landlock`
-probe, never the rest of the sandbox stack. Probes shell out with fixed argv
-from operator input only.
+A read-only leaf: imports only `agent6.kinds` and the sibling `landlock` probe.
+Probes shell out with fixed argv only.
 """
 
 from __future__ import annotations
@@ -33,40 +32,39 @@ class KernelInfo:
 
 @dataclass(frozen=True, slots=True)
 class Environment:
-    """Detected execution environment."""
+    """The detected execution environment.
+
+    Attributes:
+        in_container: A container indicator is present.
+        container_signals: The names of the indicators present.
+        kernel: The running kernel's version.
+        userns_supported: This process can create an unprivileged user namespace.
+        landlock_abi: The probed Landlock ABI version, 0 without Landlock; the syscall
+            probe, not a kernel-version guess, since a kernel can ship with the LSM
+            compiled out or disabled via `lsm=`.
+        seccomp_arch_supported: The jail's seccomp filter exists for this CPU; mirrors
+            the arch set in `jail/src/main.rs` `apply_seccomp`, which fails closed, and
+            both strict and hardened promise that filter.
+        sandbox_available: The host is Linux.
+    """
 
     in_container: bool
     container_signals: tuple[str, ...]
     kernel: KernelInfo
     userns_supported: bool
-    # The probed Landlock ABI version (0 = no Landlock). The syscall probe,
-    # not a kernel-version guess: a >=5.13 kernel can still ship with the
-    # Landlock LSM compiled out or disabled via `lsm=`.
     landlock_abi: int
-    # The jail's seccomp filter exists for this CPU architecture. Mirrors the
-    # arch set in jail/src/main.rs `apply_seccomp` (which fails closed); both
-    # strict and hardened promise that filter, so neither can run without it.
     seccomp_arch_supported: bool
     sandbox_available: bool
 
     @property
     def detected_isolation(self) -> IsolationLevel:
-        """The strongest jail isolation this environment can actually run.
+        """The strongest jail isolation this environment can run.
 
-        On non-Linux hosts (macOS) the kernel sandbox does not exist at all,
-        so the only isolation is `none` (unsandboxed): child commands run as
-        plain subprocesses with no confinement. Callers are expected to warn
-        loudly when this is selected.
-
-        On Linux, `strict` requires `CLONE_NEWUSER` (and friends) to succeed;
-        on hosts where userns is blocked (default-seccomp Docker,
-        AppArmor-restricted Ubuntu, locked-down kiosks) we fall back to
-        `hardened`, which keeps Landlock + seccomp + NO_NEW_PRIVS but skips
-        namespaces. `hardened`'s only filesystem boundary is Landlock, so it
-        additionally requires the Landlock probe to succeed; a host offering
-        neither userns nor Landlock has no confinement mechanism at all and
-        resolves to `none`, truthfully unsandboxed and loudly warned, never a
-        hardened label that would silently confine nothing.
+        `strict` needs user namespaces; without them `hardened` keeps Landlock,
+        seccomp and NO_NEW_PRIVS, and since Landlock is its only filesystem boundary
+        it needs the Landlock probe to succeed. A host with neither, or no Linux
+        kernel, resolves to `none`: unsandboxed and loudly warned by the caller,
+        never a hardened label that confines nothing.
         """
         if not self.sandbox_available or not self.seccomp_arch_supported:
             return "none"
@@ -79,6 +77,7 @@ _KERNEL_VERSION_RE = re.compile(r"^(\d+)\.(\d+)")
 
 
 def _parse_kernel(raw: str) -> KernelInfo:
+    """Return the major and minor version parsed from an osrelease string."""
     match = _KERNEL_VERSION_RE.match(raw)
     if match is None:
         return KernelInfo(raw=raw, major=0, minor=0)
@@ -86,7 +85,7 @@ def _parse_kernel(raw: str) -> KernelInfo:
 
 
 def read_kernel() -> KernelInfo:
-    """Read the running kernel version from `/proc/sys/kernel/osrelease`."""
+    """Return the running kernel version from `/proc/sys/kernel/osrelease`."""
     try:
         raw = Path("/proc/sys/kernel/osrelease").read_text(encoding="utf-8").strip()
     except OSError:
@@ -95,12 +94,11 @@ def read_kernel() -> KernelInfo:
 
 
 def detect_container_signals() -> tuple[str, ...]:
-    """Return the names of all container indicators present (empty = bare host)."""
+    """Return the names of the container indicators present; empty on a bare host."""
     signals: list[str] = []
     if Path("/.dockerenv").exists():
         signals.append("/.dockerenv")
-    # podman's equivalent marker; rootless podman often lacks a "podman" token in
-    # /proc/1/cgroup (user-session cgroup), so this file is the reliable signal.
+    # Rootless podman often lacks a "podman" token in /proc/1/cgroup; this file is its marker.
     if Path("/run/.containerenv").exists():
         signals.append("/run/.containerenv")
     if os.environ.get("REMOTE_CONTAINERS") == "true":
@@ -117,32 +115,28 @@ def detect_container_signals() -> tuple[str, ...]:
 
 
 def sandbox_disabled_by_env() -> bool:
-    """True when `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` is set.
+    """Return whether `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` is set.
 
-    The env form of `--dangerously-disable-sandbox`: a per-invocation setter
-    that forces the unsandboxed isolation regardless of config, read in
-    :func:`resolve_isolation`. For a `machine run` the supervisor calls
-    `resolve_isolation` and passes the resolved `none` to each agent
-    subprocess in its request (the subprocess trusts `req["isolation"]` and
-    does not re-resolve). Never reachable by the LLM (it cannot set the
-    launcher's environment)."""
+    The env form of `--dangerously-disable-sandbox`, read by `resolve_isolation`.
+    A `machine run` supervisor resolves once and passes `none` to each agent
+    subprocess in its request, which does not re-resolve. The LLM cannot set the
+    launcher's environment.
+    """
     return os.environ.get("AGENT6_DANGEROUSLY_DISABLE_SANDBOX") == "1"
 
 
 @functools.lru_cache(maxsize=1)
 def probe_userns_supported() -> bool:
-    """Return True iff this process can create an unprivileged user namespace.
+    """Return whether this process can create an unprivileged user namespace.
 
-    Uses `unshare -U -r true` as a side-effect-free probe: if the call
-    succeeds, the kernel + container policy allow `CLONE_NEWUSER`, which is a
-    prerequisite for the `strict` jail isolation. Cached for the process
-    lifetime; this never changes mid-run.
+    `unshare -U -r true` is the side-effect-free probe; `strict` needs it to succeed.
+    Cached for the process lifetime.
     """
     unshare = "/usr/bin/unshare"
     if not Path(unshare).is_file():
         return False
     try:
-        result = subprocess.run(  # fixed argv, no shell, no LLM input
+        result = subprocess.run(  # fixed argv, no LLM input
             [unshare, "-U", "-r", "/usr/bin/true"],
             capture_output=True,
             timeout=2.0,
@@ -155,12 +149,10 @@ def probe_userns_supported() -> bool:
 
 @functools.lru_cache(maxsize=1)
 def probe_landlock_abi() -> int:
-    """The kernel's Landlock ABI version, 0 when unavailable.
+    """Return the kernel's Landlock ABI version, 0 when unavailable.
 
-    Fail-closed: a probe error reads as "no Landlock", so isolation resolution
-    refuses `hardened` / resolves `auto` to the loudly-warned `none` instead
-    of promising confinement the kernel may not deliver. Cached for the
-    process lifetime; this never changes mid-run.
+    Fails closed: a probe error reads as no Landlock, so resolution refuses
+    `hardened` and takes `auto` to the warned `none`. Cached for the process lifetime.
     """
     if not sandbox_available():
         return 0
@@ -171,14 +163,12 @@ def probe_landlock_abi() -> int:
 
 
 def apparmor_userns_restricted() -> bool:
-    """True iff the kernel restricts unprivileged user namespaces via AppArmor.
+    """Return whether AppArmor restricts unprivileged user namespaces.
 
-    Ubuntu 23.10+/24.04+ ship `kernel.apparmor_restrict_unprivileged_userns=1`:
-    an unprivileged process can then create a user namespace only with an
-    AppArmor profile granting `userns`. This is why `strict` can be
-    unavailable even when `kernel.unprivileged_userns_clone = 1`; the fix is
-    `agent6 system apparmor install` (or set the sysctl to 0). Reads the proc
-    file directly; absent on non-AppArmor kernels.
+    Ubuntu 23.10+ ships `kernel.apparmor_restrict_unprivileged_userns=1`, so
+    `strict` can be unavailable with `unprivileged_userns_clone = 1`; the fix is
+    `agent6 system apparmor install` or the sysctl at 0. The proc file is absent
+    on non-AppArmor kernels.
     """
     try:
         raw = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text(
@@ -190,17 +180,12 @@ def apparmor_userns_restricted() -> bool:
 
 
 def sandbox_available() -> bool:
-    """Return True iff the Linux kernel sandbox can be used on this host.
-
-    The sandbox (jail launcher + Landlock + seccomp + namespaces) is
-    Linux-only. On every other platform there is no confinement mechanism, so
-    we run unsandboxed (`isolation = none`) and refuse any config that
-    explicitly asked for isolation.
-    """
+    """Return whether the host is Linux, the only platform with the kernel sandbox."""
     return sys.platform.startswith("linux")
 
 
 def _read_max_userns() -> str | None:
+    """Return `user.max_user_namespaces`, or None when unreadable."""
     try:
         return Path("/proc/sys/user/max_user_namespaces").read_text(encoding="utf-8").strip()
     except OSError:
@@ -208,7 +193,7 @@ def _read_max_userns() -> str | None:
 
 
 def _userns_block_cause(env: Environment) -> str:
-    """Name the mechanism blocking unprivileged user namespaces on this host."""
+    """Return the mechanism blocking unprivileged user namespaces on this host."""
     if apparmor_userns_restricted():
         return (
             "unprivileged user namespaces are blocked by AppArmor "
@@ -229,11 +214,10 @@ def _userns_block_cause(env: Environment) -> str:
 
 
 def degrade_reason(env: Environment) -> str | None:
-    """Why `auto` resolves below `strict` here, or None at full strength.
+    """Return why `auto` resolves below `strict` here, or None at full strength.
 
-    One owner for the why: every surface that reports an auto-selected level
-    below strict (check sandbox, check config, the run-entry warning) prints
-    this, so a degraded level never appears without its cause.
+    Every surface reporting an auto-selected level below strict prints this, so a
+    degraded level never appears without its cause.
     """
     if not env.sandbox_available:
         return f"there is no Linux kernel sandbox on {sys.platform!r}"
@@ -254,7 +238,7 @@ def degrade_reason(env: Environment) -> str | None:
 
 
 def detect() -> Environment:
-    """Detect kernel + container indicators + userns/Landlock capability."""
+    """Return the host's kernel, container indicators and confinement capabilities."""
     signals = detect_container_signals()
     return Environment(
         in_container=bool(signals),
@@ -270,25 +254,30 @@ def detect() -> Environment:
 class IsolationUnavailableError(Exception):
     """The host cannot provide the requested `[sandbox] isolation`.
 
-    A distinct type so the refusal sites catch exactly this; a bare
-    RuntimeError there would swallow unrelated faults as security refusals.
+    A distinct type, so the refusal sites catch exactly this and no unrelated fault.
     """
 
 
 def resolve_isolation(requested: str, env: Environment) -> IsolationLevel:
-    """Resolve `[sandbox] isolation` ("auto"|"strict"|"hardened"|"none") against the host.
+    """Resolve `[sandbox] isolation` against the host.
 
-    Raises `IsolationUnavailableError` if the user asked for an isolation level the kernel
-    + container cannot provide. This is the "no silent downgrade" rule: we never
-    give the user less isolation than they configured.
+    `auto` degrades to the strongest level the host offers; an explicit level the
+    host cannot honor is refused, never downgraded.
+
+    Args:
+        requested: "auto", "strict", "hardened" or "none".
+        env: The detected environment.
+
+    Returns:
+        The level to run.
+
+    Raises:
+        IsolationUnavailableError: The host cannot provide the requested level, or the
+            level is unknown.
     """
     if sandbox_disabled_by_env():
-        # Per-invocation override: run unconfined regardless of config.
         requested = "none"
     if not env.sandbox_available:
-        # Non-Linux host: there is no kernel sandbox. `auto` (and an explicit
-        # opt-out) resolve to the unsandboxed `none` isolation (callers warn); an
-        # explicit request for real isolation is refused, not silently downgraded.
         if requested in ("auto", "none"):
             return "none"
         raise IsolationUnavailableError(
@@ -298,20 +287,11 @@ def resolve_isolation(requested: str, env: Environment) -> IsolationLevel:
             f"platform, or run agent6 on Linux for kernel-enforced isolation."
         )
     if requested == "auto":
-        # `auto` reaches `none` only when the host offers no confinement
-        # mechanism at all: non-Linux (above), or a Linux kernel with neither
-        # userns (no strict) nor Landlock (no hardened). Even then it is never
-        # silent: callers warn loudly, and the auto-approved-run_command combo
-        # additionally hits the unconfined confirm gate.
+        # `none` is never silent: callers warn, and with auto-approved run_command a confirm
+        # gate fires too.
         return env.detected_isolation
     if requested == "none":
-        # Explicit opt-out of agent6's kernel sandbox: commands run with no
-        # Landlock/seccomp/namespace confinement, relying entirely on whatever
-        # isolates the surrounding environment (a container, a disposable VM).
-        # Self-authorizing: `sandbox.isolation`, the flag, and the env var are all
-        # operator-only (the LLM can set none of them), so writing `none` is the
-        # consent. The loud run-startup warning fires either way; when it also
-        # coincides with auto-approved run_command an extra confirm gate does.
+        # Self-authorizing: the config key, the flag and the env var are all operator-only.
         return "none"
     if requested in ("strict", "hardened") and not env.seccomp_arch_supported:
         raise IsolationUnavailableError(

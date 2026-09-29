@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Sandbox subsystem: host/kernel detection, the Landlock ABI probe, and the
-jail launcher."""
+"""Host and kernel detection, the Landlock ABI probe, and the jail launcher."""
 
 from __future__ import annotations
 

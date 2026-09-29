@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Operator tool reachability inside the jail: the PATH a jailed command
-gets, the real tool dirs mounted read+exec for it, and the notes a
-surface prints about tools it cannot reach or mounts that expose more
-than a tool.
+"""Resolve operator tools inside the jail.
+
+The PATH a jailed command gets, the real tool dirs mounted read+exec for it, and
+the notes a surface prints about tools it cannot reach or mounts that expose
+more than a tool.
 """
 
 from __future__ import annotations
@@ -14,15 +15,9 @@ from pathlib import Path
 
 from agent6.paths import private_dirs
 
-# The jail's baseline PATH is /usr/bin:/bin and it bind-mounts only the system
-# roots below. Operator tools (uv, node, ruff, ...) installed elsewhere are
-# otherwise unreachable, so a jailed command dies 127. We add the standard bin
-# dirs that exist to PATH, and for those outside the system roots (or whose
-# symlinks resolve out to one, a pipx `uv` at /usr/local/bin -> /opt/pipx/...)
-# pass the real dirs as tool_paths for a real-location RO+exec mount. Read+exec
-# only; the jail still confines writes and network. Owned here so run_command
-# and verify (tools.dispatch), machine tool states (machine.engine), and the
-# host-side probe (`machine check`) resolve tools identically.
+# The jail mounts only these system roots; a tool elsewhere needs a read+exec mount of its
+# real dir, or a jailed command dies 127. One owner, so dispatch, machine.engine and
+# `machine check` resolve tools identically.
 _JAIL_BASE_PATH_DIRS = ("/usr/bin", "/bin")
 _SYSTEM_ROOTS = (
     Path("/usr"),
@@ -36,25 +31,18 @@ _SYSTEM_ROOTS = (
 
 
 def _under_system_root(p: Path) -> bool:
+    """Return whether the path lies under a root the jail already mounts."""
     return any(p.is_relative_to(r) for r in _SYSTEM_ROOTS)
 
 
 def _never_mounted(p: Path) -> bool:
-    """Dirs that never belong in a jail mount, however a tool symlink
-    resolves.
+    """Return whether a dir must never be a jail mount, however a tool symlink resolves.
 
-    `operator_tool_paths` mounts `real.parent` for every symlink in a bin
-    dir, so one resolving into the config dir would mount `secrets.toml` (the
-    provider API keys) read-only into the jail, and one into the state dir
-    would mount memory and transcripts. A mount containing a private dir
-    grants the same reads from above, and a plain `~/.local/bin/x -> ~/x.sh`
-    makes `real.parent` the whole home dir. So agent6's private dirs
-    (:func:`agent6.paths.private_dirs`) are refused in either direction, and
-    $HOME and its ancestors outright: mounting home or a dir above it would
-    hand the jail `~/.ssh` and every credential the operator owns. A mount
-    below home (a tool target's own subdir) stays allowed; that is what keeps
-    `~/.local/bin` tools working. Denied by identity rather than by inspecting
-    contents.
+    Refused by identity, never by content: $HOME and its ancestors (a mount there
+    hands the jail `~/.ssh` and every credential), and agent6's private dirs
+    (`agent6.paths.private_dirs`: `secrets.toml`, memory, transcripts) in either
+    direction, since a mount above a private dir grants the same reads. A dir below
+    home stays allowed; that keeps `~/.local/bin` tools working.
     """
     if Path.home().is_relative_to(p):
         return True
@@ -62,11 +50,15 @@ def _never_mounted(p: Path) -> bool:
 
 
 def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
-    """Return (PATH string, real-location mount dirs) so operator-installed tools
-    resolve in the jail. Recomputed per call so a tool the operator (or model)
-    just installed is picked up (dirs under a mounted system root only join PATH;
-    dirs outside it, and the real dirs symlinks resolve out to, also need the
-    RO+exec mount)."""
+    """Return the jail's PATH and the real-location dirs to mount read+exec.
+
+    Recomputed per call, so a tool just installed is picked up. A bin dir under a
+    mounted system root only joins PATH; a dir outside one, and the real dir a
+    symlink resolves to, also needs the mount.
+
+    Returns:
+        The PATH string and the sorted mount dirs.
+    """
     path_dirs: list[str] = list(_JAIL_BASE_PATH_DIRS)
     candidates = _tool_bin_dirs()
     mounts: set[Path] = set()
@@ -75,25 +67,22 @@ def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
             continue
         path_dirs.append(str(d))
         if not _under_system_root(d) and not _never_mounted(d):
-            mounts.add(d)  # real binaries in a non-system dir need the dir itself
+            mounts.add(d)
         try:
             entries = list(d.iterdir())
         except OSError:
             continue
         for entry in entries:
             if not entry.is_symlink():
-                continue  # real files are covered by the dir / the /usr mount
+                continue
             try:
                 real = entry.resolve()
             except OSError:
                 continue
             if real.is_file() and not _under_system_root(real) and not _never_mounted(real.parent):
-                mounts.add(real.parent)  # e.g. /opt/pipx/venvs/uv/bin
-    # Interpreter toolchains a repo venv's python may symlink to: uv-managed
-    # CPython lives under XDG data, not any bin dir. Without this mount the
-    # jail sees such a venv "linked to a non-existent interpreter" and an
-    # in-jail `uv run` deletes and recreates the operator's .venv.
-    # Mount-only, never a PATH entry.
+                mounts.add(real.parent)
+    # uv-managed CPython lives under XDG data; without this mount an in-jail `uv run` sees the
+    # venv's interpreter missing and recreates the operator's .venv. A mount, never a PATH entry.
     data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
     uv_pythons = data_home / "uv" / "python"
     if uv_pythons.is_dir():
@@ -102,7 +91,7 @@ def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
 
 
 def _tool_bin_dirs() -> tuple[Path, ...]:
-    """The bin dirs scanned for operator-installed tools (PATH + mounts)."""
+    """Return the bin dirs scanned for operator-installed tools."""
     home = Path.home()
     return (
         Path("/usr/local/bin"),
@@ -116,24 +105,27 @@ def _tool_bin_dirs() -> tuple[Path, ...]:
 
 @dataclass(frozen=True, slots=True)
 class ToolMountNotes:
-    """What the operator should know about how their bin dirs resolve into the
-    jail, for the once-per-run preflight. Both lists are `"<link> -> <target>"`
-    strings; the notes change no mount decision."""
+    """How the operator's bin dirs resolve into the jail, for the once-per-run preflight.
 
-    # A symlink whose target's dir is never mounted, so the tool is absent
-    # inside the jail (it would die 127 with nothing naming the reason).
+    Both lists hold `"<link> -> <target>"` strings; the notes change no mount decision.
+
+    Attributes:
+        unreachable: Symlinks whose target dir is never mounted, so the tool is absent
+            in the jail and would die 127 with nothing naming the reason.
+        exposes_home_dir: Symlinks resolving out of their bin dir into another dir
+            under $HOME, which is therefore mounted read-only into the jail.
+    """
+
     unreachable: tuple[str, ...] = ()
-    # A symlink resolving out of its bin dir into another dir under $HOME,
-    # which is therefore mounted read-only into the jail. Allowed on purpose
-    # (it is what keeps ~/.local/bin tools working), but the operator placed
-    # one symlink and got a whole directory exposed, so say which.
     exposes_home_dir: tuple[str, ...] = ()
 
 
 def tool_mount_notes() -> ToolMountNotes:
-    """Scan the bin dirs the jail puts on PATH and report both surprises: a
-    tool the jail cannot reach, and a tool that drags a home directory into
-    the jail with it."""
+    """Report the tools the jail cannot reach and the home dirs a tool drags into it.
+
+    Returns:
+        The notes over the bin dirs the jail puts on PATH.
+    """
     home = Path.home()
     bin_dirs = _tool_bin_dirs()
     unreachable: list[str] = []
@@ -161,7 +153,8 @@ def tool_mount_notes() -> ToolMountNotes:
 
 
 def jail_search_path() -> str:
-    """The PATH a jailed command resolves against, for host-side reachability
-    probes (`machine check`): the jail baseline plus the standard bin dirs that
-    exist right now. Advisory only; the jail recomputes its own per call."""
+    """Return the PATH a jailed command resolves against, for host-side probes.
+
+    Advisory only; the jail recomputes its own per call.
+    """
     return operator_tool_paths()[0]
