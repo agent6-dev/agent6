@@ -41,7 +41,6 @@ from agent6.graph.order import OPEN_STATUSES
 from agent6.memory import (
     decisions_path,
     decisions_text,
-    is_memory_name,
     memory_dir,
     record_decision,
     record_use,
@@ -73,15 +72,8 @@ from agent6.tools.dispatch import (
     ToolError,
 )
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX
-from agent6.tools.patch_apply import (
-    PatchError,
-    patch_op,
-    patch_target_path,
-    split_patch_files,
-)
 from agent6.tools.results import (
     AnswersResult,
-    EditResult,
     ExecResult,
     MetricResult,
     PreviewResult,
@@ -142,6 +134,7 @@ from agent6.workflows._loop_state import (
     TurnState,
     restore_completion_state,
 )
+from agent6.workflows._memory_touch import memory_store_facts
 from agent6.workflows._metric import (
     MetricSample,
     best_metric_sample,
@@ -1082,7 +1075,7 @@ class Workflow:
         edit tool's write there (the facts it created, edited or deleted, and
         `written` for the nudges). True for a write: the store sits outside
         the workspace, so it is not workspace work."""
-        facts = self._memory_store_facts(name, result, tool_input)
+        facts = memory_store_facts(self.state_dir, name, result, tool_input)
         if facts is None:
             return False
         if name == "read_file":
@@ -1095,54 +1088,6 @@ class Workflow:
                 state.memory.note_write(fact, op)
             return True
         return False
-
-    def _memory_store_facts(
-        self, name: str, result: ToolResult, tool_input: Any
-    ) -> dict[str, str] | None:
-        """The facts a tool call addressed in the memory store, each with what
-        the call did to it (`read`; `create`, `edit` or `delete` from the
-        edit result's `created` or the patch's headers); None when the call was not
-        (wholly) about the store. Judged on the model's input paths: the
-        store sits outside the workspace root, so only an absolute path
-        reaches it (a result's path is store-relative, and matching on it
-        never fires). `apply_patch` normally carries no `path` and names its
-        files in the headers; every one must be under the store (a patch over
-        the store and the workspace together is workspace work). A fact is a
-        file the store's name rule accepts; the index, the rulings and any
-        other file are not, so a call about them alone answers {}."""
-        if self.state_dir is None or not isinstance(tool_input, dict):
-            return None
-        try:
-            sections = (
-                split_patch_files(str(tool_input.get("patch", ""))) if name == "apply_patch" else []
-            )
-            if tool_input.get("path"):
-                paths = [str(tool_input["path"])]
-                ops = [
-                    ("create" if result.created else "edit")
-                    if isinstance(result, EditResult)
-                    else patch_op(sections[0])
-                    if sections
-                    else "read"
-                ]
-            else:
-                paths = [patch_target_path(section) for section in sections]
-                ops = [patch_op(section) for section in sections]
-        except PatchError:
-            return None
-        if not paths or not all(p.startswith("/") for p in paths):
-            return None
-        # Both sides resolved: the model is told the store's unresolved path
-        # (a symlinked state home), and a resolved path never sits under it.
-        store = memory_dir(self.state_dir).resolve()
-        resolved = [Path(p).resolve() for p in paths]
-        if not all(p.is_relative_to(store) for p in resolved):
-            return None
-        return {
-            p.stem: op
-            for p, op in zip(resolved, ops, strict=True)
-            if p.parent == store and p.suffix == ".md" and is_memory_name(p.stem)
-        }
 
     def _record_memory_use(self, state: LoopState) -> None:
         """Persist the facts this leg wrote and read (`memory list` shows them);
