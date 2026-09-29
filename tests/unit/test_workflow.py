@@ -7579,10 +7579,10 @@ def test_auto_commit_failure_surface_tells_the_truth(tmp_path: Path) -> None:
     wf.events.emit = _capture  # type: ignore[method-assign]
 
     for benign in ("nothing to commit, working tree clean", "no changes added to commit"):
-        wf._report_auto_commit_failure(GitError(benign), "s", iteration=1)  # pyright: ignore[reportPrivateUsage]
+        wf.checkpoints.report_failure(GitError(benign), "s", iteration=1)
     assert events == []  # a non-failure never claims to be one
 
-    wf._report_auto_commit_failure(  # pyright: ignore[reportPrivateUsage]
+    wf.checkpoints.report_failure(
         GitError("fatal: unable to write new index file"), "agent6 iter 2: fix", iteration=2
     )
     (evt,) = [e for e in events if e["type"] == "loop.auto_commit.failed"]

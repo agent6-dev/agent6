@@ -37,7 +37,7 @@ def _turn(text: str) -> TurnState:
 
 def test_agent6_style_is_the_default_and_unchanged(tmp_path: Path) -> None:
     wf = _wf(tmp_path, "agent6")
-    got = wf._checkpoint_subject(  # pyright: ignore[reportPrivateUsage]
+    got = wf.checkpoints.subject(
         _turn("Add the unified write path.\nmore prose"), fallback="verify passed"
     )
     assert got == "agent6 iter 3: Add the unified write path."
@@ -51,9 +51,7 @@ def test_conventional_style_derives_from_the_worktree(
 
     monkeypatch.setattr(chain_mod, "worktree_name_status", _one_added)
     wf = _wf(tmp_path, "conventional")
-    got = wf._checkpoint_subject(  # pyright: ignore[reportPrivateUsage]
-        _turn("Add the unified write path."), fallback="verify passed"
-    )
+    got = wf.checkpoints.subject(_turn("Add the unified write path."), fallback="verify passed")
     assert got == "feat(config): add the unified write path"
 
 
@@ -67,7 +65,7 @@ def test_model_style_uses_the_provider_text(
     provider = MagicMock()
     provider.call.return_value = MagicMock(text=" fix: tighten the resolver \n")
     wf = _wf(tmp_path, "model", provider=provider)
-    got = wf._checkpoint_subject(_turn("prose"), fallback="verify passed")  # pyright: ignore[reportPrivateUsage]
+    got = wf.checkpoints.subject(_turn("prose"), fallback="verify passed")
     assert got == "fix: tighten the resolver"
 
 
@@ -82,6 +80,6 @@ def test_model_style_degrades_to_agent6_with_a_warning(
     provider.call.side_effect = RuntimeError("no endpoint")
     logged: list[str] = []
     wf = _wf(tmp_path, "model", provider=provider, logger=logged.append)
-    got = wf._checkpoint_subject(_turn("Fix the thing."), fallback="verify passed")  # pyright: ignore[reportPrivateUsage]
+    got = wf.checkpoints.subject(_turn("Fix the thing."), fallback="verify passed")
     assert got == "agent6 iter 3: Fix the thing."
     assert any("model commit message failed" in m for m in logged)

@@ -214,6 +214,7 @@ def _config() -> Any:
             verify_infer=True,
         ),
         prompt=SimpleNamespace(decompose="off"),
+        git=SimpleNamespace(commit=SimpleNamespace(checkpoint=SimpleNamespace(message="agent6"))),
     )
 
 

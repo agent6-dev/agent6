@@ -23,13 +23,10 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import ValidationError
 
 from agent6.budget import BudgetExceeded, BudgetTracker
-from agent6.commit_message import conventional_commit_subject
 from agent6.config import Config
 from agent6.git_ops import (
     GitError,
-    commit_diff,
 )
-from agent6.git_ops import status as git_status
 from agent6.graph.curator import CuratorError, GraphCurator
 from agent6.graph.models import (
     SetCursorIntent,
@@ -56,7 +53,6 @@ from agent6.providers import (
     ProviderInterrupted,
     ProviderResponse,
     ToolDefinition,
-    call_for_text,
 )
 from agent6.sessions.ipc import (
     emit_session_start,
@@ -90,6 +86,7 @@ from agent6.workflows._advice import (
     with_open_tasks,
 )
 from agent6.workflows._chain import RunChain
+from agent6.workflows._checkpoint import Checkpoints
 from agent6.workflows._compaction import (
     CompactionSettings,
     cap_tool_result,
@@ -203,32 +200,6 @@ if TYPE_CHECKING:
 # (see Workflow._worker_max_tokens). 2 spares a one-off starvation its full
 # recovery room while breaking a reasoning-binge spiral.
 _STARVATION_BACKOFF_AFTER_QUIETS = 2
-
-
-def _first_prose_line(text: str, *, fallback: str) -> str:
-    """The agent's first prose line (leading `<thinking>` blocks dropped,
-    heading/bullet markers stripped), or *fallback* on a pure tool-call turn."""
-    cleaned = text
-    while cleaned.lstrip().startswith("<thinking>"):
-        end = cleaned.find("</thinking>")
-        if end == -1:
-            cleaned = ""
-            break
-        cleaned = cleaned[end + len("</thinking>") :]
-    for raw_line in cleaned.splitlines():
-        line = raw_line.strip().lstrip("#").lstrip("-*").strip()
-        if line:
-            return line
-    return fallback
-
-
-def _summarise_assistant_text_for_commit(
-    text: str, iteration: int, *, fallback: str = "verify passed"
-) -> str:
-    """`agent6 iter N: <first line>`, the first line truncated to 72 chars
-    (git `--oneline` width). Free: `resp.text` is already in hand."""
-    subject_body = _first_prose_line(text, fallback=fallback)[:72]
-    return f"agent6 iter {iteration}: {subject_body}"
 
 
 @dataclass
@@ -1139,20 +1110,12 @@ class Workflow:
             # the prompt promises a [harness metric] block after every verified
             # edit, so the model sees the number it is asked to move.
             return self._sample_metric(state, turn, sha="")
-        commit_subject = self._checkpoint_subject(
+        commit_subject = self.checkpoints.subject(
             turn, fallback="checkpoint" if unjudged_changed else "verify passed"
         )
         sha = ""
         try:
-            sha = self.chain.commit(commit_subject)
-            if sha:
-                # "" is chain_commit's nothing-changed answer (a green verify
-                # with no new edits); an event or log line for it would claim
-                # a commit that never happened.
-                self._log(f"  auto-commit: {sha[:12]}")
-                self._emit(
-                    "loop.auto_commit", iteration=turn.iteration, sha=sha, subject=commit_subject
-                )
+            sha = self.checkpoints.commit(commit_subject, iteration=turn.iteration)
             turn.committed = bool(sha)
             # Adoption fills an ABSENT command, for a worker who may run one:
             # a configured gate nobody may run stays the operator's.
@@ -1162,16 +1125,8 @@ class Workflow:
                 and self.gate.may_run(denied=state.verify.denied)
             ):
                 self.gate.maybe_adopt(state, turn)
-            if sha:
-                # Surface "what the worker just changed" to a live viewer
-                # (the TUI diff panel). Capped; best-effort.
-                self._emit(
-                    "diff.updated",
-                    sha=sha,
-                    patch=commit_diff(self.chain.root, sha, max_bytes=8000),
-                )
         except (GitError, OSError) as exc:
-            self._report_auto_commit_failure(exc, commit_subject, iteration=turn.iteration)
+            self.checkpoints.report_failure(exc, commit_subject, iteration=turn.iteration)
         # REPL hook. Default no-op returns "continue".
         if sha:
             directive = self.bridge.after_auto_commit(turn.iteration, sha)
@@ -1225,45 +1180,6 @@ class Workflow:
             return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
         turn.metric_plateau_finish = self._plateau_finish(state.metric.history)
         return None
-
-    def _report_auto_commit_failure(
-        self, exc: GitError | OSError, commit_subject: str, *, iteration: int
-    ) -> None:
-        """Log + emit a non-benign auto-commit failure with a worktree status
-        snapshot, so the event payload tells the operator what was in the tree
-        at the failure point. "nothing to commit" variants are benign and stay
-        silent: the phrase can arrive in either the stdout or the stderr half
-        of the detail string (see git_ops._run); "no changes added" covers the
-        variant when only paths outside the worktree (or .gitignore'd) changed;
-        "working tree clean" covers a verify pass without any file mutation."""
-        msg = str(exc).lower()
-        benign = (
-            "nothing to commit" in msg or "no changes added" in msg or "working tree clean" in msg
-        )
-        if benign:
-            return
-        self._log(f"  auto-commit failed: {exc}")
-        # Best-effort: if status itself raises (rare; the outside-a-repo case
-        # is already gone by this point in the loop), omit the snapshot.
-        worktree_status = ""
-        try:
-            st = git_status(self.chain.root, exclude=self.chain.untracked_at_start)
-            worktree_status = (
-                f"branch={st.branch}"
-                f" head={st.head_sha[:12]}"
-                f" clean={st.is_clean}"
-                f" modified={st.modified_count}"
-                f" untracked={st.untracked_count}"
-            )
-        except (GitError, OSError):
-            pass
-        self._emit(
-            "loop.auto_commit.failed",
-            iteration=iteration,
-            error=str(exc)[:2000],
-            worktree_status=worktree_status,
-            commit_subject=commit_subject[:200],
-        )
 
     # ---- finish gates ----------------------------------------------------------
 
@@ -1441,7 +1357,7 @@ class Workflow:
         finish = turn.finish
         if finish is not None:
             self._log(f"LOOP: {finish.kind} called at iter {turn.iteration}")
-            self._final_checkpoint(turn.iteration)
+            self.checkpoints.final(iteration=turn.iteration)
             # Honest finish: finish_planning is always a clean finish, but a
             # finish_session over a red/stale verify is "finished", not "passed"
             # -- all_passed reflects the actual verify state, never just "the
@@ -1766,34 +1682,6 @@ class Workflow:
         for a run; "" in the modes that never commit."""
         return self.chain.dirty_note() if self.mode == "run" else ""
 
-    def _final_checkpoint(self, iteration: int) -> None:
-        """Best-effort commit of any dirty worktree on a successful exit so
-        run_command-authored edits on a gated run aren't lost from git history.
-
-        On a gated run (verify_command set) the in-loop auto-commit only fires
-        on a green verify; an edit made via run_command after a prior green
-        verify, never re-verified, is left only in the working tree and is
-        silently lost when the run ends (score.sh, resume, and the diff viewer
-        all read git history). Capturing it here closes that gap."""
-        if self.mode != "run" or not self.chain.per_step or not self.chain.dirty():
-            return
-        try:
-            subject = f"checkpoint (iter {iteration})"
-            sha = self.chain.commit(subject)
-            if sha:
-                self._log(f"  final checkpoint: {sha[:12]}")
-                self._emit("loop.auto_commit", iteration=iteration, sha=sha, subject=subject)
-                # Also emit diff.updated so the commit is COUNTED: every fold
-                # (web/TUI/CLI) tallies commits and the latest diff from
-                # diff.updated alone, never from loop.auto_commit.
-                self._emit(
-                    "diff.updated",
-                    sha=sha,
-                    patch=commit_diff(self.chain.root, sha, max_bytes=8000),
-                )
-        except (GitError, OSError) as exc:
-            self._log(f"  final checkpoint commit failed: {exc}")
-
     def _pass_pending_root_tasks(self) -> None:
         """On successful completion, mark still-pending root task(s) as passed.
 
@@ -1835,7 +1723,7 @@ class Workflow:
         tests nearest the diff, so a scoped green reads "passed · scoped
         gate" on every surface."""
         if end.checkpoint:
-            self._final_checkpoint(iteration)
+            self.checkpoints.final(iteration=iteration)
         roots = end.roots if end.roots is not None else end.verdict != "failed"
         if roots:
             self._pass_pending_root_tasks()
@@ -2226,6 +2114,17 @@ class Workflow:
         )
 
     @cached_property
+    def checkpoints(self) -> Checkpoints:
+        return Checkpoints(
+            chain=self.chain,
+            style=self.config.git.commit.checkpoint.message,
+            enabled=self.mode == "run",
+            provider=self.provider,
+            log=self._log,
+            emit=self._emit,
+        )
+
+    @cached_property
     def compactor(self) -> Compactor:
         """The run's context compaction driver."""
         return Compactor(
@@ -2485,40 +2384,6 @@ class Workflow:
         worker pid first (see :func:`agent6.sessions.ipc.emit_session_start`)."""
         if self.events is not None:
             emit_session_start(self.events, self.events.path.parent, event_type, **fields)
-
-    def _checkpoint_subject(self, turn: TurnState, *, fallback: str) -> str:
-        """The per-step commit message, per `[git.commit.checkpoint].message`."""
-        agent6_subject = _summarise_assistant_text_for_commit(
-            turn.resp.text or "", turn.iteration, fallback=fallback
-        )
-        style = self.config.git.commit.checkpoint.message
-        if style == "agent6":
-            return agent6_subject
-        summary = _first_prose_line(turn.resp.text or "", fallback=fallback)
-        changes = self.chain.name_status()
-        if style == "conventional":
-            return conventional_commit_subject(changes, summary=summary)
-        msg = self._model_commit_message(changes, hint=summary)
-        if msg:
-            return msg
-        self._log("WARNING: model commit message failed; using the agent6 style")
-        return agent6_subject
-
-    def _model_commit_message(self, changes: Sequence[tuple[str, str]], *, hint: str) -> str | None:
-        """Model-drafted checkpoint message from git facts only; None on any
-        failure (the caller degrades to the agent6 style)."""
-        listing = "\n".join(f"{s}\t{p}" for s, p in changes[:200])
-        return call_for_text(
-            self.provider,
-            system=(
-                "Write a git commit message for the change set: one"
-                " imperative subject line under 72 characters, optionally a"
-                " blank line and a short body. Use only the facts given."
-                " Output the message text only."
-            ),
-            user=f"Summary hint: {hint}\nChanged files (status\tpath):\n{listing}",
-            max_tokens=400,
-        )
 
     def _emit_budget(self, iteration: int) -> None:
         """Per-iteration usage heartbeat: running token + cost totals. The fold

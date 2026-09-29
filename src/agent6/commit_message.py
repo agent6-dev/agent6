@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Commit message composition: the trailer line, the condensed message a
-squash carries, and the Conventional Commits subject a machine's commit
-gets. Pure string work; `git_ops` runs git.
+squash carries, and a checkpoint's subject in the agent6 or the Conventional
+Commits style. Pure string work; `git_ops` runs git.
 """
 
 from __future__ import annotations
@@ -64,6 +64,29 @@ def condense_commit_message(rows: tuple[CommitRow, ...], *, subject: str) -> str
 
 
 _SUBJECT_LIMIT = 72  # git's soft subject cap; conventional tooling truncates past it
+
+
+def first_prose_line(text: str, *, fallback: str) -> str:
+    """The agent's first prose line (leading `<thinking>` blocks dropped,
+    heading/bullet markers stripped), or *fallback* on a pure tool-call turn."""
+    cleaned = text
+    while cleaned.lstrip().startswith("<thinking>"):
+        end = cleaned.find("</thinking>")
+        if end == -1:
+            cleaned = ""
+            break
+        cleaned = cleaned[end + len("</thinking>") :]
+    for raw_line in cleaned.splitlines():
+        line = raw_line.strip().lstrip("#").lstrip("-*").strip()
+        if line:
+            return line
+    return fallback
+
+
+def agent6_subject(text: str, iteration: int, *, fallback: str = "verify passed") -> str:
+    """`agent6 iter N: <first line>`, the first line truncated to the subject
+    limit. Free: `resp.text` is already in hand."""
+    return f"agent6 iter {iteration}: {first_prose_line(text, fallback=fallback)[:_SUBJECT_LIMIT]}"
 
 
 def _is_testish(p: str) -> bool:

@@ -837,7 +837,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
 
 def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) -> None:
     """A run_command-authored edit left uncommitted on a gated run is captured
-    by _final_checkpoint so it isn't lost from git history at exit."""
+    by the final checkpoint so it isn't lost from git history at exit."""
     repo = tmp_path / "repo"
     _git_repo(repo)
     config = SimpleNamespace(
@@ -869,7 +869,7 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
 
-    wf._final_checkpoint(5)  # pyright: ignore[reportPrivateUsage]
+    wf.checkpoints.final(iteration=5)
 
     head_after = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
@@ -930,7 +930,7 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
     ).stdout.strip()
 
     wf_clean = _wf(root=repo, config=config, mode="run")
-    wf_clean._final_checkpoint(1)  # pyright: ignore[reportPrivateUsage]
+    wf_clean.checkpoints.final(iteration=1)
     assert (
         sp.run(
             ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
@@ -941,7 +941,7 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
     # Dirty tree, but plan mode -> still no commit.
     (repo / "edit.txt").write_text("plan-mode edit\n")
     wf_plan = _wf(root=repo, config=config, mode="plan")
-    wf_plan._final_checkpoint(1)  # pyright: ignore[reportPrivateUsage]
+    wf_plan.checkpoints.final(iteration=1)
     assert (
         sp.run(
             ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
