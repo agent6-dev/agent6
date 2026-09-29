@@ -15,6 +15,7 @@ import time
 
 import pytest
 
+from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
 
 
@@ -35,16 +36,14 @@ def test_a_frontend_claim_is_published_atomically(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A liveness probe must never prune a partially written start identity."""
-    from agent6.sessions import ipc
-
     writes: list[pathlib.Path] = []
-    real = ipc.atomic_write
+    real = portable.atomic_write
 
     def spy(path: pathlib.Path, text: str) -> None:
         writes.append(path)
         real(path, text)
 
-    monkeypatch.setattr(ipc, "atomic_write", spy)
+    monkeypatch.setattr(portable, "atomic_write", spy)
     sessions_ipc.register_frontend(tmp_path, os.getpid())
 
     assert writes == [tmp_path / sessions_ipc.FRONTENDS_DIR / str(os.getpid())]
@@ -55,7 +54,6 @@ def test_a_liveness_probe_does_not_delete_an_inflight_claim(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The claim scan must leave atomic_write's visible sibling temp alone."""
-    from agent6.sessions import ipc
 
     def publish_with_probe(path: pathlib.Path, text: str) -> None:
         temp = path.with_name(f".{path.name}.race.tmp")
@@ -63,7 +61,7 @@ def test_a_liveness_probe_does_not_delete_an_inflight_claim(
         assert sessions_ipc.frontend_is_live(tmp_path) is False
         temp.replace(path)
 
-    monkeypatch.setattr(ipc, "atomic_write", publish_with_probe)
+    monkeypatch.setattr(portable, "atomic_write", publish_with_probe)
     sessions_ipc.register_frontend(tmp_path, os.getpid())
 
     assert sessions_ipc.frontend_is_live(tmp_path) is True

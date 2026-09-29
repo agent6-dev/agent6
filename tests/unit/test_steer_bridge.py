@@ -17,6 +17,7 @@ from unittest import mock
 import pytest
 
 from agent6 import events as agent6_events
+from agent6 import portable
 from agent6.harness import _chain, _operator, _provider_call
 from agent6.sessions import ipc as sessions_ipc
 from agent6.ui import steer as ui_steer
@@ -391,13 +392,13 @@ def test_an_urgent_steer_request_publishes_atomically(
     from agent6.sessions import ipc
 
     calls: list[tuple[pathlib.Path, str]] = []
-    real = ipc.atomic_write
+    real = portable.atomic_write
 
     def spy(path: pathlib.Path, data: str) -> None:
         calls.append((path, data))
         real(path, data)
 
-    monkeypatch.setattr(ipc, "atomic_write", spy)
+    monkeypatch.setattr(portable, "atomic_write", spy)
     ipc.request_steer(tmp_path, now=True)
 
     assert (tmp_path / "steer.request", "now") in calls
@@ -416,13 +417,13 @@ def test_compact_request_publishes_atomically(
     from agent6.sessions import ipc
 
     calls: list[tuple[pathlib.Path, str]] = []
-    real = ipc.atomic_write
+    real = portable.atomic_write
 
     def spy(path: pathlib.Path, data: str) -> None:
         calls.append((path, data))
         real(path, data)
 
-    monkeypatch.setattr(ipc, "atomic_write", spy)
+    monkeypatch.setattr(portable, "atomic_write", spy)
     ipc.request_compact(tmp_path, focus="pin the auth decisions")
     assert (tmp_path / "compact.request", "pin the auth decisions") in calls
     assert ipc.read_compact_request(tmp_path) == "pin the auth decisions"

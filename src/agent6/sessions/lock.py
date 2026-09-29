@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import contextlib
 import os
-from pathlib import Path
+import pathlib
 
-from agent6.paths import checkout_root, mkdir_for_real_user, repo_id
-from agent6.portable import lock_exclusive, lock_shared_nonblocking, unlock
+from agent6 import paths, portable
 
 
-def acquire_single_writer(session_dir: Path) -> int | None:
+def acquire_single_writer(session_dir: pathlib.Path) -> int | None:
     """Take a non-blocking exclusive lock on `<session-dir>/worker.lock`.
 
     A second writer of the same run dir would spawn a second curator whose in-memory cache
@@ -30,10 +29,10 @@ def acquire_single_writer(session_dir: Path) -> int | None:
         The held fd, passed to `release_single_writer` at teardown; None when another live
         process holds the lock.
     """
-    mkdir_for_real_user(session_dir)
+    paths.mkdir_for_real_user(session_dir)
     fd = os.open(session_dir / "worker.lock", os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        lock_exclusive(fd, blocking=False)
+        portable.lock_exclusive(fd, blocking=False)
     except OSError:
         os.close(fd)
         return None
@@ -52,7 +51,7 @@ def release_single_writer(fd: int | None) -> None:
     if fd is None:
         return
     with contextlib.suppress(OSError):
-        unlock(fd)
+        portable.unlock(fd)
     with contextlib.suppress(OSError):
         os.close(fd)
 
@@ -66,7 +65,7 @@ SINGLE_WRITER_BUSY = (
 )
 
 
-def checkout_lock_path(state_dir: Path, checkout: Path) -> Path:
+def checkout_lock_path(state_dir: pathlib.Path, checkout: pathlib.Path) -> pathlib.Path:
     """Return the writer lock of the checkout a path is in.
 
     A repository's checkouts (its working tree, each linked worktree) share one state dir
@@ -79,10 +78,12 @@ def checkout_lock_path(state_dir: Path, checkout: Path) -> Path:
     Returns:
         `<state-dir>/locks/<checkout-id>.lock`.
     """
-    return state_dir / "locks" / f"{repo_id(checkout_root(checkout))}.lock"
+    return state_dir / "locks" / f"{paths.repo_id(paths.checkout_root(checkout))}.lock"
 
 
-def acquire_repo_writer(state_dir: Path, checkout: Path, session_id: str) -> int | None:
+def acquire_repo_writer(
+    state_dir: pathlib.Path, checkout: pathlib.Path, session_id: str
+) -> int | None:
     """Take a non-blocking exclusive lock on a checkout: one live run-mode worker per checkout.
 
     Each commit stages the whole working tree, so a second concurrent run would fold the
@@ -99,10 +100,10 @@ def acquire_repo_writer(state_dir: Path, checkout: Path, session_id: str) -> int
         process holds the lock.
     """
     lock_path = checkout_lock_path(state_dir, checkout)
-    mkdir_for_real_user(lock_path.parent)
+    paths.mkdir_for_real_user(lock_path.parent)
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        lock_exclusive(fd, blocking=False)
+        portable.lock_exclusive(fd, blocking=False)
     except OSError:
         os.close(fd)
         return None
@@ -111,7 +112,7 @@ def acquire_repo_writer(state_dir: Path, checkout: Path, session_id: str) -> int
     return fd
 
 
-def repo_writer_holder(state_dir: Path, checkout: Path) -> str:
+def repo_writer_holder(state_dir: pathlib.Path, checkout: pathlib.Path) -> str:
     """Return the session id the checkout lock's holder stamped, or "".
 
     Advisory, for a refusal message; the flock is the boundary.
@@ -129,7 +130,7 @@ def repo_writer_holder(state_dir: Path, checkout: Path) -> str:
         return ""
 
 
-def repo_writer_held(state_dir: Path, checkout: Path) -> bool:
+def repo_writer_held(state_dir: pathlib.Path, checkout: pathlib.Path) -> bool:
     """Return whether a live worker holds the checkout lock.
 
     An advisory probe for a front-end preflight: it takes a shared lock, which an exclusive
@@ -151,7 +152,7 @@ def repo_writer_held(state_dir: Path, checkout: Path) -> bool:
     except OSError:
         return False
     try:
-        lock_shared_nonblocking(fd)
+        portable.lock_shared_nonblocking(fd)
     except OSError:
         os.close(fd)
         return True

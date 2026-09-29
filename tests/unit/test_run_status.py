@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
 from agent6.ui.cli import (
     _common,  # pyright: ignore[reportPrivateUsage]
@@ -693,17 +694,15 @@ def test_worker_pid_is_published_atomically(tmp_path: pathlib.Path) -> None:
     time identity stripped, and a prefix that happens to name a live process you own reads alive
     with nothing left to refute it, which is the recycled-pid lie the identity was added to kill.
     """
-    from agent6.sessions import ipc
-
     seen: list[str] = []
-    real = ipc.atomic_write
+    real = portable.atomic_write
 
     def spy(path: pathlib.Path, text: str) -> None:
         seen.append(path.name)
         real(path, text)
 
     monkey = pytest.MonkeyPatch()
-    monkey.setattr(ipc, "atomic_write", spy)
+    monkey.setattr(portable, "atomic_write", spy)
     try:
         sessions_ipc.write_worker_pid(tmp_path, os.getpid())
     finally:

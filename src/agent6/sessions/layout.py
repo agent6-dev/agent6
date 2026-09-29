@@ -7,13 +7,13 @@ A leaf: path arithmetic over the resolved state base.
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 from collections.abc import Collection, Sequence
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.paths import mkdir_for_real_user
-from agent6.portable import atomic_write
-from agent6.sessions.manifest import MANIFEST_NAME
+from agent6 import paths as agent6_paths
+from agent6 import portable
+from agent6.sessions import manifest
 
 
 def is_safe_session_id(session_id: str) -> bool:
@@ -43,7 +43,7 @@ LOGS_NAME = "logs.jsonl"
 UNTRACKED_AT_START_NAME = "untracked-at-start"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionLayout:
     """The paths of one session's state.
 
@@ -53,52 +53,52 @@ class SessionLayout:
         subdir: The bucket under the sessions root, one per mode.
     """
 
-    state_dir: Path
+    state_dir: pathlib.Path
     session_id: str
     subdir: str = "runs"
 
     @property
-    def session_dir(self) -> Path:
+    def session_dir(self) -> pathlib.Path:
         """The session directory."""
         return bucket_dir(self.state_dir, self.subdir) / self.session_id
 
     @property
-    def manifest_path(self) -> Path:
+    def manifest_path(self) -> pathlib.Path:
         """The manifest file."""
-        return self.session_dir / MANIFEST_NAME
+        return self.session_dir / manifest.MANIFEST_NAME
 
     @property
-    def graph_dir(self) -> Path:
+    def graph_dir(self) -> pathlib.Path:
         """The task graph's node store."""
         return self.session_dir / "graph"
 
     @property
-    def journal_path(self) -> Path:
+    def journal_path(self) -> pathlib.Path:
         """The task graph's journal."""
         return self.session_dir / "graph.jsonl"
 
     @property
-    def cursor_path(self) -> Path:
+    def cursor_path(self) -> pathlib.Path:
         """The task graph's cursor."""
         return self.session_dir / "cursor.json"
 
     @property
-    def lock_path(self) -> Path:
+    def lock_path(self) -> pathlib.Path:
         """The task graph's lock file."""
         return self.session_dir / ".lock"
 
     @property
-    def checkpoints_dir(self) -> Path:
+    def checkpoints_dir(self) -> pathlib.Path:
         """The per-turn checkpoints, `<NNNN>.json`, each the snapshot bytes of that turn."""
         return self.session_dir / "checkpoints"
 
     @property
-    def transcripts_dir(self) -> Path:
+    def transcripts_dir(self) -> pathlib.Path:
         """The provider transcripts."""
         return self.session_dir / "transcripts"
 
     @property
-    def logs_path(self) -> Path:
+    def logs_path(self) -> pathlib.Path:
         """The event journal."""
         return self.session_dir / LOGS_NAME
 
@@ -108,11 +108,11 @@ class SessionLayout:
         Under sudo the handover is now, not at teardown: a killed run must not leave a
         root-owned base.
         """
-        mkdir_for_real_user(self.graph_dir)
-        mkdir_for_real_user(self.transcripts_dir)
-        mkdir_for_real_user(self.checkpoints_dir)
+        agent6_paths.mkdir_for_real_user(self.graph_dir)
+        agent6_paths.mkdir_for_real_user(self.transcripts_dir)
+        agent6_paths.mkdir_for_real_user(self.checkpoints_dir)
 
-    def checkpoint_path(self, turn: int) -> Path:
+    def checkpoint_path(self, turn: int) -> pathlib.Path:
         """Return the checkpoint file of a turn.
 
         Args:
@@ -124,7 +124,7 @@ class SessionLayout:
         return self.checkpoints_dir / f"{turn:04d}.json"
 
 
-def read_untracked_at_start(session_dir: Path) -> frozenset[str]:
+def read_untracked_at_start(session_dir: pathlib.Path) -> frozenset[str]:
     """Read the run's `untracked-at-start` set.
 
     Args:
@@ -140,14 +140,14 @@ def read_untracked_at_start(session_dir: Path) -> frozenset[str]:
     return frozenset(p.decode("utf-8", "surrogateescape") for p in raw.split(b"\0") if p)
 
 
-def write_untracked_at_start(session_dir: Path, paths: Collection[str]) -> None:
+def write_untracked_at_start(session_dir: pathlib.Path, paths: Collection[str]) -> None:
     """Write the run's `untracked-at-start` set.
 
     Args:
         session_dir: The session directory.
         paths: The repo-relative paths.
     """
-    atomic_write(
+    portable.atomic_write(
         session_dir / UNTRACKED_AT_START_NAME,
         b"\0".join(p.encode("utf-8", "surrogateescape") for p in sorted(paths)),
     )
@@ -161,7 +161,7 @@ SESSION_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks", "machines")
 HUB_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks")
 
 
-def session_has_record(session_dir: Path) -> bool:
+def session_has_record(session_dir: pathlib.Path) -> bool:
     """Return whether a session dir holds a record: a manifest or a journal.
 
     A dir with neither was refused before it started, or orphaned.
@@ -172,10 +172,10 @@ def session_has_record(session_dir: Path) -> bool:
     Returns:
         True when either file exists.
     """
-    return (session_dir / MANIFEST_NAME).exists() or (session_dir / LOGS_NAME).exists()
+    return (session_dir / manifest.MANIFEST_NAME).exists() or (session_dir / LOGS_NAME).exists()
 
 
-def machines_root(state_dir: Path) -> Path:
+def machines_root(state_dir: pathlib.Path) -> pathlib.Path:
     """Return the directory of machine instances.
 
     A `machine create` draft is a session and lives under the `machines` bucket instead.
@@ -189,7 +189,7 @@ def machines_root(state_dir: Path) -> Path:
     return state_dir / "machines"
 
 
-def bucket_dir(state_dir: Path, bucket: str) -> Path:
+def bucket_dir(state_dir: pathlib.Path, bucket: str) -> pathlib.Path:
     """Return the directory holding one bucket's sessions.
 
     Args:
@@ -202,7 +202,7 @@ def bucket_dir(state_dir: Path, bucket: str) -> Path:
     return state_dir / SESSIONS_ROOT / bucket
 
 
-def layout_of(session_dir: Path) -> SessionLayout:
+def layout_of(session_dir: pathlib.Path) -> SessionLayout:
     """Return the layout of a resolved session directory.
 
     Rebuilding one from the directory's name alone loses the bucket and defaults to `runs`,
@@ -222,7 +222,7 @@ def layout_of(session_dir: Path) -> SessionLayout:
 
 
 def session_matches(
-    state_dir: Path, session_id: str, *, buckets: Sequence[str] = SESSION_BUCKETS
+    state_dir: pathlib.Path, session_id: str, *, buckets: Sequence[str] = SESSION_BUCKETS
 ) -> list[SessionLayout]:
     """Return every session an id names or prefixes.
 
@@ -255,7 +255,7 @@ def session_matches(
     return exact or prefix
 
 
-def session_layout(state_dir: Path, session_id: str) -> SessionLayout | None:
+def session_layout(state_dir: pathlib.Path, session_id: str) -> SessionLayout | None:
     """Return the layout an id names in whichever bucket holds it, or None.
 
     Args:

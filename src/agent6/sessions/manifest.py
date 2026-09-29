@@ -11,14 +11,14 @@ gate, which refuses an unknown mode rather than falling open to the write tools.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 from typing import cast
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+import pydantic
 
-from agent6.kinds import ResumableMode, UnknownSessionKindError, session_kind
+from agent6 import kinds
 
-_MODEL_CONFIG = ConfigDict(frozen=True, extra="ignore")
+_MODEL_CONFIG = pydantic.ConfigDict(frozen=True, extra="ignore")
 
 
 class ManifestError(Exception):
@@ -28,7 +28,7 @@ class ManifestError(Exception):
     """
 
 
-class ModelBrief(BaseModel):
+class ModelBrief(pydantic.BaseModel):
     """The provider and model of a resolved role."""
 
     model_config = _MODEL_CONFIG
@@ -37,7 +37,7 @@ class ModelBrief(BaseModel):
     model: str = ""
 
 
-class ModelsBrief(BaseModel):
+class ModelsBrief(pydantic.BaseModel):
     """The models the run resolved.
 
     Attributes:
@@ -58,7 +58,7 @@ class ModelsBrief(BaseModel):
         return self.driver if self.driver_from_flag else None
 
 
-class PolicyStamp(BaseModel):
+class PolicyStamp(pydantic.BaseModel):
     """The policy the run launched under, so every surface and `agent6 exec` read one record.
 
     Attributes:
@@ -77,7 +77,7 @@ class PolicyStamp(BaseModel):
     commit_per_step: bool = True
 
 
-class HarnessStamp(BaseModel):
+class HarnessStamp(pydantic.BaseModel):
     """The in-loop strategy the run started with, so `resume` re-applies it.
 
     Attributes:
@@ -116,7 +116,7 @@ class HarnessStamp(BaseModel):
 NO_MERGE_COMMIT = "0" * 40
 
 
-class MergeStamp(BaseModel):
+class MergeStamp(pydantic.BaseModel):
     """The record of the run branch's merge.
 
     Attributes:
@@ -154,7 +154,7 @@ class MergeStamp(BaseModel):
         return f"already on {self.into}, no merge commit"
 
 
-class ParallelLineage(BaseModel):
+class ParallelLineage(pydantic.BaseModel):
     """A fan-out lane's place.
 
     Attributes:
@@ -171,7 +171,7 @@ class ParallelLineage(BaseModel):
     coordinator: str = ""
 
 
-class FanoutStamp(BaseModel):
+class FanoutStamp(pydantic.BaseModel):
     """The record a `run --parallel` fan-out leaves on its own session.
 
     A `/parallel` group's coordinator is an ordinary run and carries none.
@@ -187,7 +187,7 @@ class FanoutStamp(BaseModel):
     spec: str = ""
 
 
-class CompareStamp(BaseModel):
+class CompareStamp(pydantic.BaseModel):
     """A fan-out lane's auto-compare placement.
 
     Attributes:
@@ -217,7 +217,7 @@ MANIFEST_VERSION = 4
 MANIFEST_NAME = "manifest.json"
 
 
-class SessionManifest(BaseModel):
+class SessionManifest(pydantic.BaseModel):
     """The typed manifest.json a session starts with and later stamps.
 
     A stamp-rewrite by this version drops keys only a newer version knows, so the write
@@ -280,14 +280,14 @@ class SessionManifest(BaseModel):
     parent_session_id: str | None = None
     forked_from_turn: int | None = None
     forked_from_sha: str | None = None
-    worktree: Path | None = None
-    worktree_git_dir: Path | None = None
+    worktree: pathlib.Path | None = None
+    worktree_git_dir: pathlib.Path | None = None
     merged: MergeStamp | None = None
     parallel: ParallelLineage | None = None
     compare: CompareStamp | None = None
     fanout: FanoutStamp | None = None
 
-    def session_mode(self) -> ResumableMode:
+    def session_mode(self) -> kinds.ResumableMode:
         """Return the session's mode, refusing one this agent6 does not know.
 
         Fork and resume act on this rather than the raw `mode`, so a damaged manifest never
@@ -300,13 +300,13 @@ class SessionManifest(BaseModel):
             ManifestError: The mode is unknown, or its kind is not resumable.
         """
         try:
-            kind = session_kind(self.mode)
-        except UnknownSessionKindError as exc:
+            kind = kinds.session_kind(self.mode)
+        except kinds.UnknownSessionKindError as exc:
             raise ManifestError(str(exc)) from exc
         if not kind.resumable:
             raise ManifestError(f"a {kind.name!r} session is not resumable")
         # Guarded by `resumable` above, which the type system cannot follow.
-        return cast(ResumableMode, kind.name)
+        return cast(kinds.ResumableMode, kind.name)
 
 
 def model_git_refusal(manifest: SessionManifest, verb: str) -> str | None:
@@ -328,7 +328,7 @@ def model_git_refusal(manifest: SessionManifest, verb: str) -> str | None:
     )
 
 
-def read_manifest(session_dir: Path) -> SessionManifest:
+def read_manifest(session_dir: pathlib.Path) -> SessionManifest:
     """Parse a session's manifest.json.
 
     Args:
@@ -352,5 +352,5 @@ def read_manifest(session_dir: Path) -> SessionManifest:
         data["harness"] = data.pop("workflow")  # the stamp's key through version 3
     try:
         return SessionManifest.model_validate(data)
-    except ValidationError as exc:
+    except pydantic.ValidationError as exc:
         raise ManifestError(str(exc)) from exc
