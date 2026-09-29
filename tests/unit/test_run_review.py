@@ -231,6 +231,16 @@ def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
     assert provider.last_user == "AGENTS.md:\n# rules\n\nRUN RECORD:\nsession x: task"
     assert "Candidate memory facts" in provider.last_system
     assert "Memory entries the record contradicts" in provider.last_system
+    # Not a fault: a finish the memory backstop deferred once, a task's own
+    # starting red verify. Not a fact: the code's state at the time, the
+    # index's own entries.
+    for line in (
+        "not a fault, unless",
+        "the task, not a fault",
+        "Not the code's state at the time",
+        "or the memory index already state",
+    ):
+        assert line in provider.last_system
     with pytest.raises(RunReviewError, match="provider call failed"):
         run_review(_FakeProvider(raise_error=True), digest="x")  # type: ignore[arg-type]
     with pytest.raises(RunReviewError, match="empty"):

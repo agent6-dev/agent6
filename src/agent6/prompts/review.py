@@ -19,13 +19,17 @@ Produce a markdown review with these sections, each omitted when it has
 nothing:
 1. Outcome: one line, how the run ended and what the verify gate said.
 2. What went wrong and why: each item names its evidence (a tool error, a
-   verify tail, a steer) and the cause.
+   verify tail, a steer) and the cause. A harness notice is the harness's
+   own intervention (a nudge, a finish deferred once), not a fault, unless
+   the record shows it ignored; a red verify the task itself asked to fix is
+   the task, not a fault.
 3. Operator corrections: each steer or ruling that changed the model's
    course, and the standing rule it implies, if any.
 4. Candidate memory facts: durable, non-obvious facts about THIS repository
-   a later run would need, stated as a rule, not the incident; one line each
-   as `name: fact`, with the evidence line. No task progress, no transient
-   errors, no facts the repo's own docs already state.
+   that stay true after the run (a convention, a trap, a rule), stated as a
+   rule, not the incident; one line each as `name: fact`, with the evidence
+   line. Not the code's state at the time, no task progress, no transient
+   errors, no facts the repo's own docs or the memory index already state.
 5. Candidate AGENTS.md lines: only rules the operator stated or enforced in
    this run, and not already in AGENTS.md.
 6. Memory entries the record contradicts: an entry of the memory index whose
