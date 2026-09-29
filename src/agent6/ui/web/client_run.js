@@ -134,6 +134,7 @@ async function renderRun(id, opts, gen) {
         cards.review.innerHTML = '';
         const pre = el('pre', 'plan'); pre.textContent = d.review; cards.review.appendChild(pre);
         cards.review.parentElement.style.display = '';
+        if (cards._setW) cards._setW('review'); // a phone shows one widget: this one, now
       } catch (e) { toast(e.message, true); }
       finally { reviewBtn.disabled = false; }
     };
@@ -172,6 +173,7 @@ async function renderRun(id, opts, gen) {
 
   // The phone widget menu: pick which single widget the page shows.
   const entries = [['conv', 'Conversation'], ['head', 'Overview'], ['plan', 'plan.md'],
+                   ['review', 'Run review'],
                    ['tasks', 'Task graph'], ['budget', 'Budget'], ['tools', 'Tool calls'],
                    ['shells', 'Background shells'], ['diff', 'Latest commit'], ['log', 'Event log']];
   const wbtn = el('button', 'wmenu-btn', '☰');
@@ -187,6 +189,7 @@ async function renderRun(id, opts, gen) {
     wmenu.appendChild(mb);
   }
   wbtn.onclick = () => { wmenu.style.display = wmenu.style.display === 'none' ? '' : 'none'; };
+  cards._setW = setW; // the Review run button activates its card on a phone
   setW('conv');
   // The button lives in the header (next to the theme toggle) so the two share
   // one row and skin; route() removes it since clearing #view won't.

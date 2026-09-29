@@ -17,7 +17,7 @@ from agent6.ui.web.page import CLIENT_JS, PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "cd974e1e550c9341af966d9662871cafbe9fec8c9ae734e451cfb73d41e1c73e"
+PAGE_SHA256 = "f266a97bb7bce8a136defce9f3dab3f278edc61c2c35c691dd54447d1c5b2cb9"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -187,3 +187,12 @@ def test_the_hub_keeps_its_maintenance_actions_behind_one_control() -> None:
     for label in ("Prune merged runs", "Prune merged runs, squash-merged too", "Clear saved asks"):
         assert f"action('{label}'" in CLIENT_JS
     assert "also squash-merged branches" not in CLIENT_JS
+
+
+def test_the_phone_widget_menu_can_show_the_run_review() -> None:
+    """Under the phone layout only the active widget shows; the review card
+    had no menu entry and was never activated, so a review that landed on a
+    phone was invisible."""
+    client = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
+    assert "['review', 'Run review']" in client
+    assert "setW('review')" in client
