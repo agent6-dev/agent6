@@ -1257,6 +1257,84 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
     assert "was `pytest -q`" in told and "now `make check`" in told
 
 
+def test_an_adopted_gate_carries_into_the_next_leg(tmp_path: Path) -> None:
+    """A gateless run adopts a verify command at its first commit; a resumed
+    leg started with nothing adopted, so the swap notice named the gate as
+    lost and the run re-adopted it one commit later."""
+    from agent6.workflows._session_state import SessionSnapshot as _Snap
+
+    session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
+    session_dir.mkdir(parents=True)
+    snap_path = session_dir / "loop_state.json"
+    snap_path.write_text(
+        _Snap(
+            system="s",
+            messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
+            tool_calls=0,
+            next_iteration=3,
+            root_task_id=None,
+            original_task="go",
+            verify_command=("pytest", "-q"),  # adopted in leg one; the config names none
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    config = SimpleNamespace(
+        git=_GIT_STUB,
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
+            verify_when="never",
+            verify_retries=2,
+            verify_command=(),
+            metric=SimpleNamespace(goal="maximize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
+        ),
+    )
+    provider = MagicMock()
+    provider.call.return_value = SimpleNamespace(
+        text="",
+        tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
+        refused={},
+        stop_reason="tool_use",
+        input_tokens=1,
+        output_tokens=1,
+        raw={
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "t1",
+                    "name": "finish_session",
+                    "input": {"summary": "done"},
+                }
+            ]
+        },
+    )
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher.adopt_verify_command.return_value = True
+    ev = _EventCapture(path=session_dir / "logs.jsonl")
+    wf = _wf(
+        provider=provider,
+        dispatcher=dispatcher,
+        config=config,
+        mode="run",
+        events=ev,
+        resume_state_path=snap_path,
+    )
+    wf.resume()
+
+    dispatcher.adopt_verify_command.assert_called_once_with(("pytest", "-q"))
+    assert [e for e in ev.events if e["type"] == "loop.verify_swapped"] == []
+    (carried,) = [e for e in ev.events if e["type"] == "loop.verify_inferred"]
+    assert carried["command"] == ["pytest", "-q"] and carried["source"] == "resumed"
+    # The leg's own snapshot names the carried gate as the one in force.
+    written = json.loads(snap_path.read_text(encoding="utf-8"))
+    assert tuple(written["verify_command"]) == ("pytest", "-q")
+
+
 def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Path) -> None:
     """The snapshot's `head_sha` is the run's CHAIN TIP, and a chain commit
     moves neither HEAD nor the checkout, so a carry gated on `git status`

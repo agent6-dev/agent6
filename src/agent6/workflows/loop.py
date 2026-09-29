@@ -353,6 +353,9 @@ class Workflow:
     # The operator's standing goal (`run --standing`): seeded as a standing
     # task under the root at run start. "" = none.
     standing_goal: str = ""
+    # The gate a resumed leg carried from the last one (`_carry_adopted_gate`),
+    # set at the leg's start for the state the leg then builds.
+    _adopted_on_resume: tuple[str, ...] = ()
     # An operator is watching and can steer live (a foreground CLI/TUI run or
     # an interactive resume). A quiet turn then PARKS for a steer instead of
     # ending: interactively, going quiet is the most normal thing an agent
@@ -507,7 +510,8 @@ class Workflow:
         # worker run a command nothing checks. A gate the leg dropped because
         # commands are withheld is no swap: no command can run, that one
         # included.
-        gate = self.gate.configured  # a leg starts with nothing adopted
+        self._adopted_on_resume = self._carry_adopted_gate(snapshot)
+        gate = self.gate.configured or self._adopted_on_resume
         withheld = (
             not gate and bool(snapshot.verify_command) and self.dispatcher.command_policy() == "no"
         )
@@ -550,6 +554,7 @@ class Workflow:
         """
         if resume_from is not None:
             restore_completion_state(state, resume_from)
+            state.verify.adopted = self._adopted_on_resume
             self._carry_verify_verdict(state, resume_from)
             self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
             elided, gists = count_elisions(conversation)
@@ -564,6 +569,23 @@ class Workflow:
             self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
             if state.pins:
                 conversation.notice(pinned_block(state.pins))
+
+    def _carry_adopted_gate(self, snapshot: SessionSnapshot) -> tuple[str, ...]:
+        """The gate a gateless run adopted in an earlier leg, carried into this
+        one: the snapshot's command when the config names none and the jail
+        can run it (the dispatcher takes it again, as the adoption did). `()`
+        otherwise, and the leg-start notice reads the gate as swapped."""
+        argv = tuple(snapshot.verify_command)
+        if self.gate.configured or not argv or not self.dispatcher.adopt_verify_command(argv):
+            return ()
+        self._log(f"LOOP: verify gate carried from the last leg: {' '.join(argv)}")
+        self._emit(
+            "loop.verify_inferred",
+            command=list(argv),
+            source="resumed",
+            adopted_at=snapshot.next_iteration,
+        )
+        return argv
 
     def _carry_verify_verdict(self, state: LoopState, snap: SessionSnapshot) -> None:
         """Carry the prior leg's verify observation when it still describes THIS
