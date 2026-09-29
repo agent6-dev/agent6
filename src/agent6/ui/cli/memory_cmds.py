@@ -12,6 +12,7 @@ from pathlib import Path
 
 from agent6.memory import (
     MemoryUse,
+    Touch,
     add,
     decisions_path,
     index_name,
@@ -56,16 +57,22 @@ def format_use(use: MemoryUse) -> str:
     read once|N times, last <date> by <session>` or `never read`; a part the
     record does not hold is left out."""
     parts: list[str] = []
-    if use.created_by:
-        parts.append(f"written {use.created_at[:10]} by {use.created_by}")
-        if use.updated_by and (use.updated_by, use.updated_at) != (use.created_by, use.created_at):
-            parts.append(f"edited {use.updated_at[:10]} by {use.updated_by}")
-    if use.reads:
+    created, updated = use.created, use.updated
+    if created is not None:
+        parts.append(f"written {_when_by(created)}")
+        if updated is not None and updated != created:
+            parts.append(f"edited {_when_by(updated)}")
+    if use.reads and use.last_read is not None:
         times = "once" if use.reads == 1 else f"{use.reads} times"
-        parts.append(f"read {times}, last {use.read_at[:10]} by {use.read_by}")
+        parts.append(f"read {times}, last {_when_by(use.last_read)}")
     else:
         parts.append("never read")
     return ", ".join(parts)
+
+
+def _when_by(touch: Touch) -> str:
+    """`<date> by <session>`, or `by <session>` when the record holds no stamp."""
+    return f"{touch.at[:10]} by {touch.session}" if touch.at else f"by {touch.session}"
 
 
 def _cmd_memory_show(name: str) -> int:

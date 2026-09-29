@@ -138,11 +138,10 @@ def test_the_leg_end_persists_what_it_wrote_and_read(tmp_path: Path) -> None:
     state.memory = MemoryState(wrote=["quirk"], read={"quirk": 2, "other": 1})
     wf._record_memory_use(state)  # pyright: ignore[reportPrivateUsage]
     use = read_use(tmp_path)
-    assert use["quirk"].created_by == "run-a"
-    assert use["quirk"].updated_by == "run-a"
+    assert use["quirk"].writers == ("run-a",)
     assert use["quirk"].reads == 2
-    assert use["quirk"].read_by == "run-a"
-    assert use["other"].created_by == ""
+    assert use["quirk"].last_read is not None and use["quirk"].last_read.session == "run-a"
+    assert use["other"].created is None
     assert use["other"].reads == 1
 
 

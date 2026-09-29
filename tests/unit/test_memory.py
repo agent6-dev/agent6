@@ -15,6 +15,7 @@ from agent6.memory import (
     MemoryMerge,
     MemoryStoreError,
     MemoryUse,
+    Touch,
     add,
     decisions_path,
     index_name,
@@ -524,35 +525,30 @@ def test_record_use_keeps_who_wrote_and_who_read(tmp_path: Path) -> None:
     record_use(tmp_path, session="run-b", wrote=("fact",), read={}, when=10800.0)
     use = read_use(tmp_path)
     assert use["fact"] == MemoryUse(
-        created_by="run-a",
-        created_at="1970-01-01 00:00Z",
-        updated_by="run-b",
-        updated_at="1970-01-01 03:00Z",
-        writers=("run-a", "run-b"),
+        writes=(
+            Touch("run-a", "1970-01-01 00:00Z"),
+            Touch("run-b", "1970-01-01 01:00Z"),
+            Touch("run-b", "1970-01-01 03:00Z"),
+        ),
         reads=3,
-        read_by="run-c",
-        read_at="1970-01-01 02:00Z",
+        last_read=Touch("run-c", "1970-01-01 02:00Z"),
+    )
+    assert use["fact"].writers == ("run-a", "run-b")
+    assert (use["fact"].created, use["fact"].updated) == (
+        Touch("run-a", "1970-01-01 00:00Z"),
+        Touch("run-b", "1970-01-01 03:00Z"),
     )
     # A read of a fact nobody recorded writing (hand-written, or older than
     # the record) still counts, with no writer named.
-    assert use["other"] == MemoryUse(
-        created_by="",
-        created_at="",
-        updated_by="",
-        updated_at="",
-        writers=(),
-        reads=1,
-        read_by="run-c",
-        read_at="1970-01-01 02:00Z",
-    )
+    assert use["other"] == MemoryUse(reads=1, last_read=Touch("run-c", "1970-01-01 02:00Z"))
+    assert use["other"].created is None
     assert use_path(tmp_path) == tmp_path / "memory-use.json"
 
 
 def test_operator_add_and_rm_keep_the_use_record_in_step(tmp_path: Path) -> None:
     add(tmp_path, "quirk", "The build needs FOO=1.")
     use = read_use(tmp_path)
-    assert use["quirk"].created_by == "operator"
-    assert use["quirk"].updated_by == "operator"
+    assert use["quirk"].writers == ("operator",)
     assert use["quirk"].reads == 0
     remove(tmp_path, "quirk")
     assert "quirk" not in read_use(tmp_path)
@@ -569,6 +565,19 @@ def test_read_use_tolerates_a_missing_or_misshapen_record(tmp_path: Path) -> Non
     )
     assert list(read_use(tmp_path)) == ["ok", "u"]
     assert read_use(tmp_path)["u"].writers == ("run-a",)
+    use_path(tmp_path).write_text(
+        '{"n": {"writes": [{"session": "run-a", "at": "2026-01-01 00:00Z"}], "reads": 1,'
+        ' "last_read": {"session": "run-b", "at": "2026-01-02 00:00Z"}},'
+        ' "bad": {"writes": [{"session": 1}]}, "worse": {"writes": "run-a"}}',
+        encoding="utf-8",
+    )
+    assert read_use(tmp_path) == {
+        "n": MemoryUse(
+            writes=(Touch("run-a", "2026-01-01 00:00Z"),),
+            reads=1,
+            last_read=Touch("run-b", "2026-01-02 00:00Z"),
+        )
+    }
 
 
 def test_read_use_fills_writers_for_an_entry_recorded_before_the_list_existed(
@@ -619,9 +628,11 @@ def test_merge_use_carries_a_lanes_record_into_the_origin(tmp_path: Path) -> Non
     assert (merged, reads) == (2, 1)  # two writers carried; one fact read (gone was never held)
     use = read_use(origin)
     assert use["shared"].writers == ("run-o", "lane-1")
-    assert (use["shared"].created_by, use["shared"].updated_by) == ("run-o", "lane-1")
-    assert (use["shared"].reads, use["shared"].read_by) == (3, "lane-1")
-    assert use["fresh"].created_by == "lane-1"
+    assert (use["shared"].reads, use["shared"].last_read) == (
+        3,
+        Touch("lane-1", "1970-01-01 00:01Z"),
+    )
+    assert use["fresh"].writers == ("lane-1",)
     assert "gone" not in use  # a read of a fact the origin never held travels nowhere
     # Nothing to carry leaves the origin alone.
     assert merge_use(tmp_path / "empty", origin, written=()) == (0, 0)

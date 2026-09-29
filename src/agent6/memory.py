@@ -18,7 +18,7 @@ import re
 import time
 from collections.abc import Collection, Generator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -80,20 +80,37 @@ def use_path(state_dir: Path) -> Path:
 
 
 @dataclass(frozen=True, slots=True)
-class MemoryUse:
-    """One fact's provenance and use: the session that first wrote it, the
-    one that last wrote it, every distinct writer in order, and its reads
-    (empty when unknown, as for a fact written by hand or before the record
-    existed)."""
+class Touch:
+    """One session's touch of a fact: who, and when (UTC, to the minute;
+    empty when the record does not know)."""
 
-    created_by: str = ""
-    created_at: str = ""
-    updated_by: str = ""
-    updated_at: str = ""
-    writers: tuple[str, ...] = ()
+    session: str
+    at: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryUse:
+    """One fact's provenance and use: every recorded write in order (the
+    first is its creation as the record knows it, the last its latest edit),
+    its read count and its last read. Empty for a fact written by hand or
+    before the record existed."""
+
+    writes: tuple[Touch, ...] = ()
     reads: int = 0
-    read_by: str = ""
-    read_at: str = ""
+    last_read: Touch | None = None
+
+    @property
+    def created(self) -> Touch | None:
+        return self.writes[0] if self.writes else None
+
+    @property
+    def updated(self) -> Touch | None:
+        return self.writes[-1] if self.writes else None
+
+    @property
+    def writers(self) -> tuple[str, ...]:
+        """Every distinct writer, first to last."""
+        return tuple(dict.fromkeys(t.session for t in self.writes))
 
 
 def read_use(state_dir: Path) -> dict[str, MemoryUse]:
@@ -110,29 +127,48 @@ def read_use(state_dir: Path) -> dict[str, MemoryUse]:
     for name, entry in cast("dict[Any, Any]", raw).items():
         if not isinstance(name, str) or not isinstance(entry, dict):
             continue
-        fields: dict[str, Any] = {
-            k: v for k, v in cast("dict[Any, Any]", entry).items() if k in _USE_FIELDS
-        }
-        if "writers" in fields:
-            writers = fields["writers"]
-            if not isinstance(writers, list) or not all(
-                isinstance(w, str) for w in cast("list[Any]", writers)
-            ):
-                continue
-            fields["writers"] = tuple(cast("list[str]", writers))
-        else:
-            # The record's first shape held the first and the last writer only.
-            known = [fields.get("created_by", ""), fields.get("updated_by", "")]
-            fields["writers"] = tuple(dict.fromkeys(w for w in known if isinstance(w, str) and w))
-        if all(
-            (type(v) is int) if k == "reads" else isinstance(v, tuple if k == "writers" else str)
-            for k, v in fields.items()
-        ):
-            out[name] = MemoryUse(**fields)
+        use = _use_from_entry(cast("dict[Any, Any]", entry))
+        if use is not None:
+            out[name] = use
     return out
 
 
-_USE_FIELDS = frozenset(MemoryUse.__dataclass_fields__)
+def _touch(value: Any) -> Touch | None:
+    """A `{"session", "at"}` object as a Touch, None when it is not one."""
+    if not isinstance(value, dict):
+        return None
+    session, at = value.get("session"), value.get("at", "")  # pyright: ignore[reportUnknownMemberType]
+    if not isinstance(session, str) or not session or not isinstance(at, str):
+        return None
+    return Touch(session, at)
+
+
+def _use_from_entry(entry: dict[Any, Any]) -> MemoryUse | None:
+    """One entry's fields, None when misshapen. The record's first shape
+    (`created_by`, `updated_by`, `writers`, `read_by`, `read_at`) still
+    reads: the first and the last writer keep their stamps, the others none."""
+    reads = entry.get("reads", 0)
+    if type(reads) is not int:
+        return None
+    if "writes" in entry:
+        raw_writes, raw_last = entry["writes"], entry.get("last_read")
+        touches = [_touch(w) for w in raw_writes] if isinstance(raw_writes, list) else [None]
+        writes = tuple(t for t in touches if t is not None)
+        last_read = _touch(raw_last)
+        if len(writes) < len(touches) or (raw_last is not None and last_read is None):
+            return None
+        return MemoryUse(writes=writes, reads=reads, last_read=last_read)
+    created_by, created_at = entry.get("created_by", ""), entry.get("created_at", "")
+    updated_by, updated_at = entry.get("updated_by", ""), entry.get("updated_at", "")
+    read_by, read_at = entry.get("read_by", ""), entry.get("read_at", "")
+    writers = entry.get("writers", [w for w in (created_by, updated_by) if w])
+    strings = (created_by, created_at, updated_by, updated_at, read_by, read_at)
+    if not isinstance(writers, list) or not all(isinstance(v, str) for v in (*strings, *writers)):
+        return None
+    stamps = {created_by: created_at, updated_by: updated_at}
+    writes = tuple(Touch(w, stamps.get(w, "")) for w in dict.fromkeys(writers) if w)
+    last_read = Touch(read_by, read_at) if read_by else None
+    return MemoryUse(writes=writes, reads=reads, last_read=last_read)
 
 
 def record_use(
@@ -143,9 +179,9 @@ def record_use(
     read: Mapping[str, int],
     when: float | None = None,
 ) -> None:
-    """Fold one session's memory writes and reads into the use record: a
-    first write creates the entry, every write updates it, reads accumulate
-    with the last reader. Nothing to record leaves the file alone."""
+    """Fold one session's memory writes and reads into the use record: every
+    write appends a touch, reads accumulate with the last reader. Nothing to
+    record leaves the file alone."""
     if not wrote and not read:
         return
     with _locked_memory(state_dir):
@@ -160,33 +196,14 @@ def _record_use_unlocked(
     read: Mapping[str, int],
     when: float | None = None,
 ) -> None:
-    stamp = time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(when))
+    touch = Touch(session, time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(when)))
     use = read_use(state_dir)
     for name in wrote:
         prior = use.get(name, MemoryUse())
-        writers = prior.writers if session in prior.writers else (*prior.writers, session)
-        use[name] = MemoryUse(
-            created_by=prior.created_by or session,
-            created_at=prior.created_at or stamp,
-            updated_by=session,
-            updated_at=stamp,
-            writers=writers,
-            reads=prior.reads,
-            read_by=prior.read_by,
-            read_at=prior.read_at,
-        )
+        use[name] = replace(prior, writes=(*prior.writes, touch))
     for name, count in read.items():
         prior = use.get(name, MemoryUse())
-        use[name] = MemoryUse(
-            created_by=prior.created_by,
-            created_at=prior.created_at,
-            updated_by=prior.updated_by,
-            updated_at=prior.updated_at,
-            writers=prior.writers,
-            reads=prior.reads + count,
-            read_by=session,
-            read_at=stamp,
-        )
+        use[name] = replace(prior, reads=prior.reads + count, last_read=touch)
     _write_use(state_dir, use)
 
 
@@ -196,7 +213,7 @@ def merge_use(
     """Carry a lane's use record into the origin's at import, before the
     lane's state dir goes: its writes of the facts *written* (the names
     `merge_memory` carried or updated) and its reads of facts the origin
-    holds. Returns (entries whose writers were carried, entries whose reads
+    holds. Returns (entries whose writes were carried, entries whose reads
     were folded)."""
     theirs_all = read_use(src_state_dir)
     if not theirs_all:
@@ -208,31 +225,15 @@ def merge_use(
         for name, theirs in theirs_all.items():
             ours = ours_all.get(name, MemoryUse())
             changed = False
-            if name in written and theirs.writers:
-                ours = MemoryUse(
-                    created_by=ours.created_by or theirs.created_by,
-                    created_at=ours.created_at or theirs.created_at,
-                    updated_by=theirs.updated_by or ours.updated_by,
-                    updated_at=theirs.updated_at or ours.updated_at,
-                    writers=tuple(dict.fromkeys((*ours.writers, *theirs.writers))),
-                    reads=ours.reads,
-                    read_by=ours.read_by,
-                    read_at=ours.read_at,
-                )
+            if name in written and theirs.writes:
+                fresh = tuple(t for t in theirs.writes if t not in ours.writes)
+                ours = replace(ours, writes=(*ours.writes, *fresh))
                 carried += 1
                 changed = True
             if theirs.reads and (name in written or name in held):
-                later = theirs if theirs.read_at >= ours.read_at else ours
-                ours = MemoryUse(
-                    created_by=ours.created_by,
-                    created_at=ours.created_at,
-                    updated_by=ours.updated_by,
-                    updated_at=ours.updated_at,
-                    writers=ours.writers,
-                    reads=ours.reads + theirs.reads,
-                    read_by=later.read_by,
-                    read_at=later.read_at,
-                )
+                mine, its = ours.last_read, theirs.last_read
+                later = its if mine is None or (its is not None and its.at >= mine.at) else mine
+                ours = replace(ours, reads=ours.reads + theirs.reads, last_read=later)
                 folded += 1
                 changed = True
             if changed:
@@ -244,7 +245,11 @@ def merge_use(
 
 def _write_use(state_dir: Path, use: Mapping[str, MemoryUse]) -> None:
     body = {
-        name: {**asdict(entry), "writers": list(entry.writers)}
+        name: {
+            "writes": [asdict(t) for t in entry.writes],
+            "reads": entry.reads,
+            "last_read": None if entry.last_read is None else asdict(entry.last_read),
+        }
         for name, entry in sorted(use.items())
     }
     atomic_write(use_path(state_dir), (json.dumps(body, indent=1) + "\n").encode("utf-8"))

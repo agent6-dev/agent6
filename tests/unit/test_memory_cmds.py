@@ -116,26 +116,26 @@ def test_list_names_orphans_when_the_index_is_absent_or_blank(
 
 
 def test_format_use_says_each_state_plainly() -> None:
-    from agent6.memory import MemoryUse
+    from agent6.memory import MemoryUse, Touch
     from agent6.ui.cli.memory_cmds import format_use
 
     assert format_use(MemoryUse()) == "never read"
-    assert format_use(MemoryUse(created_by="run-a", created_at="2026-01-01 00:00Z")) == (
+    assert format_use(MemoryUse(writes=(Touch("run-a", "2026-01-01 00:00Z"),))) == (
         "written 2026-01-01 by run-a, never read"
     )
     assert format_use(
         MemoryUse(
-            created_by="run-a",
-            created_at="2026-01-01 00:00Z",
-            updated_by="run-b",
-            updated_at="2026-01-02 00:00Z",
+            writes=(Touch("run-a", "2026-01-01 00:00Z"), Touch("run-b", "2026-01-02 00:00Z")),
             reads=1,
-            read_by="run-c",
-            read_at="2026-01-03 00:00Z",
+            last_read=Touch("run-c", "2026-01-03 00:00Z"),
         )
     ) == (
         "written 2026-01-01 by run-a, edited 2026-01-02 by run-b,"
         " read once, last 2026-01-03 by run-c"
+    )
+    # A writer the record's first shape kept without a stamp.
+    assert format_use(MemoryUse(writes=(Touch("run-x"),), reads=0)) == (
+        "written by run-x, never read"
     )
 
 
