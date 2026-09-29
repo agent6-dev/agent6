@@ -131,7 +131,7 @@ def finish_contract(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refu
 def review_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
     """The before-finish panel over the turn's end: a rejection revokes it,
     the findings reaching the model with the turn's notices."""
-    return Refusal() if ctx.end_reviewed(turn, turn.ending or "finish_session") else None
+    return Refusal() if ctx.end_rejected(turn, turn.ending or "finish_session") else None
 
 
 def open_tasks_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:

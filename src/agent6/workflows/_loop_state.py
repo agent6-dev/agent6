@@ -38,9 +38,10 @@ from agent6.workflows._verify_verdict import VerifyVerdict
 @dataclass(slots=True)
 class LoopState:
     """Mutable per-run bookkeeping threaded through the agent loop: the shared
-    facts every phase reads, and one guard object per heuristic (`_guards`)
-    holding that heuristic's counters and its rule, so adding, tuning or
-    deleting a heuristic touches its guard, its loop hook and its pin."""
+    facts every phase reads, and one guard object per heuristic holding its
+    counters; the rule itself is the advisor function in `_guards`, so
+    adding, tuning or deleting a heuristic touches its guard, its advisor
+    and its pin."""
 
     original_task: str
     tool_calls: int
@@ -182,9 +183,9 @@ class TurnState:
     metric_feedback: str | None = None
     metric_plateau_finish: str | None = None
     review_text: str | None = None
-    # The before-finish panel's verdict on this turn's end (True: rejected),
-    # sat once however many ends the turn declares.
-    end_reviewed: bool | None = None
+    # Whether the before-finish panel rejected this turn's end, sat once
+    # however many ends the turn declares; None until it sits.
+    end_rejected: bool | None = None
     # The advisors' decisions to end the run, in the order they were made;
     # the stop checks honour the first one left after a standing task's absorb.
     stops: list[Stop] = field(default_factory=list)

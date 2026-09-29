@@ -37,7 +37,7 @@ def turn_context(**overrides: Any) -> TurnContext:
         "budget_remaining": lambda: None,
         "operator_wait_s": lambda: 0.0,
         "open_subtasks": list,
-        "end_reviewed": _never_rejected,
+        "end_rejected": _never_rejected,
         "standing_absorb": _no_standing_task,
     }
     facts.update(overrides)

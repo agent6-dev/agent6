@@ -100,10 +100,10 @@ class TurnContext:
     budget_remaining: Callable[[], float | None]
     operator_wait_s: Callable[[], float]
     open_subtasks: Callable[[], list[tuple[str, str]]]
-    # The before-finish panel's verdict over an end declared on the turn
-    # (named by the ending it judges): True when it rejected the end. Sits
-    # once per turn; it records its own verdict.
-    end_reviewed: Callable[[TurnState, str], bool]
+    # The before-finish panel over an end declared on the turn (named by the
+    # ending it judges): True when it rejected the end. Sits once per turn;
+    # it records its own verdict.
+    end_rejected: Callable[[TurnState, str], bool]
     # The standing goal's re-entry nudge for a soft end (the reason and the
     # iteration), or None when the run may end; it records the re-entry.
     standing_absorb: Callable[[str, int], str | None]

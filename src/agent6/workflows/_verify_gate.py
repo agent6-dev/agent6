@@ -7,8 +7,8 @@ start.
 `finish` certifies the tree a run ends on; `step` also judges every editing
 turn; `never` leaves every gate run to the model's own `run_verify_command`
 calls. A turn whose own verify call already judged the tree is never judged
-twice. These are pure decisions over the turn's facts; the loop owns the
-running and the bookkeeping.
+twice. `VerifyGate` runs the harness gate and its scoped follow-up and keeps
+the verdict bookkeeping; the loop decides when a turn ends.
 """
 
 from __future__ import annotations

@@ -199,7 +199,7 @@ def tty_prompt(
         # Discard type-ahead before prompting (the sudo/ssh rule): text typed
         # before this prompt existed was aimed at something else: a
         # pause-menu command typed during the "pausing after this step" window
-        # must not ride into a run_command [y/N/a] approval as its answer.
+        # must not ride into a run_command [y/N/a/d] approval as its answer.
         with contextlib.suppress(Exception):
             termios.tcflush(fd, termios.TCIFLUSH)
         tty = io.TextIOWrapper(

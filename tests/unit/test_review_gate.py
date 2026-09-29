@@ -545,7 +545,7 @@ def test_a_rejected_plateau_end_is_named_as_one() -> None:
     panel = _PanelScript([CritiqueResult(text="* the gain is unmeasured", satisfied=False)])
     turn = _idle_turn()
     with patch.object(Reviewer, "critique", panel):
-        assert wf.reviewer.end_reviewed(_settled_state(), turn, ending="metric_plateau")
+        assert wf.reviewer.end_rejected(_settled_state(), turn, ending="metric_plateau")
     assert turn.review_text is not None
     assert turn.review_text.startswith("The review panel rejected the end at the metric plateau")
     assert "the gain is unmeasured" in turn.review_text

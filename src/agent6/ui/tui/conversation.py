@@ -240,11 +240,13 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         _HELP_MENU,
     )
 
-    # The composer bar owns plain letters + Enter, so every shortcut here is a
-    # priority binding (fires before the bar) on a modified key: the same set,
-    # in the same footer order, as the dashboard. Everything else lives in the
-    # menu bar (which shows the shortcuts from these bindings) and the palette.
-    # `?` opens help too, when focus is not in the bar.
+    # The composer bar owns plain letters + Enter, so the run shortcuts are
+    # priority bindings (they fire before the bar) on modified keys: the same
+    # set, in the same footer order, as the dashboard. The one plain-letter
+    # set is the approval answers, which fire from any focus outside a text
+    # field. Everything else lives in the menu bar (which shows the shortcuts
+    # from these bindings) and the palette. `?` opens help too, when focus is
+    # not in the bar.
     BINDINGS: ClassVar = [
         Binding("ctrl+d", "toggle_dashboard", "Dashboard", priority=True),
         *keys(RUN_VIEW_KEYS, priority=True, show=True),

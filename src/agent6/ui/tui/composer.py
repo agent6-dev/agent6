@@ -287,7 +287,8 @@ class SteerInput(TextArea):
     Shift+Enter insert a newline instead) and grows with its content up to
     _INPUT_MAX_ROWS. Two modes (set_mode): steer a live run, or type the
     follow-up instruction a finished run is resumed with. An open approval
-    never takes the keys: they answer only with the focus moved into its row."""
+    never takes the keys while the focus is in the text: its letters answer
+    from any other focus."""
 
     ALLOW_MAXIMIZE = False  # a full-screen composer is never what Maximize means
 

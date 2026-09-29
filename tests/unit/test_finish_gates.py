@@ -71,7 +71,7 @@ def test_the_panels_rejection_revokes_the_finish_without_a_text() -> None:
         seen.append(ending)
         return True
 
-    refusal = review_finish(_finishing(), _state(), turn_context(end_reviewed=rejecting))
+    refusal = review_finish(_finishing(), _state(), turn_context(end_rejected=rejecting))
     assert refusal is not None and refusal.text == "" and refusal.event == ""
     assert seen == ["finish_session"]
     assert review_finish(_finishing(), _state(), turn_context()) is None

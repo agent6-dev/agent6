@@ -395,8 +395,8 @@ class Reviewer:
     (the diff it grounds on, the AGENTS.md it reads), the read-only tools an
     explore seat gets, and the run's budget, log and event callables.
     `critique` runs the panel over the run diff; `triggers` is the
-    observe-only schedule; `end_reviewed` the before-finish verdict over an
-    end."""
+    observe-only schedule; `end_rejected` the before-finish panel over an
+    end, True when it rejected it."""
 
     settings: ReviewSettings
     chain: RunChain
@@ -406,8 +406,8 @@ class Reviewer:
     emit: Callable[..., None]
 
     def triggers(self, state: LoopState, turn: TurnState) -> None:
-        """The observe-only review triggers (before_finish, which can revoke a
-        finish, is `end_reviewed`):
+        """The observe-only review triggers (before_finish, which can revoke an
+        end, is `end_rejected`):
 
           on_verify_fail - the verify just failed; surface a critique
                            alongside the failure so the worker has a second
@@ -431,7 +431,7 @@ class Reviewer:
             if critique is not None:
                 turn.review_text = critique.text
 
-    def end_reviewed(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
+    def end_rejected(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
         """The before-finish panel over an end (`finish_session`, a silent
         finish, or the settled stop or metric plateau the harness declares):
         True when the panel rejected it
@@ -441,9 +441,9 @@ class Reviewer:
         indefinitely. False when there is no panel or it approved. One turn
         can declare two ends (a finish a gate revokes, then the plateau or
         settled stop): the panel sits once and its verdict covers both."""
-        if turn.end_reviewed is None:
-            turn.end_reviewed = self._judge_end(state, turn, ending=ending)
-        return turn.end_reviewed
+        if turn.end_rejected is None:
+            turn.end_rejected = self._judge_end(state, turn, ending=ending)
+        return turn.end_rejected
 
     def _judge_end(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
         if not (self.settings.trigger == "before_finish" and self.available()):

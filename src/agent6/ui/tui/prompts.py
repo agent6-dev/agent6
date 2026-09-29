@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Prompt dispatch for a TUI view over a session's fold: one modal per
-unanswered approval or question, its answer written to that session's file
-bridge. Shared by the run dashboard and the machine watch view."""
+unanswered question (the run views dock their approvals as a row), its
+answer written to that session's file bridge. Shared by the run views and
+the machine watch view."""
 
 from __future__ import annotations
 

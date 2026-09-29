@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The steer-directive grammars (`/parallel`, `/pin`, `/compact`, `/btw`), shared by
-the coordinator steer parser (`workflows/loop.py`) and the web + TUI composers.
+"""The steer-directive grammars (`/parallel`, `/pin`, `/compact`, `/btw`,
+`/task`, `/standing`, `/retire`), shared by the coordinator steer parser
+(`workflows/loop.py`) and the web + TUI composers.
 
     /parallel [spec] <task text> [/parallel [spec] <task text>]...
     /pin <instruction that must survive context compaction>
@@ -178,9 +179,7 @@ def parse_standing(text: str) -> str | None:
     return text[m.end() :].strip()
 
 
-# A task the operator retires, named by its id or the shortest unique prefix of
-# one. Unlike a command word, an id is read off the screen and pasted, so a
-# prefix resolves; an ambiguous one is refused rather than guessed.
+# A task the operator retires, named by the id every task tree leads with.
 _RETIRE_TOKEN = re.compile(r"\A\s*/retire(?=\s|\Z)")
 
 
@@ -327,9 +326,9 @@ def _parse_segment(raw: str) -> Segment:
 
 
 # The directives a composer can complete, with one-line help: exactly what the
-# TUI/web composers and the loop parse out of steer text (`/btw` stays a CLI
-# pause-menu command, and that menu keeps its own richer table). The web client
-# mirrors these strings verbatim, drift-pinned by tests/web.
+# TUI/web composers and the loop parse out of steer text (the CLI pause menu
+# adds its own menu-only commands). The web client mirrors these strings
+# verbatim, drift-pinned by tests/web.
 STEER_COMMANDS: dict[str, str] = {
     "/pin": "pin an instruction that survives compaction: /pin <text>",
     "/compact": "compact the context now; /compact <focus> steers the summary",

@@ -1447,7 +1447,7 @@ class Workflow:
             finish_validator=self.finish_validator,
             metric=metric_goal(self.config.workflow.metric) is not None,
             memory_wired=self.state_dir is not None,
-            end_reviewed=lambda turn, ending: self.reviewer.end_reviewed(
+            end_rejected=lambda turn, ending: self.reviewer.end_rejected(
                 state, turn, ending=ending
             ),
             standing_absorb=lambda reason, iteration: self._standing_absorb(
@@ -2670,7 +2670,7 @@ class Workflow:
         standing goal re-enters (autonomy first), else an interactive run
         parks for a steer. Returns NEXT_TURN to continue the loop, a park's
         terminal steer verb, or None when neither applies (the caller ends
-        the run as before)."""
+        the run)."""
         if self.mode != "run":
             return None
         nudge = self._standing_absorb(state, reason=reason, iteration=iteration)

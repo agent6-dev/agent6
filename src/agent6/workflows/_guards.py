@@ -620,8 +620,10 @@ def run_budget_nudge(state: LoopState, ctx: TurnContext) -> Nudge | None:
     )
 
 
-# The advisors that run once a turn's tools have run, in the order their
-# notices reach the model.
+# The advisors that run once a turn's tools have run. The order is the order
+# their notices reach the model and the precedence among their stops: the
+# loop honours the first stop left after a standing goal's absorb, and a
+# stop the tool-error ladder raised during dispatch outranks them all.
 AFTER_TOOLS: tuple[Advisor, ...] = (
     memory_flip,
     loop_guard_notice,

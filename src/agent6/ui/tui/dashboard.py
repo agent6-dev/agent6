@@ -213,9 +213,11 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         ),
     )
     # The composer bar is the default focus, so (exactly like the conversation
-    # view) there are no plain-letter shortcuts: the same priority-bound set,
-    # in the same footer order, on both screens. Run control lives in the Run
-    # menu and the palette. `?` opens help when focus is not in the bar.
+    # view) the run shortcuts are priority bindings on modified keys: the same
+    # set, in the same footer order, on both screens. The one plain-letter set
+    # is the approval answers, which fire from any focus outside a text field.
+    # Run control lives in the Run menu and the palette. `?` opens help when
+    # focus is not in the bar.
     BINDINGS: ClassVar = [
         Binding("ctrl+d", "toggle_dashboard", "Conversation", priority=True),
         *keys(RUN_VIEW_KEYS, priority=True, show=True),

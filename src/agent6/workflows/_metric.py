@@ -6,9 +6,9 @@ For runs with a configured [workflow.metric], the loop measures a continuous
 score after each verified step and feeds the trajectory back to the worker.
 This module owns the pure pieces of that: the `MetricSample` record, parsing a
 score and the unmet thresholds out of metric output, deciding whether a sample
-is a new best / at a provable ceiling, formatting the feedback block, and the
-plateau detection + budget-scaled nudge selection. The loop owns the policy of
-when to measure and when to stop.
+is a new best / at a provable ceiling, formatting the feedback block, the
+plateau and ceiling stops (`metric_plateau`) and the early-finish gate
+(`metric_early_finish`). The loop decides when to measure.
 """
 
 from __future__ import annotations

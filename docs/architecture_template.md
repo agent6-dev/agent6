@@ -120,9 +120,9 @@ A red finish certification returns to the model with the gate's output `verify_r
 - a focus task held without forward motion draws a split/pass/skip nudge, re-firing up to a small cap; progress resets it
 - an end is final: `passed` takes only `obsolete`, and a `skipped` or `obsolete` task stays retired (needed again means a new task)
 
-**Standing tasks park a run instead of ending it.** A standing task (`run --standing "<goal>"`, `add_task(standing=true)`) is the never-passing fallback, worked only when no ordinary subtask is ready.
+**A standing goal parks a run instead of ending it.** The operator's goal (`run --standing "<goal>"`, `/standing` on a live run) is the never-passing fallback, worked only when no ordinary subtask is ready; the model's `add_task` cannot set the flag.
 
-- the model retires its own (`skipped`/`obsolete`); the operator's `--standing` goal only the operator retires
+- only the operator retires it: `/standing` with a new goal, or stopping the run
 - while one exists, the soft out-of-work endings (`finish_session`, the settled family, a quiet turn) convert into re-entry
 - faults, operator verbs, the iteration cap, and a spent budget still end the run
 - a re-entry round landing no executed tool call escalates the nudge; `[workflow].standing_patience` bounds the streak (`-1` default: never self-ends; landed work resets)
