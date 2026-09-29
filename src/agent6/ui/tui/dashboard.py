@@ -67,7 +67,7 @@ from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import (
     status_style,
 )
-from agent6.ui.tui.widgets import Picker
+from agent6.ui.tui.widgets import Picker, PickerRow
 from agent6.viewmodel import manifest_branches, manifest_header, session_compare
 from agent6.viewmodel.format import (
     clip_cell,
@@ -151,9 +151,8 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     #body { height: 1fr; }
     #log { width: 1fr; border: round $primary; }
     #diff { width: 1fr; border: round $primary; padding: 0 1; }
-    /* The step picker and the cumulative toggle: one row, like the pickers
-       above a composer; the compact toggle's focus border would make it three. */
-    #diff-nav { height: 1; }
+    /* The step picker and the cumulative toggle share a picker row; the compact
+       toggle's focus border would make it three lines. */
     #diff-cumulative { margin-left: 2; background: transparent; }
     #diff-cumulative:focus { border: none; }
     /* The stream/diff bodies fill their scroll pane so long content scrolls;
@@ -229,7 +228,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         """The step selector lists the run's commits (newest first) behind
         "latest commit"; hidden while nothing is committed, and under
         `[git].control = "model"` the pane says so (no chain to select from)."""
-        nav = self.query_one("#diff-nav", Horizontal)
+        nav = self.query_one("#diff-nav", PickerRow)
         if self._git_control() == "model":
             nav.display = False
             return
@@ -442,7 +441,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 max_lines=MAX_LOG_TAIL,
             )
             with _ScrollPane(id="diff"):
-                with Horizontal(id="diff-nav"):
+                with PickerRow(id="diff-nav"):
                     yield Picker(
                         [("latest commit", "")],
                         value="",

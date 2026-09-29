@@ -16,7 +16,7 @@ try:
     from rich.console import RenderableType
     from rich.text import Text
     from textual import events
-    from textual.containers import ScrollableContainer
+    from textual.containers import Horizontal, ScrollableContainer
     from textual.geometry import Region
     from textual.message import Message
     from textual.widget import Widget
@@ -516,6 +516,18 @@ class ActionItem(Static):
 
 
 _PICKER_ROWS = 10  # options a Picker's list shows before it scrolls
+
+
+class PickerRow(Horizontal):
+    """One line of labelled pickers, above a composer or at the top of a pane:
+    a `.picker-label` Static captions the picker after it. A host adds only
+    its placement (padding, when it shows)."""
+
+    DEFAULT_CSS = """
+    PickerRow { height: 1; }
+    PickerRow .picker-label { width: auto; padding: 0 1 0 0; color: $text-muted; }
+    PickerRow Picker { margin-right: 2; }
+    """
 
 
 class Picker(Select[str]):

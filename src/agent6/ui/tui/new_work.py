@@ -19,7 +19,7 @@ from typing import ClassVar
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import Footer, Select, Static, TextArea
@@ -31,7 +31,7 @@ from agent6.ui.spawn import spawn_new_work
 from agent6.ui.tui.composer import SteerInput, SteerSuggest
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
-from agent6.ui.tui.widgets import Picker
+from agent6.ui.tui.widgets import Picker, PickerRow
 
 _INTRO = (
     "Describe the task (or the question, for ask). Enter starts it; Ctrl-J adds a line.\n"
@@ -71,9 +71,7 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
     #draft-main { height: 1fr; }
     #draft-scroll { height: 1fr; }
     #draft-notice { height: auto; padding: 0 1; pointer: text; }
-    #draft-options { height: 1; padding: 0 1; }
-    .draft-label { width: auto; padding: 0 1 0 0; color: $text-muted; }
-    #draft-options Picker { margin-right: 2; }
+    #draft-options { padding: 0 1; }
     """
 
     # The composer has the focus: Esc and Ctrl+Q fire before it.
@@ -124,12 +122,12 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         with Vertical(id="draft-main"), VerticalScroll(id="draft-scroll", can_focus=False):
             yield Static(Text(_INTRO, style="dim italic"), id="draft-notice")
         yield SteerSuggest(id="draft-suggest")
-        with Horizontal(id="draft-options"):
-            yield Static("mode", classes="draft-label")
+        with PickerRow(id="draft-options"):
+            yield Static("mode", classes="picker-label")
             yield Picker(
                 [(m, m) for m in OPERATOR_MODES], value="run", allow_blank=False, id="draft-mode"
             )
-            yield Static("preset", classes="draft-label")
+            yield Static("preset", classes="picker-label")
             preset = default_preset(self.repo_cwd, self.config_path)
             yield Picker(
                 [(default_label(preset), ""), *((p, p) for p in self._presets)],
@@ -137,7 +135,7 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
                 allow_blank=False,
                 id="draft-preset",
             )
-            yield Static("model", classes="draft-label")
+            yield Static("model", classes="picker-label")
             route = default_route(self.repo_cwd, self.config_path, "run", "")
             yield Picker(self._model_options(route), value="", allow_blank=False, id="draft-model")
         yield SteerInput(id="draft-input")

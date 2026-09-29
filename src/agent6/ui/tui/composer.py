@@ -33,7 +33,7 @@ from agent6.ui.tui.menubar import (
     MenuItem,
 )
 from agent6.ui.tui.modals import HistorySearchModal
-from agent6.ui.tui.widgets import Picker
+from agent6.ui.tui.widgets import Picker, PickerRow
 from agent6.viewmodel import approval_parts
 from agent6.viewmodel.state import ApprovalPrompt, SessionState, open_approval_of
 from agent6.viewmodel.tail import tail_events
@@ -149,7 +149,7 @@ class ResumeHost(Protocol):
     def resume_defaults(self, preset: str) -> tuple[str, str]: ...
 
 
-class ResumeOptions(Horizontal):
+class ResumeOptions(PickerRow):
     """The row above a resume composer: the config preset and the model the
     next leg continues under (`agent6 resume --preset`, `--model`). Both
     change only between legs, so the row shows only while the composer
@@ -159,9 +159,7 @@ class ResumeOptions(Horizontal):
     row reappears and, for the model, when the preset pick changes."""
 
     DEFAULT_CSS = """
-    ResumeOptions { display: none; height: 1; padding: 0 1; }
-    ResumeOptions .resume-label { width: auto; padding: 0 1 0 0; color: $text-muted; }
-    ResumeOptions Picker { margin-right: 2; }
+    ResumeOptions { display: none; padding: 0 1; }
     """
 
     def __init__(self, presets: list[str], routes: list[str], **kwargs: Any) -> None:
@@ -174,9 +172,9 @@ class ResumeOptions(Horizontal):
     def compose(self) -> ComposeResult:
         host = self._host()
         self._labels, self._labelled = host.resume_defaults(host.resume_preset), host.resume_preset
-        yield Static("continue under preset", classes="resume-label")
+        yield Static("continue under preset", classes="picker-label")
         yield Picker(self._options(0), value="", allow_blank=False, id="resume-preset")
-        yield Static("model", classes="resume-label")
+        yield Static("model", classes="picker-label")
         yield Picker(self._options(1), value="", allow_blank=False, id="resume-model")
 
     def _host(self) -> ResumeHost:
