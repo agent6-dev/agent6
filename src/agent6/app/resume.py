@@ -16,9 +16,8 @@ from collections.abc import Callable
 
 from agent6 import budget, directive, event_log, git_ops, kinds
 from agent6 import paths as agent6_paths
-from agent6.app import _execution, _session, _setup, preflight, run
+from agent6.app import _execution, _session, _setup, preflight, run, stamps
 from agent6.app import frontend as app_frontend
-from agent6.app import manifest as app_manifest
 from agent6.app import reporter as app_reporter
 from agent6.config import (
     Config,
@@ -543,7 +542,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     f" was {preflight.gate_text(tuple(pinned_gate))},"
                     f" now {preflight.gate_text(cfg.harness.verify_command)}"
                 )
-            app_manifest.pin_gate(
+            stamps.pin_gate(
                 layout.session_dir,
                 cfg.harness.verify_command,
                 execution_gate_origin(
@@ -590,16 +589,16 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 return 2
         # Every preflight passed: the operator's new choices are recorded from here.
         if preset:
-            app_manifest.stamp_preset(layout.session_dir, preset)
+            stamps.stamp_preset(layout.session_dir, preset)
         if (flagged := _setup.flag_route(cfg, mode, model)) is not None:
-            app_manifest.stamp_model(layout.session_dir, flagged)
+            stamps.stamp_model(layout.session_dir, flagged)
         if steer.strip():
             # A steer that is the work names the run, for a finished run or a fork still
             # carrying its source's task.
             if new_work:
-                app_manifest.stamp_task(layout.session_dir, steer.strip())
+                stamps.stamp_task(layout.session_dir, steer.strip())
             elif manifest.parent_session_id:
-                app_manifest.stamp_fork_task(
+                stamps.stamp_fork_task(
                     layout.session_dir,
                     steer.strip(),
                     source_dir=layout.session_dir.parent / manifest.parent_session_id,
@@ -607,7 +606,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         # Written once the preflight passed: a refused resume never had a live worker.
         ipc.write_worker_pid(layout.session_dir, os.getpid())
         # This execution's models and policy, for `agent6 exec` and the policy surfaces.
-        app_manifest.stamp_execution(layout.session_dir, cfg, mode, isolation)
+        stamps.stamp_execution(layout.session_dir, cfg, mode, isolation)
         if mode == "run":
             # The next auto-commit takes the previous execution's tail and any operator edit
             # since; the operator's untracked files stay out.

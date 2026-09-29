@@ -78,7 +78,7 @@ CONTRACTS: tuple[Contract, ...] = (
         title="SessionManifest",
         module="agent6.sessions.manifest",
         primary=("SessionManifest",),
-        writers=("app/manifest.py",),
+        writers=("app/stamps.py",),
         pins=("tests/unit/test_sessions_manifest.py",),
     ),
     Contract(

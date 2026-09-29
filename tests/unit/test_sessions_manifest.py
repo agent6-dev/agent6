@@ -143,7 +143,7 @@ def test_write_manifest_bytes_fresh(tmp_path: pathlib.Path) -> None:
     # Byte pin of the writer's emitted JSON (the read side is pinned above; this
     # pins the EXACT bytes write_manifest lands on disk: key set, key order,
     # indent, null shape, trailing newline). A fresh run: no fork/merge/compare.
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
 
     m = sessions_manifest.SessionManifest(
         agent6_version="0.1.0",
@@ -163,7 +163,7 @@ def test_write_manifest_bytes_fresh(tmp_path: pathlib.Path) -> None:
         ),
     )
     path = tmp_path / "manifest.json"
-    app_manifest.write_manifest(path, m)
+    stamps.write_manifest(path, m)
     assert path.read_text(encoding="utf-8") == (_DATA / "golden_manifest_fresh.json").read_text(
         encoding="utf-8"
     )
@@ -173,7 +173,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
     # Byte pin of a fully-stamped fan-out lane: fork lineage + merge stamp +
     # parallel lineage + compare, so every optional nested stamp's serialized
     # shape is frozen, not just the fresh subset.
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
 
     m = sessions_manifest.SessionManifest(
         agent6_version="0.1.0",
@@ -209,7 +209,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
         ),
     )
     path = tmp_path / "manifest.json"
-    app_manifest.write_manifest(path, m)
+    stamps.write_manifest(path, m)
     golden = (_DATA / "golden_manifest_stamped.json").read_text(encoding="utf-8")
     assert path.read_text(encoding="utf-8") == golden
     # The pinned bytes round-trip back to an equal model (writer <-> reader).
@@ -222,7 +222,7 @@ def test_rewriting_a_newer_manifest_is_refused(tmp_path: pathlib.Path) -> None:
     `extra="ignore"` drops the keys this binary does not know, so a stamp would silently
     downgrade the record it was meant to annotate.
     """
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
 
     _write(
         tmp_path,
@@ -237,7 +237,7 @@ def test_rewriting_a_newer_manifest_is_refused(tmp_path: pathlib.Path) -> None:
     with pytest.raises(
         sessions_manifest.ManifestError, match=f"version {sessions_manifest.MANIFEST_VERSION + 1}"
     ):
-        app_manifest.write_manifest(tmp_path / "manifest.json", m)
+        stamps.write_manifest(tmp_path / "manifest.json", m)
     # Untouched on disk: the newer record keeps its version AND its keys.
     on_disk = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert on_disk["version"] == sessions_manifest.MANIFEST_VERSION + 1
@@ -246,12 +246,10 @@ def test_rewriting_a_newer_manifest_is_refused(tmp_path: pathlib.Path) -> None:
 
 def test_rewriting_an_older_manifest_upgrades_it(tmp_path: pathlib.Path) -> None:
     """A stamp rewrite of an older manifest upgrades the version claim to the shape it wrote."""
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
 
     _write(tmp_path, {"version": 1, "session_id": "r-old"})
-    app_manifest.write_manifest(
-        tmp_path / "manifest.json", sessions_manifest.read_manifest(tmp_path)
-    )
+    stamps.write_manifest(tmp_path / "manifest.json", sessions_manifest.read_manifest(tmp_path))
     on_disk = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert on_disk["version"] == sessions_manifest.MANIFEST_VERSION
     assert on_disk["session_id"] == "r-old"
@@ -289,7 +287,7 @@ def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: pathlib.Path) -> No
     Reading the worker unconditionally, a plan run (driven by the planner) displays a model that
     never ran, disagreeing with both the web (which reads the role events) and its own cost block.
     """
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
     from agent6.config import Config
     from agent6.sessions import layout as sessions_layout
 
@@ -305,7 +303,7 @@ def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: pathlib.Path) -> No
     for mode, expected in (("plan", "planner-model"), ("run", "worker-model")):
         layout = sessions_layout.SessionLayout(state_dir=tmp_path / mode, session_id="r")
         layout.ensure()
-        app_manifest.write_session_manifest(
+        stamps.write_session_manifest(
             layout,
             session_id="r",
             user_task="t",
@@ -326,7 +324,7 @@ def test_write_session_manifest_stores_the_operators_words(tmp_path: pathlib.Pat
     composed prompt reached every listing as the task.
     """
     from agent6 import task_text
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
     from agent6.config import Config
     from agent6.sessions import layout as sessions_layout
 
@@ -337,7 +335,7 @@ def test_write_session_manifest_stores_the_operators_words(tmp_path: pathlib.Pat
     )
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="r-words")
     layout.ensure()
-    app_manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout,
         session_id="r-words",
         user_task=composed,
@@ -374,7 +372,7 @@ def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: pathlib.Path) -> N
     A later edit to the file an inferred gate came from cannot move it, and any surface can say
     whether an operator or the repo chose it.
     """
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
 
     (tmp_path / "manifest.json").write_text(
         json.dumps({"version": 3, "mode": "run", "session_id": "r"}), encoding="utf-8"
@@ -382,7 +380,7 @@ def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: pathlib.Path) -> N
     assert (
         sessions_manifest.read_manifest(tmp_path).harness.verify_origin == ""
     )  # gateless until pinned
-    app_manifest.stamp_verify_gate(tmp_path, ("uv", "run", "pytest"), "inferred")
+    stamps.stamp_verify_gate(tmp_path, ("uv", "run", "pytest"), "inferred")
     wf = sessions_manifest.read_manifest(tmp_path).harness
     assert wf.verify_command == ("uv", "run", "pytest")
     assert wf.verify_origin == "inferred"
@@ -458,7 +456,7 @@ def test_each_mode_gets_its_own_tool_surface() -> None:
 
 def test_a_execution_restamps_a_config_selected_preset(tmp_path: pathlib.Path) -> None:
     """A plain resume replaces the prior execution's preset name with the one it re-resolved."""
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
     from agent6.config import Config
 
     _write(
@@ -471,7 +469,7 @@ def test_a_execution_restamps_a_config_selected_preset(tmp_path: pathlib.Path) -
         },
     )
 
-    app_manifest.stamp_execution(tmp_path, Config(preset="new-config"), "run", "strict")
+    stamps.stamp_execution(tmp_path, Config(preset="new-config"), "run", "strict")
 
     harness = sessions_manifest.read_manifest(tmp_path).harness
     assert harness.preset == "new-config"
@@ -484,7 +482,7 @@ def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: path
     Written once at run start, `agent6 exec` joined a recorded unsandboxed policy against a
     jailed agent, and every policy surface named a model another one answered for.
     """
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
     from agent6.config import Config
 
     _write(
@@ -506,7 +504,7 @@ def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: path
         }
     )
 
-    app_manifest.stamp_execution(tmp_path, cfg, "run", "strict")
+    stamps.stamp_execution(tmp_path, cfg, "run", "strict")
 
     m = sessions_manifest.read_manifest(tmp_path)
     assert m.policy.isolation == "strict"

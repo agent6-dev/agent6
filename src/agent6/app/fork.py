@@ -24,7 +24,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from agent6 import git_ops, kinds, paths, portable
-from agent6.app import _setup, fork_worktrees, manifest, parallel, resume
+from agent6.app import _setup, fork_worktrees, parallel, resume, stamps
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
 from agent6.graph import replay, storage
@@ -492,7 +492,7 @@ def _materialize_fork(
         if plan.mode == "run" and plan.cfg.git.branch_per_run
         else None
     )
-    manifest.write_session_manifest(
+    stamps.write_session_manifest(
         dst,
         session_id=dst.session_id,
         user_task=plan.user_task,

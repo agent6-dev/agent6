@@ -582,7 +582,7 @@ def test_summary_task_is_the_manifests_operator_words(tmp_path: pathlib.Path) ->
     session.start clips user_task to 200 chars; `run --skill` and `--from` prepend blocks.
     """
     from agent6 import task_text
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
     from agent6.config import Config
     from agent6.sessions import layout
 
@@ -601,7 +601,7 @@ def test_summary_task_is_the_manifests_operator_words(tmp_path: pathlib.Path) ->
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    app_manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout.layout_of(rd),
         session_id="r-long",
         user_task=composed,

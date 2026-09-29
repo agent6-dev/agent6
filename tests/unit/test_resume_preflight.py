@@ -1231,7 +1231,7 @@ def test_resume_model_flag_is_recorded_and_replayed(
 
     A later plain resume routes to X again; a refused route stamps nothing.
     """
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
     from agent6.config import load_config
     from agent6.sessions import manifest as sessions_manifest
 
@@ -1262,9 +1262,7 @@ def test_resume_model_flag_is_recorded_and_replayed(
     assert (stamped.driver.provider, stamped.driver.model) == ("anthropic", "claude-y")
     cfg = load_config(tmp_path / "cfg.toml")
     route = cfg.model_route("planner", "claude-y")
-    app_manifest.stamp_execution(
-        session_dir, cfg.with_model_route("planner", route), "plan", "none"
-    )
+    stamps.stamp_execution(session_dir, cfg.with_model_route("planner", route), "plan", "none")
     assert sessions_manifest.read_manifest(session_dir).models.driver_from_flag
     assert cli_resume._cmd_resume(None, "plan-MODEL1", force=False) == 0
     # The replayed execution carries the recorded pair, spelled provider/model.

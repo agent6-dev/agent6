@@ -17,8 +17,7 @@ from typing import Literal
 
 from agent6 import budget as agent6_budget
 from agent6 import commit_message, event_log, git_ops, secrets
-from agent6.app import _setup, providers
-from agent6.app import manifest as app_manifest
+from agent6.app import _setup, providers, stamps
 from agent6.config import Config, ConfigError
 from agent6.providers import ProviderError, TranscriptSink, call_for_text
 from agent6.sessions import layout as sessions_layout
@@ -92,7 +91,7 @@ def record_merge_in_manifest(
     )
     # ManifestError: a manifest newer than this binary is left alone rather than downgraded.
     try:
-        app_manifest.write_manifest(layout.manifest_path, stamped)
+        stamps.write_manifest(layout.manifest_path, stamped)
     except (OSError, sessions_manifest.ManifestError) as exc:
         return str(exc)
     return ""

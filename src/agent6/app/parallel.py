@@ -26,9 +26,8 @@ from concurrent import futures as concurrent_futures
 from typing import Protocol
 
 from agent6 import directive, event_log, git_ops, kinds, memory, paths
-from agent6.app import _lane_watch, finalize
+from agent6.app import _lane_watch, finalize, stamps
 from agent6.app import compare as app_compare
-from agent6.app import manifest as app_manifest
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import judge, subrun
@@ -761,7 +760,7 @@ def _stamp(session_dir: pathlib.Path, **updates: object) -> str | None:
     except sessions_manifest.ManifestError as exc:
         return f"could not read {mpath}: {exc}"
     try:
-        app_manifest.write_manifest(mpath, m.model_copy(update=updates))
+        stamps.write_manifest(mpath, m.model_copy(update=updates))
     except (OSError, sessions_manifest.ManifestError) as exc:
         # The import stands; the remaining lanes keep importing.
         return f"could not write {mpath}: {exc}"
@@ -1132,7 +1131,7 @@ def run_parallel(
         state_dir=origin_state, session_id=fanout_id, subdir=kinds.session_bucket("run")
     )
     layout.ensure()
-    app_manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout,
         session_id=fanout_id,
         user_task=task,

@@ -17,7 +17,7 @@ from collections.abc import Sequence
 
 from agent6 import budget as agent6_budget
 from agent6 import directive, event_log, git_ops, kinds, paths
-from agent6.app import _execution, _session, _setup, finalize, manifest, preflight
+from agent6.app import _execution, _session, _setup, finalize, preflight, stamps
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
@@ -261,8 +261,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
 
         # Written before the gates below, which park rather than refuse; the rewrite keeps
         # the park, which the execution's start clears.
-        parked = manifest.parked_stamp(layout.session_dir)
-        manifest.write_session_manifest(
+        parked = stamps.parked_stamp(layout.session_dir)
+        stamps.write_session_manifest(
             layout,
             session_id=effective_session_id,
             source_session_id=source_session_id,
@@ -278,11 +278,11 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             isolation=isolation,
         )
         if parked is not None:
-            manifest.stamp_parked(layout.session_dir, task=parked[0], reason=parked[1])
+            stamps.stamp_parked(layout.session_dir, task=parked[0], reason=parked[1])
 
         def _park(reason: str, detail: str, *, hint: str = "") -> int:
             # `reason` is the short cause listings show; `detail` is the sentence read now.
-            manifest.stamp_parked(layout.session_dir, task=task, reason=reason)
+            stamps.stamp_parked(layout.session_dir, task=task, reason=reason)
             reporter.err(
                 f"PARKED: {detail}. Your task is saved as run {effective_session_id!r}:\n"
                 f"    agent6 resume {effective_session_id}    (starts it)"
@@ -365,7 +365,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             if cfg.harness.verify_command:
                 gate_origin = "configured" if configured_gate else "inferred"
             # From here the run is judged by this gate, whatever its source says later.
-            manifest.pin_gate(
+            stamps.pin_gate(
                 layout.session_dir,
                 cfg.harness.verify_command,
                 gate_origin,

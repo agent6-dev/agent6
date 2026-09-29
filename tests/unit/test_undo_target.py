@@ -7,7 +7,7 @@ from __future__ import annotations
 import pathlib
 from typing import Any
 
-from agent6.app import manifest, undo
+from agent6.app import stamps, undo
 from agent6.config import Config
 from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
@@ -140,7 +140,7 @@ def test_repeated_undo_follows_the_fork_lineage(tmp_path: pathlib.Path) -> None:
     child = _layout(tmp_path, "run-q")
     # The seed a /undo of run-p would have cut: turn 2's conversation.
     _checkpoint(child, 0, [_task("do the thing"), _steer("first steer")])
-    manifest.write_session_manifest(
+    stamps.write_session_manifest(
         child,
         session_id="run-q",
         user_task="do the thing",
@@ -164,7 +164,7 @@ def test_a_cyclic_lineage_does_not_crash(tmp_path: pathlib.Path) -> None:
     layout = _layout(tmp_path, "cyclic-run")
     # Only the task in the checkpoint, so the resolver must walk to the parent.
     _checkpoint(layout, 0, [_task("do the thing"), _steer("focus the parser")])
-    manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout,
         session_id="cyclic-run",
         user_task="do the thing",

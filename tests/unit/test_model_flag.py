@@ -283,14 +283,14 @@ def test_a_fresh_run_records_its_model_flag(repo: pathlib.Path) -> None:
     The manifest carries the `--model` a run started with, so a resume without the flag runs on it,
     as a flag-selected preset is replayed.
     """
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
     from agent6.sessions import layout as sessions_layout
     from agent6.sessions import manifest as sessions_manifest
 
     cfg = _setup.load_session_config(repo, None, mode="run", model="claude-y").config
     layout = sessions_layout.SessionLayout(state_dir=repo / "state", session_id="run-1")
     layout.session_dir.mkdir(parents=True)
-    app_manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout,
         session_id="run-1",
         user_task="t",

@@ -22,8 +22,7 @@ import pytest
 
 from agent6 import git_ops, paths
 from agent6.app import _execution as app__execution
-from agent6.app import _session, _setup
-from agent6.app import manifest as app_manifest
+from agent6.app import _session, _setup, stamps
 from agent6.app import run as app_run
 from agent6.config import Config
 from agent6.models import validate
@@ -187,13 +186,13 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
 
     It releases its own locks first, so the fresh start can take them.
     """
-    from agent6.app import manifest as app_manifest
     from agent6.app import resume as resume_mod
+    from agent6.app import stamps
 
     state = paths.state_dir(repo)
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="run-PARKED2")
     layout.ensure()
-    app_manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout,
         session_id="run-PARKED2",
         user_task="do the saved thing",
@@ -203,7 +202,7 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
         cfg=_load_cfg(),
         mode="run",
     )
-    app_manifest.stamp_parked(layout.session_dir, task="do the saved thing", reason="checkout busy")
+    stamps.stamp_parked(layout.session_dir, task="do the saved thing", reason="checkout busy")
     called: dict[str, Any] = {}
 
     def fake_run_task(cfg: Config, task: str, **kw: Any) -> int:
@@ -412,13 +411,13 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
     The bridge files resume seeds are wiped by run_task's own stale-state clear, so the follow-up
     must ride the delegation (initial_steer) instead of dying on the floor.
     """
-    from agent6.app import manifest as app_manifest
     from agent6.app import resume as resume_mod
+    from agent6.app import stamps
 
     state = paths.state_dir(repo)
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="run-PSTEER")
     layout.ensure()
-    app_manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout,
         session_id="run-PSTEER",
         user_task="do the saved thing",
@@ -428,7 +427,7 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
         cfg=_load_cfg(),
         mode="run",
     )
-    app_manifest.stamp_parked(layout.session_dir, task="do the saved thing", reason="checkout busy")
+    stamps.stamp_parked(layout.session_dir, task="do the saved thing", reason="checkout busy")
     called: dict[str, Any] = {}
 
     def fake_run_task(cfg: Config, task: str, **kw: Any) -> int:
@@ -492,7 +491,7 @@ def test_teardown_raise_still_releases_both_writer_locks(
         raise RuntimeError("fail with both writer locks held")
 
     # The first call past BOTH lock acquisitions on the clean-tree path.
-    monkeypatch.setattr(app_manifest, "write_session_manifest", boom)
+    monkeypatch.setattr(stamps, "write_session_manifest", boom)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("teardown raise")
     with pytest.raises(OSError, match="teardown raise"):

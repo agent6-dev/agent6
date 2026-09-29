@@ -12,8 +12,8 @@ import pathlib
 import pytest
 
 from agent6 import event_log
-from agent6.app import manifest
 from agent6.app import reporter as app_reporter
+from agent6.app import stamps
 from agent6.config import Config
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -22,7 +22,7 @@ from agent6.sessions import manifest as sessions_manifest
 def _layout(tmp_path: pathlib.Path) -> sessions_layout.SessionLayout:
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="brave-elk-BBBBBB")
     layout.ensure()
-    manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout,
         session_id=layout.session_id,
         user_task="t",
@@ -48,7 +48,7 @@ def test_a_gate_adopted_mid_execution_re_pins(tmp_path: pathlib.Path) -> None:
     layout = _layout(tmp_path)
     events = _sink(tmp_path)
     reporter, _said = _quiet()
-    manifest.pin_gate(layout.session_dir, (), "", events=events, reporter=reporter)
+    stamps.pin_gate(layout.session_dir, (), "", events=events, reporter=reporter)
     assert sessions_manifest.read_manifest(layout.session_dir).harness.verify_command == ()
 
     events.emit("loop.verify_inferred", command=["pytest", "-q"], source="agents_md", adopted_at=3)
@@ -63,7 +63,7 @@ def test_an_un_adopted_gate_re_pins_gateless(tmp_path: pathlib.Path) -> None:
     layout = _layout(tmp_path)
     events = _sink(tmp_path)
     reporter, _said = _quiet()
-    manifest.pin_gate(layout.session_dir, (), "", events=events, reporter=reporter)
+    stamps.pin_gate(layout.session_dir, (), "", events=events, reporter=reporter)
     events.emit("loop.verify_inferred", command=["pytest", "-q"], source="agents_md", adopted_at=3)
     events.emit("loop.verify_inferred", command=[], source="unadopted", adopted_at=5)
     pinned = sessions_manifest.read_manifest(layout.session_dir).harness
@@ -75,7 +75,7 @@ def test_a_preflight_inference_is_not_an_adoption(tmp_path: pathlib.Path) -> Non
     layout = _layout(tmp_path)
     events = _sink(tmp_path)
     reporter, _said = _quiet()
-    manifest.pin_gate(
+    stamps.pin_gate(
         layout.session_dir, ("make", "check"), "configured", events=events, reporter=reporter
     )
     events.emit("loop.verify_inferred", command=["pytest"], source="repo_signals")
@@ -89,7 +89,7 @@ def test_a_pin_that_cannot_be_written_is_reported(tmp_path: pathlib.Path) -> Non
     layout = _layout(tmp_path)
     events = _sink(tmp_path)
     reporter, said = _quiet()
-    manifest.pin_gate(layout.session_dir, (), "", events=events, reporter=reporter)
+    stamps.pin_gate(layout.session_dir, (), "", events=events, reporter=reporter)
     layout.manifest_path.unlink()
     events.emit("loop.verify_inferred", command=["pytest"], source="agents_md", adopted_at=1)
     assert any("could not record this run's verify gate" in line for line in said)
@@ -99,7 +99,7 @@ def test_a_fork_inherits_the_gate_its_source_was_judged_by(tmp_path: pathlib.Pat
     """A fork inherits the source's pinned gate, not the current config's."""
     dst = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="quiet-fox-AAAAAA")
     dst.ensure()
-    manifest.write_session_manifest(
+    stamps.write_session_manifest(
         dst,
         session_id=dst.session_id,
         user_task="t",
@@ -177,7 +177,7 @@ def test_a_run_records_the_isolation_it_actually_ran_under(tmp_path: pathlib.Pat
     """The manifest stamps the resolved level: `auto` says nothing about the run's confinement."""
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="quiet-fox-AAAAAA")
     layout.ensure()
-    manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout,
         session_id=layout.session_id,
         user_task="t",
@@ -194,6 +194,6 @@ def test_an_empty_gate_never_carries_an_origin(tmp_path: pathlib.Path) -> None:
     """`configured` beside `()` is self-contradictory on disk; the next execution reads it."""
     layout = _layout(tmp_path)
     reporter, _said = _quiet()
-    manifest.pin_gate(layout.session_dir, (), "", events=_sink(tmp_path), reporter=reporter)
+    stamps.pin_gate(layout.session_dir, (), "", events=_sink(tmp_path), reporter=reporter)
     pinned = sessions_manifest.read_manifest(layout.session_dir).harness
     assert (pinned.verify_command, pinned.verify_origin) == ((), "")

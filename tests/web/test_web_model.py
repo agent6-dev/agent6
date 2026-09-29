@@ -541,14 +541,14 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
 
     A fresh manifest carries the configured command with no origin until the execution pins it.
     """
-    from agent6.app import manifest
+    from agent6.app import stamps
     from agent6.config import Config
 
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="parked-two-AAAAAA"
     )
     layout.ensure()
-    manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout,
         session_id=layout.session_id,
         user_task="t",
@@ -557,12 +557,12 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
         run_branch=None,
         cfg=Config.model_validate({"harness": {"verify_command": ["python3", "-m", "pytest"]}}),
     )
-    manifest.stamp_parked(layout.session_dir, task="t", reason="checkout busy")
+    stamps.stamp_parked(layout.session_dir, task="t", reason="checkout busy")
     snap = session_snapshot(layout.session_dir)
     assert snap["status_label"] == "parked · checkout busy"
     assert snap["policy"].endswith("python3 -m pytest (configured)")
     # A gateless config stays gateless until the execution infers or adopts one.
-    manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout,
         session_id=layout.session_id,
         user_task="t",

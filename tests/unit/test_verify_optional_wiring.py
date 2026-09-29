@@ -19,7 +19,7 @@ from agent6 import git_ops, kinds, paths
 from agent6.app import _execution as app__execution
 from agent6.app import _session as app__session
 from agent6.app import _setup as app__setup
-from agent6.app import confine, manifest
+from agent6.app import confine, stamps
 from agent6.app import providers as app_providers
 from agent6.config import Config, layer
 from agent6.harness import _chain, _prompt_blocks, _snapshot, _verify_verdict
@@ -442,7 +442,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     monkeypatch.setattr(app_providers, "build_role_provider", _provider)
     monkeypatch.setattr(app__setup, "check_provider_keys", _none)
     monkeypatch.setattr(git_ops, "verify_git_identity", _none)
-    monkeypatch.setattr(manifest, "pin_gate", _capture_pin(pinned))
+    monkeypatch.setattr(stamps, "pin_gate", _capture_pin(pinned))
 
     said: list[str] = []
     frontend = dataclasses.replace(cli_run.session_frontend(), confirm_unconfined_autorun=_yes)
@@ -501,7 +501,7 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
     monkeypatch.setattr(preflight_mod, "budget_preflight", _none)
     monkeypatch.setattr(app_providers, "build_role_provider", _provider)
     monkeypatch.setattr(git_ops, "verify_git_identity", _none)
-    monkeypatch.setattr(manifest, "pin_gate", _capture_pin(pinned))
+    monkeypatch.setattr(stamps, "pin_gate", _capture_pin(pinned))
 
     said: list[str] = []
     frontend = mock.MagicMock()

@@ -23,7 +23,7 @@ import pytest
 
 from agent6 import directive, git_ops, kinds, memory, paths, portable
 from agent6.app import _lane_watch as lane_watch
-from agent6.app import compare, manifest, parallel, reporter
+from agent6.app import compare, parallel, reporter, stamps
 from agent6.config import Config, ConfigError
 from agent6.harness import subrun
 from agent6.sessions import ipc
@@ -1185,9 +1185,9 @@ def test_lineage_stamp_oserror_does_not_abort_import_loop(
 
     # The stamp is the fan-out's own manifest write; the lane imports keep the real writer.
     stand_in = types.SimpleNamespace(
-        write_manifest=boom, write_session_manifest=manifest.write_session_manifest
+        write_manifest=boom, write_session_manifest=stamps.write_session_manifest
     )
-    monkeypatch.setattr(parallel, "app_manifest", stand_in)
+    monkeypatch.setattr(parallel, "stamps", stand_in)
 
     rc = parallel.run_parallel(
         "t",
@@ -2253,7 +2253,7 @@ def test_lane_is_self_describing_from_birth(
     grouping survives a coordinator death; a stamp written only after import leaves orphaned lanes
     listed as unrelated runs.
     """
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
     from agent6.sessions import layout as sessions_layout
 
     captured: list[dict[str, str]] = []
@@ -2279,7 +2279,7 @@ def test_lane_is_self_describing_from_birth(
     monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:2")
     layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="fan-l2")
     layout.ensure()
-    app_manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout,
         session_id="fan-l2",
         user_task="do it",
@@ -2295,7 +2295,7 @@ def test_lane_is_self_describing_from_birth(
     monkeypatch.delenv("AGENT6_PARALLEL_LINEAGE")
     layout2 = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="plain-run")
     layout2.ensure()
-    app_manifest.write_session_manifest(
+    stamps.write_session_manifest(
         layout2,
         session_id="plain-run",
         user_task="t",

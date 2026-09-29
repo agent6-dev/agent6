@@ -427,7 +427,7 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
 
     Recording the parent's checkout handed the child's model a writable checkout it was never given.
     """
-    from agent6.app import manifest as app_manifest
+    from agent6.app import stamps
     from agent6.config import Config
 
     repo = tmp_path / "repo"
@@ -444,7 +444,7 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
     state = paths.state_dir(repo)
     parent = sessions_layout.SessionLayout(state_dir=state, session_id="parent-AAAA11")
     parent.ensure()
-    app_manifest.write_session_manifest(
+    stamps.write_session_manifest(
         parent,
         session_id="parent-AAAA11",
         user_task="do the thing",
@@ -460,7 +460,7 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
     git_ops.add_worktree(repo, worktree, c2)
     fork = sessions_layout.SessionLayout(state_dir=state, session_id="fork-BBBB22")
     fork.ensure()
-    app_manifest.write_session_manifest(
+    stamps.write_session_manifest(
         fork,
         session_id="fork-BBBB22",
         user_task="do the thing",

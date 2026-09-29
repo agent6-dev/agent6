@@ -18,7 +18,7 @@ from collections.abc import Callable, Sequence
 
 from agent6 import budget as agent6_budget
 from agent6 import commit_message, event_log, git_ops, kinds, paths
-from agent6.app import _session, _setup, finalize, manifest, providers
+from agent6.app import _session, _setup, finalize, providers, stamps
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, RoleName
@@ -245,7 +245,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         )
     except (KeyboardInterrupt, Exception) as exc:
         # A parked run whose start crashes here never ran: it stays parked with no session.end.
-        if manifest.parked_stamp(layout.session_dir) is not None:
+        if stamps.parked_stamp(layout.session_dir) is not None:
             reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
         else:
             reporter.err(f"\n[agent6] {label} {_journal_escape(events, exc, iterations=0)}")
@@ -404,7 +404,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             ),
         )
         if inputs.task is not None:
-            manifest.unpark(layout.session_dir, run_branch=inputs.chain_branch)
+            stamps.unpark(layout.session_dir, run_branch=inputs.chain_branch)
         try:
             with frontend.tui_session(layout.session_dir, inputs.tui_enabled):
                 try:
@@ -438,7 +438,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         if (
             not escape_handled
             and result is None
-            and manifest.parked_stamp(layout.session_dir) is None
+            and stamps.parked_stamp(layout.session_dir) is None
         ):
             _journal_escape(events, exc, iterations=wf.iterations_reached if wf else 0)
         reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
