@@ -28,6 +28,9 @@ nothing:
    errors, no facts the repo's own docs already state.
 5. Candidate AGENTS.md lines: only rules the operator stated or enforced in
    this run, and not already in AGENTS.md.
+6. Memory entries the record contradicts: an entry of the memory index whose
+   claim the run's evidence (a verify tail, a file the model read, a ruling)
+   contradicts, named with that evidence; the operator removes or edits it.
 
 Quote the record for evidence. When nothing qualifies at all, say so in one
 line.

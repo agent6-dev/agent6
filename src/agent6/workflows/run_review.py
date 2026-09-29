@@ -17,7 +17,7 @@ import json
 from collections import Counter
 from dataclasses import dataclass, field
 
-from agent6.memory import read_use
+from agent6.memory import index_text, read_use
 from agent6.prompts.review import RUN_REVIEW_SYSTEM_PROMPT
 from agent6.providers import Provider, ProviderError, ProviderResponse
 from agent6.sessions.layout import SessionLayout
@@ -83,6 +83,7 @@ class RunDigest:
     first_errors: tuple[str, ...] = ()  # "[tool] summary"
     notices: tuple[tuple[str, int], ...] = ()
     memory_wrote: tuple[str, ...] = ()
+    memory_index: str = ""  # the repo's MEMORY.md index, what every run is shown
     conversation: str = ""
     dropped: dict[str, int] = field(default_factory=dict)  # what the caps left out, by kind
 
@@ -116,6 +117,10 @@ class RunDigest:
             lines.append("\nharness notices: " + ", ".join(f"{k} x{n}" for k, n in self.notices))
         if self.memory_wrote:
             lines.append("\nmemory facts this session wrote: " + ", ".join(self.memory_wrote))
+        if self.memory_index:
+            lines.append(
+                f"\nmemory index (every run on this repo is shown it):\n{self.memory_index}"
+            )
         lines.append(f"\nconversation (tail):\n{self.conversation}")
         return "\n".join(lines)
 
@@ -218,6 +223,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         first_errors=tuple(first_errors),
         notices=tuple(sorted(notices.items())),
         memory_wrote=wrote,
+        memory_index=index_text(layout.state_dir),
         conversation=conversation(layout, max_chars=max_chars),
         dropped={k: v for k, v in dropped.items() if v},
     )

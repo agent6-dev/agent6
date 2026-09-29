@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.config import Config
-from agent6.memory import record_use
+from agent6.memory import add, record_use
 from agent6.paths import state_dir
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
 from agent6.sessions.layout import SessionLayout
@@ -97,6 +97,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: Path) -> None:
     layout = _write_session(repo)
     record_use(layout.state_dir, session="run-AAAA11", wrote=("lexer-rule",), read={"old": 1})
     record_use(layout.state_dir, session="run-other", wrote=("other",), read={})
+    add(layout.state_dir, "money-rounding", "Money rounds half-up on the cent.")
 
     d = run_digest(layout)
 
@@ -113,6 +114,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: Path) -> None:
     assert d.first_errors == ("[run_command] exit 1: 2 failed",)
     assert d.notices == (("no_progress.nudge", 1),)
     assert d.memory_wrote == ("lexer-rule",)
+    assert d.memory_index == "- money-rounding: Money rounds half-up on the cent."
     assert "assistant: Done: the lexer is untouched." in d.conversation
     assert "a side seat's answer" not in d.conversation
     text = d.render()
@@ -127,6 +129,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: Path) -> None:
         "tool errors (1 of 2 calls):",
         "harness notices: no_progress.nudge x1",
         "memory facts this session wrote: lexer-rule",
+        "memory index (every run on this repo is shown it):\n- money-rounding:",
         "conversation (tail):",
     ):
         assert heading in text
@@ -197,6 +200,7 @@ def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
     assert out.startswith("## Outcome")
     assert provider.last_user == "AGENTS.md:\n# rules\n\nRUN RECORD:\nsession x: task"
     assert "Candidate memory facts" in provider.last_system
+    assert "Memory entries the record contradicts" in provider.last_system
     with pytest.raises(RunReviewError, match="provider call failed"):
         run_review(_FakeProvider(raise_error=True), digest="x")  # type: ignore[arg-type]
     with pytest.raises(RunReviewError, match="empty"):
