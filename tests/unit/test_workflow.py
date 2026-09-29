@@ -3368,7 +3368,7 @@ def test_summarise_and_restart_applies_dag_checkoff() -> None:
         compaction=CompactionSettings(summariser=summariser), curator=fake, logger=logged.append
     )
     messages = _long_history(6)
-    _restart_via_wire(wf, messages)
+    _restart_via_wire(wf, messages, state=_state(root_task_id="01ROOT"))
 
     assert fake.passed == ["01DONE"]  # valid completed id passed; hallucinated id ignored
     assert fake.added == [("01ROOT", "fix the budget rounding bug")]  # queued under the root
@@ -5099,23 +5099,6 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -
     warnings = [m for m in logs if "could not persist resume snapshot" in m]
     assert len(warnings) == 1, "warn exactly once, then stay quiet"
     assert not snap.exists()
-
-
-def test_open_tasks_for_checkoff_excludes_auto_root() -> None:
-    # The tier-2 compaction check-off must never offer the auto-root (parent_id
-    # is None): a summariser listing it would mark the whole run passed mid-run.
-    curator = MagicMock()
-    curator.nodes.return_value = _typed(
-        {
-            "root": {"status": "in_progress", "title": "the whole run", "parent_id": None},
-            "01A": {"status": "pending", "title": "subtask A", "parent_id": "root"},
-            "01B": {"status": "in_progress", "title": "subtask B", "parent_id": "root"},
-            "01C": {"status": "passed", "title": "done subtask", "parent_id": "root"},
-        }
-    )
-    wf = _wf(curator=curator)
-    ids = {nid for nid, _ in wf.compactor.open_tasks_for_checkoff()}
-    assert ids == {"01A", "01B"}  # root excluded; passed subtask excluded
 
 
 def test_run_result_docstring_enumerates_every_loop_reason() -> None:

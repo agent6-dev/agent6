@@ -20,7 +20,6 @@ from pydantic import ValidationError
 from agent6.budget import BudgetExceeded
 from agent6.graph.curator import CuratorError, GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
-from agent6.graph.order import OPEN_STATUSES
 from agent6.prompts.revision import (
     CONTEXT_SUMMARY_SYSTEM_PROMPT,
     GIST_DISTILL_SYSTEM_PROMPT,
@@ -29,6 +28,7 @@ from agent6.prompts.revision import (
     progress_summary_from_notice,
 )
 from agent6.providers import Provider, ProviderError
+from agent6.workflows._advice import open_subtasks
 from agent6.workflows._compaction import (
     CompactionSettings,
     GistRequest,
@@ -216,7 +216,7 @@ class Compactor:
         # summariser to check off finished tasks and surface newly-found ones, so
         # task state stays accurate across compaction without depending on the
         # worker calling update_task (which weak models rarely do).
-        open_tasks = self.open_tasks_for_checkoff()
+        open_tasks = open_subtasks(self.curator.nodes()) if self.curator is not None else []
         if open_tasks:
             task_lines = "\n".join(f"- {tid}: {title}" for tid, title in open_tasks)
             checkoff_req = (
@@ -284,7 +284,9 @@ class Compactor:
         # Apply the check-off only after the stripped narrative passed the
         # fail-safe, so bookkeeping alone can neither mutate the DAG nor erase history.
         if open_tasks:
-            self.apply_checkoff(raw, valid_ids={tid for tid, _ in open_tasks})
+            self.apply_checkoff(
+                raw, valid_ids={tid for tid, _ in open_tasks}, root_id=state.root_task_id
+            )
         conversation.restart(
             context_restart_notice(
                 self.mode,
@@ -308,28 +310,12 @@ class Compactor:
         )
         return True
 
-    def open_tasks_for_checkoff(self) -> list[tuple[str, str]]:
-        """(id, title) of every pending/in_progress task in the DAG, for the
-        tier-2 compaction check-off. Best-effort: no curator or a curator error
-        yields an empty list, so compaction degrades to the plain summary."""
-        if self.curator is None:
-            return []
-        out: list[tuple[str, str]] = []
-        for nid, node in self.curator.nodes().items():
-            # Subtasks only: never offer the auto-root (parent_id is None) for
-            # check-off, mirroring the finish-gate and surface rules. The root is
-            # the whole-run container, so a mid-run summary must not mark it
-            # passed and end the run early.
-            if node.parent_id is None or node.standing:
-                continue
-            if node.status in OPEN_STATUSES:
-                out.append((nid, node.title[:120]))
-        return out
-
-    def apply_checkoff(self, summary_text: str, *, valid_ids: set[str]) -> None:
+    def apply_checkoff(
+        self, summary_text: str, *, valid_ids: set[str], root_id: str | None
+    ) -> None:
         """Parse the summariser's ```checkoff block and apply it to the curator:
-        mark completed tasks passed, queue newly-discovered ones as children of
-        the first root. Best-effort: a curator hiccup must never break the run."""
+        mark completed tasks passed, queue newly-discovered ones under the
+        run's root. Best-effort: a curator hiccup must never break the run."""
         if self.curator is None:
             return
         completed, new_tasks = parse_checkoff(summary_text)
@@ -352,7 +338,7 @@ class Compactor:
             try:
                 self.curator.add_subtask(
                     AddSubtaskIntent(
-                        parent_id=self.first_root_id(),
+                        parent_id=root_id,
                         draft=TaskNodeDraft(title=title, created_by="planner"),
                     )
                 )
@@ -366,12 +352,3 @@ class Compactor:
             # request bigger than the change.
             self.log(f"LOOP: compaction check-off -- passed {passed}, queued {queued}")
             self.emit_graph_snapshot()
-
-    def first_root_id(self) -> str | None:
-        """The first root task id (parent_id is None), or None. Best-effort."""
-        if self.curator is None:
-            return None
-        for nid, node in self.curator.nodes().items():
-            if node.parent_id is None:
-                return nid
-        return None
