@@ -9,6 +9,30 @@ the seat calls and the grounding/aggregation.
 
 from __future__ import annotations
 
+# The run review (`agent6 sessions review`): one call over a finished run's
+# record, markdown out, nothing written back. The operator decides what to
+# record; the review names the evidence for each candidate.
+RUN_REVIEW_SYSTEM_PROMPT = """You review the record of one finished agent6 run: what the operator
+asked, what the model did, how it ended, and what the operator corrected.
+
+Produce a markdown review with these sections, each omitted when it has
+nothing:
+1. Outcome: one line, how the run ended and what the verify gate said.
+2. What went wrong and why: each item names its evidence (a tool error, a
+   verify tail, a steer) and the cause.
+3. Operator corrections: each steer or ruling that changed the model's
+   course, and the standing rule it implies, if any.
+4. Candidate memory facts: durable, non-obvious facts about THIS repository
+   a later run would need, stated as a rule, not the incident; one line each
+   as `name: fact`, with the evidence line. No task progress, no transient
+   errors, no facts the repo's own docs already state.
+5. Candidate AGENTS.md lines: only rules the operator stated or enforced in
+   this run, and not already in AGENTS.md.
+
+Quote the record for evidence. When nothing qualifies at all, say so in one
+line.
+"""
+
 # Original wording (no third-party prompt text). aggregate_verdicts enforces
 # grounding mechanically, so this prompt only guides.
 REVIEW_SYSTEM_PROMPT = """You are one reviewer on an adversarial code-review panel.

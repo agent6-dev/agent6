@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""`agent6 sessions review`: a read-only review of one finished session's
+record on the reviewer role, its own module so `sessions list` does not load
+the provider stack."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+from agent6.app._setup import budget_tracker, check_provider_keys
+from agent6.app.providers import build_role_provider
+from agent6.budget import BudgetExceeded
+from agent6.config import ConfigError
+from agent6.paths import state_dir
+from agent6.providers import ProviderError, TranscriptSink
+from agent6.ui.cli._common import error
+from agent6.ui.cli.review_cmds import _reviewer_config, save_review
+from agent6.ui.cli.sessions_cmds import _resolve_session_manifest
+from agent6.workflows._context import agents_md_text
+from agent6.workflows.run_review import RunReviewError, run_digest, run_review
+
+
+def _cmd_sessions_review(  # noqa: PLR0911
+    config_path: Path | None, *, session_id: str, model: str
+) -> int:
+    """Print a review of a session's record to stdout and save it under the
+    state dir's reviews/. Read-only; no jail. *model* is `--model`,
+    `[provider/]model`, applied to the reviewer route over every config
+    layer. Exit 0 reviewed, 2 refused, 3 budget."""
+    cwd = Path.cwd()
+    resolved = _resolve_session_manifest(cwd, session_id, recent_note="reviewing the newest run")
+    if isinstance(resolved, int):
+        return resolved
+    layout, _manifest = resolved
+    try:
+        cfg = _reviewer_config(config_path, model)
+    except ConfigError as exc:
+        error(str(exc))
+        return 2
+    cfg.require_runnable("reviewer")
+    err = check_provider_keys(cfg)
+    if err is not None:
+        error(f"{err}")
+        return 2
+    budget = budget_tracker(cfg)
+    reviews_dir = state_dir(cwd) / "reviews"
+    transcript_sink = TranscriptSink(reviews_dir)
+    try:
+        reviewer = build_role_provider(
+            cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat="review:run"
+        )
+    except ProviderError as exc:
+        error(f"provider init failed: {exc}")
+        return 2
+    digest = run_digest(layout)
+    print(f"[agent6] reviewing run: {layout.session_id}", file=sys.stderr)
+    try:
+        text = run_review(reviewer, digest=digest.render(), agents_md=agents_md_text(cwd))
+    except RunReviewError as exc:
+        print(f"REVIEW FAILED: {exc}", file=sys.stderr)
+        return 2
+    except BudgetExceeded as exc:
+        print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
+        return 3
+    print(text, flush=True)
+    saved = save_review(reviews_dir, label=f"run {layout.session_id}", body=text)
+    print(f"[agent6] review saved: {saved}", file=sys.stderr)
+    print(budget.format_summary(), file=sys.stderr)
+    return 0

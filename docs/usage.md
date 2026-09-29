@@ -152,12 +152,14 @@ agent6 plan show <session-id>                 # print the plan
 agent6 plan edit <session-id>                 # open plan.md in $EDITOR (answer its open questions)
 agent6 resume <session-id> --steer "answered" # the planner re-reads and revises
 agent6 review --base origin/main --head HEAD  # read-only diff review
+agent6 sessions review <session-id>           # read-only review of a finished run's record
 agent6 ask "how does the task-graph curator work?"
 ```
 
 - `agent6 review --reviewers 3 --personas security,correctness,tests`: a panel whose findings are checked against the diff, so only real problems gate
   - a seat can pin its model, `security@openrouter/<model-id>`, the `[review].seats` grammar
 - `review --path P` narrows the diff; `--model [provider/]model` picks the reviewer for this review (a seat pinned in `[review].seats` keeps its own)
+- `sessions review [ID] [--model M]` reads a finished run's journal (steers, rulings, verify runs, tool errors, harness notices, the conversation's tail) and prints how it ended, what went wrong and why, what you corrected, and candidate memory facts and AGENTS.md lines with their evidence; it writes nothing, so a candidate lands only through `agent6 memory add` or your AGENTS.md
 - every review is also saved as `<stamp>-review.md` under the repo's state dir (`<state-dir>/reviews/`, beside the provider transcripts); the path is printed on stderr
 - `ask` runs in any directory; headless (no TTY) under the default `run_commands = "ask"` it needs `--auto-approve`, `--no-commands`, or an away-mode (`AGENT6_DETACHED_AWAY=wait|deny|approve`)
 - `run` and `plan` need a git repository (branches, diffs, merges)

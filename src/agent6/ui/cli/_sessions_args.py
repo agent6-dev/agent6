@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Parser builder for `sessions` and its subcommands: list this repo's sessions,
-or inspect one (show/diff/merge/compare/commits/prune/transcript/graph)."""
+or inspect one (show/diff/merge/compare/review/commits/prune/transcript/graph)."""
 
 from __future__ import annotations
 
 import argparse
 
 from agent6.ui.cli._common import SESSION_ID, _add_session_id, _sub
-from agent6.ui.cli.completers import _complete_session_ids
+from agent6.ui.cli.completers import _complete_model_routes, _complete_session_ids
 
 
 def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -115,6 +115,28 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         default=None,
         help="Use this commit message for a squash or merge. Default: condensed session summary.",
     )
+
+    sessions_review = _sub(
+        sessions_sub,
+        "review",
+        help=(
+            "Print a read-only review of a finished session's record on the reviewer model:"
+            " how it ended, what went wrong and why, what you corrected, and candidate memory"
+            " facts and AGENTS.md lines with their evidence. Saved under the state dir's"
+            " reviews/. Nothing is written to the repo or the memory."
+        ),
+    )
+    _add_session_id(sessions_review, _complete_session_ids)
+    review_model = sessions_review.add_argument(
+        "--model",
+        default="",
+        metavar="[PROVIDER/]MODEL",
+        help=(
+            "The reviewer for this review, over every config layer: provider/model, or a"
+            " model id on the reviewer's provider."
+        ),
+    )
+    review_model.completer = _complete_model_routes  # type: ignore[attr-defined]
 
     sessions_compare = _sub(
         sessions_sub,

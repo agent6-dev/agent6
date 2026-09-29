@@ -144,6 +144,7 @@ depends_on = [
   "agent6.tools.schema",
   "agent6.types",
   "agent6.verify_infer",  # gateless runs adopt a verify mid-run (deterministic tiers)
+  "agent6.viewmodel",  # the run review folds a session's record with the one listing scan
 ]
 
 [[modules]]

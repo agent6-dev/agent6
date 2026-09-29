@@ -458,6 +458,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
     )
     from agent6.ui.cli.sessions_compare import _cmd_compare  # noqa: PLC0415
     from agent6.ui.cli.sessions_merge import _cmd_merge, _cmd_prune  # noqa: PLC0415
+    from agent6.ui.cli.sessions_review import _cmd_sessions_review  # noqa: PLC0415
     from agent6.ui.cli.sessions_show import _cmd_status  # noqa: PLC0415
 
     if args.sessions_command == "list":
@@ -480,6 +481,8 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
             config_path=args.config,
             rejudge=args.rejudge,
         )
+    if args.sessions_command == "review":
+        return _cmd_sessions_review(args.config, session_id=args.session_id, model=args.model)
     if args.sessions_command == "commits":
         return _cmd_commits(session_id=args.session_id)
     if args.sessions_command == "prune":
