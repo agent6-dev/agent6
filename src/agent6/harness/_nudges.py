@@ -42,7 +42,7 @@ TOOL_ERROR_ESCALATION = (
     "[harness tool-error] The identical error persists; the run ends at the eighth."
 )
 
-# A streak of ToolDenied refusals (the approval policy): the call
+# A streak of ToolDeniedError refusals (the approval policy): the call
 # was REFUSED, not malformed, so the generic "fix the call shape" text would
 # be false and invite pointless reshuffling of the same command.
 TOOL_DENIED_NUDGE = (

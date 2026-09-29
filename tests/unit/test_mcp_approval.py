@@ -18,7 +18,7 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.sessions.ipc import COMMAND_SCOPE, set_session_allow, set_session_deny
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.errors import ToolDenied, ToolError
+from agent6.tools.errors import ToolDeniedError, ToolError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.operator_prompts import ApprovalAnswer, ApprovalRequest, OperatorPrompts
 from tests.unit.test_mcp_client import _fake_server_argv  # pyright: ignore[reportPrivateUsage]
@@ -105,7 +105,7 @@ def test_the_prompt_carries_the_arguments_in_full(tmp_path: Path) -> None:
             mcp_manager=mgr,
             prompts=OperatorPrompts(approver=_capture),
         )
-        with pytest.raises(ToolDenied):
+        with pytest.raises(ToolDeniedError):
             d.dispatch("mcp__fake__echo", {"text": "x" * 500, "items": list(range(20))})
     finally:
         mgr.close()
@@ -123,7 +123,7 @@ def test_a_denied_call_never_reaches_the_server(tmp_path: Path) -> None:
             mcp_manager=mgr,
             prompts=OperatorPrompts(approver=_deny),
         )
-        with pytest.raises(ToolDenied, match="approve"):
+        with pytest.raises(ToolDeniedError, match="approve"):
             d.dispatch("mcp__fake__echo", {"text": "hello"})
     finally:
         mgr.close()
@@ -173,7 +173,7 @@ def test_allowing_every_command_does_not_allow_a_server(tmp_path: Path) -> None:
     mgr = _manager()
     try:
         d = ToolDispatcher(root=tmp_path, config=_cfg(), mcp_manager=mgr, prompts=prompts)
-        with pytest.raises(ToolDenied):
+        with pytest.raises(ToolDeniedError):
             d.dispatch("mcp__fake__echo", {"text": "hi"})
     finally:
         mgr.close()
@@ -365,7 +365,7 @@ def test_a_huge_payload_prompts_with_a_head_and_a_full_file(tmp_path: Path) -> N
             prompts=OperatorPrompts(approver=_capture),
             session_dir=session_dir,
         )
-        with pytest.raises(ToolDenied):
+        with pytest.raises(ToolDeniedError):
             d.dispatch("mcp__fake__echo", {"text": big})
     finally:
         mgr.close()

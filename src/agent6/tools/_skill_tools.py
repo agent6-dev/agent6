@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6.skills import ResolvedSkills
-from agent6.tools._path_safety import NotRegularFile, contain, open_contained
+from agent6.tools._path_safety import NotRegularFileError, contain, open_contained
 from agent6.tools.errors import ToolError
 from agent6.tools.results import SkillResult
 from agent6.tools.schema import UseSkillInput
@@ -41,7 +41,7 @@ def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any])
         fd = open_contained(contain(skill.dir, args.file), os.O_RDONLY)
     except FileNotFoundError:
         raise ToolError(f"no such file in skill {skill.name!r}: {args.file!r}") from None
-    except NotRegularFile:
+    except NotRegularFileError:
         # A directory (or a FIFO a hostile skill dir planted): refused by the
         # open itself, so it never reaches the read below.
         raise ToolError(f"no such file in skill {skill.name!r}: {args.file!r}") from None

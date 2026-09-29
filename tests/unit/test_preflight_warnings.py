@@ -180,7 +180,7 @@ def test_the_route_preflight_precedes_isolation(
 
     seen: list[str] = []
 
-    class _Stop(Exception):
+    class _Stop(Exception):  # noqa: N818  # a signal, not an error  # a signal, not an error
         pass
 
     def _route(*_a: object, **_k: object) -> bool:

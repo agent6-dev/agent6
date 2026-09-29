@@ -25,7 +25,7 @@ from agent6.sessions.ipc import listening_ports, write_session_netns_pid, write_
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.ui.cli.net_cmds import (
-    SessionNetworkUnavailable,
+    SessionNetworkUnavailableError,
     exec_in_session,
     join_session_network,
 )
@@ -104,7 +104,7 @@ def test_exec_runs_where_the_agent_runs(tmp_path: Path) -> None:
 def test_joining_a_session_without_a_network_says_why(tmp_path: Path) -> None:
     """A run on the host network has nothing to join, and the refusal names the
     setting rather than failing with a bare errno."""
-    with pytest.raises(SessionNetworkUnavailable, match=r"sandbox\.network"):
+    with pytest.raises(SessionNetworkUnavailableError, match=r"sandbox\.network"):
         join_session_network(tmp_path)
 
 

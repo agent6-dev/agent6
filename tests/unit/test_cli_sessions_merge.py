@@ -899,11 +899,11 @@ def test_merge_squash_default_style_writes_the_run_message(
 def test_merge_squash_model_style_degrades_on_a_budget_fault(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The narrowed catch let a `BudgetExceeded` from the provider's build
+    """The narrowed catch let a `BudgetExceededError` from the provider's build
     escape a finished run's teardown (auto_merge runs the draft there): the
     draft degrades with its reason on every fault its setup can raise."""
     from agent6.app import merge as merge_mod
-    from agent6.budget import BudgetExceeded
+    from agent6.budget import BudgetExceededError
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
@@ -913,7 +913,7 @@ def test_merge_squash_model_style_degrades_on_a_budget_fault(
     )
 
     def over(*_a: object, **_k: object) -> object:
-        raise BudgetExceeded("the ceiling was crossed on the last call")
+        raise BudgetExceededError("the ceiling was crossed on the last call")
 
     monkeypatch.setattr(merge_mod, "build_role_provider", over)
     _setup_run(tmp_path, "run-BDG111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])

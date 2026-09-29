@@ -21,7 +21,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal
 
-from agent6.budget import BudgetExceeded
+from agent6.budget import BudgetExceededError
 from agent6.config import ReviewTier
 from agent6.harness._chain import RunChain
 from agent6.harness._context import agents_md_text
@@ -547,7 +547,7 @@ class Reviewer:
                 tools=tools,
                 dispatch=dispatch,
             )
-        except BudgetExceeded:
+        except BudgetExceededError:
             self.emit("loop.review.skipped", iteration=iteration, reason="budget")
             return None
         for v in result.per_seat:

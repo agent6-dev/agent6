@@ -16,7 +16,7 @@ import pytest
 import agent6.app._session as session_mod
 import agent6.app.resume as resume_mod
 import agent6.app.run as run_mod
-from agent6.budget import BudgetExceeded
+from agent6.budget import BudgetExceededError
 from agent6.paths import state_dir
 from agent6.providers import ProviderResponse
 from agent6.ui.cli import cli_main
@@ -292,7 +292,7 @@ def test_an_ask_out_of_budget_exits_three(
     _setup(tmp_path, monkeypatch)
 
     def _raise(_i: int) -> None:
-        raise BudgetExceeded("USD budget exhausted")
+        raise BudgetExceededError("USD budget exhausted")
 
     prov = _Scripted([("an answer", ())], before_call=_raise)
     monkeypatch.setattr(session_mod, "build_role_provider", _use(prov))

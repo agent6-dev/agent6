@@ -136,7 +136,7 @@ def parse_response(  # noqa: PLR0912, PLR0915
             # the context, priming the same degeneration next turn. Cap the
             # diagnostic at 500 chars so the
             # repetition doesn't survive the round-trip.
-            _RAW_ARGS_CAP = 500
+            raw_args_cap = 500
             try:
                 parsed_input = json.loads(args_raw) if args_raw else {}
                 if not isinstance(parsed_input, dict):
@@ -156,9 +156,9 @@ def parse_response(  # noqa: PLR0912, PLR0915
                     parsed_input = repaired
                 else:
                     raw_str = str(args_raw)
-                    if len(raw_str) > _RAW_ARGS_CAP:
+                    if len(raw_str) > raw_args_cap:
                         raw_str = (
-                            raw_str[:_RAW_ARGS_CAP]
+                            raw_str[:raw_args_cap]
                             + f"... <truncated; original was {len(str(args_raw))} chars>"
                         )
                     parsed_input = {"_raw_arguments": raw_str}

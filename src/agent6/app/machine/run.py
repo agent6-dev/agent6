@@ -44,7 +44,7 @@ from agent6.app.machine._preflight import (
 from agent6.app.machine._spend import book_crashed_attempt
 from agent6.app.machine_agent import build_machine_agent_runner, clone_at_machine_chain
 from agent6.app.parallel import subordinate_workdir_root
-from agent6.app.preflight import SessionRefused, budget_preflight
+from agent6.app.preflight import SessionRefusedError, budget_preflight
 from agent6.app.reporter import Reporter
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective_with_overlay
@@ -332,7 +332,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
         try:
             isolation = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
-        except SessionRefused as refusal:
+        except SessionRefusedError as refusal:
             return refusal.rc
         # Its fix is an allowlist entry, never a network change: refused
         # outright, ahead of the network-fix flow below.

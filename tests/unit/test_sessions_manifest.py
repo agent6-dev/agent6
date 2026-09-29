@@ -421,7 +421,7 @@ def test_a_known_mode_is_never_reported_as_an_unknown_one(tmp_path: Path) -> Non
 
 def test_each_mode_gets_its_own_tool_surface() -> None:
     """Read off the record, not re-derived per call site."""
-    from agent6.kinds import SESSION_KINDS, UnknownSessionKind
+    from agent6.kinds import SESSION_KINDS, UnknownSessionKindError
     from agent6.tools.schema import ASK_EXTRA_TOOLS, MACHINE_EXTRA_TOOLS, mode_tools
 
     assert mode_tools("machine").extras == MACHINE_EXTRA_TOOLS
@@ -431,7 +431,7 @@ def test_each_mode_gets_its_own_tool_surface() -> None:
         names = mode_tools(name).names
         assert ("apply_edit" in names) is kind.edits, name
         assert ("run_command" in names) is kind.runs_commands, name
-    with pytest.raises(UnknownSessionKind):
+    with pytest.raises(UnknownSessionKindError):
         mode_tools("wat")
 
 

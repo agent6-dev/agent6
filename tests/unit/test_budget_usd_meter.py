@@ -238,7 +238,7 @@ def test_fraction_remaining_tracks_usd_ceiling() -> None:
     On a USD-budgeted, cache-heavy run the USD ceiling (which alone includes
     cache cost) is what hard-stops the run; if `fraction_remaining` ignored it,
     the token fractions would report plenty of budget left and the graceful
-    wind-down nudges would never fire before `BudgetExceeded`.
+    wind-down nudges would never fire before `BudgetExceededError`.
     """
     # Token caps sized huge so only the $5 USD ceiling binds. Cache-heavy turn:
     # tiny fresh input/output, large cache_read (billed at 0.1x, counting zero

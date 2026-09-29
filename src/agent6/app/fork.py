@@ -219,7 +219,7 @@ class Checkout:
     git_dir: Path
 
 
-class _ForkRefused(Exception):
+class _ForkRefusedError(Exception):
     """The fork was refused before anything was created; the reason is
     printed and `rc` is the exit code."""
 
@@ -266,7 +266,7 @@ def _plan_fork(
     reporter: Reporter = STDIO_REPORTER,
 ) -> _ForkPlan:
     """Resolve a fork of *source_session_id* at checkpoint *at_turn*; raises
-    :class:`_ForkRefused` with the exit code after printing the reason.
+    :class:`_ForkRefusedError` with the exit code after printing the reason.
 
     The child's config is built as its continuation builds it (the source's
     preset, the mode clamp, this invocation's *sandbox_overrides*), so the
@@ -279,17 +279,17 @@ def _plan_fork(
     state = state_dir(cwd)
     src = resolve_source(state, source_session_id, reporter=reporter)
     if src is None:
-        raise _ForkRefused(2)
+        raise _ForkRefusedError(2)
 
     checkpoint_path = _select_checkpoint_path(src, at_turn, reporter=reporter)
     if checkpoint_path is None:
-        raise _ForkRefused(2)
+        raise _ForkRefusedError(2)
 
     try:
         checkpoint = load_session_snapshot(checkpoint_path)
     except (OSError, ValueError) as exc:
         reporter.error(f"failed to load checkpoint {checkpoint_path}: {exc}")
-        raise _ForkRefused(1) from exc
+        raise _ForkRefusedError(1) from exc
 
     # Read the source manifest to carry base_sha / base_branch / mode forward.
     # `mode` is security-relevant: a missing/corrupt source manifest must NOT
@@ -303,18 +303,18 @@ def _plan_fork(
         src_mode = sm.session_mode()
     except ManifestError as exc:
         reporter.error(f"cannot read source run manifest {src.manifest_path}: {exc}")
-        raise _ForkRefused(2) from exc
+        raise _ForkRefusedError(2) from exc
     refusal = model_git_refusal(sm, "fork")
     if refusal is not None:
         reporter.error(refusal)
-        raise _ForkRefused(2)
+        raise _ForkRefusedError(2)
 
     forked_from_sha = checkpoint.head_sha
     if not forked_from_sha:
         reporter.error(
             "the chosen checkpoint records no head_sha, so the fork branch cannot be cut."
         )
-        raise _ForkRefused(1)
+        raise _ForkRefusedError(1)
 
     try:
         # The source's preset: resume replays it (preset or manifest_preset),
@@ -331,19 +331,19 @@ def _plan_fork(
         )
     except ConfigError as exc:
         reporter.error(str(exc))
-        raise _ForkRefused(2) from exc
+        raise _ForkRefusedError(2) from exc
     if refuse_continuation is not None:
         refusal = refuse_continuation(cfg, src_mode)
         if refusal is not None:
             reporter.refuse(refusal)
-            raise _ForkRefused(2)
+            raise _ForkRefusedError(2)
 
     if new_session_id:
         try:
             validate_explicit_session_id(new_session_id)
         except SessionIdError as exc:
             reporter.error(str(exc))
-            raise _ForkRefused(2) from exc
+            raise _ForkRefusedError(2) from exc
         # Any bucket holding it makes the id ambiguous on every surface; the
         # same-bucket case would also fail the target-dir check later.
         if (held := session_id_bucket(state, new_session_id)) is not None:
@@ -351,7 +351,7 @@ def _plan_fork(
                 f"--session-id {new_session_id!r} already names a session under {held}/;"
                 " ids are unique across every bucket. Pick another id."
             )
-            raise _ForkRefused(2)
+            raise _ForkRefusedError(2)
     child_id = new_session_id or unused_session_id(state, session_bucket(src_mode))
     return _ForkPlan(
         src=src,
@@ -422,7 +422,7 @@ def create_fork(
             refuse_continuation=refuse_continuation,
             reporter=reporter,
         )
-    except _ForkRefused as refused:
+    except _ForkRefusedError as refused:
         return "", refused.rc
     added = worktree and plan.mode == "run"
     if added and plan.cfg.git.control == "model":

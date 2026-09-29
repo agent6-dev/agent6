@@ -116,7 +116,7 @@ depends_on = [
 [[modules]]
 path = "agent6.harness"
 depends_on = [
-  "agent6.budget",  # loop harness needs BudgetExceeded
+  "agent6.budget",  # loop harness needs BudgetExceededError
   "agent6.commit_message",
   "agent6.config",
   "agent6.directive",

@@ -16,7 +16,7 @@ from pathlib import Path
 from agent6.app._setup import budget_tracker, check_provider_keys
 from agent6.app.finalize import EXIT_VERIFY_FAILED
 from agent6.app.providers import build_review_seats, build_role_provider
-from agent6.budget import BudgetExceeded, BudgetTracker
+from agent6.budget import BudgetExceededError, BudgetTracker
 from agent6.config import (
     Config,
     ConfigError,
@@ -213,7 +213,7 @@ def _run_review_panel(
             tools=tools,
             dispatch=dispatch,
         )
-    except BudgetExceeded as exc:
+    except BudgetExceededError as exc:
         print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
         return 3
     # One all-abstain owner, shared with the in-loop panel, so neither surface
@@ -396,7 +396,7 @@ def _cmd_review(  # noqa: PLR0911
     except CodeReviewError as exc:
         print(f"REVIEW FAILED: {exc}", file=sys.stderr)
         return 2
-    except BudgetExceeded as exc:
+    except BudgetExceededError as exc:
         print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
         return 3
 

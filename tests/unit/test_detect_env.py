@@ -85,7 +85,7 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
     question; the binary's own refusal propagates, and the isolation
     preflight refuses with it."""
     from agent6.app._session import select_isolation
-    from agent6.app.preflight import SessionRefused
+    from agent6.app.preflight import SessionRefusedError
     from agent6.app.reporter import Reporter
     from agent6.config import Config
     from agent6.sandbox.jail import JailUnavailableError, strict_namespaces_work
@@ -100,7 +100,7 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
             _setup.detect_env()
         said: list[str] = []
         reporter = Reporter(out=said.append, err=said.append)
-        with pytest.raises(SessionRefused):
+        with pytest.raises(SessionRefusedError):
             select_isolation(
                 Config(),
                 cwd=tmp_path,

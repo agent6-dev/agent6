@@ -11,7 +11,7 @@ from pathlib import Path
 
 from agent6.app._setup import budget_tracker, check_provider_keys
 from agent6.app.providers import build_role_provider
-from agent6.budget import BudgetExceeded
+from agent6.budget import BudgetExceededError
 from agent6.config import ConfigError
 from agent6.harness._context import agents_md_text
 from agent6.harness.run_review import RunReviewError, run_digest, run_review
@@ -77,7 +77,7 @@ def _cmd_sessions_review(  # noqa: PLR0911
     except RunReviewError as exc:
         print(f"REVIEW FAILED: {exc}", file=sys.stderr)
         return 2
-    except BudgetExceeded as exc:
+    except BudgetExceededError as exc:
         print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
         return 3
     print(text, flush=True)

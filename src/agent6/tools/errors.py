@@ -10,7 +10,7 @@ class ToolError(Exception):
     """The LLM tried something the tool layer refused."""
 
 
-class ToolDenied(ToolError):
+class ToolDeniedError(ToolError):
     """A tool call refused by POLICY before it ran: the approval gate did not
     approve (a human said no, or the ask-policy auto-denied an unattended run).
     A command, an MCP server's tool and a `fetch` whose host is outside
@@ -20,7 +20,7 @@ class ToolDenied(ToolError):
     of "your call is malformed"."""
 
 
-class OperatorCommandUnexecutable(Exception):
+class OperatorCommandUnexecutableError(Exception):
     """An operator-configured verify/metric command could not be executed in the
     jail (not found on PATH /usr/bin:/bin, or a path that escapes the sandbox).
 

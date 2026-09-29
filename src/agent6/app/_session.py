@@ -21,7 +21,7 @@ from agent6.app.confine import (
 )
 from agent6.app.frontend import SessionFacts
 from agent6.app.preflight import (
-    SessionRefused,
+    SessionRefusedError,
     budget_preflight,
     warn_if_prompt_override_incomplete,
 )
@@ -55,13 +55,13 @@ def resolve_isolation_or_refuse(
     cfg: Config, env: Environment, *, reporter: Reporter
 ) -> IsolationLevel:
     """The isolation level *cfg* resolves to on this host, or a REFUSING line
-    and :class:`SessionRefused` when an explicit level is unavailable here (an
+    and :class:`SessionRefusedError` when an explicit level is unavailable here (an
     `auto` degrades inside `resolve_isolation`)."""
     try:
         return resolve_isolation(cfg.sandbox.isolation, env)
     except IsolationUnavailableError as exc:
         reporter.refuse(str(exc))
-        raise SessionRefused(2) from exc
+        raise SessionRefusedError(2) from exc
 
 
 def tool_result_cap_bytes(cfg: Config, role: RoleName) -> int:
@@ -88,14 +88,14 @@ def select_isolation(
     """The isolation preflight: pick the sandbox isolation for this environment,
     confirm an unconfined autorun, and refuse configs the isolation cannot honor
     (network mode, strict egress, budget) or a workspace no tool could read.
-    Raises :class:`SessionRefused`."""
+    Raises :class:`SessionRefusedError`."""
     try:
         env = detect_env()
     except JailUnavailableError as exc:
         # The strict probe could not run the jail binary itself: no isolation
         # can be selected over a binary no command will run.
         reporter.refuse(str(exc))
-        raise SessionRefused(2) from exc
+        raise SessionRefusedError(2) from exc
     selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
     try:
         warn_sandbox_gaps(
@@ -105,15 +105,15 @@ def select_isolation(
         # The hardened exposure scan builds the run's policy, which creates the
         # jail's HOME and refuses one it cannot make.
         reporter.refuse(str(exc))
-        raise SessionRefused(2) from exc
+        raise SessionRefusedError(2) from exc
     warn_cleartext_credential_endpoints(cfg, reporter=reporter)
     if not confirm_unconfined(selected, cfg):
         reporter.note("aborted.")
-        raise SessionRefused(2)
+        raise SessionRefusedError(2)
     net_err = check_network_support(cfg, selected)
     if net_err is not None:
         reporter.refuse(net_err)
-        raise SessionRefused(2)
+        raise SessionRefusedError(2)
     # The shared list (`config_refusal`): a default this host cannot honour
     # degraded with a warning above; a value the operator wrote down refuses.
     cfg_err = config_refusal(
@@ -121,11 +121,11 @@ def select_isolation(
     )
     if cfg_err is not None:
         reporter.refuse(cfg_err)
-        raise SessionRefused(2)
+        raise SessionRefusedError(2)
     budget_err = budget_preflight(cfg, reporter=reporter)
     if budget_err is not None:
         reporter.refuse(budget_err)
-        raise SessionRefused(2)
+        raise SessionRefusedError(2)
     return selected
 
 

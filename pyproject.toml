@@ -107,6 +107,7 @@ select = [
     "E",    # pycodestyle
     "F",    # pyflakes
     "I",    # isort
+    "N",    # pep8-naming
     "PL",   # pylint subset
     "PTH",  # use pathlib
     "RUF",  # ruff-specific
@@ -126,7 +127,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"bench/**" = ["E501", "PLC0415", "PLR0912", "PLR0915", "PLW2901", "PTH", "S", "SIM105", "SIM114", "SIM115"]
+"bench/**" = ["E501", "N", "PLC0415", "PLR0912", "PLR0915", "PLW2901", "PTH", "S", "SIM105", "SIM114", "SIM115"]
 # gen_contracts.py embeds the artifact's CSS/SVG/HTML as strings; line length is moot there.
 "docs/gen_contracts.py" = ["E501"]
 "docs/screenshots/keystroke_overlay.py" = ["PLR0912", "PLR1730"]

@@ -130,7 +130,7 @@ def is_side_role(role: str) -> bool:
     return bool(role) and role not in DRIVING_ROLES
 
 
-class UnknownSessionKind(ValueError):
+class UnknownSessionKindError(ValueError):
     """A mode string this agent6 does not know."""
 
 
@@ -142,7 +142,7 @@ def session_kind(name: str) -> SessionKind:
     """
     kind = SESSION_KINDS.get(name)
     if kind is None:
-        raise UnknownSessionKind(f"unknown session mode {name!r}")
+        raise UnknownSessionKindError(f"unknown session mode {name!r}")
     return kind
 
 
@@ -157,7 +157,7 @@ def session_bucket(name: str) -> str:
     """
     kind = session_kind(name)
     if kind.name == "agent":
-        raise UnknownSessionKind(
+        raise UnknownSessionKindError(
             "an agent execution lives under its machine instance, not sessions/"
         )
     return f"{kind.name}s"

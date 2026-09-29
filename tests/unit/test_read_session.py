@@ -212,7 +212,7 @@ def _peak_bytes_reading(fn: Callable[[], object]) -> int:
         tracemalloc.stop()
 
 
-def test_a_reader_sees_what_the_assistant_SAID_in_a_real_journal(tmp_path: Path) -> None:
+def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: Path) -> None:
     """Written by the real emitter, not by hand. The prose reached the journal
     only as `role.text_delta`, which is emitted only when streaming is on -- so
     a headless run (CI, a redirected stdout, every spawned ask) recorded no

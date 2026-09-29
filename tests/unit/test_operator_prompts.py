@@ -19,7 +19,7 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.sessions.ipc import COMMAND_SCOPE, set_session_allow, write_answer
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.errors import ToolDenied
+from agent6.tools.errors import ToolDeniedError
 from agent6.tools.operator_prompts import (
     ApprovalAnswer,
     ApprovalRequest,
@@ -70,7 +70,7 @@ def test_an_approval_is_journaled_with_the_call_it_gates(tmp_path: Path) -> None
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
     d = _dispatcher(session_dir, events, _prompts(session_dir, events, approver=_deny))
-    with pytest.raises(ToolDenied):
+    with pytest.raises(ToolDeniedError):
         d.dispatch("run_command", {"argv": ["ls"]})
     (call,) = _of(session_dir, "tool.call")
     (prompt,) = _of(session_dir, "approval.prompt")
@@ -129,7 +129,7 @@ def test_concurrent_seats_each_name_their_own_call(tmp_path: Path) -> None:
     with ThreadPoolExecutor(max_workers=2) as pool:
         seats = [pool.submit(d.dispatch, "run_command", {"argv": ["ls", arg]}) for arg in "ab"]
         for seat in seats:
-            with pytest.raises(ToolDenied):
+            with pytest.raises(ToolDeniedError):
                 seat.result(timeout=30)
     stamped = {" ".join(e["args"]["argv"]): e["call_id"] for e in _of(session_dir, "tool.call")}
     assert named == {f"Allow run_command: {argv}": cid for argv, cid in stamped.items()}
@@ -144,7 +144,7 @@ def test_a_verify_the_harness_runs_gates_no_call(tmp_path: Path) -> None:
     events = _sink(session_dir)
     prompts = _prompts(session_dir, events, approver=_deny)
     d = _dispatcher(session_dir, events, prompts)
-    with pytest.raises(ToolDenied):
+    with pytest.raises(ToolDeniedError):
         d.run_verify()
     prompts.ask((UserQuestion(question="stash?", options=("stash", "cancel")),))
     (approval,) = _of(session_dir, "approval.prompt")

@@ -60,7 +60,7 @@ from agent6.sandbox.jail import (
     SessionNetwork,
     spawn_in_jail,
 )
-from agent6.tools.mcp_http import HttpTransport, MCPHttpError, MCPSessionExpired
+from agent6.tools.mcp_http import HttpTransport, MCPHttpError, MCPSessionExpiredError
 
 # MCP protocol version we speak. The spec is versioned by date string;
 # we negotiate this in `initialize` and accept whatever the server says
@@ -160,11 +160,11 @@ class MCPError(RuntimeError):
     """Anything the MCP client refuses to do or could not complete."""
 
 
-class MCPTimeout(MCPError):
+class MCPTimeoutError(MCPError):
     """A request the server did not answer within its timeout."""
 
 
-class MCPRestarted(MCPError):
+class MCPRestarted(MCPError):  # noqa: N818  # a signal, not an error  # a signal, not an error
     """A request cut short because another caller's timeout replaced the server."""
 
 
@@ -480,7 +480,7 @@ class _MCPServer:
                 generation = self._generation
             try:
                 return self._call(tool_name, arguments)
-            except MCPTimeout as exc:
+            except MCPTimeoutError as exc:
                 raise MCPError(f"{exc}; {self._restart(generation)}") from exc
             except MCPRestarted:
                 continue
@@ -619,7 +619,7 @@ class _MCPServer:
             # reader thread, no id collision with a server-initiated request.
             try:
                 response = self.http.send(payload, timeout_s=timeout_s)
-            except MCPSessionExpired:
+            except MCPSessionExpiredError:
                 # The server dropped this client's session (the transport already cleared
                 # the id). Re-initialize per the spec and retry this request
                 # once. The re-initialize carries no session id, so its own
@@ -668,7 +668,7 @@ class _MCPServer:
                         # sandbox grants.
                         said = self._stderr_tail()
                         detail = f": {said}" if said else ""
-                        raise MCPTimeout(
+                        raise MCPTimeoutError(
                             f"server {self.name!r} timed out after"
                             f" {timeout_s:.1f}s on {method}{detail}"
                         )

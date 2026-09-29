@@ -8,7 +8,7 @@ gets a FULL ceiling again: across N resumes real spend can reach N x the cap
 against runaway spend, not a ledger across a multi-day task.
 
 Budget enforcement is a HARD STOP (not a warning): once a ledger
-crosses its cap, the next provider call raises `BudgetExceeded`; the
+crosses its cap, the next provider call raises `BudgetExceededError`; the
 harness drains and the process exits with a distinct exit code so
 resume tooling can recognise the condition.
 
@@ -40,7 +40,7 @@ from agent6.models.pricing import lookup_price
 # an unknown price is honest, an outdated hardcoded one is wrong.
 
 
-class BudgetExceeded(Exception):
+class BudgetExceededError(Exception):
     """Raised by `BudgetTracker.check()` once a configured limit is exceeded."""
 
 
@@ -311,7 +311,7 @@ class BudgetTracker:
     against `max_percent`; a call with neither counts its input+output tokens
     against `max_tokens_fallback`. All caps share one rule: `-1` = unlimited,
     `0` = refuse calls in that ledger, `> 0` = an exclusive ceiling -- the
-    call that brings a ledger to or over its cap triggers `BudgetExceeded` on
+    call that brings a ledger to or over its cap triggers `BudgetExceededError` on
     the *next* `check()`, so a single call may cross the line but no further
     call is issued.
 
@@ -548,11 +548,11 @@ class BudgetTracker:
             self._check_plan_ceilings(model, plan)
 
     def check(self) -> None:
-        """Raise `BudgetExceeded` if a prior `record()` crossed a ceiling."""
+        """Raise `BudgetExceededError` if a prior `record()` crossed a ceiling."""
         with self._lock:
             reason = self._exceeded_reason
         if reason:
-            raise BudgetExceeded(reason)
+            raise BudgetExceededError(reason)
 
     def is_exhausted(self) -> bool:
         with self._lock:

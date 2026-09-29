@@ -43,7 +43,7 @@ from agent6.skills import (
     resolve_states,
     skill_search_dirs,
 )
-from agent6.tools.http_body import BodyRefused, read_capped
+from agent6.tools.http_body import BodyRefusedError, read_capped
 from agent6.ui.cli._common import home_contracted, sgr, warn
 from agent6.ui.cli._steer_menu import MENU_COMMANDS
 
@@ -131,7 +131,7 @@ def _fetch_url(url: str) -> str:
             body = read_capped(
                 resp, cap=_FETCH_MAX_BYTES, deadline=deadline, timeout_s=_FETCH_TIMEOUT_S
             )
-    except BodyRefused as exc:
+    except BodyRefusedError as exc:
         raise OperatorError(f"{url}: {exc}") from exc
     except httpx2.HTTPError as exc:
         raise OperatorError(f"could not fetch {url}: {exc}") from exc

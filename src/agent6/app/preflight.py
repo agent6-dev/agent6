@@ -52,7 +52,7 @@ from agent6.viewmodel.format import clip_cell
 from agent6.viewmodel.listing import session_dirs
 
 
-class SessionRefused(Exception):
+class SessionRefusedError(Exception):
     """A preflight refusal already reported through the Reporter; the caller
     returns `rc` as the process exit code."""
 
@@ -187,7 +187,7 @@ def git_preflight(
     reporter: Reporter,
 ) -> GitPreflight:
     """The git checks a session needs before it creates anything, raising
-    :class:`SessionRefused` on each already-reported refusal.
+    :class:`SessionRefusedError` on each already-reported refusal.
 
     The auto-commit-on-verify-pass behaviour requires a clean working tree, so
     the same git assumptions apply; skipping these leaves a first-time run
@@ -209,7 +209,7 @@ def git_preflight(
         pre_status = git_status(cwd)
     except GitError as exc:
         reporter.error(str(exc))
-        raise SessionRefused(2) from exc
+        raise SessionRefusedError(2) from exc
     # Starting a run while checked out on ANOTHER run's branch (agent6/<id>) is
     # usually a slip (the operator forgot to merge or switch back), so the new
     # run would pile on top of an unmerged one. Confirm; they may instead intend
@@ -222,7 +222,7 @@ def git_preflight(
         reporter.note(
             "aborted. Merge (agent6 sessions merge) or switch branches first, then re-run."
         )
-        raise SessionRefused(2)
+        raise SessionRefusedError(2)
     return GitPreflight(base_sha=pre_status.head_sha, base_branch=pre_status.branch)
 
 

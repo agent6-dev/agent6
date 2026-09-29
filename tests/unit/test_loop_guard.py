@@ -450,17 +450,17 @@ def test_max_iterations_stop_checkpoints_the_dirty_worktree(tmp_path: Path) -> N
 
 def test_budget_exhausted_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
     """Every harness-initiated end must checkpoint (the loop-guard rule): a
-    BudgetExceeded on the next provider call ended the run with the prior
+    BudgetExceededError on the next provider call ended the run with the prior
     turn's run_command edit only in the worktree, invisible to runs
     diff/merge/score."""
-    from agent6.budget import BudgetExceeded
+    from agent6.budget import BudgetExceededError
 
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = MagicMock()
     provider.call.side_effect = [
         _resp_with_tool("read_file", {"path": "x.txt"}),
-        BudgetExceeded("input cap reached"),
+        BudgetExceededError("input cap reached"),
     ]
     wf = _gated_wf(repo, provider, _dirtying_dispatcher(repo), max_iterations=5)
     result = wf.run("do the thing")
@@ -514,7 +514,7 @@ def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: Path
     jail, so verify can NEVER go green and the per-turn auto-commit never
     fires -- ALL of the run's edits existed only in the worktree at the
     abort."""
-    from agent6.tools.dispatch import OperatorCommandUnexecutable
+    from agent6.tools.dispatch import OperatorCommandUnexecutableError
 
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -528,7 +528,7 @@ def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: Path
 
     def dispatch(name: str, *_a: Any, **_k: Any) -> RawResult:
         if name == "run_verify_command":
-            raise OperatorCommandUnexecutable("verify binary missing from the jail PATH")
+            raise OperatorCommandUnexecutableError("verify binary missing from the jail PATH")
         (repo / "edit.txt").write_text("run_command wrote this\n")
         return RawResult({"content": "hi\n"})
 

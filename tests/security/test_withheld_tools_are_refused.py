@@ -24,7 +24,7 @@ from agent6.config import Config
 from agent6.harness._toolset import tool_definitions
 from agent6.sessions.ipc import set_session_deny
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.errors import ToolDenied, ToolError
+from agent6.tools.errors import ToolDeniedError, ToolError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.operator_prompts import ApprovalAnswer, ApprovalRequest, OperatorPrompts
 from agent6.tools.schema import ALL_TOOLS
@@ -50,7 +50,7 @@ def _assert_withheld_are_refused(d: ToolDispatcher, expected: set[str], mode: Mo
     withheld = {cls.TOOL_NAME for cls in ALL_TOOLS} - offered
     assert expected <= withheld, f"expected these withheld: {expected - withheld}"
     for name in sorted(expected):
-        with pytest.raises((ToolError, ToolDenied)) as caught:
+        with pytest.raises((ToolError, ToolDeniedError)) as caught:
             d.dispatch(name, {})
         message = str(caught.value)
         assert any(w in message for w in GUARD_WORDS), (

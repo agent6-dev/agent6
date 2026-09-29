@@ -25,7 +25,7 @@ from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._scriptcheck import lint_and_typecheck, run_offline_tests
 from agent6.app.machine_agent import build_machine_agent_runner
 from agent6.app.parallel import subordinate_workdir_root
-from agent6.app.preflight import SessionRefused
+from agent6.app.preflight import SessionRefusedError
 from agent6.app.reporter import Reporter
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective
@@ -208,7 +208,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             reporter=reporter,
             explicit_leaves=eff.explicit_leaves,
         )
-    except SessionRefused as refusal:
+    except SessionRefusedError as refusal:
         return refusal.rc
 
     scratch = new_draft_dir(state_dir(cwd))

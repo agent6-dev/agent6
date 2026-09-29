@@ -48,13 +48,13 @@ def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
     """The clamp has to land before the session is built, or the tool gate, the
     status line and the detach prompt each answer differently."""
     from agent6.app import run as run_mod
-    from agent6.app.preflight import SessionRefused
+    from agent6.app.preflight import SessionRefusedError
 
     seen: list[str] = []
 
     def capture(cfg: Config, **_kw: object) -> str:
         seen.append(cfg.sandbox.run_commands)
-        raise SessionRefused(2)
+        raise SessionRefusedError(2)
 
     monkeypatch.setattr(run_mod, "select_isolation", capture)
     monkeypatch.chdir(tmp_path)
@@ -101,13 +101,13 @@ def test_an_explicit_auto_approve_survives_the_ask_clamp(
     """
     from agent6.app import run as run_mod
     from agent6.app._setup import SandboxOverrides
-    from agent6.app.preflight import SessionRefused
+    from agent6.app.preflight import SessionRefusedError
 
     seen: list[str] = []
 
     def capture(cfg: Config, **_kw: object) -> str:
         seen.append(cfg.sandbox.run_commands)
-        raise SessionRefused(2)
+        raise SessionRefusedError(2)
 
     monkeypatch.setattr(run_mod, "select_isolation", capture)
     monkeypatch.chdir(tmp_path)

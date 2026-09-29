@@ -27,7 +27,7 @@ from urllib.parse import urlsplit
 
 import httpx2
 
-from agent6.tools.http_body import BodyRefused, read_capped
+from agent6.tools.http_body import BodyRefusedError, read_capped
 
 # A body is context the operator pays for, and a fetch is meant to answer one
 # question. Beyond this the read is refused, never silently truncated.
@@ -41,7 +41,7 @@ _TEXTUAL = ("text/", "application/json", "application/xml", "application/xhtml+x
 ANY_HOST = "*"
 
 
-class FetchRefused(Exception):
+class FetchRefusedError(Exception):
     """The URL was not fetched, and why."""
 
 
@@ -114,24 +114,24 @@ def check_url(url: str) -> Checked:
         _ = parts.port  # a port outside 0-65535 raises here, before the approval
     except ValueError as exc:
         # urlsplit refuses a malformed literal ("http://[::1") and the port
-        # accessor an out-of-range port; as a FetchRefused either reads like
+        # accessor an out-of-range port; as a FetchRefusedError either reads like
         # every other fetch refusal instead of the dispatcher's "failed:".
-        raise FetchRefused(f"the URL cannot be read: {exc}") from exc
+        raise FetchRefusedError(f"the URL cannot be read: {exc}") from exc
     if parts.scheme != "https":
-        raise FetchRefused(f"only https is fetched, not {parts.scheme or 'a bare path'!r}")
+        raise FetchRefusedError(f"only https is fetched, not {parts.scheme or 'a bare path'!r}")
     if parts.username or parts.password:
         # httpx turns userinfo into an Authorization header, so this is the
         # model choosing a credential as well as disguising the real host.
-        raise FetchRefused("a URL with credentials in it is not fetched")
+        raise FetchRefusedError("a URL with credentials in it is not fetched")
     host = parts.hostname
     if not host:
-        raise FetchRefused("no host in the URL")
+        raise FetchRefusedError("no host in the URL")
     try:
         literal = ipaddress.ip_address(host)
     except ValueError:
         return Checked(url=url, host=host)  # a name: resolved behind the gate
     if not literal.is_global:
-        raise FetchRefused(f"{host} is not a public address")
+        raise FetchRefusedError(f"{host} is not a public address")
     return Checked(url=url, host=host)
 
 
@@ -159,15 +159,17 @@ def fetch(checked: Checked) -> Fetched:
     try:
         infos = socket.getaddrinfo(checked.host, port, proto=socket.IPPROTO_TCP)
     except OSError as exc:
-        raise FetchRefused(f"{checked.host} does not resolve: {exc}") from exc
+        raise FetchRefusedError(f"{checked.host} does not resolve: {exc}") from exc
     address = ""
     for info in infos:
         addr = ipaddress.ip_address(str(info[4][0]))
         if not addr.is_global:
-            raise FetchRefused(f"{checked.host} resolves to {addr}, which is not a public address")
+            raise FetchRefusedError(
+                f"{checked.host} resolves to {addr}, which is not a public address"
+            )
         address = address or str(addr)
     if not address:
-        raise FetchRefused(f"{checked.host} resolves to nothing")
+        raise FetchRefusedError(f"{checked.host} resolves to nothing")
     literal = f"[{address}]" if ":" in address else address
     dialled = parts._replace(netloc=f"{literal}:{port}").geturl()
     try:
@@ -185,7 +187,7 @@ def fetch(checked: Checked) -> Fetched:
         ):
             content_type = response.headers.get("content-type", "")
             if not content_type.startswith(_TEXTUAL):
-                raise FetchRefused(f"not a text response: content-type {content_type!r}")
+                raise FetchRefusedError(f"not a text response: content-type {content_type!r}")
             deadline = time.monotonic() + TIMEOUT_S
             body = read_capped(response, cap=MAX_BYTES, deadline=deadline, timeout_s=TIMEOUT_S)
             return Fetched(
@@ -195,7 +197,7 @@ def fetch(checked: Checked) -> Fetched:
                 body=body.decode(response.encoding or "utf-8", errors="replace"),
                 location=response.headers.get("location", ""),
             )
-    except BodyRefused as exc:
-        raise FetchRefused(str(exc)) from exc
+    except BodyRefusedError as exc:
+        raise FetchRefusedError(str(exc)) from exc
     except httpx2.HTTPError as exc:
-        raise FetchRefused(f"could not fetch {checked.url}: {exc}") from exc
+        raise FetchRefusedError(f"could not fetch {checked.url}: {exc}") from exc

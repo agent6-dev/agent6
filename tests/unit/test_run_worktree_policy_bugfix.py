@@ -72,7 +72,7 @@ def _runnable_cfg(git_cfg: GitConfig) -> Config:
     )
 
 
-class _Stop(Exception):
+class _Stop(Exception):  # noqa: N818  # a signal, not an error  # a signal, not an error
     """Raised by a stub to end the run right after the tree policy ran."""
 
 

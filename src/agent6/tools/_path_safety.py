@@ -22,7 +22,7 @@ from pathlib import Path
 from agent6.tools.errors import ToolError
 
 
-class NotRegularFile(ToolError):
+class NotRegularFileError(ToolError):
     """The leaf resolved and is inside the boundary, but is a directory, a FIFO
     or a device. Its own type because callers word the two differently: this is
     "wrong kind of file", not the containment refusal every other ToolError from
@@ -250,7 +250,7 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
         fd = os.open(at, flags | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644, dir_fd=dir_fd)
         try:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
-                raise NotRegularFile(f"Not a regular file: {rel_path}")
+                raise NotRegularFileError(f"Not a regular file: {rel_path}")
             os.set_blocking(fd, True)
         except BaseException:
             os.close(fd)
@@ -273,7 +273,7 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
         if exc.errno == errno.ENXIO:
             # O_WRONLY|O_NONBLOCK on a reader-less FIFO: the one non-regular
             # leaf the open rejects itself, so the fstat never sees it.
-            raise NotRegularFile(f"Not a regular file: {rel_path}") from exc
+            raise NotRegularFileError(f"Not a regular file: {rel_path}") from exc
         raise
     finally:
         os.close(dir_fd)

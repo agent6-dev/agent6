@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from agent6.budget import BudgetExceeded, BudgetTracker, PlanUsage, format_plan_usage
+from agent6.budget import BudgetExceededError, BudgetTracker, PlanUsage, format_plan_usage
 
 
 @pytest.fixture(autouse=True)
@@ -51,7 +51,7 @@ def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
         cache_read_tokens=0,
         cache_creation_tokens=300_000,
     )
-    with pytest.raises(BudgetExceeded) as exc:
+    with pytest.raises(BudgetExceededError) as exc:
         t.check()
     assert "USD budget" in str(exc.value)
 
@@ -119,7 +119,7 @@ def test_fallback_ceiling_hard_stop() -> None:
         model="m", input_tokens=7, output_tokens=3, cache_read_tokens=0, cache_creation_tokens=0
     )
     assert t.is_exhausted()
-    with pytest.raises(BudgetExceeded, match="fallback token budget"):
+    with pytest.raises(BudgetExceededError, match="fallback token budget"):
         t.check()
 
 
@@ -234,7 +234,7 @@ def test_percent_meter_sawtooth_and_cap() -> None:
     usd, partial = t.estimate_usd()
     assert usd == 0.0 and partial is False  # authoritative $0, not unpriced
     rec(8.0)  # +3 -> consumed 11 >= 10
-    with pytest.raises(BudgetExceeded, match="plan budget exhausted"):
+    with pytest.raises(BudgetExceededError, match="plan budget exhausted"):
         t.check()
     assert "plan usage (gpt-5.6-sol): 8% of the 7-day window" in t.format_summary()
     assert "(subscription)" in t.format_summary()
@@ -252,7 +252,7 @@ def test_percent_zero_refuses_plan_metered_calls() -> None:
         cache_creation_tokens=0,
         plan_usage=PlanUsage.single(used_percent=1.0, window_minutes=300, resets_at=2e9),
     )
-    with pytest.raises(BudgetExceeded, match="percent budget is 0"):
+    with pytest.raises(BudgetExceededError, match="percent budget is 0"):
         t.check()
 
 
@@ -284,7 +284,7 @@ def test_exhausted_window_with_credits_refuses_by_default() -> None:
     hide, so the default refuses and names [budget].allow_paid_credits."""
     t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     _record_plan(t, _plan_with_credits(100.0))
-    with pytest.raises(BudgetExceeded, match="allow_paid_credits"):
+    with pytest.raises(BudgetExceededError, match="allow_paid_credits"):
         t.check()
 
 
@@ -299,7 +299,7 @@ def test_zero_usd_refuses_paid_credits_even_when_opted_in() -> None:
         max_usd=0, max_tokens_fallback=-1, max_percent=-1, allow_paid_credits=True
     )
     tracker.record_plan_preflight("chatgpt", _plan_with_credits(100.0))
-    with pytest.raises(BudgetExceeded, match="USD budget is 0"):
+    with pytest.raises(BudgetExceededError, match="USD budget is 0"):
         tracker.check()
 
 
@@ -372,7 +372,7 @@ def test_preflight_reading_seeds_the_baseline_and_guards_credits() -> None:
             secondary_used_percent=100.0,
         ),
     )
-    with pytest.raises(BudgetExceeded, match="purchased"):
+    with pytest.raises(BudgetExceededError, match="purchased"):
         guarded.check()
 
 
@@ -395,7 +395,7 @@ def test_the_binding_window_meters_the_run_whatever_its_name() -> None:
     _record_plan(t, reading(10.5, 43.0))
     assert t.snapshot().plan_consumed == 3.0  # spark moved 3, primary 0.5
     _record_plan(t, reading(11.0, 46.0))
-    with pytest.raises(BudgetExceeded, match="gpt-5-6-spark window"):
+    with pytest.raises(BudgetExceededError, match="gpt-5-6-spark window"):
         t.check()
     # A reset on one window restarts that window's count from zero only.
     t2 = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=50.0)
@@ -420,12 +420,12 @@ def test_percent_cap_names_the_window_whose_consumption_bound_it() -> None:
     _record_plan(tracker, reading(90, 10))
     _record_plan(tracker, reading(91, 16))
 
-    with pytest.raises(BudgetExceeded, match="gpt-5-6-spark window"):
+    with pytest.raises(BudgetExceededError, match="gpt-5-6-spark window"):
         tracker.check()
     # The latest reading need not carry the window that bound: the backend
     # adds and drops per-model windows per response.
     _record_plan(tracker, PlanUsage(windows=(PlanWindow("primary", 92, 10080, 2e9),)))
-    with pytest.raises(BudgetExceeded, match="gpt-5-6-spark window"):
+    with pytest.raises(BudgetExceededError, match="gpt-5-6-spark window"):
         tracker.check()
 
 
@@ -452,7 +452,7 @@ def test_purchased_credit_spend_meters_against_max_usd() -> None:
     assert "cost=$0.60" in t.format_summary()
     t.check()
     _record_plan(t, reading("$11.40"))
-    with pytest.raises(BudgetExceeded, match="purchased credits spent"):
+    with pytest.raises(BudgetExceededError, match="purchased credits spent"):
         t.check()
     opaque = BudgetTracker(
         max_usd=1.0, max_tokens_fallback=100, max_percent=-1, allow_paid_credits=True

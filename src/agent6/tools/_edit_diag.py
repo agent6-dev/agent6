@@ -41,9 +41,9 @@ def preview_result(
         diff = f"--- {label_a}\n+++ {label_b}\n"
     hunks = sum(1 for line in diff.splitlines() if line.startswith("@@ "))
     truncated = False
-    _MAX_DIFF_CHARS = 8000
-    if len(diff) > _MAX_DIFF_CHARS:
-        diff = diff[:_MAX_DIFF_CHARS] + f"\n... <truncated {len(diff) - _MAX_DIFF_CHARS} chars>\n"
+    max_diff_chars = 8000
+    if len(diff) > max_diff_chars:
+        diff = diff[:max_diff_chars] + f"\n... <truncated {len(diff) - max_diff_chars} chars>\n"
         truncated = True
     return PreviewResult(
         path=path,

@@ -43,7 +43,7 @@ from agent6.app.manifest import (
 )
 from agent6.app.preflight import (
     DirtyTreeChoice,
-    SessionRefused,
+    SessionRefusedError,
     dirty_tree_choice,
     dirty_tree_question,
     dirty_tree_refusal,
@@ -228,7 +228,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter=reporter,
             explicit_leaves=explicit_leaves,
         )
-    except SessionRefused as refusal:
+    except SessionRefusedError as refusal:
         return refusal.rc
 
     try:
@@ -239,7 +239,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             confirm_run_on_run_branch=frontend.confirm_run_on_run_branch,
             reporter=reporter,
         )
-    except SessionRefused as refusal:
+    except SessionRefusedError as refusal:
         return refusal.rc
     base_sha, base_branch = git.base_sha, git.base_branch
 

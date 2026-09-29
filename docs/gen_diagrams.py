@@ -125,7 +125,7 @@ def _tier_callgraph(rel_path: str, tier: tuple[str, ...]) -> str:
             self.generic_visit(node)
             self.cur = prev
 
-        visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]
+        visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]  # noqa: N815  # ast.NodeVisitor dispatch name
 
         def visit_Call(self, node: ast.Call) -> None:
             name = None

@@ -23,22 +23,22 @@ class _Response(Protocol):
     def iter_raw(self) -> Iterable[bytes]: ...
 
 
-class BodyRefused(Exception):
+class BodyRefusedError(Exception):
     """The body was not read to the end; the message names why."""
 
 
 def read_capped(response: _Response, *, cap: int, deadline: float, timeout_s: float) -> bytes:
-    """The raw body of *response*, or `BodyRefused` when it is compressed,
+    """The raw body of *response*, or `BodyRefusedError` when it is compressed,
     passes *cap* bytes, or is still arriving at *deadline* (a `time.monotonic`
     instant, *timeout_s* after the request started, named in the refusal)."""
     encoding = response.headers.get("content-encoding", "")
     if encoding.lower() not in ("", "identity"):
-        raise BodyRefused(f"refusing content-encoding {encoding!r}: only identity is read")
+        raise BodyRefusedError(f"refusing content-encoding {encoding!r}: only identity is read")
     body = bytearray()
     for chunk in response.iter_raw():
         body += chunk
         if len(body) > cap:
-            raise BodyRefused(f"response is larger than {cap} bytes")
+            raise BodyRefusedError(f"response is larger than {cap} bytes")
         if time.monotonic() > deadline:
-            raise BodyRefused(f"response was still arriving after {timeout_s:g}s")
+            raise BodyRefusedError(f"response was still arriving after {timeout_s:g}s")
     return bytes(body)

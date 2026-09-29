@@ -124,7 +124,7 @@ class ProviderCaller:
     tool-call response (`is_empty_tool_call_response`) is re-asked after a
     short fixed delay, and when every attempt is empty the last is returned
     for the loop's went-quiet handler. An abort, an interrupt and
-    `BudgetExceeded` are never retried.
+    `BudgetExceededError` are never retried.
     """
 
     provider: Provider

@@ -73,8 +73,8 @@ from agent6.tools._result_format import (
 )
 from agent6.tools._skill_tools import use_skill
 from agent6.tools.background import SHELLS_DIR, BackgroundError, BackgroundShells
-from agent6.tools.errors import OperatorCommandUnexecutable, ToolDenied, ToolError
-from agent6.tools.fetch import FetchRefused, check_url, fetch, host_allowed
+from agent6.tools.errors import OperatorCommandUnexecutableError, ToolDeniedError, ToolError
+from agent6.tools.fetch import FetchRefusedError, check_url, fetch, host_allowed
 from agent6.tools.index import SymbolIndex
 from agent6.tools.mcp_client import (
     MCP_TOOL_PREFIX,
@@ -571,7 +571,7 @@ class ToolDispatcher:
         except ToolError as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise
-        except OperatorCommandUnexecutable as exc:
+        except OperatorCommandUnexecutableError as exc:
             # Not a model-fixable tool error: an operator verify/metric command
             # that cannot execute in the jail. Record the failed result for the
             # audit trail, then propagate (NOT wrapped as ToolError) so the loop
@@ -745,7 +745,7 @@ class ToolDispatcher:
         self._config = self._config.with_verify_command(())
 
     def _approve_mcp_call(self, name: str, raw_input: dict[str, Any]) -> None:
-        """Gate one MCP tool call on its server's `approve`, or raise ToolDenied.
+        """Gate one MCP tool call on its server's `approve`, or raise ToolDeniedError.
 
         A server's tools are arbitrary external capabilities, so they are asked
         about like a command -- but on their OWN scope: "allow all" for one
@@ -787,7 +787,7 @@ class ToolDispatcher:
                 f" ...[{len(args)} chars total; full payload: {full}]"
             )
         if not self._approve(f"Allow {name}: {args}", scope=f"{MCP_SCOPE_PREFIX}{server}"):
-            raise ToolDenied(
+            raise ToolDeniedError(
                 f"{name} not approved (set [mcp.servers.{server}].approve = 'yes' to stop asking)"
             )
 
@@ -798,13 +798,15 @@ class ToolDispatcher:
         finally:
             self.operator_wait_s += time.monotonic() - started
 
-    def _not_approved(self, name: str) -> ToolDenied:
+    def _not_approved(self, name: str) -> ToolDeniedError:
         """The gate cannot tell a human "no" from an unattended run's auto-deny,
         so the message blames neither and names the knob; a stop requested
         while the approval waited is the one cause it can name."""
         if self._session_dir is not None and stop_request_pending(self._session_dir):
-            return ToolDenied(f"{name} not run: the run was asked to stop while awaiting approval")
-        return ToolDenied(f"{name} not approved (sandbox.run_commands='ask')")
+            return ToolDeniedError(
+                f"{name} not run: the run was asked to stop while awaiting approval"
+            )
+        return ToolDeniedError(f"{name} not approved (sandbox.run_commands='ask')")
 
     def _run_verify(self, raw: dict[str, Any]) -> ExecResult:
         RunVerifyInput.model_validate(raw)
@@ -838,7 +840,7 @@ class ToolDispatcher:
             stderr_tail=res.stderr[-2000:],
         )
         if res.exec_failed:
-            raise OperatorCommandUnexecutable(
+            raise OperatorCommandUnexecutableError(
                 f"verify_command {list(argv)} could not be executed in the sandbox: "
                 f"{res.stderr}. The jail PATH is /usr/bin:/bin plus the standard bin "
                 "dirs that exist (/usr/local/bin, /usr/local/sbin, ~/.local/bin, "
@@ -963,7 +965,7 @@ class ToolDispatcher:
         args = FetchInput.model_validate(raw)
         try:
             checked = check_url(args.url)
-        except FetchRefused as exc:
+        except FetchRefusedError as exc:
             raise ToolError(str(exc)) from exc
         # On the list: read it. Off the list: ask. The list IS the standing
         # approval, and a prompt per doc read only trains a reflexive yes --
@@ -975,12 +977,12 @@ class ToolDispatcher:
         if not host_allowed(checked.host, self._config.sandbox.fetch_hosts) and not self._approve(
             f"Allow fetch: {checked.prompt()}"
         ):
-            raise ToolDenied(
+            raise ToolDeniedError(
                 f"fetch not approved for {checked.host} (add it to sandbox.fetch_hosts to allow it)"
             )
         try:
             got = fetch(checked)
-        except FetchRefused as exc:
+        except FetchRefusedError as exc:
             raise ToolError(str(exc)) from exc
         return FetchResult(
             url=got.url,
@@ -1085,7 +1087,7 @@ class ToolDispatcher:
             argv, label="metric_command", timeout_s=self._config.harness.verify_timeout_s
         )
         if outcome.exec_failed:
-            raise OperatorCommandUnexecutable(
+            raise OperatorCommandUnexecutableError(
                 f"metric_command {list(argv)} could not be executed in the sandbox: "
                 f"{outcome.stderr}. See run_verify_command's note: PATH is /usr/bin:/bin "
                 "plus the standard bin dirs; install the tool into one of those on the "

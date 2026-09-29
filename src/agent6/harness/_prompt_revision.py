@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from agent6.budget import BudgetExceeded
+from agent6.budget import BudgetExceededError
 from agent6.kinds import RepoSummary
 from agent6.prompts.revision import PROMPT_REVISION_SYSTEM_PROMPT
 from agent6.providers import Provider, ProviderError
@@ -52,7 +52,7 @@ class PromptRevisionError(Exception):
     """Raised when the optional prompt-revision pass cannot produce a task."""
 
 
-class PromptRevisionDeclined(PromptRevisionError):
+class PromptRevisionDeclined(PromptRevisionError):  # noqa: N818  # a signal, not an error  # a signal, not an error
     """The operator quit at the interactive choice: their stop, not a failure."""
 
 
@@ -162,7 +162,7 @@ def revise_prompt(
             max_tokens=settings.max_tokens,
             temperature=settings.temperature,
         )
-    except (ProviderError, BudgetExceeded) as exc:
+    except (ProviderError, BudgetExceededError) as exc:
         emit("loop.prompt_revision.failed", error=str(exc)[:200])
         raise PromptRevisionError(str(exc)) from exc
 

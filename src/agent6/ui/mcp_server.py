@@ -46,7 +46,7 @@ from agent6.sessions.layout import (
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher, ToolError
-from agent6.tools.errors import OperatorCommandUnexecutable
+from agent6.tools.errors import OperatorCommandUnexecutableError
 from agent6.viewmodel import session_dirs
 from agent6.viewmodel.listing import ListingRow, nested_rows, summarize_session_dir, summary_row
 
@@ -413,8 +413,8 @@ class MCPServer:
             raise _RpcError(-32602, violation)
         try:
             payload = self._tools[name].handler(args)
-        except (ToolError, OperatorCommandUnexecutable) as exc:
-            # OperatorCommandUnexecutable aborts a run loudly by design; here
+        except (ToolError, OperatorCommandUnexecutableError) as exc:
+            # OperatorCommandUnexecutableError aborts a run loudly by design; here
             # the contract is an isError result: escaping would end the serve
             # process and break the pipe for every later client call.
             return {

@@ -24,7 +24,7 @@ from typing import Any
 
 import httpx2
 
-from agent6.tools.http_body import BodyRefused, read_capped
+from agent6.tools.http_body import BodyRefusedError, read_capped
 
 # The same bound the stdio reader applies, and applied the same way: while the
 # body arrives, not after. `response.content` materializes first, so a 400 MiB
@@ -64,7 +64,7 @@ class MCPHttpError(Exception):
     """The server could not be reached, or answered with something unusable."""
 
 
-class MCPSessionExpired(MCPHttpError):
+class MCPSessionExpiredError(MCPHttpError):
     """A stateful server answered a request carrying this transport's session id with 404:
     the spec's signal that it expired the session. The caller re-initializes.
     A subclass of MCPHttpError so a plain `except MCPHttpError` still catches
@@ -151,13 +151,15 @@ class HttpTransport:
                     # the server expired that session. Drop it so the transport does not
                     # keep echoing a dead id, and signal a re-initialize.
                     self.session_id = ""
-                    raise MCPSessionExpired(f"server {self.name!r} expired its session (HTTP 404)")
+                    raise MCPSessionExpiredError(
+                        f"server {self.name!r} expired its session (HTTP 404)"
+                    )
                 deadline = time.monotonic() + timeout_s
                 try:
                     body = read_capped(
                         response, cap=MAX_BODY_BYTES, deadline=deadline, timeout_s=timeout_s
                     )
-                except BodyRefused as exc:
+                except BodyRefusedError as exc:
                     raise MCPHttpError(f"server {self.name!r}: {exc}") from exc
                 if not 200 <= response.status_code < 300:
                     # A 3xx is no JSON-RPC answer either. The body is the

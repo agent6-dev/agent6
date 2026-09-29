@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from agent6.budget import BudgetExceeded, BudgetTracker, PlanUsage, PlanWindow
+from agent6.budget import BudgetExceededError, BudgetTracker, PlanUsage, PlanWindow
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +42,7 @@ def test_unmetered_calls_count_only_against_the_fallback() -> None:
     _rec(bt, "local-model", 400, 300)
     bt.check()  # 700 < 1000 and $0 < $0.01: both ledgers have room
     _rec(bt, "local-model", 200, 200)
-    with pytest.raises(BudgetExceeded, match="fallback"):
+    with pytest.raises(BudgetExceededError, match="fallback"):
         bt.check()  # 1100 >= 1000
 
 
@@ -52,7 +52,7 @@ def test_metered_calls_count_only_against_max_usd() -> None:
     _rec(bt, "claude-sonnet-4-5", 5_000, 5_000)  # >> fallback cap, but metered
     bt.check()  # fallback ledger untouched; ~$0.09 < $1
     _rec(bt, "claude-sonnet-4-5", 250_000, 20_000)  # ~$1.05 more -> over $1 total
-    with pytest.raises(BudgetExceeded, match="USD"):
+    with pytest.raises(BudgetExceededError, match="USD"):
         bt.check()
 
 
@@ -76,7 +76,7 @@ def test_zero_fallback_refuses_any_unmetered_call() -> None:
     # "never run an unmeterable model" promise, enforced as a runtime backstop.
     bt = BudgetTracker(max_usd=10.0, max_tokens_fallback=0, max_percent=-1)
     _rec(bt, "local-model", 1, 0)
-    with pytest.raises(BudgetExceeded, match="unmetered"):
+    with pytest.raises(BudgetExceededError, match="unmetered"):
         bt.check()
 
 
@@ -84,7 +84,7 @@ def test_zero_usd_refuses_any_metered_call() -> None:
     # max_usd = 0: a run-nothing-metered policy (local-only rig).
     bt = BudgetTracker(max_usd=0.0, max_tokens_fallback=1_000_000, max_percent=-1)
     _rec(bt, "claude-sonnet-4-5", 10, 10)
-    with pytest.raises(BudgetExceeded, match="USD"):
+    with pytest.raises(BudgetExceededError, match="USD"):
         bt.check()
 
 
@@ -105,7 +105,7 @@ def test_a_plan_call_zeroes_only_its_own_calls_not_the_model_id() -> None:
     _rec(bt, "claude-sonnet-4-5", 250_000, 20_000)  # the SAME id, on the paid API
 
     assert bt.estimate_usd()[0] == pytest.approx(1.05, abs=0.01)
-    with pytest.raises(BudgetExceeded, match="USD"):
+    with pytest.raises(BudgetExceededError, match="USD"):
         bt.check()
     summary = bt.format_summary()
     assert "$1.05" in summary and "(subscription)" not in summary

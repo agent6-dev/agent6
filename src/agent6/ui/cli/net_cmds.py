@@ -44,7 +44,7 @@ from agent6.viewmodel import session_is_live, summarize_session_dir
 _JOIN_ORDER = (("user", "CLONE_NEWUSER"), ("net", "CLONE_NEWNET"))
 
 
-class SessionNetworkUnavailable(Exception):
+class SessionNetworkUnavailableError(Exception):
     """The run has no session network to join, and why."""
 
 
@@ -53,24 +53,24 @@ def join_session_network(session_dir: Path) -> None:
     is not involved, but nothing here ever leaves a namespace it entered."""
     pid = read_session_netns_pid(session_dir)
     if pid is None:
-        raise SessionNetworkUnavailable(
+        raise SessionNetworkUnavailableError(
             "this session has no network of its own to join. A run only makes one"
             " under the strict isolation with sandbox.network = auto|session;"
             " with network = host its commands are already on this machine's."
         )
     setns = getattr(os, "setns", None)
     if setns is None:
-        raise SessionNetworkUnavailable("joining a session's network needs Linux")
+        raise SessionNetworkUnavailableError("joining a session's network needs Linux")
     for kind, flag_name in _JOIN_ORDER:
         flag: int = getattr(os, flag_name)
         try:
             fd = os.open(f"/proc/{pid}/ns/{kind}", os.O_RDONLY)
         except OSError as exc:
-            raise SessionNetworkUnavailable(f"the session's network is gone: {exc}") from exc
+            raise SessionNetworkUnavailableError(f"the session's network is gone: {exc}") from exc
         try:
             setns(fd, flag)
         except OSError as exc:
-            raise SessionNetworkUnavailable(
+            raise SessionNetworkUnavailableError(
                 f"could not join the session's {kind} namespace: {exc}"
             ) from exc
         finally:
@@ -187,7 +187,7 @@ def forward(
                         inside = socket.create_connection(("127.0.0.1", remote_port), timeout=10)
                         inside.settimeout(None)  # the 10 s bounds the connect, not the bridge
                         _pump(conn, inside)
-                    except (SessionNetworkUnavailable, OSError):
+                    except (SessionNetworkUnavailableError, OSError):
                         code = 1
                     finally:
                         conn.close()

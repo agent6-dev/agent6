@@ -244,7 +244,7 @@ def test_the_worker_gets_the_tool_for_a_gate_adopted_mid_run(tmp_path: Path) -> 
     assert "run_verify_command" in after, "the adopted gate has no tool to run it"
 
 
-class _Stop(Exception):
+class _Stop(Exception):  # noqa: N818  # a signal, not an error  # a signal, not an error
     """Sentinel: the lifecycle reached pin_gate with this execution's final gate."""
 
 
@@ -829,7 +829,7 @@ def test_a_resumes_key_check_precedes_isolation(
     effective = EffectiveConfig(config=_role_cfg({}), sources={}, layers=())
     seen: list[str] = []
 
-    class _Stop(Exception):
+    class _Stop(Exception):  # noqa: N818  # a signal, not an error  # a signal, not an error
         pass
 
     def _effective(*_a: object, **_k: object) -> EffectiveConfig:

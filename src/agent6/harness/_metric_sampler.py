@@ -22,7 +22,7 @@ from agent6.harness._metric import (
     metric_goal,
     metric_plateau_summary,
 )
-from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
+from agent6.tools.dispatch import ToolDeniedError, ToolDispatcher, ToolError
 from agent6.tools.results import MetricResult
 
 if TYPE_CHECKING:
@@ -107,7 +107,7 @@ class MetricSampler:
             result = self.dispatcher.dispatch("run_metric_command", {})
         except ToolError as exc:
             error = str(exc)
-            if isinstance(exc, ToolDenied):
+            if isinstance(exc, ToolDeniedError):
                 state.metric.denied = True
                 error += "; the automatic metric is withheld for the rest of the run"
             history.append(

@@ -20,7 +20,7 @@ from typing import Literal
 from agent6.app._setup import apply_git_ops_policy, budget_tracker
 from agent6.app.manifest import write_manifest
 from agent6.app.providers import InstrumentedProvider, build_role_provider
-from agent6.budget import BudgetExceeded, BudgetTracker
+from agent6.budget import BudgetExceededError, BudgetTracker
 from agent6.commit_message import CommitRow, condense_commit_message, conventional_commit_subject
 from agent6.config import Config, ConfigError
 from agent6.events import EventSink
@@ -300,7 +300,14 @@ def _model_squash_message(
             ),
             max_tokens=500,
         )
-    except (BudgetExceeded, ConfigError, GitError, OSError, ProviderError, SecretsError) as exc:
+    except (
+        BudgetExceededError,
+        ConfigError,
+        GitError,
+        OSError,
+        ProviderError,
+        SecretsError,
+    ) as exc:
         # Every fault the draft's setup and call can raise, each degraded with
         # its reason: the draft is best-effort, and auto_merge runs it in a
         # finished run's teardown, which must not crash on it.

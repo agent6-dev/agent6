@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import ValidationError
 
-from agent6.budget import BudgetExceeded
+from agent6.budget import BudgetExceededError
 from agent6.graph.curator import CuratorError, GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
 from agent6.harness._advice import open_subtasks
@@ -178,7 +178,7 @@ class Compactor:
                 max_tokens=self.settings.summary_max_tokens,
                 temperature=0.0,
             )
-        except (ProviderError, BudgetExceeded) as exc:
+        except (ProviderError, BudgetExceededError) as exc:
             self.log(f"  gist distillation failed: {exc}; eliding without gists")
             self.emit("loop.compact.gist.failed", error=str(exc)[:200])
             return {}
@@ -270,7 +270,7 @@ class Compactor:
                 max_tokens=self.settings.summary_max_tokens,
                 temperature=0.0,
             )
-        except (ProviderError, BudgetExceeded) as exc:
+        except (ProviderError, BudgetExceededError) as exc:
             # Fail-safe: keep the current (tier-1-elided) context. A real
             # budget exhaustion is re-detected by the next provider call.
             self.log(f"  tier-2 summarise failed: {exc}; keeping current context")

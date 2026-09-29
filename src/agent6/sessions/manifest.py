@@ -24,7 +24,7 @@ from typing import cast
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agent6.kinds import ResumableMode, UnknownSessionKind, session_kind
+from agent6.kinds import ResumableMode, UnknownSessionKindError, session_kind
 
 _MODEL_CONFIG = ConfigDict(frozen=True, extra="ignore")
 
@@ -283,7 +283,7 @@ class SessionManifest(BaseModel):
         """
         try:
             kind = session_kind(self.mode)
-        except UnknownSessionKind as exc:
+        except UnknownSessionKindError as exc:
             raise ManifestError(str(exc)) from exc
         if not kind.resumable:
             raise ManifestError(f"a {kind.name!r} session is not resumable")

@@ -34,7 +34,7 @@ from agent6.harness._nudges import (
 )
 from agent6.harness._snapshot import Verification
 from agent6.harness._verify_verdict import VerifyVerdict
-from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
+from agent6.tools.dispatch import ToolDeniedError, ToolDispatcher, ToolError
 from agent6.tools.results import ExecResult
 from agent6.verify_infer import infer_verify_command, read_agents_md
 
@@ -326,7 +326,7 @@ class VerifyGate:
         harness as it does from the model, and a DENIED gate (ask: a human's
         no, or the unattended auto-deny) is withheld for the rest of the run
         the same way. An unexecutable operator command raises
-        `OperatorCommandUnexecutable` for the loop to end the run on."""
+        `OperatorCommandUnexecutableError` for the loop to end the run on."""
         why = harness_verify_due(
             when=self.when,
             gate_present=self.mode == "run" and self.present(state.verify),
@@ -345,7 +345,7 @@ class VerifyGate:
         try:
             scope = self.scope_paths(state.verify) if state.verify.scoped else ()
             result = self.dispatcher.run_verify(extra_argv=scope)
-        except ToolDenied as exc:
+        except ToolDeniedError as exc:
             state.verify.denied = True
             turn.tool_results.append(Notice(gate_withheld_notice(f"[harness verify] {why}", exc)))
             return
@@ -390,7 +390,7 @@ class VerifyGate:
         self.emit("loop.verify_scoped", paths=list(scope), iteration=turn.iteration)
         try:
             result = self.dispatcher.run_verify(extra_argv=scope)
-        except ToolDenied as exc:
+        except ToolDeniedError as exc:
             state.verify.denied = True
             turn.tool_results.append(Notice(gate_withheld_notice("[verify] scoped re-run", exc)))
             return None

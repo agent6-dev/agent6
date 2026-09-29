@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from agent6.tools.mcp_http import HttpTransport, MCPSessionExpired
+from agent6.tools.mcp_http import HttpTransport, MCPSessionExpiredError
 
 
 class _Server(ThreadingHTTPServer):
@@ -83,7 +83,7 @@ def test_expiry_404_drops_the_session_and_raises_its_own_type(server: _Server) -
     server.expire_after = 2
     t = _transport(server)
     t.send({"jsonrpc": "2.0", "id": 1, "method": "initialize"}, timeout_s=5)
-    with pytest.raises(MCPSessionExpired):
+    with pytest.raises(MCPSessionExpiredError):
         t.send({"jsonrpc": "2.0", "id": 2, "method": "tools/call"}, timeout_s=5)
     assert t.session_id == "", "the expired id must not be re-echoed"
     # The next send starts clean, ready for the caller's fresh handshake.
@@ -98,7 +98,7 @@ def test_a_bare_404_with_no_session_is_an_ordinary_error(server: _Server) -> Non
     t = _transport(server)
     with pytest.raises(MCPHttpError) as exc:
         t.send({"jsonrpc": "2.0", "id": 1, "method": "initialize"}, timeout_s=5)
-    assert not isinstance(exc.value, MCPSessionExpired)
+    assert not isinstance(exc.value, MCPSessionExpiredError)
 
 
 def test_a_malformed_session_id_is_dropped_not_echoed(server: _Server) -> None:

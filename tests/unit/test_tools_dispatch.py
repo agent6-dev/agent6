@@ -79,7 +79,7 @@ def test_read_file_ok(tmp_path: Path) -> None:
 
 def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
     """A verify_command that the jail could not execute (rc 127, exec_failed)
-    must raise OperatorCommandUnexecutable, not return a silent verify-failure.
+    must raise OperatorCommandUnexecutableError, not return a silent verify-failure.
 
     Regression: on a no-userns host the jail PATH is /usr/bin:/bin; a uv-based
     verify (uv lives under /usr/local/bin or ~/.local/bin) exited 127 and was
@@ -88,7 +88,7 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
     operator config, so this must fail loudly instead.
     """
     from agent6.kinds import CommandResult
-    from agent6.tools.dispatch import OperatorCommandUnexecutable
+    from agent6.tools.dispatch import OperatorCommandUnexecutableError
 
     # run_commands = "yes": this exercises verify EXECUTION, not the gate.
     cfg = _config_with_run_commands(tmp_path, "yes")  # verify_command = ["true"]
@@ -103,7 +103,7 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
     )
     with (
         mock.patch("agent6.tools.dispatch.run_in_jail", return_value=unexecutable),
-        pytest.raises(OperatorCommandUnexecutable),
+        pytest.raises(OperatorCommandUnexecutableError),
     ):
         d.dispatch("run_verify_command", {})
 
@@ -1038,10 +1038,10 @@ def test_run_command_disabled_when_no(tmp_path: Path) -> None:
 def test_run_command_denial_is_typed_and_names_the_knob(tmp_path: Path) -> None:
     # The gate can't tell a human "no" from the ask-policy auto-deny of an
     # unattended run: the message blames neither ("denied by user" was a lie in
-    # a machine subprocess) and names the config knob. ToolDenied (not a bare
+    # a machine subprocess) and names the config knob. ToolDeniedError (not a bare
     # ToolError) so the loop's sandbox-reachability heuristic can skip it: the
     # command never executed, it did not "fail in the jail".
-    from agent6.tools.errors import ToolDenied
+    from agent6.tools.errors import ToolDeniedError
 
     cfg = _config_with_run_commands(tmp_path, "ask")
 
@@ -1049,7 +1049,7 @@ def test_run_command_denial_is_typed_and_names_the_knob(tmp_path: Path) -> None:
         return ApprovalAnswer(False, "stdin")
 
     d = ToolDispatcher(root=tmp_path, config=cfg, prompts=OperatorPrompts(approver=_no))
-    with pytest.raises(ToolDenied, match=r"not approved \(sandbox.run_commands='ask'\)"):
+    with pytest.raises(ToolDeniedError, match=r"not approved \(sandbox.run_commands='ask'\)"):
         d.dispatch("run_command", {"argv": ["echo", "hi"]})
 
 
@@ -1915,7 +1915,7 @@ def test_every_jail_tool_answers_to_run_commands(tmp_path: Path) -> None:
 def test_ask_prompts_before_the_verify_gate_runs(tmp_path: Path) -> None:
     """Under `ask` the operator approves the verify command like any other, and
     a refusal denies the call instead of running it."""
-    from agent6.tools.errors import ToolDenied
+    from agent6.tools.errors import ToolDeniedError
 
     asked: list[str] = []
 
@@ -1928,7 +1928,7 @@ def test_ask_prompts_before_the_verify_gate_runs(tmp_path: Path) -> None:
         config=_config_with_run_commands(tmp_path, "ask"),
         prompts=OperatorPrompts(approver=refuse),
     )
-    with pytest.raises(ToolDenied):
+    with pytest.raises(ToolDeniedError):
         d.dispatch("run_verify_command", {})
     assert asked and asked[0].startswith("Allow run_verify_command: true")
 

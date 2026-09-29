@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import ValidationError
 
-from agent6.budget import BudgetExceeded, BudgetTracker
+from agent6.budget import BudgetExceededError, BudgetTracker
 from agent6.config import Config
 from agent6.git_ops import (
     GitError,
@@ -162,8 +162,8 @@ from agent6.sessions.ipc import (
 from agent6.skills import ResolvedSkills
 from agent6.task_text import operator_task_text
 from agent6.tools.dispatch import (
-    OperatorCommandUnexecutable,
-    ToolDenied,
+    OperatorCommandUnexecutableError,
+    ToolDeniedError,
     ToolDispatcher,
     ToolError,
 )
@@ -936,7 +936,7 @@ class Harness:
         conversation is only touched on the steer path."""
         try:
             return self.caller.call(system, wire, tools, self._worker_max_tokens(state))
-        except BudgetExceeded as exc:
+        except BudgetExceededError as exc:
             self._log(f"LOOP: budget exhausted at iter {iteration} ({exc})")
             return self._finish(
                 state,
@@ -1097,7 +1097,7 @@ class Harness:
             except ToolError as exc:
                 content = self._note_tool_error(state, name, tool_input, exc)
                 self._take(state, turn, ctx, tool_error_ladder(turn, state, ctx))
-            except OperatorCommandUnexecutable as exc:
+            except OperatorCommandUnexecutableError as exc:
                 return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
             turn.tool_results.append(
                 ToolResultItem(
@@ -1113,7 +1113,7 @@ class Harness:
         # The gate run the harness adds to the turn, after the model's calls.
         try:
             self.gate.harness_verify(state, turn)
-        except OperatorCommandUnexecutable as exc:
+        except OperatorCommandUnexecutableError as exc:
             return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
         return None
 
@@ -1273,7 +1273,7 @@ class Harness:
         self._log(f"  tool_error: {name}: {exc}")
         state.spiral.note_error(
             tool_error_signature(name, str(exc)),
-            denial=isinstance(exc, ToolDenied),
+            denial=isinstance(exc, ToolDeniedError),
             content=content,
         )
         return content
@@ -1375,13 +1375,13 @@ class Harness:
         if tree and tree == state.metric.tree:
             return None
         state.metric.tree = tree
-        # The auto path raises OperatorCommandUnexecutable just like a manual
+        # The auto path raises OperatorCommandUnexecutableError just like a manual
         # run_metric_command would: the same abort as the per-tool handler's.
         try:
             turn.metric_feedback = self.metrics.auto_feedback(
                 state, iteration=turn.iteration, sha=sha
             )
-        except OperatorCommandUnexecutable as exc:
+        except OperatorCommandUnexecutableError as exc:
             return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
         turn.metric_plateau_finish = self.metrics.plateau_finish(state.metric.history)
         return None
@@ -1446,7 +1446,7 @@ class Harness:
         refusal as a notice."""
         try:
             self.gate.harness_verify(state, turn, ending=True)
-        except OperatorCommandUnexecutable as exc:
+        except OperatorCommandUnexecutableError as exc:
             return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
         turn.ending = ending
         for gate in gates:
@@ -1858,7 +1858,7 @@ class Harness:
             self._log(f"LOOP: memory use record failed: {exc}")
 
     def _unexecutable_abort(
-        self, exc: OperatorCommandUnexecutable, *, iteration: int, state: LoopState
+        self, exc: OperatorCommandUnexecutableError, *, iteration: int, state: LoopState
     ) -> SessionResult:
         """Graceful abort when an operator verify/metric command cannot run in
         the jail (e.g. its binary is not on the jail PATH). The model cannot fix

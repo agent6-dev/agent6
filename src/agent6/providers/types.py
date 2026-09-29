@@ -66,12 +66,12 @@ class ProviderError(Exception):
         self.attempts = attempts
 
 
-class ProviderAborted(ProviderError):
+class ProviderAborted(ProviderError):  # noqa: N818  # a signal, not an error  # a signal, not an error
     """The operator stopped the run mid-call (a streaming turn was interrupted).
     A distinct type so the loop ends the run instead of retrying like a fault."""
 
 
-class ProviderInterrupted(ProviderError):
+class ProviderInterrupted(ProviderError):  # noqa: N818  # a signal, not an error  # a signal, not an error
     """The operator asked to steer mid-call, so the watchdog closed the (possibly
     long, thinking) stream to bring the loop to its steer boundary promptly. Unlike
     ProviderAborted this does not end the run: the loop shows the steer menu and

@@ -79,7 +79,7 @@ def menu_capable() -> bool:
     return termios is not None and sys.stdin.isatty() and sys.stdout.isatty()
 
 
-class LineSuperseded(Exception):
+class LineSuperseded(Exception):  # noqa: N818  # a signal, not an error  # a signal, not an error
     """The line being read was answered by another route: the reader's
     *until* held while it waited for a key."""
 

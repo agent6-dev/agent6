@@ -38,7 +38,7 @@ from agent6.app.manifest import (
     stamp_task,
 )
 from agent6.app.preflight import (
-    SessionRefused,
+    SessionRefusedError,
     drop_gate_if_unrunnable,
     gate_text,
     headless_approval_refusal,
@@ -564,7 +564,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 explicit_leaves=explicit_leaves,
                 worktree_git_dir=manifest.worktree_git_dir,
             )
-        except SessionRefused as refusal:
+        except SessionRefusedError as refusal:
             return refusal.rc
 
         identity = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)

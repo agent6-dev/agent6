@@ -516,10 +516,10 @@ def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
     the model is told so, and the finish stands unverified. Bouncing the
     finish against a denial burned every retry on a wall nobody could open
     (a live machine execution failed with its fix committed and tests green)."""
-    from agent6.tools.errors import ToolDenied
+    from agent6.tools.errors import ToolDeniedError
 
     wf, dispatcher = _harness_wf("finish", retries=2)
-    dispatcher.run_verify.side_effect = ToolDenied("run_verify_command not approved")
+    dispatcher.run_verify.side_effect = ToolDeniedError("run_verify_command not approved")
     state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf.gate.harness_verify(state, turn)
@@ -783,13 +783,13 @@ def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
     """One denial means the same on both call sites: the scoped re-run not
     approved withholds the gate for the rest of the run, in the harness
     path's words, and a later finish never asks again."""
-    from agent6.tools.errors import ToolDenied
+    from agent6.tools.errors import ToolDeniedError
 
     monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.side_effect = [
         _exec(124),
-        ToolDenied("run_verify_command not approved"),
+        ToolDeniedError("run_verify_command not approved"),
     ]
     state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)

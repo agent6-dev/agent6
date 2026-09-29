@@ -188,7 +188,7 @@ def test_parked_resume_of_a_config_selected_profile_re_derives_the_stamp(
     assert captured["preset_stamp"] is None  # re-derives, not the stale manifest name
 
 
-class _Stop(Exception):
+class _Stop(Exception):  # noqa: N818  # a signal, not an error  # a signal, not an error
     """Sentinel: the resume path reached the seam past the assertion point."""
 
 
@@ -326,7 +326,7 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     lock, a missing snapshot, the git guards, config, isolation) still read
     "resuming" from the hub and "alive" from the listing."""
     from agent6.app._execution import ExecutionEnd
-    from agent6.app.preflight import SessionRefused
+    from agent6.app.preflight import SessionRefusedError
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -347,7 +347,7 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
 
     def _refuse(*_a: object, **_k: object) -> str:
         order.append("isolation")
-        raise SessionRefused(2)
+        raise SessionRefusedError(2)
 
     monkeypatch.setattr(resume_mod, "select_isolation", _refuse)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)  # no key in a unit test
@@ -380,7 +380,7 @@ def test_a_late_resume_refusal_does_not_record_unrun_preset_or_model_picks(
 ) -> None:
     """A pick becomes the run's recorded default only when its execution starts; a
     later preflight refusal must leave the last running execution's choices intact."""
-    from agent6.app.preflight import SessionRefused
+    from agent6.app.preflight import SessionRefusedError
     from agent6.sessions.manifest import read_manifest
 
     repo = tmp_path / "repo"
@@ -392,7 +392,7 @@ def test_a_late_resume_refusal_does_not_record_unrun_preset_or_model_picks(
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
 
     def _refuse(*_a: object, **_k: object) -> str:
-        raise SessionRefused(2)
+        raise SessionRefusedError(2)
 
     monkeypatch.setattr(resume_mod, "select_isolation", _refuse)
 
@@ -1077,7 +1077,7 @@ def test_a_declined_unconfined_confirm_is_the_operators_refusal(
     the code the exit table gives a broken run; every other declined startup
     confirm and refusal exits 2, the operator's own code."""
     from agent6.app._session import select_isolation
-    from agent6.app.preflight import SessionRefused
+    from agent6.app.preflight import SessionRefusedError
     from agent6.app.reporter import Reporter
     from agent6.config import Config
 
@@ -1091,7 +1091,7 @@ def test_a_declined_unconfined_confirm_is_the_operators_refusal(
     monkeypatch.setattr(session_mod, "resolve_isolation", _unconfined)
     monkeypatch.setattr(session_mod, "warn_sandbox_gaps", _none)
     err: list[str] = []
-    with pytest.raises(SessionRefused) as refusal:
+    with pytest.raises(SessionRefusedError) as refusal:
         select_isolation(
             Config.model_validate({"sandbox": {"isolation": "none"}}),
             cwd=tmp_path,

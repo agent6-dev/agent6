@@ -156,7 +156,7 @@ def test_every_ask_command_tool_uses_the_command_scope(
     tmp_path: Path, name: str, raw: dict[str, object], shown: str
 ) -> None:
     """Each command that runs something asks before acting, on the one command scope."""
-    from agent6.tools.errors import ToolDenied
+    from agent6.tools.errors import ToolDeniedError
 
     seen: list[ApprovalRequest] = []
 
@@ -179,7 +179,7 @@ def test_every_ask_command_tool_uses_the_command_scope(
         session_dir=tmp_path,
         prompts=OperatorPrompts(approver=refuse, session_dir=tmp_path),
     )
-    with pytest.raises(ToolDenied):
+    with pytest.raises(ToolDeniedError):
         d.dispatch(name, raw)
     assert len(seen) == 1
     assert seen[0].prompt == f"Allow {shown}"

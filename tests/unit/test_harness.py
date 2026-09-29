@@ -1076,7 +1076,7 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
 ) -> None:
     """A terminal fault is separate from gate state: after observing red, the
     result exported to hooks must not revert verification to not_applicable."""
-    from agent6.budget import BudgetExceeded
+    from agent6.budget import BudgetExceededError
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -1088,7 +1088,7 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id="v1")
             if ending == "budget":
-                raise BudgetExceeded("token cap")
+                raise BudgetExceededError("token cap")
             if ending == "provider":
                 raise ProviderError("provider unavailable", fatal=True)
             if ending == "quiet":
@@ -1483,9 +1483,9 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
     """An unexecutable metric command must abort the run the SAME graceful way
     whether the model called run_metric_command or the auto-after-verify path
     did. Pins the crash where the auto path's `except ToolError` could not catch
-    OperatorCommandUnexecutable (a sibling of ToolError, not a subclass), so the
+    OperatorCommandUnexecutableError (a sibling of ToolError, not a subclass), so the
     misconfiguration escaped as an uncaught traceback out of the whole run."""
-    from agent6.tools.dispatch import OperatorCommandUnexecutable
+    from agent6.tools.dispatch import OperatorCommandUnexecutableError
 
     class ProviderStub:
         # Always pass verify; never call run_metric_command itself, so the AUTO
@@ -1506,7 +1506,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
                     returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
                 )
             if name == "run_metric_command":
-                raise OperatorCommandUnexecutable("metric command '/x/uv' not in jail")
+                raise OperatorCommandUnexecutableError("metric command '/x/uv' not in jail")
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
@@ -1552,7 +1552,7 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: Path
     """The operator's no to the automatic metric (run_commands=ask) holds for
     the run, as a denied harness verify does: later green verifies do not ask
     again, and the reading that was denied says so."""
-    from agent6.tools.dispatch import ToolDenied
+    from agent6.tools.dispatch import ToolDeniedError
 
     class ProviderStub:
         def call(self, **kwargs: Any) -> ProviderResponse:
@@ -1571,7 +1571,7 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: Path
                     returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
                 )
             if name == "run_metric_command":
-                raise ToolDenied("denied by the operator")
+                raise ToolDeniedError("denied by the operator")
             raise AssertionError(f"unexpected tool: {name}")
 
     dispatcher = DispatcherStub()
@@ -5927,11 +5927,11 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
             # each time — same ERROR signature, different args
             return _tool_resp("read_file", {"path": "x/" * self.calls}, tool_id=f"g{self.calls}")
 
-    from agent6.tools.errors import ToolError as _TE
+    from agent6.tools.errors import ToolError as _ToolError
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-            raise _TE("read_file: the arguments were not valid JSON. Resend the call.")
+            raise _ToolError("read_file: the arguments were not valid JSON. Resend the call.")
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -5976,7 +5976,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
 
 
 def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path) -> None:
-    """A streak of policy refusals (ToolDenied) is nudged as 'refused, stop
+    """A streak of policy refusals (ToolDeniedError) is nudged as 'refused, stop
     retrying', never 'your call is malformed', and the stale binary a REAL
     exec failure recorded first (git at streak 1; the note fires at 2) must
     not be resurfaced by what is pure policy."""
@@ -5984,7 +5984,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
         TOOL_DENIED_NUDGE,
         TOOL_ERROR_NUDGE,
     )
-    from agent6.tools.errors import ToolDenied as _TD
+    from agent6.tools.errors import ToolDeniedError as _ToolDenied
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -6025,7 +6025,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
                     duration_s=0.0,
                     exec_failed=True,
                 )
-            raise _TD("run_command not approved (sandbox.run_commands='ask')")
+            raise _ToolDenied("run_command not approved (sandbox.run_commands='ask')")
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -6072,7 +6072,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
     """A successful tool call between errors clears the streak, so intermittent
     errors never trip the ladder."""
     from agent6.harness._nudges import TOOL_ERROR_NUDGE
-    from agent6.tools.errors import ToolError as _TE
+    from agent6.tools.errors import ToolError as _ToolError
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -6095,7 +6095,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
             self.n += 1
             if self.n % 2 == 0:  # alternate error / success
                 return RawResult({"content": "ok"})
-            raise _TE("read_file: bad path")
+            raise _ToolError("read_file: bad path")
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -6224,11 +6224,11 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> 
                 "run_command", {"argv": ["python3", "-c", "x"]}, tool_id=f"c{self.calls}"
             )
 
-    from agent6.tools.errors import ToolError as _TE
+    from agent6.tools.errors import ToolError as _ToolError
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-            raise _TE("python3: boom in the sandbox")
+            raise _ToolError("python3: boom in the sandbox")
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -6799,12 +6799,12 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> 
     extra-input rejection produced a finalize warning blaming the sandbox
     for a binary that later ran fine)."""
 
-    from agent6.tools.errors import ToolError as _TE
+    from agent6.tools.errors import ToolError as _ToolError
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_command":
-                raise _TE("1 validation error for RunCommandInput: env extra_forbidden")
+                raise _ToolError("1 validation error for RunCommandInput: env extra_forbidden")
             return ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.0, exec_failed=False
             )
@@ -7672,7 +7672,7 @@ def test_the_old_crash_marker_survives_the_replayed_provider_call(tmp_path: Path
         write_turn_marker,
     )
 
-    class ReplayStarted(Exception):
+    class ReplayStarted(Exception):  # noqa: N818  # a signal, not an error  # a signal, not an error
         pass
 
     marker = tmp_path / TURN_IN_FLIGHT_NAME
@@ -7761,10 +7761,10 @@ def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
 
     # The log-derived follow-up gate: steer_exit never re-opens the prompt.
     import tempfile
-    from pathlib import Path as _P
+    from pathlib import Path as _Path
 
     with tempfile.TemporaryDirectory() as td:
-        d = _P(td)
+        d = _Path(td)
         (d / "logs.jsonl").write_text(
             json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
             + "\n"
@@ -8571,7 +8571,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: Path) -> No
     from unittest.mock import patch
 
     from agent6.events import EventSink
-    from agent6.tools.errors import ToolDenied
+    from agent6.tools.errors import ToolDeniedError
     from agent6.tools.results import FinishSessionResult
 
     (tmp_path / "AGENTS.md").write_text(
@@ -8597,7 +8597,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: Path) -> No
 
         def run_verify(self, *, extra_argv: tuple[str, ...] = ()) -> ExecResult:
             del extra_argv
-            raise ToolDenied("operator denied the verify gate")
+            raise ToolDeniedError("operator denied the verify gate")
 
         def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
             self.adopted.append(tuple(argv))

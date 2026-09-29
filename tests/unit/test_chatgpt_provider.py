@@ -13,7 +13,7 @@ from unittest import mock
 
 import pytest
 
-from agent6.budget import BudgetExceeded, BudgetTracker
+from agent6.budget import BudgetExceededError, BudgetTracker
 from agent6.providers import ProviderError
 from agent6.providers.chatgpt import (
     ChatGPTProvider,
@@ -946,7 +946,7 @@ def test_usage_body_does_not_treat_string_false_as_unlimited_credits() -> None:
     assert plan is not None and plan.credits_unlimited is False
     budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     budget.record_plan_preflight("chatgpt", plan)
-    with pytest.raises(BudgetExceeded, match="purchased"):
+    with pytest.raises(BudgetExceededError, match="purchased"):
         budget.check()
 
 
@@ -1067,7 +1067,7 @@ def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
     with (
         mock.patch("httpx2.get", side_effect=get),
         mock.patch("httpx2.stream", side_effect=stream),
-        pytest.raises(BudgetExceeded, match="purchased"),
+        pytest.raises(BudgetExceededError, match="purchased"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert urls == ["https://chatgpt.com/backend-api/codex/usage"] and streamed == []

@@ -36,10 +36,10 @@ def test_the_step_picker_fetches_with_the_cards_own_id() -> None:
 
 def test_the_machine_watch_gates_on_the_shared_refusals() -> None:
     """Every machine input consumes the wire refusals, without a second gate."""
-    from agent6.ui.web.page import CLIENT_JS as js
+    from agent6.ui.web.page import CLIENT_JS as JS
 
-    start = js.index("function paintMachine(")
-    body = js[start : js.index("\nfunction ", start + 1)]
+    start = JS.index("function paintMachine(")
+    body = JS[start : JS.index("\nfunction ", start + 1)]
     assert "m.refusals" in body, "the machine watch derives its own gating"
     assert "notRunning" not in body
     assert "canAnswer ? (data.reasoning || {}) : {}" in body
@@ -54,10 +54,10 @@ def test_the_machine_header_paints_the_wire_status_as_a_pill() -> None:
     """The detail view renders `machine_state_as_dict.status` and its level
     without rebuilding either: a failed machine read plain on its own page
     while the hub row carried the error level."""
-    from agent6.ui.web.page import CLIENT_JS as js
+    from agent6.ui.web.page import CLIENT_JS as JS
 
-    start = js.index("function paintMachine(")
-    body = js[start : js.index("\nfunction ", start + 1)]
+    start = JS.index("function paintMachine(")
+    body = JS[start : JS.index("\nfunction ", start + 1)]
     assert "pill(m.level, m.status)" in body
     assert "const word =" not in body
 
@@ -65,46 +65,46 @@ def test_the_machine_header_paints_the_wire_status_as_a_pill() -> None:
 def test_a_stop_and_an_end_each_notify_once_across_a_resume() -> None:
     """One flag served both the worker_lost banner and the ended banner, so a
     tab that followed a stop and a resume never announced the machine's end."""
-    from agent6.ui.web.page import CLIENT_JS as js
+    from agent6.ui.web.page import CLIENT_JS as JS
 
-    start = js.index("function paintMachine(")
-    body = js[start : js.index("\nfunction ", start + 1)]
+    start = JS.index("function paintMachine(")
+    body = JS[start : JS.index("\nfunction ", start + 1)]
     assert "m.worker_lost && !ctx.lostNotified" in body
     assert "m.ended && !ctx.endedNotified" in body
     assert "ctx.lostNotified = false" in body
     # The first paint seeds the flag: a stop the page opened on is not news.
-    start = js.index("function machineNotify(")
-    seed = js[start : js.index("\nfunction ", start + 1)]
+    start = JS.index("function machineNotify(")
+    seed = JS[start : JS.index("\nfunction ", start + 1)]
     assert "ctx.lostNotified = !!m.worker_lost" in seed
 
 
 def test_the_machine_composer_hint_names_enter() -> None:
     """Every docked entry's hint says what Enter does (docs/web.md); the
     machine composer's did not."""
-    from agent6.ui.web.page import CLIENT_JS as js
+    from agent6.ui.web.page import CLIENT_JS as JS
 
-    start = js.index("async function renderMachine")
-    body = js[start : js.index("function paintMachine(", start)]
+    start = JS.index("async function renderMachine")
+    body = JS[start : JS.index("function paintMachine(", start)]
     hint = next(line for line in body.splitlines() if "el('div', 'hint'" in line)
     assert "Enter sends" in hint and "Shift+Enter" in hint
 
 
 def test_the_machine_snapshot_gates_controls_before_the_stream_arrives() -> None:
     """The one-shot wire payload is painted before any EventSource frame."""
-    from agent6.ui.web.page import CLIENT_JS as js
+    from agent6.ui.web.page import CLIENT_JS as JS
 
-    start = js.index("async function renderMachine")
-    body = js[start : js.index("function paintMachine(", start)]
+    start = JS.index("async function renderMachine")
+    body = JS[start : JS.index("function paintMachine(", start)]
     assert "const initial = await getJSON(base)" in body
     assert body.index("paintMachine(") < body.index("new EventSource(")
 
 
 def test_worker_loss_leaves_the_machine_event_source_ready_for_a_resume() -> None:
     """EOF reconnects to a resumed machine; only a journaled end closes EventSource."""
-    from agent6.ui.web.page import CLIENT_JS as js
+    from agent6.ui.web.page import CLIENT_JS as JS
 
-    start = js.index("live.onmessage = ev =>", js.index("async function renderMachine"))
-    body = js[start : js.index("if (!hbTimer)", start)]
+    start = JS.index("live.onmessage = ev =>", JS.index("async function renderMachine"))
+    body = JS[start : JS.index("if (!hbTimer)", start)]
     close_line = next(line for line in body.splitlines() if "data.machine &&" in line)
     assert ".ended" in close_line
     assert "worker_lost" not in close_line
@@ -112,10 +112,10 @@ def test_worker_loss_leaves_the_machine_event_source_ready_for_a_resume() -> Non
 
 def test_enter_submits_the_available_machine_composer_verb() -> None:
     """Enter sends the one enabled verb; Shift+Enter remains a textarea newline."""
-    from agent6.ui.web.page import CLIENT_JS as js
+    from agent6.ui.web.page import CLIENT_JS as JS
 
-    start = js.index("async function renderMachine")
-    body = js[start : js.index("function machineNotify(", start)]
+    start = JS.index("async function renderMachine")
+    body = JS[start : JS.index("function machineNotify(", start)]
     handler_start = body.index("din.onkeydown")
     key_handler = body[handler_start : body.index("\n  };", handler_start)]
     assert "e.key === 'Enter'" in key_handler
@@ -129,10 +129,10 @@ def test_the_web_approval_box_offers_every_answer() -> None:
     """The box offered three of the four. The answers come from `ui.keymap`, so
     a fifth would fail here rather than quietly go unoffered."""
     from agent6.ui.keymap import APPROVAL_ANSWERS
-    from agent6.ui.web.page import CLIENT_JS as js
+    from agent6.ui.web.page import CLIENT_JS as JS
 
-    start = js.index("for (const ap of")
-    body = js[start : js.index("for (const q of", start)]
+    start = JS.index("for (const ap of")
+    body = JS[start : JS.index("for (const q of", start)]
     for entry in APPROVAL_ANSWERS:
         assert f"send('{entry.answer}')" in body, entry.answer
         # The button says the word the table says, as the CLI and TUI do.
@@ -145,11 +145,11 @@ def test_a_failure_toast_holds_until_it_is_dismissed() -> None:
     """Every message was one 4-second toast at one fixed position: two
     overlapped, and a captured CLI refusal (several lines) was gone before it
     could be read."""
-    from agent6.ui.web.page import CLIENT_JS as js
+    from agent6.ui.web.page import CLIENT_JS as JS
     from agent6.ui.web.page import PAGE_HTML
 
-    start = js.index("function toast(")
-    body = js[start : js.index("\nfunction ", start + 1)]
+    start = JS.index("function toast(")
+    body = JS[start : JS.index("\nfunction ", start + 1)]
     assert "setTimeout" in body, "a confirmation still clears itself"
     assert "if (bad)" in body and "t.remove()" in body, "a failure has no dismiss"
     assert "#toasts" in PAGE_HTML, "the stack has no container style"
@@ -158,12 +158,12 @@ def test_a_failure_toast_holds_until_it_is_dismissed() -> None:
 def test_the_machine_page_offers_stop() -> None:
     """`agent6 machine stop` and the TUI's `x` park a machine at its next
     transition; the page had no way to ask, though its route was there."""
-    from agent6.ui.web.page import CLIENT_JS as js
+    from agent6.ui.web.page import CLIENT_JS as JS
 
-    start = js.index("async function renderMachine")
-    body = js[start : js.index("function paintMachine(", start)]
+    start = JS.index("async function renderMachine")
+    body = JS[start : JS.index("function paintMachine(", start)]
     assert "'/stop'" in body or "+ '/stop'" in body
-    assert "cards._stop_btn" in js
+    assert "cards._stop_btn" in JS
 
 
 def test_the_in_flight_mark_needs_a_live_run() -> None:

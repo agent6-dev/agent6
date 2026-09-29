@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.kinds import SESSION_KINDS, UnknownSessionKind, session_bucket
+from agent6.kinds import SESSION_KINDS, UnknownSessionKindError, session_bucket
 from agent6.paths import state_dir
 from agent6.sessions.layout import (
     HUB_BUCKETS,
@@ -31,7 +31,7 @@ def test_a_bucket_is_the_mode_plus_s() -> None:
 
 
 def test_an_unknown_mode_has_no_bucket() -> None:
-    with pytest.raises(UnknownSessionKind):
+    with pytest.raises(UnknownSessionKindError):
         session_bucket("nonsense")
 
 
@@ -40,7 +40,7 @@ def test_an_agent_execution_has_no_sessions_bucket() -> None:
     directory. Answering "agents" here minted a bucket nothing writes, so a
     misrouted session landed somewhere no listing scans instead of failing
     loudly at the routing bug."""
-    with pytest.raises(UnknownSessionKind):
+    with pytest.raises(UnknownSessionKindError):
         session_bucket("agent")
 
 
