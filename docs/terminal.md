@@ -23,23 +23,21 @@ Below 100 columns `updated` keeps only the time for today's runs and only the da
 
 ## Conversation
 
-Opening a run lands on its conversation, the text `agent6 sessions transcript` prints: the task, the model's reasoning, and every tool call with its input and output, following live.
-Tool input and output are clipped to the salient lines by default; Detail cycles hidden, collapsed, expanded.
-A live run keeps a steer bar at the bottom.
-Above it, a live pane streams a model call while it is in flight, and lists the tool calls in flight (`→ run_command  sleep 60  · running`) until their results land in the transcript.
-An approval shows inline at the conversation's tail (the command, fixed-width), with an answer row docked above the bar.
-The keys are the CLI prompt's, on every surface: `y` allow, `a` allow all this session, `n` deny, `d` deny all this session.
-Once answered, it collapses to one dim line.
-The dashboard docks the same row, carrying the command (it has no transcript for it), and the machine watch docks it above its footer.
-No approval takes the focus or a key: the composer keeps both, so a message typed as one arrives is a message.
-Tab (or a click) moves the focus off the composer, and the letters answer wherever it lands: the transcript, a pane, or the row itself, where every answer is its own tab stop and Enter answers the focused one.
-Answering from the row leaves the focus there, so the next approval answers straight away.
-A modal's buttons sit in one row; on a terminal narrower than the row the later buttons are off screen, and the question modal's answer fields and Ctrl+S still answer.
+Opening a run lands on its conversation, the text `agent6 sessions transcript` prints: the task, the model's reasoning and every tool call, following live.
+A live run keeps a steer bar at the bottom; the pane above it streams the model call and the tool calls in flight until their results land.
+The composer takes the [steer directives](usage.md#follow-and-steer-a-run).
 
 - `Ctrl+T` cycles the thinking and tool detail: hidden, collapsed, expanded
 - `Ctrl+C` copies the selection, or the whole transcript when nothing is selected
-- `Ctrl+Z` leaves the view: a run `agent6 run --tui` fronts detaches to the background after its current step (`agent6 attach` reattaches); one opened with `attach --tui` or from the hub keeps running as it was
-- `Ctrl+_` undoes typing in the composer (`Ctrl+Z` is the detach key everywhere in the view)
+- `Ctrl+Z` leaves the view: a run started with `agent6 run --tui` detaches after its current step (`agent6 attach` reattaches); one opened with `attach --tui` or from the hub keeps running as it was
+- `Ctrl+_` undoes typing in the composer
+
+An approval shows inline at the conversation's tail with an answer row above the bar, and collapses to one dim line once answered.
+The dashboard and the machine watch dock the same row.
+
+- the keys are the CLI prompt's, on every surface: `y` allow, `a` allow all this session, `n` deny, `d` deny all this session
+- the composer keeps the focus, so a message typed as a prompt arrives is a message; Tab moves the focus off it and the letters answer wherever it lands, Enter answering the focused button
+- on a terminal narrower than a modal's button row the later buttons are off screen; the question modal's fields and Ctrl+S still answer
 
 ![A run transcript](screenshots/out/05-transcript.png)
 
@@ -48,15 +46,10 @@ A modal's buttons sit in one row; on a terminal narrower than the row the later 
 `Ctrl+D` toggles the dashboard: task graph beside live reasoning, tool calls with results, event log and latest commit diff side by side.
 Before the first model call, the header names the role and model from the manifest and says `starting`; the spinner runs only while a model call is in flight.
 
-- the diff pane opens on the latest commit; its selector walks the run's per-step commits (newest first), `cumulative` shows the chain up to that step; the task tree and the cost line follow the selected step; a run whose model owns git has no chain and the pane says so
-- the composer bar runs along the foot: type to steer, or to resume a finished run; the row above it picks the preset and model the next execution continues under (each first entry names what a resume without flags runs under)
-- `/` completes the steer directives, which act when one starts the line; Ctrl-R searches the session's past messages
-- `/shells` lists the run's background commands and how they ended; `/restate` replays the conversation since your last message
-- `/retire <task id>` drops a task from the graph, named by the number the task tree shows
-- `/standing <text>` sets the goal the run returns to whenever its queue drains, replacing any it had
-- `/task <text>` adds work to the run's task graph instead of steering it: the run works it once its open tasks drain, and the turn in flight never sees it
-- the View menu maximizes the focused pane
-- on a terminal under 28 rows the dashboard shows one pane row at a time: the row holding focus, else the log and diff, with a summary line of the tool calls; Tab reaches the folded panes and unfolds them
+- the diff pane opens on the latest commit; its selector walks the per-step commits, `cumulative` shows the chain up to one, and the task tree and cost line follow it; a run whose model owns git has no chain and the pane says so
+- the composer bar steers a live run or resumes a finished one, under the preset and model picked in the row above it (the first entries name what a resume without flags runs under); `/` completes the directives, Ctrl-R searches past messages
+- `/shells` lists the run's background commands; `/restate` replays the conversation since your last message
+- the View menu maximizes the focused pane; under 28 rows the dashboard shows one pane row at a time and Tab unfolds the rest
 - on a finished plan, Run > Run this plan starts `agent6 run --from` on it and opens the new run; the plan session stays as it was
 - on a finished run, Run > Review this run… runs `agent6 sessions review` on it (a model call that can take minutes) and opens the markdown in a modal; a live run is refused until it ends
 
@@ -85,15 +78,12 @@ The config page shows every setting, its effective value, and the layer that set
 
 `agent6 run` executes in the foreground; Ctrl-C opens its pause menu to steer it.
 
-- the pause menu Tab-completes its commands, which are typed in full to fire; Up recalls, Ctrl-R searches past messages
-    - `/status`, `/tasks`, `/pin`, `/compact`, `/parallel`, `/btw`, `/task`, `/standing`, `/retire`, `/shells`, `/restate`, `/undo`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
-- a steer sent from another surface (`agent6 steer`, the web or TUI composer) while the menu is open is taken as the answer
-- `/detach` in the menu hands the run to the background after its current step (`agent6 attach` reattaches); Ctrl-Z prints the run's state and stands an armed pause down, it never suspends the run (a suspended agent would lose its live provider stream)
-- `/exit` in the menu, the fallback prompt, or the `run -i` REPL stops the run and leaves without the follow-up prompt (`agent6 resume` continues it)
-- `/stop` in the menu, or Ctrl-C at the pause prompt itself, stops the run now (a third Ctrl-C without the prompt does the same); `agent6 stop ID` from another terminal is the same stop
+- the menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages; a steer sent from another surface while it is open is taken as the answer
+    - the [steer directives](usage.md#follow-and-steer-a-run) plus `/status`, `/tasks`, `/shells`, `/restate`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
+- `/detach` hands the run to the background after its current step (`agent6 attach` reattaches); Ctrl-Z prints the run's state and never suspends it (a suspended agent would lose its provider stream)
+- `/exit` leaves the run resumable; `/stop`, or Ctrl-C at the pause prompt, stops it now, as `agent6 stop ID` does
 - `run -i` prompts after every commit: `/continue` (bare Enter), `/cost`, `/diff`, `/watch`, `/mcp`, `/init`, `/undo`, `/help`, `/quit`, `/exit`
-- closing a viewer opened with `agent6 attach --tui` (Ctrl-Z) leaves the run as it was
-- TUI/web-hub runs start detached; `agent6 attach` covers both kinds: conversation by default, `--tui` full screen, `--json` one-shot snapshot, and `--raw` line tail for runs
+- hub-started runs run detached; `agent6 attach` follows them (conversation by default; `--tui`, `--json`, `--raw`)
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/temps-demo.webm" type="video/webm">
@@ -102,11 +92,7 @@ The config page shows every setting, its effective value, and the layer that set
 ## Watching a state machine
 
 An [agent state machine](state-machines.md) runs in the terminal like anything else: author the file, read its graph, watch it execute.
-Here `code-fixer` runs a fix-loop.
-An agent state edits the repo to make a failing check pass.
-A tool state re-runs the check.
-The machine routes on the result until the check is green or the attempt budget is spent.
-The agent's reasoning streams live, as in a run.
+Here `code-fixer` runs a fix loop: an agent state edits the repo to make a failing check pass, a tool state re-runs it, and the machine routes on the result until the check is green or the attempt budget is spent.
 
 - the machines screen (`M` on the hub): `v` (or Enter) opens the parsed file, `R` runs it, `w` watches its instance, `c` creates a draft, `r` refreshes
 - the watch screen (also `agent6 attach --tui <id>`): `s` steers the current agent state, `m` messages a waiting instance (`machine poke`), `x` stops it at the next transition

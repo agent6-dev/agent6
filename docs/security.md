@@ -91,12 +91,11 @@ Its only reach into the machine is agent6's tools served over the sdk MCP tunnel
 The binary holds the operator's Claude login exactly as an interactive `claude` does, and agent6 never reads it.
 
 Every line the CLI prints to the operator's terminal, on stdout, stderr or `/dev/tty`, passes one scrubber (`scrub_terminal_output`).
-It drops a control sequence inside text the model influenced (a file name a command created, a commit subject, a summary, a task a plan wrote).
-That keeps the model from writing the clipboard (OSC 52), retitling the window or forging a line.
-SGR styling is the allowlist, conceal excepted.
-An approval prompt drops every sequence from the text under judgment.
-The spinners and the interactive composer write their erase and cursor sequences under the wrapper, the composer with its rows scrubbed.
-The ACP and MCP stdio transports write protocol bytes to their peer, not to a terminal; the TUI and the web render text as text by construction.
+It drops a control sequence inside text the model influenced (a file name, a commit subject, a summary, a task a plan wrote), so the model cannot write the clipboard (OSC 52), retitle the window or forge a line.
+
+- SGR styling is the allowlist, conceal excepted; an approval prompt drops every sequence from the text under judgment
+- the spinners and the interactive composer write their own erase and cursor sequences under the wrapper, the composer with its rows scrubbed
+- the ACP and MCP stdio transports write protocol bytes to their peer, not a terminal; the TUI and the web render text as text by construction
 
 ### 2. Sandbox
 

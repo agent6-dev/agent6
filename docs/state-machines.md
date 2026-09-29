@@ -654,12 +654,11 @@ It warns when a `tool` state's binary is not on the jail's PATH.
 ### 7.1 `machine create`
 
 Describe a loop in plain language and get a first-cut bundle back.
-It is an ordinary agent6 run handed this document's grammar, working in a drafting workspace of its own.
-The model writes the `.asm.toml` and every `scripts/...` file there with `apply_edit`, one file at a time, and finishes when the bundle is complete.
-No new tool.
-The execution has the edit tools; `run_commands = "no"` withholds `run_command`, `run_verify_command`, `run_metric_command` and `stop_background`, and the operator's `[harness].metric` is dropped.
-No host is pre-allowed, so a headless `fetch` denies.
-It never sees the operator's checkout, and its writes are bounded by the workspace the way any run's are by its repo.
+It is an ordinary agent6 run handed this document's grammar, writing the `.asm.toml` and every `scripts/...` file with `apply_edit` in a drafting workspace of its own.
+
+- no new tool: the edit tools only, since `run_commands = "no"` withholds every command tool and drops the operator's `[harness].metric`
+- no host is pre-allowed, so a headless `fetch` denies
+- it never sees the operator's checkout; the workspace bounds its writes the way a repo bounds a run's
 
 - the workspace is an empty git repo under `[parallel].workdir` (where lane clones and fork worktrees live)
     - each iteration commits, so the draft survives a failure for the operator to read
@@ -680,12 +679,11 @@ It never sees the operator's checkout, and its writes are bounded by the workspa
 The layering is `ui → app → harness → tools → sandbox`, with `agent6.machine` a top-level package beside them.
 An `agent` state needs to *invoke* the harness, so the engine cannot itself sit inside `harness` without importing upward.
 
-The engine does not import the harness.
-`engine.drive` takes a `World`; the live one, `LiveWorld`, runs an `agent` state through its `agent_runner` callable (`Callable[[AgentRequest, Path | None], AgentExecResult]`).
-The second argument is the per-state event-log path (`<instance>/states/<seq>-<state>/logs.jsonl`) each agent-state execution streams to.
-`app/`, which depends on both `agent6.machine` and `agent6.harness`, builds that runner (`build_machine_agent_runner` in `app/machine_agent.py`) and wires it into the `LiveWorld` in `app/machine/run.py`.
-The orchestration around `machine create`/`run` lives in `app/machine/`, and `ui/cli` adapts argv and renders.
-So `agent6.machine` never gains an edge into `agent6.harness`, and the tach graph stays acyclic.
+The engine does not import the harness, so the tach graph stays acyclic.
+
+- `engine.drive` takes a `World`; the live one, `LiveWorld`, runs an `agent` state through an `agent_runner` callable (`Callable[[AgentRequest, Path | None], AgentExecResult]`), the path being the per-state event log (`<instance>/states/<seq>-<state>/logs.jsonl`)
+- `app/` depends on both packages: it builds that runner (`build_machine_agent_runner` in `app/machine_agent.py`), wires it into the `LiveWorld` in `app/machine/run.py`, and holds the `machine create`/`run` orchestration under `app/machine/`
+- `ui/cli` adapts argv and renders
 
 Files (all `from __future__ import annotations`, strict pyright, pydantic only at the parse boundary, `@dataclass(frozen=True, slots=True)` for the internal value types):
 
