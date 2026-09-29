@@ -1,27 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Pre-spawn model validation: catch a bogus model id before any run or lane
-spawns, with a did-you-mean, instead of dying at the first provider call where
-the raw upstream 400 leaks.
+"""Pre-spawn model validation: a bogus model id is refused with a did-you-mean.
 
-`validate_configured_model` checks a configured `models.<role>.model` at run
-start; `validate_spec_models` checks a `/parallel` spec's per-lane routes,
-each against its own provider (the models the roles name on it, unioned with
-its listing).
-
-Matching is cache-first: exact id, or the registry's normalization so a
-dated/tagged variant of a listed id (`...-20251001`, `...:free`) passes. A
-MISS against an existing cache fetches the provider's live listing once (TTL
-bypassed, ~1.5s cap) before any hard stop: `refused` always rests on a listing
-fetched by this invocation, so a just-pulled local model or a just-published
-listing entry is never refused off a stale snapshot. A failed fetch (offline,
-provider down) degrades the miss to `warned` and the run proceeds -- the first
-provider call is the final arbiter. With no cache at all nothing is fetched and
-nothing blocks (a fresh/offline machine, or a provider that lists no models).
-Never raises.
-
-Lives in the models layer so all three front-ends and the coordinator's group
-dispatcher share one policy without a UI or harness dependency.
+`validate_configured_model` checks a configured `models.<role>.model` at run start;
+`validate_spec_models` checks a `/parallel` spec's lane routes, each against its own
+provider. Matching is cache-first, the id or its normalized form. A miss against an
+existing cache fetches the live listing once, so `refused` always rests on a listing this
+invocation fetched; a failed fetch degrades to `warned` and the run proceeds; with no cache
+nothing is fetched and nothing blocks. Nothing here raises.
 """
 
 from __future__ import annotations
@@ -55,9 +41,7 @@ _MAX_SUGGESTIONS = 3
 
 
 def _known_models(cfg: Config, provider: str) -> set[str]:
-    """The model ids *provider* is known to serve, without touching the
-    network: the models the roles name on it, unioned with its on-disk
-    model-list cache snapshot."""
+    """Return the ids the provider is known to serve: the roles' models plus its cache."""
     named = {
         rm.model
         for role in ROLES
@@ -68,15 +52,13 @@ def _known_models(cfg: Config, provider: str) -> set[str]:
 
 @dataclass(frozen=True, slots=True)
 class ModelValidation:
-    """Outcome of a model check.
+    """The outcome of a model check.
 
-    `unknown` lists the named models not found (deduped, in spec order);
-    `suggestions` maps each to its closest known ids; `can_validate` is True
-    when the miss was judged against real evidence (a matching cache, or a
-    listing fetched live by this invocation). `refused` (unknown +
-    can_validate) is a hard stop resting on a just-fetched listing; `warned`
-    (unknown + no fresh evidence: no cache, or the live re-fetch failed)
-    proceeds -- an offline machine is never blocked on a regenerable cache."""
+    Attributes:
+        unknown: The named models not found, deduped, in spec order.
+        suggestions: Each unknown model's closest known ids.
+        can_validate: The miss was judged against a cache or a listing fetched live now.
+    """
 
     unknown: tuple[str, ...]
     suggestions: dict[str, tuple[str, ...]]
@@ -84,19 +66,23 @@ class ModelValidation:
 
     @property
     def refused(self) -> bool:
+        """A hard stop: an unknown model judged against fresh evidence."""
         return bool(self.unknown) and self.can_validate
 
     @property
     def warned(self) -> bool:
+        """A proceed with a warning: an unknown model with no fresh evidence."""
         return bool(self.unknown) and not self.can_validate
 
 
 def _fresh_listing(cfg: Config, provider_name: str) -> list[str] | None:
-    """The provider's LIVE model listing, fetched now (TTL bypassed): the
-    evidence a hard refusal needs. None when the fetch fails -- the caller
-    degrades to the warn path rather than refuse on a snapshot it could not
-    freshen. Keyless (local) providers list without auth; a secrets problem
-    just means an unauthenticated attempt."""
+    """Fetch the provider's live listing now, the evidence a refusal needs.
+
+    A secrets problem means an unauthenticated attempt, as a keyless provider lists.
+
+    Returns:
+        The ids, or None when the fetch fails or the provider has no listing.
+    """
     entry = cfg.providers.get(provider_name)
     if entry is None or isinstance(entry, ClaudeCodeProviderEntry):
         return None  # no listing: the binary resolves model names itself
@@ -109,19 +95,25 @@ def _fresh_listing(cfg: Config, provider_name: str) -> list[str] | None:
 
 
 def _matches(model: str, pool: set[str], norm_pool: set[str]) -> bool:
-    """True when *model* is listed: exact id, or its normalized form matches a
-    listed id's (a dated/tagged variant of a listed model is provider-plausible,
-    so it must never hard-refuse; the call itself is the final arbiter)."""
+    """Return whether the model is listed, by exact id or normalized form."""
     return model in pool or normalize_model_id(model) in norm_pool
 
 
 def _close_ids(typo: str, pool: list[str], bare_to_full: dict[str, list[str]]) -> tuple[str, ...]:
-    """Closest known ids to *typo*: matched against the full provider-prefixed ids
-    AND against the un-prefixed model segment (the part after the last `/`). The
-    bare match catches a short nickname near-miss (`glm`, `kimi-typo`) that scores
-    below difflib's cutoff against a full id, because the provider prefix dominates
-    the ratio (`glm` vs `z-ai/glm-4.6`). Bare hits map back to full ids (what the
-    operator must actually pass); full-id hits keep priority, capped overall."""
+    """Return the closest known ids to a typo.
+
+    Matched against the full ids and against the segment after the last `/`: a short
+    nickname (`glm`) scores below difflib's cutoff against `z-ai/glm-4.6`. Full-id hits keep
+    priority.
+
+    Args:
+        typo: The unknown id.
+        pool: The known ids.
+        bare_to_full: Each bare segment's full ids.
+
+    Returns:
+        At most three full ids.
+    """
     close = list(difflib.get_close_matches(typo, pool, n=_MAX_SUGGESTIONS))
     bare_typo = typo.rsplit("/", 1)[-1]
     for bare in difflib.get_close_matches(bare_typo, sorted(bare_to_full), n=_MAX_SUGGESTIONS):
@@ -130,7 +122,7 @@ def _close_ids(typo: str, pool: list[str], bare_to_full: dict[str, list[str]]) -
 
 
 def _suggest(unknown: list[str], pool: list[str]) -> dict[str, tuple[str, ...]]:
-    """Did-you-mean suggestions for each unknown model, drawn from *pool*."""
+    """Return did-you-mean suggestions for each unknown model, drawn from the pool."""
     bare_to_full: dict[str, list[str]] = {}
     for full in pool:
         bare_to_full.setdefault(full.rsplit("/", 1)[-1], []).append(full)
@@ -138,12 +130,19 @@ def _suggest(unknown: list[str], pool: list[str]) -> dict[str, tuple[str, ...]]:
 
 
 def validate_spec_models(routes: Sequence[ModelRoute | None], cfg: Config) -> ModelValidation:
-    """Check per-lane *routes* (`None` = the worker's own route, skipped), each
-    against its provider's `_known_models`. A miss against an existing cache
-    re-checks that provider's live listing once before refusing (see module
-    docstring); a miss on a provider with no cache is unvalidated. `unknown`
-    names each route as provider/model. A confirmed miss refuses even when
-    another route stays unvalidated."""
+    """Check a `/parallel` spec's lane routes, each against its own provider.
+
+    A miss against an existing cache re-checks the live listing once; a miss on a provider
+    with no cache is unvalidated. A confirmed miss refuses even when another route stays
+    unvalidated.
+
+    Args:
+        routes: The lane routes; None is the worker's own route and is skipped.
+        cfg: The effective config.
+
+    Returns:
+        The outcome, with each unknown route named as provider/model.
+    """
     misses: list[ModelRoute] = []
     for route in routes:
         if route is None or route in misses:
@@ -157,9 +156,7 @@ def validate_spec_models(routes: Sequence[ModelRoute | None], cfg: Config) -> Mo
     fresh_by_provider: dict[str, list[str] | None] = {}
     for route in misses:
         if not cached_models(route.provider):
-            # No snapshot to judge against: proceed with a warning, never block
-            # a fresh/offline machine (and no fetch attempt: keyed providers got
-            # one in check_provider_keys; a fetchable listing would be cached).
+            # No snapshot to judge against: a fetchable listing would be cached by preflight.
             unvalidated.append(route.spec)
             continue
         if route.provider not in fresh_by_provider:
@@ -182,16 +179,18 @@ def validate_spec_models(routes: Sequence[ModelRoute | None], cfg: Config) -> Mo
 
 
 def validate_configured_model(cfg: Config, role: RoleName) -> ModelValidation:
-    """Check the CONFIGURED model for *role* against ITS provider's listing, so a
-    typo'd `models.<role>.model` is caught at run start.
+    """Check the configured model of a role against its provider's listing.
 
-    Unlike `validate_spec_models` the pool EXCLUDES the model itself -- a
-    configured model is trivially in `_known_models`, so that check can never
-    fail. A miss against an existing cache re-checks the live listing once;
-    `refused` always rests on a listing fetched by this invocation, `warned`
-    means the re-fetch failed (the caller prints it and proceeds). No cache at
-    all (a fresh/offline machine, or a provider that lists no models) stays a
-    silent proceed, with no fetch attempt."""
+    The pool excludes the model itself, which `_known_models` would list trivially. A miss
+    against an existing cache re-checks the live listing once; no cache is a silent proceed.
+
+    Args:
+        cfg: The effective config.
+        role: The role.
+
+    Returns:
+        The outcome; `warned` when the re-fetch failed.
+    """
     rm = cfg.models.resolve(role)
     if rm is None:
         return ModelValidation(unknown=(), suggestions={}, can_validate=False)
@@ -214,10 +213,15 @@ def validate_configured_model(cfg: Config, role: RoleName) -> ModelValidation:
 
 
 def configured_model_refusal(v: ModelValidation, role: str) -> str:
-    """Refusal text for a typo'd CONFIGURED role model (a refused
-    `validate_configured_model`): name the bad model, its closest known ids, and
-    how to fix it. The listing was re-fetched live before this refusal, so
-    refreshing the cache cannot fix it."""
+    """Return the refusal for a configured role model that its provider does not list.
+
+    Args:
+        v: A refused `validate_configured_model` outcome.
+        role: The role.
+
+    Returns:
+        One line naming the model, its closest known ids and the fix.
+    """
     model = v.unknown[0]
     close = v.suggestions.get(model, ())
     suffix = f" Closest: {', '.join(close)}." if close else ""
@@ -228,10 +232,18 @@ def configured_model_refusal(v: ModelValidation, role: str) -> str:
 
 
 def flag_model_refusal(v: ModelValidation, cfg: Config, role: RoleName, spec: str) -> str:
-    """Refusal text for a typo'd `--model` (a refused `validate_configured_model`
-    whose model the flag set): name what was typed, the provider whose listing
-    was checked live, the closest known ids, and, when the value's first
-    segment names no configured provider, that it was read as one model id."""
+    """Return the refusal for a `--model` value its provider does not list.
+
+    Args:
+        v: A refused `validate_configured_model` outcome for the flag's model.
+        cfg: The effective config.
+        role: The role the flag set.
+        spec: The flag's value as typed.
+
+    Returns:
+        One line naming the value, the provider checked, the closest ids and, when the
+        first segment names no configured provider, that the whole value was read as an id.
+    """
     model = v.unknown[0]
     route = cfg.models.resolve(role)
     provider = route.provider if route is not None else ""
@@ -252,10 +264,16 @@ def flag_model_refusal(v: ModelValidation, cfg: Config, role: RoleName, spec: st
 
 
 def refusal_message(v: ModelValidation, *, directive: bool) -> str:
-    """The refusal text for an `unknown + can_validate` result: one line per
-    unknown model with its closest matches. On a directive surface (the composers
-    and the coordinator, where the same token could be task text) add the backtick
-    hint."""
+    """Return the refusal for a `/parallel` spec, one line per unknown model.
+
+    Args:
+        v: A refused outcome.
+        directive: The surface is a composer, where the token could be task text, so the
+            backtick hint is added.
+
+    Returns:
+        The lines, joined.
+    """
     lines = [
         f"unknown model {model!r} in /parallel spec"
         + (f"; closest: {', '.join(close)}" if (close := v.suggestions.get(model, ())) else "")
@@ -274,19 +292,25 @@ def directive_model_refusal(
     preset: str = "",
     model: str = "",
 ) -> str | None:
-    """Refuse a `/parallel` directive that names a model the configured
-    providers' cache says doesn't exist, before any spawn (the surface's normal
-    error path, nothing spawned). None = every model checks out, or there is no
-    cache to check against (a fresh/offline machine proceeds; the detached
-    lane's own preflight warns). A malformed or over-`max_lanes` spec surfaces
-    its grammar error. *preset* and *model* are the new run's overrides, so
-    validation uses the same worker route as the child."""
+    """Return the refusal for a `/parallel` directive naming an unlisted model, before any spawn.
+
+    Args:
+        cwd: The repo.
+        segments: The directive's segments.
+        config_path: An explicit config file, or None.
+        preset: The new run's preset override, so validation uses the child's worker route.
+        model: The new run's model override, likewise.
+
+    Returns:
+        The refusal, a malformed spec's grammar error, or None when every model checks out
+        or there is no cache to check against (the lane's own preflight warns).
+    """
     try:
         cfg = load_effective(cwd, config_path, preset=preset).config
         if model:
             cfg = cfg.with_model_route("worker", cfg.model_route("worker", model))
     except ConfigError:
-        return None  # a broken config is its own separate error; don't mask it here
+        return None  # a broken config is its own error elsewhere
     try:
         cap = cfg.parallel.max_lanes
         routes = [
@@ -301,9 +325,7 @@ def directive_model_refusal(
 
 
 def warning_message(v: ModelValidation) -> str:
-    """The single warning line for an `unknown + not can_validate` result: no
-    fresh listing to check against (no cache, or the live re-fetch failed), so
-    proceed but name the unvalidated model(s)."""
+    """Return the warning line for a `warned` outcome, naming the unvalidated models."""
     return (
         f"unvalidated model(s) {', '.join(v.unknown)}: no fresh provider listing"
         " to check against; proceeding (run `agent6 model` to refresh)."

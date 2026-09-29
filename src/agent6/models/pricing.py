@@ -1,28 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Cache-only model price lookups (USD per 1M tokens, (input, output)).
+"""Cache-only model price lookups, in USD per 1M tokens.
 
-There is NO static price table and no fallback rate: a price either came from
-a provider's own models endpoint (fetched + cached by `agent6.models.cache`,
-which stores it alongside the model list under
-`$XDG_CACHE_HOME/agent6/models/<provider>.json`) or it is unknown. An
-outdated hardcoded price is worse than no price: reports render unknown models
-as "$?" and the USD budget conversion does not apply.
-
-Today OpenRouter publishes per-model pricing on its /models endpoint.
-Anthropic's models API does not include pricing (verified live 2026-07), so a
-direct-Anthropic model id falls back to its OpenRouter listing when one is
-cached: `claude-haiku-4-5-20251001` -> `anthropic/claude-haiku-4.5` (strip
-the date suffix, dot the trailing version). The price itself is still
-live-fetched from a provider endpoint; only the id spelling is derived, and
-OpenRouter mirrors Anthropic's list prices. A model the derivation cannot map
-stays honestly unpriced, and runs rely on token ceilings (and
-OpenRouter-style `usage.cost` reporting where available).
-
-This module is import-light (stdlib + `agent6.paths`) so `agent6.budget`
-can use it without dragging in config/httpx2. Reads are cache-file only, never
-network. Lookups are memoized for the process lifetime: one CLI invocation is
-one run, and mid-run price changes are noise.
+There is no static price table: a price came from a provider's models endpoint (cached by
+`agent6.models.cache` under `$XDG_CACHE_HOME/agent6/models/<provider>.json`) or it is
+unknown, and reports then render "$?". OpenRouter publishes pricing; Anthropic's models API
+does not, so a bare `claude-*` id reads its OpenRouter listing when one is cached
+(`claude-haiku-4-5-20251001` -> `anthropic/claude-haiku-4.5`). The module imports only
+the stdlib and `agent6.paths`, so `agent6.budget` can use it; reads never touch the network.
 """
 
 from __future__ import annotations
@@ -43,14 +28,16 @@ _CLAUDE_TRAILING_VERSION_RE = re.compile(r"-(\d+)-(\d+)$")
 
 
 def _openrouter_alias(model: str) -> str | None:
-    """OpenRouter listing id for a direct-Anthropic model id, or None.
+    """Return the OpenRouter listing id for a bare `claude-*` model id.
 
-    Only derives for bare `claude-*` ids (never rewrites an already
-    namespaced id): drop a `-YYYYMMDD` snapshot suffix, then dot a trailing
-    `-N-M` version (`claude-opus-4-8` -> `anthropic/claude-opus-4.8`).
-    Ids the rules don't cover (e.g. legacy version-first `claude-3-5-sonnet`)
-    return a candidate that simply misses the price map, keeping them
-    honestly unpriced rather than mispriced.
+    Drops a `-YYYYMMDD` suffix, then dots a trailing `-N-M` version. An id the rules do
+    not cover (`claude-3-5-sonnet`) yields a candidate that misses the price map.
+
+    Args:
+        model: The model id.
+
+    Returns:
+        The candidate id, or None for a namespaced or non-Claude id.
     """
     if "/" in model or not model.startswith("claude-"):
         return None
@@ -60,18 +47,18 @@ def _openrouter_alias(model: str) -> str | None:
 
 
 def _models_cache_dir() -> Path | None:
+    """Return the models cache directory, or None when no cache dir resolves."""
     with contextlib.suppress(OSError, RuntimeError):
         return cache_dir() / "models"
     return None
 
 
 def _cache_state() -> tuple[tuple[str, float], ...]:
-    """(name, mtime) per cache file; the memoization key for the parsed map.
+    """Return (name, mtime) per cache file, the memoization key for the parsed map.
 
-    A fetch that lands mid-process (the CLI preflight refreshes the cache
-    AFTER the config was first constructed) bumps an mtime and naturally
-    invalidates the memo. Stat-ing a handful of files per lookup is cheap
-    next to the provider call each lookup accompanies."""
+    A fetch that lands mid-process (the preflight refresh) bumps an mtime and invalidates
+    the memo.
+    """
     root = _models_cache_dir()
     if root is None or not root.is_dir():
         return ()
@@ -85,10 +72,15 @@ def _cache_state() -> tuple[tuple[str, float], ...]:
 
 @dataclass(frozen=True, slots=True)
 class Price:
-    """USD per 1M tokens: fresh input, output, and the cache rates a listing
-    publishes (OpenRouter's `input_cache_read` / `input_cache_write`); None
-    where the listing carries none, and the cost arithmetic then applies
-    Anthropic's multipliers to the input rate."""
+    """A model's listed rates in USD per 1M tokens.
+
+    Attributes:
+        input: The fresh input rate.
+        output: The output rate.
+        cache_read: The cache read rate, or None when the listing carries none (the cost
+            arithmetic then applies Anthropic's multipliers to the input rate).
+        cache_write: The cache write rate, or None likewise.
+    """
 
     input: float
     output: float
@@ -96,7 +88,7 @@ class Price:
     cache_write: float | None = None
 
     def as_list(self) -> list[float]:
-        """The cache file's row: `[input, output]`, plus both cache rates when known."""
+        """Return the cache file's row: `[input, output]`, plus both cache rates when known."""
         if self.cache_read is None or self.cache_write is None:
             return [self.input, self.output]
         return [self.input, self.output, self.cache_read, self.cache_write]
@@ -106,8 +98,14 @@ class Price:
 def _load_pricing(
     state: tuple[tuple[str, float], ...],
 ) -> dict[str, dict[str, Price]]:
-    """The pricing map of every provider cache file, keyed by the provider
-    name the file is named for. Never raises."""
+    """Return the pricing map of every provider cache file, keyed by provider name.
+
+    Args:
+        state: The (name, mtime) pairs from `_cache_state`.
+
+    Returns:
+        Per provider, the model to price map; never raises.
+    """
     out: dict[str, dict[str, Price]] = {}
     root = _models_cache_dir()
     if root is None:
@@ -133,6 +131,7 @@ def _load_pricing(
 
 
 def _price_in(table: dict[str, Price], model: str) -> Price | None:
+    """Return the table's price for the model, by its id or its OpenRouter alias."""
     hit = table.get(model)
     if hit is not None:
         return hit
@@ -141,14 +140,19 @@ def _price_in(table: dict[str, Price], model: str) -> Price | None:
 
 
 def lookup_price(model: str, provider: str = "") -> Price | None:
-    """The listed price of *model* (USD per 1M tokens), or None if unknown.
+    """Return the listed price of a model.
 
-    *provider* names the config entry the call went through: two providers
-    can list one model id at different prices, and the route's own listing
-    is the price that bills, so a model it does not list is unpriced. With
-    no provider named, or a route with no cached listing at all (the
-    direct-Anthropic alias), the first listing that has the id answers, by
-    file name."""
+    Two providers can list one id at different prices, and the route's own listing bills,
+    so a model the named provider does not list is unpriced.
+
+    Args:
+        model: The model id.
+        provider: The config entry the call went through; "" or a provider with no cached
+            listing lets the first listing that has the id answer, by file name.
+
+    Returns:
+        The price, or None when unknown.
+    """
     tables = _load_pricing(_cache_state())
     if provider and provider in tables:
         return _price_in(tables[provider], model)

@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The values a config leaf can take when the schema alone cannot say: a
-provider's model ids, the ids a `/parallel` lane may run. One owner behind
-the config editors' pickers, the web suggest route, and TAB completion, so
-the surfaces offer the same lists."""
+"""The values a config leaf can take when the schema alone cannot say.
+
+A provider's model ids and the routes a `/parallel` lane may run, behind the config
+editors' pickers, the web suggest route and TAB completion, so every surface offers the
+same lists.
+"""
 
 from __future__ import annotations
 
@@ -19,12 +21,19 @@ from agent6.sessions.manifest import ManifestError, read_manifest
 
 
 def provider_model_choices(cfg: Config, provider: str) -> list[str]:
-    """Model ids for *provider*: the ones a role already names on it, unioned
-    with the provider's listing (cache-first, refreshed from the live listing
-    when stale; the fetch dials only that operator-configured base_url). A
-    broken secrets file degrades to a keyless attempt, never a raise: this is
-    a convenience list, and the authoritative SecretsError fires at run setup.
-    An unconfigured provider yields its cache alone."""
+    """Return the model ids a provider serves: the roles' models plus its listing.
+
+    The listing is cache-first, refreshed live when stale. A broken secrets file degrades
+    to a keyless attempt; the authoritative SecretsError fires at run setup. An
+    unconfigured provider yields its cache alone.
+
+    Args:
+        cfg: The effective config.
+        provider: The provider's config name.
+
+    Returns:
+        The ids, sorted.
+    """
     out: set[str] = set()
     for role in ROLES:
         rm = cfg.models.resolve(role)
@@ -44,10 +53,17 @@ def provider_model_choices(cfg: Config, provider: str) -> list[str]:
 
 
 def route_choices(cfg: Config) -> list[str]:
-    """Every `provider/model` a run can be pointed at (`--model` and the
-    composers' model picker): each configured provider's cached listing plus
-    the models the roles name on it. Cache-only, so a picker never waits on
-    the network; `agent6 model <role> <provider>` refreshes a listing."""
+    """Return every `provider/model` a run can be pointed at.
+
+    Cache-only, so a picker never waits on the network; `agent6 model <role> <provider>`
+    refreshes a listing.
+
+    Args:
+        cfg: The effective config.
+
+    Returns:
+        Each configured provider's cached ids plus the roles' models, sorted.
+    """
     out: set[str] = set()
     for name in cfg.providers:
         out.update(f"{name}/{m}" for m in cached_models(name))
@@ -59,15 +75,29 @@ def route_choices(cfg: Config) -> list[str]:
 
 
 def route_for(cfg: Config, mode: str) -> str:
-    """The `provider/model` a session of *mode* runs under this config (the
-    mode's role, worker fallback applied), or "" when the role is unset."""
+    """Return the `provider/model` a session of a mode runs under, or "" when unset.
+
+    Args:
+        cfg: The effective config.
+        mode: The session mode; its role resolves with the worker fallback.
+
+    Returns:
+        The route, or "".
+    """
     rm = cfg.models.resolve(session_kind(mode).role)
     return f"{rm.provider}/{rm.model}" if rm is not None else ""
 
 
 def available_routes(cwd: Path, config_path: Path | None) -> list[str]:
-    """`route_choices` for the config a hub at *cwd* runs under; empty on any
-    config error (the hub's other lists degrade the same way)."""
+    """Return `route_choices` for the config a hub at a directory runs under.
+
+    Args:
+        cwd: The hub's directory.
+        config_path: An explicit config file, or None.
+
+    Returns:
+        The routes, or [] on any config error.
+    """
     try:
         cfg = load_effective(cwd, config_path).config
     except ConfigError:
@@ -76,9 +106,15 @@ def available_routes(cwd: Path, config_path: Path | None) -> list[str]:
 
 
 def default_preset(cwd: Path, config_path: Path | None) -> str:
-    """The preset the config at *cwd* selects (the repo's, else the global
-    one): what a hub's preset picker names as the config default. Empty when
-    none is selected or on any config error."""
+    """Return the preset the config at a directory selects.
+
+    Args:
+        cwd: The hub's directory.
+        config_path: An explicit config file, or None.
+
+    Returns:
+        The selected preset, or "" when none is selected or on any config error.
+    """
     try:
         return preset_catalog(cwd, config_path).selected
     except ConfigError:
@@ -86,9 +122,17 @@ def default_preset(cwd: Path, config_path: Path | None) -> str:
 
 
 def default_route(cwd: Path, config_path: Path | None, mode: str, preset: str) -> str:
-    """The `provider/model` a session of *mode* under *preset* runs from the
-    config alone: what a hub's model picker shows until the operator picks
-    another. Empty on any config error or an unset role."""
+    """Return the route a session of a mode runs under a preset from the config alone.
+
+    Args:
+        cwd: The hub's directory.
+        config_path: An explicit config file, or None.
+        mode: The session mode.
+        preset: The preset to load under.
+
+    Returns:
+        The route, or "" on any config error or an unset role.
+    """
     try:
         cfg = load_effective(cwd, config_path, preset=preset).config
     except ConfigError:
@@ -97,20 +141,35 @@ def default_route(cwd: Path, config_path: Path | None, mode: str, preset: str) -
 
 
 def default_label(name: str, *, recorded: bool = False) -> str:
-    """The label of a picker's no-flag entry: what it runs under,
-    `quick (config default)`, or `none` when nothing resolves; `as recorded`
-    in place of `config default` when a resume replays the run's own flag."""
+    """Return the label of a picker's no-flag entry, such as `quick (config default)`.
+
+    Args:
+        name: What the entry runs under; "" reads as `none`.
+        recorded: A resume replays the run's own flag, so the origin reads `as recorded`.
+
+    Returns:
+        The label.
+    """
     return f"{name or 'none'} ({'as recorded' if recorded else 'config default'})"
 
 
 def resume_defaults(
     cwd: Path, config_path: Path | None, session_dir: Path, *, preset: str = ""
 ) -> tuple[str, str]:
-    """The (preset, model) labels of a resume row's no-flag entries: what a
-    resume of *session_dir* without `--preset` / `--model` runs under, the
-    model's under *preset* when one is picked. A preset or model the run set
-    by flag is replayed; anything else is what the config resolves now. An
-    unreadable manifest names the config's."""
+    """Return the (preset, model) labels of a resume row's no-flag entries.
+
+    A preset or model the run set by flag is replayed; anything else is what the config
+    resolves now. An unreadable manifest names the config's.
+
+    Args:
+        cwd: The hub's directory.
+        config_path: An explicit config file, or None.
+        session_dir: The session to resume.
+        preset: The preset picked in the row, or "".
+
+    Returns:
+        The preset label and the model label.
+    """
     try:
         manifest = read_manifest(session_dir)
         mode: str = manifest.session_mode()
@@ -130,8 +189,15 @@ def resume_defaults(
 
 
 def model_role_provider(eff: EffectiveConfig, key: str) -> str | None:
-    """The provider whose model ids a `models.<role>.model` leaf takes, else
-    None. The TUI's editor and `config_value_choices` decide on it alike."""
+    """Return the provider whose model ids a `models.<role>.model` leaf takes.
+
+    Args:
+        eff: The effective config.
+        key: The config leaf.
+
+    Returns:
+        The provider's name, or None for any other leaf.
+    """
     parts = key.split(".")
     if len(parts) != 3 or parts[0] != "models" or parts[2] != "model":
         return None
@@ -140,12 +206,17 @@ def model_role_provider(eff: EffectiveConfig, key: str) -> str | None:
 
 
 def config_value_choices(eff: EffectiveConfig, key: str) -> list[str]:
-    """What a chooser offers for an open-text config leaf: `models.<role>.model`
-    is that role's provider's model ids; the pseudo-key `parallel.models` (a
-    composer's `/parallel` autocomplete) is every `provider/model` a lane may
-    run (`route_choices`, cache-only, so a keystroke never waits on the
-    network). Enum leaves carry their choices in the config view; anything
-    else offers nothing."""
+    """Return what a chooser offers for an open-text config leaf.
+
+    Enum leaves carry their choices in the config view.
+
+    Args:
+        eff: The effective config.
+        key: The leaf, or the pseudo-key `parallel.models` for a `/parallel` autocomplete.
+
+    Returns:
+        The role's provider's model ids, every lane route for `parallel.models`, else [].
+    """
     if key == "parallel.models":
         return route_choices(eff.config)
     provider = model_role_provider(eff, key)

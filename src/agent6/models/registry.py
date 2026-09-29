@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Model facts for the run path: context windows (they size adaptive
-compaction) and decompose-first families. Entries change only with bench
-evidence; the live cache covers windows this table omits. Lookups never
-raise and never touch the network.
+"""Model facts for the run path.
+
+Context windows (they size adaptive compaction), decompose-first families and the effort
+each role sends. Entries change only with bench evidence; the live cache covers windows the
+table omits. Lookups never raise and never touch the network.
 """
 
 from __future__ import annotations
@@ -25,15 +26,10 @@ __all__ = [
     "role_effort",
 ]
 
-# Context windows in TOKENS for tested-or-popular models. Bundled because a
-# provider listing can omit the window (Anthropic's /models does not report
-# it) and the first run has no cache yet; wins over the live cache when both
-# know a model. Keep ids canonical (no date/`:tag` suffix --
-# `normalize_model_id` strips those before matching).
+# Context windows in tokens, canonical ids only (`normalize_model_id` strips a date or `:tag`).
+# The table wins over the live cache; Anthropic's listing reports no window.
 BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
-    # Anthropic. The 5-family ships 1M as the default AND maximum (no beta
-    # header, standard pricing); the 4.x standard window is 200k with the 1M
-    # beta opt-in, so pin [context] explicitly if you enable that beta.
+    # The 4.x window is 200k with a 1M beta opt-in: pin [context] when enabling that beta.
     "claude-fable-5": 1_000_000,
     "claude-opus-5": 1_000_000,
     "claude-sonnet-5": 1_000_000,
@@ -43,8 +39,7 @@ BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
     "claude-haiku-4-5": 200_000,
     "claude-3-5-sonnet": 200_000,
     "claude-3-5-haiku": 200_000,
-    # OpenRouter open-weights we bench against (cross-checked against the live
-    # listing).
+    # The open-weights models the bench runs, cross-checked against the live listing.
     "moonshotai/kimi-k2.6": 262_144,
     "moonshotai/kimi-k2": 131_072,
     "qwen/qwen3-coder": 1_048_576,
@@ -54,42 +49,41 @@ BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
     "deepseek/deepseek-v3.2-exp": 163_840,
 }
 
-# Adaptive sizing. tokens ~= chars/4 (matches the loop's `context_chars`
-# approximation). Tier-1 elides old tool_results once they pass ~45% of the
-# window (Claude Code's continuous local tiers); tier-2 summarise-and-restart
-# is a near-edge valve, firing only within a fixed reserve of the window
-# (pi's reserveTokens shape; Claude's autocompact likewise). The reserve
-# leaves room for the next turn's output and the summary call itself.
+# Adaptive sizing: tokens ~= chars/4 (the loop's `context_chars` approximation); tier 1 elides
+# old tool results past 45% of the window, tier 2 summarises within a reserve of the window
+# that leaves room for the next turn's output and the summary call.
 _CHARS_PER_TOKEN = 4
 _DROP_FRACTION = 0.45
 _RESERVE_TOKENS = 16_384
-# Used when the window is unknown. Mirrors harness._compaction
-# DROP_BLOCKS_AT_CHARS / SUMMARISE_AT_CHARS.
+# For an unknown window; mirrors harness._compaction DROP_BLOCKS_AT_CHARS / SUMMARISE_AT_CHARS.
 _FALLBACK_DROP_CHARS = 256_000
 _FALLBACK_SUMMARISE_CHARS = 768_000
 
 
 def normalize_model_id(model_id: str) -> str:
-    """Strip a trailing `-YYYYMMDD` snapshot date or `:tag` so dated/tagged
-    ids (`claude-haiku-4-5-20251001`, `qwen/qwen3-coder:free`) match the
-    canonical bundled key."""
+    """Return the id without a trailing `-YYYYMMDD` date or `:tag`, the bundled key's form."""
     base = model_id.split(":", 1)[0]
     return re.sub(r"-\d{8}$", "", base)
 
 
 def _bundled_context_window(model_id: str) -> int | None:
+    """Return the bundled window for the id or its normalized form."""
     if model_id in BUNDLED_CONTEXT_WINDOWS:
         return BUNDLED_CONTEXT_WINDOWS[model_id]
     return BUNDLED_CONTEXT_WINDOWS.get(normalize_model_id(model_id))
 
 
 def context_window(provider_name: str, model_id: str) -> int | None:
-    """Best-effort context window (tokens) for a configured model. Never raises.
+    """Return the context window in tokens for a configured model.
 
-    Bundled table (curated; tested models + Anthropic) first, then the live
-    model cache (`context_length` from the provider listing, populated by
-    completion / `agent6 model`), then None. Reads only -- never triggers a
-    network fetch -- so it is safe and fast on the run path.
+    The bundled table first, then the live model cache; reads only, never a fetch.
+
+    Args:
+        provider_name: The provider's config name.
+        model_id: The model id.
+
+    Returns:
+        The window, or None when neither source knows it.
     """
     return _bundled_context_window(model_id) or cached_context_window(
         provider_name, (model_id, normalize_model_id(model_id))
@@ -103,13 +97,19 @@ def compaction_thresholds(
     drop_override: int | None,
     summarise_override: int | None,
 ) -> tuple[int, int]:
-    """Effective `(compact_drop_at_chars, compact_summarise_at_chars)`.
+    """Return the effective (drop_at_chars, summarise_at_chars) thresholds.
 
-    Explicit config wins (both set, by construction -- the config validator
-    requires both-or-neither). Otherwise size from the model's context window
-    (tier-1 at ~45% of it, tier-2 at the window minus a fixed 16k-token
-    reserve); if the window is unknown, the fixed 256k/768k defaults. Never
-    raises.
+    Explicit config wins (the validator requires both or neither); otherwise the model's
+    window sizes them, and an unknown window takes the fixed defaults.
+
+    Args:
+        provider_name: The provider's config name.
+        model_id: The model id.
+        drop_override: The configured `context.drop_at_chars`, or None.
+        summarise_override: The configured `context.summarise_at_chars`, or None.
+
+    Returns:
+        The two thresholds in chars.
     """
     if drop_override is not None and summarise_override is not None:
         return drop_override, summarise_override
@@ -121,35 +121,38 @@ def compaction_thresholds(
     return drop, summarise
 
 
-# Model families with a MEASURED decompose-first win
-# (bench/coreagent/FINDINGS.md, thrust 2): forcing up-front decomposition
-# converted premature finishes into full component coverage
-# (mistral-small-3.2-24b: textkit +0.53, rpn +0.13, ledger +0.18). Every other
-# benched model (qwen3-coder-30b, qwen3.6-35b, claude-haiku-4-5) sat at the
-# score ceiling and paid a 2-4x iteration tax, so `prompt.decompose = "auto"`
-# resolves to on ONLY for these families and unknown models stay off. Grow
-# this list with bench evidence.
+# Families with a measured decompose-first win (bench/coreagent/FINDINGS.md: mistral-small-3.2-24b
+# textkit +0.53, rpn +0.13, ledger +0.18); the other benched models paid a 2-4x iteration tax.
 DECOMPOSE_WIN_MODEL_FAMILIES: tuple[str, ...] = ("mistral-small-3.2",)
 
 
 def decompose_default(model_id: str) -> bool:
-    """True when `prompt.decompose = "auto"` should enable decompose-first
-    prompting for *model_id*: its family has a measured win in bench/coreagent.
-    Family matching ignores the org prefix and any date/`:tag` suffix, so
-    `mistralai/mistral-small-3.2-24b-instruct:free` matches
-    `mistral-small-3.2`."""
+    """Return whether `prompt.decompose = "auto"` resolves to on for a model.
+
+    Family matching ignores the org prefix and any date or `:tag` suffix.
+
+    Args:
+        model_id: The model id.
+
+    Returns:
+        True when the model's family has a measured decompose-first win.
+    """
     family = normalize_model_id(model_id).rsplit("/", 1)[-1].lower()
     return family.startswith(DECOMPOSE_WIN_MODEL_FAMILIES)
 
 
 def role_effort(cfg: Config, role: RoleName) -> str | None:
-    """The reasoning effort *role*'s calls carry, or None when agent6 sends no
-    effort at all and the provider's own default decides (a non-reasoning
-    OpenAI-compatible model, ChatGPT, the Claude Code binary).
+    """Return the reasoning effort a role's calls carry.
 
-    Reads the configured `[models.<role>].effort` when set, else the default
-    each wire applies: openai-compatible reasoning models `low`
-    (`sent_reasoning_effort`), Anthropic no thinking, which is `off`.
+    The configured `[models.<role>].effort` when set, else each wire's default: `low` for an
+    OpenAI-compatible reasoning model, `off` (no thinking) for Anthropic.
+
+    Args:
+        cfg: The effective config.
+        role: The role.
+
+    Returns:
+        The effort, or None when agent6 sends none and the provider's default decides.
     """
     rm = cfg.models.resolve(role)
     if rm is None:
@@ -171,11 +174,17 @@ def role_effort(cfg: Config, role: RoleName) -> str | None:
 
 
 def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
-    """Config settings whose effective value is resolved at runtime, so a UI
-    (`config show`, the TUI/web config page) can display the real number rather
-    than the unset/adaptive placeholder: the adaptive compaction thresholds
-    sized from the worker model's context window, the auto decompose decision,
-    and each role's unset effort. Empty when nothing resolves."""
+    """Return the config leaves whose effective value resolves at runtime.
+
+    `config show` and the config pages print these in place of the adaptive placeholder.
+
+    Args:
+        cfg: The effective config.
+
+    Returns:
+        The compaction thresholds, the auto decompose decision and each role's unset effort,
+        by leaf; empty when nothing resolves.
+    """
     out: dict[str, object] = {}
     for role in ("worker", "reviewer", "planner"):
         role_model = cfg.models.resolve(role)
