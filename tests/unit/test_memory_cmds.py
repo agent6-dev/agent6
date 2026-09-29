@@ -95,3 +95,27 @@ def test_list_shows_who_wrote_and_read_each_fact(
     assert "    written " in out
     assert "by operator" in out
     assert "read 3 times, last 1970-01-02 by run-a" in out
+
+
+def test_list_names_the_files_the_index_no_longer_lists(
+    env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run that drops a fact's index line leaves its file behind, invisible
+    to every later run and to `memory list`; the operator pruning the store
+    saw nothing to prune. The list names such files under the index."""
+    from agent6.memory import index_path, memory_dir
+
+    _cmd_memory_add("kept", "A fact that stays.")
+    _cmd_memory_add("dropped", "A fact whose line went.")
+    state = state_dir(Path.cwd())
+    lines = index_path(state).read_text(encoding="utf-8").splitlines()
+    index_path(state).write_text(
+        "\n".join(ln for ln in lines if not ln.startswith("- dropped:")) + "\n", encoding="utf-8"
+    )
+    assert (memory_dir(state) / "dropped.md").is_file()
+    capsys.readouterr()
+    assert _cmd_memory_list() == 0
+    out = capsys.readouterr().out
+    assert "- kept: A fact that stays." in out
+    assert "- dropped:" not in out
+    assert "not in the index (no run sees them; `memory rm` deletes): dropped" in out

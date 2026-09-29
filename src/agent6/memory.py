@@ -478,6 +478,19 @@ def index_name(line: str) -> str | None:
     return None if match is None else match.group(1)
 
 
+def unindexed_names(state_dir: Path) -> tuple[str, ...]:
+    """Fact files the index does not list: invisible to every run (only the
+    index reaches a prompt), left behind when a run drops a line. Sorted."""
+    named = {n for n in (index_name(ln) for ln in index_text(state_dir).splitlines()) if n}
+    try:
+        files = sorted(p.stem for p in memory_dir(state_dir).glob("*.md"))
+    except OSError:
+        return ()
+    return tuple(
+        n for n in files if n not in named and n not in (INDEX_NAME[:-3], DECISIONS_NAME[:-3])
+    )
+
+
 def _index_hook(index_lines: list[str], name: str) -> str | None:
     """The hook text an index line carries for *name*, None when it has none."""
     pattern = re.compile(rf"^\s*[-*]\s*{re.escape(name)}\s*:")

@@ -20,6 +20,7 @@ from agent6.memory import (
     read_use,
     remove,
     show,
+    unindexed_names,
 )
 from agent6.paths import state_dir
 
@@ -44,6 +45,8 @@ def _cmd_memory_list() -> int:
         name = index_name(line)
         if name is not None and name in use:
             print(f"    {format_use(use[name])}")
+    if orphans := unindexed_names(state):
+        print(f"not in the index (no run sees them; `memory rm` deletes): {', '.join(orphans)}")
     return 0
 
 
