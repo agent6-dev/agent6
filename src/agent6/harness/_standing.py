@@ -9,20 +9,19 @@ the settled family, a quiet turn) converts into re-entry and applies that to a t
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from agent6.graph.curator import GraphCurator
-from agent6.harness._dag_focus import ready_subtask
-from agent6.harness._nudges import standing_fruitless_nudge, standing_resume_nudge
+from agent6.graph import curator as graph_curator
+from agent6.graph import order
+from agent6.harness import _nudges
 
 if TYPE_CHECKING:
-    from agent6.harness._conversation import Conversation
-    from agent6.harness._loop_state import LoopState, TurnState
+    from agent6.harness import _conversation, _loop_state
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Standing:
     """Read the run's standing goal from the graph and convert soft ends into re-entry.
 
@@ -34,7 +33,7 @@ class Standing:
         emit: The run's event emitter.
     """
 
-    curator: GraphCurator | None
+    curator: graph_curator.GraphCurator | None
     patience: int
     budget_remaining: Callable[[], float | None]
     log: Callable[[str], None]
@@ -46,11 +45,11 @@ class Standing:
             return None
         nodes = self.curator.nodes()
         for nid, node in nodes.items():
-            if node.standing and ready_subtask(nodes, node):
+            if node.standing and order.ready_subtask(nodes, node):
                 return nid, node.title[:120]
         return None
 
-    def absorb(self, state: LoopState, *, reason: str, iteration: int) -> str | None:
+    def absorb(self, state: _loop_state.LoopState, *, reason: str, iteration: int) -> str | None:
         """Convert a soft end into re-entry of the standing task.
 
         A re-entry with no executed tool call since the last one is fruitless; past `patience`
@@ -81,17 +80,20 @@ class Standing:
                     f" standing_patience {self.patience}; honouring {reason}"
                 )
                 return None
-            nudge = standing_fruitless_nudge(reason, nid, title, state.standing.fruitless)
+            nudge = _nudges.standing_fruitless_nudge(reason, nid, title, state.standing.fruitless)
         else:
             state.standing.fruitless = 0
-            nudge = standing_resume_nudge(reason, nid, title)
+            nudge = _nudges.standing_resume_nudge(reason, nid, title)
         state.standing.tools_mark = state.ok_tool_calls
         self.log(f"  standing re-entry ({reason}) -> {nid} at iter {iteration}")
         self.emit("loop.standing.resumed", reason=reason, task_id=nid, iteration=iteration)
         return nudge
 
     def absorb_soft_stop(
-        self, state: LoopState, turn: TurnState, conversation: Conversation
+        self,
+        state: _loop_state.LoopState,
+        turn: _loop_state.TurnState,
+        conversation: _conversation.Conversation,
     ) -> None:
         """Clear a turn's soft stop and put the re-entry nudge in the conversation.
 

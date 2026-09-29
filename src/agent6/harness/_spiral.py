@@ -10,22 +10,21 @@ nudge, escalate, stop ladder. A successful dispatch clears the whole error spira
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import dataclasses
 
-from agent6.harness._guards import Ladder, Rung
-from agent6.harness._nudges import (
-    TOOL_ERROR_ESCALATE_AFTER,
-    TOOL_ERROR_NUDGE_AFTER,
-    TOOL_ERROR_STOP_AFTER,
-)
+from agent6.harness import _guards, _nudges
 
 
-def tool_error_ladder() -> Ladder:
+def tool_error_ladder() -> _guards.Ladder:
     """Return the ladder a streak of tool errors sharing one signature climbs."""
-    return Ladder(TOOL_ERROR_NUDGE_AFTER, TOOL_ERROR_ESCALATE_AFTER, TOOL_ERROR_STOP_AFTER)
+    return _guards.Ladder(
+        _nudges.TOOL_ERROR_NUDGE_AFTER,
+        _nudges.TOOL_ERROR_ESCALATE_AFTER,
+        _nudges.TOOL_ERROR_STOP_AFTER,
+    )
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class SpiralGuard:
     """Hold the repeat and error streaks of one execution.
 
@@ -48,7 +47,7 @@ class SpiralGuard:
     warned_at_iteration: int = 0
     error_sig: str | None = None
     error_streak: int = 0
-    error_ladder: Ladder = field(default_factory=tool_error_ladder)
+    error_ladder: _guards.Ladder = dataclasses.field(default_factory=tool_error_ladder)
     last_error_was_denial: bool = False
 
     def note_call(self, sig: str, *, polling: bool = False) -> None:
@@ -112,6 +111,6 @@ class SpiralGuard:
             self.error_streak = 1
             self.error_ladder.rearm()
 
-    def climb_error(self) -> Rung | None:
+    def climb_error(self) -> _guards.Rung | None:
         """Return the rung the error streak reaches on the tool-error ladder."""
         return self.error_ladder.climb(self.error_streak)

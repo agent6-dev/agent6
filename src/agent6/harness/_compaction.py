@@ -13,28 +13,19 @@ call these and supplies the one impure seam, the `gister`.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 import shlex
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
 from typing import Any, Final
 
-from agent6.harness._conversation import (
-    AssistantTurn,
-    Conversation,
-    ToolResultItem,
-    Turn,
-    UserTurn,
-)
-from agent6.harness._panel import REVIEW_NOTICE_BYTES
-from agent6.harness._verify_gate import VERIFY_TAIL_CHARS
-from agent6.providers import CLAUDE_CODE_PERSIST_BYTES, Provider
-from agent6.providers.types import ToolDefinition
-from agent6.tools.schema import AskUserInput
+from agent6.harness import _conversation, _panel, _verify_gate
+from agent6.providers import CLAUDE_CODE_PERSIST_BYTES, Provider, types
+from agent6.tools import schema
 
 # Every placeholder variant shares the prefix: idempotency checks and tests key on it.
-ASK_USER_TOOL = AskUserInput.TOOL_NAME
+ASK_USER_TOOL = schema.AskUserInput.TOOL_NAME
 ELISION_PREFIX = "<elided by context compaction"
 
 ELISION_PLACEHOLDER = (
@@ -132,7 +123,7 @@ GIST_INPUT_CAP_CHARS = 24_000  # total distiller input per drop event
 GIST_MAX_FILES_PER_CALL = 12
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class GistRequest:
     """One file whose about-to-be-elided read_file content is to be distilled.
 
@@ -149,7 +140,7 @@ class GistRequest:
 Gister = Callable[[tuple[GistRequest, ...]], Mapping[str, str]]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class CompactionStats:
     """What one tier-1 pass did; a count is the length of its tuple.
 
@@ -246,7 +237,9 @@ TOOL_RESULT_CAP_BYTES = 60_000
 
 # A Claude Code turn's tool_result carries the trailing notices too, and the whole
 # stays under the persist threshold with the notices at their largest.
-CLAUDE_CODE_NOTICE_ROOM_BYTES = 4 * VERIFY_TAIL_CHARS + REVIEW_NOTICE_BYTES + 4_000
+CLAUDE_CODE_NOTICE_ROOM_BYTES = (
+    4 * _verify_gate.VERIFY_TAIL_CHARS + _panel.REVIEW_NOTICE_BYTES + 4_000
+)
 CLAUDE_CODE_RESULT_CAP_BYTES = CLAUDE_CODE_PERSIST_BYTES - CLAUDE_CODE_NOTICE_ROOM_BYTES
 
 # Chars, not tokens: tokens are roughly chars/4 for English-shaped content.
@@ -373,7 +366,7 @@ def strip_checkoff(text: str) -> str:
     return _CHECKOFF_FENCE_RE.sub("", text).strip()
 
 
-def context_chars(conversation: Conversation) -> int:
+def context_chars(conversation: _conversation.Conversation) -> int:
     """Return the character size of the conversation context.
 
     Notice text, tool_result content and every value of every assistant raw
@@ -390,7 +383,7 @@ def context_chars(conversation: Conversation) -> int:
     return sum(turn_chars(turn) for turn in conversation.turns)
 
 
-def turn_chars(turn: Turn) -> int:
+def turn_chars(turn: _conversation.Turn) -> int:
     """Return one turn's contribution to `context_chars`.
 
     Args:
@@ -399,7 +392,7 @@ def turn_chars(turn: Turn) -> int:
     Returns:
         Its character count, "type" keys excluded.
     """
-    if isinstance(turn, AssistantTurn):
+    if isinstance(turn, _conversation.AssistantTurn):
         total = 0
         for item in turn.raw_content:
             if not isinstance(item, dict):
@@ -413,7 +406,8 @@ def turn_chars(turn: Turn) -> int:
             )
         return total
     return sum(
-        len(item.content if isinstance(item, ToolResultItem) else item.text) for item in turn.items
+        len(item.content if isinstance(item, _conversation.ToolResultItem) else item.text)
+        for item in turn.items
     )
 
 
@@ -422,7 +416,7 @@ def turn_chars(turn: Turn) -> int:
 KEEP_RECENT_CHARS = 80_000
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class CompactionSettings:
     """Context compaction as the run configures it.
 
@@ -450,7 +444,9 @@ class CompactionSettings:
     summariser: Provider | None = None
 
 
-def strip_old_thinking(conversation: Conversation, *, keep_turns: int) -> tuple[int, int]:
+def strip_old_thinking(
+    conversation: _conversation.Conversation, *, keep_turns: int
+) -> tuple[int, int]:
     """Drop thinking blocks from assistant turns older than the newest few.
 
     Anthropic requires the signed thinking block of a tool_use still being
@@ -464,7 +460,9 @@ def strip_old_thinking(conversation: Conversation, *, keep_turns: int) -> tuple[
         (turns stripped, chars removed).
     """
     assistant_idxs = [
-        i for i, turn in enumerate(conversation.turns) if isinstance(turn, AssistantTurn)
+        i
+        for i, turn in enumerate(conversation.turns)
+        if isinstance(turn, _conversation.AssistantTurn)
     ]
     n = chars = 0
     for idx in assistant_idxs[:-keep_turns]:
@@ -475,7 +473,7 @@ def strip_old_thinking(conversation: Conversation, *, keep_turns: int) -> tuple[
     return n, chars
 
 
-def request_prefix_chars(system: str, tools: Sequence[ToolDefinition]) -> int:
+def request_prefix_chars(system: str, tools: Sequence[types.ToolDefinition]) -> int:
     """Return the chars every request carries besides the conversation.
 
     The window bounds the whole request, so a threshold on the conversation
@@ -496,7 +494,7 @@ def request_prefix_chars(system: str, tools: Sequence[ToolDefinition]) -> int:
     )
 
 
-def recent_tail_start(turns: Sequence[Turn], cap_chars: int) -> int:
+def recent_tail_start(turns: Sequence[_conversation.Turn], cap_chars: int) -> int:
     """Return the index where a tier-2 restart's verbatim tail begins.
 
     A safe start is any turn except a user turn carrying tool_results, which
@@ -528,15 +526,17 @@ def recent_tail_start(turns: Sequence[Turn], cap_chars: int) -> int:
     if start == len(turns):
         # The newest exchange exceeds the cap alone: keep it anyway, since paraphrasing
         # undelivered results away is the one loss the tail exists to prevent.
-        assistant_idxs = [i for i in range(1, len(turns)) if isinstance(turns[i], AssistantTurn)]
+        assistant_idxs = [
+            i for i in range(1, len(turns)) if isinstance(turns[i], _conversation.AssistantTurn)
+        ]
         if assistant_idxs:
             start = assistant_idxs[-1]
     return start
 
 
-def _starts_with_results(turn: Turn) -> bool:
-    return isinstance(turn, UserTurn) and any(
-        isinstance(item, ToolResultItem) for item in turn.items
+def _starts_with_results(turn: _conversation.Turn) -> bool:
+    return isinstance(turn, _conversation.UserTurn) and any(
+        isinstance(item, _conversation.ToolResultItem) for item in turn.items
     )
 
 
@@ -546,7 +546,9 @@ _PATCH_TARGET_RE = re.compile(
 )
 
 
-def recently_edited_paths(conversation: Conversation, *, last_turns: int = 8) -> frozenset[str]:
+def recently_edited_paths(
+    conversation: _conversation.Conversation, *, last_turns: int = 8
+) -> frozenset[str]:
     """Return the paths apply_edit and apply_patch targeted in the newest turns.
 
     Tier-1 elision deprioritises these files' reads, since a placeholder there
@@ -564,7 +566,7 @@ def recently_edited_paths(conversation: Conversation, *, last_turns: int = 8) ->
     out: set[str] = set()
     seen_assistant = 0
     for turn in reversed(conversation.turns):
-        if not isinstance(turn, AssistantTurn):
+        if not isinstance(turn, _conversation.AssistantTurn):
             continue
         seen_assistant += 1
         if seen_assistant > last_turns:
@@ -584,7 +586,7 @@ def recently_edited_paths(conversation: Conversation, *, last_turns: int = 8) ->
 
 
 def _tool_result_pointers(
-    conversation: Conversation,
+    conversation: _conversation.Conversation,
 ) -> tuple[list[tuple[int, int, int]], int]:
     """Return every tool_result's position and size, in order.
 
@@ -597,17 +599,17 @@ def _tool_result_pointers(
     pointers: list[tuple[int, int, int]] = []
     total = 0
     for turn_idx, turn in enumerate(conversation.turns):
-        if isinstance(turn, AssistantTurn):
+        if isinstance(turn, _conversation.AssistantTurn):
             continue
         for item_idx, item in enumerate(turn.items):
-            if not isinstance(item, ToolResultItem):
+            if not isinstance(item, _conversation.ToolResultItem):
                 continue
             pointers.append((turn_idx, item_idx, len(item.content)))
             total += len(item.content)
     return pointers, total
 
 
-def count_elisions(conversation: Conversation) -> tuple[int, int]:
+def count_elisions(conversation: _conversation.Conversation) -> tuple[int, int]:
     """Count the elision markers in the context, and the live gists among them.
 
     A resumed or forked execution re-announces these, since its fresh log has
@@ -630,7 +632,7 @@ def count_elisions(conversation: Conversation) -> tuple[int, int]:
 
 
 def compact_old_tool_results(
-    conversation: Conversation,
+    conversation: _conversation.Conversation,
     *,
     max_total_bytes: int,
     keep_recent: int = 2,
@@ -711,7 +713,7 @@ def compact_old_tool_results(
     )
 
 
-def _is_operator_answer(item: ToolResultItem) -> bool:
+def _is_operator_answer(item: _conversation.ToolResultItem) -> bool:
     """Return whether the result is the operator's answer to an `ask_user`.
 
     An answer is exempt from elision and dedup: it is a binding ruling that
@@ -726,16 +728,18 @@ def _is_operator_answer(item: ToolResultItem) -> bool:
     return item.for_call.name == ASK_USER_TOOL
 
 
-def _result_at(conversation: Conversation, turn_idx: int, item_idx: int) -> ToolResultItem:
+def _result_at(
+    conversation: _conversation.Conversation, turn_idx: int, item_idx: int
+) -> _conversation.ToolResultItem:
     turn = conversation.turns[turn_idx]
-    assert not isinstance(turn, AssistantTurn)
+    assert not isinstance(turn, _conversation.AssistantTurn)
     item = turn.items[item_idx]
-    assert isinstance(item, ToolResultItem)  # pointers only ever index tool_results
+    assert isinstance(item, _conversation.ToolResultItem)  # pointers only ever index tool_results
     return item
 
 
 def _undelivered_result_turn(
-    conversation: Conversation, pointers: list[tuple[int, int, int]]
+    conversation: _conversation.Conversation, pointers: list[tuple[int, int, int]]
 ) -> int | None:
     """Return the newest result turn when no assistant turn has consumed it yet.
 
@@ -747,7 +751,10 @@ def _undelivered_result_turn(
         The turn index, or None once an assistant turn follows it.
     """
     last_result = max(turn_idx for turn_idx, _, _ in pointers)
-    if any(isinstance(turn, AssistantTurn) for turn in conversation.turns[last_result + 1 :]):
+    if any(
+        isinstance(turn, _conversation.AssistantTurn)
+        for turn in conversation.turns[last_result + 1 :]
+    ):
         return None
     return last_result
 
@@ -757,7 +764,7 @@ _DEDUP_MIN_CHARS = 200
 
 
 def _dedupe_identical_results(
-    conversation: Conversation,
+    conversation: _conversation.Conversation,
     pointers: list[tuple[int, int, int]],
     *,
     keep_recent: int,
@@ -818,7 +825,7 @@ def _dedupe_identical_results(
     return tuple(labels)
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class _Tier1Pass:
     """The state shared by the phases of one tier-1 pass.
 
@@ -837,19 +844,19 @@ class _Tier1Pass:
         demoted_paths: The paths whose gist was demoted.
     """
 
-    conversation: Conversation
+    conversation: _conversation.Conversation
     max_total_bytes: int
     protect_paths: frozenset[str]
     candidates: list[tuple[int, int, int]]
     total: int
-    victims: list[tuple[int, int, int]] = field(default_factory=list)
+    victims: list[tuple[int, int, int]] = dataclasses.field(default_factory=list)
     gist_headroom: int = 0
-    gists: dict[tuple[int, int], str] = field(default_factory=dict)
-    elided_calls: list[str] = field(default_factory=list)
-    gist_paths: list[str] = field(default_factory=list)
-    demoted_paths: list[str] = field(default_factory=list)
+    gists: dict[tuple[int, int], str] = dataclasses.field(default_factory=dict)
+    elided_calls: list[str] = dataclasses.field(default_factory=list)
+    gist_paths: list[str] = dataclasses.field(default_factory=list)
+    demoted_paths: list[str] = dataclasses.field(default_factory=list)
 
-    def _item(self, turn_idx: int, item_idx: int) -> ToolResultItem:
+    def _item(self, turn_idx: int, item_idx: int) -> _conversation.ToolResultItem:
         return _result_at(self.conversation, turn_idx, item_idx)
 
     def plan(self) -> None:

@@ -350,7 +350,7 @@ def test_periodic_panel_fires_every_n_iterations() -> None:
     # verify-settled detector stays dormant and all 5 iterations run.
     with (
         mock.patch.object(_reviewer.Reviewer, "critique", panel),
-        mock.patch("agent6.harness._chain.chain_commit", return_value="sha"),
+        mock.patch("agent6.git_ops.chain_commit", return_value="sha"),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",

@@ -13,8 +13,7 @@ candidates, as in the finish gate: the always-pending root is the whole job.
 
 from __future__ import annotations
 
-from agent6.graph.models import TaskNode, queued_by_operator
-from agent6.graph.order import is_focusable_subtask, ready_subtask, tree_order
+from agent6.graph import models, order
 
 # After one of these runs the loop re-snapshots the graph (the graph.update event).
 DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task"})
@@ -26,7 +25,7 @@ STUCK_ON_TASK_AFTER = 20
 STUCK_NUDGE_MAX = 3
 
 
-def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
+def first_ready_subtask(nodes: dict[str, models.TaskNode]) -> str | None:
     """Return the first focusable subtask in the order the task tree shows.
 
     Focusable is open, dependencies satisfied, no open child; the order is
@@ -41,17 +40,17 @@ def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
     Returns:
         The subtask's id, or None when nothing is ready.
     """
-    for nid in tree_order(nodes):
-        if is_focusable_subtask(nodes, nodes[nid]):
+    for nid in order.tree_order(nodes):
+        if order.is_focusable_subtask(nodes, nodes[nid]):
             return nid
-    for nid in tree_order(nodes):
+    for nid in order.tree_order(nodes):
         node = nodes[nid]
-        if node.standing and ready_subtask(nodes, node):
+        if node.standing and order.ready_subtask(nodes, node):
             return nid
     return None
 
 
-def current_task_id(nodes: dict[str, TaskNode], cursor: str | None) -> str | None:
+def current_task_id(nodes: dict[str, models.TaskNode], cursor: str | None) -> str | None:
     """Return the subtask to focus on now.
 
     The curator cursor wins while it points at a focusable subtask (a decomposed
@@ -67,12 +66,12 @@ def current_task_id(nodes: dict[str, TaskNode], cursor: str | None) -> str | Non
     """
     if cursor is not None:
         node = nodes.get(cursor)
-        if node is not None and is_focusable_subtask(nodes, node):
+        if node is not None and order.is_focusable_subtask(nodes, node):
             return cursor
     return first_ready_subtask(nodes)
 
 
-def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False) -> str:
+def current_task_banner(task_id: str, node: models.TaskNode, *, decompose: bool = False) -> str:
     """Return the focus directive naming the current task and its acceptance.
 
     Args:
@@ -85,7 +84,7 @@ def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False
     """
     title = node.title.strip() or "(untitled)"
     lines = [f"[harness focus] Current task ({task_id}): {title}"]
-    if queued_by_operator(node):
+    if models.queued_by_operator(node):
         # The operator's whole text is the spec; the title is only its first line.
         if (queued := node.rationale.strip()) and queued != title:
             lines.append(queued)
@@ -124,7 +123,7 @@ def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False
     return "\n".join(lines)
 
 
-def stuck_on_task_nudge(task_id: str, node: TaskNode, turns: int) -> str:
+def stuck_on_task_nudge(task_id: str, node: models.TaskNode, turns: int) -> str:
     """Return the nudge offering the three ways to record progress on a stuck task.
 
     Never for a standing task: it concludes nothing by design, and two of the

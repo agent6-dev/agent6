@@ -10,8 +10,8 @@ models.
 
 from __future__ import annotations
 
+import dataclasses
 import re
-from dataclasses import dataclass, replace
 from typing import Literal
 
 Severity = Literal["block", "warn", "nit"]
@@ -26,7 +26,7 @@ ADVISORY_CATEGORIES: frozenset[str] = frozenset({"test-gap", "style", "over-eng"
 ALL_CATEGORIES: frozenset[str] = ALLOWED_BLOCK_CATEGORIES | ADVISORY_CATEGORIES
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Finding:
     """One reviewer finding.
 
@@ -45,7 +45,7 @@ class Finding:
     detail: str = ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ReviewVerdict:
     """One seat's verdict.
 
@@ -66,7 +66,7 @@ class ReviewVerdict:
     error: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ReviewContext:
     """What every seat is shown, and what the aggregator grounds findings against.
 
@@ -89,7 +89,7 @@ class ReviewContext:
     prior_findings: tuple[Finding, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class PanelResult:
     """The panel's aggregated result.
 
@@ -168,7 +168,7 @@ def _hdr_path(raw: str) -> str:
     return "" if target == "/dev/null" else re.sub(r"^[ab]/", "", target)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Hunk:
     """One hunk as it addresses one path.
 
@@ -384,8 +384,8 @@ def _ground_seat(
         sev = _ground_severity(f, ctx, hunks)
         if v.verdict != "block" and sev == "block":
             sev = "warn"
-        out.append(f if sev == f.severity else replace(f, severity=sev))
-    return replace(v, findings=tuple(out))
+        out.append(f if sev == f.severity else dataclasses.replace(f, severity=sev))
+    return dataclasses.replace(v, findings=tuple(out))
 
 
 def _has_new_block(
@@ -476,7 +476,7 @@ def aggregate_verdicts(
     for v in per_seat:
         if v.error is not None:
             n_abstain += 1
-            grounded_seats.append(replace(v, findings=()))
+            grounded_seats.append(dataclasses.replace(v, findings=()))
             continue
         gv = _ground_seat(v, ctx, hunks)
         grounded_seats.append(gv)

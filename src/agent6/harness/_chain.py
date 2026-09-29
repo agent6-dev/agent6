@@ -7,27 +7,16 @@ Where the loop's commits go, and what the worktree holds beyond them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+import dataclasses
+import pathlib
 
+from agent6 import git_ops
 from agent6.config import GitCommitConfig
-from agent6.git_ops import (
-    CommitIdentity,
-    GitError,
-    chain_commit,
-    chain_dirty,
-    chain_dirty_paths,
-    chain_tip,
-    diff_since,
-    worktree_name_status,
-    worktree_tree,
-)
-from agent6.git_ops import status as git_status
 
 _DIRTY_NOTE_CAP = 500  # paths a dirty-worktree note counts before it says "+"
 
 
-def commit_identity(commit: GitCommitConfig, trailer: str | None) -> CommitIdentity | None:
+def commit_identity(commit: GitCommitConfig, trailer: str | None) -> git_ops.CommitIdentity | None:
     """Return the author and provenance trailer of the run's commits.
 
     `[git.commit].name` and `.email` are the only identity on a machine whose git
@@ -42,10 +31,12 @@ def commit_identity(commit: GitCommitConfig, trailer: str | None) -> CommitIdent
     """
     if not (commit.name or commit.email or trailer):
         return None
-    return CommitIdentity(name=commit.name or None, email=commit.email or None, trailer=trailer)
+    return git_ops.CommitIdentity(
+        name=commit.name or None, email=commit.email or None, trailer=trailer
+    )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RunChain:
     """The run's commit line in the repository at `root`.
 
@@ -72,12 +63,12 @@ class RunChain:
             scope; "" when unknown.
     """
 
-    root: Path
+    root: pathlib.Path
     ref: str | None = None
     branch: str | None = None
     fallback_parent: str | None = None
     untracked_at_start: frozenset[str] = frozenset()
-    identity: CommitIdentity | None = None
+    identity: git_ops.CommitIdentity | None = None
     per_step: bool = True
     base_sha: str = ""
 
@@ -93,7 +84,7 @@ class RunChain:
         if self.ref is None:
             return ""
         return (
-            chain_commit(
+            git_ops.chain_commit(
                 self.root,
                 subject,
                 ref=self.ref,
@@ -115,8 +106,8 @@ class RunChain:
         if self.ref is None:
             return ""
         try:
-            return chain_tip(self.root, self.ref) or self.fallback_parent or ""
-        except (GitError, OSError):
+            return git_ops.chain_tip(self.root, self.ref) or self.fallback_parent or ""
+        except (git_ops.GitError, OSError):
             return ""
 
     def is_dirty(self) -> bool:
@@ -134,10 +125,10 @@ class RunChain:
             OSError: The repository could not be read.
         """
         if self.ref is not None:
-            return chain_dirty(
+            return git_ops.chain_dirty(
                 self.root, self.ref, self.fallback_parent, exclude=self.untracked_at_start
             )
-        return not git_status(self.root, exclude=self.untracked_at_start).is_clean
+        return not git_ops.status(self.root, exclude=self.untracked_at_start).is_clean
 
     def dirty(self) -> bool:
         """Return `is_dirty`, reading clean when git cannot say.
@@ -147,7 +138,7 @@ class RunChain:
         """
         try:
             return self.is_dirty()
-        except (GitError, OSError):
+        except (git_ops.GitError, OSError):
             return False
 
     def dirty_note(self) -> str:
@@ -162,14 +153,14 @@ class RunChain:
         if self.ref is None:
             return ""
         try:
-            paths = chain_dirty_paths(
+            paths = git_ops.chain_dirty_paths(
                 self.root,
                 self.ref,
                 self.fallback_parent,
                 _DIRTY_NOTE_CAP,
                 exclude=self.untracked_at_start,
             )
-        except (GitError, OSError):
+        except (git_ops.GitError, OSError):
             return ""
         if not paths:
             return ""
@@ -184,10 +175,10 @@ class RunChain:
             The sha, seeded on the chain tip like a chain commit; "" when git cannot say.
         """
         try:
-            return worktree_tree(
+            return git_ops.worktree_tree(
                 self.root, self.tip() or self.fallback_parent, self.untracked_at_start
             )
-        except (GitError, OSError):
+        except (git_ops.GitError, OSError):
             return ""
 
     def checkpoint_head_sha(self) -> str:
@@ -203,8 +194,8 @@ class RunChain:
         if self.ref is not None:
             return self.tip()
         try:
-            return git_status(self.root).head_sha
-        except (GitError, OSError):
+            return git_ops.status(self.root).head_sha
+        except (git_ops.GitError, OSError):
             return ""
 
     def name_status(self) -> tuple[tuple[str, str], ...]:
@@ -213,7 +204,7 @@ class RunChain:
         Returns:
             The pairs in `git status` order.
         """
-        return worktree_name_status(self.root, exclude=self.untracked_at_start)
+        return git_ops.worktree_name_status(self.root, exclude=self.untracked_at_start)
 
     def diff_since_base(self) -> str:
         """Return the run's cumulative change: the base commit against the working tree.
@@ -227,4 +218,4 @@ class RunChain:
         """
         if not self.base_sha:
             return ""
-        return diff_since(self.root, self.base_sha, exclude=self.untracked_at_start)
+        return git_ops.diff_since(self.root, self.base_sha, exclude=self.untracked_at_start)

@@ -8,10 +8,9 @@ recent commits.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
-from agent6.git_ops import is_git_repo, recent_log, status, toplevel, tracked_files
-from agent6.kinds import RepoSummary
+from agent6 import git_ops, kinds
 
 _REPO_MAP_MAX_LINES = 60
 _REPO_MAP_MAX_FILES_PER_DIR = 6
@@ -19,7 +18,7 @@ _REPO_MAP_MAX_FILES_PER_DIR = 6
 AGENTS_MD_WARN_CHARS = 40_000
 
 
-def _read_text(path: Path) -> str:
+def _read_text(path: pathlib.Path) -> str:
     """Return the file's text, or "" when it is missing or unreadable.
 
     A stray byte or a permission-denied file degrades instead of crashing the run
@@ -37,7 +36,7 @@ def _read_text(path: Path) -> str:
         return ""
 
 
-def _agents_md_sources(root: Path) -> tuple[tuple[Path, str], ...]:
+def _agents_md_sources(root: pathlib.Path) -> tuple[tuple[pathlib.Path, str], ...]:
     """Return the readable AGENTS.md files from the git root through root, in order.
 
     Args:
@@ -46,7 +45,7 @@ def _agents_md_sources(root: Path) -> tuple[tuple[Path, str], ...]:
     Returns:
         (path, text) pairs, toplevel first.
     """
-    top = toplevel(root)
+    top = git_ops.toplevel(root)
     if top is None:
         candidates = (root / "AGENTS.md",)
     else:
@@ -64,7 +63,7 @@ def _agents_md_sources(root: Path) -> tuple[tuple[Path, str], ...]:
     return tuple((path, text) for path in candidates if (text := _read_text(path)))
 
 
-def agents_md_text(root: Path) -> str:
+def agents_md_text(root: pathlib.Path) -> str:
     """Return the AGENTS.md text a session at root injects, whole.
 
     When root sits below a git toplevel, every ancestor file loads from the
@@ -77,7 +76,7 @@ def agents_md_text(root: Path) -> str:
     Returns:
         The files' texts joined by blank lines, "" when none is readable.
     """
-    top = toplevel(root)
+    top = git_ops.toplevel(root)
     parts: list[str] = []
     for path, text in _agents_md_sources(root):
         directory = path.parent.resolve()
@@ -91,7 +90,7 @@ def agents_md_text(root: Path) -> str:
     return "\n\n".join(parts)
 
 
-def agents_md_notices(root: Path) -> tuple[str, ...]:
+def agents_md_notices(root: pathlib.Path) -> tuple[str, ...]:
     """Return the session-start operator lines about the injected AGENTS.md.
 
     They name the files loaded when starting from a subdirectory, and warn on an
@@ -104,7 +103,7 @@ def agents_md_notices(root: Path) -> tuple[str, ...]:
         The lines, empty when there is nothing to say.
     """
     out: list[str] = []
-    top = toplevel(root)
+    top = git_ops.toplevel(root)
     sources = _agents_md_sources(root)
     if top is not None and top.resolve() != root.resolve():
         own = any(path.parent.resolve() == root.resolve() for path, _ in sources)
@@ -167,7 +166,7 @@ def _build_repo_map(tracked: tuple[str, ...]) -> str:
     return "\n".join(rows)
 
 
-def load_repo_summary(root: Path) -> RepoSummary:
+def load_repo_summary(root: pathlib.Path) -> kinds.RepoSummary:
     """Build the workspace's `RepoSummary`, shared by every mode.
 
     Outside a git repository (`agent6 ask` runs anywhere; run and plan refuse up
@@ -181,8 +180,8 @@ def load_repo_summary(root: Path) -> RepoSummary:
     Returns:
         The layout, AGENTS.md, recent commits and the repo map.
     """
-    in_git = is_git_repo(root)
-    st = status(root) if in_git else None
+    in_git = git_ops.is_git_repo(root)
+    st = git_ops.status(root) if in_git else None
     top = tuple(
         sorted(
             p.name + ("/" if p.is_dir() else "")
@@ -191,15 +190,15 @@ def load_repo_summary(root: Path) -> RepoSummary:
         )
     )
     # An unfiltered rglob would count .git/.venv/build junk and walk the tree every startup.
-    tracked = tracked_files(root) if in_git else ()
-    return RepoSummary(
+    tracked = git_ops.tracked_files(root) if in_git else ()
+    return kinds.RepoSummary(
         root=root,
         branch=st.branch if st is not None else "",
         head_sha=st.head_sha if st is not None else "",
         file_count=len(tracked),
         top_level=top,
         agents_md=agents_md_text(root),
-        recent_log=recent_log(root, n=20) if in_git else "",
+        recent_log=git_ops.recent_log(root, n=20) if in_git else "",
         repo_map=_build_repo_map(tracked),
         is_git=in_git,
     )

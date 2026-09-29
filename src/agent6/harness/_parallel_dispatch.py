@@ -9,33 +9,23 @@ branch and reduce lane outcomes to the DAG stamp and the summary message, withou
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import ValidationError
+import pydantic
 
-from agent6.directive import DirectiveError, Segment, parse_spec
-from agent6.git_ops import CommitIdentity, GitError, chain_merge, commit_diff
-from agent6.graph.curator import CuratorError, GraphCurator
-from agent6.graph.models import (
-    AddSubtaskIntent,
-    NodeStatus,
-    RecordCommitIntent,
-    TaskNodeDraft,
-    UpdateStatusIntent,
-)
-from agent6.harness._chain import RunChain
-from agent6.harness._dag_focus import current_task_id
-from agent6.harness.subrun import GroupLaneSpawner, LaneResult, LaneTask, SubrunError
+from agent6 import directive, git_ops
+from agent6.graph import curator as graph_curator
+from agent6.graph import models as graph_models
+from agent6.harness import _chain, _dag_focus, subrun
 
 if TYPE_CHECKING:
-    from agent6.harness._conversation import Conversation
-    from agent6.harness._loop_state import LoopState
+    from agent6.harness import _conversation, _loop_state
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class LaneJoin:
     """One lane's outcome in a `/parallel` dispatch.
 
@@ -55,7 +45,9 @@ class LaneJoin:
     detail: str
 
 
-def segment_lanes(seg: Segment, pins: Sequence[str] = (), *, limit: int) -> list[LaneTask]:
+def segment_lanes(
+    seg: directive.Segment, pins: Sequence[str] = (), *, limit: int
+) -> list[subrun.LaneTask]:
     """Expand one segment into its lanes, one model per lane.
 
     A bad spec (zero lanes, an empty model list, more than the limit) raises `DirectiveError`
@@ -72,17 +64,17 @@ def segment_lanes(seg: Segment, pins: Sequence[str] = (), *, limit: int) -> list
         The lanes; a model of None is the worker model.
     """
     lane_pins = tuple(pins)
-    models = parse_spec(seg.spec, limit=limit)
-    return [LaneTask(task=seg.task, model=model, pins=lane_pins) for model in models]
+    models = directive.parse_spec(seg.spec, limit=limit)
+    return [subrun.LaneTask(task=seg.task, model=model, pins=lane_pins) for model in models]
 
 
 def join_lane_result(
-    root: Path,
-    res: LaneResult,
+    root: pathlib.Path,
+    res: subrun.LaneResult,
     *,
     ref: str,
     fallback_parent: str | None,
-    identity: CommitIdentity | None,
+    identity: git_ops.CommitIdentity | None,
     also_branch: str | None,
 ) -> LaneJoin:
     """Join one returned lane's branch onto the coordinator's chain.
@@ -105,7 +97,7 @@ def join_lane_result(
     if not res.ok:
         return LaneJoin(rid, res.branch, "failed", "", res.error)
     try:
-        sha = chain_merge(
+        sha = git_ops.chain_merge(
             root,
             res.branch,
             f"merge {res.branch}",
@@ -114,14 +106,14 @@ def join_lane_result(
             identity=identity,
             also_branch=also_branch,
         )
-    except (GitError, OSError) as exc:
+    except (git_ops.GitError, OSError) as exc:
         return LaneJoin(rid, res.branch, "failed", "", str(exc))
     if sha is None:
         return LaneJoin(rid, res.branch, "conflict", "", "merge conflict")
     return LaneJoin(rid, res.branch, "joined", sha, "")
 
 
-def segment_stamp(lanes: list[LaneJoin]) -> tuple[NodeStatus, str, str]:
+def segment_stamp(lanes: list[LaneJoin]) -> tuple[graph_models.NodeStatus, str, str]:
     """Reduce one segment's lane joins to its DAG stamp.
 
     A segment passes when any lane joined, recording the last joined sha; the note names every
@@ -169,8 +161,8 @@ def summary_text(group: str, lanes: list[LaneJoin]) -> str:
 
 
 def spawn_lanes(
-    spawner: GroupLaneSpawner, lanes: list[LaneTask], group: str, *, at: str | None
-) -> list[LaneResult]:
+    spawner: subrun.GroupLaneSpawner, lanes: list[subrun.LaneTask], group: str, *, at: str | None
+) -> list[subrun.LaneResult]:
     """Run the lanes through the spawner and check the result count.
 
     Args:
@@ -187,21 +179,27 @@ def spawn_lanes(
     """
     results = spawner(lanes, group, at=at)
     if len(results) != len(lanes):
-        raise SubrunError(
+        raise subrun.SubrunError(
             f"group spawner returned {len(results)} result(s) for {len(lanes)} lane(s)"
         )
     return results
 
 
-def parallel_parent_id(curator: GraphCurator | None, root_task_id: str | None) -> str | None:
+def parallel_parent_id(
+    curator: graph_curator.GraphCurator | None, root_task_id: str | None
+) -> str | None:
     """Return the parent for a dispatched subtask: the cursor's open node, else the run root."""
     if curator is None:
         return root_task_id
-    return current_task_id(curator.nodes(), curator.cursor()) or root_task_id
+    return _dag_focus.current_task_id(curator.nodes(), curator.cursor()) or root_task_id
 
 
 def add_parallel_node(
-    curator: GraphCurator | None, task: str, parent_id: str | None, *, log: Callable[[str], None]
+    curator: graph_curator.GraphCurator | None,
+    task: str,
+    parent_id: str | None,
+    *,
+    log: Callable[[str], None],
 ) -> str | None:
     """Add a steering-created DAG node for one dispatched task.
 
@@ -220,9 +218,9 @@ def add_parallel_node(
     title = next((ln.strip() for ln in task.splitlines() if ln.strip()), "")[:200]
     try:
         node = curator.add_subtask(
-            AddSubtaskIntent(
+            graph_models.AddSubtaskIntent(
                 parent_id=parent_id,
-                draft=TaskNodeDraft(
+                draft=graph_models.TaskNodeDraft(
                     title=title or "(parallel task)",
                     rationale="dispatched via /parallel steering",
                     created_by="steering",
@@ -230,16 +228,16 @@ def add_parallel_node(
             )
         )
         return node.id
-    except (CuratorError, OSError, ValidationError) as exc:
+    except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
         log(f"PARALLEL: DAG node add failed: {exc}")
         return None
 
 
 def stamp_parallel_node(
-    curator: GraphCurator | None,
+    curator: graph_curator.GraphCurator | None,
     node_id: str | None,
     *,
-    status: NodeStatus,
+    status: graph_models.NodeStatus,
     note: str,
     sha: str = "",
     log: Callable[[str], None],
@@ -260,14 +258,16 @@ def stamp_parallel_node(
         return
     try:
         if sha:
-            curator.record_commit(RecordCommitIntent(id=node_id, sha=sha))
-        curator.update_status(UpdateStatusIntent(id=node_id, new_status=status, note=note))
-    except (CuratorError, OSError, ValidationError) as exc:
+            curator.record_commit(graph_models.RecordCommitIntent(id=node_id, sha=sha))
+        curator.update_status(
+            graph_models.UpdateStatusIntent(id=node_id, new_status=status, note=note)
+        )
+    except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
         log(f"PARALLEL: DAG node stamp failed for {node_id}: {exc}")
 
 
 def stamp_segment_node(
-    curator: GraphCurator | None,
+    curator: graph_curator.GraphCurator | None,
     node_id: str | None,
     lanes: list[LaneJoin],
     *,
@@ -278,7 +278,7 @@ def stamp_segment_node(
     stamp_parallel_node(curator, node_id, status=status, note=note, sha=sha, log=log)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ParallelDispatcher:
     """The coordinator's side of a `/parallel` group.
 
@@ -296,10 +296,10 @@ class ParallelDispatcher:
         emit_graph_snapshot: Publishes the graph after a write.
     """
 
-    chain: RunChain
-    curator: GraphCurator | None
+    chain: _chain.RunChain
+    curator: graph_curator.GraphCurator | None
     max_lanes: int
-    lane_spawner: GroupLaneSpawner | None
+    lane_spawner: subrun.GroupLaneSpawner | None
     save_snapshot: Callable[..., None]
     log: Callable[[str], None]
     emit: Callable[..., None]
@@ -307,10 +307,10 @@ class ParallelDispatcher:
 
     def dispatch(
         self,
-        conversation: Conversation,
+        conversation: _conversation.Conversation,
         iteration: int,
-        state: LoopState,
-        segments: list[Segment],
+        state: _loop_state.LoopState,
+        segments: list[directive.Segment],
     ) -> None:
         """Dispatch a `/parallel` sibling group at the steer boundary.
 
@@ -336,7 +336,7 @@ class ParallelDispatcher:
             # One DAG node per segment; its lanes join under it.
             lanes_cap = self.max_lanes
             per_segment = [segment_lanes(seg, state.pins, limit=lanes_cap) for seg in segments]
-        except DirectiveError as exc:
+        except directive.DirectiveError as exc:
             self.feedback(conversation, f"bad /parallel spec: {exc}; nothing dispatched.")
             return
         lanes = [lane for seg_lanes in per_segment for lane in seg_lanes]
@@ -457,13 +457,13 @@ class ParallelDispatcher:
                 self.emit(
                     "diff.updated",
                     sha=sha,
-                    patch=commit_diff(self.chain.root, sha, max_bytes=8000),
+                    patch=git_ops.commit_diff(self.chain.root, sha, max_bytes=8000),
                 )
-        except (GitError, OSError) as exc:
+        except (git_ops.GitError, OSError) as exc:
             self.log(f"PARALLEL: pre-dispatch checkpoint failed: {exc}")
         return not self.chain.dirty()
 
-    def feedback(self, conversation: Conversation, msg: str) -> None:
+    def feedback(self, conversation: _conversation.Conversation, msg: str) -> None:
         """Answer a `/parallel` steer with a one-line notice and continue."""
         self.log(f"PARALLEL: {msg}")
         conversation.notice(f"[parallel] {msg}")

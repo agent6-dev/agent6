@@ -10,19 +10,18 @@ knobs. The advisors live in `_guards` and `_metric`, the gates in
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from agent6.graph.models import TaskNode, owner_note
-from agent6.graph.order import OPEN_STATUSES
-from agent6.harness._snapshot import End
+from agent6.graph import models, order
+from agent6.harness import _snapshot
 
 if TYPE_CHECKING:
-    from agent6.harness._loop_state import LoopState, TurnState
+    from agent6.harness import _loop_state
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Nudge:
     """What an advisor says to the model this turn, and how the harness records it.
 
@@ -35,11 +34,11 @@ class Nudge:
 
     text: str
     event: str = ""
-    fields: Mapping[str, object] = field(default_factory=dict)
+    fields: Mapping[str, object] = dataclasses.field(default_factory=dict)
     log: str = ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Stop:
     """An advisor's decision to end the run.
 
@@ -58,15 +57,15 @@ class Stop:
         log: The log line written at the stop; "" writes none.
     """
 
-    end: Callable[[], End]
+    end: Callable[[], _snapshot.End]
     soft: str = ""
     declared: str = ""
     event: str = ""
-    fields: Mapping[str, object] = field(default_factory=dict)
+    fields: Mapping[str, object] = dataclasses.field(default_factory=dict)
     log: str = ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class TurnContext:
     """The run facts an advisor reads, built once per turn.
 
@@ -100,18 +99,20 @@ class TurnContext:
     operator_wait_s: Callable[[], float]
     open_subtasks: Callable[[], list[tuple[str, str]]]
     # The before-finish panel over the turn's declared end: True when it rejected the end.
-    end_rejected: Callable[[TurnState, str], bool]
+    end_rejected: Callable[[_loop_state.TurnState, str], bool]
     # The standing goal's re-entry nudge for a soft end, or None when the run may end.
     standing_absorb: Callable[[str, int], str | None]
 
 
 # An advisor: one heuristic over the turn, answering with a nudge, a stop or nothing.
-Advisor = Callable[["TurnState", "LoopState", TurnContext], Nudge | Stop | None]
+Advisor = Callable[
+    ["_loop_state.TurnState", "_loop_state.LoopState", TurnContext], Nudge | Stop | None
+]
 # A before-call advisor's nudge goes to the conversation ahead of the provider call.
-BeforeCallAdvisor = Callable[["LoopState", TurnContext], Nudge | None]
+BeforeCallAdvisor = Callable[["_loop_state.LoopState", TurnContext], Nudge | None]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Refusal(Nudge):
     """A finish gate's answer: the loop revokes the end and the model gets the text.
 
@@ -120,10 +121,10 @@ class Refusal(Nudge):
 
 
 # A finish gate: one rule a finish must satisfy; a Refusal hands the finish back.
-Gate = Callable[["TurnState", "LoopState", TurnContext], Refusal | None]
+Gate = Callable[["_loop_state.TurnState", "_loop_state.LoopState", TurnContext], Refusal | None]
 
 
-def open_subtasks(nodes: Mapping[str, TaskNode]) -> list[tuple[str, str]]:
+def open_subtasks(nodes: Mapping[str, models.TaskNode]) -> list[tuple[str, str]]:
     """Return the worker's own subtasks still open, as (id, title) pairs.
 
     Only subtasks count: the root is pending until the run ends, so counting it
@@ -139,9 +140,11 @@ def open_subtasks(nodes: Mapping[str, TaskNode]) -> list[tuple[str, str]]:
     """
     out: list[tuple[str, str]] = []
     for nid, node in nodes.items():
-        if node.parent_id is None or node.status not in OPEN_STATUSES or node.standing:
+        if node.parent_id is None or node.status not in order.OPEN_STATUSES or node.standing:
             continue
-        note = owner_note(created_by=node.created_by, parent_id=node.parent_id, standing=False)
+        note = models.owner_note(
+            created_by=node.created_by, parent_id=node.parent_id, standing=False
+        )
         out.append((nid, node.title[:120] + (f" ({note})" if note else "")))
     return out
 

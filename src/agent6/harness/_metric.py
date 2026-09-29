@@ -10,18 +10,17 @@ The loop decides when to measure.
 
 from __future__ import annotations
 
+import dataclasses
 import re
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from agent6.harness._advice import Nudge, Refusal, Stop, TurnContext, with_open_tasks
-from agent6.harness._snapshot import End
+from agent6.harness import _advice, _snapshot
 
 if TYPE_CHECKING:
-    from agent6.harness._loop_state import LoopState, TurnState
+    from agent6.harness import _loop_state
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MetricSample:
     """One metric reading.
 
@@ -335,7 +334,7 @@ def metric_plateau_summary(
     )
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class MetricGuard:
     """A metric run's readings and its patience counters.
 
@@ -347,7 +346,7 @@ class MetricGuard:
         finish_nudges_used: Early finishes rejected while runway remained.
     """
 
-    history: list[MetricSample] = field(default_factory=list)
+    history: list[MetricSample] = dataclasses.field(default_factory=list)
     tree: str = ""
     denied: bool = False
     plateau_nudges_used: int = 0
@@ -362,7 +361,9 @@ class MetricGuard:
         return any(sample.at_ceiling for sample in self.history)
 
 
-def metric_plateau(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | Stop | None:
+def metric_plateau(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Nudge | _advice.Stop | None:
     """Decide the metric run's end after a reading that only ties the best.
 
     While the run has runway the tie draws the plateau notice; in the final budget slice, or
@@ -385,17 +386,17 @@ def metric_plateau(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge
     in_final_slice = remaining is None or remaining <= METRIC_PLATEAU_STOP_BELOW_BUDGET
     guard = state.metric
 
-    def end() -> End:
-        return End(
+    def end() -> _snapshot.End:
+        return _snapshot.End(
             "metric_plateau",
-            with_open_tasks(finish, ctx.open_subtasks()),
+            _advice.with_open_tasks(finish, ctx.open_subtasks()),
             completed=True,
             verdict="grounded",
         )
 
     log = f"LOOP: metric_plateau at iter {turn.iteration}"
     if guard.at_ceiling():
-        return Stop(
+        return _advice.Stop(
             end,
             soft="metric_plateau",
             declared="metric_plateau",
@@ -404,12 +405,12 @@ def metric_plateau(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge
             log=log,
         )
     if in_final_slice and guard.plateau_nudges_used >= METRIC_PLATEAU_PATIENCE:
-        return Stop(end, soft="metric_plateau", declared="metric_plateau", log=log)
+        return _advice.Stop(end, soft="metric_plateau", declared="metric_plateau", log=log)
     # Patience counts final-slice notices only; a tie with runway left is a local optimum to leave.
     if in_final_slice:
         guard.plateau_nudges_used += 1
     budget_note = "n/a" if remaining is None else f"{remaining:.0%} left"
-    return Nudge(
+    return _advice.Nudge(
         metric_plateau_nudge(remaining),
         event="loop.metric_plateau.nudge",
         fields={
@@ -424,7 +425,9 @@ def metric_plateau(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge
     )
 
 
-def metric_early_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+def metric_early_finish(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Refusal | None:
     """Refuse an early finish on an optimisation run while runway remains.
 
     Above the final budget slice an early finish is rejected `METRIC_EARLY_FINISH_PATIENCE`
@@ -449,7 +452,7 @@ def metric_early_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> 
     state.metric.finish_nudges_used += 1
     used = state.metric.finish_nudges_used
     trigger = turn.ending if turn.ending not in (None, "finish_session") else ""
-    return Refusal(
+    return _advice.Refusal(
         METRIC_FINISH_NUDGE,
         event="loop.metric_early_finish.rejected",
         fields={

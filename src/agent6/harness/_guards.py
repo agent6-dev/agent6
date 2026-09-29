@@ -13,62 +13,22 @@ window. The completion-relevant subset persists (`restore_completion_state`).
 
 from __future__ import annotations
 
+import dataclasses
 import shutil
 import time
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from agent6.graph.models import TaskNode
-from agent6.graph.order import is_focusable_subtask
-from agent6.harness._advice import (
-    Advisor,
-    BeforeCallAdvisor,
-    Nudge,
-    Stop,
-    TurnContext,
-    with_open_tasks,
-)
-from agent6.harness._dag_focus import (
-    STUCK_NUDGE_MAX,
-    STUCK_ON_TASK_AFTER,
-    stuck_on_task_nudge,
-)
-from agent6.harness._metric import metric_plateau
-from agent6.harness._nudges import (
-    LOOP_GUARD_NOTICE_AFTER,
-    MEMORY_FLIP_NUDGE,
-    NO_PROGRESS_ESCALATE_AFTER,
-    NO_PROGRESS_ESCALATION,
-    NO_PROGRESS_NUDGE,
-    NO_PROGRESS_NUDGE_AFTER,
-    NO_PROGRESS_STOP_AFTER,
-    PLAN_BUDGET_NUDGE,
-    PLAN_BUDGET_NUDGE_BELOW,
-    PLAN_NUDGE_AFTER_ITERS,
-    RUN_BUDGET_NUDGE,
-    RUN_BUDGET_NUDGE_BELOW,
-    RUN_BUDGET_NUDGE_GATELESS,
-    STAGNATION_NUDGE,
-    STAGNATION_NUDGE_GATELESS,
-    TOOL_DENIED_NUDGE,
-    TOOL_ERROR_ESCALATION,
-    TOOL_ERROR_NUDGE,
-    VERIFY_SETTLED_NUDGE,
-    VERIFY_SETTLED_NUDGE_AFTER,
-    VERIFY_SETTLED_STOP_AFTER,
-    loop_guard_words,
-    unreachable_tool_notice,
-)
-from agent6.harness._snapshot import End
-from agent6.tools.results import ExecResult, ToolResult
+from agent6.graph import models, order
+from agent6.harness import _advice, _dag_focus, _metric, _nudges, _snapshot
+from agent6.tools import results
 
 if TYPE_CHECKING:
-    from agent6.harness._loop_state import LoopState, TurnState
+    from agent6.harness import _loop_state
 
 Rung = Literal["nudge", "escalate", "stop"]
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class Ladder:
     """A nudge, escalate, stop ladder over a streak.
 
@@ -126,10 +86,16 @@ def no_progress_ladder() -> Ladder:
     Returns:
         The ladder at the `_nudges` thresholds.
     """
-    return Ladder(NO_PROGRESS_NUDGE_AFTER, NO_PROGRESS_ESCALATE_AFTER, NO_PROGRESS_STOP_AFTER)
+    return Ladder(
+        _nudges.NO_PROGRESS_NUDGE_AFTER,
+        _nudges.NO_PROGRESS_ESCALATE_AFTER,
+        _nudges.NO_PROGRESS_STOP_AFTER,
+    )
 
 
-def no_progress(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | Stop | None:
+def no_progress(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Nudge | _advice.Stop | None:
     """Nudge, escalate, then stop on a plain run's streak of identical verify failures.
 
     Judged on a turn whose verify failed. A metric run is left to its plateau,
@@ -151,25 +117,25 @@ def no_progress(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | 
     if rung is None:
         return None
     if rung == "stop":
-        end = End(
+        end = _snapshot.End(
             "no_progress",
             f"stopped: the same verify failure persisted through {streak} consecutive"
             " runs despite two harness interventions; resume with a new approach or"
             " a bigger budget",
         )
-        return Stop(
+        return _advice.Stop(
             lambda: end,
             soft="no_progress",
             log=f"LOOP: no_progress stop at iter {turn.iteration} (streak {streak})",
         )
-    return Nudge(
-        NO_PROGRESS_ESCALATION if rung == "escalate" else NO_PROGRESS_NUDGE,
+    return _advice.Nudge(
+        _nudges.NO_PROGRESS_ESCALATION if rung == "escalate" else _nudges.NO_PROGRESS_NUDGE,
         event="loop.no_progress.nudge",
         fields={"iteration": turn.iteration, "streak": streak, "level": Ladder.level(rung)},
     )
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class SettledGuard:
     """The verify-settled completion's counters.
 
@@ -215,7 +181,7 @@ class SettledGuard:
         Returns:
             True at `VERIFY_SETTLED_STOP_AFTER` idle turns.
         """
-        return self.idle >= VERIFY_SETTLED_STOP_AFTER
+        return self.idle >= _nudges.VERIFY_SETTLED_STOP_AFTER
 
     def nudge_due(self) -> bool:
         """Return whether the one settled nudge goes out now, and count it as sent.
@@ -223,13 +189,13 @@ class SettledGuard:
         Returns:
             True once per streak, at `VERIFY_SETTLED_NUDGE_AFTER` idle turns.
         """
-        if self.idle < VERIFY_SETTLED_NUDGE_AFTER or self.nudged:
+        if self.idle < _nudges.VERIFY_SETTLED_NUDGE_AFTER or self.nudged:
             return False
         self.nudged = True
         return True
 
 
-def settled_reason(state: LoopState, ctx: TurnContext) -> str:
+def settled_reason(state: _loop_state.LoopState, ctx: _advice.TurnContext) -> str:
     """Return why a settled end is not a pass.
 
     Args:
@@ -253,7 +219,7 @@ def settled_reason(state: LoopState, ctx: TurnContext) -> str:
     return "the worker settled after committing work; the verify never passed"
 
 
-def settled_end(state: LoopState, ctx: TurnContext) -> End:
+def settled_end(state: _loop_state.LoopState, ctx: _advice.TurnContext) -> _snapshot.End:
     """Return the settled stop's end, grounded on the tree.
 
     Args:
@@ -266,24 +232,26 @@ def settled_end(state: LoopState, ctx: TurnContext) -> End:
         subtasks.
     """
     if state.verify.ever_passed and ctx.tree_green() is not False:
-        return End(
+        return _snapshot.End(
             "verify_settled",
-            with_open_tasks(
+            _advice.with_open_tasks(
                 "verify passed and the worker stopped making changes", ctx.open_subtasks()
             ),
             completed=True,
             verdict="passed",
             scoped=state.verify.scoped,
         )
-    return End(
+    return _snapshot.End(
         "settled",
-        with_open_tasks(settled_reason(state, ctx), ctx.open_subtasks()),
+        _advice.with_open_tasks(settled_reason(state, ctx), ctx.open_subtasks()),
         completed=True,
         roots=True,
     )
 
 
-def verify_settled(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | Stop | None:
+def verify_settled(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Nudge | _advice.Stop | None:
     """Nudge once, then stop, a plain run that settled after a good state.
 
     The stop is an ending the end gates judge and a standing task may absorb.
@@ -312,22 +280,22 @@ def verify_settled(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge
     if turn.finish is not None:
         return None
     if guard.stop_due():
-        return Stop(
+        return _advice.Stop(
             lambda: settled_end(state, ctx),
             soft="verify_settled",
             declared="settled",
             log=f"LOOP: verify_settled at iter {turn.iteration} (idle {guard.idle})",
         )
     if guard.nudge_due():
-        return Nudge(
-            VERIFY_SETTLED_NUDGE,
+        return _advice.Nudge(
+            _nudges.VERIFY_SETTLED_NUDGE,
             event="loop.verify_settled.nudge",
             fields={"iteration": turn.iteration, "idle": guard.idle},
         )
     return None
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class StagnationGuard:
     """The stagnation notice's counters; a resumed run gets a fresh window.
 
@@ -336,11 +304,13 @@ class StagnationGuard:
         nudged: The one notice went out.
     """
 
-    started_monotonic: float = field(default_factory=time.monotonic)
+    started_monotonic: float = dataclasses.field(default_factory=time.monotonic)
     nudged: bool = False
 
 
-def tool_error_ladder(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | Stop | None:
+def tool_error_ladder(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Nudge | _advice.Stop | None:
     """Nudge, escalate, then stop on a streak of identical tool errors.
 
     Judged after each failed call. A plain run's guard: a metric run's own
@@ -362,27 +332,29 @@ def tool_error_ladder(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nu
     if rung is None:
         return None
     if rung == "stop":
-        end = End(
+        end = _snapshot.End(
             "tool_error_stuck",
             f"stopped: the same tool call failed {streak} times with the identical"
             " error despite two harness interventions; resume with a different"
             " approach",
         )
-        return Stop(
+        return _advice.Stop(
             lambda: end, log=f"LOOP: tool_error stop at iter {turn.iteration} (streak {streak})"
         )
     if state.spiral.last_error_was_denial:
-        text = TOOL_DENIED_NUDGE
+        text = _nudges.TOOL_DENIED_NUDGE
     else:
-        text = TOOL_ERROR_ESCALATION if rung == "escalate" else TOOL_ERROR_NUDGE
-    return Nudge(
+        text = _nudges.TOOL_ERROR_ESCALATION if rung == "escalate" else _nudges.TOOL_ERROR_NUDGE
+    return _advice.Nudge(
         text,
         event="loop.tool_error.nudge",
         fields={"iteration": turn.iteration, "streak": streak, "level": Ladder.level(rung)},
     )
 
 
-def loop_guard_notice(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | None:
+def loop_guard_notice(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Nudge | None:
     """Notice the same (tool, args) call `LOOP_GUARD_NOTICE_AFTER` times in a row.
 
     Re-armed after one quiet iteration, so an unbroken streak hears it every
@@ -398,21 +370,23 @@ def loop_guard_notice(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nu
     """
     spiral = state.spiral
     if not (
-        spiral.call_streak >= LOOP_GUARD_NOTICE_AFTER
+        spiral.call_streak >= _nudges.LOOP_GUARD_NOTICE_AFTER
         and spiral.warned_at_iteration < turn.iteration - 1
     ):
         return None
     spiral.warned_at_iteration = turn.iteration
     tool = (spiral.last_call_sig or "").split(":", 1)[0] or "<unknown>"
-    return Nudge(
-        loop_guard_words(tool, spiral.call_streak),
+    return _advice.Nudge(
+        _nudges.loop_guard_words(tool, spiral.call_streak),
         event="loop.loop_guard.triggered",
         fields={"iteration": turn.iteration, "tool": tool, "streak": spiral.call_streak},
         log=f"  loop-guard: {tool} called {spiral.call_streak}x in a row - injecting notice",
     )
 
 
-def loop_guard_kill(turn: TurnState, state: LoopState, ctx: TurnContext) -> Stop | None:
+def loop_guard_kill(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Stop | None:
     """End the run on the same (tool, args) call `loop_guard_kill_threshold` times in a row.
 
     A threshold of 0 leaves the notice alone. Observed last, so a turn's other
@@ -431,13 +405,13 @@ def loop_guard_kill(turn: TurnState, state: LoopState, ctx: TurnContext) -> Stop
     if not (threshold > 0 and streak >= threshold):
         return None
     tool = (state.spiral.last_call_sig or "").split(":", 1)[0] or "<unknown>"
-    end = End(
+    end = _snapshot.End(
         "loop_guard_killed",
         f"loop-guard killed run: `{tool}` called {streak}x in a row with identical"
         f" arguments (threshold {threshold})",
         fields={"tool": tool, "streak": streak},
     )
-    return Stop(
+    return _advice.Stop(
         lambda: end,
         log=(
             f"LOOP: loop_guard_killed at iter {turn.iteration} - {tool} called {streak}x"
@@ -446,7 +420,9 @@ def loop_guard_kill(turn: TurnState, state: LoopState, ctx: TurnContext) -> Stop
     )
 
 
-def stagnation(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | None:
+def stagnation(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Nudge | None:
     """Notice once when `stagnation_notice_after_s` passed with no edit and no verify.
 
     Time blocked on the operator is not the model's, and a gateless run's
@@ -477,8 +453,8 @@ def stagnation(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | N
         return None
     guard.nudged = True
     minutes = max(1, int(elapsed // 60))
-    text = STAGNATION_NUDGE if ctx.gate_present() else STAGNATION_NUDGE_GATELESS
-    return Nudge(
+    text = _nudges.STAGNATION_NUDGE if ctx.gate_present() else _nudges.STAGNATION_NUDGE_GATELESS
+    return _advice.Nudge(
         text.format(minutes=minutes),
         event="loop.stagnation.nudged",
         fields={"iteration": turn.iteration, "elapsed_s": int(elapsed)},
@@ -486,7 +462,7 @@ def stagnation(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | N
     )
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class MemoryState:
     """The run's memory bookkeeping.
 
@@ -506,10 +482,10 @@ class MemoryState:
     written: bool = False
     flip_nudged: bool = False
     finish_nudged: bool = False
-    wrote: list[str] = field(default_factory=list)
-    created: list[str] = field(default_factory=list)
-    deleted: list[str] = field(default_factory=list)
-    read: dict[str, int] = field(default_factory=dict)
+    wrote: list[str] = dataclasses.field(default_factory=list)
+    created: list[str] = dataclasses.field(default_factory=list)
+    deleted: list[str] = dataclasses.field(default_factory=list)
+    read: dict[str, int] = dataclasses.field(default_factory=dict)
 
     def note_write(self, fact: str, op: str) -> None:
         """Fold one write of a fact.
@@ -536,7 +512,9 @@ class MemoryState:
             self.created.append(fact)
 
 
-def memory_flip(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | None:
+def memory_flip(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Nudge | None:
     """Advise once per run, at the first red-to-green verify with no memory write.
 
     That is the moment a hard-won root cause is in hand; `_nudges` holds the
@@ -559,15 +537,15 @@ def memory_flip(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | 
     ):
         return None
     state.memory.flip_nudged = True
-    return Nudge(
-        MEMORY_FLIP_NUDGE,
+    return _advice.Nudge(
+        _nudges.MEMORY_FLIP_NUDGE,
         event="loop.memory_flip.nudged",
         fields={"iteration": turn.iteration},
         log="  memory: verify flipped green - injecting memory advisory",
     )
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class StandingGoal:
     """The standing goal's re-entry counters. Both persist.
 
@@ -583,7 +561,7 @@ class StandingGoal:
     fruitless: int = 0
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class ReachabilityGuard:
     """The sandbox reachability counters.
 
@@ -624,8 +602,8 @@ class ReachabilityGuard:
 
 
 def unreachable_tool(
-    state: LoopState, name: str, tool_input: Any, result: ToolResult
-) -> Nudge | None:
+    state: _loop_state.LoopState, name: str, tool_input: Any, result: results.ToolResult
+) -> _advice.Nudge | None:
     """Note a binary present on the host but broken in the jail, after each call.
 
     The signal is a run_command the jail failed to exec (a nonzero exit is the
@@ -642,7 +620,7 @@ def unreachable_tool(
     Returns:
         The notice, or None.
     """
-    if name != "run_command" or not isinstance(result, ExecResult):
+    if name != "run_command" or not isinstance(result, results.ExecResult):
         return None
     argv = tool_input.get("argv") if isinstance(tool_input, dict) else None
     binary = str(argv[0]) if isinstance(argv, list) and argv else ""
@@ -651,15 +629,15 @@ def unreachable_tool(
     if shutil.which(binary) is None:
         return None
     state.reach.warned = True
-    return Nudge(
-        unreachable_tool_notice(binary),
+    return _advice.Nudge(
+        _nudges.unreachable_tool_notice(binary),
         event="loop.sandbox_tool_unreachable",
         fields={"binary": binary},
         log=f"LOOP: sandbox tool unreachable: {binary} exists on host, fails in jail",
     )
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class FocusGuard:
     """The focus banner's and the stuck-on-task nudge's counters.
 
@@ -705,8 +683,8 @@ class FocusGuard:
                 return False
         self.turns_on_task += 1
         if (
-            self.turns_on_task % STUCK_ON_TASK_AFTER == 0
-            and self.stuck_nudges_fired < STUCK_NUDGE_MAX
+            self.turns_on_task % _dag_focus.STUCK_ON_TASK_AFTER == 0
+            and self.stuck_nudges_fired < _dag_focus.STUCK_NUDGE_MAX
             and not standing
         ):
             self.stuck_nudges_fired += 1
@@ -715,8 +693,11 @@ class FocusGuard:
 
 
 def stuck_on_task(
-    state: LoopState, current_id: str, node: TaskNode, nodes: dict[str, TaskNode]
-) -> Nudge | None:
+    state: _loop_state.LoopState,
+    current_id: str,
+    node: models.TaskNode,
+    nodes: dict[str, models.TaskNode],
+) -> _advice.Nudge | None:
     """Offer to split, pass or skip a task the worker has ground on too long.
 
     Judged each turn the focus phase names a current task. A task marked done or
@@ -736,11 +717,11 @@ def stuck_on_task(
     # A previous focus still ready means the worker claimed another task instead of
     # concluding this one.
     previous = nodes.get(focus.last_focus_id or "")
-    progressed = previous is None or not is_focusable_subtask(nodes, previous)
+    progressed = previous is None or not order.is_focusable_subtask(nodes, previous)
     if not focus.note(current_id, standing=node.standing, progressed=progressed):
         return None
-    return Nudge(
-        stuck_on_task_nudge(current_id, node, focus.turns_on_task),
+    return _advice.Nudge(
+        _dag_focus.stuck_on_task_nudge(current_id, node, focus.turns_on_task),
         event="loop.task.stuck_nudge",
         fields={"task_id": current_id, "turns": focus.turns_on_task, "n": focus.stuck_nudges_fired},
         log=(
@@ -750,7 +731,7 @@ def stuck_on_task(
     )
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class BudgetNudges:
     """Which one-shot budget directives went out.
 
@@ -763,7 +744,9 @@ class BudgetNudges:
     run_budget: bool = False
 
 
-def plan_budget_nudge(state: LoopState, ctx: TurnContext) -> Nudge | None:
+def plan_budget_nudge(
+    state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Nudge | None:
     """Direct the planner once to finish on a low budget or too many turns.
 
     A planner takes many cheap cached turns, so the `PLAN_NUDGE_AFTER_ITERS`
@@ -779,13 +762,13 @@ def plan_budget_nudge(state: LoopState, ctx: TurnContext) -> Nudge | None:
     if ctx.mode != "plan" or state.budget_nudges.plan_finish:
         return None
     remaining = ctx.budget_remaining()
-    low_budget = remaining is not None and remaining <= PLAN_BUDGET_NUDGE_BELOW
-    too_many_turns = ctx.iteration - ctx.execution_start + 1 >= PLAN_NUDGE_AFTER_ITERS
+    low_budget = remaining is not None and remaining <= _nudges.PLAN_BUDGET_NUDGE_BELOW
+    too_many_turns = ctx.iteration - ctx.execution_start + 1 >= _nudges.PLAN_NUDGE_AFTER_ITERS
     if not (low_budget or too_many_turns):
         return None
     state.budget_nudges.plan_finish = True
-    return Nudge(
-        PLAN_BUDGET_NUDGE,
+    return _advice.Nudge(
+        _nudges.PLAN_BUDGET_NUDGE,
         event="loop.plan_finish.nudge",
         fields={"iteration": ctx.iteration, "budget_remaining": remaining},
         log=(
@@ -795,7 +778,9 @@ def plan_budget_nudge(state: LoopState, ctx: TurnContext) -> Nudge | None:
     )
 
 
-def run_budget_nudge(state: LoopState, ctx: TurnContext) -> Nudge | None:
+def run_budget_nudge(
+    state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Nudge | None:
     """Direct a plain run once to verify and finish before a cap ends it.
 
     Fires once the budget fraction falls to `RUN_BUDGET_NUDGE_BELOW`; gateless,
@@ -811,11 +796,11 @@ def run_budget_nudge(state: LoopState, ctx: TurnContext) -> Nudge | None:
     if ctx.mode != "run" or ctx.metric or state.budget_nudges.run_budget:
         return None
     remaining = ctx.budget_remaining()
-    if remaining is None or remaining > RUN_BUDGET_NUDGE_BELOW:
+    if remaining is None or remaining > _nudges.RUN_BUDGET_NUDGE_BELOW:
         return None
     state.budget_nudges.run_budget = True
-    return Nudge(
-        RUN_BUDGET_NUDGE if ctx.gate_present() else RUN_BUDGET_NUDGE_GATELESS,
+    return _advice.Nudge(
+        _nudges.RUN_BUDGET_NUDGE if ctx.gate_present() else _nudges.RUN_BUDGET_NUDGE_GATELESS,
         event="loop.run_budget.nudge",
         fields={"iteration": ctx.iteration, "budget_remaining": remaining},
         log=f"LOOP: run budget-nudge at iter {ctx.iteration}",
@@ -824,15 +809,15 @@ def run_budget_nudge(state: LoopState, ctx: TurnContext) -> Nudge | None:
 
 # The order is the order the notices reach the model and the precedence among the
 # stops; a stop the tool-error ladder raised during dispatch outranks them all.
-AFTER_TOOLS: tuple[Advisor, ...] = (
+AFTER_TOOLS: tuple[_advice.Advisor, ...] = (
     memory_flip,
     loop_guard_notice,
     stagnation,
-    metric_plateau,
+    _metric.metric_plateau,
     verify_settled,
     no_progress,
     loop_guard_kill,
 )
 
 # The advisors that speak before the provider call, in order.
-BEFORE_CALL: tuple[BeforeCallAdvisor, ...] = (plan_budget_nudge, run_budget_nudge)
+BEFORE_CALL: tuple[_advice.BeforeCallAdvisor, ...] = (plan_budget_nudge, run_budget_nudge)

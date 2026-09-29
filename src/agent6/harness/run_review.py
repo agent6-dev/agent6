@@ -9,17 +9,17 @@ AGENTS.md line.
 
 from __future__ import annotations
 
+import collections
+import dataclasses
 import json
-from collections import Counter
 from collections.abc import Sized
-from dataclasses import dataclass
 from typing import Literal
 
-from agent6.memory import clipped_index, index_text, read_use
-from agent6.prompts.review import RUN_REVIEW_SYSTEM_PROMPT
+from agent6 import memory
+from agent6.prompts import review
 from agent6.providers import Provider, ProviderError, ProviderResponse
-from agent6.sessions.layout import SessionLayout
-from agent6.tools.sessions import conversation
+from agent6.sessions import layout as sessions_layout
+from agent6.tools import sessions
 from agent6.viewmodel import summarize_session_dir
 
 # The harness's own interventions, named with their counts.
@@ -55,7 +55,7 @@ class RunReviewError(Exception):
 VerifyWord = Literal["not gated", "passed", "failed", "unverified"]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class VerifyRun:
     """Hold one verify run as the digest shows it.
 
@@ -70,7 +70,7 @@ class VerifyRun:
     tail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RunDigest:
     """Hold one session's record as the reviewer reads it.
 
@@ -169,7 +169,7 @@ def _shown(shown: Sized, total: int) -> str:
 
 
 def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
-    layout: SessionLayout, *, max_chars: int = CONVERSATION_MAX_CHARS
+    layout: sessions_layout.SessionLayout, *, max_chars: int = CONVERSATION_MAX_CHARS
 ) -> RunDigest:
     """Fold a session's journal into a digest.
 
@@ -186,9 +186,9 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     steers: list[str] = []
     decisions: list[tuple[str, str]] = []
     verify_runs: list[VerifyRun] = []
-    errors: Counter[str] = Counter()
+    errors: collections.Counter[str] = collections.Counter()
     first_errors: list[str] = []
-    notices: Counter[str] = Counter()
+    notices: collections.Counter[str] = collections.Counter()
     tool_calls = 0
     end_reason = ""
     all_passed: bool | None = None
@@ -247,7 +247,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         verify = "failed"
     else:
         verify = "unverified"
-    use = read_use(layout.state_dir)
+    use = memory.read_use(layout.state_dir)
     wrote = tuple(sorted(n for n, u in use.items() if layout.session_id in u.writers))
     return RunDigest(
         session_id=layout.session_id,
@@ -267,8 +267,8 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         first_errors=tuple(first_errors),
         notices=tuple(sorted(notices.items())),
         memory_wrote=wrote,
-        memory_index=clipped_index(index_text(layout.state_dir)),
-        conversation=conversation(layout, max_chars=max_chars),
+        memory_index=memory.clipped_index(memory.index_text(layout.state_dir)),
+        conversation=sessions.conversation(layout, max_chars=max_chars),
         steers_total=len(steers),
         decisions_total=len(decisions),
         verify_total=len(verify_runs),
@@ -298,7 +298,7 @@ def run_review(
     parts.append(f"RUN RECORD:\n{digest}")
     try:
         resp: ProviderResponse = provider.call(
-            system=RUN_REVIEW_SYSTEM_PROMPT,
+            system=review.RUN_REVIEW_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": "\n\n".join(parts)}],
             max_tokens=max_tokens,
         )

@@ -11,31 +11,23 @@ The loop's phase methods live in `loop.py`; these are the shapes they take.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import dataclasses
 
-from agent6.harness._conversation import AssistantTurn, Notice, ToolResultItem
-from agent6.harness._finish_gates import FinishCall, FinishGates
-from agent6.harness._guards import (
-    BudgetNudges,
-    FocusGuard,
-    Ladder,
-    MemoryState,
-    ReachabilityGuard,
-    SettledGuard,
-    StagnationGuard,
-    StandingGoal,
-    Stop,
-    no_progress_ladder,
+from agent6.harness import (
+    _advice,
+    _conversation,
+    _finish_gates,
+    _guards,
+    _metric,
+    _quiet_turns,
+    _snapshot,
+    _spiral,
+    _verify_verdict,
 )
-from agent6.harness._metric import MetricGuard, MetricSample
-from agent6.harness._quiet_turns import QuietGuard
-from agent6.harness._snapshot import SessionSnapshot
-from agent6.harness._spiral import SpiralGuard
-from agent6.harness._verify_verdict import VerifyVerdict
 from agent6.providers import ProviderResponse
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class LoopState:
     """Mutable per-run bookkeeping threaded through the agent loop.
 
@@ -79,30 +71,32 @@ class LoopState:
     original_task: str
     tool_calls: int
     ok_tool_calls: int = 0
-    decisions_recorded: list[str] = field(default_factory=list)
+    decisions_recorded: list[str] = dataclasses.field(default_factory=list)
     tier2_floor_chars: int = 0
-    verify: VerifyVerdict = field(default_factory=VerifyVerdict)
+    verify: _verify_verdict.VerifyVerdict = dataclasses.field(
+        default_factory=_verify_verdict.VerifyVerdict
+    )
     ever_edited: bool = False
     plan_injected: str = ""
     root_task_id: str | None = None
     system: str = ""
     parallel_groups_dispatched: int = 0
-    pins: list[str] = field(default_factory=list)
-    spiral: SpiralGuard = field(default_factory=SpiralGuard)
-    no_progress: Ladder = field(default_factory=no_progress_ladder)
-    settled: SettledGuard = field(default_factory=SettledGuard)
-    metric: MetricGuard = field(default_factory=MetricGuard)
-    quiet: QuietGuard = field(default_factory=QuietGuard)
-    stagnation: StagnationGuard = field(default_factory=StagnationGuard)
-    memory: MemoryState = field(default_factory=MemoryState)
-    standing: StandingGoal = field(default_factory=StandingGoal)
-    reach: ReachabilityGuard = field(default_factory=ReachabilityGuard)
-    focus: FocusGuard = field(default_factory=FocusGuard)
-    gates: FinishGates = field(default_factory=FinishGates)
-    budget_nudges: BudgetNudges = field(default_factory=BudgetNudges)
+    pins: list[str] = dataclasses.field(default_factory=list)
+    spiral: _spiral.SpiralGuard = dataclasses.field(default_factory=_spiral.SpiralGuard)
+    no_progress: _guards.Ladder = dataclasses.field(default_factory=_guards.no_progress_ladder)
+    settled: _guards.SettledGuard = dataclasses.field(default_factory=_guards.SettledGuard)
+    metric: _metric.MetricGuard = dataclasses.field(default_factory=_metric.MetricGuard)
+    quiet: _quiet_turns.QuietGuard = dataclasses.field(default_factory=_quiet_turns.QuietGuard)
+    stagnation: _guards.StagnationGuard = dataclasses.field(default_factory=_guards.StagnationGuard)
+    memory: _guards.MemoryState = dataclasses.field(default_factory=_guards.MemoryState)
+    standing: _guards.StandingGoal = dataclasses.field(default_factory=_guards.StandingGoal)
+    reach: _guards.ReachabilityGuard = dataclasses.field(default_factory=_guards.ReachabilityGuard)
+    focus: _guards.FocusGuard = dataclasses.field(default_factory=_guards.FocusGuard)
+    gates: _finish_gates.FinishGates = dataclasses.field(default_factory=_finish_gates.FinishGates)
+    budget_nudges: _guards.BudgetNudges = dataclasses.field(default_factory=_guards.BudgetNudges)
 
 
-def restore_completion_state(state: LoopState, snap: SessionSnapshot) -> None:
+def restore_completion_state(state: LoopState, snap: _snapshot.SessionSnapshot) -> None:
     """Carry a resume snapshot's completion bookkeeping into fresh loop state.
 
     The review gate-disarm, metric and verify-settled stop logic keep their
@@ -127,7 +121,7 @@ def restore_completion_state(state: LoopState, snap: SessionSnapshot) -> None:
         # One synthetic sample carries the prior best; the plateau stop re-arms after a
         # few measurements, the ceiling stop is immediate.
         state.metric.history.append(
-            MetricSample(
+            _metric.MetricSample(
                 label="resumed",
                 score=snap.metric_best_score,
                 returncode=0,
@@ -147,7 +141,7 @@ class NextTurn:
 NEXT_TURN = NextTurn()
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class TurnState:
     """Mutable bookkeeping for one assistant turn that dispatched tools.
 
@@ -191,11 +185,13 @@ class TurnState:
 
     iteration: int
     resp: ProviderResponse
-    assistant: AssistantTurn
-    finish: FinishCall | None = None
+    assistant: _conversation.AssistantTurn
+    finish: _finish_gates.FinishCall | None = None
     end_returned: bool = False
     ending: str | None = None
-    tool_results: list[ToolResultItem | Notice] = field(default_factory=list)
+    tool_results: list[_conversation.ToolResultItem | _conversation.Notice] = dataclasses.field(
+        default_factory=list
+    )
     verify_just_passed: bool = False
     verify_just_failed: bool = False
     verify_flipped_green: bool = False
@@ -208,4 +204,4 @@ class TurnState:
     metric_plateau_finish: str | None = None
     review_text: str | None = None
     end_rejected: bool | None = None
-    stops: list[Stop] = field(default_factory=list)
+    stops: list[_advice.Stop] = dataclasses.field(default_factory=list)

@@ -9,13 +9,13 @@ written before each provider call; the loop saves it and `load_session_snapshot`
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
+import pathlib
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+import pydantic
 
 # Every way a session can end; `SessionResult` says what each means.
 SessionEndReason = Literal[
@@ -55,7 +55,7 @@ SessionEndReason = Literal[
 Verification = Literal["passed", "failed", "unverified", "not_applicable"]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionResult:
     """Hold the final state of a session.
 
@@ -113,7 +113,7 @@ class SessionResult:
     verified: Verification = "not_applicable"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class End:
     """Record a decision to end the run, as `Harness._finish` applies it.
 
@@ -145,7 +145,7 @@ class End:
     scoped: bool = False
     finish_payload: dict[str, Any] | None = None
     stale_gate: str = ""
-    fields: Mapping[str, object] = field(default_factory=dict)
+    fields: Mapping[str, object] = dataclasses.field(default_factory=dict)
 
 
 class ResumeError(Exception):
@@ -156,7 +156,7 @@ class ResumeError(Exception):
 SNAPSHOT_VERSION = 4
 
 
-class SessionSnapshot(BaseModel):
+class SessionSnapshot(pydantic.BaseModel):
     """Hold the persisted state of an in-flight session, what a resume re-enters and a fork clones.
 
     The loop advances `loop_state.json` at every safe boundary (before each provider call and
@@ -201,7 +201,7 @@ class SessionSnapshot(BaseModel):
         graph_version: The task graph version a fork rebuilds by replay, 0 when unreadable.
     """
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = pydantic.ConfigDict(frozen=True, extra="forbid")
 
     version: int = SNAPSHOT_VERSION
     system: str
@@ -233,7 +233,7 @@ class SessionSnapshot(BaseModel):
     graph_version: int = 0
 
 
-def _load_state_object(path: Path, what: str) -> dict[str, Any]:
+def _load_state_object(path: pathlib.Path, what: str) -> dict[str, Any]:
     """Read a state JSON file whose top level must be an object.
 
     Args:
@@ -257,7 +257,7 @@ def _load_state_object(path: Path, what: str) -> dict[str, Any]:
     return raw
 
 
-def load_session_snapshot(path: Path) -> SessionSnapshot:
+def load_session_snapshot(path: pathlib.Path) -> SessionSnapshot:
     """Load a snapshot, `loop_state.json` or a checkpoint.
 
     Args:
@@ -279,7 +279,7 @@ def load_session_snapshot(path: Path) -> SessionSnapshot:
         )
     try:
         return SessionSnapshot.model_validate(raw)
-    except ValidationError as exc:
+    except pydantic.ValidationError as exc:
         raise ValueError(f"malformed run-state snapshot at {path}: {exc}") from exc
 
 
@@ -287,7 +287,7 @@ def load_session_snapshot(path: Path) -> SessionSnapshot:
 TURN_IN_FLIGHT_NAME = "turn_in_flight.json"
 
 
-def write_turn_marker(path: Path, iteration: int, tools: tuple[str, ...]) -> None:
+def write_turn_marker(path: pathlib.Path, iteration: int, tools: tuple[str, ...]) -> None:
     """Write the marker; a failed write never fails the turn.
 
     Args:
@@ -301,7 +301,7 @@ def write_turn_marker(path: Path, iteration: int, tools: tuple[str, ...]) -> Non
         )
 
 
-def read_turn_marker(path: Path) -> tuple[int, tuple[str, ...]] | None:
+def read_turn_marker(path: pathlib.Path) -> tuple[int, tuple[str, ...]] | None:
     """Return the marker's (iteration, tool names), or None when it is absent or unreadable.
 
     Args:
@@ -322,7 +322,7 @@ def read_turn_marker(path: Path) -> tuple[int, tuple[str, ...]] | None:
     return iteration, names
 
 
-def clear_turn_marker(path: Path) -> None:
+def clear_turn_marker(path: pathlib.Path) -> None:
     """Delete the marker when present."""
     with contextlib.suppress(OSError):
         path.unlink(missing_ok=True)

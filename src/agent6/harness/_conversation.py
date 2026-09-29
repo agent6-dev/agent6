@@ -26,15 +26,15 @@ providers never forward the field.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
 from typing import Any
 
 _EPHEMERAL = {"type": "ephemeral"}
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ToolUse:
     """One tool call from an assistant turn, parsed once from the raw blocks.
 
@@ -50,7 +50,7 @@ class ToolUse:
     input: Any
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ToolResultItem:
     """One tool_result block.
 
@@ -66,7 +66,7 @@ class ToolResultItem:
     for_call: ToolUse
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Notice:
     """Harness or operator text in a user turn.
 
@@ -80,7 +80,7 @@ class Notice:
     text: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class AssistantTurn:
     """One assistant message.
 
@@ -113,7 +113,7 @@ class AssistantTurn:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class UserTurn:
     """One user message.
 
@@ -329,7 +329,7 @@ class Conversation:
         if not isinstance(item, ToolResultItem):
             raise ValueError("set_result_content targets a tool_result")
         items = list(turn.items)
-        items[item_idx] = replace(item, content=content)
+        items[item_idx] = dataclasses.replace(item, content=content)
         self._turns[turn_idx] = UserTurn(items=tuple(items))
 
     # ---- rolling cache breakpoints --------------------------------------

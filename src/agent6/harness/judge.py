@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+import pydantic
 
-from agent6.budget import BudgetExceededError
-from agent6.harness._llm_json import extract_json
-from agent6.prompts.judge import JUDGE_SYSTEM_PROMPT
+from agent6 import budget
+from agent6.harness import _llm_json
+from agent6.prompts import judge
 from agent6.providers import Provider, ProviderError
 
 
@@ -23,10 +23,10 @@ class JudgeError(Exception):
     """The compare judge could not produce a valid verdict."""
 
 
-class CandidateBrief(BaseModel):
+class CandidateBrief(pydantic.BaseModel):
     """One candidate lane run shown to the judge."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     session_id: str
     task: str
@@ -35,10 +35,10 @@ class CandidateBrief(BaseModel):
     cost_usd: float
 
 
-class CompareVerdict(BaseModel):
+class CompareVerdict(pydantic.BaseModel):
     """The judge's ranking of candidates, best first, plus its rationale."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     ranking: tuple[str, ...]
     rationale: str
@@ -105,18 +105,18 @@ def compare(
     for _attempt in range(2):
         try:
             resp = provider.call(
-                system=JUDGE_SYSTEM_PROMPT,
+                system=judge.JUDGE_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user}],
                 max_tokens=max_tokens,
             )
         except ProviderError as exc:
             last_err = f"provider ({model}): {exc}"
             continue
-        except BudgetExceededError as exc:
+        except budget.BudgetExceededError as exc:
             # A spent budget is a judge failure like any other: the caller degrades to mechanical.
             last_err = f"judge budget exhausted ({model}): {exc}"
             continue
-        obj = extract_json(resp.text, prefer=("ranking",))
+        obj = _llm_json.extract_json(resp.text, prefer=("ranking",))
         if obj is None:
             last_err = f"unparseable judge output ({model})"
             continue

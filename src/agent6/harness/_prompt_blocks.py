@@ -11,42 +11,13 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+import pathlib
 from typing import Literal
 
+from agent6 import kinds, memory
+from agent6 import skills as agent6_skills
 from agent6.config import Config, plan_metered
-from agent6.kinds import IsolationLevel, RepoSummary
-from agent6.memory import clipped_index
-from agent6.prompts.loop import (
-    AGENT_SYSTEM_PROMPT_BASE,
-    APPLY_EDIT_RULE,
-    ASK_SYSTEM_PROMPT_BASE,
-    AUTO_COMMIT_RULE,
-    AUTO_COMMIT_RULE_GATELESS,
-    CREATE_HINT,
-    CREATE_HINT_PATCH_ONLY,
-    GIT_PROTECT_RULE,
-    HARDENED_FS_RULE,
-    MODEL_GIT_RULE,
-    MODEL_GIT_RULE_NO_COMMANDS,
-    NO_AUTO_COMMIT_RULE,
-    PLAN_BUDGET_LINE,
-    PLAN_SYSTEM_PROMPT_BASE,
-    PLAN_VERIFY_RULE,
-    READONLY_COMMAND_NOTE,
-    READONLY_COMMAND_RULE,
-    SKILLS_HEADER,
-    SYSTEM_PROMPT_BASE,
-    V2_BUDGET_BLOCK_TEMPLATE,
-    V2_METRIC_BLOCK_TEMPLATE,
-    V2_NO_VERIFY_BLOCK,
-    V2_REPO_BLOCK_TEMPLATE,
-    V2_STALE_GATE,
-    V2_VERIFY_BLOCK_TEMPLATE,
-    V2_VERIFY_WHEN,
-    dag_rules_block,
-)
-from agent6.skills import ResolvedSkills
+from agent6.prompts import loop
 
 
 def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
@@ -63,7 +34,7 @@ def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
     Returns:
         The block, or "" for a read-only mode with nothing recorded.
     """
-    body = clipped_index(index)
+    body = memory.clipped_index(index)
     if mode != "run" and not body:
         return ""
     header = (
@@ -141,7 +112,7 @@ def initial_instructions(mode: str, run_commands: str, *, has_gate: bool) -> str
     )
 
 
-def skills_block(resolved: ResolvedSkills) -> str:
+def skills_block(resolved: agent6_skills.ResolvedSkills) -> str:
     """Render the skills prompt parts: the full text of `always` skills, then a bounded index.
 
     Args:
@@ -159,7 +130,7 @@ def skills_block(resolved: ResolvedSkills) -> str:
             text = text[:SKILL_ALWAYS_MAX_CHARS] + "\n[clipped]"
         parts.append(f'<skill name="{sk.name}">\n{text.rstrip()}\n</skill>\n')
     if resolved.enabled:
-        lines = [SKILLS_HEADER, ""]
+        lines = [loop.SKILLS_HEADER, ""]
         used = 0
         shown = 0
         for sk in resolved.enabled:
@@ -179,7 +150,7 @@ def skills_block(resolved: ResolvedSkills) -> str:
     return "\n".join(parts)
 
 
-def repo_priors_block(repo: RepoSummary) -> str:
+def repo_priors_block(repo: kinds.RepoSummary) -> str:
     """Render the <repo-priors> block.
 
     The repo header line, the top-level listing, AGENTS.md, the repo map and the recent
@@ -207,7 +178,7 @@ def repo_priors_block(repo: RepoSummary) -> str:
     agents_block = (
         f"AGENTS.md (project conventions):\n{repo.agents_md}\n\n" if repo.agents_md else ""
     )
-    return V2_REPO_BLOCK_TEMPLATE.format(
+    return loop.V2_REPO_BLOCK_TEMPLATE.format(
         repo_line=repo_line,
         top_level=", ".join(repo.top_level),
         agents_block=agents_block,
@@ -233,7 +204,7 @@ def _plan_budget_line(config: Config) -> str:
         if config.budget.max_percent == -1
         else f"max_percent {config.budget.max_percent:g} points per run"
     )
-    return PLAN_BUDGET_LINE.format(percent_cap=cap)
+    return loop.PLAN_BUDGET_LINE.format(percent_cap=cap)
 
 
 def _commit_rule(config: Config, *, has_gate: bool, commands_allowed: bool) -> str:
@@ -252,25 +223,25 @@ def _commit_rule(config: Config, *, has_gate: bool, commands_allowed: bool) -> s
         The rule text.
     """
     if config.git.control == "model":
-        return MODEL_GIT_RULE if commands_allowed else MODEL_GIT_RULE_NO_COMMANDS
+        return loop.MODEL_GIT_RULE if commands_allowed else loop.MODEL_GIT_RULE_NO_COMMANDS
     if not config.git.commit_per_step:
-        return NO_AUTO_COMMIT_RULE
+        return loop.NO_AUTO_COMMIT_RULE
     if has_gate and config.harness.verify_when != "finish":
-        return AUTO_COMMIT_RULE
-    return AUTO_COMMIT_RULE_GATELESS
+        return loop.AUTO_COMMIT_RULE
+    return loop.AUTO_COMMIT_RULE_GATELESS
 
 
 def build_system_prompt(
     *,
     config: Config,
-    repo: RepoSummary,
+    repo: kinds.RepoSummary,
     mode: Literal["run", "plan", "ask", "agent"] = "run",
     memory_index: str = "",
     memory_dir_path: str = "",
     decisions: str = "",
     decisions_path: str = "",
-    skills: ResolvedSkills | None,
-    isolation: IsolationLevel = "strict",
+    skills: agent6_skills.ResolvedSkills | None,
+    isolation: kinds.IsolationLevel = "strict",
     commands_allowed: bool | None = None,
     protected_paths: bool = False,
     dag_available: bool = True,
@@ -299,30 +270,30 @@ def build_system_prompt(
         The prompt text.
     """
     base = (
-        ASK_SYSTEM_PROMPT_BASE
+        loop.ASK_SYSTEM_PROMPT_BASE
         if mode == "ask"
-        else AGENT_SYSTEM_PROMPT_BASE
+        else loop.AGENT_SYSTEM_PROMPT_BASE
         if mode == "agent"
-        else PLAN_SYSTEM_PROMPT_BASE
+        else loop.PLAN_SYSTEM_PROMPT_BASE
         if mode == "plan"
-        else SYSTEM_PROMPT_BASE
+        else loop.SYSTEM_PROMPT_BASE
     )
     # `[prompt].system_prompt_file` replaces run mode's static base; dynamic blocks still append.
     override = config.prompt.system_prompt_file
     if mode == "run" and override:
-        base = Path(override).expanduser().read_text(encoding="utf-8")
+        base = pathlib.Path(override).expanduser().read_text(encoding="utf-8")
     # The DAG-rules sentinel exists only in the run-mode default base; an override file has none.
     # "auto" is pinned before the harness starts; an unresolved "auto" renders the optional block.
     # A run with no curator (a machine agent state) has no DAG tools to teach.
-    dag_block = dag_rules_block(config.prompt.decompose == "on") if dag_available else ""
+    dag_block = loop.dag_rules_block(config.prompt.decompose == "on") if dag_available else ""
     base = base.replace("__DAG_RULES_BLOCK__", dag_block)
     patch_only = mode == "run" and os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1"
     if patch_only:
-        base = base.replace(APPLY_EDIT_RULE, "")
+        base = base.replace(loop.APPLY_EDIT_RULE, "")
     # The hardened filesystem caveat is real only under hardened with protect paths carved around.
     carved = isolation == "hardened" and protected_paths
-    hardened_rule = HARDENED_FS_RULE.replace(
-        "__CREATE_HINT__", CREATE_HINT_PATCH_ONLY if patch_only else CREATE_HINT
+    hardened_rule = loop.HARDENED_FS_RULE.replace(
+        "__CREATE_HINT__", loop.CREATE_HINT_PATCH_ONLY if patch_only else loop.CREATE_HINT
     )
     base = base.replace("__HARDENED_FS_RULE__", hardened_rule if carved else "")
     # `.git` is read-only under strict with protect_git, and in a fork's worktree under any jail.
@@ -330,14 +301,16 @@ def build_system_prompt(
     git_read_only = (isolation == "strict" and config.sandbox.protect_git) or (
         isolation != "none" and (repo.root / ".git").is_file()
     )
-    base = base.replace("__GIT_PROTECT_RULE__", GIT_PROTECT_RULE if git_read_only else "")
+    base = base.replace("__GIT_PROTECT_RULE__", loop.GIT_PROTECT_RULE if git_read_only else "")
     # `run_commands = "no"` withholds every command tool: gateless whatever the config says.
     # The caller's answer (a resumed run whose operator denied commands) wins over the config.
     allowed = config.sandbox.run_commands != "no" if commands_allowed is None else commands_allowed
     has_gate = bool(config.harness.verify_command) and allowed
-    base = base.replace("__PLAN_VERIFY_RULE__", PLAN_VERIFY_RULE if has_gate else "")
-    base = base.replace("__READONLY_COMMAND_RULE__", READONLY_COMMAND_RULE if allowed else "")
-    base = base.replace("__READONLY_COMMAND_NOTE__", READONLY_COMMAND_NOTE + " " if allowed else "")
+    base = base.replace("__PLAN_VERIFY_RULE__", loop.PLAN_VERIFY_RULE if has_gate else "")
+    base = base.replace("__READONLY_COMMAND_RULE__", loop.READONLY_COMMAND_RULE if allowed else "")
+    base = base.replace(
+        "__READONLY_COMMAND_NOTE__", loop.READONLY_COMMAND_NOTE + " " if allowed else ""
+    )
     base = base.replace(
         "__AUTO_COMMIT_RULE__",
         _commit_rule(config, has_gate=has_gate, commands_allowed=allowed),
@@ -358,7 +331,7 @@ def build_system_prompt(
     # Machine agent states get only the budget cap and their base prompt.
     if mode == "agent":
         parts.append(
-            V2_BUDGET_BLOCK_TEMPLATE.format(
+            loop.V2_BUDGET_BLOCK_TEMPLATE.format(
                 usd_cap=(
                     "unlimited USD"
                     if config.budget.max_usd == -1
@@ -377,24 +350,24 @@ def build_system_prompt(
     verify_argv = list(config.harness.verify_command) if has_gate else []
     if verify_argv:
         parts.append(
-            V2_VERIFY_BLOCK_TEMPLATE.format(
+            loop.V2_VERIFY_BLOCK_TEMPLATE.format(
                 argv=json.dumps(verify_argv),
                 timeout_s=config.harness.verify_timeout_s,
                 # The harness runs the gate in run mode only.
-                when=V2_VERIFY_WHEN[
+                when=loop.V2_VERIFY_WHEN[
                     config.harness.verify_when if mode == "run" else "never"
                 ].format(retries=config.harness.verify_retries),
-                stale=V2_STALE_GATE if mode == "run" else "",
+                stale=loop.V2_STALE_GATE if mode == "run" else "",
             )
         )
     else:
-        parts.append(V2_NO_VERIFY_BLOCK)
+        parts.append(loop.V2_NO_VERIFY_BLOCK)
 
     # Run mode with commands allowed only: elsewhere the model has no run_metric_command.
     if mode == "run" and config.harness.metric is not None and allowed:
         m = config.harness.metric
         parts.append(
-            V2_METRIC_BLOCK_TEMPLATE.format(
+            loop.V2_METRIC_BLOCK_TEMPLATE.format(
                 argv=json.dumps(list(m.command)),
                 pattern=m.pattern,
                 goal=m.goal,
@@ -402,7 +375,7 @@ def build_system_prompt(
         )
 
     parts.append(
-        V2_BUDGET_BLOCK_TEMPLATE.format(
+        loop.V2_BUDGET_BLOCK_TEMPLATE.format(
             usd_cap=(
                 "unlimited USD" if config.budget.max_usd == -1 else f"${config.budget.max_usd:g}"
             ),

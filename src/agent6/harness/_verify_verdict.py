@@ -8,10 +8,10 @@ snapshot, the turn notices) reads this one object; its transitions live here.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import dataclasses
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class VerifyVerdict:
     """Hold the verify bookkeeping of one execution.
 
@@ -45,7 +45,7 @@ class VerifyVerdict:
     ever_passed: bool = False
     ever_failed: bool = False
     adopted: tuple[str, ...] = ()
-    unadoptable: set[tuple[str, ...]] = field(default_factory=set)
+    unadoptable: set[tuple[str, ...]] = dataclasses.field(default_factory=set)
 
     def note_pass(self) -> None:
         """Record a green verify: the tree as it stands is verified and the streaks reset."""

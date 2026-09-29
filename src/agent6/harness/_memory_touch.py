@@ -8,16 +8,15 @@ after every dispatched call.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any
 
-from agent6.memory import is_memory_name, memory_dir
-from agent6.tools.patch_apply import PatchError, patch_op, patch_target_path, split_patch_files
-from agent6.tools.results import EditResult, ToolResult
+from agent6 import memory
+from agent6.tools import patch_apply, results
 
 
 def memory_store_facts(
-    state_dir: Path | None, name: str, result: ToolResult, tool_input: Any
+    state_dir: pathlib.Path | None, name: str, result: results.ToolResult, tool_input: Any
 ) -> dict[str, str] | None:
     """Return the memory-store facts a tool call addressed, each with what it did.
 
@@ -41,31 +40,33 @@ def memory_store_facts(
         return None
     try:
         sections = (
-            split_patch_files(str(tool_input.get("patch", ""))) if name == "apply_patch" else []
+            patch_apply.split_patch_files(str(tool_input.get("patch", "")))
+            if name == "apply_patch"
+            else []
         )
         if tool_input.get("path"):
             paths = [str(tool_input["path"])]
             ops = [
                 ("create" if result.created else "edit")
-                if isinstance(result, EditResult)
-                else patch_op(sections[0])
+                if isinstance(result, results.EditResult)
+                else patch_apply.patch_op(sections[0])
                 if sections
                 else "read"
             ]
         else:
-            paths = [patch_target_path(section) for section in sections]
-            ops = [patch_op(section) for section in sections]
-    except PatchError:
+            paths = [patch_apply.patch_target_path(section) for section in sections]
+            ops = [patch_apply.patch_op(section) for section in sections]
+    except patch_apply.PatchError:
         return None
     if not paths or not all(p.startswith("/") for p in paths):
         return None
     # Both sides resolved: a symlinked state home never sits under the store's raw path.
-    store = memory_dir(state_dir).resolve()
-    resolved = [Path(p).resolve() for p in paths]
+    store = memory.memory_dir(state_dir).resolve()
+    resolved = [pathlib.Path(p).resolve() for p in paths]
     if not all(p.is_relative_to(store) for p in resolved):
         return None
     return {
         p.stem: op
         for p, op in zip(resolved, ops, strict=True)
-        if p.parent == store and p.suffix == ".md" and is_memory_name(p.stem)
+        if p.parent == store and p.suffix == ".md" and memory.is_memory_name(p.stem)
     }

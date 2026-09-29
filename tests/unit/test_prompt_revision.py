@@ -186,7 +186,7 @@ def test_workflow_auto_revises_task_before_worker_call(tmp_path: pathlib.Path) -
         revision=_prompt_revision.RevisionSettings(reviser=reviser, mode="auto"),
     )
 
-    with mock.patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
+    with mock.patch("agent6.harness._context.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix it")
 
     assert result.reason == "finish_session"
@@ -211,7 +211,7 @@ def test_workflow_prompt_revision_empty_response_fails_before_worker(
         revision=_prompt_revision.RevisionSettings(reviser=reviser, mode="auto"),
     )
 
-    with mock.patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
+    with mock.patch("agent6.harness._context.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix it")
 
     assert result.completed is False
@@ -235,7 +235,7 @@ def test_workflow_interactive_selector_can_use_original(tmp_path: pathlib.Path) 
         ),
     )
 
-    with mock.patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
+    with mock.patch("agent6.harness._context.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("keep this exact task")
 
     assert result.reason == "finish_session"
@@ -264,7 +264,7 @@ def test_quit_at_the_revise_choice_reads_as_an_operator_stop(tmp_path: pathlib.P
             reviser=reviser, mode="interactive", selector=quit_at_the_choice
         ),
     )
-    with mock.patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
+    with mock.patch("agent6.harness._context.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix the bug in src/foo.py")
     assert result.reason == "steer_abort"
     word, _ = listing.status_word(finished=True, all_passed=False, end_reason=result.reason)

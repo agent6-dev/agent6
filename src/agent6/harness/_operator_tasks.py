@@ -9,26 +9,20 @@ sees a queued request, and the next turn's focus banner names the work.
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 from collections.abc import Callable
-from dataclasses import dataclass, replace
-from pathlib import Path
 
-from pydantic import ValidationError
+import pydantic
 
-from agent6.graph.curator import CuratorError, GraphCurator
-from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
-from agent6.graph.order import OPEN_STATUSES
-from agent6.harness._context import load_repo_summary
-from agent6.harness._prompt_revision import (
-    PromptRevisionError,
-    RevisionSettings,
-    revise_prompt,
-)
-from agent6.sessions.ipc import OperatorRequest
-from agent6.task_text import task_headline
+from agent6 import task_text
+from agent6.graph import curator as graph_curator
+from agent6.graph import models, order
+from agent6.harness import _context, _prompt_revision
+from agent6.sessions import ipc
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class OperatorTasks:
     """The operator's writes to the run's task graph.
 
@@ -44,10 +38,10 @@ class OperatorTasks:
         emit_graph_snapshot: Publishes the graph after a write.
     """
 
-    curator: GraphCurator | None
-    take_requests: Callable[[], list[OperatorRequest]]
-    revision: RevisionSettings
-    root: Path
+    curator: graph_curator.GraphCurator | None
+    take_requests: Callable[[], list[ipc.OperatorRequest]]
+    revision: _prompt_revision.RevisionSettings
+    root: pathlib.Path
     log: Callable[[str], None]
     emit: Callable[..., None]
     emit_graph_snapshot: Callable[[], None]
@@ -74,7 +68,7 @@ class OperatorTasks:
                     self.set_standing(root_task_id, request.text)
                 else:
                     self.retire(request.text)
-            except (CuratorError, OSError, ValidationError) as exc:
+            except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
                 self.log(f"LOOP: {request.kind} request refused: {exc}")
                 self.emit(
                     "loop.request.refused",
@@ -102,18 +96,18 @@ class OperatorTasks:
         if self.curator is None:
             return None
         # TaskNodeDraft.title has min_length=1: "(run)" when the task is blank.
-        title = task_headline(user_task)[:200] or "(run)"
+        title = task_text.task_headline(user_task)[:200] or "(run)"
         try:
-            draft = TaskNodeDraft(
+            draft = models.TaskNodeDraft(
                 title=title,
                 rationale="single-loop run; root task seeded by Harness",
                 acceptance="",
                 relevant_paths=(),
                 created_by="user",
             )
-            node = self.curator.add_subtask(AddSubtaskIntent(parent_id=None, draft=draft))
+            node = self.curator.add_subtask(models.AddSubtaskIntent(parent_id=None, draft=draft))
             return node.id
-        except (CuratorError, OSError, ValidationError) as exc:
+        except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
             self.log(f"LOOP: failed to seed root task: {exc}")
             return None
 
@@ -131,7 +125,7 @@ class OperatorTasks:
             return
         try:
             self.set_standing(root_id, goal)
-        except (CuratorError, OSError, ValidationError) as exc:
+        except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
             self.log(f"LOOP: standing goal not seeded: {exc}")
 
     def queue(self, root_id: str, text: str) -> None:
@@ -144,12 +138,12 @@ class OperatorTasks:
             root_id: The run's root task.
             text: The task as the operator typed it.
         """
-        title = task_headline(text)[:200] or text.strip()[:200]
+        title = task_text.task_headline(text)[:200] or text.strip()[:200]
         spec = self._revised(text)
         node = self._graph.add_subtask(
-            AddSubtaskIntent(
+            models.AddSubtaskIntent(
                 parent_id=root_id,
-                draft=TaskNodeDraft(
+                draft=models.TaskNodeDraft(
                     title=title,
                     rationale=spec if spec.strip() != title else "",
                     created_by="user",
@@ -169,7 +163,9 @@ class OperatorTasks:
             task_id: The task to retire.
         """
         node = self._graph.update_status(
-            UpdateStatusIntent(id=task_id, new_status="obsolete", note="retired by the operator")
+            models.UpdateStatusIntent(
+                id=task_id, new_status="obsolete", note="retired by the operator"
+            )
         )
         self.log(f"LOOP: operator retired task {node.id}")
         self.emit("loop.task.retired", id=node.id, title=node.title)
@@ -186,31 +182,31 @@ class OperatorTasks:
         """
         curator = self._graph
         for node in curator.nodes().values():
-            if node.standing and node.status in OPEN_STATUSES:
+            if node.standing and node.status in order.OPEN_STATUSES:
                 curator.update_status(
-                    UpdateStatusIntent(
+                    models.UpdateStatusIntent(
                         id=node.id, new_status="obsolete", note="replaced by the operator"
                     )
                 )
                 self.log(f"LOOP: standing goal {node.id} retired for a new one")
         node = curator.add_subtask(
-            AddSubtaskIntent(
+            models.AddSubtaskIntent(
                 parent_id=root_id,
-                draft=TaskNodeDraft(title=goal, standing=True, created_by="steering"),
+                draft=models.TaskNodeDraft(title=goal, standing=True, created_by="steering"),
             )
         )
         self.log(f"LOOP: standing goal set: {node.id}")
         self.emit("loop.standing.set", id=node.id, title=goal)
 
     @property
-    def _graph(self) -> GraphCurator:
+    def _graph(self) -> graph_curator.GraphCurator:
         """The curator, for a write that needs one.
 
         Raises:
             CuratorError: The run has no task graph.
         """
         if self.curator is None:
-            raise CuratorError("this run has no task graph")
+            raise graph_curator.CuratorError("this run has no task graph")
         return self.curator
 
     def _revised(self, text: str) -> str:
@@ -229,13 +225,13 @@ class OperatorTasks:
         if self.revision.mode == "off":
             return text
         try:
-            return revise_prompt(
-                replace(self.revision, mode="auto"),
+            return _prompt_revision.revise_prompt(
+                dataclasses.replace(self.revision, mode="auto"),
                 text,
-                load_repo_summary(self.root),
+                _context.load_repo_summary(self.root),
                 log=self.log,
                 emit=self.emit,
             )
-        except PromptRevisionError as exc:
+        except _prompt_revision.PromptRevisionError as exc:
             self.log(f"LOOP: queued task kept as written: {exc}")
             return text

@@ -8,23 +8,18 @@ verbs, and the pin invariant.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from agent6.directive import DirectiveError, parse_directive, parse_pin
-from agent6.harness._conversation import last_assistant_prose
-from agent6.harness._nudges import ending_question
-from agent6.harness.subrun import GroupLaneSpawner
-from agent6.kinds import AutoCommitDirective
-from agent6.sessions.ipc import OperatorRequest
-from agent6.skills import skill_command, skill_steer_payload
+from agent6 import directive as agent6_directive
+from agent6 import kinds, skills
+from agent6.harness import _conversation, _nudges, subrun
+from agent6.sessions import ipc
 
 if TYPE_CHECKING:
-    from agent6.harness._conversation import Conversation
-    from agent6.harness._loop_state import LoopState
-    from agent6.harness._parallel_dispatch import ParallelDispatcher
-    from agent6.tools.dispatch import ToolDispatcher
+    from agent6.harness import _loop_state, _parallel_dispatch
+    from agent6.tools import dispatch
 
 # `/pin` instructions are re-injected after every tier-2 restart, so their total is capped.
 # Over the cap a pin lands as an ordinary steer; only its survival across compaction is refused.
@@ -39,7 +34,7 @@ STEER_VERBS: dict[str, tuple[str, str, str]] = {
 }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class OperatorBridge:
     """What the operator can do to a running loop, as the front-end injects it.
 
@@ -71,22 +66,22 @@ class OperatorBridge:
             or inside a lane) makes the directive answer with feedback and continue.
     """
 
-    steer_requested: Callable[[], bool] = field(default=lambda: False)
-    steer_clear: Callable[[], None] = field(default=lambda: None)
-    steer_prompt: Callable[[], str | None] = field(default=lambda: None)
-    steer_reset: Callable[[], None] = field(default=lambda: None)
-    compact_requested: Callable[[], str | None] = field(default=lambda: None)
-    compact_clear: Callable[[], None] = field(default=lambda: None)
-    stop_requested: Callable[[], bool] = field(default=lambda: False)
-    stop_clear: Callable[[], None] = field(default=lambda: None)
-    should_abort: Callable[[], bool] = field(default=lambda: False)
-    should_interrupt: Callable[[], bool] = field(default=lambda: False)
-    take_requests: Callable[[], list[OperatorRequest]] = field(default=list)
-    after_auto_commit: Callable[[int, str], AutoCommitDirective] = field(
+    steer_requested: Callable[[], bool] = dataclasses.field(default=lambda: False)
+    steer_clear: Callable[[], None] = dataclasses.field(default=lambda: None)
+    steer_prompt: Callable[[], str | None] = dataclasses.field(default=lambda: None)
+    steer_reset: Callable[[], None] = dataclasses.field(default=lambda: None)
+    compact_requested: Callable[[], str | None] = dataclasses.field(default=lambda: None)
+    compact_clear: Callable[[], None] = dataclasses.field(default=lambda: None)
+    stop_requested: Callable[[], bool] = dataclasses.field(default=lambda: False)
+    stop_clear: Callable[[], None] = dataclasses.field(default=lambda: None)
+    should_abort: Callable[[], bool] = dataclasses.field(default=lambda: False)
+    should_interrupt: Callable[[], bool] = dataclasses.field(default=lambda: False)
+    take_requests: Callable[[], list[ipc.OperatorRequest]] = dataclasses.field(default=list)
+    after_auto_commit: Callable[[int, str], kinds.AutoCommitDirective] = dataclasses.field(
         default=lambda _i, _sha: "continue"
     )
     undo_forker: Callable[[], tuple[str, str] | None] | None = None
-    lane_spawner: GroupLaneSpawner | None = None
+    lane_spawner: subrun.GroupLaneSpawner | None = None
 
 
 def try_pin(pins: list[str], instruction: str) -> bool:
@@ -111,7 +106,7 @@ def try_pin(pins: list[str], instruction: str) -> bool:
     return True
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Steering:
     """What a steer's text means for the run, taken at an operator boundary or a park.
 
@@ -129,17 +124,17 @@ class Steering:
     """
 
     bridge: OperatorBridge
-    parallel: Callable[[], ParallelDispatcher]
-    dispatcher: ToolDispatcher
-    record_decision: Callable[[LoopState, str, str], None]
+    parallel: Callable[[], _parallel_dispatch.ParallelDispatcher]
+    dispatcher: dispatch.ToolDispatcher
+    record_decision: Callable[[_loop_state.LoopState, str, str], None]
     log: Callable[[str], None]
     emit: Callable[..., None]
 
     def handle(
         self,
-        conversation: Conversation,
+        conversation: _conversation.Conversation,
         iteration: int,
-        state: LoopState,
+        state: _loop_state.LoopState,
     ) -> str | None:
         """Take the operator's steer between iterations.
 
@@ -181,15 +176,15 @@ class Steering:
             return None
         self.log(f"  injecting steering instruction ({len(steer_text)} chars)")
         self.emit("loop.steer.injected", chars=len(steer_text), text=steer_text)
-        asked = last_assistant_prose(conversation)
-        if question := ending_question(asked):
+        asked = _conversation.last_assistant_prose(conversation)
+        if question := _nudges.ending_question(asked):
             self.record_decision(state, question, steer_text)
         conversation.notice(
             f"OPERATOR STEERING (a mid-run instruction from the operator):\n{steer_text}"
         )
         return None
 
-    def skill(self, conversation: Conversation, steer_text: str) -> bool:
+    def skill(self, conversation: _conversation.Conversation, steer_text: str) -> bool:
         """Handle a `/<skill> [args]` steer: the skill's full text is injected as the instruction.
 
         Args:
@@ -201,7 +196,7 @@ class Steering:
         """
         if not steer_text.startswith("/"):
             return False
-        found = skill_command(steer_text, self.dispatcher.resolved_skills())
+        found = skills.skill_command(steer_text, self.dispatcher.resolved_skills())
         if found is None:
             return False
         skill, args = found
@@ -209,11 +204,16 @@ class Steering:
         self.emit("loop.steer.skill", name=skill.name, args=args)
         conversation.notice(
             "OPERATOR STEERING (a mid-run instruction from the operator):\n"
-            + skill_steer_payload(skill.name, skill.text, args)
+            + skills.skill_steer_payload(skill.name, skill.text, args)
         )
         return True
 
-    def pin(self, conversation: Conversation, state: LoopState, steer_text: str) -> bool:
+    def pin(
+        self,
+        conversation: _conversation.Conversation,
+        state: _loop_state.LoopState,
+        steer_text: str,
+    ) -> bool:
         """Handle a `/pin` steer.
 
         A recorded pin is injected as a marked instruction and re-injected after every tier-2
@@ -229,8 +229,8 @@ class Steering:
             True when handled; False when the text is not a pin directive.
         """
         try:
-            instruction = parse_pin(steer_text)
-        except DirectiveError as exc:
+            instruction = agent6_directive.parse_pin(steer_text)
+        except agent6_directive.DirectiveError as exc:
             conversation.notice(f"OPERATOR STEERING: nothing pinned: {exc}")
             self.log(f"  /pin refused: {exc}")
             return True
@@ -257,9 +257,9 @@ class Steering:
 
     def directive(
         self,
-        conversation: Conversation,
+        conversation: _conversation.Conversation,
         iteration: int,
-        state: LoopState,
+        state: _loop_state.LoopState,
         steer_text: str,
     ) -> bool:
         """Handle a `/parallel` steer: dispatch a valid one, answer a malformed one and continue.
@@ -274,8 +274,8 @@ class Steering:
             True when handled; False when the text is ordinary steering to inject.
         """
         try:
-            segments = parse_directive(steer_text)
-        except DirectiveError as exc:
+            segments = agent6_directive.parse_directive(steer_text)
+        except agent6_directive.DirectiveError as exc:
             self.parallel().feedback(conversation, f"nothing dispatched: {exc}")
             return True
         if segments is None:

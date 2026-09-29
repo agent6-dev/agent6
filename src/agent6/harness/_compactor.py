@@ -13,43 +13,24 @@ call.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import ValidationError
+import pydantic
 
-from agent6.budget import BudgetExceededError
-from agent6.graph.curator import CuratorError, GraphCurator
-from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
-from agent6.harness._advice import open_subtasks
-from agent6.harness._compaction import (
-    CompactionSettings,
-    GistRequest,
-    compact_old_tool_results,
-    context_chars,
-    parse_checkoff,
-    parse_gist_lines,
-    recent_tail_start,
-    recently_edited_paths,
-    strip_checkoff,
-    strip_old_thinking,
-)
-from agent6.harness._conversation import Conversation, Notice, format_transcript_tail
-from agent6.prompts.revision import (
-    CONTEXT_SUMMARY_SYSTEM_PROMPT,
-    GIST_DISTILL_SYSTEM_PROMPT,
-    PINS_NO_RESTATE_CLAUSE,
-    context_restart_notice,
-    progress_summary_from_notice,
-)
+from agent6 import budget
+from agent6.graph import curator as graph_curator
+from agent6.graph import models
+from agent6.harness import _advice, _compaction, _conversation
+from agent6.prompts import revision
 from agent6.providers import Provider, ProviderError
 
 if TYPE_CHECKING:
-    from agent6.harness._loop_state import LoopState
+    from agent6.harness import _loop_state
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Compactor:
     """The compaction driver for one run.
 
@@ -67,9 +48,9 @@ class Compactor:
         emit_graph_snapshot: Re-snapshots the graph after a check-off.
     """
 
-    settings: CompactionSettings
+    settings: _compaction.CompactionSettings
     provider: Provider
-    curator: GraphCurator | None
+    curator: graph_curator.GraphCurator | None
     mode: Literal["run", "plan", "ask", "agent"]
     dag_available: bool
     decisions: Callable[[], str]
@@ -80,7 +61,11 @@ class Compactor:
     emit_graph_snapshot: Callable[[], None]
 
     def compact(
-        self, conversation: Conversation, state: LoopState, *, prefix_chars: int = 0
+        self,
+        conversation: _conversation.Conversation,
+        state: _loop_state.LoopState,
+        *,
+        prefix_chars: int = 0,
     ) -> bool:
         """Run tiered compaction over the conversation, in place.
 
@@ -109,11 +94,11 @@ class Compactor:
             focus_note = f" (focus: {forced[:80]})" if forced else ""
             self.log(f"LOOP: operator requested a manual compaction{focus_note}")
             self.emit("loop.compact.requested", focus=forced)
-        stats = compact_old_tool_results(
+        stats = _compaction.compact_old_tool_results(
             conversation,
             max_total_bytes=self.settings.drop_at_chars,
             keep_recent=2,
-            protect_paths=recently_edited_paths(conversation),
+            protect_paths=_compaction.recently_edited_paths(conversation),
             gister=self.distill_gists if self.settings.elision_gists else None,
         )
         n_deduped = len(stats.deduped_calls)
@@ -121,10 +106,12 @@ class Compactor:
         n_gisted = len(stats.gist_paths)
         n_demoted = len(stats.demoted_paths)
         if self.settings.keep_thinking_turns > 0 and (
-            n_deduped or n_elided or context_chars(conversation) > self.settings.drop_at_chars
+            n_deduped
+            or n_elided
+            or _compaction.context_chars(conversation) > self.settings.drop_at_chars
         ):
             # As with dedup: only at tier-1 pressure, never as a rolling per-turn rewrite.
-            n_turns, n_chars = strip_old_thinking(
+            n_turns, n_chars = _compaction.strip_old_thinking(
                 conversation, keep_turns=self.settings.keep_thinking_turns
             )
             if n_turns:
@@ -151,7 +138,7 @@ class Compactor:
             )
         # The whole request: tier 1 bounded the results alone, and the window bounds the
         # prefix too.
-        total = context_chars(conversation) + prefix_chars
+        total = _compaction.context_chars(conversation) + prefix_chars
         # Below four turns a restart loses more than it saves; a forced compaction skips
         # the growth floor.
         over = total > self.settings.summarise_at_chars and total >= state.tier2_floor_chars
@@ -165,7 +152,7 @@ class Compactor:
             self.emit("loop.compact.refused", reason="too little history to summarise")
         return False
 
-    def distill_gists(self, requests: tuple[GistRequest, ...]) -> dict[str, str]:
+    def distill_gists(self, requests: tuple[_compaction.GistRequest, ...]) -> dict[str, str]:
         """Distill about-to-be-elided file reads into one-line gists.
 
         The summariser seat does the call. A provider error returns {} and every
@@ -182,22 +169,22 @@ class Compactor:
         self.emit("loop.compact.gist.call", files=len(requests))
         try:
             resp = provider.call(
-                system=GIST_DISTILL_SYSTEM_PROMPT,
+                system=revision.GIST_DISTILL_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": files}],
                 tools=[],
                 max_tokens=self.settings.summary_max_tokens,
                 temperature=0.0,
             )
-        except (ProviderError, BudgetExceededError) as exc:
+        except (ProviderError, budget.BudgetExceededError) as exc:
             self.log(f"  gist distillation failed: {exc}; eliding without gists")
             self.emit("loop.compact.gist.failed", error=str(exc)[:200])
             return {}
-        return parse_gist_lines(resp.text or "", paths=[r.path for r in requests])
+        return _compaction.parse_gist_lines(resp.text or "", paths=[r.path for r in requests])
 
     def summarise_and_restart(
         self,
-        conversation: Conversation,
-        state: LoopState,
+        conversation: _conversation.Conversation,
+        state: _loop_state.LoopState,
         *,
         focus: str = "",
         prefix_chars: int = 0,
@@ -222,16 +209,16 @@ class Compactor:
         provider = self.settings.summariser or self.provider
         turns = conversation.turns
         # The verbatim tail survives the restart; the summary covers only what is dropped.
-        tail_start = recent_tail_start(turns, self.settings.keep_recent_chars)
+        tail_start = _compaction.recent_tail_start(turns, self.settings.keep_recent_chars)
         if tail_start <= 1:
             # A tail holding the whole history would grow the context; keep nothing.
             tail_start = len(turns)
-        transcript = format_transcript_tail(
+        transcript = _conversation.format_transcript_tail(
             turns[1:tail_start], max_messages=len(conversation), max_chars=60_000
         )
         # The summariser checks off finished tasks and surfaces new ones, so task state
         # stays accurate without the worker calling update_task.
-        open_tasks = open_subtasks(self.curator.nodes()) if self.curator is not None else []
+        open_tasks = _advice.open_subtasks(self.curator.nodes()) if self.curator is not None else []
         if open_tasks:
             task_lines = "\n".join(f"- {tid}: {title}" for tid, title in open_tasks)
             checkoff_req = (
@@ -255,13 +242,15 @@ class Compactor:
         pins_req = ""
         if state.pins:
             pin_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(state.pins, start=1))
-            pins_req = PINS_NO_RESTATE_CLAUSE + pin_lines
+            pins_req = revision.PINS_NO_RESTATE_CLAUSE + pin_lines
         # The previous summary heads the history, which the clipped transcript drops
         # first, so it is carried out-of-band like pins.
         prior_req = ""
         for turn in conversation.turns:
             for item in getattr(turn, "items", ()):
-                if isinstance(item, Notice) and (prior := progress_summary_from_notice(item.text)):
+                if isinstance(item, _conversation.Notice) and (
+                    prior := revision.progress_summary_from_notice(item.text)
+                ):
                     prior_req = (
                         "\n\nThis conversation was ALREADY compacted; the summary from"
                         " that restart follows, and the transcript below covers only what"
@@ -278,19 +267,19 @@ class Compactor:
         self.emit("loop.compact.summarise.call", messages=len(conversation))
         try:
             resp = provider.call(
-                system=CONTEXT_SUMMARY_SYSTEM_PROMPT,
+                system=revision.CONTEXT_SUMMARY_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],
                 tools=[],
                 max_tokens=self.settings.summary_max_tokens,
                 temperature=0.0,
             )
-        except (ProviderError, BudgetExceededError) as exc:
+        except (ProviderError, budget.BudgetExceededError) as exc:
             # A real budget exhaustion is re-detected by the next provider call.
             self.log(f"  tier-2 summarise failed: {exc}; keeping current context")
             self.emit("loop.compact.summarise.failed", error=str(exc)[:200])
             return False
         raw = (resp.text or "").strip()
-        summary = strip_checkoff(raw) if open_tasks else raw
+        summary = _compaction.strip_checkoff(raw) if open_tasks else raw
         if not summary:
             self.emit("loop.compact.summarise.failed", error="empty summary")
             return False
@@ -300,7 +289,7 @@ class Compactor:
                 raw, valid_ids={tid for tid, _ in open_tasks}, root_id=state.root_task_id
             )
         conversation.restart(
-            context_restart_notice(
+            revision.context_restart_notice(
                 self.mode,
                 pins=state.pins,
                 decisions=self.decisions(),
@@ -310,7 +299,9 @@ class Compactor:
             keep=turns[tail_start:],
         )
         # Measured as the trigger is, prefix included, or tier 2 re-fires next iteration.
-        state.tier2_floor_chars = int((context_chars(conversation) + prefix_chars) * 1.25)
+        state.tier2_floor_chars = int(
+            (_compaction.context_chars(conversation) + prefix_chars) * 1.25
+        )
         self.emit(
             "loop.compact.summarise.done",
             summary_chars=len(summary),
@@ -334,7 +325,7 @@ class Compactor:
         """
         if self.curator is None:
             return
-        completed, new_tasks = parse_checkoff(summary_text)
+        completed, new_tasks = _compaction.parse_checkoff(summary_text)
         completed = [cid for cid in completed if cid in valid_ids]  # ignore hallucinated ids
         if not completed and not new_tasks:
             return
@@ -343,21 +334,23 @@ class Compactor:
         for cid in completed:
             try:
                 self.curator.update_status(
-                    UpdateStatusIntent(id=cid, new_status="passed", note="compaction check-off")
+                    models.UpdateStatusIntent(
+                        id=cid, new_status="passed", note="compaction check-off"
+                    )
                 )
-            except (CuratorError, OSError, ValidationError) as exc:
+            except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
                 self.log(f"LOOP: compaction check-off skipped {cid} ({exc})")
                 continue
             passed += 1
         for title in new_tasks[:8]:  # cap: a runaway summary can't flood the DAG
             try:
                 self.curator.add_subtask(
-                    AddSubtaskIntent(
+                    models.AddSubtaskIntent(
                         parent_id=root_id,
-                        draft=TaskNodeDraft(title=title, created_by="planner"),
+                        draft=models.TaskNodeDraft(title=title, created_by="planner"),
                     )
                 )
-            except (CuratorError, OSError, ValidationError) as exc:
+            except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
                 self.log(f"LOOP: compaction check-off could not queue {title[:60]!r} ({exc})")
                 continue
             queued += 1

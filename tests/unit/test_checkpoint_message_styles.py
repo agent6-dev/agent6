@@ -10,6 +10,7 @@ from unittest import mock
 
 import pytest
 
+from agent6 import git_ops
 from agent6.config import Config
 from agent6.harness import _chain as chain_mod
 from agent6.harness import _loop_state, loop
@@ -49,7 +50,7 @@ def test_conventional_style_derives_from_the_worktree(
     def _one_added(_p: pathlib.Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
         return (("A", "src/agent6/config/write.py"),)
 
-    monkeypatch.setattr(chain_mod, "worktree_name_status", _one_added)
+    monkeypatch.setattr(git_ops, "worktree_name_status", _one_added)
     wf = _wf(tmp_path, "conventional")
     got = wf.checkpoints.subject(_turn("Add the unified write path."), fallback="verify passed")
     assert got == "feat(config): add the unified write path"
@@ -61,7 +62,7 @@ def test_model_style_uses_the_provider_text(
     def _one_modified(_p: pathlib.Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
         return (("M", "a.py"),)
 
-    monkeypatch.setattr(chain_mod, "worktree_name_status", _one_modified)
+    monkeypatch.setattr(git_ops, "worktree_name_status", _one_modified)
     provider = mock.MagicMock()
     provider.call.return_value = mock.MagicMock(text=" fix: tighten the resolver \n")
     wf = _wf(tmp_path, "model", provider=provider)
@@ -75,7 +76,7 @@ def test_model_style_degrades_to_agent6_with_a_warning(
     def _one_modified(_p: pathlib.Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
         return (("M", "a.py"),)
 
-    monkeypatch.setattr(chain_mod, "worktree_name_status", _one_modified)
+    monkeypatch.setattr(git_ops, "worktree_name_status", _one_modified)
     provider = mock.MagicMock()
     provider.call.side_effect = RuntimeError("no endpoint")
     logged: list[str] = []

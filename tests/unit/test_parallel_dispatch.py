@@ -52,20 +52,20 @@ def test_join_lane_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     def _conflict(*_a: Any, **_k: Any) -> str | None:
         return None
 
-    monkeypatch.setattr(pd, "chain_merge", _conflict)
+    monkeypatch.setattr(git_ops, "chain_merge", _conflict)
     assert pd.join_lane_result(pathlib.Path("/r"), _res(ok=True), **kw).status == "conflict"
 
     def _boom(*_a: Any, **_k: Any) -> str | None:
         raise git_ops.GitError("fetch failed")
 
-    monkeypatch.setattr(pd, "chain_merge", _boom)
+    monkeypatch.setattr(git_ops, "chain_merge", _boom)
     j = pd.join_lane_result(pathlib.Path("/r"), _res(ok=True), **kw)
     assert (j.status, j.detail) == ("failed", "fetch failed")
 
     def _clean(*_a: Any, **_k: Any) -> str | None:
         return "a" * 40
 
-    monkeypatch.setattr(pd, "chain_merge", _clean)
+    monkeypatch.setattr(git_ops, "chain_merge", _clean)
     j = pd.join_lane_result(pathlib.Path("/r"), _res(ok=True), **kw)
     assert (j.status, j.sha) == ("joined", "a" * 40)
 

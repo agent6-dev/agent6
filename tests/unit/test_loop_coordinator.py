@@ -18,6 +18,7 @@ from unittest import mock
 
 import pytest
 
+from agent6 import git_ops
 from agent6.app import parallel
 from agent6.config import Config
 from agent6.graph import curator, models
@@ -697,7 +698,7 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
     def _noop_commit(*_a: object, **_k: object) -> None:
         return None
 
-    monkeypatch.setattr(chain_mod, "chain_commit", _noop_commit)
+    monkeypatch.setattr(git_ops, "chain_commit", _noop_commit)
 
     repo = tmp_path / "repo"
     _init_repo(repo)

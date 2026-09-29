@@ -8,7 +8,7 @@ heuristics over the worktree: no git, no config.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 _TEST_DIR_NAMES = ("tests", "test")
 # Vendored trees and envs are large and judge nothing.
@@ -54,12 +54,12 @@ def is_bare_pytest(command: tuple[str, ...]) -> bool:
     return False
 
 
-def _is_test_file(rel: Path) -> bool:
+def _is_test_file(rel: pathlib.Path) -> bool:
     name = rel.name
     return (name.startswith("test_") and name.endswith(".py")) or name.endswith("_test.py")
 
 
-def _candidates_for(rel: Path) -> list[Path]:
+def _candidates_for(rel: pathlib.Path) -> list[pathlib.Path]:
     """Return the conventional homes for one changed source file's tests, most specific first.
 
     Args:
@@ -85,7 +85,7 @@ def _candidates_for(rel: Path) -> list[Path]:
     return out
 
 
-def _scan_test_dirs(root: Path, sources: list[Path]) -> list[Path]:
+def _scan_test_dirs(root: pathlib.Path, sources: list[pathlib.Path]) -> list[pathlib.Path]:
     """Return the name-matched test files under the test dirs beside the sources or their ancestors.
 
     Catches the layouts the conventions miss, dropped path segments included
@@ -99,15 +99,15 @@ def _scan_test_dirs(root: Path, sources: list[Path]) -> list[Path]:
     Returns:
         The matching test files, repo-relative.
     """
-    hits: list[Path] = []
+    hits: list[pathlib.Path] = []
     budget = _SCAN_CAP
     stems = {s.stem for s in sources}
     wanted = {f"test_{s}.py" for s in stems} | {f"{s}_test.py" for s in stems}
-    scan_roots: dict[Path, None] = {}
+    scan_roots: dict[pathlib.Path, None] = {}
     for src in sources:
         for anc in [src.parent, *src.parent.parents]:
             for n in _TEST_DIR_NAMES:
-                p = root / anc / n if anc != Path() else root / n
+                p = root / anc / n if anc != pathlib.Path() else root / n
                 if p.is_dir():
                     scan_roots.setdefault(p, None)
     stack = list(scan_roots)
@@ -129,7 +129,9 @@ def _scan_test_dirs(root: Path, sources: list[Path]) -> list[Path]:
     return hits
 
 
-def nearest_test_paths(root: Path, changed: tuple[str, ...], *, cap: int = 20) -> tuple[str, ...]:
+def nearest_test_paths(
+    root: pathlib.Path, changed: tuple[str, ...], *, cap: int = 20
+) -> tuple[str, ...]:
     """Return the test files most likely to judge the changed paths.
 
     Changed test files themselves, then the conventional siblings and mirrors of each changed
@@ -147,9 +149,9 @@ def nearest_test_paths(root: Path, changed: tuple[str, ...], *, cap: int = 20) -
         The repo-relative test paths.
     """
     picked: dict[str, None] = {}
-    sources: list[Path] = []
+    sources: list[pathlib.Path] = []
     for c in changed:
-        rel = Path(c)
+        rel = pathlib.Path(c)
         if rel.suffix != ".py":
             continue
         if _is_test_file(rel):

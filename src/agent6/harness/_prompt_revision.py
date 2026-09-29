@@ -9,21 +9,20 @@ revision with the original; `revise_prompt` runs the call.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Literal
 
-from agent6.budget import BudgetExceededError
-from agent6.kinds import RepoSummary
-from agent6.prompts.revision import PROMPT_REVISION_SYSTEM_PROMPT
+from agent6 import budget, kinds
+from agent6.prompts import revision as prompts_revision
 from agent6.providers import Provider, ProviderError
 
 # One leading list marker; the numeric form needs trailing whitespace so "0.5s" keeps its digits.
 _LIST_MARKER_RE = re.compile(r"^\s*(?:[-*]|\d+[.)]\s)\s*")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RevisionSettings:
     """The `[prompt].revise_prompt` settings.
 
@@ -43,7 +42,7 @@ class RevisionSettings:
     selector: Callable[[str, str, tuple[str, ...]], str | None] | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class PromptRevision:
     """The reviser's answer: the rewritten task and up to three clarifying questions."""
 
@@ -117,7 +116,7 @@ def parse_prompt_revision(text: str) -> PromptRevision:
     return PromptRevision(revised_task=revised.strip(), clarifying_questions=tuple(questions[:3]))
 
 
-def format_prompt_revision_context(repo: RepoSummary) -> str:
+def format_prompt_revision_context(repo: kinds.RepoSummary) -> str:
     """Return the repo-context block the reviser reads, clipped to 20,000 characters.
 
     Args:
@@ -179,7 +178,7 @@ def format_effective_task(raw_task: str, revision: PromptRevision) -> str:
 def revise_prompt(
     settings: RevisionSettings,
     user_task: str,
-    repo: RepoSummary,
+    repo: kinds.RepoSummary,
     *,
     log: Callable[[str], None],
     emit: Callable[..., None],
@@ -215,13 +214,13 @@ def revise_prompt(
     emit("loop.prompt_revision.call", mode=settings.mode)
     try:
         resp = settings.reviser.call(
-            system=PROMPT_REVISION_SYSTEM_PROMPT,
+            system=prompts_revision.PROMPT_REVISION_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
             tools=[],
             max_tokens=settings.max_tokens,
             temperature=settings.temperature,
         )
-    except (ProviderError, BudgetExceededError) as exc:
+    except (ProviderError, budget.BudgetExceededError) as exc:
         emit("loop.prompt_revision.failed", error=str(exc)[:200])
         raise PromptRevisionError(str(exc)) from exc
 

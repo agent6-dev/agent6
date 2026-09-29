@@ -10,22 +10,16 @@ and gates, and the snapshot a resume re-enters; the sibling `_name` modules hold
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+import dataclasses
+import pathlib
 from typing import Literal
 
+from agent6 import kinds, memory, skills
 from agent6.config import Config
-from agent6.harness._context import load_repo_summary
-from agent6.harness._dag_focus import initial_dag_hint
-from agent6.harness._prompt_blocks import build_system_prompt, initial_instructions
-from agent6.harness._toolset import tool_definitions
-from agent6.kinds import IsolationLevel
-from agent6.memory import decisions_path, decisions_text, memory_dir
-from agent6.memory import index_text as memory_index_text
+from agent6.harness import _context, _dag_focus, _prompt_blocks, _toolset
 from agent6.providers import ToolDefinition
-from agent6.sandbox.detect import IsolationUnavailableError, detect, resolve_isolation
-from agent6.skills import ResolvedSkills
-from agent6.tools.dispatch import ToolDispatcher
+from agent6.sandbox import detect
+from agent6.tools import dispatch
 
 __all__ = [
     "ModelExchange",
@@ -36,10 +30,10 @@ __all__ = [
 
 def system_prompt_for(
     config: Config,
-    root: Path,
+    root: pathlib.Path,
     mode: Literal["run", "plan", "ask", "agent"] = "run",
     *,
-    state_dir: Path | None = None,
+    state_dir: pathlib.Path | None = None,
 ) -> str:
     """Assemble the exact system prompt a run would send for this root, config and mode.
 
@@ -55,23 +49,23 @@ def system_prompt_for(
     Returns:
         The system prompt text.
     """
-    repo = load_repo_summary(root)
+    repo = _context.load_repo_summary(root)
     # Agent mode assembles without repo context: one gate for every recall block.
     recall = None if mode == "agent" else state_dir
-    return build_system_prompt(
+    return _prompt_blocks.build_system_prompt(
         config=config,
         repo=repo,
         mode=mode,
-        memory_index=memory_index_text(recall) if recall is not None else "",
-        memory_dir_path=str(memory_dir(recall)) if recall is not None else "",
-        decisions=decisions_text(recall) if recall is not None else "",
-        decisions_path=str(decisions_path(recall)) if recall is not None else "",
+        memory_index=memory.index_text(recall) if recall is not None else "",
+        memory_dir_path=str(memory.memory_dir(recall)) if recall is not None else "",
+        decisions=memory.decisions_text(recall) if recall is not None else "",
+        decisions_path=str(memory.decisions_path(recall)) if recall is not None else "",
         skills=_installed_skills(root, config, mode),
         isolation=_shown_isolation(config),
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ModelExchange:
     """Hold everything the model receives on a run's first call, for `agent6 prompt show`.
 
@@ -92,10 +86,10 @@ class ModelExchange:
 
 def model_exchange_for(
     config: Config,
-    root: Path,
+    root: pathlib.Path,
     mode: Literal["run", "plan", "ask", "agent"] = "run",
     *,
-    state_dir: Path | None = None,
+    state_dir: pathlib.Path | None = None,
 ) -> ModelExchange:
     """Build the exact exchange a run here would open with.
 
@@ -112,17 +106,17 @@ def model_exchange_for(
         The system prompt, the tools and the first message.
     """
     system = system_prompt_for(config, root, mode, state_dir=state_dir)
-    dispatcher = ToolDispatcher(
+    dispatcher = dispatch.ToolDispatcher(
         root=root,
         config=config,
         mode="machine" if mode == "agent" else mode,
         state_dir=state_dir,
     )
-    tools = tuple(tool_definitions(dispatcher, mode=mode))
-    header = initial_instructions(
+    tools = tuple(_toolset.tool_definitions(dispatcher, mode=mode))
+    header = _prompt_blocks.initial_instructions(
         mode, config.sandbox.run_commands, has_gate=bool(config.harness.verify_command)
     )
-    hint = initial_dag_hint("<root task id>", mode, config.prompt.decompose == "on")
+    hint = _dag_focus.initial_dag_hint("<root task id>", mode, config.prompt.decompose == "on")
     return ModelExchange(
         mode=mode,
         system=system,
@@ -132,19 +126,19 @@ def model_exchange_for(
     )
 
 
-def _shown_isolation(config: Config) -> IsolationLevel:
+def _shown_isolation(config: Config) -> kinds.IsolationLevel:
     """Return the isolation level a run here would resolve, "none" when the host cannot honor it."""
     try:
-        return resolve_isolation(config.sandbox.isolation, detect())
-    except IsolationUnavailableError:
+        return detect.resolve_isolation(config.sandbox.isolation, detect.detect())
+    except detect.IsolationUnavailableError:
         return "none"
 
 
 def _installed_skills(
-    root: Path, config: Config, mode: Literal["run", "plan", "ask", "agent"]
-) -> ResolvedSkills | None:
+    root: pathlib.Path, config: Config, mode: Literal["run", "plan", "ask", "agent"]
+) -> skills.ResolvedSkills | None:
     """Return the skills the loop would show: run mode only, None when nothing is installed."""
     if mode != "run":
         return None
-    resolved = ToolDispatcher(root=root, config=config).resolved_skills()
+    resolved = dispatch.ToolDispatcher(root=root, config=config).resolved_skills()
     return resolved if (resolved.enabled or resolved.always) else None

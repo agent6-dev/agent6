@@ -8,22 +8,20 @@ drives a `LaneSpawner` over it.
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 import shutil
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Protocol
 
-from agent6.git_ops import GitError, branch_exists, clone_repo, fetch_branch
-from agent6.kinds import ModelRoute
-from agent6.paths import mkdir_for_real_user
-from agent6.sessions.layout import bucket_dir
+from agent6 import git_ops, kinds, paths
+from agent6.sessions import layout
 
 
 class SubrunError(Exception):
     """A lane clone or import failed."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class LaneSpec:
     """Name one lane to run.
 
@@ -36,11 +34,11 @@ class LaneSpec:
 
     lane: int
     session_id: str
-    workdir: Path
-    route: ModelRoute | None
+    workdir: pathlib.Path
+    route: kinds.ModelRoute | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class LaneResult:
     """Record the outcome of one lane.
 
@@ -53,13 +51,13 @@ class LaneResult:
     """
 
     spec: LaneSpec
-    session_dir: Path
+    session_dir: pathlib.Path
     branch: str
     ok: bool
     error: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class LaneTask:
     """Name one lane to dispatch, as the coordinator expands a `/parallel` segment.
 
@@ -98,7 +96,7 @@ class GroupLaneSpawner(Protocol):
         ...
 
 
-def clone_workspace(origin: Path, dest: Path) -> None:
+def clone_workspace(origin: pathlib.Path, dest: pathlib.Path) -> None:
     """Clone the origin repo into a disposable lane workspace.
 
     Args:
@@ -109,18 +107,18 @@ def clone_workspace(origin: Path, dest: Path) -> None:
         SubrunError: When the clone fails.
     """
     try:
-        clone_repo(origin, dest)
-    except GitError as exc:
+        git_ops.clone_repo(origin, dest)
+    except git_ops.GitError as exc:
         raise SubrunError(f"clone {origin} -> {dest} failed: {exc}") from exc
 
 
 def import_run(
-    origin: Path,
-    lane_repo: Path,
+    origin: pathlib.Path,
+    lane_repo: pathlib.Path,
     branch: str,
-    lane_session_dir: Path,
-    origin_state: Path,
-) -> Path:
+    lane_session_dir: pathlib.Path,
+    origin_state: pathlib.Path,
+) -> pathlib.Path:
     """Land a finished lane's branch in the origin and move its run dir under the origin's state.
 
     Both refusals are checked before the fetch or the move, so a refusal touches neither. A lane
@@ -139,16 +137,16 @@ def import_run(
     Raises:
         SubrunError: When the branch or run dir already exists in the origin, or the fetch fails.
     """
-    if branch_exists(origin, branch):
+    if git_ops.branch_exists(origin, branch):
         raise SubrunError(f"branch {branch!r} already exists in {origin}")
-    dest_session_dir = bucket_dir(origin_state, "runs") / lane_session_dir.name
+    dest_session_dir = layout.bucket_dir(origin_state, "runs") / lane_session_dir.name
     if dest_session_dir.exists():
         raise SubrunError(f"run dir already exists: {dest_session_dir}")
-    if branch_exists(lane_repo, branch):
+    if git_ops.branch_exists(lane_repo, branch):
         try:
-            fetch_branch(origin, lane_repo, f"{branch}:{branch}")
-        except GitError as exc:
+            git_ops.fetch_branch(origin, lane_repo, f"{branch}:{branch}")
+        except git_ops.GitError as exc:
             raise SubrunError(f"fetch {branch!r} from {lane_repo} failed: {exc}") from exc
-    mkdir_for_real_user(dest_session_dir.parent)
+    paths.mkdir_for_real_user(dest_session_dir.parent)
     shutil.move(str(lane_session_dir), str(dest_session_dir))
     return dest_session_dir

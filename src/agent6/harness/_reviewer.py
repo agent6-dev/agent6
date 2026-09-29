@@ -9,31 +9,17 @@ testable without a provider.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import threading
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal
 
-from agent6.budget import BudgetExceededError
+from agent6 import budget
 from agent6.config import ReviewTier
-from agent6.harness._chain import RunChain
-from agent6.harness._context import agents_md_text
-from agent6.harness._llm_json import extract_json
-from agent6.harness._panel import (
-    ALL_CATEGORIES,
-    Finding,
-    PanelResult,
-    ReviewContext,
-    ReviewDecision,
-    ReviewVerdict,
-    aggregate_verdicts,
-    inconclusive_note,
-    panel_is_inconclusive,
-    render_findings,
-)
-from agent6.prompts.review import EXPLORE_REVIEW_SYSTEM_PROMPT, REVIEW_SYSTEM_PROMPT
+from agent6.harness import _chain, _context, _llm_json, _panel
+from agent6.prompts import review
 from agent6.providers import (
     Provider,
     ProviderError,
@@ -41,13 +27,13 @@ from agent6.providers import (
     ToolDefinition,
     output_cap_truncated,
 )
-from agent6.tools.results import ToolResult
+from agent6.tools import results
 
 if TYPE_CHECKING:
-    from agent6.harness._loop_state import LoopState, TurnState
+    from agent6.harness import _loop_state
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class CritiqueResult:
     """Hold the panel's verdict as the triggers consume it.
 
@@ -61,10 +47,10 @@ class CritiqueResult:
 
 
 # A read-only dispatch callable for explore-tier seats: (tool_name, input) -> result.
-ReviewDispatch = Callable[[str, dict[str, Any]], ToolResult]
+ReviewDispatch = Callable[[str, dict[str, Any]], results.ToolResult]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ReviewSeat:
     """Bind one persona to a provider and model.
 
@@ -81,7 +67,7 @@ class ReviewSeat:
     tier: ReviewTier = "diff"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ReviewSettings:
     """Hold the in-loop review panel's settings, from `[review]`.
 
@@ -104,7 +90,7 @@ class ReviewSettings:
     trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
     period: int = 10
     seats: Sequence[ReviewSeat] = ()
-    decision: ReviewDecision = "advisory"
+    decision: _panel.ReviewDecision = "advisory"
     quorum: int = 2
     max_total_rejections: int = 4
     budget_fraction: float = 0.25
@@ -112,7 +98,7 @@ class ReviewSettings:
     max_consecutive_rejections: int = 2
 
 
-def _build_user_message(ctx: ReviewContext) -> str:
+def _build_user_message(ctx: _panel.ReviewContext) -> str:
     parts: list[str] = [f"TASK:\n{ctx.task.strip()[:4000]}"]
     if ctx.agents_md.strip():
         parts.append(f"AGENTS.md:\n{ctx.agents_md.strip()[:8000]}")
@@ -129,21 +115,21 @@ def _build_user_message(ctx: ReviewContext) -> str:
     return "\n\n".join(parts)
 
 
-def _coerce_findings(raw: object) -> tuple[Finding, ...]:
-    out: list[Finding] = []
+def _coerce_findings(raw: object) -> tuple[_panel.Finding, ...]:
+    out: list[_panel.Finding] = []
     if not isinstance(raw, list):
         return ()
     for item in raw:
         if not isinstance(item, dict):
             continue
         category = str(item.get("category", "other"))
-        if category not in ALL_CATEGORIES:
+        if category not in _panel.ALL_CATEGORIES:
             category = "other"
         severity = str(item.get("severity", "warn"))
         if severity not in ("block", "warn", "nit"):
             severity = "warn"
         out.append(
-            Finding(
+            _panel.Finding(
                 category=category,
                 severity=severity,  # type: ignore[arg-type]
                 file_line=" ".join(str(item.get("file_line", "")).split()),
@@ -190,8 +176,8 @@ def _no_verdict_error(resp: ProviderResponse) -> str:
 
 
 def structured_review(
-    provider: Provider, ctx: ReviewContext, *, seat: str, model: str, max_tokens: int = 1500
-) -> ReviewVerdict:
+    provider: Provider, ctx: _panel.ReviewContext, *, seat: str, model: str, max_tokens: int = 1500
+) -> _panel.ReviewVerdict:
     """Run one diff-tier seat.
 
     Args:
@@ -204,7 +190,7 @@ def structured_review(
     Returns:
         The seat's verdict; a provider error or junk output abstains with `error` set.
     """
-    system = REVIEW_SYSTEM_PROMPT.format(persona=ctx.persona or "general correctness")
+    system = review.REVIEW_SYSTEM_PROMPT.format(persona=ctx.persona or "general correctness")
     try:
         resp = provider.call(
             system=system,
@@ -212,22 +198,26 @@ def structured_review(
             max_tokens=max_tokens,
         )
     except ProviderError as exc:
-        return ReviewVerdict(seat=seat, model=model, verdict="pass", error=f"provider: {exc}")
-    obj = extract_json(resp.text, prefer=("verdict", "findings"))
+        return _panel.ReviewVerdict(
+            seat=seat, model=model, verdict="pass", error=f"provider: {exc}"
+        )
+    obj = _llm_json.extract_json(resp.text, prefer=("verdict", "findings"))
     if obj is None:
-        return ReviewVerdict(seat=seat, model=model, verdict="pass", error=_no_verdict_error(resp))
+        return _panel.ReviewVerdict(
+            seat=seat, model=model, verdict="pass", error=_no_verdict_error(resp)
+        )
     return _verdict_from_obj(obj, seat, model)
 
 
-def _verdict_from_obj(obj: dict[str, Any], seat: str, model: str) -> ReviewVerdict:
+def _verdict_from_obj(obj: dict[str, Any], seat: str, model: str) -> _panel.ReviewVerdict:
     raw_verdict = obj.get("verdict")
     if not isinstance(raw_verdict, str) or raw_verdict.lower() not in ("pass", "block"):
-        return ReviewVerdict(
+        return _panel.ReviewVerdict(
             seat=seat, model=model, verdict="pass", error="invalid reviewer verdict"
         )
     findings = _coerce_findings(obj.get("findings"))
     verdict = "block" if raw_verdict.lower() == "block" else "pass"
-    return ReviewVerdict(
+    return _panel.ReviewVerdict(
         seat=seat,
         model=model,
         verdict=verdict,
@@ -238,7 +228,7 @@ def _verdict_from_obj(obj: dict[str, Any], seat: str, model: str) -> ReviewVerdi
 
 def explore_review(
     provider: Provider,
-    ctx: ReviewContext,
+    ctx: _panel.ReviewContext,
     *,
     seat: str,
     model: str,
@@ -247,7 +237,7 @@ def explore_review(
     max_iters: int = 6,
     max_tokens: int = 2000,
     deadline_s: float = 90.0,
-) -> ReviewVerdict:
+) -> _panel.ReviewVerdict:
     """Run one explore-tier seat: a bounded loop of read-only tool calls, then a verdict.
 
     Args:
@@ -264,12 +254,14 @@ def explore_review(
     Returns:
         The seat's verdict; a provider error, the deadline or no verdict in time abstains.
     """
-    system = EXPLORE_REVIEW_SYSTEM_PROMPT.format(persona=ctx.persona or "general correctness")
+    system = review.EXPLORE_REVIEW_SYSTEM_PROMPT.format(
+        persona=ctx.persona or "general correctness"
+    )
     messages: list[dict[str, Any]] = [{"role": "user", "content": _build_user_message(ctx)}]
     start = time.monotonic()
     for i in range(max_iters):
         if time.monotonic() - start > deadline_s:
-            return ReviewVerdict(
+            return _panel.ReviewVerdict(
                 seat=seat, model=model, verdict="pass", error="explore: deadline exceeded"
             )
         try:
@@ -277,18 +269,20 @@ def explore_review(
                 system=system, messages=messages, tools=tools, max_tokens=max_tokens
             )
         except ProviderError as exc:
-            return ReviewVerdict(seat=seat, model=model, verdict="pass", error=f"provider: {exc}")
+            return _panel.ReviewVerdict(
+                seat=seat, model=model, verdict="pass", error=f"provider: {exc}"
+            )
         messages.append({"role": "assistant", "content": resp.raw.get("content") or []})
         if not resp.tool_uses:
-            obj = extract_json(resp.text, prefer=("verdict", "findings"))
+            obj = _llm_json.extract_json(resp.text, prefer=("verdict", "findings"))
             if obj is None:
-                return ReviewVerdict(
+                return _panel.ReviewVerdict(
                     seat=seat, model=model, verdict="pass", error=_no_verdict_error(resp)
                 )
             return _verdict_from_obj(obj, seat, model)
         # On the last iteration a verdict beside tool calls counts; without one no tool runs.
         if i == max_iters - 1:
-            obj = extract_json(resp.text, prefer=("verdict", "findings"))
+            obj = _llm_json.extract_json(resp.text, prefer=("verdict", "findings"))
             if obj is not None and ("verdict" in obj or "findings" in obj):
                 return _verdict_from_obj(obj, seat, model)
             break
@@ -303,22 +297,22 @@ def explore_review(
                 content = f"error: {exc}"[:2000]
             tool_results.append({"type": "tool_result", "tool_use_id": tu_id, "content": content})
         messages.append({"role": "user", "content": tool_results})
-    return ReviewVerdict(
+    return _panel.ReviewVerdict(
         seat=seat, model=model, verdict="pass", error="explore: no verdict within max_iters"
     )
 
 
 def run_panel(
     seats: Sequence[ReviewSeat],
-    ctx: ReviewContext,
+    ctx: _panel.ReviewContext,
     *,
-    decision: ReviewDecision,
+    decision: _panel.ReviewDecision,
     quorum: int,
     panel_id: str,
     concurrency: int = 1,
     tools: list[ToolDefinition] | None = None,
     dispatch: ReviewDispatch | None = None,
-) -> PanelResult:
+) -> _panel.PanelResult:
     """Run every seat over the same context and aggregate the verdicts in seat order.
 
     Args:
@@ -335,8 +329,8 @@ def run_panel(
         The aggregated panel result.
     """
 
-    def _run(s: ReviewSeat) -> ReviewVerdict:
-        seat_ctx = replace(ctx, persona=s.persona)
+    def _run(s: ReviewSeat) -> _panel.ReviewVerdict:
+        seat_ctx = dataclasses.replace(ctx, persona=s.persona)
         if s.tier == "explore" and tools is not None and dispatch is not None:
             return explore_review(
                 s.provider, seat_ctx, seat=s.persona, model=s.model, tools=tools, dispatch=dispatch
@@ -347,14 +341,16 @@ def run_panel(
         verdicts = _run_seats_concurrently(seats, _run, concurrency)
     else:
         verdicts = [_run(s) for s in seats]
-    return aggregate_verdicts(verdicts, ctx, decision=decision, quorum=quorum, panel_id=panel_id)
+    return _panel.aggregate_verdicts(
+        verdicts, ctx, decision=decision, quorum=quorum, panel_id=panel_id
+    )
 
 
 def _run_seats_concurrently(
     seats: Sequence[ReviewSeat],
-    run_seat: Callable[[ReviewSeat], ReviewVerdict],
+    run_seat: Callable[[ReviewSeat], _panel.ReviewVerdict],
     concurrency: int,
-) -> list[ReviewVerdict]:
+) -> list[_panel.ReviewVerdict]:
     """Run the seat calls on daemon threads, results in seat order.
 
     A thread pool's workers are joined at exit and a seat call has no abort hook, so Ctrl-C
@@ -372,7 +368,7 @@ def _run_seats_concurrently(
     Raises:
         RuntimeError: When a thread ended with neither a verdict nor an error.
     """
-    slots: list[ReviewVerdict | None] = [None] * len(seats)
+    slots: list[_panel.ReviewVerdict | None] = [None] * len(seats)
     errors: list[BaseException] = []
     gate = threading.Semaphore(min(concurrency, len(seats)))
     done = threading.Semaphore(0)
@@ -435,7 +431,7 @@ REVIEW_REJECTED = {
 }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Reviewer:
     """Sit the in-loop review panel for one run.
 
@@ -449,13 +445,13 @@ class Reviewer:
     """
 
     settings: ReviewSettings
-    chain: RunChain
+    chain: _chain.RunChain
     review_tools: Callable[[], tuple[list[ToolDefinition], ReviewDispatch]]
     budget_remaining: Callable[[], float | None]
     log: Callable[[str], None]
     emit: Callable[..., None]
 
-    def triggers(self, state: LoopState, turn: TurnState) -> None:
+    def triggers(self, state: _loop_state.LoopState, turn: _loop_state.TurnState) -> None:
         """Sit the observe-only panels: after a verify failure, or every `period` iterations.
 
         The before-finish panel, which can revoke an end, is `end_rejected`.
@@ -481,7 +477,9 @@ class Reviewer:
             if critique is not None:
                 turn.review_text = critique.text
 
-    def end_rejected(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
+    def end_rejected(
+        self, state: _loop_state.LoopState, turn: _loop_state.TurnState, *, ending: str
+    ) -> bool:
         """Sit the before-finish panel over an end, once per turn.
 
         After `max_consecutive_rejections` back-to-back rejections the end goes through with the
@@ -499,7 +497,9 @@ class Reviewer:
             turn.end_rejected = self._judge_end(state, turn, ending=ending)
         return turn.end_rejected
 
-    def _judge_end(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
+    def _judge_end(
+        self, state: _loop_state.LoopState, turn: _loop_state.TurnState, *, ending: str
+    ) -> bool:
         if not (self.settings.trigger == "before_finish" and self.available()):
             return False
         critique = self.critique(state, trigger="before_finish", iteration=turn.iteration)
@@ -536,7 +536,9 @@ class Reviewer:
         """Return whether the panel has seats; every in-loop trigger gates on it."""
         return bool(self.settings.seats)
 
-    def critique(self, state: LoopState, *, trigger: str, iteration: int) -> CritiqueResult | None:
+    def critique(
+        self, state: _loop_state.LoopState, *, trigger: str, iteration: int
+    ) -> CritiqueResult | None:
         """Run the panel over the run diff.
 
         The before-finish rejection counter decays on a pass and disarms the gate at its cap, so
@@ -567,12 +569,12 @@ class Reviewer:
             )
             return None
         # Only the before-finish panel gates.
-        decision: ReviewDecision = (
+        decision: _panel.ReviewDecision = (
             self.settings.decision if trigger == "before_finish" else "advisory"
         )
-        ctx = ReviewContext(
+        ctx = _panel.ReviewContext(
             task=state.original_task,
-            agents_md=agents_md_text(self.chain.root),
+            agents_md=_context.agents_md_text(self.chain.root),
             diff=diff,
             verify_ok=state.verify.last_ok,
             verify_output=state.verify.last_tail,
@@ -598,7 +600,7 @@ class Reviewer:
                 tools=tools,
                 dispatch=dispatch,
             )
-        except BudgetExceededError:
+        except budget.BudgetExceededError:
             self.emit("loop.review.skipped", iteration=iteration, reason="budget")
             return None
         for v in result.per_seat:
@@ -629,8 +631,8 @@ class Reviewer:
             else:
                 state.gates.review_total = max(0, state.gates.review_total - 1)
         # An all-abstain panel reviewed nothing and says so; it still lets the end through.
-        if panel_is_inconclusive(result):
-            text = inconclusive_note(result)
+        if _panel.panel_is_inconclusive(result):
+            text = _panel.inconclusive_note(result)
         else:
-            text = render_findings(result.merged_findings) or "No blocking findings."
+            text = _panel.render_findings(result.merged_findings) or "No blocking findings."
         return CritiqueResult(text=text, satisfied=not effective_blocked)

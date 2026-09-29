@@ -8,21 +8,19 @@ every fold counts a commit by. The loop decides when a step commits.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from agent6.commit_message import agent6_subject, conventional_commit_subject, first_prose_line
-from agent6.git_ops import GitError, commit_diff
-from agent6.git_ops import status as git_status
-from agent6.harness._chain import RunChain
+from agent6 import commit_message, git_ops
+from agent6.harness import _chain
 from agent6.providers import Provider, call_for_text
 
 if TYPE_CHECKING:
-    from agent6.harness._loop_state import TurnState
+    from agent6.harness import _loop_state
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Checkpoints:
     """The checkpoint policy and the sinks a commit reports through.
 
@@ -35,14 +33,14 @@ class Checkpoints:
         emit: The run event sink.
     """
 
-    chain: RunChain
+    chain: _chain.RunChain
     style: str
     enabled: bool
     provider: Provider
     log: Callable[[str], None]
     emit: Callable[..., None]
 
-    def subject(self, turn: TurnState, *, fallback: str) -> str:
+    def subject(self, turn: _loop_state.TurnState, *, fallback: str) -> str:
         """Return the step's commit subject in the configured style.
 
         The model style degrades to the agent6 style, with a warning, when the
@@ -56,13 +54,13 @@ class Checkpoints:
             The subject line.
         """
         text = turn.resp.text or ""
-        default = agent6_subject(text, turn.iteration, fallback=fallback)
+        default = commit_message.agent6_subject(text, turn.iteration, fallback=fallback)
         if self.style == "agent6":
             return default
-        summary = first_prose_line(text, fallback=fallback)
+        summary = commit_message.first_prose_line(text, fallback=fallback)
         changes = self.chain.name_status()
         if self.style == "conventional":
-            return conventional_commit_subject(changes, summary=summary)
+            return commit_message.conventional_commit_subject(changes, summary=summary)
         msg = self._model_subject(changes, hint=summary)
         if msg:
             return msg
@@ -87,10 +85,14 @@ class Checkpoints:
         self.log(f"  {label}: {sha[:12]}")
         self.emit("loop.auto_commit", iteration=iteration, sha=sha, subject=subject)
         # Every fold tallies commits and the latest diff from diff.updated alone.
-        self.emit("diff.updated", sha=sha, patch=commit_diff(self.chain.root, sha, max_bytes=8000))
+        self.emit(
+            "diff.updated", sha=sha, patch=git_ops.commit_diff(self.chain.root, sha, max_bytes=8000)
+        )
         return sha
 
-    def report_failure(self, exc: GitError | OSError, subject: str, *, iteration: int) -> None:
+    def report_failure(
+        self, exc: git_ops.GitError | OSError, subject: str, *, iteration: int
+    ) -> None:
         """Log and emit a commit that failed, with a worktree status snapshot.
 
         A "nothing to commit" variant is benign and stays silent: the phrase arrives
@@ -108,7 +110,7 @@ class Checkpoints:
         self.log(f"  auto-commit failed: {exc}")
         worktree_status = ""
         try:
-            st = git_status(self.chain.root, exclude=self.chain.untracked_at_start)
+            st = git_ops.status(self.chain.root, exclude=self.chain.untracked_at_start)
             worktree_status = (
                 f"branch={st.branch}"
                 f" head={st.head_sha[:12]}"
@@ -116,7 +118,7 @@ class Checkpoints:
                 f" modified={st.modified_count}"
                 f" untracked={st.untracked_count}"
             )
-        except (GitError, OSError):
+        except (git_ops.GitError, OSError):
             pass  # the status itself failed: the event goes without the snapshot
         self.emit(
             "loop.auto_commit.failed",
@@ -142,7 +144,7 @@ class Checkpoints:
             self.commit(
                 f"checkpoint (iter {iteration})", iteration=iteration, label="final checkpoint"
             )
-        except (GitError, OSError) as exc:
+        except (git_ops.GitError, OSError) as exc:
             self.log(f"  final checkpoint commit failed: {exc}")
 
     def _model_subject(self, changes: Sequence[tuple[str, str]], *, hint: str) -> str | None:

@@ -10,24 +10,19 @@ applies the first `Refusal`: `FINISH_GATES` over a finish_session,
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-from agent6.harness._advice import Gate, Refusal, TurnContext
-from agent6.harness._metric import metric_early_finish
-from agent6.harness._nudges import MEMORY_FINISH_NUDGE, TASK_FINISH_PATIENCE
-from agent6.harness._snapshot import SessionEndReason
-from agent6.harness._verify_gate import finish_red_notice
-from agent6.harness._verify_verdict import VerifyVerdict
-from agent6.tools.schema import FinishPlanningInput, FinishSessionInput
+from agent6.harness import _advice, _metric, _nudges, _snapshot, _verify_gate, _verify_verdict
+from agent6.tools import schema
 
 if TYPE_CHECKING:
-    from agent6.harness._loop_state import LoopState, TurnState
+    from agent6.harness import _loop_state
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class FinishCall:
     """A dispatched finish call as the model sent it; the finish gates may revoke it.
 
@@ -63,7 +58,7 @@ class FinishCall:
         """
         fields = tool_input if isinstance(tool_input, dict) else {}
         summary = str(fields.get("summary", "(no summary)"))
-        if name == FinishSessionInput.TOOL_NAME:
+        if name == schema.FinishSessionInput.TOOL_NAME:
             raw_result = fields.get("result")
             if isinstance(raw_result, str):
                 # A stringified result parses here; schema validation stays strict.
@@ -77,7 +72,7 @@ class FinishCall:
                 payload=raw_result if isinstance(raw_result, dict) else None,
                 stale_gate=str(fields.get("stale_gate", "")).strip(),
             )
-        if name == FinishPlanningInput.TOOL_NAME:
+        if name == schema.FinishPlanningInput.TOOL_NAME:
             plan_md = str(fields.get("plan_markdown", ""))
             # A plan left in `summary` under a bare title folds under it; the review
             # gate judged the content.
@@ -103,7 +98,7 @@ def _plan_is_title_only(plan_md: str) -> bool:
     )
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class FinishGates:
     """The finish gates' counters.
 
@@ -139,7 +134,7 @@ def task_finish_nudge(open_tasks: Sequence[tuple[str, str]], gates: FinishGates)
     """
     if not open_tasks:
         return None
-    if gates.task_nudges_used >= TASK_FINISH_PATIENCE:
+    if gates.task_nudges_used >= _nudges.TASK_FINISH_PATIENCE:
         return None  # cap reached: the end goes through, the receipt names them
     gates.task_nudges_used += 1
     listing = "\n".join(f"- {tid}: {title}" for tid, title in open_tasks)
@@ -147,14 +142,14 @@ def task_finish_nudge(open_tasks: Sequence[tuple[str, str]], gates: FinishGates)
         f"[harness] finish_session deferred: {len(open_tasks)} task(s) are"
         f" pending or in_progress:\n{listing}\n"
         "update_task marks one skipped or obsolete; the run ends once the"
-        f" list is clear, or on the {TASK_FINISH_PATIENCE + 1}th call."
+        f" list is clear, or on the {_nudges.TASK_FINISH_PATIENCE + 1}th call."
     )
 
 
 def red_gate_returns(
     verify_when: Literal["finish", "step", "never"],
     verify_retries: int,
-    verify: VerifyVerdict,
+    verify: _verify_verdict.VerifyVerdict,
     gates: FinishGates,
     *,
     gate_present: bool,
@@ -200,8 +195,12 @@ def contract_refusal(problems: Sequence[str]) -> str:
 
 
 def finish_reason(
-    kind: SessionEndReason, *, stale_gate: str, tree_green: bool | None, verify: VerifyVerdict
-) -> SessionEndReason:
+    kind: _snapshot.SessionEndReason,
+    *,
+    stale_gate: str,
+    tree_green: bool | None,
+    verify: _verify_verdict.VerifyVerdict,
+) -> _snapshot.SessionEndReason:
     """Return what a finish is called.
 
     `gate_stale` needs a gate that is red: green means it passed, and a gateless
@@ -226,7 +225,9 @@ def finish_reason(
     return kind
 
 
-def finish_contract(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+def finish_contract(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Refusal | None:
     """Return a finish_session whose `result` is off the machine state's schema.
 
     The retry happens in-execution instead of the execution ending failed over
@@ -246,7 +247,7 @@ def finish_contract(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refu
     problems = ctx.finish_validator(turn.finish.payload if turn.finish is not None else None)
     if not problems:
         return None
-    return Refusal(
+    return _advice.Refusal(
         contract_refusal(problems),
         event="loop.finish_contract.refused",
         fields={"iteration": turn.iteration, "problems": problems},
@@ -254,7 +255,9 @@ def finish_contract(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refu
     )
 
 
-def review_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+def review_finish(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Refusal | None:
     """Sit the before-finish panel over the turn's end.
 
     Args:
@@ -266,10 +269,12 @@ def review_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusa
         An empty refusal on a rejection, since the findings reach the model
         with the turn's notices; else None.
     """
-    return Refusal("") if ctx.end_rejected(turn, turn.ending or "finish_session") else None
+    return _advice.Refusal("") if ctx.end_rejected(turn, turn.ending or "finish_session") else None
 
 
-def open_tasks_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+def open_tasks_finish(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Refusal | None:
     """Hold a run's end while the worker's own subtasks are open, capped.
 
     Args:
@@ -286,7 +291,7 @@ def open_tasks_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Re
     if nudge is None:
         return None
     ending = turn.ending or "finish_session"
-    return Refusal(
+    return _advice.Refusal(
         nudge,
         event="loop.task_finish.gated",
         fields={
@@ -301,7 +306,9 @@ def open_tasks_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Re
     )
 
 
-def verify_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+def verify_finish(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Refusal | None:
     """Return a run's end over a tree the gate did not certify.
 
     The end returns `verify_retries` times, then stands: reported finished,
@@ -330,8 +337,8 @@ def verify_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusa
         return None
     state.gates.verify_retries_used += 1
     used = state.gates.verify_retries_used
-    return Refusal(
-        finish_red_notice(used=used, retries=ctx.verify_retries),
+    return _advice.Refusal(
+        _verify_gate.finish_red_notice(used=used, retries=ctx.verify_retries),
         event="loop.verify_finish.gated",
         fields={"iteration": turn.iteration, "nudges_used": used},
         log=(
@@ -341,7 +348,9 @@ def verify_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusa
     )
 
 
-def memory_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+def memory_finish(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Refusal | None:
     """Defer once a run's first finish after a red-to-green recovery with no memory write.
 
     The nudge asks for the root cause or an immediate re-finish; `_nudges` holds
@@ -365,15 +374,17 @@ def memory_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusa
     ):
         return None
     state.memory.finish_nudged = True
-    return Refusal(
-        MEMORY_FINISH_NUDGE,
+    return _advice.Refusal(
+        _nudges.MEMORY_FINISH_NUDGE,
         event="loop.memory_finish.gated",
         fields={"iteration": turn.iteration},
         log=f"  finish_session deferred once: memory backstop at iter {turn.iteration}",
     )
 
 
-def standing_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+def standing_finish(
+    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
+) -> _advice.Refusal | None:
     """Re-enter a ready standing task instead of ending the run.
 
     Uncapped, since the goal is deliberate; the absorb refuses on spent budget
@@ -390,25 +401,25 @@ def standing_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refu
     if ctx.mode != "run":
         return None
     nudge = ctx.standing_absorb("finish_session", turn.iteration)
-    return None if nudge is None else Refusal(nudge)
+    return None if nudge is None else _advice.Refusal(nudge)
 
 
 # One precedence for every end: a red tree returns the end before the panel sits.
-FINISH_GATES: tuple[Gate, ...] = (
+FINISH_GATES: tuple[_advice.Gate, ...] = (
     finish_contract,
     verify_finish,
     review_finish,
-    metric_early_finish,
+    _metric.metric_early_finish,
     open_tasks_finish,
     memory_finish,
     standing_finish,
 )
 # A harness-declared end has no payload; its memory and standing rules sit at the stop.
-END_GATES: tuple[Gate, ...] = (verify_finish, review_finish, open_tasks_finish)
+END_GATES: tuple[_advice.Gate, ...] = (verify_finish, review_finish, open_tasks_finish)
 # A silent finish is a finish the model wrote in prose: the metric rule applies.
-SILENT_END_GATES: tuple[Gate, ...] = (
+SILENT_END_GATES: tuple[_advice.Gate, ...] = (
     verify_finish,
     review_finish,
-    metric_early_finish,
+    _metric.metric_early_finish,
     open_tasks_finish,
 )

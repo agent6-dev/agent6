@@ -10,20 +10,12 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from agent6.harness._reviewer import ReviewDispatch
-from agent6.kinds import session_kind
+from agent6 import kinds
+from agent6.harness import _reviewer
 from agent6.providers import ToolDefinition
-from agent6.tools.dispatch import ToolDispatcher, ToolError
-from agent6.tools.results import ToolResult
-from agent6.tools.schema import (
-    DagAddTaskInput,
-    DagListTasksInput,
-    DagUpdateTaskInput,
-    RunMetricInput,
-    UseSkillInput,
-    mode_tools,
-    wire_schema,
-)
+from agent6.tools import dispatch as tools_dispatch
+from agent6.tools import errors, results
+from agent6.tools import schema as tools_schema
 
 # The only tools a reviewer may use, enforced by the exposed list and by the dispatch wrapper.
 READONLY_REVIEW_TOOLS = frozenset(
@@ -38,11 +30,15 @@ READONLY_REVIEW_TOOLS = frozenset(
 
 
 # The task-graph tools, offered only where a curator backs them.
-DAG_TOOLS = (DagAddTaskInput, DagUpdateTaskInput, DagListTasksInput)
+DAG_TOOLS = (
+    tools_schema.DagAddTaskInput,
+    tools_schema.DagUpdateTaskInput,
+    tools_schema.DagListTasksInput,
+)
 
 
 def tool_definitions(
-    dispatcher: ToolDispatcher,
+    dispatcher: tools_dispatch.ToolDispatcher,
     *,
     mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
 ) -> list[ToolDefinition]:
@@ -56,7 +52,7 @@ def tool_definitions(
         The tool definitions, with MCP tools appended in the editing modes only.
     """
     available = set(dispatcher.available_tool_names())
-    surface = mode_tools(mode)
+    surface = tools_schema.mode_tools(mode)
     out: list[ToolDefinition] = []
     for cls in (*surface.base, *surface.extras):
         if cls.TOOL_NAME not in available and cls not in surface.extras:
@@ -65,19 +61,25 @@ def tool_definitions(
             continue
         if cls in DAG_TOOLS and not dispatcher.dag_available:
             continue  # no curator: every task-graph call errors
-        if cls.TOOL_NAME == RunMetricInput.TOOL_NAME and not dispatcher.metric_configured():
+        if (
+            cls.TOOL_NAME == tools_schema.RunMetricInput.TOOL_NAME
+            and not dispatcher.metric_configured()
+        ):
             continue  # no metric: the tool could only answer that none is configured
-        if cls.TOOL_NAME == UseSkillInput.TOOL_NAME and not dispatcher.skills_available():
+        if (
+            cls.TOOL_NAME == tools_schema.UseSkillInput.TOOL_NAME
+            and not dispatcher.skills_available()
+        ):
             continue  # no skills: the tool could only error
         out.append(
             ToolDefinition(
                 name=cls.TOOL_NAME,
                 description=cls.TOOL_DESCRIPTION,
-                input_schema=wire_schema(cls),
+                input_schema=tools_schema.wire_schema(cls),
             )
         )
     # MCP tools cannot be classified as read-only, so only an editing mode offers them.
-    if session_kind(mode).edits:
+    if kinds.session_kind(mode).edits:
         for desc in dispatcher.mcp_descriptors():
             schema = dict(desc.input_schema)
             schema.setdefault("type", "object")
@@ -92,8 +94,8 @@ def tool_definitions(
 
 
 def build_readonly_review_tools(
-    dispatcher: ToolDispatcher,
-) -> tuple[list[ToolDefinition], ReviewDispatch]:
+    dispatcher: tools_dispatch.ToolDispatcher,
+) -> tuple[list[ToolDefinition], _reviewer.ReviewDispatch]:
     """Build the read-only tool surface a review seat gets.
 
     Args:
@@ -105,9 +107,9 @@ def build_readonly_review_tools(
     """
     tools = [t for t in tool_definitions(dispatcher, mode="run") if t.name in READONLY_REVIEW_TOOLS]
 
-    def dispatch(name: str, tool_input: dict[str, Any]) -> ToolResult:
+    def dispatch(name: str, tool_input: dict[str, Any]) -> results.ToolResult:
         if name not in READONLY_REVIEW_TOOLS:
-            raise ToolError(f"review reviewer may not call {name!r} (read-only)")
+            raise errors.ToolError(f"review reviewer may not call {name!r} (read-only)")
         return dispatcher.dispatch(name, tool_input)
 
     return tools, dispatch

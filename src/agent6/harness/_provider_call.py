@@ -8,10 +8,10 @@ status on their own, so they test without a `Harness`.
 
 from __future__ import annotations
 
+import dataclasses
 import random
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 from agent6.providers import (
@@ -93,7 +93,7 @@ def reasoning_starvation(resp: ProviderResponse) -> int:
     return reasoning_chars
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class CallSettings:
     """Hold the worker call's knobs.
 
@@ -114,7 +114,7 @@ class CallSettings:
     metric_task_max_tokens: int = 65536
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ProviderCaller:
     """Call the provider with at most `retry_count + 1` attempts.
 
