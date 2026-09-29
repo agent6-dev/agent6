@@ -1936,10 +1936,12 @@ def test_a_short_terminal_dashboard_shows_one_pane_row_at_a_time(tmp_path: Path)
             summary = str(dash.query_one("#summary", Static).render())
             assert "1 tool call · last read_file" in summary
             tools.focus()
-            await pilot.pause()
-            assert tools.region.height > 3 and dash.query_one("#body").region.height == 0
+            # The fold follows the focus through a relayout, which is a frame
+            # or more away under load.
+            await _wait_for(pilot, lambda: tools.region.height > 3, "the tools pane unfolded")
+            assert dash.query_one("#body").region.height == 0
             await pilot.resize_terminal(120, 40)
-            await pilot.pause()
-            assert not dash.has_class("-compact") and dash.query_one("#log").region.height > 3
+            await _wait_for(pilot, lambda: not dash.has_class("-compact"), "the wide layout")
+            assert dash.query_one("#log").region.height > 3
 
     asyncio.run(scenario())
