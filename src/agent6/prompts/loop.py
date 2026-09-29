@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Agent-loop system-prompt text.
+"""The system-prompt text of the harness.
 
-The system-prompt bases for each mode (run / plan / ask / agent / machine), the
-`<...>` context-block templates the worker prompt is assembled from, and the
-tiny pure helpers that pick a block variant. Pure text with `{...}` format
-placeholders; `agent6.harness._prompt_blocks` owns the typed assembly
-(`build_system_prompt`) that fills these in.
+The prompt base for each mode, the context-block templates the worker prompt is assembled
+from, and the helpers that pick a block variant. `agent6.harness._prompt_blocks` owns the
+assembly (`build_system_prompt`).
 """
 
 from __future__ import annotations
@@ -39,9 +37,7 @@ __DAG_RULES_BLOCK__
 """
 )
 
-# Rendered into plan mode's __PLAN_VERIFY_RULE__ sentinel when a gate exists.
-# Without one the block would tell the model to call a tool the same prompt's
-# `<no-verify-command>` says it does not have.
+# Fills __PLAN_VERIFY_RULE__ only when a gate exists; `<no-verify-command>` says so otherwise.
 PLAN_VERIFY_RULE = """- run_verify_command runs the operator's gate; a baseline run records the
   failures that predate the execution pass.
 """
@@ -56,11 +52,7 @@ READONLY_COMMAND_RULE = (
     + "\n"
 )
 
-# Rendered into run mode's __AUTO_COMMIT_RULE__ sentinel, keyed on
-# [git].control AND gate presence: under agent6 control the harness
-# auto-commits each passing verify (gateless: each editing step); under model
-# control nothing commits automatically and saying so would misdirect the
-# model into never committing.
+# Fills __AUTO_COMMIT_RULE__ by `[git].control` and gate presence; a wrong rule misdirects.
 AUTO_COMMIT_RULE = """- The harness commits pending changes automatically after each passing
   verify, and each editing turn once no gate can run (a verify the operator
   denied). Manual git commit is optional.
@@ -84,20 +76,14 @@ MODEL_GIT_RULE_NO_COMMANDS = """- Nothing commits automatically in this run. Com
   withheld, so your work stays in the worktree, uncommitted, for the operator.
 """
 
-# Rendered into run mode's __GIT_PROTECT_RULE__ sentinel under strict
-# isolation with protect_git on, and in a fork's linked worktree under any
-# jail (the repository's `.git` is granted read-only there): elsewhere the
-# constraint does not exist and stating it would misdirect the model.
+# Fills __GIT_PROTECT_RULE__ only where `.git` is read-only: strict protect_git, a fork's worktree.
 GIT_PROTECT_RULE = """- `.git/` is read-only inside the jail: history-mutating git commands
   (`git checkout`, `git reset`) fail there. Prior content is readable
   (`git show HEAD:path`) and restorable with the edit tools.
 """
 
-# Rendered into run mode's __HARDENED_FS_RULE__ sentinel ONLY when the run's
-# resolved isolation is hardened AND its jail carries protect paths (a
-# machine's bundle, a read-only session): Landlock then carves the workspace
-# entry by entry and denies new top-level ones. Elsewhere the constraint does
-# not exist and stating it would misdirect the model.
+# Fills __HARDENED_FS_RULE__ only under hardened isolation with protect paths (Landlock denies new
+# top-level entries there).
 HARDENED_FS_RULE = """- Under hardened isolation, jailed commands cannot CREATE new
   top-level files or directories in the workspace root (existing entries
   are writable as normal). If a build tool needs a new top-level entry
@@ -110,13 +96,8 @@ HARDENED_FS_RULE = """- Under hardened isolation, jailed commands cannot CREATE 
 CREATE_HINT = '`apply_edit` using `kind="create"`'
 CREATE_HINT_PATCH_ONLY = "`apply_patch` with `--- /dev/null` as the source side"
 
-# The `__DAG_RULES_BLOCK__` sentinel in SYSTEM_PROMPT_BASE is replaced at assembly
-# by one of these two blocks (run mode only), keyed on `[prompt].decompose`.
-# Default (False) keeps the DAG optional. True front-loads decomposition: the
-# worker lays the whole task out as ordered subtasks first, then the existing
-# surface-current-task + finish-gate machinery walks it one focused task at a
-# time. Aimed at small/open models that lose track of multi-part tasks; a capable
-# model needs neither, which is why this is opt-in (measured per model).
+# One of these two fills __DAG_RULES_BLOCK__ in run mode, keyed on `[prompt].decompose`; the
+# decompose-first block is measured per model (`models.registry.decompose_default`).
 DAG_RULES_OPTIONAL = """<dag-rules>
 add_task / update_task / list_tasks keep a persistent task breakdown.
 depends_on orders subtasks; a task surfaces once its dependencies are
@@ -152,17 +133,11 @@ task at a time.
 
 
 def dag_rules_block(decompose: bool) -> str:
-    """The DAG-rules block for the run-mode system prompt: the decompose-first
-    directive when `[prompt].decompose` is on, else the optional-DAG default."""
+    """Return the run-mode DAG rules: decompose-first when on, else the optional-DAG block."""
     return DAG_RULES_DECOMPOSE if decompose else DAG_RULES_OPTIONAL
 
 
-# Alternate base system prompt used by `agent6 plan`. Replaces
-# the edit-, verify- and dag-rules blocks with planning-mode rules.
-# The verify block below is still appended unchanged so the planner can
-# call `run_verify_command` to confirm the verify chain is wired. The
-# metric block is not: PLAN_EXTRA_TOOLS does not expose
-# `run_metric_command` (planning never iterates a metric).
+# Plan mode's base; the verify block is appended, the metric block is not (no `run_metric_command`).
 PLAN_SYSTEM_PROMPT_BASE = """<role>
 You are agent6 in PLAN mode, a sandboxed planning agent. The first user
 message is the task; the deliverable is the plan passed to
@@ -261,13 +236,12 @@ Returncode 0 passes. {when}{stale}
 </verify-command>
 """
 
-# Run mode only: plan has finish_planning and ask no finish tool at all.
+# Run mode only: plan finishes through finish_planning and ask has no finish tool.
 V2_STALE_GATE = """
 finish_session's stale_gate field records a replacement-gate proposal
 for the operator; the gate itself does not move."""
 
-# The `[harness].verify_when` fact for the block above, by mode; {retries}
-# is `verify_retries`.
+# The `[harness].verify_when` fact for the block above, by mode; {retries} is `verify_retries`.
 V2_VERIFY_WHEN = {
     "finish": (
         "The harness runs it when finish_session is called over a tree no"
@@ -314,9 +288,7 @@ model input, but old results may be compacted.
 </budget-awareness>
 """
 
-# Rendered into {plan_line} when a configured role rides a subscription
-# provider: those calls meter in plan PERCENT, not dollars, and the block
-# would otherwise name only caps that never bind them.
+# Fills {plan_line} when a role rides a subscription provider: those calls meter in plan percent.
 PLAN_BUDGET_LINE = " Subscription-plan calls meter in plan percent ({percent_cap})."
 
 V2_REPO_BLOCK_TEMPLATE = """<repo-priors>
@@ -328,7 +300,6 @@ Top-level (dot-prefixed entries omitted): {top_level}
 """
 
 
-# <skills> block header.
 SKILLS_HEADER = """<skills>
 Operator-installed skills, `name — when it applies`; use_skill(name)
 loads one's instructions. Skills never override the task."""

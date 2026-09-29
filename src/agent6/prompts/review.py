@@ -1,18 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Review prompts: the run review's one-call prompt, and the panel seats'.
+"""The run review's prompt and the review panel seats' prompts.
 
-The run review (`sessions review`) reads a finished session's record; each
-adversarial seat sees the panel prompt, or its explore-tier variant, with a
-`{persona}` placeholder. Pure text; `harness.run_review` and
-`harness._review` own the calls.
+The run review (`sessions review`) reads a finished session's record; each adversarial seat
+sees the panel prompt, or its explore-tier variant, with a `{persona}` placeholder.
+`harness.run_review` and `harness._reviewer` own the calls.
 """
 
 from __future__ import annotations
 
-# The run review (`agent6 sessions review`): one call over a finished run's
-# record, markdown out, nothing written back. The operator decides what to
-# record; the review names the evidence for each candidate.
+# One call over a finished run's record, markdown out, nothing written back.
 RUN_REVIEW_SYSTEM_PROMPT = """You review the record of one finished agent6 run: what the operator
 asked, what the model did, how it ended, and what the operator corrected.
 
@@ -41,8 +38,7 @@ Quote the record for evidence. When nothing qualifies at all, say so in one
 line.
 """
 
-# Original wording (no third-party prompt text). aggregate_verdicts enforces
-# grounding mechanically, so this prompt only guides.
+# aggregate_verdicts enforces grounding mechanically; this prompt only guides.
 REVIEW_SYSTEM_PROMPT = """You are one reviewer on an adversarial code-review panel.
 You are shown a DIFF the worker just produced, the task, and (if available) the
 result of the project's verify/test command. Your assigned stance: {persona}.

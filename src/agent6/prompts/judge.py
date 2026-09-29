@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Compare-judge prompt.
+"""The compare judge's system prompt.
 
-The system prompt for the structured judge that ranks parallel-run
-candidates. Pure text; `harness.judge` owns the call and parsing.
+The judge ranks parallel-run candidates; `harness.judge` owns the call and the parsing.
 """
 
 from __future__ import annotations

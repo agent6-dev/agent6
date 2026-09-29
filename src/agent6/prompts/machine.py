@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Machine-authoring grammar reference.
+"""The machine-authoring grammar reference.
 
-The complete `.asm.toml` grammar + worked example handed to the model in
-`agent6 machine create`. Pure text; `machine.authoring` owns assembling the
-per-attempt prompt around it.
+The complete `.asm.toml` grammar and a worked example, handed to the model by
+`agent6 machine create`; `machine.authoring` assembles the per-attempt prompt around it.
 """
 
 from __future__ import annotations

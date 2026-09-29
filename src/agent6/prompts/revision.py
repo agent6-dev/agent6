@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Auxiliary agent-loop prompts.
+"""The loop's auxiliary prompts.
 
-The prompt-revision pass, the context summariser, the per-file gist
-distiller, and the post-compaction restart notice. Pure text; the loop owns
-running each call.
+The prompt-revision pass, the context summariser, the per-file gist distiller and the
+post-compaction restart notice. The loop runs each call.
 """
 
 from __future__ import annotations
@@ -64,8 +63,7 @@ GIST_DISTILL_SYSTEM_PROMPT = (
 )
 
 
-# Prepended to the post-compaction restart message so the worker knows the
-# history was summarised rather than lost, and continues rather than restarting.
+# Heads the restart message, so the worker continues from the summary instead of starting over.
 _CONTEXT_RESTART_HEAD = (
     "[harness context restart] The earlier conversation was compacted to free"
     " context; the progress summary below records what was done up to this"
@@ -79,17 +77,23 @@ _CONTEXT_RESTART_DAG = (
 
 
 def pinned_block(pins: Sequence[str]) -> str:
-    """The operator's `/pin` instructions as a numbered verbatim block, or ""
-    when none. Rendered into every tier-2 restart so pinned instructions are
-    never squeezed through the summariser."""
+    """Render the operator's `/pin` instructions as a numbered verbatim block.
+
+    Every restart carries the block, so pins never pass through the summariser.
+
+    Args:
+        pins: The pinned instructions in order.
+
+    Returns:
+        The block, or "" when there are no pins.
+    """
     if not pins:
         return ""
     lines = "\n".join(f"{i}. {pin}" for i, pin in enumerate(pins, start=1))
     return f"PINNED operator instructions (verbatim):\n{lines}"
 
 
-# Appended to the summariser's request when pins exist: the restart re-shows
-# them verbatim, so a summary that restates them would double-spend the chars.
+# Appended to the summariser's request when pins exist; a restated pin would double-spend chars.
 PINS_NO_RESTATE_CLAUSE = (
     "\n\nThe operator pinned these instructions; they are re-shown verbatim"
     " after the restart, so the summary does not restate them:\n"
@@ -97,13 +101,17 @@ PINS_NO_RESTATE_CLAUSE = (
 
 
 def progress_summary_from_notice(text: str) -> str:
-    """The progress summary a restart notice carries, or "" if *text* is not one.
+    """Return the progress summary a restart notice carries.
 
-    Parser beside the builder so the two cannot drift. The caller carries the
-    prior restart's summary into the NEXT summariser request out-of-band: the
-    notice sits at the head of the post-restart history and the summariser's
-    transcript is tail-clipped, so a second summary reading only the history
-    would begin at the first restart while claiming to cover everything.
+    The caller feeds the prior summary into the next summariser request out of band: the
+    summariser's transcript is tail-clipped, so a summary read from the history alone would
+    begin at the first restart while claiming to cover everything.
+
+    Args:
+        text: A message that may be a restart notice.
+
+    Returns:
+        The summary, or "" when the text is not a restart notice.
     """
     if not text.startswith(_CONTEXT_RESTART_HEAD[:40]):
         return ""
@@ -118,11 +126,17 @@ def context_restart_notice(
     *,
     dag_available: bool = True,
 ) -> str:
-    """The post-compaction restart preamble. The DAG-recovery paragraph is
-    included only when the run has a curator and its mode exposes the DAG tools
-    (run, plan). Otherwise `list_tasks` does not exist, so instructing the
-    worker to call it burns a turn on an unknown-tool error. Operator pins render
-    between the preamble and the summary label, as standing orders."""
+    """Build the post-compaction restart preamble.
+
+    Args:
+        mode: The session's mode; the DAG paragraph appears only for run and plan.
+        pins: The operator's pinned instructions, rendered as standing orders.
+        decisions: The recorded operator rulings, or "".
+        dag_available: The run has a curator, so `list_tasks` exists.
+
+    Returns:
+        The preamble, ending with the "PROGRESS SUMMARY:" label the summary follows.
+    """
     parts = [_CONTEXT_RESTART_HEAD]
     if dag_available and mode in ("run", "plan"):
         parts.append(_CONTEXT_RESTART_DAG)
