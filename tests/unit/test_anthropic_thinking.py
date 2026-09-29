@@ -17,16 +17,13 @@ Validate that the provider's ``effort`` level:
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import httpx2
 import pytest
 
-from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink
-from agent6.providers.anthropic import (
-    _THINKING_BUDGET_TOKENS,  # pyright: ignore[reportPrivateUsage]
-)
+from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink, anthropic
 
 
 class _FakeResponse:
@@ -72,7 +69,7 @@ def test_thinking_enables_budget_and_drops_temperature(
         max_tokens=8192,
     )
     body = bodies[0]
-    budget = _THINKING_BUDGET_TOKENS[level]
+    budget = anthropic._THINKING_BUDGET_TOKENS[level]
     assert body["thinking"] == {"type": "enabled", "budget_tokens": budget}
     # Temperature must not be sent while thinking is enabled.
     assert "temperature" not in body
@@ -102,7 +99,7 @@ def test_adaptive_models_use_adaptive_effort_and_summary(
     assert body["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert body["output_config"] == {"effort": "high"}
     assert "temperature" not in body
-    assert body["max_tokens"] > _THINKING_BUDGET_TOKENS["high"]
+    assert body["max_tokens"] > anthropic._THINKING_BUDGET_TOKENS["high"]
 
 
 @pytest.mark.parametrize("model", ["claude-opus-4-6", "claude-sonnet-4-6"])
@@ -143,7 +140,7 @@ def test_legacy_models_keep_budget_tokens(monkeypatch: pytest.MonkeyPatch, model
     body = bodies[0]
     assert body["thinking"] == {
         "type": "enabled",
-        "budget_tokens": _THINKING_BUDGET_TOKENS["high"],
+        "budget_tokens": anthropic._THINKING_BUDGET_TOKENS["high"],
     }
     assert "output_config" not in body
 
@@ -401,7 +398,7 @@ def _thinking_then_tool_stream() -> list[str]:
 
 
 def test_streaming_preserves_thinking_blocks(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     sink = TranscriptSink(tmp_path / "transcripts")
     provider = AnthropicProvider(
@@ -437,9 +434,7 @@ def test_streaming_preserves_thinking_blocks(
 
 def test_two_text_blocks_in_a_response_stay_separated() -> None:
     """Two text blocks in a response stay separated in the settled text."""
-    from agent6.providers.anthropic import _parse_response  # pyright: ignore[reportPrivateUsage]
-
-    resp = _parse_response(
+    resp = anthropic._parse_response(
         {
             "content": [
                 {"type": "text", "text": "First message."},

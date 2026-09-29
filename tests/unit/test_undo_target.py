@@ -4,14 +4,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any
 
-from agent6.app.manifest import write_session_manifest
-from agent6.app.undo import undo_target
+from agent6.app import manifest, undo
 from agent6.config import Config
-from agent6.harness._snapshot import SessionSnapshot
-from agent6.sessions.layout import SessionLayout
+from agent6.harness import _snapshot
+from agent6.sessions import layout as sessions_layout
 
 _WRAP = "OPERATOR STEERING (a mid-run instruction from the operator):\n"
 
@@ -33,14 +32,16 @@ def _tool_result(text: str) -> dict[str, Any]:
     return {"role": "user", "content": [block]}
 
 
-def _layout(tmp_path: Path, sid: str) -> SessionLayout:
-    layout = SessionLayout(state_dir=tmp_path, session_id=sid, subdir="runs")
+def _layout(tmp_path: pathlib.Path, sid: str) -> sessions_layout.SessionLayout:
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id=sid, subdir="runs")
     layout.ensure()
     return layout
 
 
-def _checkpoint(layout: SessionLayout, turn: int, messages: list[dict[str, Any]]) -> None:
-    snap = SessionSnapshot(
+def _checkpoint(
+    layout: sessions_layout.SessionLayout, turn: int, messages: list[dict[str, Any]]
+) -> None:
+    snap = _snapshot.SessionSnapshot(
         system="s",
         messages=messages,
         tool_calls=0,
@@ -52,7 +53,7 @@ def _checkpoint(layout: SessionLayout, turn: int, messages: list[dict[str, Any]]
     layout.checkpoint_path(turn).write_text(snap.model_dump_json(), encoding="utf-8")
 
 
-def test_undo_walks_back_one_operator_message(tmp_path: Path) -> None:
+def test_undo_walks_back_one_operator_message(tmp_path: pathlib.Path) -> None:
     layout = _layout(tmp_path, "run-a")
     _checkpoint(layout, 1, [_task("do the thing"), _assistant("working")])
     _checkpoint(
@@ -71,13 +72,13 @@ def test_undo_walks_back_one_operator_message(tmp_path: Path) -> None:
             _assistant("done"),
         ],
     )
-    target = undo_target(tmp_path, "run-a")
+    target = undo.undo_target(tmp_path, "run-a")
     assert target is not None
     assert (target.source_session_id, target.at_turn) == ("run-a", 1)
     assert target.undone_text == "focus the parser"
 
 
-def test_undo_finds_the_last_message_across_a_compacted_checkpoint(tmp_path: Path) -> None:
+def test_undo_finds_the_last_message_across_a_compacted_checkpoint(tmp_path: pathlib.Path) -> None:
     """Compaction dropping older steers still resolves the checkpoint before the latest steer."""
     layout = _layout(tmp_path, "run-compacted")
     _checkpoint(layout, 1, [_task("do the thing")])
@@ -98,39 +99,39 @@ def test_undo_finds_the_last_message_across_a_compacted_checkpoint(tmp_path: Pat
         ],
     )
 
-    target = undo_target(tmp_path, "run-compacted")
+    target = undo.undo_target(tmp_path, "run-compacted")
 
     assert target is not None
     assert (target.source_session_id, target.at_turn) == ("run-compacted", 2)
     assert target.undone_text == "second steer"
 
 
-def test_undo_with_only_the_task_restarts_from_the_first_checkpoint(tmp_path: Path) -> None:
+def test_undo_with_only_the_task_restarts_from_the_first_checkpoint(tmp_path: pathlib.Path) -> None:
     """The composer gets the operator's words back, never the skill block or digest before them."""
-    from agent6.task_text import SKILLS_PREAMBLE
+    from agent6 import task_text
 
-    composed = f'{SKILLS_PREAMBLE}\n<skill name="tidy">be tidy</skill>\n---\ndo the thing'
+    composed = f'{task_text.SKILLS_PREAMBLE}\n<skill name="tidy">be tidy</skill>\n---\ndo the thing'
     layout = _layout(tmp_path, "run-b")
     _checkpoint(layout, 1, [_task(composed)])
     _checkpoint(layout, 2, [_task(composed), _assistant("lots of work")])
-    target = undo_target(tmp_path, "run-b")
+    target = undo.undo_target(tmp_path, "run-b")
     assert target is not None
     assert (target.source_session_id, target.at_turn) == ("run-b", 1)
     assert target.undone_text == "do the thing"
 
 
-def test_undo_refuses_at_the_opening_message(tmp_path: Path) -> None:
+def test_undo_refuses_at_the_opening_message(tmp_path: pathlib.Path) -> None:
     layout = _layout(tmp_path, "run-c")
     _checkpoint(layout, 1, [_task("do the thing")])
     said: list[str] = []
-    from agent6.app.reporter import Reporter
+    from agent6.app import reporter as app_reporter
 
-    reporter = Reporter(out=said.append, err=said.append)
-    assert undo_target(tmp_path, "run-c", reporter=reporter) is None
+    reporter = app_reporter.Reporter(out=said.append, err=said.append)
+    assert undo.undo_target(tmp_path, "run-c", reporter=reporter) is None
     assert any("nothing to undo" in line for line in said)
 
 
-def test_repeated_undo_follows_the_fork_lineage(tmp_path: Path) -> None:
+def test_repeated_undo_follows_the_fork_lineage(tmp_path: pathlib.Path) -> None:
     """A fork's one seed checkpoint sends the next /undo to its parent, so B -> C -> D works."""
     parent = _layout(tmp_path, "run-p")
     _checkpoint(parent, 1, [_task("do the thing")])
@@ -139,7 +140,7 @@ def test_repeated_undo_follows_the_fork_lineage(tmp_path: Path) -> None:
     child = _layout(tmp_path, "run-q")
     # The seed a /undo of run-p would have cut: turn 2's conversation.
     _checkpoint(child, 0, [_task("do the thing"), _steer("first steer")])
-    write_session_manifest(
+    manifest.write_session_manifest(
         child,
         session_id="run-q",
         user_task="do the thing",
@@ -152,18 +153,18 @@ def test_repeated_undo_follows_the_fork_lineage(tmp_path: Path) -> None:
         preset_from_flag=False,
         parent_session_id="run-p",
     )
-    target = undo_target(tmp_path, "run-q")
+    target = undo.undo_target(tmp_path, "run-q")
     assert target is not None
     assert (target.source_session_id, target.at_turn) == ("run-p", 1)
     assert target.undone_text == "first steer"
 
 
-def test_a_cyclic_lineage_does_not_crash(tmp_path: Path) -> None:
+def test_a_cyclic_lineage_does_not_crash(tmp_path: pathlib.Path) -> None:
     """A manifest whose parent lineage cycles ends the walk on a revisited id and refuses."""
     layout = _layout(tmp_path, "cyclic-run")
     # Only the task in the checkpoint, so the resolver must walk to the parent.
     _checkpoint(layout, 0, [_task("do the thing"), _steer("focus the parser")])
-    write_session_manifest(
+    manifest.write_session_manifest(
         layout,
         session_id="cyclic-run",
         user_task="do the thing",
@@ -177,8 +178,8 @@ def test_a_cyclic_lineage_does_not_crash(tmp_path: Path) -> None:
         parent_session_id="cyclic-run",  # points at itself
     )
     said: list[str] = []
-    from agent6.app.reporter import Reporter
+    from agent6.app import reporter as app_reporter
 
-    reporter = Reporter(out=said.append, err=said.append)
-    assert undo_target(tmp_path, "cyclic-run", reporter=reporter) is None
+    reporter = app_reporter.Reporter(out=said.append, err=said.append)
+    assert undo.undo_target(tmp_path, "cyclic-run", reporter=reporter) is None
     assert any("nothing to undo" in line for line in said)

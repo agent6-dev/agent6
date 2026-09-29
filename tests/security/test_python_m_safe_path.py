@@ -12,7 +12,7 @@ spawn site that forgets it fails here rather than in the field.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+import pathlib
 
 import agent6
 
@@ -28,7 +28,7 @@ def _is_sys_executable(node: ast.expr) -> bool:
 
 def _python_m_agent6_spawns() -> list[tuple[str, int, list[str]]]:
     """(file, lineno, string args) for every argv literal running `sys.executable ... -m agent6`."""
-    src = Path(agent6.__file__).resolve().parent
+    src = pathlib.Path(agent6.__file__).resolve().parent
     found: list[tuple[str, int, list[str]]] = []
     for py in src.rglob("*.py"):
         tree = ast.parse(py.read_text(encoding="utf-8"))

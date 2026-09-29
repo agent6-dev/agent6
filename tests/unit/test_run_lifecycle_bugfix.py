@@ -9,8 +9,8 @@ a resumed plan makes no commit notes, and an ask out of budget exits by the shar
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess as sp
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,8 +18,7 @@ import pytest
 import agent6.app._session as session_mod
 import agent6.app.resume as resume_mod
 import agent6.app.run as run_mod
-from agent6.budget import BudgetExceededError
-from agent6.paths import state_dir
+from agent6 import budget, paths
 from agent6.providers import ProviderResponse
 from agent6.ui.cli import cli_main
 
@@ -132,7 +131,7 @@ def _plan(md: str) -> tuple[str, tuple[dict[str, Any], ...]]:
     )
 
 
-def _setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     cfg_home = tmp_path / "cfg"
     (cfg_home / "agent6").mkdir(parents=True)
@@ -154,7 +153,7 @@ def _setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_a_failed_first_start_keeps_the_parked_task(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A failed first start keeps the parked task.
 
@@ -163,7 +162,7 @@ def test_a_failed_first_start_keeps_the_parked_task(
     operator's saved words are unreachable.
     """
     repo = _setup(tmp_path, monkeypatch)
-    sd = state_dir(repo) / "sessions" / "runs" / "pin-PARK01"
+    sd = paths.state_dir(repo) / "sessions" / "runs" / "pin-PARK01"
     sd.mkdir(parents=True)
     (sd / "manifest.json").write_text(
         json.dumps(
@@ -201,7 +200,7 @@ def test_a_failed_first_start_keeps_the_parked_task(
 
 
 def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A parked resume with no provider key refuses cleanly.
 
@@ -219,7 +218,7 @@ def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
         '[review]\ntrigger = "off"\n',
         encoding="utf-8",
     )
-    sd = state_dir(repo) / "sessions" / "runs" / "pin-PARK02"
+    sd = paths.state_dir(repo) / "sessions" / "runs" / "pin-PARK02"
     sd.mkdir(parents=True)
     (sd / "manifest.json").write_text(
         json.dumps(
@@ -242,31 +241,33 @@ def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
 
 
 def test_a_execution_discards_a_stop_it_never_honored(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An execution discards a stop it never honoured.
 
     A stop that lands after the last boundary poll (here, during the finish turn) is never honoured
     by the ending execution; its teardown discards it, so it cannot leak into and abort the next.
     """
-    from agent6.sessions.ipc import request_stop, stop_request_pending
+    from agent6.sessions import ipc
 
     repo = _setup(tmp_path, monkeypatch)
-    sd = state_dir(repo) / "sessions" / "runs" / "pin-STOP01"
+    sd = paths.state_dir(repo) / "sessions" / "runs" / "pin-STOP01"
 
     def _stop_on_finish(call_index: int) -> None:
         if call_index == 1:  # the second call is the finish turn
-            request_stop(sd)
+            ipc.request_stop(sd)
 
     prov = _Scripted([_edit("a.txt", "1\n"), _finish("done")], before_call=_stop_on_finish)
     monkeypatch.setattr(session_mod, "build_role_provider", _use(prov))
     assert cli_main(["run", "--session-id", "pin-STOP01", "task"]) == 0
     capsys.readouterr()
-    assert not stop_request_pending(sd), "a stop the execution never honored must not survive it"
+    assert not ipc.stop_request_pending(sd), (
+        "a stop the execution never honored must not survive it"
+    )
 
 
 def test_a_resumed_plan_execution_makes_no_commit_notes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A resumed plan execution makes no commit notes.
 
@@ -274,7 +275,7 @@ def test_a_resumed_plan_execution_makes_no_commit_notes(
     notes ("left out of this run's commits", "the tree holds changes no commit has") are false
     there, and untracked-at-start is not written into a plan dir nothing reads.
     """
-    from agent6.git_ops import chain_ref_for, chain_tip
+    from agent6 import git_ops
 
     repo = _setup(tmp_path, monkeypatch)
     prov = _Scripted([_plan("# Plan: p\n\n1. one\n")])
@@ -290,13 +291,13 @@ def test_a_resumed_plan_execution_makes_no_commit_notes(
     assert cli_main(["resume", "p-PLAN01", "--steer", "add a step"]) == 0
     err = capsys.readouterr().err
     assert "commit" not in err
-    sd = state_dir(repo) / "sessions" / "plans" / "p-PLAN01"
+    sd = paths.state_dir(repo) / "sessions" / "plans" / "p-PLAN01"
     assert not (sd / "untracked-at-start").exists()
-    assert chain_tip(repo, chain_ref_for("p-PLAN01")) is None
+    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("p-PLAN01")) is None
 
 
 def test_an_ask_out_of_budget_exits_three(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An ask out of budget exits 3.
 
@@ -306,7 +307,7 @@ def test_an_ask_out_of_budget_exits_three(
     _setup(tmp_path, monkeypatch)
 
     def _raise(_i: int) -> None:
-        raise BudgetExceededError("USD budget exhausted")
+        raise budget.BudgetExceededError("USD budget exhausted")
 
     prov = _Scripted([("an answer", ())], before_call=_raise)
     monkeypatch.setattr(session_mod, "build_role_provider", _use(prov))

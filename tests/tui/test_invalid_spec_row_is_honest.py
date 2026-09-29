@@ -8,7 +8,7 @@ which file it was. The TUI machines page and `machine list` share the row.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 from agent6.app.machine import summarize_machine_file
 
@@ -28,7 +28,7 @@ reason = "nothing to do"
 """
 
 
-def test_an_unparsable_file_claims_no_name(tmp_path: Path) -> None:
+def test_an_unparsable_file_claims_no_name(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "lint-and-test.asm.toml"
     path.write_text("this is not toml {{{", encoding="utf-8")
 
@@ -38,7 +38,7 @@ def test_an_unparsable_file_claims_no_name(tmp_path: Path) -> None:
     assert row.name == "-", f"invented a name: {row.name!r}"
 
 
-def test_a_valid_file_shows_its_declared_name(tmp_path: Path) -> None:
+def test_a_valid_file_shows_its_declared_name(tmp_path: pathlib.Path) -> None:
     """The declared name, not the filename: the two can differ."""
     path = tmp_path / "some-other-filename.asm.toml"
     path.write_text(_VALID, encoding="utf-8")
@@ -48,7 +48,7 @@ def test_a_valid_file_shows_its_declared_name(tmp_path: Path) -> None:
     assert row.spec != "invalid"
 
 
-def test_row_validity_covers_the_scripts_bundle(tmp_path: Path) -> None:
+def test_row_validity_covers_the_scripts_bundle(tmp_path: pathlib.Path) -> None:
     """A machine whose `scripts/` reference is missing is flagged, as `machine check` refuses it."""
     f = tmp_path / "runner.asm.toml"
     f.write_text(

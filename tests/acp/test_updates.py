@@ -9,24 +9,24 @@ cannot disagree with the other three about what happened.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 from typing import Any
 
-from agent6.ui.acp.updates import updates_for
-from agent6.viewmodel.transcript import TranscriptFold, TranscriptItem
+from agent6.ui.acp import updates as acp_updates
+from agent6.viewmodel import transcript
 
 
 def updates_for_events(
     events: list[dict[str, Any]], *, acp_session_id: str
 ) -> list[dict[str, Any]]:
     """One fold across the sequence; fresh folds per event emit each partial message as whole."""
-    fold = TranscriptFold()
+    fold = transcript.TranscriptFold()
     out: list[dict[str, Any]] = []
     announced: set[str] = set()
     for event in events:
         for item in fold.feed(event):
             out.extend(
-                updates_for(
+                acp_updates.updates_for(
                     item, acp_session_id=acp_session_id, announced=item.call_id in announced
                 )
             )
@@ -41,8 +41,12 @@ def _kinds(updates: list[dict[str, Any]]) -> list[str]:
 
 def test_reasoning_and_answer_are_different_channels() -> None:
     """Thinking is its own delta; conflated, the model's scratch work reads as its answer."""
-    thinking = updates_for(TranscriptItem("thinking", body="let me look"), acp_session_id="s")
-    text = updates_for(TranscriptItem("text", body="the answer"), acp_session_id="s")
+    thinking = acp_updates.updates_for(
+        transcript.TranscriptItem("thinking", body="let me look"), acp_session_id="s"
+    )
+    text = acp_updates.updates_for(
+        transcript.TranscriptItem("text", body="the answer"), acp_session_id="s"
+    )
     assert _kinds(thinking) == ["agent_thought_chunk"]
     assert _kinds(text) == ["agent_message_chunk"]
 
@@ -52,7 +56,9 @@ def test_the_operators_own_words_echo_back_as_theirs() -> None:
 
     Attributing it to the agent would make the transcript lie about who said what.
     """
-    updates = updates_for(TranscriptItem("operator", body="also add a flag"), acp_session_id="s")
+    updates = acp_updates.updates_for(
+        transcript.TranscriptItem("operator", body="also add a flag"), acp_session_id="s"
+    )
     assert _kinds(updates) == ["user_message_chunk"]
 
 
@@ -80,13 +86,15 @@ def test_known_tools_carry_their_acp_kinds() -> None:
         "fetch": "fetch",
     }
     for name, kind in expected.items():
-        (notification,) = updates_for(TranscriptItem("tool", name=name), acp_session_id="s")
+        (notification,) = acp_updates.updates_for(
+            transcript.TranscriptItem("tool", name=name), acp_session_id="s"
+        )
         assert notification["params"]["update"]["kind"] == kind
 
 
 def test_journaled_tool_paths_reach_the_editor_as_absolute_locations() -> None:
     """An edit's journaled paths reach the editor, so it follows the files the run changed."""
-    fold = TranscriptFold()
+    fold = transcript.TranscriptFold()
     fold.feed(
         {
             "type": "tool.call",
@@ -105,10 +113,10 @@ def test_journaled_tool_paths_reach_the_editor_as_absolute_locations() -> None:
         }
     )
 
-    (notification,) = updates_for(
+    (notification,) = acp_updates.updates_for(
         item,
         acp_session_id="s",
-        cwd=Path("/repo"),
+        cwd=pathlib.Path("/repo"),
         paths=("src/agent6/ui/acp/updates.py",),
     )
 
@@ -140,26 +148,34 @@ def test_an_approval_wait_reads_pending_then_in_progress() -> None:
 
 
 def test_a_failed_tool_says_so() -> None:
-    (outcome,) = updates_for(
-        TranscriptItem("tool", name="run_command", arg="ls", ok=False), acp_session_id="s"
+    (outcome,) = acp_updates.updates_for(
+        transcript.TranscriptItem("tool", name="run_command", arg="ls", ok=False),
+        acp_session_id="s",
     )
     assert outcome["params"]["update"]["status"] == "failed"
 
 
 def test_a_tool_still_running_is_not_reported_failed() -> None:
     """`ok=None` is no outcome yet: the call is announced, in progress, and nothing closes it."""
-    updates = updates_for(TranscriptItem("tool", name="grep", arg="x"), acp_session_id="s")
+    updates = acp_updates.updates_for(
+        transcript.TranscriptItem("tool", name="grep", arg="x"), acp_session_id="s"
+    )
     assert _kinds(updates) == ["tool_call"]
     assert updates[0]["params"]["update"]["status"] == "in_progress"
 
 
 def test_an_empty_body_produces_nothing() -> None:
     """A blank chunk renders as an empty bubble in the editor."""
-    assert updates_for(TranscriptItem("text", body="   "), acp_session_id="s") == []
+    assert (
+        acp_updates.updates_for(transcript.TranscriptItem("text", body="   "), acp_session_id="s")
+        == []
+    )
 
 
 def test_every_notification_is_addressed_and_well_formed() -> None:
-    updates = updates_for(TranscriptItem("text", body="hi"), acp_session_id="sess-1")
+    updates = acp_updates.updates_for(
+        transcript.TranscriptItem("text", body="hi"), acp_session_id="sess-1"
+    )
     (one,) = updates
     assert one["jsonrpc"] == "2.0"
     assert one["method"] == "session/update"
@@ -231,8 +247,8 @@ def test_a_red_gate_does_not_look_like_a_green_one() -> None:
 
 def test_a_commit_is_not_dropped() -> None:
     """An auto-commit's sha and line count live in `detail`; keying on `body` dropped it."""
-    updates = updates_for(
-        TranscriptItem("commit", arg="abc1234", detail="3 lines"), acp_session_id="s"
+    updates = acp_updates.updates_for(
+        transcript.TranscriptItem("commit", arg="abc1234", detail="3 lines"), acp_session_id="s"
     )
     text = updates[0]["params"]["update"]["content"]["text"]
     assert "abc1234" in text and "3 lines" in text
@@ -263,15 +279,14 @@ def test_a_tool_call_id_is_unique_across_a_sessions_turns() -> None:
 
     Keyed on the run id alone, turn 2's first call overwrote turn 1's in the editor.
     """
-    from agent6.ui.acp.updates import tool_call_id
-    from agent6.viewmodel.transcript import TranscriptItem
-
-    item = TranscriptItem(kind="tool", name="run_command", arg="ls", ok=True, call_id="1")
-    first = tool_call_id(item, "brave-oak-AAAAAA", 1)
-    second = tool_call_id(item, "brave-oak-AAAAAA", 2)
+    item = transcript.TranscriptItem(
+        kind="tool", name="run_command", arg="ls", ok=True, call_id="1"
+    )
+    first = acp_updates.tool_call_id(item, "brave-oak-AAAAAA", 1)
+    second = acp_updates.tool_call_id(item, "brave-oak-AAAAAA", 2)
     assert first != second
     assert first.startswith("brave-oak-AAAAAA:")
-    (announced,) = updates_for(item, acp_session_id="s", wire_id=first)
+    (announced,) = acp_updates.updates_for(item, acp_session_id="s", wire_id=first)
     assert announced["params"]["update"]["toolCallId"] == first
 
 
@@ -285,11 +300,10 @@ def test_a_tools_output_is_wrapped_in_acps_tagged_content() -> None:
     the call announced one line earlier stayed `pending` for the rest of the
     session.
     """
-    from agent6.ui.acp.updates import updates_for
-    from agent6.viewmodel.transcript import TranscriptItem
-
-    item = TranscriptItem(kind="tool", name="run_verify", arg="", ok=False, detail="exit 1")
-    (outcome,) = updates_for(item, acp_session_id="s")
+    item = transcript.TranscriptItem(
+        kind="tool", name="run_verify", arg="", ok=False, detail="exit 1"
+    )
+    (outcome,) = acp_updates.updates_for(item, acp_session_id="s")
     content = outcome["params"]["update"]["content"]
     assert content == [{"type": "content", "content": {"type": "text", "text": "exit 1"}}]
 
@@ -300,13 +314,10 @@ def test_a_failed_tool_carries_the_output_that_explains_it() -> None:
     Sending only `detail` left an editor showing "failed" and the word "exit 1", with the test log
     that says WHY nowhere on the wire.
     """
-    from agent6.ui.acp.updates import updates_for
-    from agent6.viewmodel.transcript import TranscriptItem
-
-    item = TranscriptItem(
+    item = transcript.TranscriptItem(
         kind="tool", name="run_verify", arg="", ok=False, detail="exit 1", tail="E   assert 1 == 2"
     )
-    (outcome,) = updates_for(item, acp_session_id="s")
+    (outcome,) = acp_updates.updates_for(item, acp_session_id="s")
     text = outcome["params"]["update"]["content"][0]["content"]["text"]
     assert "assert 1 == 2" in text
 
@@ -316,11 +327,10 @@ def test_model_text_cannot_carry_a_terminal_escape_to_the_editor() -> None:
 
     The renderer is a third party, so agent6 cannot assume it treats an escape as inert.
     """
-    from agent6.ui.acp.updates import updates_for
-    from agent6.viewmodel.transcript import TranscriptItem
-
     hostile = "hi\x1b]0;pwned\x07 there\x1b[2J\nsecond\tline"
-    (update,) = updates_for(TranscriptItem(kind="text", body=hostile), acp_session_id="s")
+    (update,) = acp_updates.updates_for(
+        transcript.TranscriptItem(kind="text", body=hostile), acp_session_id="s"
+    )
     text = update["params"]["update"]["content"]["text"]
     assert "\x1b" not in text and "\x07" not in text
     assert "\nsecond\tline" in text, "real whitespace is content, not an escape"
@@ -328,12 +338,9 @@ def test_model_text_cannot_carry_a_terminal_escape_to_the_editor() -> None:
 
 def test_a_tool_call_title_is_scrubbed_like_its_content() -> None:
     """The `title` is scrubbed like `content`; it is the model's own argv, path or pattern."""
-    from agent6.ui.acp.updates import updates_for
-    from agent6.viewmodel.transcript import TranscriptItem
-
     hostile = "sh -c '\x1b]0;PWNED\x07'"
-    (call,) = updates_for(
-        TranscriptItem(kind="tool", name="run_command", arg=hostile), acp_session_id="s"
+    (call,) = acp_updates.updates_for(
+        transcript.TranscriptItem(kind="tool", name="run_command", arg=hostile), acp_session_id="s"
     )
     assert "\x1b" not in call["params"]["update"]["title"]
     assert "\x07" not in call["params"]["update"]["title"]
@@ -352,28 +359,28 @@ def test_a_gateless_finish_never_reads_as_a_failed_check() -> None:
 
 def test_every_built_in_tool_names_its_acp_kind() -> None:
     """Every fixed tool maps to an ACP kind; only an MCP tool reads `other`."""
-    from agent6.tools.schema import (
-        ALL_TOOLS,
-        ASK_EXTRA_TOOLS,
-        LOOP_EXTRA_TOOLS,
-        MACHINE_EXTRA_TOOLS,
-        PLAN_EXTRA_TOOLS,
-    )
-    from agent6.ui.acp.updates import _TOOL_KINDS  # pyright: ignore[reportPrivateUsage]
+    from agent6.tools import schema
 
     registries = (
-        ALL_TOOLS,
-        LOOP_EXTRA_TOOLS,
-        PLAN_EXTRA_TOOLS,
-        ASK_EXTRA_TOOLS,
-        MACHINE_EXTRA_TOOLS,
+        schema.ALL_TOOLS,
+        schema.LOOP_EXTRA_TOOLS,
+        schema.PLAN_EXTRA_TOOLS,
+        schema.ASK_EXTRA_TOOLS,
+        schema.MACHINE_EXTRA_TOOLS,
     )
     names = {tool.TOOL_NAME for registry in registries for tool in registry}
-    assert names == set(_TOOL_KINDS), names ^ set(_TOOL_KINDS)
+    assert names == set(acp_updates._TOOL_KINDS), names ^ set(acp_updates._TOOL_KINDS)
 
 
 def test_a_whitespace_delta_reaches_the_editor() -> None:
     """A paragraph-break delta reaches the editor; dropped, two paragraphs ran together."""
-    (update,) = updates_for(TranscriptItem("text", body="\n\n"), acp_session_id="s", streamed=True)
+    (update,) = acp_updates.updates_for(
+        transcript.TranscriptItem("text", body="\n\n"), acp_session_id="s", streamed=True
+    )
     assert update["params"]["update"]["content"]["text"] == "\n\n"
-    assert updates_for(TranscriptItem("text", body=""), acp_session_id="s", streamed=True) == []
+    assert (
+        acp_updates.updates_for(
+            transcript.TranscriptItem("text", body=""), acp_session_id="s", streamed=True
+        )
+        == []
+    )

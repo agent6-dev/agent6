@@ -4,22 +4,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any, cast
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
-from agent6.harness._llm_json import extract_json
-from agent6.harness._panel import ReviewContext
-from agent6.harness._reviewer import (
-    ReviewSeat,
-    _coerce_findings,  # pyright: ignore[reportPrivateUsage]
-    run_panel,
-    structured_review,
-)
+from agent6.harness import _llm_json, _panel, _reviewer
 from agent6.providers import Provider, ProviderError
-from agent6.tools.results import RawResult, ToolResult
+from agent6.tools import results
 
 SAMPLE_DIFF = """\
 --- a/foo.py
@@ -73,35 +66,37 @@ def _prov(text: str) -> Provider:
     return cast(Provider, _FakeProvider(text))
 
 
-def _ctx() -> ReviewContext:
-    return ReviewContext(task="add auth", diff=SAMPLE_DIFF, verify_ok=True)
+def _ctx() -> _panel.ReviewContext:
+    return _panel.ReviewContext(task="add auth", diff=SAMPLE_DIFF, verify_ok=True)
 
 
 def test_structured_review_parses_clean_json() -> None:
-    v = structured_review(_prov(_BLOCK_JSON), _ctx(), seat="security", model="m1")
+    v = _reviewer.structured_review(_prov(_BLOCK_JSON), _ctx(), seat="security", model="m1")
     assert v.error is None and v.verdict == "block"
     assert v.findings[0].category == "security" and v.findings[0].file_line == "foo.py:11"
 
 
 def test_structured_review_parses_fenced_json_with_prose() -> None:
     text = f"Here is my review:\n```json\n{_BLOCK_JSON}\n```\nDone."
-    v = structured_review(_prov(text), _ctx(), seat="s", model="m1")
+    v = _reviewer.structured_review(_prov(text), _ctx(), seat="s", model="m1")
     assert v.error is None and v.verdict == "block" and len(v.findings) == 1
 
 
 def test_structured_review_junk_output_abstains() -> None:
-    v = structured_review(_prov("I could not produce JSON, sorry."), _ctx(), seat="s", model="m1")
+    v = _reviewer.structured_review(
+        _prov("I could not produce JSON, sorry."), _ctx(), seat="s", model="m1"
+    )
     assert v.error is not None and v.verdict == "pass"  # abstain, never a false pass-as-real
 
 
 @pytest.mark.parametrize("text", ["{}", '{"findings": []}', '{"verdict": "maybe"}'])
 def test_structured_review_without_a_verdict_abstains(text: str) -> None:
-    v = structured_review(_prov(text), _ctx(), seat="s", model="m1")
+    v = _reviewer.structured_review(_prov(text), _ctx(), seat="s", model="m1")
     assert v.error == "invalid reviewer verdict"
 
 
 def test_structured_review_provider_error_abstains() -> None:
-    v = structured_review(cast(Provider, _ErrProvider()), _ctx(), seat="s", model="m1")
+    v = _reviewer.structured_review(cast(Provider, _ErrProvider()), _ctx(), seat="s", model="m1")
     assert v.error is not None and "provider" in v.error
 
 
@@ -115,7 +110,7 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     starved = _FakeProvider("")
     starved_resp = _Resp("", stop_reason="length", output_tokens=4500)
     starved.call = lambda **_kw: starved_resp  # type: ignore[method-assign]
-    v = structured_review(cast(Provider, starved), _ctx(), seat="s", model="kimi-k3")
+    v = _reviewer.structured_review(cast(Provider, starved), _ctx(), seat="s", model="kimi-k3")
     assert v.error is not None and v.verdict == "pass"
     assert "unparseable" not in v.error
     assert "hit the cap" in v.error and "stop_reason=length" in v.error
@@ -125,7 +120,7 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     cut = _FakeProvider("")
     cut_resp = _Resp('{"verdict": "blo', stop_reason="length", output_tokens=1500)
     cut.call = lambda **_kw: cut_resp  # type: ignore[method-assign]
-    v2 = structured_review(cast(Provider, cut), _ctx(), seat="s", model="m1")
+    v2 = _reviewer.structured_review(cast(Provider, cut), _ctx(), seat="s", model="m1")
     assert v2.error is not None
     assert "before the verdict JSON completed" in v2.error
 
@@ -141,7 +136,7 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     empty_resp = _Resp("", stop_reason="error", output_tokens=16801)
     empty.call = lambda **_kw: empty_resp  # type: ignore[method-assign]
 
-    v = structured_review(cast(Provider, empty), _ctx(), seat="s", model="kimi-k2.6")
+    v = _reviewer.structured_review(cast(Provider, empty), _ctx(), seat="s", model="kimi-k2.6")
 
     assert v.error is not None and v.verdict == "pass"
     assert "unparseable" not in v.error
@@ -156,7 +151,7 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     thought = _Resp("", stop_reason="stop", output_tokens=7160, thinking="t" * 30_175)
     thinker.call = lambda **_kw: thought  # type: ignore[method-assign]
 
-    v2 = structured_review(cast(Provider, thinker), _ctx(), seat="s", model="kimi-k2.6")
+    v2 = _reviewer.structured_review(cast(Provider, thinker), _ctx(), seat="s", model="kimi-k2.6")
 
     assert v2.error is not None
     assert "30,175 chars of it in the reasoning channel" in v2.error
@@ -168,14 +163,14 @@ def test_coerce_findings_normalizes_bad_category_and_severity() -> None:
         "not a dict",
         {"category": "security", "severity": "block", "file_line": "b:2", "title": "ok"},
     ]
-    fs = _coerce_findings(raw)
+    fs = _reviewer._coerce_findings(raw)
     assert len(fs) == 2
     assert fs[0].category == "other" and fs[0].severity == "warn"  # normalized
     assert fs[1].category == "security" and fs[1].severity == "block"
 
 
 def test_finding_text_is_one_line() -> None:
-    (finding,) = _coerce_findings(
+    (finding,) = _reviewer._coerce_findings(
         [
             {
                 "category": "security",
@@ -193,16 +188,16 @@ def test_finding_text_is_one_line() -> None:
 
 def test_run_panel_distinct_models_quorum_blocks() -> None:
     seats = [
-        ReviewSeat(persona="security", model="m1", provider=_prov(_BLOCK_JSON)),
-        ReviewSeat(persona="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
+        _reviewer.ReviewSeat(persona="security", model="m1", provider=_prov(_BLOCK_JSON)),
+        _reviewer.ReviewSeat(persona="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
     ]
-    res = run_panel(seats, _ctx(), decision="quorum", quorum=2, panel_id="p")
+    res = _reviewer.run_panel(seats, _ctx(), decision="quorum", quorum=2, panel_id="p")
     assert res.blocked is True and res.n_block == 2
 
 
 def test_run_panel_advisory_never_blocks() -> None:
-    seats = [ReviewSeat(persona="security", model="m1", provider=_prov(_BLOCK_JSON))]
-    res = run_panel(seats, _ctx(), decision="advisory", quorum=2, panel_id="p")
+    seats = [_reviewer.ReviewSeat(persona="security", model="m1", provider=_prov(_BLOCK_JSON))]
+    res = _reviewer.run_panel(seats, _ctx(), decision="advisory", quorum=2, panel_id="p")
     assert res.blocked is False
     assert (
         res.merged_findings and res.merged_findings[0].severity == "block"
@@ -213,11 +208,13 @@ def test_run_panel_concurrent_preserves_order_and_aggregates() -> None:
     # 3 seats, distinct models, concurrency=3: results stay in seat order and the
     # grounded quorum still blocks (thread pool must not change the verdict).
     seats = [
-        ReviewSeat(persona="security", model="m1", provider=_prov(_BLOCK_JSON)),
-        ReviewSeat(persona="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
-        ReviewSeat(persona="edge", model="m3", provider=_prov(_BLOCK_JSON)),
+        _reviewer.ReviewSeat(persona="security", model="m1", provider=_prov(_BLOCK_JSON)),
+        _reviewer.ReviewSeat(persona="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
+        _reviewer.ReviewSeat(persona="edge", model="m3", provider=_prov(_BLOCK_JSON)),
     ]
-    res = run_panel(seats, _ctx(), decision="quorum", quorum=2, panel_id="p", concurrency=3)
+    res = _reviewer.run_panel(
+        seats, _ctx(), decision="quorum", quorum=2, panel_id="p", concurrency=3
+    )
     assert [v.seat for v in res.per_seat] == ["security", "correctness", "edge"]
     assert res.blocked is True and res.n_block == 3
 
@@ -272,7 +269,7 @@ def test_a_routed_reviewer_leaves_pinned_seats_alone(monkeypatch: Any) -> None:
     cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", "claude-haiku-override"))
 
     seats = prov_mod.build_review_seats(
-        cfg, transcript_sink=cast(Any, MagicMock()), budget=cast(Any, None), n=1
+        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None), n=1
     )
     assert [s.model for s in seats] == [
         "anthropic/claude-opus-4-8",
@@ -288,7 +285,7 @@ def test_build_review_seats_no_override_keeps_pinned_models(monkeypatch: Any) ->
     cfg = _cfg_with_seats(("security@anthropic/claude-opus-4-8",))
 
     seats = prov_mod.build_review_seats(
-        cfg, transcript_sink=cast(Any, MagicMock()), budget=cast(Any, None), n=1
+        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None), n=1
     )
     assert seats[0].model == "anthropic/claude-opus-4-8"  # unchanged when no --model
 
@@ -302,7 +299,7 @@ def test_a_bare_persona_seat_follows_the_routed_reviewer(monkeypatch: Any) -> No
     cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", "claude-haiku-override"))
 
     seats = prov_mod.build_review_seats(
-        cfg, transcript_sink=cast(Any, MagicMock()), budget=cast(Any, None), n=1
+        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None), n=1
     )
     assert seats[0].model == "anthropic/claude-haiku-override"
 
@@ -317,13 +314,13 @@ def test_bare_and_pinned_routes_to_the_same_model_count_once(monkeypatch: Any) -
     monkeypatch.setattr(prov_mod, "build_role_provider", blocking_provider)
     cfg = _cfg_with_seats(("correctness", "security@anthropic/reviewer-default"))
     seats = prov_mod.build_review_seats(
-        cfg, transcript_sink=cast(Any, MagicMock()), budget=cast(Any, None), n=2
+        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None), n=2
     )
     assert [seat.model for seat in seats] == [
         "anthropic/reviewer-default",
         "anthropic/reviewer-default",
     ]
-    result = run_panel(seats, _ctx(), decision="quorum", quorum=2, panel_id="p")
+    result = _reviewer.run_panel(seats, _ctx(), decision="quorum", quorum=2, panel_id="p")
     assert result.n_block == 1 and result.blocked is False
 
 
@@ -350,8 +347,6 @@ class _ExploreProvider:
 
 
 def test_explore_review_uses_tools_then_verdicts() -> None:
-    from agent6.harness._reviewer import explore_review
-
     tu = {"name": "find_references", "id": "t1", "input": {"symbol": "read_doc"}}
     provider = _ExploreProvider(
         [
@@ -361,11 +356,11 @@ def test_explore_review_uses_tools_then_verdicts() -> None:
     )
     dispatched: list[str] = []
 
-    def dispatch(name: str, inp: dict[str, Any]) -> ToolResult:
+    def dispatch(name: str, inp: dict[str, Any]) -> results.ToolResult:
         dispatched.append(name)
-        return RawResult({"matches": ["caller.py:9: read_doc(x)"]})
+        return results.RawResult({"matches": ["caller.py:9: read_doc(x)"]})
 
-    v = explore_review(
+    v = _reviewer.explore_review(
         cast(Provider, provider), _ctx(), seat="security", model="m1", tools=[], dispatch=dispatch
     )
     assert provider.calls == 2 and dispatched == ["find_references"]  # investigated, then judged
@@ -373,8 +368,6 @@ def test_explore_review_uses_tools_then_verdicts() -> None:
 
 
 def test_explore_review_abstains_when_no_verdict_in_budget() -> None:
-    from agent6.harness._reviewer import explore_review
-
     tu = {"name": "list_dir", "id": "t1", "input": {"path": "."}}
     # provider keeps calling tools, never emits a verdict -> abstain after max_iters
     provider = _ExploreProvider(
@@ -383,21 +376,19 @@ def test_explore_review_abstains_when_no_verdict_in_budget() -> None:
             for _ in range(10)
         ]
     )
-    v = explore_review(
+    v = _reviewer.explore_review(
         cast(Provider, provider),
         _ctx(),
         seat="s",
         model="m1",
         tools=[],
-        dispatch=lambda n, i: RawResult({"entries": []}),
+        dispatch=lambda n, i: results.RawResult({"entries": []}),
         max_iters=3,
     )
     assert v.error is not None and provider.calls == 3  # bounded, abstains (never false-pass)
 
 
 def test_explore_review_skips_dispatch_on_final_iteration() -> None:
-    from agent6.harness._reviewer import explore_review
-
     # The last allowed model call returns tool_uses and no verdict: the seat is
     # about to abstain, and no model call follows to consume the results, so the
     # final round's tools must not be executed (pure waste).
@@ -410,11 +401,11 @@ def test_explore_review_skips_dispatch_on_final_iteration() -> None:
     )
     dispatched: list[str] = []
 
-    def dispatch(name: str, inp: dict[str, Any]) -> ToolResult:
+    def dispatch(name: str, inp: dict[str, Any]) -> results.ToolResult:
         dispatched.append(name)
-        return RawResult({"ok": True})
+        return results.RawResult({"ok": True})
 
-    v = explore_review(
+    v = _reviewer.explore_review(
         cast(Provider, provider),
         _ctx(),
         seat="s",
@@ -436,15 +427,17 @@ def test_run_panel_routes_explore_tier_seats() -> None:
             _ExploreResp(text=_BLOCK_JSON),
         ]
     )
-    seat = ReviewSeat(persona="security", model="m1", provider=cast(Provider, prov), tier="explore")
-    res = run_panel(
+    seat = _reviewer.ReviewSeat(
+        persona="security", model="m1", provider=cast(Provider, prov), tier="explore"
+    )
+    res = _reviewer.run_panel(
         [seat],
         _ctx(),
         decision="veto",
         quorum=2,
         panel_id="p",
         tools=[],
-        dispatch=lambda n, i: RawResult({"ok": True}),
+        dispatch=lambda n, i: results.RawResult({"ok": True}),
     )
     assert prov.calls == 2 and res.blocked is True  # explore seat ran the tool loop + blocked
 
@@ -456,12 +449,12 @@ def test_extract_json_prefers_the_verdict_object_over_a_stray_preamble() -> None
         'I will think first {"note": "scratch"} and here is my answer:\n'
         '```json\n{"verdict": "pass", "summary": "ok", "findings": []}\n```\n'
     )
-    obj = extract_json(text, prefer=("verdict", "findings"))
+    obj = _llm_json.extract_json(text, prefer=("verdict", "findings"))
     assert obj is not None and obj["verdict"] == "pass" and obj["summary"] == "ok"
 
 
 def test_extract_json_ignores_braces_inside_strings() -> None:
-    obj = extract_json(
+    obj = _llm_json.extract_json(
         '{"verdict": "block", "summary": "a } brace { in text", "findings": []}',
         prefer=("verdict", "findings"),
     )
@@ -469,21 +462,19 @@ def test_extract_json_ignores_braces_inside_strings() -> None:
 
 
 def test_explore_review_honors_verdict_alongside_tool_use_on_last_iter() -> None:
-    from agent6.harness._reviewer import explore_review
-
     # On the FINAL allowed iteration the model emits a tool_use AND a verdict in
     # the same turn; the verdict must be honored (not wasted into an abstain).
     tu = {"name": "find_references", "id": "t1", "input": {"symbol": "x"}}
     provider = _ExploreProvider(
         [_ExploreResp(text=_BLOCK_JSON, tool_uses=(tu,), raw={"content": []})]
     )
-    v = explore_review(
+    v = _reviewer.explore_review(
         cast(Provider, provider),
         _ctx(),
         seat="s",
         model="m1",
         tools=[],
-        dispatch=lambda n, i: RawResult({"ok": True}),
+        dispatch=lambda n, i: results.RawResult({"ok": True}),
         max_iters=1,
     )
     assert v.error is None and v.verdict == "block"
@@ -506,10 +497,14 @@ def test_run_panel_concurrent_seats_run_on_daemon_threads() -> None:
             return _Resp(_BLOCK_JSON)
 
     seats = [
-        ReviewSeat(persona=f"s{i}", model="m", provider=cast(Provider, _ThreadProbeProvider()))
+        _reviewer.ReviewSeat(
+            persona=f"s{i}", model="m", provider=cast(Provider, _ThreadProbeProvider())
+        )
         for i in range(3)
     ]
-    res = run_panel(seats, _ctx(), decision="advisory", quorum=2, panel_id="p", concurrency=3)
+    res = _reviewer.run_panel(
+        seats, _ctx(), decision="advisory", quorum=2, panel_id="p", concurrency=3
+    )
     assert len(res.per_seat) == 3
     assert daemons == [True, True, True]
 
@@ -525,11 +520,13 @@ def test_run_panel_concurrent_seat_crash_propagates() -> None:
             raise RuntimeError("unexpected seat crash")
 
     seats = [
-        ReviewSeat(persona="a", model="m", provider=_prov(_BLOCK_JSON)),
-        ReviewSeat(persona="b", model="m", provider=cast(Provider, _BoomProvider())),
+        _reviewer.ReviewSeat(persona="a", model="m", provider=_prov(_BLOCK_JSON)),
+        _reviewer.ReviewSeat(persona="b", model="m", provider=cast(Provider, _BoomProvider())),
     ]
     with pytest.raises(RuntimeError, match="unexpected seat crash"):
-        run_panel(seats, _ctx(), decision="advisory", quorum=2, panel_id="p", concurrency=2)
+        _reviewer.run_panel(
+            seats, _ctx(), decision="advisory", quorum=2, panel_id="p", concurrency=2
+        )
 
 
 def test_run_panel_concurrency_limit_is_honored() -> None:
@@ -553,10 +550,12 @@ def test_run_panel_concurrency_limit_is_honored() -> None:
             return _Resp(_BLOCK_JSON)
 
     seats = [
-        ReviewSeat(persona=f"s{i}", model="m", provider=cast(Provider, _SlowProvider()))
+        _reviewer.ReviewSeat(persona=f"s{i}", model="m", provider=cast(Provider, _SlowProvider()))
         for i in range(6)
     ]
-    res = run_panel(seats, _ctx(), decision="advisory", quorum=2, panel_id="p", concurrency=2)
+    res = _reviewer.run_panel(
+        seats, _ctx(), decision="advisory", quorum=2, panel_id="p", concurrency=2
+    )
     assert len(res.per_seat) == 6
     assert peak <= 2
 
@@ -569,26 +568,29 @@ def test_seats_are_instrumented_when_the_run_passes_its_event_sink(monkeypatch: 
     With the run's sink each seat is wrapped; `agent6 review` has no session log, passes no sink,
     and stays bare.
     """
+    from agent6.app import providers
     from agent6.app import providers as prov_mod
-    from agent6.app.providers import InstrumentedProvider
 
     monkeypatch.setattr(prov_mod, "_provider_from_entry", _stub_seat_provider)
     monkeypatch.setattr(prov_mod, "build_role_provider", _stub_seat_provider)
     cfg = _cfg_with_seats(("security@anthropic/claude-opus-4-8", "correctness"))
-    kw: dict[str, Any] = {"transcript_sink": cast(Any, MagicMock()), "budget": cast(Any, None)}
+    kw: dict[str, Any] = {"transcript_sink": cast(Any, mock.MagicMock()), "budget": cast(Any, None)}
 
-    seats = prov_mod.build_review_seats(cfg, n=1, events=cast(Any, MagicMock()), **kw)
-    assert [type(s.provider) for s in seats] == [InstrumentedProvider, InstrumentedProvider]
+    seats = prov_mod.build_review_seats(cfg, n=1, events=cast(Any, mock.MagicMock()), **kw)
+    assert [type(s.provider) for s in seats] == [
+        providers.InstrumentedProvider,
+        providers.InstrumentedProvider,
+    ]
 
     assert not any(
-        isinstance(s.provider, InstrumentedProvider)
+        isinstance(s.provider, providers.InstrumentedProvider)
         for s in prov_mod.build_review_seats(cfg, n=1, **kw)
     )
 
     # The simple form (no configured seats) wraps the same way.
     simple_cfg = _cfg_with_seats(())
-    (seat,) = prov_mod.build_review_seats(simple_cfg, n=1, events=cast(Any, MagicMock()), **kw)
-    assert isinstance(seat.provider, InstrumentedProvider)
+    (seat,) = prov_mod.build_review_seats(simple_cfg, n=1, events=cast(Any, mock.MagicMock()), **kw)
+    assert isinstance(seat.provider, providers.InstrumentedProvider)
 
 
 def test_a_persona_flag_pins_a_model_like_a_configured_seat(monkeypatch: Any) -> None:
@@ -604,7 +606,7 @@ def test_a_persona_flag_pins_a_model_like_a_configured_seat(monkeypatch: Any) ->
     monkeypatch.setattr(prov_mod, "build_role_provider", _stub_seat_provider)
     seats = prov_mod.build_review_seats(
         _cfg_with_seats(()),
-        transcript_sink=cast(Any, MagicMock()),
+        transcript_sink=cast(Any, mock.MagicMock()),
         budget=cast(Any, None),
         n=2,
         personas=("security@anthropic/claude-opus-4-8", "tests"),
@@ -627,7 +629,7 @@ def test_a_persona_flag_with_a_half_spec_refuses_like_the_config_does(monkeypatc
     with pytest.raises(ProviderError, match="both provider and model required"):
         prov_mod.build_review_seats(
             _cfg_with_seats(()),
-            transcript_sink=cast(Any, MagicMock()),
+            transcript_sink=cast(Any, mock.MagicMock()),
             budget=cast(Any, None),
             n=1,
             personas=("security@openrouter",),
@@ -635,7 +637,7 @@ def test_a_persona_flag_with_a_half_spec_refuses_like_the_config_does(monkeypatc
 
 
 def test_a_half_spec_on_the_cli_is_an_operator_error_not_a_crash_report(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A half spec on the CLI is an operator error, not a crash report.
 

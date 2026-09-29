@@ -6,31 +6,30 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.config.layer import load_effective
-from agent6.models.registry import resolved_adaptive_values
-from agent6.paths import global_config_dir, state_dir
-from agent6.sessions.layout import bucket_dir, machines_root
+from agent6 import paths
+from agent6.config import layer
+from agent6.models import registry
+from agent6.sessions import layout as sessions_layout
 from agent6.ui.web import model
-from agent6.viewmodel import machine_snapshot, session_snapshot
-from agent6.viewmodel.config_view import render_show
+from agent6.viewmodel import config_view, machine_snapshot, session_snapshot
 
 
-def _bucket(cwd: Path, sub: str) -> Path:
-    return bucket_dir(state_dir(cwd), sub)
+def _bucket(cwd: pathlib.Path, sub: str) -> pathlib.Path:
+    return sessions_layout.bucket_dir(paths.state_dir(cwd), sub)
 
 
-def _run(cwd: Path, session_id: str, events: list[dict[str, object]]) -> Path:
+def _run(cwd: pathlib.Path, session_id: str, events: list[dict[str, object]]) -> pathlib.Path:
     d = _bucket(cwd, "runs") / session_id
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return d
 
 
-def test_run_summary_captures_cost_and_status(tmp_path: Path) -> None:
+def test_run_summary_captures_cost_and_status(tmp_path: pathlib.Path) -> None:
     _run(
         tmp_path,
         "r1",
@@ -49,7 +48,7 @@ def test_run_summary_captures_cost_and_status(tmp_path: Path) -> None:
     assert s["label"] == "passed"  # the one shared human label, rendered verbatim
 
 
-def test_run_summary_uses_plan_points_for_a_plan_metered_run(tmp_path: Path) -> None:
+def test_run_summary_uses_plan_points_for_a_plan_metered_run(tmp_path: pathlib.Path) -> None:
     _run(
         tmp_path,
         "plan-metered",
@@ -68,7 +67,7 @@ def test_run_summary_uses_plan_points_for_a_plan_metered_run(tmp_path: Path) -> 
     assert (row["plan_consumed"], row["plan_cap"], row["cost"]) == (2.5, 6.0, "2.5pt")
 
 
-def test_run_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
+def test_run_summary_carries_the_partial_cost_marker(tmp_path: pathlib.Path) -> None:
     # The hub row renders the same lower-bound marker as the run page.
     _run(
         tmp_path,
@@ -83,24 +82,26 @@ def test_run_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
     assert s["usd_partial"] is True
 
 
-def test_driverless_prestart_hub_row_matches_the_cli_status_and_label(tmp_path: Path) -> None:
-    from agent6.sessions.ipc import write_worker_pid
-    from agent6.viewmodel.listing import summarize_session_dir, summary_row
+def test_driverless_prestart_hub_row_matches_the_cli_status_and_label(
+    tmp_path: pathlib.Path,
+) -> None:
+    from agent6.sessions import ipc
+    from agent6.viewmodel import listing
 
     d = _bucket(tmp_path, "runs") / "starting"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
         json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
     )
-    write_worker_pid(d, os.getpid())
+    ipc.write_worker_pid(d, os.getpid())
 
-    cli_row = summary_row(summarize_session_dir(d))
+    cli_row = listing.summary_row(listing.summarize_session_dir(d))
     (web_row,) = model.hub_payload(tmp_path)["sessions"]
     assert (web_row["status"], web_row["label"]) == ("starting", "starting")
     assert (web_row["status"], web_row["label"]) == (cli_row["status"], cli_row["label"])
 
 
-def test_run_summary_survives_torn_utf8_tail(tmp_path: Path) -> None:
+def test_run_summary_survives_torn_utf8_tail(tmp_path: pathlib.Path) -> None:
     # A live writer can leave the last line torn mid multibyte sequence; the fold keeps whole lines.
     d = _bucket(tmp_path, "runs") / "torn"
     d.mkdir(parents=True)
@@ -112,7 +113,7 @@ def test_run_summary_survives_torn_utf8_tail(tmp_path: Path) -> None:
     assert s["task"] == "torn tail"
 
 
-def test_conversation_payload_folds_the_event_log(tmp_path: Path) -> None:
+def test_conversation_payload_folds_the_event_log(tmp_path: pathlib.Path) -> None:
     # A multi-line result is clipped to its first line plus a note; the full text rides beside.
     dump = "3 validation errors for ApplyEditInput\npath\n  Field required"
     d = _run(
@@ -135,7 +136,7 @@ def test_conversation_payload_folds_the_event_log(tmp_path: Path) -> None:
     assert "Field required" in full  # the expanded rendering carries it
 
 
-def test_run_snapshot_embeds_the_compare_outcome(tmp_path: Path) -> None:
+def test_run_snapshot_embeds_the_compare_outcome(tmp_path: pathlib.Path) -> None:
     # A lane's manifest carries the compare block; the snapshot embeds it for the page header.
     d = _run(tmp_path, "lane1", [{"type": "session.start", "user_task": "x"}])
     (d / "manifest.json").write_text(
@@ -153,7 +154,7 @@ def test_run_snapshot_embeds_the_compare_outcome(tmp_path: Path) -> None:
     assert "compare" not in session_snapshot(plain)
 
 
-def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> None:
+def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: pathlib.Path) -> None:
     """The wire's `user_task` is filled from the manifest when the fold has no session.start.
 
     One task field; the client coalesces nothing.
@@ -169,7 +170,7 @@ def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> Non
     assert "fallback_task" not in snap
 
 
-def test_run_snapshot_carries_the_one_line_task_the_listings_show(tmp_path: Path) -> None:
+def test_run_snapshot_carries_the_one_line_task_the_listings_show(tmp_path: pathlib.Path) -> None:
     """The run card's title is the task line the hub rows read, not the raw first line.
 
     The raw first line of a resumed or TASK.md task showed a seed block's opener or a heading mark.
@@ -185,7 +186,7 @@ def test_run_snapshot_carries_the_one_line_task_the_listings_show(tmp_path: Path
     assert snap["task_line"] == "Fix the parser"
 
 
-def test_plan_snapshot_carries_the_plan_md(tmp_path: Path) -> None:
+def test_plan_snapshot_carries_the_plan_md(tmp_path: pathlib.Path) -> None:
     """A planning run's deliverable rides the snapshot as `plan_md`; a run carries no such key."""
     d = _bucket(tmp_path, "plans") / "plan1"
     d.mkdir(parents=True)
@@ -204,7 +205,7 @@ def test_plan_snapshot_carries_the_plan_md(tmp_path: Path) -> None:
     assert "plan_md" not in session_snapshot(run)
 
 
-def test_hub_marks_the_fan_out_winner(tmp_path: Path) -> None:
+def test_hub_marks_the_fan_out_winner(tmp_path: pathlib.Path) -> None:
     d = _run(tmp_path, "lane-win", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     (d / "manifest.json").write_text(
         json.dumps({"compare": {"rank": 1, "of": 2, "winner": True}}), encoding="utf-8"
@@ -213,7 +214,7 @@ def test_hub_marks_the_fan_out_winner(tmp_path: Path) -> None:
     assert s["winner"] is True
 
 
-def test_conversation_payload_carries_operator_inputs(tmp_path: Path) -> None:
+def test_conversation_payload_carries_operator_inputs(tmp_path: pathlib.Path) -> None:
     """`operator_inputs` carries the task, then every steer, raw text in journal order.
 
     The composer's Ctrl-R history search reads it; the client flattens and reverses for display.
@@ -231,14 +232,14 @@ def test_conversation_payload_carries_operator_inputs(tmp_path: Path) -> None:
     assert payload["operator_inputs"] == ["polish the web", "focus on tests", "ship\nit"]
 
 
-def test_conversation_payload_empty_without_log(tmp_path: Path) -> None:
+def test_conversation_payload_empty_without_log(tmp_path: pathlib.Path) -> None:
     d = _bucket(tmp_path, "runs") / "r2b"
     d.mkdir(parents=True)
     assert model.conversation_payload(d) == {"items": [], "operator_inputs": []}
 
 
-def test_machine_conversation_payload_uses_newest_state_log(tmp_path: Path) -> None:
-    md = machines_root(state_dir(tmp_path)) / "m2"
+def test_machine_conversation_payload_uses_newest_state_log(tmp_path: pathlib.Path) -> None:
+    md = sessions_layout.machines_root(paths.state_dir(tmp_path)) / "m2"
     (md / "states" / "0001-work").mkdir(parents=True)
     (md / "states" / "0001-work" / "logs.jsonl").write_text(
         json.dumps({"type": "loop.steer.injected", "text": "hello"}) + "\n", encoding="utf-8"
@@ -247,9 +248,9 @@ def test_machine_conversation_payload_uses_newest_state_log(tmp_path: Path) -> N
     assert set(payload) == {"items"}
     (item,) = payload["items"]
     assert item["kind"] == "operator"
-    assert model.machine_conversation_payload(machines_root(state_dir(tmp_path)) / "nope") == {
-        "items": []
-    }
+    assert model.machine_conversation_payload(
+        sessions_layout.machines_root(paths.state_dir(tmp_path)) / "nope"
+    ) == {"items": []}
 
 
 TINY_MACHINE = """
@@ -271,12 +272,12 @@ reason = "routed"
 """
 
 
-def test_machine_snapshot_carries_the_dir_status_word(tmp_path: Path) -> None:
+def test_machine_snapshot_carries_the_dir_status_word(tmp_path: pathlib.Path) -> None:
     """The machine wire payload stamps `status`, so a client can gate Steer and the prompts on it.
 
     With only `ended` a client cannot tell a parked machine from a running one.
     """
-    md = machines_root(state_dir(tmp_path)) / "m3"
+    md = sessions_layout.machines_root(paths.state_dir(tmp_path)) / "m3"
     md.mkdir(parents=True)
     (md / "machine.asm.toml").write_text(TINY_MACHINE, encoding="utf-8")
     (md / "journal.jsonl").write_text("", encoding="utf-8")
@@ -285,9 +286,9 @@ def test_machine_snapshot_carries_the_dir_status_word(tmp_path: Path) -> None:
     assert machine_snapshot(md)["status"] == "waiting"  # parked
 
 
-def test_hub_machine_pill_keeps_the_failure_reason(tmp_path: Path) -> None:
+def test_hub_machine_pill_keeps_the_failure_reason(tmp_path: pathlib.Path) -> None:
     """A failed machine's hub entry carries the reason label, like run and draft rows."""
-    md = machines_root(state_dir(tmp_path)) / "m-fail"
+    md = sessions_layout.machines_root(paths.state_dir(tmp_path)) / "m-fail"
     md.mkdir(parents=True)
     (md / "machine.asm.toml").write_text(TINY_MACHINE, encoding="utf-8")
     (md / "journal.jsonl").write_text(
@@ -311,14 +312,14 @@ def test_hub_machine_pill_keeps_the_failure_reason(tmp_path: Path) -> None:
     assert m["label"] == "failed · boom"
 
 
-def test_reasoning_snapshot_empty_without_state_log(tmp_path: Path) -> None:
+def test_reasoning_snapshot_empty_without_state_log(tmp_path: pathlib.Path) -> None:
     # A machine dir with no states/ subtree has no agent reasoning to fold.
-    md = machines_root(state_dir(tmp_path)) / "m1"
+    md = sessions_layout.machines_root(paths.state_dir(tmp_path)) / "m1"
     md.mkdir(parents=True)
     assert model.machine_reasoning_snapshot(md) == {}
 
 
-def test_an_id_in_two_buckets_resolves_to_neither(tmp_path: Path) -> None:
+def test_an_id_in_two_buckets_resolves_to_neither(tmp_path: pathlib.Path) -> None:
     """An id found in two buckets resolves to None, a 404, never to whichever bucket iterates first.
 
     State from before ids were one namespace can hold the same id twice.
@@ -331,29 +332,29 @@ def test_an_id_in_two_buckets_resolves_to_neither(tmp_path: Path) -> None:
     assert model.session_dir_for(tmp_path, "twin") is None
 
 
-def test_run_dir_for_rejects_traversal(tmp_path: Path) -> None:
+def test_run_dir_for_rejects_traversal(tmp_path: pathlib.Path) -> None:
     _run(tmp_path, "good-run", [{"type": "session.start"}])
     assert model.session_dir_for(tmp_path, "good-run") is not None
     for bad in ("..", ".", "", "../good-run", "a/b", "..\\x"):
         assert model.session_dir_for(tmp_path, bad) is None
 
 
-def test_machine_dir_for_rejects_traversal(tmp_path: Path) -> None:
-    (machines_root(state_dir(tmp_path)) / "m1").mkdir(parents=True)
+def test_machine_dir_for_rejects_traversal(tmp_path: pathlib.Path) -> None:
+    (sessions_layout.machines_root(paths.state_dir(tmp_path)) / "m1").mkdir(parents=True)
     assert model.machine_dir_for(tmp_path, "m1") is not None
     for bad in ("..", "../m1", "a/b", ""):
         assert model.machine_dir_for(tmp_path, bad) is None
 
 
-def test_hub_payload_shape(tmp_path: Path) -> None:
+def test_hub_payload_shape(tmp_path: pathlib.Path) -> None:
     _run(tmp_path, "r3", [{"type": "session.start", "mode": "plan"}])
     hub = model.hub_payload(tmp_path)
     assert [r["session_id"] for r in hub["sessions"]] == ["r3"]
     assert hub["machines"] == []
 
 
-def test_hub_payload_lists_machine_drafts(tmp_path: Path) -> None:
-    draft = state_dir(tmp_path) / "sessions" / "machines" / "breezy-fern-AB12CD"
+def test_hub_payload_lists_machine_drafts(tmp_path: pathlib.Path) -> None:
+    draft = paths.state_dir(tmp_path) / "sessions" / "machines" / "breezy-fern-AB12CD"
     draft.mkdir(parents=True)
     (draft / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "author a triage machine"})
@@ -366,7 +367,7 @@ def test_hub_payload_lists_machine_drafts(tmp_path: Path) -> None:
     assert s["task"] == "author a triage machine"
 
 
-def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: Path) -> None:
+def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: pathlib.Path) -> None:
     # A husk (neither manifest nor logs) is not listed and does not shadow a real ask with its id.
     (_bucket(tmp_path, "runs") / "echo-fern-AA11BB").mkdir(parents=True)
     ask = _bucket(tmp_path, "asks") / "echo-fern-AA11BB"
@@ -380,7 +381,7 @@ def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: Path) -> None:
     assert model.session_dir_for(tmp_path, "echo-fern-AA11BB") == ask
 
 
-def test_hub_skips_husk_machine_draft_dirs(tmp_path: Path) -> None:
+def test_hub_skips_husk_machine_draft_dirs(tmp_path: pathlib.Path) -> None:
     """A draft with neither manifest nor log is absent like a session husk."""
     draft = _bucket(tmp_path, "machines") / "empty-draft-AAAAAA"
     draft.mkdir(parents=True)
@@ -389,7 +390,7 @@ def test_hub_skips_husk_machine_draft_dirs(tmp_path: Path) -> None:
     assert model.draft_dir_for(tmp_path, draft.name) is None
 
 
-def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: Path) -> None:
+def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: pathlib.Path) -> None:
     """The config page shows `auto` and unset thresholds resolved and marked adaptive.
 
     They resolve from the worker model at runtime; `config show` prints the same.
@@ -401,9 +402,9 @@ def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: Path
         encoding="utf-8",
     )
     payload = model.config_payload(tmp_path, cfg)
-    eff = load_effective(tmp_path, cfg)
-    resolved = resolved_adaptive_values(eff.config)
-    shown = json.loads(render_show(eff, as_json=True, resolved=resolved))
+    eff = layer.load_effective(tmp_path, cfg)
+    resolved = registry.resolved_adaptive_values(eff.config)
+    shown = json.loads(config_view.render_show(eff, as_json=True, resolved=resolved))
     for key in ("prompt.decompose", "context.drop_at_chars", "context.summarise_at_chars"):
         shared = {name: value for name, value in payload[key].items() if name != "input"}
         assert shared == shown[key]
@@ -412,7 +413,7 @@ def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: Path
     assert isinstance(payload["context.drop_at_chars"]["effective"], int)
 
 
-def test_config_payload_carries_round_trippable_editor_values(tmp_path: Path) -> None:
+def test_config_payload_carries_round_trippable_editor_values(tmp_path: pathlib.Path) -> None:
     cfg = tmp_path / "c.toml"
     cfg.write_text(
         '[harness]\nverify_command = ["uv", "run", "pytest"]\n[skills.state]\nalpha = "always"\n',
@@ -426,12 +427,12 @@ def test_config_payload_carries_round_trippable_editor_values(tmp_path: Path) ->
 
 
 def test_config_suggestions_providers_and_models(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `provider` offers the configured names as choices; `model` suggests the provider's cached ids.
     from agent6.models import choices
 
-    cfg_home = global_config_dir()
+    cfg_home = paths.global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
         '[providers.openrouter]\napi_format = "openai"\n'
@@ -464,10 +465,10 @@ def test_config_suggestions_providers_and_models(
 
 
 def test_config_suggestions_parallel_models_pseudo_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The /parallel autocomplete lists every provider's routes, cache-only so it never blocks.
-    cfg_home = global_config_dir()
+    cfg_home = paths.global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
         '[providers.openrouter]\napi_format = "openai"\n'
@@ -490,10 +491,10 @@ def test_config_suggestions_parallel_models_pseudo_key(
 
 
 def test_parallel_models_suggestions_span_every_provider(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A lane names its provider, so a sibling provider's catalog is offered too.
-    cfg_home = global_config_dir()
+    cfg_home = paths.global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
         '[providers.w]\napi_format = "openai"\nbase_url = "https://w.example/v1"\n'
@@ -513,7 +514,7 @@ def test_parallel_models_suggestions_span_every_provider(
     ]
 
 
-def test_run_snapshot_labels_a_parked_submission(tmp_path: Path) -> None:
+def test_run_snapshot_labels_a_parked_submission(tmp_path: pathlib.Path) -> None:
     """A parked run reads parked on the run page, as on the hub.
 
     It has no events, so the event fold alone reads it as running.
@@ -535,18 +536,19 @@ def test_run_snapshot_labels_a_parked_submission(tmp_path: Path) -> None:
     assert hub_row["status"] == "parked"  # the two surfaces lead with one word
 
 
-def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: Path) -> None:
+def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathlib.Path) -> None:
     """A run parked before its execution shows the verify command without an unknown origin.
 
     A fresh manifest carries the configured command with no origin until the execution pins it.
     """
-    from agent6.app.manifest import stamp_parked, write_session_manifest
+    from agent6.app import manifest
     from agent6.config import Config
-    from agent6.sessions.layout import SessionLayout
 
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="parked-two-AAAAAA")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="parked-two-AAAAAA"
+    )
     layout.ensure()
-    write_session_manifest(
+    manifest.write_session_manifest(
         layout,
         session_id=layout.session_id,
         user_task="t",
@@ -555,12 +557,12 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: Path) 
         run_branch=None,
         cfg=Config.model_validate({"harness": {"verify_command": ["python3", "-m", "pytest"]}}),
     )
-    stamp_parked(layout.session_dir, task="t", reason="checkout busy")
+    manifest.stamp_parked(layout.session_dir, task="t", reason="checkout busy")
     snap = session_snapshot(layout.session_dir)
     assert snap["status_label"] == "parked · checkout busy"
     assert snap["policy"].endswith("python3 -m pytest (configured)")
     # A gateless config stays gateless until the execution infers or adopts one.
-    write_session_manifest(
+    manifest.write_session_manifest(
         layout,
         session_id=layout.session_id,
         user_task="t",
@@ -572,7 +574,7 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: Path) 
     assert session_snapshot(layout.session_dir)["policy"].endswith("no verify gate")
 
 
-def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: Path) -> None:
+def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: pathlib.Path) -> None:
     """A run whose recorded worker is gone and that never logged session.end folds to "running".
 
     The hub calls it stale off the same pid probe; the one-shot payload the page first paints from
@@ -583,7 +585,7 @@ def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: Path) -> None:
     assert session_snapshot(d)["status_label"] == "stale"
 
 
-def test_run_snapshot_labels_waiting_starting_created(tmp_path: Path) -> None:
+def test_run_snapshot_labels_waiting_starting_created(tmp_path: pathlib.Path) -> None:
     """The run page speaks every listing word: waiting, starting, created, parked, stale.
 
     A run blocked on an operator answer read "running", sending the operator off to wait on the
@@ -591,7 +593,7 @@ def test_run_snapshot_labels_waiting_starting_created(tmp_path: Path) -> None:
     """
     import os
 
-    from agent6.sessions.ipc import write_worker_pid
+    from agent6.sessions import ipc
 
     d = _run(
         tmp_path,
@@ -601,19 +603,19 @@ def test_run_snapshot_labels_waiting_starting_created(tmp_path: Path) -> None:
             {"type": "approval.prompt", "id": "approval-1", "prompt": "rm -rf?"},
         ],
     )
-    write_worker_pid(d, os.getpid())
+    ipc.write_worker_pid(d, os.getpid())
     assert session_snapshot(d)["status_label"] == "waiting · needs answer"
 
     e = _bucket(tmp_path, "runs") / "fresh1"
     e.mkdir(parents=True)
     (e / "manifest.json").write_text(json.dumps({"session_id": "fresh1"}), encoding="utf-8")
-    write_worker_pid(e, os.getpid())
+    ipc.write_worker_pid(e, os.getpid())
     assert session_snapshot(e)["status_label"] == "starting"
     (e / "worker.pid").unlink()
     assert session_snapshot(e)["status_label"] == "created"
 
 
-def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: Path) -> None:
+def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: pathlib.Path) -> None:
     """The dir-derived relabels never touch a run that ended on its own terms."""
     d = _run(
         tmp_path,
@@ -632,7 +634,7 @@ def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: Path) -> None:
     assert session_snapshot(d)["status_label"] == "passed"
 
 
-def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
+def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: pathlib.Path) -> None:
     """The page keys its composer and Stop/Compact buttons on liveness.
 
     The fold calls every unfinished run "running", so a parked run offered a steer composer and a
@@ -641,7 +643,7 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
     """
     import os
 
-    from agent6.sessions.ipc import write_worker_pid
+    from agent6.sessions import ipc
 
     parked = _bucket(tmp_path, "runs") / "parked2"
     parked.mkdir(parents=True)
@@ -657,7 +659,7 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
     assert session_snapshot(crashed)["live"] is False
 
     alive = _run(tmp_path, "alive2", [{"type": "session.start", "mode": "run", "user_task": "t"}])
-    write_worker_pid(alive, os.getpid())
+    ipc.write_worker_pid(alive, os.getpid())
     assert session_snapshot(alive)["live"] is True
 
     done = _run(
@@ -676,7 +678,7 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
     assert session_snapshot(done)["live"] is False
 
 
-def test_the_states_that_offer_resume_are_not_live(tmp_path: Path) -> None:
+def test_the_states_that_offer_resume_are_not_live(tmp_path: pathlib.Path) -> None:
     """The composer's resume-takeover poll waits for the run to come alive.
 
     It polled `finished === false`, which is ALREADY true for the parked and stale runs it routes
@@ -700,13 +702,13 @@ def test_the_states_that_offer_resume_are_not_live(tmp_path: Path) -> None:
         assert snap["live"] is False, d.name  # ...and what actually distinguishes them
 
 
-def test_conversation_payload_carries_an_in_flight_call(tmp_path: Path) -> None:
+def test_conversation_payload_carries_an_in_flight_call(tmp_path: pathlib.Path) -> None:
     """A call the fold reports in flight shows as running until its result replaces it."""
-    from agent6.sessions.ipc import write_worker_pid
+    from agent6.sessions import ipc
 
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
     d = _run(tmp_path, "r3", [{"type": "session.start", "user_task": "x"}, {**call, "call_id": 1}])
-    write_worker_pid(d, os.getpid())  # a live worker: the call is in flight
+    ipc.write_worker_pid(d, os.getpid())  # a live worker: the call is in flight
 
     def flat_items() -> list[str]:
         items = model.conversation_payload(d)["items"]
@@ -720,7 +722,7 @@ def test_conversation_payload_carries_an_in_flight_call(tmp_path: Path) -> None:
     assert "exit 0" in settled and "running" not in settled
 
 
-def test_a_dead_workers_open_call_reads_dead_not_running(tmp_path: Path) -> None:
+def test_a_dead_workers_open_call_reads_dead_not_running(tmp_path: pathlib.Path) -> None:
     """The payload probes the worker and settles a call it left open; /restate agrees."""
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
     d = _run(tmp_path, "r4", [{"type": "session.start", "user_task": "x"}, {**call, "call_id": 1}])
@@ -732,10 +734,10 @@ def test_a_dead_workers_open_call_reads_dead_not_running(tmp_path: Path) -> None
 
 
 def test_the_hub_row_and_the_cli_json_row_are_one_shape(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The shared row includes the full task, not a web-only clipped value."""
-    from agent6.ui.cli.sessions_cmds import _cmd_list  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import sessions_cmds  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
     task = "a task whose full text must survive both JSON surfaces " + "x" * 100
@@ -749,17 +751,17 @@ def test_the_hub_row_and_the_cli_json_row_are_one_shape(
     )
 
     (hub_row,) = model.hub_payload(tmp_path)["sessions"]
-    assert _cmd_list(as_json=True) == 0
+    assert sessions_cmds._cmd_list(as_json=True) == 0
     (cli_row,) = json.loads(capsys.readouterr().out)
 
     assert hub_row == cli_row
 
 
 def test_the_hub_row_carries_the_one_line_task_the_cli_table_shows(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The card title is the task's first user-authored line, with the composed task beside it."""
-    from agent6.viewmodel.listing import task_snippet
+    from agent6.viewmodel import listing
 
     monkeypatch.chdir(tmp_path)
     task = "Fix the parser\n\nSeeded context the card must not show " + "z" * 80
@@ -767,13 +769,13 @@ def test_the_hub_row_carries_the_one_line_task_the_cli_table_shows(
 
     (row,) = model.hub_payload(tmp_path)["sessions"]
     assert row["task"] == task
-    assert row["task_line"] == task_snippet(task) == "Fix the parser"
+    assert row["task_line"] == listing.task_snippet(task) == "Fix the parser"
 
 
 def test_the_draft_hub_row_keeps_the_full_cli_json_task(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli.sessions_cmds import _cmd_list  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import sessions_cmds  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
     task = "author a machine from this complete description " + "y" * 100
@@ -785,21 +787,21 @@ def test_the_draft_hub_row_keeps_the_full_cli_json_task(
     )
 
     (hub_row,) = model.hub_payload(tmp_path)["drafts"]
-    assert _cmd_list(as_json=True) == 0
+    assert sessions_cmds._cmd_list(as_json=True) == 0
     (cli_row,) = json.loads(capsys.readouterr().out)
 
     assert hub_row == cli_row
 
 
-def test_a_waiting_machine_is_not_labelled_failed(tmp_path: Path) -> None:
+def test_a_waiting_machine_is_not_labelled_failed(tmp_path: pathlib.Path) -> None:
     """A live machine blocked on a prompt reads as waiting, not as failed.
 
     `reason` is set for a blocked machine as well as a failed end.
     """
-    from agent6.viewmodel.machine_state import MachineSummary
+    from agent6.viewmodel import machine_state
 
     row = model._machine_row(  # pyright: ignore[reportPrivateUsage]
-        MachineSummary(
+        machine_state.MachineSummary(
             name="inst",
             machine="m",
             status="waiting",
@@ -813,10 +815,10 @@ def test_a_waiting_machine_is_not_labelled_failed(tmp_path: Path) -> None:
     assert row["level"] == "warn"
 
 
-def test_the_web_machine_header_does_not_hide_a_zero_cost(tmp_path: Path) -> None:
+def test_the_web_machine_header_does_not_hide_a_zero_cost(tmp_path: pathlib.Path) -> None:
     """The web header appends the cost while it is zero, as `machine status` and the watch do."""
-    from agent6.machine.journal import BranchFact, MachineJournal, StepEvent
-    from agent6.ui.web.page import CLIENT_JS
+    from agent6.machine import journal
+    from agent6.ui.web import page
 
     (tmp_path / "machine.asm.toml").write_text(
         """machine = "tiny"
@@ -840,28 +842,30 @@ reason = "routed"
 """,
         encoding="utf-8",
     )
-    j = MachineJournal(tmp_path)
+    j = journal.MachineJournal(tmp_path)
     j.ensure_dirs()
     j.begin(machine="tiny", version=1)
     j.append(
-        StepEvent(
+        journal.StepEvent(
             ts="t",
             seq=0,
             state="route",
             label="n == 0",
             goto="done",
-            fact=BranchFact(clause_index=0),
+            fact=journal.BranchFact(clause_index=0),
         )
     )
     snap = machine_snapshot(tmp_path)
     assert snap["spend"] == {"usd": 0.0, "usd_partial": False} or snap["spend"]["usd"] == 0.0
 
-    start = CLIENT_JS.index("const sp = m.spend || {};")
-    line = CLIENT_JS[start : CLIENT_JS.index("\n", CLIENT_JS.index("const cost", start))]
+    start = page.CLIENT_JS.index("const sp = m.spend || {};")
+    line = page.CLIENT_JS[
+        start : page.CLIENT_JS.index("\n", page.CLIENT_JS.index("const cost", start))
+    ]
     assert "sp.usd ||" not in line, f"a clean $0 is falsy and drops the figure: {line!r}"
 
 
-def test_hub_folds_a_fan_outs_lanes_under_its_row(tmp_path: Path) -> None:
+def test_hub_folds_a_fan_outs_lanes_under_its_row(tmp_path: pathlib.Path) -> None:
     """The hub's session rows nest a fan-out's lanes under it, as `sessions list --json` prints."""
     start: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
     end: dict[str, object] = {"type": "session.end", "all_passed": True}

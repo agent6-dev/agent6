@@ -12,14 +12,12 @@ entry unproved and says so.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.config import Config
-from agent6.config.layer import load_effective
-from agent6.ui.cli import check_cmds
-from agent6.ui.cli.mcp_connect import cmd_mcp_connect
+from agent6.config import Config, layer
+from agent6.ui.cli import check_cmds, mcp_connect
 
 # The interpreter a jailed probe can reach: the run's sandbox grants /usr,
 # not the venv.
@@ -46,7 +44,7 @@ _WRITER_SERVER = (
 )
 
 
-def _repo_with_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def _repo_with_server(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "server.py").write_text(_WRITER_SERVER, encoding="utf-8")
@@ -86,7 +84,7 @@ def _never_started(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.needs_namespaces
 def test_a_startup_write_never_lands_in_the_repo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The server runs in the repository and is verified; its startup write is refused.
 
@@ -103,7 +101,7 @@ def test_a_startup_write_never_lands_in_the_repo(
 
 @pytest.mark.needs_namespaces
 def test_the_workspace_is_read_only_under_hardened_too(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Hardened has no mount namespace to re-bind with; the Landlock carve-out holds the same line.
 
@@ -121,11 +119,11 @@ def test_the_workspace_is_read_only_under_hardened_too(
 
 @pytest.mark.needs_namespaces
 def test_mcp_connect_probes_read_only_too(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The handshake is proved, the repo stays as it was."""
     repo = _repo_with_server(tmp_path, monkeypatch)
-    rc = cmd_mcp_connect(
+    rc = mcp_connect.cmd_mcp_connect(
         "notes",
         command=[_JAIL_PYTHON, "server.py"],
         url="",
@@ -138,7 +136,7 @@ def test_mcp_connect_probes_read_only_too(
 
 
 def test_mcp_connect_with_no_jail_writes_the_entry_unproved(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With no jail the server is not run; the entry is written and the unproved part is named.
 
@@ -148,7 +146,7 @@ def test_mcp_connect_with_no_jail_writes_the_entry_unproved(
     repo = _repo_with_server(tmp_path, monkeypatch)
     monkeypatch.setenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", "1")
     _never_started(monkeypatch)
-    rc = cmd_mcp_connect(
+    rc = mcp_connect.cmd_mcp_connect(
         "notes",
         command=[_JAIL_PYTHON, "server.py"],
         url="",
@@ -163,14 +161,17 @@ def test_mcp_connect_with_no_jail_writes_the_entry_unproved(
         " a run starts it unconfined." in err
     )
     assert "written to the global config" in out and "mcp__notes__" not in out
-    assert load_effective(repo).config.mcp.servers["notes"].command == (_JAIL_PYTHON, "server.py")
+    assert layer.load_effective(repo).config.mcp.servers["notes"].command == (
+        _JAIL_PYTHON,
+        "server.py",
+    )
     assert sorted(p.name for p in repo.iterdir()) == ["server.py"], (
         "connect wrote into the repo through MCP startup"
     )
 
 
 def test_a_server_it_cannot_hold_read_only_is_reported_not_started(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Each row names the leaf that makes the server unprobeable; nothing is spawned.
 
@@ -212,7 +213,7 @@ def test_a_server_it_cannot_hold_read_only_is_reported_not_started(
     [("extra_write_paths", ["/srv/out"]), ("extra_device_paths", ["/dev/null"])],
 )
 def test_an_operator_write_grant_holds_the_probe_off_too(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, leaf: str, value: list[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, leaf: str, value: list[str]
 ) -> None:
     """A server under a `[sandbox]` grant is not probed either: the rule stays absolute.
 
@@ -232,7 +233,7 @@ def test_an_operator_write_grant_holds_the_probe_off_too(
 
 
 def test_a_server_a_run_would_refuse_fails_the_check_unstarted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`network = "none"` on a hardened host is a run refusal, applied before any server starts.
 
@@ -262,7 +263,7 @@ def test_a_server_a_run_would_refuse_fails_the_check_unstarted(
     ],
 )
 def test_no_jail_means_no_probe_and_names_why(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, how: dict[str, str], cause: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, how: dict[str, str], cause: str
 ) -> None:
     """With no jail the check starts no spawned server; the row names what took the jail away.
 

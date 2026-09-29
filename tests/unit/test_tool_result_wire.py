@@ -17,18 +17,16 @@ model-facing bytes, so the file stays green across the change unedited.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 from typing import Any
 from unittest import mock
 
 import pytest
 
 from agent6.config import Config, load_config
-from agent6.graph.curator import GraphCurator
-from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
-from agent6.sessions.layout import SessionLayout
-from agent6.tools.dispatch import ToolDispatcher, ToolError
-from agent6.tools.operator_prompts import OperatorPrompts, QuestionAnswer
+from agent6.graph import curator, models
+from agent6.sessions import layout
+from agent6.tools import dispatch, errors, operator_prompts
 
 _VALID_TOML = """
 [agent6]
@@ -57,7 +55,7 @@ max_tokens_fallback = 2000000
 """
 
 
-def _config(tmp_path: Path, *, extra: str = "") -> Config:
+def _config(tmp_path: pathlib.Path, *, extra: str = "") -> Config:
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML + extra, encoding="utf-8")
     return load_config(p)
@@ -79,59 +77,59 @@ def _dumps(result: object) -> str:
 # --- content access family ---------------------------------------------------
 
 
-def test_wire_read_file_full(tmp_path: Path) -> None:
+def test_wire_read_file_full(tmp_path: pathlib.Path) -> None:
     (tmp_path / "hello.txt").write_text("hi", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     assert _dumps(d.dispatch("read_file", {"path": "hello.txt"})) == (
         '{"content": "hi", "size": 2, "lines_total": 1}'
     )
 
 
-def test_wire_read_file_slice(tmp_path: Path) -> None:
+def test_wire_read_file_slice(tmp_path: pathlib.Path) -> None:
     (tmp_path / "abc.txt").write_text("a\nb\nc\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     out = d.dispatch("read_file", {"path": "abc.txt", "start_line": 2, "limit": 1})
     assert _dumps(out) == (
         '{"content": "b\\n", "size": 2, "lines_total": 3, "start_line": 2, "lines_returned": 1}'
     )
 
 
-def test_wire_read_file_full_agrees_with_slice_on_lines_total(tmp_path: Path) -> None:
+def test_wire_read_file_full_agrees_with_slice_on_lines_total(tmp_path: pathlib.Path) -> None:
     """Full and partial reads of one file report the same lines_total, the splitlines count.
 
     The newline-count-plus-one heuristic overshot every newline-terminated file.
     """
     (tmp_path / "abc.txt").write_text("a\nb\nc\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     assert _dumps(d.dispatch("read_file", {"path": "abc.txt"})) == (
         '{"content": "a\\nb\\nc\\n", "size": 6, "lines_total": 3}'
     )
 
 
-def test_wire_read_file_start_past_eof(tmp_path: Path) -> None:
+def test_wire_read_file_start_past_eof(tmp_path: pathlib.Path) -> None:
     """A paging overshoot returns an empty slice with lines_returned=0, never a negative count."""
     (tmp_path / "abc.txt").write_text("a\nb\nc\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     out = d.dispatch("read_file", {"path": "abc.txt", "start_line": 10, "limit": 5})
     assert _dumps(out) == (
         '{"content": "", "size": 0, "lines_total": 3, "start_line": 10, "lines_returned": 0}'
     )
 
 
-def test_wire_list_dir(tmp_path: Path) -> None:
+def test_wire_list_dir(tmp_path: pathlib.Path) -> None:
     sub = tmp_path / "d"
     sub.mkdir()
     (sub / "a.txt").write_text("", encoding="utf-8")
     (sub / "b.txt").write_text("", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     assert _dumps(d.dispatch("list_dir", {"path": "d"})) == '{"entries": ["a.txt", "b.txt"]}'
 
 
 # --- filesystem-write family (applied + preview) -----------------------------
 
 
-def test_wire_apply_edit_applied(tmp_path: Path) -> None:
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+def test_wire_apply_edit_applied(tmp_path: pathlib.Path) -> None:
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     out = d.dispatch(
         "apply_edit",
         {"path": "new.txt", "edits": [{"kind": "create", "new_string": "x\n"}]},
@@ -139,9 +137,9 @@ def test_wire_apply_edit_applied(tmp_path: Path) -> None:
     assert _dumps(out) == '{"applied": ["create"], "path": "new.txt"}'
 
 
-def test_wire_apply_edit_preview_carries_would_apply(tmp_path: Path) -> None:
+def test_wire_apply_edit_preview_carries_would_apply(tmp_path: pathlib.Path) -> None:
     (tmp_path / "f.py").write_text("x = 1\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     out = d.dispatch(
         "apply_edit",
         {
@@ -167,10 +165,10 @@ def test_wire_apply_edit_preview_carries_would_apply(tmp_path: Path) -> None:
     assert w["hunks"] == 1
 
 
-def test_wire_apply_patch_preview_omits_would_apply(tmp_path: Path) -> None:
+def test_wire_apply_patch_preview_omits_would_apply(tmp_path: pathlib.Path) -> None:
     (tmp_path / "f.py").write_text("x = 1\n", encoding="utf-8")
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n"
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     out = d.dispatch("apply_patch", {"path": "f.py", "patch": patch, "preview": True})
     w = _wire(out)
     assert list(w) == [
@@ -187,30 +185,30 @@ def test_wire_apply_patch_preview_omits_would_apply(tmp_path: Path) -> None:
 # --- run-control family ------------------------------------------------------
 
 
-def test_wire_finish_session(tmp_path: Path) -> None:
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+def test_wire_finish_session(tmp_path: pathlib.Path) -> None:
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     out = d.dispatch("finish_session", {"summary": "done", "result": {"k": 1}})
     assert _dumps(out) == '{"acknowledged": true, "summary": "done", "result": {"k": 1}}'
 
 
-def test_wire_finish_session_null_result(tmp_path: Path) -> None:
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+def test_wire_finish_session_null_result(tmp_path: pathlib.Path) -> None:
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     out = d.dispatch("finish_session", {"summary": "done"})
     assert _dumps(out) == '{"acknowledged": true, "summary": "done", "result": null}'
 
 
-def test_wire_finish_planning(tmp_path: Path) -> None:
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), mode="plan")
+def test_wire_finish_planning(tmp_path: pathlib.Path) -> None:
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path), mode="plan")
     out = d.dispatch("finish_planning", {"summary": "s", "plan_markdown": "# Plan\n"})
     assert _dumps(out) == '{"acknowledged": true, "summary": "s", "plan_bytes": 7}'
 
 
-def test_wire_ask_user(tmp_path: Path) -> None:
-    d = ToolDispatcher(
+def test_wire_ask_user(tmp_path: pathlib.Path) -> None:
+    d = dispatch.ToolDispatcher(
         root=tmp_path,
         config=_config(tmp_path),
-        prompts=OperatorPrompts(
-            questioner=lambda request: QuestionAnswer(
+        prompts=operator_prompts.OperatorPrompts(
+            questioner=lambda request: operator_prompts.QuestionAnswer(
                 tuple("ans" for _ in request.questions), "stdin"
             )
         ),
@@ -222,12 +220,14 @@ def test_wire_ask_user(tmp_path: Path) -> None:
 # --- DAG family (dynamic ULID ids -> pin order + shape) ----------------------
 
 
-def test_wire_add_task_order(tmp_path: Path) -> None:
-    cur = GraphCurator(SessionLayout(state_dir=tmp_path / ".agent6", session_id="r"))
+def test_wire_add_task_order(tmp_path: pathlib.Path) -> None:
+    cur = curator.GraphCurator(layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="r"))
     root = cur.add_subtask(
-        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root", created_by="planner"))
+        models.AddSubtaskIntent(
+            parent_id=None, draft=models.TaskNodeDraft(title="root", created_by="planner")
+        )
     )
-    d = ToolDispatcher(
+    d = dispatch.ToolDispatcher(
         root=tmp_path, config=_config(tmp_path), curator=cur, run_root_node_id=root.id
     )
     w = _wire(d.dispatch("add_task", {"title": "sub"}))
@@ -240,15 +240,15 @@ def test_wire_add_task_order(tmp_path: Path) -> None:
 
 
 def _cmd_result(**kw: Any):
-    from agent6.kinds import CommandResult
+    from agent6 import kinds
 
     base = dict(argv=("x",), returncode=0, stdout="", stderr="", duration_s=0.5, exec_failed=False)
     base.update(kw)
-    return CommandResult(**base)  # type: ignore[arg-type]
+    return kinds.CommandResult(**base)  # type: ignore[arg-type]
 
 
-def test_wire_run_verify(tmp_path: Path) -> None:
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+def test_wire_run_verify(tmp_path: pathlib.Path) -> None:
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=_cmd_result(stdout="ok")):
         out = d.dispatch("run_verify_command", {})
     # The gate names itself: the worker never chose this command, so without
@@ -259,7 +259,7 @@ def test_wire_run_verify(tmp_path: Path) -> None:
     )
 
 
-def test_wire_run_verify_timeout_names_the_cap(tmp_path: Path) -> None:
+def test_wire_run_verify_timeout_names_the_cap(tmp_path: pathlib.Path) -> None:
     """A verify killed at verify_timeout_s reaches the model as timed_out with the cap.
 
     A bare returncode 124 with empty output was indistinguishable from a failing suite, and
@@ -270,7 +270,7 @@ def test_wire_run_verify_timeout_names_the_cap(tmp_path: Path) -> None:
     )
     p = tmp_path / "agent6.toml"
     p.write_text(toml, encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=load_config(p))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(p))
     with mock.patch(
         "agent6.tools.dispatch.run_in_jail",
         return_value=_cmd_result(returncode=124, duration_s=240.1),
@@ -282,8 +282,8 @@ def test_wire_run_verify_timeout_names_the_cap(tmp_path: Path) -> None:
     )
 
 
-def test_wire_run_command(tmp_path: Path) -> None:
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+def test_wire_run_command(tmp_path: pathlib.Path) -> None:
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     with mock.patch(
         "agent6.tools.dispatch.run_in_jail",
         return_value=_cmd_result(returncode=3, stdout="o", stderr="e"),
@@ -294,12 +294,12 @@ def test_wire_run_command(tmp_path: Path) -> None:
     )
 
 
-def test_wire_run_command_clip_names_dropped_chars(tmp_path: Path) -> None:
+def test_wire_run_command_clip_names_dropped_chars(tmp_path: pathlib.Path) -> None:
     """Output over the 20k cap leads with a marker naming the dropped char count.
 
     A bare tail read as the complete output.
     """
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     big = "x" * 25_000
     with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=_cmd_result(stdout=big)):
         out = d.dispatch("run_command", {"argv": ["echo", "hi"]})
@@ -312,7 +312,7 @@ def test_wire_run_command_clip_names_dropped_chars(tmp_path: Path) -> None:
         'pattern = "CYCLES: (\\\\d+)"\n'
         'goal = "minimize"\n'
     )
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path, extra=extra))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path, extra=extra))
     with mock.patch(
         "agent6.tools.dispatch.run_in_jail", return_value=_cmd_result(stdout="CYCLES: 42")
     ):
@@ -324,7 +324,7 @@ def test_wire_run_command_clip_names_dropped_chars(tmp_path: Path) -> None:
     )
 
 
-def test_metric_score_survives_the_display_clip(tmp_path: Path) -> None:
+def test_metric_score_survives_the_display_clip(tmp_path: pathlib.Path) -> None:
     """The metric score comes from the command's unclipped output.
 
     Parsed from the display-clipped stdout, a real score before the tail window was lost, or a
@@ -335,7 +335,7 @@ def test_metric_score_survives_the_display_clip(tmp_path: Path) -> None:
     )
     p = tmp_path / "agent6.toml"
     p.write_text(toml, encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=load_config(p))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(p))
     stdout = "CYCLES: 42\n" + "y" * 25_000
     with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=_cmd_result(stdout=stdout)):
         out = d.dispatch("run_metric_command", {})
@@ -345,25 +345,20 @@ def test_metric_score_survives_the_display_clip(tmp_path: Path) -> None:
 # --- error shape (loop wraps a raised ToolError) -----------------------------
 
 
-def test_wire_tool_error_shape(tmp_path: Path) -> None:
+def test_wire_tool_error_shape(tmp_path: pathlib.Path) -> None:
     """The model-facing error bytes are driven through the loop's error path, not a rebuilt dict.
 
     Rebuilding it here pinned the test's own literal and left the producer unpinned.
     """
-    from unittest.mock import MagicMock
+    from agent6.harness import _loop_state, loop
 
-    from agent6.harness.loop import (
-        Harness,
-        LoopState,
-    )
-
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    with pytest.raises(ToolError) as exc:
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    with pytest.raises(errors.ToolError) as exc:
         d.dispatch("no_such_tool", {})
 
-    wf = MagicMock()
-    state = LoopState(original_task="t", tool_calls=0)
-    content = Harness._note_tool_error(  # pyright: ignore[reportPrivateUsage]
+    wf = mock.MagicMock()
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    content = loop.Harness._note_tool_error(  # pyright: ignore[reportPrivateUsage]
         wf, state, "no_such_tool", {}, exc.value
     )
     assert content == '{"error": "Unknown tool: no_such_tool"}'
@@ -371,18 +366,18 @@ def test_wire_tool_error_shape(tmp_path: Path) -> None:
 
 def test_the_tool_error_log_line_names_the_tool_once() -> None:
     """A tool raises the bare message; the logger prefixes the tool's name."""
-    from unittest.mock import MagicMock
+    from agent6 import skills
+    from agent6.harness import _loop_state, loop
+    from agent6.tools import _skill_tools  # pyright: ignore[reportPrivateUsage]
 
-    from agent6.harness.loop import Harness, LoopState
-    from agent6.skills import ResolvedSkills
-    from agent6.tools._skill_tools import use_skill  # pyright: ignore[reportPrivateUsage]
-
-    with pytest.raises(ToolError) as exc:
-        use_skill(lambda: ResolvedSkills(enabled=(), always=(), warnings=()), {"name": "x"})
+    with pytest.raises(errors.ToolError) as exc:
+        _skill_tools.use_skill(
+            lambda: skills.ResolvedSkills(enabled=(), always=(), warnings=()), {"name": "x"}
+        )
     assert str(exc.value).startswith("unknown or disabled skill 'x'")
-    wf = MagicMock()
-    state = LoopState(original_task="t", tool_calls=0)
-    Harness._note_tool_error(  # pyright: ignore[reportPrivateUsage]
+    wf = mock.MagicMock()
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    loop.Harness._note_tool_error(  # pyright: ignore[reportPrivateUsage]
         wf, state, "use_skill", {}, exc.value
     )
     wf._log.assert_called_with(f"  tool_error: use_skill: {exc.value}")

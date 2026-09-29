@@ -8,7 +8,7 @@ argcomplete runs them on Tab with nowhere to show an error; one decorator guards
 from __future__ import annotations
 
 import inspect
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -48,9 +48,9 @@ def test_an_unresolvable_state_dir_does_not_reach_the_shell(
     from agent6.config import ConfigError
     from agent6.ui.cli import _common
 
-    calls: list[Path] = []
+    calls: list[pathlib.Path] = []
 
-    def _boom(root: Path) -> Path:
+    def _boom(root: pathlib.Path) -> pathlib.Path:
         calls.append(root)
         raise ConfigError("config is not valid TOML")
 
@@ -68,9 +68,8 @@ def test_any_completer_bug_yields_no_suggestions_not_a_traceback() -> None:
 
     The guard catches every exception.
     """
-    from agent6.ui.cli.completers import _never_raises  # pyright: ignore[reportPrivateUsage]
 
-    @_never_raises
+    @completers._never_raises
     def boom(prefix: str, **_kw: object) -> list[str]:
         raise KeyError("bug")
 

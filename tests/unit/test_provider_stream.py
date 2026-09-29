@@ -11,24 +11,18 @@ stop/steer classification, 4xx surfacing, and transcript records.
 from __future__ import annotations
 
 import json
+import pathlib
 import threading
 from collections.abc import Callable, Iterator
-from pathlib import Path
 from typing import Any, ClassVar
 from unittest import mock
 
 import httpx2
 import pytest
 
-from agent6.budget import BudgetTracker
+from agent6 import budget as agent6_budget
 from agent6.providers import _stream as stream_mod
-from agent6.providers._stream import SseCall, StreamClock
-from agent6.providers.types import (
-    ProviderAborted,
-    ProviderError,
-    ProviderInterrupted,
-    TranscriptSink,
-)
+from agent6.providers import types
 
 
 def _serve(resp: object) -> Callable[..., object]:
@@ -40,7 +34,7 @@ def _serve(resp: object) -> Callable[..., object]:
     return factory
 
 
-def _call(sink: TranscriptSink | None = None, **overrides: Any) -> SseCall:
+def _call(sink: types.TranscriptSink | None = None, **overrides: Any) -> stream_mod.SseCall:
     kwargs: dict[str, Any] = {
         "api_label": "OpenAI",
         "api_format": "openai",
@@ -53,10 +47,10 @@ def _call(sink: TranscriptSink | None = None, **overrides: Any) -> SseCall:
         "should_interrupt": None,
     }
     kwargs.update(overrides)
-    return SseCall(**kwargs)
+    return stream_mod.SseCall(**kwargs)
 
 
-def _drain(resp: httpx2.Response, clock: StreamClock) -> None:
+def _drain(resp: httpx2.Response, clock: stream_mod.StreamClock) -> None:
     for _line in resp.iter_lines():
         clock.mark_data()
 
@@ -135,15 +129,15 @@ class _ChunkedErrorResponse(_ErrorResponse):
 
 
 def test_idle_kill_before_output_reports_prefill_and_records(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 0.05)
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = types.TranscriptSink(tmp_path / "transcripts")
 
     with (
         mock.patch("httpx2.stream", side_effect=_serve(_ParkedResponse())),
-        pytest.raises(ProviderError, match="prefill"),
+        pytest.raises(types.ProviderError, match="prefill"),
     ):
         _call(sink).run(_drain)
 
@@ -159,14 +153,14 @@ def test_idle_kill_after_output_reports_mid_stream(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 30.0)
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
 
-    def consume(resp: httpx2.Response, clock: StreamClock) -> None:
+    def consume(resp: httpx2.Response, clock: stream_mod.StreamClock) -> None:
         for _line in resp.iter_lines():
             clock.mark_data()
             clock.mark_output()
 
     with (
         mock.patch("httpx2.stream", side_effect=_serve(_ParkedResponse(["data: x"]))),
-        pytest.raises(ProviderError, match=r"Anthropic SSE stream idle .* mid-stream"),
+        pytest.raises(types.ProviderError, match=r"Anthropic SSE stream idle .* mid-stream"),
     ):
         _call(api_label="Anthropic", api_format="anthropic").run(consume)
 
@@ -175,7 +169,7 @@ def test_idle_budget_prefers_the_thinking_phase_over_mid_stream() -> None:
     # A display:omitted thinking block streams only pings; the patient thinking
     # budget must win over the tight mid-stream budget while it is open, else a
     # long reason false-kills (the sonnet stylebook regression).
-    clock = StreamClock()
+    clock = stream_mod.StreamClock()
     assert clock.idle_budget() == (
         stream_mod.STREAM_FIRST_DATA_TIMEOUT_S,
         "before any data (prefill)",
@@ -196,7 +190,7 @@ def test_idle_kill_in_thinking_reports_mid_thinking(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 30.0)
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
 
-    def consume(resp: httpx2.Response, clock: StreamClock) -> None:
+    def consume(resp: httpx2.Response, clock: stream_mod.StreamClock) -> None:
         for _line in resp.iter_lines():
             clock.mark_data()
             clock.mark_output()
@@ -204,7 +198,7 @@ def test_idle_kill_in_thinking_reports_mid_thinking(monkeypatch: pytest.MonkeyPa
 
     with (
         mock.patch("httpx2.stream", side_effect=_serve(_ParkedResponse(["data: x"]))),
-        pytest.raises(ProviderError, match=r"Anthropic SSE stream idle .* mid-thinking"),
+        pytest.raises(types.ProviderError, match=r"Anthropic SSE stream idle .* mid-thinking"),
     ):
         _call(api_label="Anthropic", api_format="anthropic").run(consume)
 
@@ -213,7 +207,7 @@ def test_abort_classifies_as_provider_aborted(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
     with (
         mock.patch("httpx2.stream", side_effect=_serve(_ParkedResponse())),
-        pytest.raises(ProviderAborted),
+        pytest.raises(types.ProviderAborted),
     ):
         _call(should_abort=lambda: True).run(_drain)
 
@@ -222,14 +216,14 @@ def test_interrupt_classifies_as_provider_interrupted(monkeypatch: pytest.Monkey
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
     with (
         mock.patch("httpx2.stream", side_effect=_serve(_ParkedResponse())),
-        pytest.raises(ProviderInterrupted),
+        pytest.raises(types.ProviderInterrupted),
     ):
         _call(should_interrupt=lambda: True).run(_drain)
 
 
 @pytest.mark.parametrize(
     ("poll_name", "error_type"),
-    [("should_abort", ProviderAborted), ("should_interrupt", ProviderInterrupted)],
+    [("should_abort", types.ProviderAborted), ("should_interrupt", types.ProviderInterrupted)],
 )
 def test_operator_stop_classifies_when_close_ends_iteration_cleanly(
     monkeypatch: pytest.MonkeyPatch, poll_name: str, error_type: type[Exception]
@@ -259,18 +253,18 @@ def test_idle_kill_classifies_when_close_ends_iteration_cleanly(
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
     with (
         mock.patch("httpx2.stream", side_effect=_serve(_CleanlyClosedResponse())),
-        pytest.raises(ProviderError, match="prefill"),
+        pytest.raises(types.ProviderError, match="prefill"),
     ):
         _call().run(_drain)
 
 
-def test_4xx_threads_status_retry_after_and_label(tmp_path: Path) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts")
+def test_4xx_threads_status_retry_after_and_label(tmp_path: pathlib.Path) -> None:
+    sink = types.TranscriptSink(tmp_path / "transcripts")
     resp = _ErrorResponse(status_code=429, body='{"error":"rate"}', headers={"retry-after": "7"})
 
     with (
         mock.patch("httpx2.stream", side_effect=_serve(resp)),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         _call(sink).run(_drain)
 
@@ -281,13 +275,13 @@ def test_4xx_threads_status_retry_after_and_label(tmp_path: Path) -> None:
     assert len(files) == 1
 
 
-def test_http_error_body_read_stops_at_the_surfaced_prefix(tmp_path: Path) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts")
+def test_http_error_body_read_stops_at_the_surfaced_prefix(tmp_path: pathlib.Path) -> None:
+    sink = types.TranscriptSink(tmp_path / "transcripts")
     resp = _ChunkedErrorResponse()
 
     with (
         mock.patch("httpx2.stream", side_effect=_serve(resp)),
-        pytest.raises(ProviderError, match="500"),
+        pytest.raises(types.ProviderError, match="500"),
     ):
         _call(sink).run(_drain)
 
@@ -298,12 +292,12 @@ def test_http_error_body_read_stops_at_the_surfaced_prefix(tmp_path: Path) -> No
 
 
 def test_consume_provider_error_propagates_unchanged() -> None:
-    def consume(resp: httpx2.Response, clock: StreamClock) -> None:
-        raise ProviderError("mid-stream error frame")
+    def consume(resp: httpx2.Response, clock: stream_mod.StreamClock) -> None:
+        raise types.ProviderError("mid-stream error frame")
 
     with (
         mock.patch("httpx2.stream", side_effect=_serve(_ParkedResponse([]))),
-        pytest.raises(ProviderError, match="mid-stream error frame"),
+        pytest.raises(types.ProviderError, match="mid-stream error frame"),
     ):
         _call().run(consume)
 
@@ -311,7 +305,9 @@ def test_consume_provider_error_propagates_unchanged() -> None:
 def test_transport_error_names_the_wire_format() -> None:
     with (
         mock.patch("httpx2.stream", side_effect=httpx2.ReadTimeout("boom")),
-        pytest.raises(ProviderError, match=r"HTTP error streaming from .* \(anthropic format\)"),
+        pytest.raises(
+            types.ProviderError, match=r"HTTP error streaming from .* \(anthropic format\)"
+        ),
     ):
         _call(api_label="Anthropic", api_format="anthropic").run(_drain)
 
@@ -354,13 +350,13 @@ def test_a_malformed_frame_normalizes_to_a_provider_error(
         stream_mod.httpx2, "stream", _serve(_LinesResponse(['data: {"choices": "boom"}']))
     )
 
-    def consume(resp: httpx2.Response, clock: StreamClock) -> None:
+    def consume(resp: httpx2.Response, clock: stream_mod.StreamClock) -> None:
         for line in resp.iter_lines():
             clock.mark_data()
             payload = json.loads(line[5:])
             _ = int(payload["choices"][0]["index"])  # the shape error escapes here
 
-    with pytest.raises(ProviderError, match="did not match the wire shape"):
+    with pytest.raises(types.ProviderError, match="did not match the wire shape"):
         call.run(consume)
 
 
@@ -370,17 +366,15 @@ def test_an_endless_frame_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     The bounded reader refuses past the per-line ceiling as a retryable error (the non-streaming
     path already caps its whole body).
     """
-    from agent6.providers._stream import bounded_lines
-
     call = _call()
     huge = "data: " + "x" * 1024
     monkeypatch.setattr(stream_mod.httpx2, "stream", _serve(_LinesResponse([huge])))
 
-    def consume(resp: httpx2.Response, clock: StreamClock) -> None:
-        for _line in bounded_lines(resp, max_line_bytes=512):
+    def consume(resp: httpx2.Response, clock: stream_mod.StreamClock) -> None:
+        for _line in stream_mod.bounded_lines(resp, max_line_bytes=512):
             clock.mark_data()
 
-    with pytest.raises(ProviderError, match="stream frame exceeded"):
+    with pytest.raises(types.ProviderError, match="stream frame exceeded"):
         call.run(consume)
 
 
@@ -390,17 +384,15 @@ def test_an_endless_event_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     A server that never sends the blank line ending an event would have the reader gather data lines
     until the watchdog; the event ceiling refuses past it as the per-line one does.
     """
-    from agent6.providers._stream import sse_events
-
     call = _call()
     lines = ["data: " + "x" * 300] * 4
     monkeypatch.setattr(stream_mod.httpx2, "stream", _serve(_LinesResponse(lines)))
 
-    def consume(resp: httpx2.Response, clock: StreamClock) -> None:
-        for _event in sse_events(resp, max_event_bytes=512):
+    def consume(resp: httpx2.Response, clock: stream_mod.StreamClock) -> None:
+        for _event in stream_mod.sse_events(resp, max_event_bytes=512):
             clock.mark_data()
 
-    with pytest.raises(ProviderError, match="SSE event exceeded"):
+    with pytest.raises(types.ProviderError, match="SSE event exceeded"):
         call.run(consume)
 
 
@@ -410,12 +402,12 @@ def test_a_malformed_2xx_body_normalizes_at_the_transport_seam() -> None:
     A parse that trips on a malformed 2xx body surfaces as a retryable ProviderError from the one
     transport seam.
     """
-    from agent6.providers._transport import ProviderCall
+    from agent6.providers import _transport
 
     def _bad_parse(_data: dict[str, Any]) -> Any:
         raise KeyError("message")
 
-    call = ProviderCall(
+    call = _transport.ProviderCall(
         api_label="OpenAI",
         api_format="openai",
         url="https://api.test/v1/chat/completions",
@@ -441,7 +433,7 @@ def test_a_malformed_2xx_body_normalizes_at_the_transport_seam() -> None:
         def json(self) -> dict[str, Any]:
             return {"choices": [{}]}
 
-    with pytest.raises(ProviderError, match="did not match the wire shape"):
+    with pytest.raises(types.ProviderError, match="did not match the wire shape"):
         call._decode_success({}, _Resp())  # pyright: ignore[reportPrivateUsage, reportArgumentType]
 
 
@@ -459,13 +451,13 @@ def test_a_raising_abort_poll_leaves_the_watchdog_alive(monkeypatch: pytest.Monk
 
     with (
         mock.patch("httpx2.stream", side_effect=_serve(_ParkedResponse())),
-        pytest.raises(ProviderError, match="prefill"),
+        pytest.raises(types.ProviderError, match="prefill"),
     ):
         _call(should_abort=boom, should_interrupt=boom).run(_drain)
 
 
 def test_reported_cost_without_token_counts_is_recorded() -> None:
-    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
 
     stream_mod.record_billed_usage(
         budget,

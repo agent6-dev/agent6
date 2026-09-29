@@ -4,10 +4,10 @@
 
 from __future__ import annotations
 
+import pathlib
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -29,7 +29,7 @@ def priv_calls(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
 
 
 def test_status_reports_installed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     profile = tmp_path / "agent6-jail"
     profile.write_text("x", encoding="utf-8")
@@ -64,7 +64,7 @@ def test_install_refused_on_non_apparmor_host(
 
 
 def test_install_writes_profile_and_reloads(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, priv_calls: list[list[str]]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, priv_calls: list[list[str]]
 ) -> None:
     monkeypatch.setattr(sc, "_apparmor_present", lambda: True)
     dest = tmp_path / "agent6-jail"
@@ -92,11 +92,11 @@ def test_bundled_profile_parses_as_apparmor() -> None:
         fh.write(sc._APPARMOR_PROFILE)  # pyright: ignore[reportPrivateUsage]
     # -d parses and dumps; it never loads into the kernel, so no privileges.
     done = subprocess.run([parser, "-d", profile.name], capture_output=True, text=True, check=False)
-    Path(profile.name).unlink(missing_ok=True)
+    pathlib.Path(profile.name).unlink(missing_ok=True)
     assert done.returncode == 0, done.stderr
 
 
-def test_remove_absent_is_noop(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_remove_absent_is_noop(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     monkeypatch.setattr(sc, "_apparmor_present", lambda: True)
     monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(tmp_path / "nope"))
     rc = sc._cmd_system_apparmor("remove")  # pyright: ignore[reportPrivateUsage]
@@ -104,7 +104,7 @@ def test_remove_absent_is_noop(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
 
 
 def test_remove_deletes_profile_after_apparmor_is_disabled(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setattr(sc, "_apparmor_present", lambda: False)
     profile = tmp_path / "agent6-jail"
@@ -123,7 +123,7 @@ def test_remove_deletes_profile_after_apparmor_is_disabled(
 
 
 def test_remove_unloads_then_deletes(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, priv_calls: list[list[str]]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, priv_calls: list[list[str]]
 ) -> None:
     monkeypatch.setattr(sc, "_apparmor_present", lambda: True)
     profile = tmp_path / "agent6-jail"
@@ -145,7 +145,7 @@ def test_remove_unloads_then_deletes(
 
 
 def test_remove_reports_failure_if_file_remains(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, priv_calls: list[list[str]]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, priv_calls: list[list[str]]
 ) -> None:
     # A failed privileged rm is exit 1; a failed -R alone (present but not loaded) is not.
     monkeypatch.setattr(sc, "_apparmor_present", lambda: True)
@@ -158,7 +158,7 @@ def test_remove_reports_failure_if_file_remains(
 
 def test_remove_does_not_report_an_unloaded_profile_as_an_error(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     profile = tmp_path / "agent6-jail"
@@ -179,7 +179,7 @@ def test_remove_does_not_report_an_unloaded_profile_as_an_error(
 
 
 def test_a_profile_the_parser_refuses_never_reaches_the_path(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A profile the parser refuses never reaches the path.
 
@@ -211,7 +211,7 @@ def test_a_profile_the_parser_refuses_never_reaches_the_path(
 
 
 def test_a_failed_first_copy_removes_its_partial_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A failed first copy removes its partial file, so nothing reads as installed."""
     monkeypatch.setattr(sc, "_apparmor_present", lambda: True)

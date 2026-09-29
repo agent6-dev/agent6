@@ -15,10 +15,7 @@ from unittest import mock
 import httpx2
 import pytest
 
-from agent6.providers.anthropic import AnthropicProvider
-from agent6.providers.openai import OpenAIProvider
-from agent6.providers.types import ProviderError
-from agent6.providers.wire import auth_header, request_url
+from agent6.providers import anthropic, openai, types, wire
 
 _VERTEX_ANTHROPIC = (
     "https://us-east5-aiplatform.googleapis.com/v1/projects/p/locations/us-east5"
@@ -62,7 +59,7 @@ def _openai_ok() -> httpx2.Response:
 
 
 def test_anthropic_direct_wire() -> None:
-    p = AnthropicProvider(api_key="sk-ant", model="claude-x")  # deployment/auth default
+    p = anthropic.AnthropicProvider(api_key="sk-ant", model="claude-x")  # deployment/auth default
     captured, fake = _capture(_anthropic_ok())
     with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
@@ -76,7 +73,7 @@ def test_anthropic_direct_wire() -> None:
 
 def test_anthropic_vertex_wire() -> None:
     # model in URL (:rawPredict), version in body, bearer auth, no model in body.
-    p = AnthropicProvider(
+    p = anthropic.AnthropicProvider(
         api_key="ya29.tok",
         model="claude-opus-4-8",
         base_url=_VERTEX_ANTHROPIC,
@@ -94,7 +91,7 @@ def test_anthropic_vertex_wire() -> None:
 
 
 def test_openai_direct_wire() -> None:
-    p = OpenAIProvider(api_key="sk-oai", model="gpt-x")  # bearer default
+    p = openai.OpenAIProvider(api_key="sk-oai", model="gpt-x")  # bearer default
     captured, fake = _capture(_openai_ok())
     with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
@@ -105,7 +102,7 @@ def test_openai_direct_wire() -> None:
 
 def test_openai_azure_wire() -> None:
     # deployment name in URL, api-version query param, api-key header, no model in body.
-    p = OpenAIProvider(
+    p = openai.OpenAIProvider(
         api_key="azkey",
         model="my-deployment",
         base_url="https://res.openai.azure.com",
@@ -126,7 +123,7 @@ def test_openai_azure_wire() -> None:
 
 
 def test_openai_none_auth_sends_no_auth_header() -> None:
-    p = OpenAIProvider(
+    p = openai.OpenAIProvider(
         api_key="", model="local", base_url="http://localhost:1234/v1", auth_style="none"
     )
     captured, fake = _capture(_openai_ok())
@@ -137,9 +134,9 @@ def test_openai_none_auth_sends_no_auth_header() -> None:
 
 
 def test_api_key_header_is_redacted_in_transcripts() -> None:
-    from agent6.providers.types import _redact_headers  # pyright: ignore[reportPrivateUsage]
-
-    redacted = _redact_headers({"api-key": "secret", "x-api-key": "s2", "content-type": "json"})
+    redacted = types._redact_headers(
+        {"api-key": "secret", "x-api-key": "s2", "content-type": "json"}
+    )
     assert redacted["api-key"] == "<REDACTED>"
     assert redacted["x-api-key"] == "<REDACTED>"
     assert redacted["content-type"] == "json"
@@ -163,8 +160,8 @@ def test_auth_header_refuses_a_credential_that_is_not_header_safe(bad: str) -> N
     transcript. The refusal names the fault but never the value.
     """
     for style in ("bearer", "x_api_key", "api_key_header"):
-        with pytest.raises(ProviderError) as excinfo:
-            auth_header(style, bad)  # type: ignore[arg-type]
+        with pytest.raises(types.ProviderError) as excinfo:
+            wire.auth_header(style, bad)  # type: ignore[arg-type]
         # The secret must not leak into the error text (nor its distinctive bits).
         msg = str(excinfo.value)
         assert "sk-secret" not in msg and "X-Injected" not in msg and "tok" not in msg
@@ -172,8 +169,8 @@ def test_auth_header_refuses_a_credential_that_is_not_header_safe(bad: str) -> N
 
 def test_auth_header_still_accepts_an_ordinary_ascii_token() -> None:
     tok = "sk-ant_AZ-09.~+/="
-    assert auth_header("bearer", tok) == ("authorization", f"Bearer {tok}")
-    assert auth_header("x_api_key", "azkey-123") == ("x-api-key", "azkey-123")
+    assert wire.auth_header("bearer", tok) == ("authorization", f"Bearer {tok}")
+    assert wire.auth_header("x_api_key", "azkey-123") == ("x-api-key", "azkey-123")
 
 
 def test_a_bad_credential_never_reaches_the_http_client() -> None:
@@ -182,13 +179,13 @@ def test_a_bad_credential_never_reaches_the_http_client() -> None:
     The provider call path routes through auth_header, so a malformed key fails as a ProviderError
     with no HTTP request attempted at all.
     """
-    p = OpenAIProvider(api_key="sk-live\r\nX-Injected: 1", model="gpt-x")
+    p = openai.OpenAIProvider(api_key="sk-live\r\nX-Injected: 1", model="gpt-x")
     with (
         mock.patch(
             "agent6.providers._transport.http_post",
             side_effect=AssertionError("must not be called"),
         ),
-        pytest.raises(ProviderError),
+        pytest.raises(types.ProviderError),
     ):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
 
@@ -204,7 +201,7 @@ def test_a_model_id_is_percent_quoted_in_the_url_path(raw: str, quoted: str) -> 
     `?` or space would reshape the URL (a different path, an injected query) away from the base_url
     host the egress allow-list trusts.
     """
-    vurl, in_body = request_url(
+    vurl, in_body = wire.request_url(
         api_format="anthropic",
         deployment="vertex",
         base_url=_VERTEX_ANTHROPIC,
@@ -212,7 +209,7 @@ def test_a_model_id_is_percent_quoted_in_the_url_path(raw: str, quoted: str) -> 
         streaming=False,
     )
     assert vurl == f"{_VERTEX_ANTHROPIC}/{quoted}:rawPredict" and in_body is False
-    aurl, _ = request_url(
+    aurl, _ = wire.request_url(
         api_format="openai",
         deployment="azure",
         base_url="https://res.openai.azure.com",
@@ -227,7 +224,7 @@ def test_anthropic_extra_body_cannot_replace_the_structural_request_shape() -> N
 
     Tools/tool_choice never inject (the loop owns the tool schema); tuning keys still win.
     """
-    p = AnthropicProvider(
+    p = anthropic.AnthropicProvider(
         api_key="sk-test",
         model="claude-x",
         extra_body={

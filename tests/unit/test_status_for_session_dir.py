@@ -15,30 +15,25 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.viewmodel.listing import (
-    LogScan,
-    scan_session_log,
-    status_for_session_dir,
-    summarize_session_dir,
-)
-from agent6.viewmodel.state import fold_session, status_facts
+from agent6.viewmodel import listing
+from agent6.viewmodel import state as viewmodel_state
 
 LIVE = os.getpid()
 DEAD = 999999999
 
 
 def _mk(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     name: str,
     events: list[dict[str, object]] | None,
     *,
     parked: str = "",
     pid: int | None = None,
-) -> Path:
+) -> pathlib.Path:
     d = tmp_path / name
     d.mkdir()
     manifest: dict[str, object] = {"mode": "run", "session_id": name, "user_task": "t"}
@@ -179,7 +174,7 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
     ids=[row[0] for row in MATRIX],  # LIVE is this process's pid: never in an id
 )
 def test_both_fact_producers_and_the_listing_agree(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     name: str,
     events: list[dict[str, object]] | None,
     parked: str,
@@ -189,11 +184,11 @@ def test_both_fact_producers_and_the_listing_agree(
 ) -> None:
     d = _mk(tmp_path, name, events, parked=parked, pid=pid)
     logs = d / "logs.jsonl"
-    scan = scan_session_log(logs) if logs.is_file() else LogScan()
-    fold = fold_session([] if events is None else events)
-    assert status_for_session_dir(d, scan.status_facts()) == (word, reason)
-    assert status_for_session_dir(d, status_facts(fold)) == (word, reason)
-    summary = summarize_session_dir(d)
+    scan = listing.scan_session_log(logs) if logs.is_file() else listing.LogScan()
+    fold = viewmodel_state.fold_session([] if events is None else events)
+    assert listing.status_for_session_dir(d, scan.status_facts()) == (word, reason)
+    assert listing.status_for_session_dir(d, viewmodel_state.status_facts(fold)) == (word, reason)
+    summary = listing.summarize_session_dir(d)
     assert (summary.status, summary.reason) == (word, reason)
 
 
@@ -210,12 +205,12 @@ def test_resume_clears_orphaned_pending_prompts() -> None:
         {"type": "loop.resume.start", "iteration": 2},
         _APPROVAL,
     ]
-    state = fold_session(events)
+    state = viewmodel_state.fold_session(events)
     assert len(state.pending_approvals) == 1  # the new execution's, not the orphan + a dup
     assert state.pending_questions == ()
 
 
-def test_waiting_names_the_prompt_kind_and_age_in_both_producers(tmp_path: Path) -> None:
+def test_waiting_names_the_prompt_kind_and_age_in_both_producers(tmp_path: pathlib.Path) -> None:
     """The waiting status names what the run waits on and for how long.
 
     With a prompt ts, both fact producers word it "approval 5m" / "question 5m" (oldest unanswered
@@ -235,18 +230,20 @@ def test_waiting_names_the_prompt_kind_and_age_in_both_producers(tmp_path: Path)
             ev,
         ]
         d = _mk(tmp_path, f"waiting-{kind}", events, parked="", pid=os.getpid())
-        scan = scan_session_log(d / "logs.jsonl")
-        fold = fold_session(events)
+        scan = listing.scan_session_log(d / "logs.jsonl")
+        fold = viewmodel_state.fold_session(events)
         expect = ("waiting", f"{kind} 5m")
-        assert status_for_session_dir(d, scan.status_facts()) == expect
-        assert status_for_session_dir(d, status_facts(fold)) == expect
+        assert listing.status_for_session_dir(d, scan.status_facts()) == expect
+        assert listing.status_for_session_dir(d, viewmodel_state.status_facts(fold)) == expect
 
     no_ts: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "approval.prompt", "id": "approval-1", "prompt": "p"},
     ]
     d = _mk(tmp_path, "waiting-no-ts", no_ts, parked="", pid=os.getpid())
-    assert status_for_session_dir(d, scan_session_log(d / "logs.jsonl").status_facts()) == (
+    assert listing.status_for_session_dir(
+        d, listing.scan_session_log(d / "logs.jsonl").status_facts()
+    ) == (
         "waiting",
         "needs answer",
     )

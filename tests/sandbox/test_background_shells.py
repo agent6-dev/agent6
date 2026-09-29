@@ -11,46 +11,42 @@ from __future__ import annotations
 
 import contextlib
 import os
+import pathlib
 import shutil
 import signal
 import subprocess
 import threading
 import time
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
-from agent6.kinds import BackgroundHandoff, ChildSnapshot, IsolationLevel, JailPolicy
-from agent6.sandbox.jail import (
-    BackgroundJob,
-    BackgroundStatus,
-    Stopped,
-    locate_jail_binary,
-    run_in_jail,
-)
-from agent6.tools.background import BackgroundError, BackgroundShells, roster_from_dir
+from agent6 import kinds
+from agent6.sandbox import jail
+from agent6.tools import background
 
 pytestmark = pytest.mark.needs_namespaces
 
 
 @pytest.fixture
-def shells(tmp_path: Path) -> BackgroundShells:
-    if locate_jail_binary() is None:
+def shells(tmp_path: pathlib.Path) -> background.BackgroundShells:
+    if jail.locate_jail_binary() is None:
         pytest.skip("no agent6-jail binary")
-    return BackgroundShells(tmp_path / "shells")
+    return background.BackgroundShells(tmp_path / "shells")
 
 
-def _policy_for(cwd: Path, isolation: IsolationLevel = "hardened"):
-    def build(argv: tuple[str, ...], rw: tuple[Path, ...]) -> JailPolicy:
-        return JailPolicy(
+def _policy_for(cwd: pathlib.Path, isolation: kinds.IsolationLevel = "hardened"):
+    def build(argv: tuple[str, ...], rw: tuple[pathlib.Path, ...]) -> kinds.JailPolicy:
+        return kinds.JailPolicy(
             cwd=cwd, argv=argv, isolation=isolation, extra_rw_paths=rw, timeout_s=60.0
         )
 
     return build
 
 
-def _wait_state(shells: BackgroundShells, shell_id: str, state: str, timeout: float = 15.0) -> str:
+def _wait_state(
+    shells: background.BackgroundShells, shell_id: str, state: str, timeout: float = 15.0
+) -> str:
     """Poll until *shell_id* reaches *state*. Returns the state actually seen."""
     deadline = time.monotonic() + timeout
     seen = ""
@@ -63,7 +59,7 @@ def _wait_state(shells: BackgroundShells, shell_id: str, state: str, timeout: fl
 
 
 def test_a_command_that_exits_on_its_own_reports_its_code(
-    shells: BackgroundShells, tmp_path: Path
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
     """A background command that ended reads as over, not "running".
 
@@ -79,7 +75,7 @@ def test_a_command_that_exits_on_its_own_reports_its_code(
 
 
 def test_a_command_killed_from_outside_is_never_reported_running(
-    shells: BackgroundShells, tmp_path: Path
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
     """A crash agent6 did not ask for (an OOM kill, an operator's kill -9) reads as over."""
     view = shells.start(("/bin/sh", "-c", "echo up; sleep 300"), _policy_for(tmp_path))
@@ -93,7 +89,9 @@ def test_a_command_killed_from_outside_is_never_reported_running(
     assert not any(v.state == "running" for v in shells.roster())
 
 
-def test_reading_a_live_command_never_blocks(shells: BackgroundShells, tmp_path: Path) -> None:
+def test_reading_a_live_command_never_blocks(
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
+) -> None:
     """A read of a command that will run for minutes returns immediately."""
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     start = time.monotonic()
@@ -104,7 +102,9 @@ def test_reading_a_live_command_never_blocks(shells: BackgroundShells, tmp_path:
     shells.stop(view.id)
 
 
-def test_stopped_and_died_are_different_words(shells: BackgroundShells, tmp_path: Path) -> None:
+def test_stopped_and_died_are_different_words(
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
+) -> None:
     """A stop and a death read differently, so a disappearance never looks deliberate."""
     stopped = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     failed = shells.start(("/bin/sh", "-c", "exit 3"), _policy_for(tmp_path))
@@ -114,7 +114,9 @@ def test_stopped_and_died_are_different_words(shells: BackgroundShells, tmp_path
     assert words == {stopped.id: "stopped", failed.id: "exited"}
 
 
-def test_the_roster_rides_on_every_answer(shells: BackgroundShells, tmp_path: Path) -> None:
+def test_the_roster_rides_on_every_answer(
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
+) -> None:
     """Reading one command reports them all, so a second one dying is seen unasked."""
     quiet = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     doomed = shells.start(("/bin/sh", "-c", "exit 1"), _policy_for(tmp_path))
@@ -126,7 +128,7 @@ def test_the_roster_rides_on_every_answer(shells: BackgroundShells, tmp_path: Pa
 
 
 def test_stop_all_kills_everything_and_the_processes_are_gone(
-    shells: BackgroundShells, tmp_path: Path
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
     """Run-end teardown: nothing a run started may outlive it."""
     views = [
@@ -144,13 +146,17 @@ def test_stop_all_kills_everything_and_the_processes_are_gone(
     assert shells.stop_all() == []  # idempotent
 
 
-def test_an_unknown_id_names_what_exists(shells: BackgroundShells, tmp_path: Path) -> None:
+def test_an_unknown_id_names_what_exists(
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
+) -> None:
     shells.start(("/bin/true",), _policy_for(tmp_path))
-    with pytest.raises(BackgroundError, match="bg99"):
+    with pytest.raises(background.BackgroundError, match="bg99"):
         shells.read("bg99", tail_lines=5)
 
 
-def test_output_survives_the_command(shells: BackgroundShells, tmp_path: Path) -> None:
+def test_output_survives_the_command(
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
+) -> None:
     """The log is a file, so a command's output stays readable after it is gone."""
     view = shells.start(("/bin/sh", "-c", "echo first; echo second; exit 0"), _policy_for(tmp_path))
     assert _wait_state(shells, view.id, "exited") == "exited"
@@ -159,18 +165,20 @@ def test_output_survives_the_command(shells: BackgroundShells, tmp_path: Path) -
 
 
 @pytest.mark.skipif(shutil.which("unshare") is None, reason="needs userns for strict")
-def test_strict_confines_a_background_command_too(shells: BackgroundShells, tmp_path: Path) -> None:
+def test_strict_confines_a_background_command_too(
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
+) -> None:
     """A detached command runs in the same jail as a foreground one."""
     view = shells.start(
         ("/bin/sh", "-c", "echo escaped > /etc/agent6-bg-escape"), _policy_for(tmp_path, "strict")
     )
     assert _wait_state(shells, view.id, "exited") == "exited"
-    assert not Path("/etc/agent6-bg-escape").exists()
+    assert not pathlib.Path("/etc/agent6-bg-escape").exists()
     assert next(v for v in shells.roster() if v.id == view.id).returncode != 0
 
 
 def test_a_foreground_commands_sweep_spares_a_background_one(
-    shells: BackgroundShells, tmp_path: Path
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
     """A background command survives the escapee sweep of every later command.
 
@@ -183,8 +191,10 @@ def test_a_foreground_commands_sweep_spares_a_background_one(
         assert time.monotonic() < deadline, "the command never started"
         time.sleep(0.05)
     for _ in range(3):
-        res = run_in_jail(
-            JailPolicy(cwd=tmp_path, argv=("/bin/true",), isolation="hardened", timeout_s=10.0)
+        res = jail.run_in_jail(
+            kinds.JailPolicy(
+                cwd=tmp_path, argv=("/bin/true",), isolation="hardened", timeout_s=10.0
+            )
         )
         assert res.returncode == 0
     assert next(v for v in shells.roster() if v.id == view.id).state == "running"
@@ -192,7 +202,7 @@ def test_a_foreground_commands_sweep_spares_a_background_one(
 
 
 def test_a_command_started_mid_sweep_window_is_spared(
-    shells: BackgroundShells, tmp_path: Path
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
     """A background command started mid-foreground survives that command's sweep.
 
@@ -207,8 +217,8 @@ def test_a_command_started_mid_sweep_window_is_spared(
 
     thread = threading.Thread(target=start_midway)
     thread.start()
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path, argv=("/bin/sh", "-c", "sleep 2"), isolation="hardened", timeout_s=20.0
         )
     )
@@ -218,9 +228,9 @@ def test_a_command_started_mid_sweep_window_is_spared(
     shells.stop_all()
 
 
-def _launcher_pids(shells: BackgroundShells, shell_id: str) -> set[int]:
+def _launcher_pids(shells: background.BackgroundShells, shell_id: str) -> set[int]:
     shell = shells._get(shell_id)  # pyright: ignore[reportPrivateUsage]
-    assert isinstance(shell.job, BackgroundJob), "these pin the per-command launcher"
+    assert isinstance(shell.job, jail.BackgroundJob), "these pin the per-command launcher"
     return {shell.job.pid}
 
 
@@ -235,32 +245,28 @@ def _alive(pid: int) -> bool:
 
 
 def test_the_roster_is_readable_from_another_process(
-    shells: BackgroundShells, tmp_path: Path
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
     """What each command was and how it ended is on disk, for surfaces in other processes."""
-    from agent6.tools.background import roster_from_dir
-
     live = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     done = shells.start(("/bin/sh", "-c", "exit 5"), _policy_for(tmp_path))
     assert _wait_state(shells, done.id, "exited") == "exited"
 
-    lines = roster_from_dir(tmp_path / "shells")
+    lines = background.roster_from_dir(tmp_path / "shells")
     assert any(f"[{done.id}] exited 5" in line and "exit 5" in line for line in lines)
     assert any(f"[{live.id}] still running" in line for line in lines)
     shells.stop_all()
 
 
-def test_an_empty_or_missing_dir_is_not_an_error(tmp_path: Path) -> None:
-    from agent6.tools.background import roster_from_dir
-
-    assert roster_from_dir(tmp_path / "nope") == []
+def test_an_empty_or_missing_dir_is_not_an_error(tmp_path: pathlib.Path) -> None:
+    assert background.roster_from_dir(tmp_path / "nope") == []
     (tmp_path / "empty").mkdir()
-    assert roster_from_dir(tmp_path / "empty") == []
+    assert background.roster_from_dir(tmp_path / "empty") == []
 
 
 @pytest.mark.parametrize("isolation", ["strict", "hardened"])
 def test_a_detached_child_of_a_background_command_dies_with_the_run(
-    shells: BackgroundShells, tmp_path: Path, isolation: IsolationLevel
+    shells: background.BackgroundShells, tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
     """`stop` sweeps the `setsid` child a background command left, on hardened too.
 
@@ -284,7 +290,7 @@ def test_a_detached_child_of_a_background_command_dies_with_the_run(
 
 
 def test_a_command_cannot_forge_its_own_exit_code_or_name(
-    shells: BackgroundShells, tmp_path: Path
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
     """A command cannot rewrite its own result or identity.
 
@@ -299,15 +305,13 @@ def test_a_command_cannot_forge_its_own_exit_code_or_name(
     )
     import shlex
 
-    from agent6.tools.background import roster_from_dir
-
     argv = ("/bin/sh", "-c", forge)
     view = shells.start(argv, _policy_for(tmp_path, "strict"))
     assert _wait_state(shells, view.id, "exited") == "exited"
     after = next(v for v in shells.roster() if v.id == view.id)
     assert after.returncode == 42  # not the 0 it wrote
     assert after.command == shlex.join(argv)  # not the name it wrote
-    assert any("exited 42" in line for line in roster_from_dir(tmp_path / "shells"))
+    assert any("exited 42" in line for line in background.roster_from_dir(tmp_path / "shells"))
     # The trail lives in the shell dir the command was never granted, so its
     # result.json carries the real 42 and no forged returncode=0 reached it.
     # BY ID, never next(iterdir()): the shells root also holds the logs/
@@ -330,8 +334,6 @@ def test_a_sweep_never_signals_a_process_group_it_does_not_own() -> None:
     import signal
     import subprocess
 
-    from agent6.sandbox.jail import signal_group
-
     # A group leader we hold: killing it by group is safe and takes the child.
     # New GROUP, same session, so a sibling can join it (setpgid is
     # session-scoped).
@@ -339,7 +341,7 @@ def test_a_sweep_never_signals_a_process_group_it_does_not_own() -> None:
     child = subprocess.Popen(["sleep", "30"], preexec_fn=lambda: os.setpgid(0, leader.pid))  # noqa: PLW1509
     try:
         assert os.getpgid(child.pid) == leader.pid
-        signal_group(leader.pid)
+        jail.signal_group(leader.pid)
         assert leader.wait(timeout=5) != 0
         assert child.wait(timeout=5) != 0
     finally:
@@ -351,7 +353,7 @@ def test_a_sweep_never_signals_a_process_group_it_does_not_own() -> None:
     bystander = subprocess.Popen(["sleep", "30"], preexec_fn=lambda: os.setpgid(0, 0))  # noqa: PLW1509
     joiner = subprocess.Popen(["sleep", "30"], preexec_fn=lambda: os.setpgid(0, bystander.pid))  # noqa: PLW1509
     try:
-        signal_group(joiner.pid)
+        jail.signal_group(joiner.pid)
         assert joiner.wait(timeout=5) != 0
         assert bystander.poll() is None, "the sweep killed a group it did not lead"
     finally:
@@ -361,7 +363,7 @@ def test_a_sweep_never_signals_a_process_group_it_does_not_own() -> None:
             p.wait(timeout=5)
 
 
-def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: Path) -> None:
+def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: pathlib.Path) -> None:
     """A command that symlinks its log at the operator's secrets gets nothing back.
 
     The jail holds RW (MakeSym included) on the log dir and `read` runs outside the jail as
@@ -370,18 +372,17 @@ def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: Path) -> 
     import os
 
     from agent6.config import Config
-    from agent6.tools.background import BackgroundShells
-    from agent6.tools.dispatch import jail_policy
+    from agent6.tools import policy
 
     secret = tmp_path / "vault"
     secret.mkdir()
     (secret / "secrets.toml").write_text('api_key = "sk-DECOY"\n', encoding="utf-8")
     work = tmp_path / "work"
     work.mkdir()
-    shells = BackgroundShells(tmp_path / "shells")
+    shells = background.BackgroundShells(tmp_path / "shells")
 
-    def _policy(argv: tuple[str, ...], rw: tuple[Path, ...]) -> object:
-        return jail_policy(work, Config(), "none", argv, extra_rw_paths=rw)
+    def _policy(argv: tuple[str, ...], rw: tuple[pathlib.Path, ...]) -> object:
+        return policy.jail_policy(work, Config(), "none", argv, extra_rw_paths=rw)
 
     view = shells.start(("sh", "-c", "echo mine; sleep 30"), _policy)  # pyright: ignore[reportArgumentType]
     log = tmp_path / "shells" / "logs" / view.id / "out.log"
@@ -409,16 +410,11 @@ def test_the_sweep_spares_a_session_the_agent_opened_on_purpose() -> None:
     """
     import subprocess
 
-    from agent6.sandbox.jail import (
-        _kill_escapees,  # pyright: ignore[reportPrivateUsage]
-        keep_out_of_the_sweep,
-    )
-
     ours = subprocess.Popen(["sleep", "30"], start_new_session=True)
     stranger = subprocess.Popen(["sleep", "30"], start_new_session=True)
     try:
-        keep_out_of_the_sweep(ours.pid)
-        _kill_escapees(frozenset())
+        jail.keep_out_of_the_sweep(ours.pid)
+        jail._kill_escapees(frozenset())
         assert ours.poll() is None, "the sweep killed a session the agent opened"
         assert stranger.poll() is not None, "a real escapee must still be swept"
     finally:
@@ -429,24 +425,24 @@ def test_the_sweep_spares_a_session_the_agent_opened_on_purpose() -> None:
                 p.wait(timeout=5)
 
 
-def test_a_planted_symlink_cannot_redirect_the_log_directory(tmp_path: Path) -> None:
+def test_a_planted_symlink_cannot_redirect_the_log_directory(tmp_path: pathlib.Path) -> None:
     """A planted `<log_root>/bg<N>` symlink never places the log where a command says.
 
     Every command holds read-write on the shared log root; `mkdir(exist_ok=True)` and
     `is_dir()` both follow a symlink, and the agent creates the log unconfined as the
     operator. O_NOFOLLOW on the leaf does not protect the path above it.
     """
-    shells = BackgroundShells(tmp_path / "shells")
+    shells = background.BackgroundShells(tmp_path / "shells")
     victim = tmp_path / "victim"
     victim.mkdir()
     (tmp_path / "shells" / "logs" / "bg1").symlink_to(victim)
 
-    with pytest.raises(BackgroundError):
+    with pytest.raises(background.BackgroundError):
         shells.start(("/bin/true",), _policy_for(tmp_path))
     assert not list(victim.iterdir()), "the agent wrote through a command's symlink"
 
 
-def test_a_stop_that_did_not_stop_says_so(tmp_path: Path) -> None:
+def test_a_stop_that_did_not_stop_says_so(tmp_path: pathlib.Path) -> None:
     """A stop the launcher could not confirm never renders as "stopped".
 
     A process wedged in uninterruptible I/O across the deadline, or a dead session, keeps its
@@ -454,21 +450,19 @@ def test_a_stop_that_did_not_stop_says_so(tmp_path: Path) -> None:
     """
     from typing import cast
 
-    from agent6.sandbox.jail import BackgroundStatus
-
     class _Unconfirmed:
         """A job whose stop the launcher could not confirm."""
 
-        def status(self) -> BackgroundStatus:
-            return BackgroundStatus(running=True, returncode=None, error="")
+        def status(self) -> jail.BackgroundStatus:
+            return jail.BackgroundStatus(running=True, returncode=None, error="")
 
         def stop(self) -> str:
             return "pid 7 did not exit within 5s of SIGKILL"
 
-    shells = BackgroundShells(tmp_path / "shells")
+    shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     shell = shells._get(view.id)  # pyright: ignore[reportPrivateUsage]
-    shell.job = cast("BackgroundJob", _Unconfirmed())
+    shell.job = cast("jail.BackgroundJob", _Unconfirmed())
 
     got = shells.stop(view.id)
     assert got.state != "stopped", f"a stop that failed rendered as {got.state!r}"
@@ -476,7 +470,7 @@ def test_a_stop_that_did_not_stop_says_so(tmp_path: Path) -> None:
 
 
 def test_a_command_that_failed_to_start_is_not_listed_as_running(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A command that never started is absent from meta.json.
 
@@ -484,23 +478,22 @@ def test_a_command_that_failed_to_start_is_not_listed_as_running(
     listed the command as running while the roster and read_background knew no such id.
     """
     import agent6.tools.background as bg
-    from agent6.sandbox.jail import JailUnavailableError
 
-    def refuses(*_a: object, **_k: object) -> BackgroundJob:
-        raise JailUnavailableError("no launcher today")
+    def refuses(*_a: object, **_k: object) -> jail.BackgroundJob:
+        raise jail.JailUnavailableError("no launcher today")
 
     monkeypatch.setattr(bg, "start_in_jail", refuses)
     root = tmp_path / "shells"
-    shells = BackgroundShells(root)
+    shells = background.BackgroundShells(root)
 
-    with pytest.raises(BackgroundError):
+    with pytest.raises(background.BackgroundError):
         shells.start(("/bin/true",), _policy_for(tmp_path))
     assert shells.roster() == []
     assert bg.roster_from_dir(root) == [], "a command that never started is listed on disk"
 
 
 def test_a_platform_without_proc_still_starts_a_background_command(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A background command under `isolation = "none"` starts and is tracked without /proc.
 
@@ -509,17 +502,17 @@ def test_a_platform_without_proc_still_starts_a_background_command(
     """
     import agent6.sandbox.jail as jail_mod
 
-    real_iterdir = Path.iterdir
+    real_iterdir = pathlib.Path.iterdir
 
-    def no_proc(self: Path):  # pyright: ignore[reportMissingParameterType]
+    def no_proc(self: pathlib.Path):  # pyright: ignore[reportMissingParameterType]
         if str(self) == "/proc":
             raise FileNotFoundError(2, "No such file or directory", "/proc")
         return real_iterdir(self)
 
-    monkeypatch.setattr(Path, "iterdir", no_proc)
+    monkeypatch.setattr(pathlib.Path, "iterdir", no_proc)
     assert jail_mod._own_children() == {}  # pyright: ignore[reportPrivateUsage]
 
-    shells = BackgroundShells(tmp_path / "shells")
+    shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("/bin/sh", "-c", "echo up; sleep 300"), _policy_for(tmp_path, "none"))
     try:
         assert view.state == "running", view
@@ -528,75 +521,67 @@ def test_a_platform_without_proc_still_starts_a_background_command(
         shells.stop_all()
 
 
-def test_an_unsandboxed_commands_exit_code_reaches_another_process(tmp_path: Path) -> None:
+def test_an_unsandboxed_commands_exit_code_reaches_another_process(tmp_path: pathlib.Path) -> None:
     """Under `none`, the observed exit code is written down for other processes.
 
     There is no launcher to write it, so the job records the code on the first observed
     exit; otherwise `/shells` elsewhere reads the command as still running for the run's life.
     """
-    from agent6.tools.background import roster_from_dir
-
-    shells = BackgroundShells(tmp_path / "shells")
+    shells = background.BackgroundShells(tmp_path / "shells")
     done = shells.start(("/bin/sh", "-c", "exit 42"), _policy_for(tmp_path, "none"))
     live = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path, "none"))
     try:
         assert _wait_state(shells, done.id, "exited") == "exited"
-        lines = roster_from_dir(tmp_path / "shells")
+        lines = background.roster_from_dir(tmp_path / "shells")
         assert any(f"[{done.id}] exited 42" in line for line in lines), lines
         assert any(f"[{live.id}] still running" in line for line in lines), lines
     finally:
         shells.stop_all()
 
 
-def test_a_stopped_unsandboxed_command_records_its_ending(tmp_path: Path) -> None:
+def test_a_stopped_unsandboxed_command_records_its_ending(tmp_path: pathlib.Path) -> None:
     """A stop is an ending: another process must not read it as maybe still running."""
-    from agent6.tools.background import roster_from_dir
-
-    shells = BackgroundShells(tmp_path / "shells")
+    shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path, "none"))
     assert _wait_state(shells, view.id, "running") == "running"
     shells.stop(view.id)
-    lines = roster_from_dir(tmp_path / "shells")
+    lines = background.roster_from_dir(tmp_path / "shells")
     assert not any("still running" in line for line in lines), lines
 
 
 def test_a_stopped_jailed_command_records_its_ending(
-    shells: BackgroundShells, tmp_path: Path
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
     """A stop of a jailed command is recorded for other processes, without inventing a code.
 
     The stop SIGKILLs the launcher before it can write the exit code, so the record says the
     command was stopped rather than claiming a number nobody saw.
     """
-    from agent6.tools.background import roster_from_dir
-
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     assert _wait_state(shells, view.id, "running") == "running"
     shells.stop(view.id)
-    lines = roster_from_dir(tmp_path / "shells")
+    lines = background.roster_from_dir(tmp_path / "shells")
     assert not any("still running" in line for line in lines), lines
     assert any(f"[{view.id}] stopped" in line for line in lines), lines
 
 
 def test_stopping_an_already_exited_command_keeps_its_exit_code(
-    shells: BackgroundShells, tmp_path: Path
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
     """The stop record never replaces a real exit code with "stopped".
 
     `stop_all` stops exited shells too (one can have left a detached child), so the record
     runs over a result the launcher already wrote.
     """
-    from agent6.tools.background import roster_from_dir
-
     view = shells.start(("/bin/sh", "-c", "exit 42"), _policy_for(tmp_path))
     assert _wait_state(shells, view.id, "exited") == "exited"
     shells.stop_all()
-    lines = roster_from_dir(tmp_path / "shells")
+    lines = background.roster_from_dir(tmp_path / "shells")
     assert any(f"[{view.id}] exited 42" in line for line in lines), lines
 
 
 def test_an_unreadable_result_is_never_clobbered_by_a_stop(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The stop record writes only over a result it read as empty.
 
@@ -610,41 +595,44 @@ def test_an_unreadable_result_is_never_clobbered_by_a_stop(
     result = outcome / "result.json"
     result.write_text('{"returncode": 42}', encoding="utf-8")
 
-    real_read = Path.read_text
+    real_read = pathlib.Path.read_text
 
-    def _unreadable(self: Path, *a: object, **k: object) -> str:
+    def _unreadable(self: pathlib.Path, *a: object, **k: object) -> str:
         if self == result:
             raise OSError(5, "Input/output error")
         return real_read(self, *a, **k)  # pyright: ignore[reportArgumentType]
 
-    monkeypatch.setattr(Path, "read_text", _unreadable)
+    monkeypatch.setattr(pathlib.Path, "read_text", _unreadable)
     jail_mod._write_stopped(outcome)  # pyright: ignore[reportPrivateUsage]
     monkeypatch.undo()
     assert result.read_text(encoding="utf-8") == '{"returncode": 42}'
 
 
 def test_settle_records_an_ending_nobody_asked_about(
-    shells: BackgroundShells, tmp_path: Path
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
     """A background command's ending is observed at the turn boundary.
 
     The ending is written down when someone observes it, and the model may never look again
     after starting one; without the settle, `/shells` read a finished command as running.
     """
-    from agent6.tools.background import roster_from_dir
-
     done = shells.start(("/bin/sh", "-c", "exit 7"), _policy_for(tmp_path))
     deadline = time.monotonic() + 15.0
     while time.monotonic() < deadline:
         shells.settle()
-        if any(f"[{done.id}] exited 7" in line for line in roster_from_dir(tmp_path / "shells")):
+        if any(
+            f"[{done.id}] exited 7" in line
+            for line in background.roster_from_dir(tmp_path / "shells")
+        ):
             return
         time.sleep(0.05)
-    pytest.fail(f"settle never recorded the ending: {roster_from_dir(tmp_path / 'shells')}")
+    pytest.fail(
+        f"settle never recorded the ending: {background.roster_from_dir(tmp_path / 'shells')}"
+    )
 
 
 def test_an_unsandboxed_background_command_survives_a_siblings_stop(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """Stopping one unsandboxed background command leaves its sibling running.
 
@@ -652,7 +640,7 @@ def test_an_unsandboxed_background_command_survives_a_siblings_stop(
     included; an unregistered sibling would be swept, and its next status would read
     poll() over a reaped pid, which CPython reports as returncode 0.
     """
-    shells = BackgroundShells(tmp_path / "shells")
+    shells = background.BackgroundShells(tmp_path / "shells")
     first = shells.start(("/bin/sh", "-c", "echo one; sleep 300"), _policy_for(tmp_path, "none"))
     second = shells.start(("/bin/sh", "-c", "echo two; sleep 300"), _policy_for(tmp_path, "none"))
     try:
@@ -664,31 +652,36 @@ def test_an_unsandboxed_background_command_survives_a_siblings_stop(
         shells.stop_all()
 
 
-def test_stopping_an_already_exited_command_still_reads_exited(tmp_path: Path) -> None:
+def test_stopping_an_already_exited_command_still_reads_exited(tmp_path: pathlib.Path) -> None:
     """A stop over a command that already exited leaves it "exited".
 
     The state word says how a command ended; `stop` and `stop_all` agree, so the run's roster
     and the on-disk one agree.
     """
-    shells = BackgroundShells(tmp_path / "shells")
+    shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("/bin/sh", "-c", "exit 7"), _policy_for(tmp_path, "none"))
     assert _wait_state(shells, view.id, "exited") == "exited"
 
     stopped = shells.stop(view.id)
     assert (stopped.state, stopped.returncode) == ("exited", 7), stopped
     assert [v.state for v in shells.roster()] == ["exited"]
-    assert any(f"[{view.id}] exited 7" in line for line in roster_from_dir(tmp_path / "shells"))
+    assert any(
+        f"[{view.id}] exited 7" in line for line in background.roster_from_dir(tmp_path / "shells")
+    )
 
 
-def test_the_disk_roster_is_in_start_order(tmp_path: Path) -> None:
+def test_the_disk_roster_is_in_start_order(tmp_path: pathlib.Path) -> None:
     """The shell listing sorts by number: bg2 precedes bg10 and bg11."""
-    shells = BackgroundShells(tmp_path / "shells")
+    shells = background.BackgroundShells(tmp_path / "shells")
     try:
         started = [
             shells.start(("/bin/sh", "-c", "exit 0"), _policy_for(tmp_path, "none")).id
             for _ in range(11)
         ]
-        listed = [line.split("]")[0].lstrip("[") for line in roster_from_dir(tmp_path / "shells")]
+        listed = [
+            line.split("]")[0].lstrip("[")
+            for line in background.roster_from_dir(tmp_path / "shells")
+        ]
         assert listed == started, listed
     finally:
         shells.stop_all()
@@ -697,21 +690,21 @@ def test_the_disk_roster_is_in_start_order(tmp_path: Path) -> None:
 class _HostSession:
     """The JailSession calls a SessionJob makes, over a real host pid."""
 
-    def open_job(self, pid: int, before: ChildSnapshot) -> None:
+    def open_job(self, pid: int, before: kinds.ChildSnapshot) -> None:
         pass
 
-    def status_background(self, pid: int) -> BackgroundStatus:
-        return BackgroundStatus(running=True, returncode=None, error="")
+    def status_background(self, pid: int) -> jail.BackgroundStatus:
+        return jail.BackgroundStatus(running=True, returncode=None, error="")
 
-    def stop_background(self, pid: int) -> Stopped:
+    def stop_background(self, pid: int) -> jail.Stopped:
         os.kill(pid, signal.SIGKILL)
-        return Stopped(returncode=-9, survivors=frozenset())
+        return jail.Stopped(returncode=-9, survivors=frozenset())
 
-    def sweep_for(self, pid: int, before: ChildSnapshot) -> frozenset[int]:
+    def sweep_for(self, pid: int, before: kinds.ChildSnapshot) -> frozenset[int]:
         return frozenset()
 
 
-def test_adopt_stops_the_command_whose_log_it_cannot_open(tmp_path: Path) -> None:
+def test_adopt_stops_the_command_whose_log_it_cannot_open(tmp_path: pathlib.Path) -> None:
     """A hand-back `adopt` refuses is stopped, not left running.
 
     The launcher already started the command and this run owns it; a registration that
@@ -719,17 +712,17 @@ def test_adopt_stops_the_command_whose_log_it_cannot_open(tmp_path: Path) -> Non
     """
     proc = subprocess.Popen(["sleep", "60"])
     try:
-        shells = BackgroundShells(tmp_path / "shells")
-        handoff = BackgroundHandoff(
+        shells = background.BackgroundShells(tmp_path / "shells")
+        handoff = kinds.BackgroundHandoff(
             argv=("sleep", "60"),
             pid=proc.pid,
             log=str(tmp_path / "logs" / "gone.log"),
             stdout="",
             stderr="",
             duration_s=900.0,
-            before=ChildSnapshot(1, frozenset()),
+            before=kinds.ChildSnapshot(1, frozenset()),
         )
-        with pytest.raises(BackgroundError):
+        with pytest.raises(background.BackgroundError):
             shells.adopt(handoff, session=cast(Any, _HostSession()))
         assert shells.roster() == []
         assert proc.wait(timeout=5) == -signal.SIGKILL

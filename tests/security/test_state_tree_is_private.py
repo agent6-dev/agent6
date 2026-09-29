@@ -11,52 +11,59 @@ command on a new machine) would leave it at the umask's 755 for good, since
 from __future__ import annotations
 
 import os
+import pathlib
 from collections.abc import Callable, Iterator
-from pathlib import Path
 
 import pytest
 
-from agent6 import memory, paths
-from agent6.events import EventSink
-from agent6.graph.storage import append_jsonl
-from agent6.init import init_workspace
-from agent6.machine.journal import MachineJournal, machine_lock, write_source, write_stop_request
-from agent6.providers.types import TranscriptSink
-from agent6.sessions.ipc import approvals_dir, questions_dir, register_frontend, set_session_allow
-from agent6.sessions.layout import SessionLayout, machines_root
-from agent6.tools.background import BackgroundShells
+from agent6 import events, init, memory, paths
+from agent6.graph import storage
+from agent6.machine import journal
+from agent6.providers import types
+from agent6.sessions import ipc, layout
+from agent6.tools import background
 
 
-def _session(state: Path) -> Path:
-    return SessionLayout(state, "s1").session_dir
+def _session(state: pathlib.Path) -> pathlib.Path:
+    return layout.SessionLayout(state, "s1").session_dir
 
 
-def _machine_lock(root: Path) -> None:
-    with machine_lock(root):
+def _machine_lock(root: pathlib.Path) -> None:
+    with journal.machine_lock(root):
         pass
 
 
-WRITERS: dict[str, Callable[[Path, Path], object]] = {
-    "init": lambda repo, state: init_workspace(repo),
+WRITERS: dict[str, Callable[[pathlib.Path, pathlib.Path], object]] = {
+    "init": lambda repo, state: init.init_workspace(repo),
     "memory add": lambda repo, state: memory.add(state, "note", "body"),
     "memory decision": lambda repo, state: memory.record_decision(
         state, question="q", answer="a", session="s1"
     ),
-    "session layout": lambda repo, state: SessionLayout(state, "s1").ensure(),
-    "approvals dir": lambda repo, state: approvals_dir(_session(state)),
-    "questions dir": lambda repo, state: questions_dir(_session(state)),
-    "session grant": lambda repo, state: set_session_allow(_session(state), "command"),
-    "frontend claim": lambda repo, state: register_frontend(_session(state), os.getpid()),
-    "event sink": lambda repo, state: EventSink(SessionLayout(state, "s1").logs_path).emit("x"),
-    "transcripts": lambda repo, state: TranscriptSink(SessionLayout(state, "s1").transcripts_dir),
-    "background shells": lambda repo, state: BackgroundShells(_session(state)),
-    "graph append": lambda repo, state: append_jsonl(
-        SessionLayout(state, "s1").graph_dir / "g.jsonl", {"k": 1}
+    "session layout": lambda repo, state: layout.SessionLayout(state, "s1").ensure(),
+    "approvals dir": lambda repo, state: ipc.approvals_dir(_session(state)),
+    "questions dir": lambda repo, state: ipc.questions_dir(_session(state)),
+    "session grant": lambda repo, state: ipc.set_session_allow(_session(state), "command"),
+    "frontend claim": lambda repo, state: ipc.register_frontend(_session(state), os.getpid()),
+    "event sink": lambda repo, state: events.EventSink(
+        layout.SessionLayout(state, "s1").logs_path
+    ).emit("x"),
+    "transcripts": lambda repo, state: types.TranscriptSink(
+        layout.SessionLayout(state, "s1").transcripts_dir
     ),
-    "machine journal": lambda repo, state: MachineJournal(machines_root(state) / "m").ensure_dirs(),
-    "machine lock": lambda repo, state: _machine_lock(machines_root(state) / "m"),
-    "machine source": lambda repo, state: write_source(machines_root(state) / "m", "x = 1\n"),
-    "machine stop": lambda repo, state: write_stop_request(machines_root(state) / "m"),
+    "background shells": lambda repo, state: background.BackgroundShells(_session(state)),
+    "graph append": lambda repo, state: storage.append_jsonl(
+        layout.SessionLayout(state, "s1").graph_dir / "g.jsonl", {"k": 1}
+    ),
+    "machine journal": lambda repo, state: journal.MachineJournal(
+        layout.machines_root(state) / "m"
+    ).ensure_dirs(),
+    "machine lock": lambda repo, state: _machine_lock(layout.machines_root(state) / "m"),
+    "machine source": lambda repo, state: journal.write_source(
+        layout.machines_root(state) / "m", "x = 1\n"
+    ),
+    "machine stop": lambda repo, state: journal.write_stop_request(
+        layout.machines_root(state) / "m"
+    ),
 }
 
 
@@ -69,7 +76,7 @@ def umask_022() -> Iterator[None]:
         os.umask(old)
 
 
-def _open_dirs(base: Path) -> list[str]:
+def _open_dirs(base: pathlib.Path) -> list[str]:
     return [
         str(p.relative_to(base.parent))
         for p in (base, *base.rglob("*"))
@@ -79,7 +86,7 @@ def _open_dirs(base: Path) -> list[str]:
 
 @pytest.mark.parametrize("writer", sorted(WRITERS))
 def test_every_dir_a_writer_creates_under_the_state_base_is_0700(
-    writer: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, umask_022: None
+    writer: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, umask_022: None
 ) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))

@@ -5,8 +5,8 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import time
-from pathlib import Path
 
 import httpx2
 import pytest
@@ -17,7 +17,7 @@ from agent6.models import registry as models_registry
 
 
 @pytest.fixture
-def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     return tmp_path / "cache" / "agent6"
 
@@ -31,7 +31,9 @@ def _ok_response(ids: list[str]) -> object:
     return _get
 
 
-def test_fetches_and_caches_openai(cache_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetches_and_caches_openai(
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(httpx2, "get", _ok_response(["gpt-x", "gpt-y"]))
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://api.openai.com/v1")
     out = models_cache.list_models("openai", entry, "sk-test")
@@ -40,7 +42,9 @@ def test_fetches_and_caches_openai(cache_home: Path, monkeypatch: pytest.MonkeyP
     assert cached["models"] == ["gpt-x", "gpt-y"]
 
 
-def test_fresh_cache_skips_network(cache_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fresh_cache_skips_network(
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     path = cache_home / "models" / "anthropic.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"models": ["claude-cached"]}), encoding="utf-8")
@@ -54,7 +58,7 @@ def test_fresh_cache_skips_network(cache_home: Path, monkeypatch: pytest.MonkeyP
 
 
 def test_stale_cache_used_on_network_error(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = cache_home / "models" / "openrouter.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,7 +78,7 @@ def test_stale_cache_used_on_network_error(
 
 
 def test_no_cache_network_error_returns_empty(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def _fail(*a: object, **k: object) -> httpx2.Response:
         raise httpx2.ConnectTimeout("slow")
@@ -84,7 +88,9 @@ def test_no_cache_network_error_returns_empty(
     assert models_cache.list_models("openai", entry, "sk") == []
 
 
-def test_never_raises_on_bad_payload(cache_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_never_raises_on_bad_payload(
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     def _garbage(*a: object, **k: object) -> httpx2.Response:
         return httpx2.Response(
             200, text="not json", request=httpx2.Request("GET", "http://x/models")
@@ -106,7 +112,7 @@ def test_unsafe_provider_name_has_no_cache_path() -> None:
 
 
 def test_unsafe_provider_name_still_fetches(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An unsafe name skips the cache but still fetches live (never raises).
     monkeypatch.setattr(httpx2, "get", _ok_response(["m1"]))
@@ -126,7 +132,7 @@ def _ok_full(models: list[dict[str, object]]) -> object:
 
 
 def test_caches_context_length_and_reads_it_back(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
         httpx2,
@@ -150,7 +156,7 @@ def test_caches_context_length_and_reads_it_back(
 
 
 def test_fetch_models_live_bypasses_ttl_and_signals_failure(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The validation seam: a FRESH cache is ignored (the point is live
     # evidence), success rewrites the cache, and failure returns None -- never
@@ -170,18 +176,13 @@ def test_fetch_models_live_bypasses_ttl_and_signals_failure(
     assert models_cache.fetch_models_live("o", entry, None) is None
 
 
-def test_boolean_context_and_pricing_values_are_rejected(tmp_path: Path) -> None:
+def test_boolean_context_and_pricing_values_are_rejected(tmp_path: pathlib.Path) -> None:
     """Boolean context and pricing values are rejected.
 
     Bool subclasses int: a provider entry with `context_length: true` caches a 1-token window
     (collapsing the compaction thresholds every turn), and `pricing: true` coerces to $1/MTok. Both
     read as absent.
     """
-    from agent6.models.cache import (
-        _parse_context,  # pyright: ignore[reportPrivateUsage]
-        _parse_pricing,  # pyright: ignore[reportPrivateUsage]
-    )
-
     payload = {
         "data": [
             {
@@ -196,16 +197,16 @@ def test_boolean_context_and_pricing_values_are_rejected(tmp_path: Path) -> None
             },
         ]
     }
-    ctx = _parse_context(payload)
+    ctx = models_cache._parse_context(payload)
     assert "vendor/x" not in ctx
     assert ctx["vendor/y"] == 200_000
-    pricing = _parse_pricing(payload)
+    pricing = models_cache._parse_pricing(payload)
     assert "vendor/x" not in pricing
     assert "vendor/y" in pricing
 
 
 def test_pricing_catalog_refresh_prices_a_bare_claude_id(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The pricing catalog refresh prices a bare claude id.
 
@@ -240,18 +241,20 @@ def test_pricing_catalog_refresh_prices_a_bare_claude_id(
 
 
 def test_chatgpt_listing_fetches_with_the_sign_in(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """The chatgpt listing fetches with the sign-in.
 
     It comes from the backend's own /models with the stored bearer, the account header and a ceiling
     client_version; hidden entries stay out of completion; context windows land in the cache.
     """
+    from agent6 import secrets
     from agent6.config import ChatGPTProviderEntry
-    from agent6.secrets import OAuthTokens, save_oauth_tokens
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    save_oauth_tokens("chatgpt", OAuthTokens("AT", "RT", time.time() + 3600, "acct-1"))
+    secrets.save_oauth_tokens(
+        "chatgpt", secrets.OAuthTokens("AT", "RT", time.time() + 3600, "acct-1")
+    )
     seen: dict[str, object] = {}
 
     def _get(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
@@ -278,7 +281,7 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
 
 
 def test_chatgpt_listing_without_sign_in_fails_soft(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     from agent6.config import ChatGPTProviderEntry
 

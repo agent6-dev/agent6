@@ -4,25 +4,21 @@
 
 from __future__ import annotations
 
+import datetime
 import io
 import json
-from datetime import UTC, datetime
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import pytest
 
+from agent6 import paths
 from agent6.config import Config, load_config
-from agent6.graph.models import TaskNode
-from agent6.graph.storage import write_node
-from agent6.paths import state_dir
-from agent6.sessions.ipc import register_frontend
-from agent6.sessions.layout import SessionLayout
-from agent6.sessions.manifest import MANIFEST_VERSION
-from agent6.tools.dispatch import ToolError
-from agent6.tools.errors import OperatorCommandUnexecutableError
-from agent6.tools.results import ExecResult, PatchResult, ToolResult
-from agent6.ui.mcp_server import MCPServer
+from agent6.graph import models, storage
+from agent6.sessions import ipc, manifest
+from agent6.sessions import layout as sessions_layout
+from agent6.tools import errors, results
+from agent6.ui import mcp_server as ui_mcp_server
 
 _VALID_TOML = """
 [agent6]
@@ -51,16 +47,16 @@ max_tokens_fallback = 2000000
 """
 
 
-def _config(tmp_path: Path, *, run_commands: str = "no") -> Config:
+def _config(tmp_path: pathlib.Path, *, run_commands: str = "no") -> Config:
     toml = _VALID_TOML.replace('run_commands = "no"', f'run_commands = "{run_commands}"')
     p = tmp_path / "agent6.toml"
     p.write_text(toml, encoding="utf-8")
     return load_config(p)
 
 
-def _server(tmp_path: Path, **kwargs: Any) -> MCPServer:
+def _server(tmp_path: pathlib.Path, **kwargs: Any) -> ui_mcp_server.MCPServer:
     cfg = _config(tmp_path, **kwargs)
-    return MCPServer(
+    return ui_mcp_server.MCPServer(
         root=tmp_path,
         config=cfg,
         stdin=io.BytesIO(),
@@ -68,7 +64,9 @@ def _server(tmp_path: Path, **kwargs: Any) -> MCPServer:
     )
 
 
-def _roundtrip(server: MCPServer, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _roundtrip(
+    server: ui_mcp_server.MCPServer, messages: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """Feed messages into the server's stdin, drive serve() to EOF and parse the responses."""
     payload = b"".join(json.dumps(m).encode("utf-8") + b"\n" for m in messages)
     server._stdin = io.BytesIO(payload)  # type: ignore[attr-defined]  # test-only stdin swap
@@ -86,7 +84,7 @@ def _roundtrip(server: MCPServer, messages: list[dict[str, Any]]) -> list[dict[s
 # ---------------------------------------------------------------------------
 
 
-def test_initialize_returns_server_info(tmp_path: Path) -> None:
+def test_initialize_returns_server_info(tmp_path: pathlib.Path) -> None:
     server = _server(tmp_path)
     resps = _roundtrip(
         server,
@@ -100,7 +98,7 @@ def test_initialize_returns_server_info(tmp_path: Path) -> None:
     assert "tools" in info["capabilities"]
 
 
-def test_tools_list_advertises_five_tools(tmp_path: Path) -> None:
+def test_tools_list_advertises_five_tools(tmp_path: pathlib.Path) -> None:
     server = _server(tmp_path, run_commands="yes")
     resps = _roundtrip(
         server,
@@ -120,7 +118,7 @@ def test_tools_list_advertises_five_tools(tmp_path: Path) -> None:
         assert t["inputSchema"]["type"] == "object"
 
 
-def test_withdrawn_command_tools_are_absent_and_named(tmp_path: Path) -> None:
+def test_withdrawn_command_tools_are_absent_and_named(tmp_path: pathlib.Path) -> None:
     """Withdrawn command tools are absent from tools/list, and a call by name says why.
 
     Under `run_commands = "no"` (or the non-interactive "ask" clamp) an offered-and-failing tool
@@ -145,7 +143,9 @@ def test_withdrawn_command_tools_are_absent_and_named(tmp_path: Path) -> None:
     assert "withdrawn" in err and "run_commands" in err and "'no'" in err
 
 
-def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(tmp_path: Path) -> None:
+def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(
+    tmp_path: pathlib.Path,
+) -> None:
     """With no verify command there is nothing to run.
 
     `run_verify` reached the jail with an empty argv and answered "tuple index out of range", and
@@ -159,7 +159,7 @@ def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(tmp_path: P
         ),
         encoding="utf-8",
     )
-    server = MCPServer(
+    server = ui_mcp_server.MCPServer(
         root=tmp_path, config=load_config(p), stdin=io.BytesIO(), stdout=io.BytesIO()
     )
     resps = _roundtrip(
@@ -181,7 +181,7 @@ def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(tmp_path: P
     assert "withdrawn" in err and "verify_command" in err
 
 
-def test_unknown_method_returns_rpc_error(tmp_path: Path) -> None:
+def test_unknown_method_returns_rpc_error(tmp_path: pathlib.Path) -> None:
     server = _server(tmp_path)
     resps = _roundtrip(
         server,
@@ -191,7 +191,7 @@ def test_unknown_method_returns_rpc_error(tmp_path: Path) -> None:
     assert "nonsense" in resps[0]["error"]["message"]
 
 
-def test_unknown_tool_returns_rpc_error(tmp_path: Path) -> None:
+def test_unknown_tool_returns_rpc_error(tmp_path: pathlib.Path) -> None:
     server = _server(tmp_path)
     resps = _roundtrip(
         server,
@@ -207,7 +207,7 @@ def test_unknown_tool_returns_rpc_error(tmp_path: Path) -> None:
     assert resps[0]["error"]["code"] == -32601
 
 
-def test_notifications_produce_no_response(tmp_path: Path) -> None:
+def test_notifications_produce_no_response(tmp_path: pathlib.Path) -> None:
     server = _server(tmp_path)
     resps = _roundtrip(
         server,
@@ -216,7 +216,7 @@ def test_notifications_produce_no_response(tmp_path: Path) -> None:
     assert resps == []
 
 
-def test_malformed_json_answers_a_parse_error(tmp_path: Path) -> None:
+def test_malformed_json_answers_a_parse_error(tmp_path: pathlib.Path) -> None:
     """Malformed JSON answers a -32700 parse error with a null id.
 
     Silence leaves the client hanging on a request it believes it sent; the next well-formed request
@@ -241,7 +241,7 @@ def test_malformed_json_answers_a_parse_error(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_list_runs_empty(tmp_path: Path) -> None:
+def test_list_runs_empty(tmp_path: pathlib.Path) -> None:
     server = _server(tmp_path)
     resps = _roundtrip(
         server,
@@ -258,10 +258,10 @@ def test_list_runs_empty(tmp_path: Path) -> None:
     assert payload == {"sessions": []}
 
 
-def test_list_runs_reads_manifests(tmp_path: Path) -> None:
+def test_list_runs_reads_manifests(tmp_path: pathlib.Path) -> None:
     import os
 
-    runs = state_dir(tmp_path) / "sessions" / "runs"
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs"
     (runs / "run-a").mkdir(parents=True)
     (runs / "run-b").mkdir(parents=True)
     (runs / "run-a" / "manifest.json").write_text(
@@ -297,7 +297,7 @@ def test_list_runs_reads_manifests(tmp_path: Path) -> None:
     # Shipped as the typed SessionManifest dump (full shape, defaults filled), not the
     # raw dict: the recorded user_task survives, the version stamp is present.
     assert sessions_out[1]["manifest"]["user_task"] == "alpha"
-    assert sessions_out[1]["manifest"]["version"] == MANIFEST_VERSION
+    assert sessions_out[1]["manifest"]["version"] == manifest.MANIFEST_VERSION
     assert "manifest" not in sessions_out[0]
     # The row the hubs share rides on top of the manifest: an editor reads the
     # same status words the CLI and web list, which the raw manifest lacks.
@@ -305,7 +305,7 @@ def test_list_runs_reads_manifests(tmp_path: Path) -> None:
     assert {"status", "label", "level", "reason", "cost"} <= set(sessions_out[0])
 
 
-def test_query_dag_missing_run_returns_tool_error(tmp_path: Path) -> None:
+def test_query_dag_missing_run_returns_tool_error(tmp_path: pathlib.Path) -> None:
     server = _server(tmp_path)
     resps = _roundtrip(
         server,
@@ -323,7 +323,7 @@ def test_query_dag_missing_run_returns_tool_error(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("bad", ["../../elsewhere/runs/x", "/etc", "a/b", ".."])
-def test_query_dag_rejects_traversing_run_id(tmp_path: Path, bad: str) -> None:
+def test_query_dag_rejects_traversing_run_id(tmp_path: pathlib.Path, bad: str) -> None:
     """query_dag rejects a traversing session id.
 
     A client-supplied id builds a path under the session buckets; a `..` or absolute id would read
@@ -345,10 +345,10 @@ def test_query_dag_rejects_traversing_run_id(tmp_path: Path, bad: str) -> None:
     assert "invalid session_id" in resps[0]["result"]["content"][0]["text"]
 
 
-def test_query_dag_reads_persisted_nodes(tmp_path: Path) -> None:
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="r1")
+def test_query_dag_reads_persisted_nodes(tmp_path: pathlib.Path) -> None:
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="r1")
     layout.ensure()
-    node = TaskNode(
+    node = models.TaskNode(
         id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
         parent_id=None,
         title="root task",
@@ -357,10 +357,10 @@ def test_query_dag_reads_persisted_nodes(tmp_path: Path) -> None:
         acceptance="done",
         relevant_paths=(),
         created_by="planner",
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
+        created_at=datetime.datetime.now(datetime.UTC),
+        updated_at=datetime.datetime.now(datetime.UTC),
     )
-    write_node(layout, {node.id: node}, node)
+    storage.write_node(layout, {node.id: node}, node)
     server = _server(tmp_path)
     resps = _roundtrip(
         server,
@@ -387,14 +387,16 @@ def test_query_dag_reads_persisted_nodes(tmp_path: Path) -> None:
 
 
 def test_run_verify_delegates_to_dispatcher(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     server = _server(tmp_path, run_commands="yes")
     captured: list[tuple[str, dict[str, Any]]] = []
 
-    def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
+    def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
         captured.append((name, args))
-        return ExecResult(returncode=0, stdout="", stderr="", duration_s=0.0, exec_failed=False)
+        return results.ExecResult(
+            returncode=0, stdout="", stderr="", duration_s=0.0, exec_failed=False
+        )
 
     monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
     resps = _roundtrip(
@@ -414,11 +416,15 @@ def test_run_verify_delegates_to_dispatcher(
     assert resps[0]["result"]["structuredContent"]["returncode"] == 0
 
 
-def test_run_in_sandbox_validates_argv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_in_sandbox_validates_argv(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     server = _server(tmp_path, run_commands="yes")
 
-    def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
-        return ExecResult(returncode=0, stdout="ok", stderr="", duration_s=0.0, exec_failed=False)
+    def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
+        return results.ExecResult(
+            returncode=0, stdout="ok", stderr="", duration_s=0.0, exec_failed=False
+        )
 
     monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
     # Empty argv fails the published schema (minItems 1) at the call boundary:
@@ -447,7 +453,7 @@ def test_run_in_sandbox_validates_argv(tmp_path: Path, monkeypatch: pytest.Monke
     assert resps[1]["result"]["structuredContent"]["stdout"] == "ok"
 
 
-def test_every_published_schema_type_is_one_the_checker_validates(tmp_path: Path) -> None:
+def test_every_published_schema_type_is_one_the_checker_validates(tmp_path: pathlib.Path) -> None:
     """Every published schema type is one the checker validates.
 
     `_schema_violation` validates the object, array and string subset and silently skips any other
@@ -472,7 +478,7 @@ def test_every_published_schema_type_is_one_the_checker_validates(tmp_path: Path
 
 
 def test_tool_arguments_are_checked_against_the_published_schema(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Tool arguments are checked against the published schema at the call boundary.
 
@@ -483,7 +489,7 @@ def test_tool_arguments_are_checked_against_the_published_schema(
     """
     server = _server(tmp_path, run_commands="yes")
 
-    def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
+    def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
         raise AssertionError("handler must not run on a schema-invalid call")
 
     monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
@@ -521,16 +527,20 @@ def test_tool_arguments_are_checked_against_the_published_schema(
     assert "unknown field" in resps[0]["error"]["message"]
 
 
-def test_apply_patch_runs_verify_after(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apply_patch_runs_verify_after(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     server = _server(tmp_path, run_commands="yes")
     calls: list[str] = []
 
-    def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
+    def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
         calls.append(name)
         if name == "apply_patch":
-            return PatchResult(path="foo.py", bytes_written=5)
+            return results.PatchResult(path="foo.py", bytes_written=5)
         if name == "run_verify_command":
-            return ExecResult(returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False)
+            return results.ExecResult(
+                returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+            )
         raise AssertionError(name)
 
     monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
@@ -554,11 +564,13 @@ def test_apply_patch_runs_verify_after(tmp_path: Path, monkeypatch: pytest.Monke
     assert payload["verify"]["returncode"] == 0
 
 
-def test_apply_patch_surfaces_tool_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apply_patch_surfaces_tool_error(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     server = _server(tmp_path, run_commands="yes")
 
-    def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
-        raise ToolError("patch did not apply")
+    def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
+        raise errors.ToolError("patch did not apply")
 
     monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
     resps = _roundtrip(
@@ -580,7 +592,7 @@ def test_apply_patch_surfaces_tool_error(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 def test_unexecutable_operator_command_surfaces_as_iserror(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An unexecutable operator command surfaces as an isError result.
 
@@ -590,8 +602,8 @@ def test_unexecutable_operator_command_surfaces_as_iserror(
     """
     server = _server(tmp_path, run_commands="yes")
 
-    def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
-        raise OperatorCommandUnexecutableError("verify command not found on the jail PATH")
+    def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
+        raise errors.OperatorCommandUnexecutableError("verify command not found on the jail PATH")
 
     monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
     resps = _roundtrip(
@@ -628,21 +640,18 @@ def test_no_one_to_ask_withdraws_rather_than_breaks(configured: str, offered: bo
     the patch and then errors on verify, leaving the workspace changed and the call failed.
     """
     from agent6.config import Config
-    from agent6.ui.mcp_server import _no_one_to_ask  # pyright: ignore[reportPrivateUsage]
 
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": configured}, "harness": {"verify_command": ["true"]}}
     )
-    assert (_no_one_to_ask(cfg).sandbox.run_commands == "yes") is offered
+    assert (ui_mcp_server._no_one_to_ask(cfg).sandbox.run_commands == "yes") is offered
 
 
-def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: Path) -> None:
+def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: pathlib.Path) -> None:
     # Run ids start with a random adjective-noun, so a name sort is not
     # chronological. Front-ends also write frontend.pid into run dirs, so
     # directory mtime is not chronological either. The newest log activity wins.
     import os
-
-    from agent6.ui.mcp_server import _most_recent_session_id  # pyright: ignore[reportPrivateUsage]
 
     runs = tmp_path / "sessions" / "runs"
     runs.mkdir(parents=True)
@@ -654,8 +663,8 @@ def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: Pa
     (newer / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
     os.utime(older / "logs.jsonl", (1000, 1000))
     os.utime(newer / "logs.jsonl", (2000, 2000))
-    register_frontend(older, 12345)
-    assert _most_recent_session_id(tmp_path) == "aaa-newer-BBB222"
+    ipc.register_frontend(older, 12345)
+    assert ui_mcp_server._most_recent_session_id(tmp_path) == "aaa-newer-BBB222"
 
 
 # ---------------------------------------------------------------------------
@@ -663,7 +672,7 @@ def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: Pa
 # ---------------------------------------------------------------------------
 
 
-def test_serve_bounds_every_stdin_read(tmp_path: Path) -> None:
+def test_serve_bounds_every_stdin_read(tmp_path: pathlib.Path) -> None:
     """serve() reads with an explicit size bound (mirroring the embedded client's _read_loop).
 
     The old unbounded readline() buffered an entire runaway line into memory BEFORE the 4 MiB check,
@@ -687,7 +696,7 @@ def test_serve_bounds_every_stdin_read(tmp_path: Path) -> None:
 
 
 def test_serve_drains_oversized_line_and_recovers(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An over-limit line is drained in bounded chunks to its newline; the next request is served.
 
@@ -707,7 +716,7 @@ def test_serve_drains_oversized_line_and_recovers(
     assert [r["id"] for r in resps] == [7]
 
 
-def test_list_sessions_skips_husks_like_every_other_listing(tmp_path: Path) -> None:
+def test_list_sessions_skips_husks_like_every_other_listing(tmp_path: pathlib.Path) -> None:
     """A husk is a dir a crash orphaned before any manifest or log.
 
     Every other listing hides it, `viewmodel.listing` and `sessions list` both filter on
@@ -716,7 +725,7 @@ def test_list_sessions_skips_husks_like_every_other_listing(tmp_path: Path) -> N
     MCP enumerated every directory, so an editor driving agent6 saw sessions the
     CLI and the web hub denied existed.
     """
-    runs = state_dir(tmp_path) / "sessions" / "runs"
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs"
     (runs / "real-run").mkdir(parents=True)
     (runs / "real-run" / "manifest.json").write_text(
         json.dumps({"user_task": "alpha"}), encoding="utf-8"
@@ -741,21 +750,21 @@ def test_list_sessions_skips_husks_like_every_other_listing(tmp_path: Path) -> N
 
 
 def test_run_server_lets_a_config_fault_reach_the_cli_sorting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`run_server` lets a config fault reach the CLI's sorting.
 
     A `ConfigError` is already an operator error printed at exit 2, and a bug belongs on the crash
     path (exit 1, traceback saved); catching every exception around the config load pre-empts both.
     """
-    from agent6.config.model import ConfigError
+    from agent6.config import model
     from agent6.ui import mcp_server
     from agent6.ui.cli import cli_main
 
     monkeypatch.chdir(tmp_path)
     bad = tmp_path / "bad.toml"
     bad.write_text("[agent6]\nnope = 1\n", encoding="utf-8")
-    with pytest.raises(ConfigError):
+    with pytest.raises(model.ConfigError):
         mcp_server.run_server(bad)
     assert cli_main(["--config", str(bad), "mcp", "serve"]) == 2
     err = capsys.readouterr().err

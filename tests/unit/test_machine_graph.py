@@ -4,22 +4,21 @@
 
 from __future__ import annotations
 
+import pathlib
 import re
-from pathlib import Path
 
-from agent6.machine._semantics import load_machine
-from agent6.machine.graph import render_dot, render_mermaid
+from agent6.machine import _semantics, graph
 from tests.unit.test_machine_model import VALID_MACHINE
 
 
-def _spec(tmp_path: Path):  # type: ignore[no-untyped-def]
+def _spec(tmp_path: pathlib.Path):  # type: ignore[no-untyped-def]
     path = tmp_path / "m.asm.toml"
     path.write_text(VALID_MACHINE, encoding="utf-8")
-    return load_machine(path)
+    return _semantics.load_machine(path)
 
 
-def test_mermaid_has_entry_and_terminal(tmp_path: Path) -> None:
-    out = render_mermaid(_spec(tmp_path))
+def test_mermaid_has_entry_and_terminal(tmp_path: pathlib.Path) -> None:
+    out = graph.render_mermaid(_spec(tmp_path))
     assert out.startswith("stateDiagram-v2\n")
     assert "[*] --> poll" in out
     assert "halt --> [*]" in out
@@ -29,8 +28,8 @@ def test_mermaid_has_entry_and_terminal(tmp_path: Path) -> None:
     assert "have_items --> classify: else" in out
 
 
-def test_dot_has_start_point_and_terminal_shape(tmp_path: Path) -> None:
-    out = render_dot(_spec(tmp_path))
+def test_dot_has_start_point_and_terminal_shape(tmp_path: pathlib.Path) -> None:
+    out = graph.render_dot(_spec(tmp_path))
     assert out.startswith('digraph "item-classifier" {')
     assert "__start__ [shape=point];" in out
     assert '"halt" [shape=doublecircle];' in out
@@ -40,10 +39,10 @@ def test_dot_has_start_point_and_terminal_shape(tmp_path: Path) -> None:
     assert '"have_items" -> "classify" [label="else"];' in out
 
 
-_DOC = Path(__file__).resolve().parents[2] / "docs" / "state-machines.md"
+_DOC = pathlib.Path(__file__).resolve().parents[2] / "docs" / "state-machines.md"
 
 
-def test_documented_graph_is_the_rendered_one(tmp_path: Path) -> None:
+def test_documented_graph_is_the_rendered_one(tmp_path: pathlib.Path) -> None:
     """The state-machines page's mermaid block is `machine graph`'s own output."""
     text = _DOC.read_text(encoding="utf-8")
     diagram = re.search(r"```mermaid\n(.*?)```", text, re.S)
@@ -52,4 +51,4 @@ def test_documented_graph_is_the_rendered_one(tmp_path: Path) -> None:
     example = [b for b in blocks if 'machine = "item-classifier"' in b][-1]
     path = tmp_path / "item-classifier.asm.toml"
     path.write_text(example, encoding="utf-8")
-    assert render_mermaid(load_machine(path)) == diagram.group(1)
+    assert graph.render_mermaid(_semantics.load_machine(path)) == diagram.group(1)

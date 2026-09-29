@@ -6,18 +6,17 @@ from __future__ import annotations
 
 import asyncio
 
-from textual.app import App
+from textual import app
 
-from agent6.ui.tui.copy_method import CopyMethodPicker
-from agent6.ui.tui.settings import get_copy_method, save_copy_method
+from agent6.ui.tui import copy_method, settings
 
 
 def test_picker_persists_the_selected_method() -> None:
-    save_copy_method("auto")  # start from the default
+    settings.save_copy_method("auto")  # start from the default
 
-    class _Harness(App[None]):
+    class _Harness(app.App[None]):
         def on_mount(self) -> None:
-            self.push_screen(CopyMethodPicker())
+            self.push_screen(copy_method.CopyMethodPicker())
 
     async def drive() -> None:
         async with _Harness().run_test() as pilot:
@@ -27,4 +26,4 @@ def test_picker_persists_the_selected_method() -> None:
             await pilot.pause()
 
     asyncio.run(drive())
-    assert get_copy_method() == "osc52"
+    assert settings.get_copy_method() == "osc52"

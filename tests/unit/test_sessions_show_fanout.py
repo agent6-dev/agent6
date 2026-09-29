@@ -5,17 +5,17 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.layout import SessionLayout
+from agent6 import paths
+from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
 
 
-def _session(repo: Path, session_id: str, manifest: dict[str, object]) -> None:
-    layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
+def _session(repo: pathlib.Path, session_id: str, manifest: dict[str, object]) -> None:
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps({"version": 3, "session_id": session_id, "mode": "run", **manifest}),
@@ -31,7 +31,7 @@ def _session(repo: Path, session_id: str, manifest: dict[str, object]) -> None:
 
 
 @pytest.fixture
-def fan_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def fan_out(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -54,7 +54,7 @@ def fan_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_show_names_the_driving_route_and_its_model_flag(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -80,7 +80,7 @@ def test_show_names_the_driving_route_and_its_model_flag(
 
 
 def test_show_names_the_preset_the_run_continues_under(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -95,7 +95,7 @@ def test_show_names_the_preset_the_run_continues_under(
 
 
 def test_show_on_a_coordinator_lists_its_lanes(
-    fan_out: Path, capsys: pytest.CaptureFixture[str]
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "fan"]) == 0
     out = capsys.readouterr().out
@@ -111,7 +111,7 @@ def test_show_on_a_coordinator_lists_its_lanes(
 
 
 def test_show_on_a_coordinator_lists_each_lanes_route(
-    fan_out: Path, capsys: pytest.CaptureFixture[str]
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "fan"]) == 0
     lines = [ln for ln in capsys.readouterr().out.splitlines() if "fan-l" in ln]
@@ -125,7 +125,7 @@ def test_show_on_a_coordinator_lists_each_lanes_route(
 
 
 def test_show_on_a_lane_names_its_coordinator(
-    fan_out: Path, capsys: pytest.CaptureFixture[str]
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "fan-l1"]) == 0
     out = capsys.readouterr().out
@@ -137,7 +137,7 @@ def test_show_on_a_lane_names_its_coordinator(
 
 
 def test_show_marks_a_lane_unmerged_like_the_listing(
-    fan_out: Path, capsys: pytest.CaptureFixture[str]
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A lane whose branch holds commits its base lacks reads unmerged in the fan-out view."""
     import subprocess
@@ -158,7 +158,7 @@ def test_show_marks_a_lane_unmerged_like_the_listing(
     git("add", "b.txt")
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "lane work")
     git("checkout", "-q", "main")
-    layout = SessionLayout(state_dir=state_dir(fan_out), session_id="fan-l1")
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(fan_out), session_id="fan-l1")
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest.update({"base_sha": base, "base_branch": "main", "run_branch": "agent6/fan-l1"})
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -173,7 +173,7 @@ def test_show_marks_a_lane_unmerged_like_the_listing(
 
 
 def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The usage line carries the cached input side and the listing's cost cell.
 
@@ -185,7 +185,7 @@ def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
     repo.mkdir()
     monkeypatch.chdir(repo)
     _session(repo, "cached", {})
-    layout = SessionLayout(state_dir=state_dir(repo), session_id="cached")
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="cached")
     budget = {
         "type": "budget.update",
         "input_total": 18,
@@ -211,7 +211,7 @@ def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
 
 
 def test_show_usage_and_json_carry_the_plan_points(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A plan-metered run shows the points this execution consumed outside the live views.
 
@@ -223,7 +223,7 @@ def test_show_usage_and_json_carry_the_plan_points(
     repo.mkdir()
     monkeypatch.chdir(repo)
     _session(repo, "capped", {})
-    layout = SessionLayout(state_dir=state_dir(repo), session_id="capped")
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="capped")
     budget = {
         "type": "budget.update",
         "input_total": 18,
@@ -253,7 +253,7 @@ def test_show_usage_and_json_carry_the_plan_points(
 
 
 def test_show_names_the_session_that_seeded_a_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`sessions show` prints a `--from` seed as `seeded from` and carries it in the JSON."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -268,7 +268,7 @@ def test_show_names_the_session_that_seeded_a_run(
 
 
 def test_show_names_the_questions_nobody_answered(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`sessions show` names a question that waited unanswered in the transcript.
 
@@ -279,7 +279,7 @@ def test_show_names_the_questions_nobody_answered(
     repo.mkdir()
     monkeypatch.chdir(repo)
     _session(repo, "asked", {})
-    layout = SessionLayout(state_dir=state_dir(repo), session_id="asked")
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="asked")
     lines = layout.logs_path.read_text(encoding="utf-8").splitlines()
     asked = [
         {"type": "question.prompt", "id": "q1", "questions": [{"question": "Which?"}]},

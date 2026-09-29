@@ -5,15 +5,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
 from agent6.ui.cli import plan_watch
-from agent6.ui.cli.plan_watch import (
-    event_epoch,  # pyright: ignore[reportPrivateUsage]
-    format_plain_event,  # pyright: ignore[reportPrivateUsage]
-)
+from agent6.viewmodel import events as viewmodel_events
 
 
 def test_format_plain_event_renders_known_fields() -> None:
@@ -26,7 +23,7 @@ def test_format_plain_event_renders_known_fields() -> None:
             "sha": "abc123def456",
         }
     )
-    out = format_plain_event(raw, session_start_ts=1000.0)
+    out = plan_watch.format_plain_event(raw, session_start_ts=1000.0)
     assert "+  100.0s" in out
     assert "loop.auto_commit" in out
     assert "iteration=3" in out
@@ -35,34 +32,34 @@ def test_format_plain_event_renders_known_fields() -> None:
 
 
 def test_format_plain_event_handles_garbage_line() -> None:
-    out = format_plain_event("not-json-at-all\n", session_start_ts=0.0)
+    out = plan_watch.format_plain_event("not-json-at-all\n", session_start_ts=0.0)
     assert out == "not-json-at-all"
 
 
 def test_format_plain_event_no_ts_anchor() -> None:
     raw = json.dumps({"event": "ping"})
-    out = format_plain_event(raw, session_start_ts=None)
+    out = plan_watch.format_plain_event(raw, session_start_ts=None)
     assert "ping" in out
 
 
 def test_format_plain_event_tolerates_a_non_string_event_type() -> None:
     """A corrupt event value falls back to readable text instead of crashing the tail."""
-    out = format_plain_event('{"type": 42, "value": "kept"}', session_start_ts=None)
+    out = plan_watch.format_plain_event('{"type": 42, "value": "kept"}', session_start_ts=None)
     assert "42" in out
     assert "value='kept'" in out
 
 
 def test_event_epoch_parses_iso_and_numbers() -> None:
     # EventSink writes ISO-8601 strings; the anchor must parse those.
-    assert event_epoch("2026-06-08T05:41:39.762404+00:00") is not None
-    assert event_epoch(1100.0) == 1100.0
-    assert event_epoch("not-a-timestamp") is None
-    assert event_epoch(None) is None
-    assert event_epoch(True) is None  # bool is not a usable epoch
+    assert viewmodel_events.event_epoch("2026-06-08T05:41:39.762404+00:00") is not None
+    assert viewmodel_events.event_epoch(1100.0) == 1100.0
+    assert viewmodel_events.event_epoch("not-a-timestamp") is None
+    assert viewmodel_events.event_epoch(None) is None
+    assert viewmodel_events.event_epoch(True) is None  # bool is not a usable epoch
 
 
 def test_raw_watch_exits_when_the_worker_is_gone(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -80,7 +77,7 @@ def test_raw_watch_exits_when_the_worker_is_gone(
 
 
 def test_raw_watch_returns_nonzero_when_the_log_disappears_before_the_end(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -90,7 +87,7 @@ def test_raw_watch_returns_nonzero_when_the_log_disappears_before_the_end(
     events.write_text('{"type":"session.start"}\n', encoding="utf-8")
     liveness_checks = 0
 
-    def _worker_is_alive(_target: Path) -> bool:
+    def _worker_is_alive(_target: pathlib.Path) -> bool:
         nonlocal liveness_checks
         liveness_checks += 1
         return liveness_checks == 1
@@ -106,7 +103,7 @@ def test_raw_watch_returns_nonzero_when_the_log_disappears_before_the_end(
 
 
 def test_raw_watch_preserves_a_partial_replay_line(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -125,7 +122,7 @@ def test_raw_watch_preserves_a_partial_replay_line(
         with events.open("ab") as fh:
             fh.write(b'call","role":"worker"}\n{"type":"session.end"}\n')
 
-    def _worker_is_alive(_target: Path) -> bool:
+    def _worker_is_alive(_target: pathlib.Path) -> bool:
         return True
 
     monkeypatch.setattr(plan_watch, "worker_is_alive", _worker_is_alive)
@@ -141,8 +138,8 @@ def test_format_plain_event_renders_elapsed_for_iso_ts() -> None:
     # column must still render rather than always blanking.
     start = "2026-06-08T05:41:39+00:00"
     later = "2026-06-08T05:42:39+00:00"  # +60s
-    anchor = event_epoch(start)
-    out = format_plain_event(
+    anchor = viewmodel_events.event_epoch(start)
+    out = plan_watch.format_plain_event(
         json.dumps({"ts": later, "type": "loop.auto_commit"}), session_start_ts=anchor
     )
     assert "+   60.0s" in out

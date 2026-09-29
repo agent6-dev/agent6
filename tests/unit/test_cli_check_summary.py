@@ -4,17 +4,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
 from agent6.config import Config
-from agent6.ui.cli.check_cmds import _doctor_check_config  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import check_cmds as cli_check_cmds  # pyright: ignore[reportPrivateUsage]
 
 
 def test_no_providers_is_info_not_pass(capsys: pytest.CaptureFixture[str]) -> None:
     # A fresh setup is unusable until `agent6 connect`; that instruction is not a PASS.
-    checks = _doctor_check_config(Config())
+    checks = cli_check_cmds._doctor_check_config(Config())
     by_name = {c.name: c for c in checks}
     assert by_name["config.provider_keys"].status == "INFO"
     assert "agent6 connect" in by_name["config.provider_keys"].detail
@@ -24,7 +24,7 @@ def test_no_providers_is_info_not_pass(capsys: pytest.CaptureFixture[str]) -> No
 
 
 def test_check_summary_carries_info_through(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `check verify` on a default config: verify_command is unset, an advisory INFO at exit 0.
     from agent6.ui.cli import main
@@ -40,7 +40,7 @@ def test_check_summary_carries_info_through(
 
 
 def test_check_verify_uses_the_jail_path_not_the_ambient_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A host-only PATH entry cannot make a verify command executable inside the jail."""
     from agent6.ui.cli import check_cmds
@@ -59,7 +59,7 @@ def test_check_verify_uses_the_jail_path_not_the_ambient_path(
 
 
 def test_check_verify_says_what_this_repo_infers(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With verify_command unset, `check verify` names the command a run here would infer.
 
@@ -77,7 +77,7 @@ def test_check_verify_says_what_this_repo_infers(
 
 
 def test_boundaries_reports_spawned_mcp_as_unconfined_without_a_jail(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An isolation-none policy does not enforce the path grants printed for a jailed server."""
     from agent6.ui.cli import check_cmds
@@ -95,7 +95,7 @@ def test_boundaries_reports_spawned_mcp_as_unconfined_without_a_jail(
 
 
 def test_boundaries_fails_when_a_run_would_refuse_the_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Resolved host network is not an effective boundary when an explicit session is refused."""
     from agent6.ui.cli import check_cmds
@@ -127,7 +127,7 @@ def test_boundaries_fails_when_a_run_would_refuse_the_config(
 
 
 def test_boundaries_alone_prints_no_empty_summary(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The boundaries section reaches no verdict, so its own invocation prints no empty summary."""
     from agent6.ui.cli import main

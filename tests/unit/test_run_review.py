@@ -8,22 +8,20 @@ is saved, with nothing written to the repo or the memory.
 
 from __future__ import annotations
 
+import dataclasses
 import json
-from dataclasses import dataclass
-from pathlib import Path
-from types import SimpleNamespace
+import pathlib
+import types
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
+from agent6 import kinds, memory, paths
 from agent6.config import Config
-from agent6.harness.run_review import RunReviewError, run_digest, run_review
-from agent6.kinds import RoleName
-from agent6.memory import add, record_use
-from agent6.paths import state_dir
+from agent6.harness import run_review
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
-from agent6.sessions.layout import SessionLayout
+from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
 from agent6.ui.cli import sessions_review as review_mod
 
@@ -72,9 +70,9 @@ _EVENTS: list[dict[str, Any]] = [
 
 
 def _write_session(
-    repo: Path, session_id: str = "run-AAAA11", events: list[dict[str, Any]] | None = None
-) -> SessionLayout:
-    layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
+    repo: pathlib.Path, session_id: str = "run-AAAA11", events: list[dict[str, Any]] | None = None
+) -> sessions_layout.SessionLayout:
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -91,18 +89,20 @@ def _write_session(
 
 
 @pytest.fixture
-def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
 
-def test_the_digest_folds_what_the_reviewer_needs(repo: Path) -> None:
+def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
     layout = _write_session(repo)
-    record_use(layout.state_dir, session="run-AAAA11", wrote=("lexer-rule",), read={"old": 1})
-    record_use(layout.state_dir, session="run-other", wrote=("other",), read={})
-    add(layout.state_dir, "money-rounding", "Money rounds half-up on the cent.")
+    memory.record_use(
+        layout.state_dir, session="run-AAAA11", wrote=("lexer-rule",), read={"old": 1}
+    )
+    memory.record_use(layout.state_dir, session="run-other", wrote=("other",), read={})
+    memory.add(layout.state_dir, "money-rounding", "Money rounds half-up on the cent.")
 
-    d = run_digest(layout)
+    d = run_review.run_digest(layout)
 
     assert (d.session_id, d.mode, d.task) == ("run-AAAA11", "run", "fix the parser")
     assert (d.end_reason, d.verify, d.iterations) == ("finish_session", "passed", 6)
@@ -138,20 +138,20 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: Path) -> None:
         assert heading in text
 
 
-def test_every_writer_of_a_fact_is_credited_not_only_the_first_and_last(repo: Path) -> None:
+def test_every_writer_of_a_fact_is_credited_not_only_the_first_and_last(repo: pathlib.Path) -> None:
     """A creates a fact, B edits it, C edits it.
 
     Reviewing B credited B with no memory write, because the record kept only the first and the last
     writer.
     """
     layout = _write_session(repo)
-    record_use(layout.state_dir, session="run-A", wrote=("fact",), read={})
-    record_use(layout.state_dir, session="run-AAAA11", wrote=("fact",), read={})
-    record_use(layout.state_dir, session="run-C", wrote=("fact",), read={})
-    assert run_digest(layout).memory_wrote == ("fact",)
+    memory.record_use(layout.state_dir, session="run-A", wrote=("fact",), read={})
+    memory.record_use(layout.state_dir, session="run-AAAA11", wrote=("fact",), read={})
+    memory.record_use(layout.state_dir, session="run-C", wrote=("fact",), read={})
+    assert run_review.run_digest(layout).memory_wrote == ("fact",)
 
 
-def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: Path) -> None:
+def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: pathlib.Path) -> None:
     red = [
         e
         for e in _EVENTS
@@ -161,18 +161,18 @@ def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: Path) -> None:
         {"type": "session.end", "reason": "no_progress", "iterations": 9, "all_passed": False}
     )
     layout = _write_session(repo, events=red)
-    d = run_digest(layout)
+    d = run_review.run_digest(layout)
     assert (d.end_reason, d.verify) == ("no_progress", "failed")
 
     empty = _write_session(repo, session_id="run-BBBB22", events=[])
-    d = run_digest(empty)
+    d = run_review.run_digest(empty)
     # Nothing observed the tree: "unverified", never a word that claims a gate
     # was absent or green.
     assert (d.end_reason, d.verify, d.tool_calls, d.steers) == ("", "unverified", 0, ())
     assert "conversation (tail):" in d.render()
 
 
-def test_a_plan_or_an_ask_has_no_gate_to_pass(repo: Path) -> None:
+def test_a_plan_or_an_ask_has_no_gate_to_pass(repo: pathlib.Path) -> None:
     """A plan's or an ask's `all_passed: true` is not a verify pass.
 
     Nothing gated them; a digest reading it as "verify passed" reviews a plan that ran no verify as
@@ -188,27 +188,25 @@ def test_a_plan_or_an_ask_has_no_gate_to_pass(repo: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    d = run_digest(layout)
+    d = run_review.run_digest(layout)
     assert (d.mode, d.verify) == ("plan", "not gated")
     assert "verify not gated" in d.render()
 
 
-def test_the_digest_clips_a_runaway_index_like_the_prompt_does(repo: Path) -> None:
+def test_the_digest_clips_a_runaway_index_like_the_prompt_does(repo: pathlib.Path) -> None:
     """The digest clips a runaway index under the same cap and marker as the prompt.
 
     One runaway index cannot flood a review call.
     """
-    from agent6.memory import INDEX_INJECT_CAP
-
     layout = _write_session(repo)
     for i in range(120):
-        add(layout.state_dir, f"fact-{i:03d}", "x" * 60)
-    d = run_digest(layout)
-    assert len(d.memory_index) <= INDEX_INJECT_CAP
+        memory.add(layout.state_dir, f"fact-{i:03d}", "x" * 60)
+    d = run_review.run_digest(layout)
+    assert len(d.memory_index) <= memory.INDEX_INJECT_CAP
     assert d.memory_index.endswith("... (index clipped; read MEMORY.md for the rest)")
 
 
-def test_the_gate_word_agrees_with_the_listing_scan(repo: Path) -> None:
+def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
     """Three shapes the digest got wrong against `sessions show`.
 
     A resumed run whose red verify was in execution 1 and whose execution 2 ran none reads
@@ -216,7 +214,7 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: Path) -> None:
     false, no verify.end) reads "unverified", not "not gated"; a killed run (a green verify, no
     session.end) reads "unverified".
     """
-    from agent6.viewmodel.listing import scan_session_log
+    from agent6.viewmodel import listing
 
     resumed = [
         {"type": "session.start", "session_id": "r", "mode": "run", "user_task": "t"},
@@ -233,16 +231,16 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: Path) -> None:
         {"type": "session.end", "reason": "finish_session", "iterations": 6, "all_passed": False},
     ]
     layout = _write_session(repo, session_id="run-resumed", events=resumed)
-    d = run_digest(layout)
+    d = run_review.run_digest(layout)
     assert d.verify == "unverified"
-    assert scan_session_log(layout.logs_path).verify_verdict() is None
+    assert listing.scan_session_log(layout.logs_path).verify_verdict() is None
 
     never_ran = [
         {"type": "session.start", "session_id": "n", "mode": "run", "user_task": "t"},
         {"type": "session.end", "reason": "finish_session", "iterations": 2, "all_passed": False},
     ]
     layout = _write_session(repo, session_id="run-never", events=never_ran)
-    assert run_digest(layout).verify == "unverified"
+    assert run_review.run_digest(layout).verify == "unverified"
 
     killed = [
         {"type": "session.start", "session_id": "k", "mode": "run", "user_task": "t"},
@@ -256,26 +254,26 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: Path) -> None:
         },
     ]
     layout = _write_session(repo, session_id="run-killed", events=killed)
-    assert run_digest(layout).verify == "unverified"
+    assert run_review.run_digest(layout).verify == "unverified"
 
     gateless = [
         {"type": "session.start", "session_id": "g", "mode": "run", "user_task": "t"},
         {"type": "session.end", "reason": "finish_session", "iterations": 2, "all_passed": None},
     ]
     layout = _write_session(repo, session_id="run-gateless", events=gateless)
-    assert run_digest(layout).verify == "not gated"
+    assert run_review.run_digest(layout).verify == "not gated"
 
 
-def test_the_caps_are_named_not_silent(repo: Path) -> None:
+def test_the_caps_are_named_not_silent(repo: pathlib.Path) -> None:
     many = [{"type": "loop.steer.injected", "chars": 1, "text": f"steer {i}"} for i in range(25)]
     layout = _write_session(repo, events=many)
-    d = run_digest(layout)
+    d = run_review.run_digest(layout)
     assert len(d.steers) == 20
     assert d.steers_total == 25
     assert "operator steers (20, 5 more not shown):" in d.render()
 
 
-@dataclass
+@dataclasses.dataclass
 class _FakeProvider:
     response_text: str = "## Outcome\nfinished green"
     raise_error: bool = False
@@ -308,7 +306,7 @@ class _FakeProvider:
 
 def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
     provider = _FakeProvider()
-    out = run_review(provider, digest="session x: task", agents_md="# rules")  # type: ignore[arg-type]
+    out = run_review.run_review(provider, digest="session x: task", agents_md="# rules")  # type: ignore[arg-type]
     assert out.startswith("## Outcome")
     assert provider.last_user == "AGENTS.md:\n# rules\n\nRUN RECORD:\nsession x: task"
     assert "Candidate memory facts" in provider.last_system
@@ -323,10 +321,10 @@ def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
         "or the memory index already state",
     ):
         assert line in provider.last_system
-    with pytest.raises(RunReviewError, match="provider call failed"):
-        run_review(_FakeProvider(raise_error=True), digest="x")  # type: ignore[arg-type]
-    with pytest.raises(RunReviewError, match="empty"):
-        run_review(_FakeProvider(response_text="  "), digest="x")  # type: ignore[arg-type]
+    with pytest.raises(run_review.RunReviewError, match="provider call failed"):
+        run_review.run_review(_FakeProvider(raise_error=True), digest="x")  # type: ignore[arg-type]
+    with pytest.raises(run_review.RunReviewError, match="empty"):
+        run_review.run_review(_FakeProvider(response_text="  "), digest="x")  # type: ignore[arg-type]
 
 
 def _reviewer_config() -> Config:
@@ -339,7 +337,7 @@ def _reviewer_config() -> Config:
 
 
 def test_the_verb_prints_and_saves_the_review(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write_session(repo)
     provider = _FakeProvider(
@@ -347,12 +345,12 @@ def test_the_verb_prints_and_saves_the_review(
     )
     cfg = _reviewer_config()
 
-    def loaded(*_a: object, **_k: object) -> SimpleNamespace:
-        return SimpleNamespace(config=cfg)
+    def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
+        return types.SimpleNamespace(config=cfg)
 
     monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
-    monkeypatch.setattr(review_mod, "check_provider_keys", MagicMock(return_value=None))
-    monkeypatch.setattr(review_mod, "build_role_provider", MagicMock(return_value=provider))
+    monkeypatch.setattr(review_mod, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(review_mod, "build_role_provider", mock.MagicMock(return_value=provider))
 
     rc = main(["sessions", "review", "run-AAAA11"])
 
@@ -361,16 +359,16 @@ def test_the_verb_prints_and_saves_the_review(
     assert out.out == "## Outcome\nfinished green\n\n## Candidate memory facts\n- lexer-rule: ...\n"
     assert "reviewing run: run-AAAA11" in out.err
     assert provider.last_user.startswith("RUN RECORD:\nsession run-AAAA11 (run): fix the parser")
-    saved = sorted((state_dir(repo) / "reviews").glob("*-review.md"))
+    saved = sorted((paths.state_dir(repo) / "reviews").glob("*-review.md"))
     assert len(saved) == 1
     assert saved[0].read_text(encoding="utf-8").startswith("# review: run run-AAAA11\n\n## Outcome")
     assert f"review saved: {saved[0]}" in out.err
     # Read-only: the memory store gained nothing.
-    assert not (state_dir(repo) / "memory").exists()
+    assert not (paths.state_dir(repo) / "memory").exists()
 
 
 def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The verb reviews any session by id, and the newest session across buckets without one.
 
@@ -383,12 +381,12 @@ def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
     provider = _FakeProvider(response_text="## Outcome\nok")
     cfg = _reviewer_config()
 
-    def loaded(*_a: object, **_k: object) -> SimpleNamespace:
-        return SimpleNamespace(config=cfg)
+    def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
+        return types.SimpleNamespace(config=cfg)
 
     monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
-    monkeypatch.setattr(review_mod, "check_provider_keys", MagicMock(return_value=None))
-    monkeypatch.setattr(review_mod, "build_role_provider", MagicMock(return_value=provider))
+    monkeypatch.setattr(review_mod, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(review_mod, "build_role_provider", mock.MagicMock(return_value=provider))
 
     modelgit = _write_session(repo, session_id="run-MODEL1")
     modelgit.manifest_path.write_text(
@@ -413,7 +411,9 @@ def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
     capsys.readouterr()
 
     _time.sleep(0.05)
-    plan = SessionLayout(state_dir=state_dir(repo), session_id="plan-NEWEST", subdir="plans")
+    plan = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo), session_id="plan-NEWEST", subdir="plans"
+    )
     plan.ensure()
     plan.manifest_path.write_text(
         json.dumps({"version": 2, "session_id": "plan-NEWEST", "mode": "plan", "user_task": "p"})
@@ -430,22 +430,22 @@ def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
 
 
 def test_the_model_flag_reaches_the_reviewer(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write_session(repo)
     cfg = _reviewer_config()
     seen: list[str] = []
 
-    def loaded(*_a: object, **_k: object) -> SimpleNamespace:
-        return SimpleNamespace(config=cfg)
+    def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
+        return types.SimpleNamespace(config=cfg)
 
-    def build(cfg_used: Config, role: RoleName, **_k: object) -> _FakeProvider:
+    def build(cfg_used: Config, role: kinds.RoleName, **_k: object) -> _FakeProvider:
         route = cfg_used.models.resolve(role)
         seen.append(route.model if route is not None else "")
         return _FakeProvider()
 
     monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
-    monkeypatch.setattr(review_mod, "check_provider_keys", MagicMock(return_value=None))
+    monkeypatch.setattr(review_mod, "check_provider_keys", mock.MagicMock(return_value=None))
     monkeypatch.setattr(review_mod, "build_role_provider", build)
     assert main(["sessions", "review", "run-AAAA11", "--model", "local/other"]) == 0
     capsys.readouterr()
@@ -453,7 +453,7 @@ def test_the_model_flag_reaches_the_reviewer(
 
 
 def test_the_verb_refuses_an_unknown_session_and_a_provider_it_cannot_build(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write_session(repo)
     assert main(["sessions", "review", "nope"]) == 2
@@ -461,31 +461,33 @@ def test_the_verb_refuses_an_unknown_session_and_a_provider_it_cannot_build(
 
     cfg = _reviewer_config()
 
-    def loaded(*_a: object, **_k: object) -> SimpleNamespace:
-        return SimpleNamespace(config=cfg)
+    def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
+        return types.SimpleNamespace(config=cfg)
 
     monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
-    monkeypatch.setattr(review_mod, "check_provider_keys", MagicMock(return_value=None))
+    monkeypatch.setattr(review_mod, "check_provider_keys", mock.MagicMock(return_value=None))
     monkeypatch.setattr(
-        review_mod, "build_role_provider", MagicMock(side_effect=ProviderError("no key"))
+        review_mod, "build_role_provider", mock.MagicMock(side_effect=ProviderError("no key"))
     )
     assert main(["sessions", "review", "run-AAAA11", "--model", "local/other"]) == 2
     assert "provider init failed: no key" in capsys.readouterr().err
 
 
 def test_a_failed_reviewer_call_is_reported(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write_session(repo)
     cfg = _reviewer_config()
 
-    def loaded(*_a: object, **_k: object) -> SimpleNamespace:
-        return SimpleNamespace(config=cfg)
+    def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
+        return types.SimpleNamespace(config=cfg)
 
     monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
-    monkeypatch.setattr(review_mod, "check_provider_keys", MagicMock(return_value=None))
+    monkeypatch.setattr(review_mod, "check_provider_keys", mock.MagicMock(return_value=None))
     monkeypatch.setattr(
-        review_mod, "build_role_provider", MagicMock(return_value=_FakeProvider(raise_error=True))
+        review_mod,
+        "build_role_provider",
+        mock.MagicMock(return_value=_FakeProvider(raise_error=True)),
     )
     assert main(["sessions", "review"]) == 2
     err = capsys.readouterr().err
@@ -494,18 +496,18 @@ def test_a_failed_reviewer_call_is_reported(
 
 
 def test_a_live_session_is_refused_before_any_call(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A live run's record is not complete; the review waits for its end."""
     import os
 
-    from agent6.sessions.ipc import write_worker_pid
+    from agent6.sessions import ipc
 
     layout = _write_session(repo, events=_EVENTS[:1])
-    write_worker_pid(layout.session_dir, os.getpid())
+    ipc.write_worker_pid(layout.session_dir, os.getpid())
     monkeypatch.setattr(
         "agent6.ui.cli.review_cmds.load_effective",
-        MagicMock(side_effect=AssertionError("config loaded")),
+        mock.MagicMock(side_effect=AssertionError("config loaded")),
     )
     assert main(["sessions", "review", "run-AAAA11"]) == 2
     err = capsys.readouterr().err

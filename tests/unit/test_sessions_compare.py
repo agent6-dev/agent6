@@ -11,32 +11,32 @@ from __future__ import annotations
 
 import io
 import json
+import pathlib
 import subprocess
 import sys
 import time
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
-from agent6.budget import BudgetTracker
+from agent6 import budget as agent6_budget
+from agent6 import paths
 from agent6.config import Config
-from agent6.harness.judge import CandidateBrief
-from agent6.paths import repo_config_path, state_dir
+from agent6.harness import judge as harness_judge
 from agent6.providers import Provider, ProviderError
-from agent6.sessions.layout import SessionLayout
+from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import _compare as compare_mod
 from agent6.ui.cli import main
-from agent6.viewmodel.format import SPINNER_FRAMES
+from agent6.viewmodel import format
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: pathlib.Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
     ).stdout.strip()
 
 
-def _init_repo(repo: Path) -> str:
+def _init_repo(repo: pathlib.Path) -> str:
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "user.email", "t@t")
     _git(repo, "config", "user.name", "t")
@@ -47,7 +47,7 @@ def _init_repo(repo: Path) -> str:
 
 
 def _setup_run(
-    repo: Path,
+    repo: pathlib.Path,
     session_id: str,
     *,
     base_sha: str,
@@ -72,7 +72,7 @@ def _setup_run(
         _git(repo, "commit", "-q", "-m", msg)
     _git(repo, "checkout", "-q", current)
 
-    layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -101,7 +101,7 @@ def _setup_run(
 
 
 @pytest.fixture
-def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     # Run state is isolated by the autouse `_isolate_state` fixture (conftest.py)
     # to a tmp dir OUTSIDE this one; nesting XDG_STATE_HOME under tmp_path here
     # would put untracked run state inside the repo's own working tree, where a
@@ -116,7 +116,9 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_compare_needs_at_least_two_ids(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_compare_needs_at_least_two_ids(
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     rc = main(["sessions", "compare", "run-AAAA11"])
@@ -125,7 +127,7 @@ def test_compare_needs_at_least_two_ids(repo: Path, capsys: pytest.CaptureFixtur
 
 
 def test_compare_of_a_fanout_id_compares_its_lanes(
-    repo: Path, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A fan-out id given alone names every lane carrying it, in lane order.
 
@@ -148,7 +150,9 @@ def test_compare_of_a_fanout_id_compares_its_lanes(
     assert "fan-1" in out and "fan-2" in out and "run-AAAA11" not in out
 
 
-def test_compare_unknown_id_errors_loudly(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_compare_unknown_id_errors_loudly(
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     rc = main(["sessions", "compare", "run-AAAA11", "nonexistent"])
@@ -156,7 +160,9 @@ def test_compare_unknown_id_errors_loudly(repo: Path, capsys: pytest.CaptureFixt
     assert "no session matches" in capsys.readouterr().err
 
 
-def test_compare_ambiguous_id_errors_loudly(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_compare_ambiguous_id_errors_loudly(
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     base = _init_repo(repo)
     _setup_run(repo, "run-DUPXX1", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     _setup_run(repo, "run-DUPXX2", base_sha=base, commits=[("b.txt", "b\n", "add b")])
@@ -166,7 +172,9 @@ def test_compare_ambiguous_id_errors_loudly(repo: Path, capsys: pytest.CaptureFi
     assert "ambiguous" in capsys.readouterr().err
 
 
-def test_compare_rejects_duplicate_id(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_compare_rejects_duplicate_id(
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")])
@@ -181,7 +189,7 @@ def test_compare_rejects_duplicate_id(repo: Path, capsys: pytest.CaptureFixture[
 
 
 def test_compare_prefix_resolution_and_mechanical_ranking(
-    repo: Path, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     base = _init_repo(repo)
     # Cheaper lane fails verify; the other passes -- verify-pass must win despite
@@ -214,7 +222,7 @@ def test_compare_prefix_resolution_and_mechanical_ranking(
 
 
 def test_compare_row_of_a_merged_run_says_so(
-    repo: Path, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A candidate already merged is not offered `sessions merge` again; its row names the base."""
     base = _init_repo(repo)
@@ -244,7 +252,7 @@ def test_compare_row_of_a_merged_run_says_so(
 
 
 def test_compare_rows_and_total_format_cost_the_same_way(
-    repo: Path, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Per-row and total costs render through the one cost formatter.
 
@@ -275,7 +283,7 @@ def test_compare_rows_and_total_format_cost_the_same_way(
 
 
 def test_compare_excludes_a_run_that_never_finished(
-    repo: Path, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A run that died before session.end is dropped from a hand-picked comparison, and said so.
 
@@ -300,7 +308,7 @@ def test_compare_excludes_a_run_that_never_finished(
         cost=0.01,
     )
     # A recorded-but-dead worker pid is what makes an unfinished run read "stale".
-    layout = SessionLayout(state_dir=state_dir(repo), session_id="run-FFFF66")
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-FFFF66")
     (layout.session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
 
     assert main(["sessions", "compare", "run-EEEE55", "run-FFFF66"]) == 0
@@ -312,7 +320,7 @@ def test_compare_excludes_a_run_that_never_finished(
 
 
 def test_compare_excludes_a_run_that_is_still_live(
-    repo: Path, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A live run is dropped from a comparison like a died one.
 
@@ -338,7 +346,7 @@ def test_compare_excludes_a_run_that_is_still_live(
         status="crashed",  # no session.end...
         cost=0.01,
     )
-    layout = SessionLayout(state_dir=state_dir(repo), session_id="run-HHHH88")
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-HHHH88")
     (layout.session_dir / "worker.pid").write_text(
         str(os.getpid()), encoding="utf-8"
     )  # ...but LIVE
@@ -351,20 +359,24 @@ def test_compare_excludes_a_run_that_is_still_live(
     assert "run-HHHH88 is still running" in out  # named as excluded, with why
 
 
-def test_compare_is_read_only(repo: Path) -> None:
+def test_compare_is_read_only(repo: pathlib.Path) -> None:
     """Never merges, never writes to the run's own branch/manifest."""
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")])
     head_before = _git(repo, "rev-parse", "main")
     manifest_before = (
-        SessionLayout(state_dir=state_dir(repo), session_id="run-AAAA11").manifest_path
+        sessions_layout.SessionLayout(
+            state_dir=paths.state_dir(repo), session_id="run-AAAA11"
+        ).manifest_path
     ).read_text(encoding="utf-8")
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
     assert rc == 0
     assert _git(repo, "rev-parse", "main") == head_before
     assert (
-        SessionLayout(state_dir=state_dir(repo), session_id="run-AAAA11").manifest_path
+        sessions_layout.SessionLayout(
+            state_dir=paths.state_dir(repo), session_id="run-AAAA11"
+        ).manifest_path
     ).read_text(encoding="utf-8") == manifest_before
 
 
@@ -373,8 +385,8 @@ def test_compare_is_read_only(repo: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _write_reviewer_config(repo: Path) -> None:
-    p = repo_config_path(repo)
+def _write_reviewer_config(repo: pathlib.Path) -> None:
+    p = paths.repo_config_path(repo)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(
         '[providers.anthropic]\napi_format = "anthropic"\napi_key_env = "FAKE_KEY_NOT_SET"\n\n'
@@ -414,7 +426,7 @@ def _stub_builder(provider: object) -> Any:
 class _CostingFakeProvider(_FakeProvider):
     """A fake provider that bills each call into the BudgetTracker its builder received."""
 
-    budget: BudgetTracker | None = None
+    budget: agent6_budget.BudgetTracker | None = None
 
     def call(self, **kw: Any) -> Any:
         assert self.budget is not None
@@ -440,7 +452,7 @@ def _costing_stub_builder(provider: _CostingFakeProvider) -> Any:
 
 
 def test_compare_uses_judge_when_reviewer_configured(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")], cost=0.10)
@@ -461,7 +473,7 @@ def test_compare_uses_judge_when_reviewer_configured(
 
 
 def test_compare_total_line_accounts_the_judge_calls_own_spend(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The judge call's spend lands on the ranked report's total line."""
     base = _init_repo(repo)
@@ -487,7 +499,7 @@ def _lane_extra(*, winner: bool, rank: int) -> dict[str, Any]:
 
 
 def test_compare_discloses_a_fresh_verdict_that_contradicts_the_stamp(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Re-judging a fan-out's lanes never rewrites the stamp, and a flipped winner is said."""
     base = _init_repo(repo)
@@ -519,7 +531,7 @@ def test_compare_discloses_a_fresh_verdict_that_contradicts_the_stamp(
 
 
 def test_compare_stays_quiet_when_the_fresh_verdict_agrees_with_the_stamp(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     base = _init_repo(repo)
     _setup_run(
@@ -547,7 +559,7 @@ def test_compare_stays_quiet_when_the_fresh_verdict_agrees_with_the_stamp(
 
 
 def test_failed_judge_announces_what_its_attempts_still_spent(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Two malformed judge replies fall back to the mechanical ranking with their spend reported.
 
@@ -575,7 +587,7 @@ class _UnpricedFakeProvider(_FakeProvider):
     The shape that makes estimate_usd return (0.0, unknown=True).
     """
 
-    budget: BudgetTracker | None = None
+    budget: agent6_budget.BudgetTracker | None = None
 
     def call(self, **kw: Any) -> Any:
         assert self.budget is not None
@@ -590,7 +602,7 @@ class _UnpricedFakeProvider(_FakeProvider):
 
 
 def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An unpriced reviewer with no reported cost renders as the ~ lower bound, never hidden."""
     base = _init_repo(repo)
@@ -614,7 +626,7 @@ def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
 
 
 def test_compare_falls_back_to_mechanical_on_judge_error(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A configured reviewer that never yields a verdict falls back to the mechanical ranking.
 
@@ -669,17 +681,21 @@ def _reviewer_cfg() -> Config:
     )
 
 
-def _two_candidates() -> list[CandidateBrief]:
+def _two_candidates() -> list[harness_judge.CandidateBrief]:
     return [
-        CandidateBrief(session_id="run-AAAA11", task="t", diff="", verify_ok=True, cost_usd=0.1),
-        CandidateBrief(session_id="run-BBBB22", task="t", diff="", verify_ok=True, cost_usd=0.2),
+        harness_judge.CandidateBrief(
+            session_id="run-AAAA11", task="t", diff="", verify_ok=True, cost_usd=0.1
+        ),
+        harness_judge.CandidateBrief(
+            session_id="run-BBBB22", task="t", diff="", verify_ok=True, cost_usd=0.2
+        ),
     ]
 
 
 _VERDICT = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b is cleaner"}'
 
 # The one spinner-frame owner every surface shares (imported at top).
-_SPINNER_GLYPHS = SPINNER_FRAMES
+_SPINNER_GLYPHS = format.SPINNER_FRAMES
 
 # The run stream's heartbeat tick (`_console_view._HEARTBEAT_TICK_S`).
 _HEARTBEAT_TICK_S = 0.5
@@ -716,7 +732,7 @@ class _SlowFakeProvider:
 
 
 def test_rank_plain_judging_line_on_non_tty(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Piped or detached, one truthful line surrounds the judge call and no frame animates."""
     provider = _FakeProvider([_VERDICT])
@@ -728,7 +744,7 @@ def test_rank_plain_judging_line_on_non_tty(
 
 
 def test_rank_animates_the_judging_status_on_a_tty(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A real terminal spins the run stream's glyphs and cadence, then clears the line."""
     fake = _FakeTTYOut()
@@ -747,7 +763,7 @@ def test_rank_animates_the_judging_status_on_a_tty(
 
 
 def test_rank_clears_the_judging_status_even_when_the_judge_call_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = _FakeTTYOut()
     monkeypatch.setattr(sys, "stdout", fake)
@@ -761,7 +777,7 @@ def test_rank_clears_the_judging_status_even_when_the_judge_call_fails(
 
 
 def test_rank_mechanical_path_prints_no_judging_line(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With no reviewer configured the mechanical fallback is instant and shows no status."""
     outcome = compare_mod.rank(Config(), _two_candidates(), transcript_dir=tmp_path)
@@ -786,7 +802,7 @@ def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:
 
 
 def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
-    repo: Path, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """After `prune --delete-squashed` a candidate's diff comes from the recorded merge."""
     base = _init_repo(repo)
@@ -797,8 +813,10 @@ def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
     _git(repo, "commit", "-q", "-m", "squash p")
     landed = _git(repo, "rev-parse", "HEAD")
     _git(repo, "branch", "-D", "agent6/run-PPPP77")
-    state = state_dir(repo)
-    manifest = SessionLayout(state_dir=state, session_id="run-PPPP77", subdir="runs").manifest_path
+    state = paths.state_dir(repo)
+    manifest = sessions_layout.SessionLayout(
+        state_dir=state, session_id="run-PPPP77", subdir="runs"
+    ).manifest_path
     data = json.loads(manifest.read_text(encoding="utf-8"))
     data["merged"] = {"into": "main", "sha": landed, "tip": tip}
     manifest.write_text(json.dumps(data), encoding="utf-8")
@@ -809,7 +827,7 @@ def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
     assert "empty diff" not in out.lower()
 
 
-def _stamped_fanout(repo: Path) -> None:
+def _stamped_fanout(repo: pathlib.Path) -> None:
     """Two lanes of one fan-out, stamped with the verdict its auto-compare recorded."""
     base = _init_repo(repo)
     _setup_run(
@@ -830,7 +848,7 @@ def _stamped_fanout(repo: Path) -> None:
 
 
 def test_compare_of_a_fanout_id_prints_the_recorded_verdict_without_judging(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Asking a fan-out for its comparison reads the stamp, never a fresh judge call."""
     _stamped_fanout(repo)
@@ -848,7 +866,7 @@ def test_compare_of_a_fanout_id_prints_the_recorded_verdict_without_judging(
 
 
 def test_rejudge_on_a_fanout_id_spends_a_fresh_judge_call(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _stamped_fanout(repo)
     judge = _FakeProvider(['{"ranking": ["run-AAAA11", "run-BBBB22"], "rationale": "flip"}'])
@@ -864,7 +882,7 @@ def test_rejudge_on_a_fanout_id_spends_a_fresh_judge_call(
 
 
 def test_a_fanout_with_no_recorded_verdict_is_judged(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An auto-compare that never ran leaves no stamp, so the lanes are ranked instead."""
     base = _init_repo(repo)

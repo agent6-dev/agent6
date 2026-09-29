@@ -4,11 +4,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import get_args
 
+import pydantic
 import pytest
-from pydantic import ValidationError
 
 from agent6.config import (
     AnthropicProviderEntry,
@@ -51,31 +51,31 @@ max_tokens_fallback = 100000
 """
 
 
-def _write(tmp_path: Path, body: str) -> Path:
+def _write(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
     return p
 
 
-def test_loads_valid_config(tmp_path: Path) -> None:
+def test_loads_valid_config(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.agent6.config_version == 1
     assert cfg.sandbox.isolation == "auto"
     assert cfg.harness.verify_command == ("true",)
 
 
-def test_missing_file_raises(tmp_path: Path) -> None:
+def test_missing_file_raises(tmp_path: pathlib.Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
         load_config(tmp_path / "nope.toml")
 
 
-def test_extra_key_forbidden(tmp_path: Path) -> None:
+def test_extra_key_forbidden(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace("[git]", "[git]\nextra_key = true")
     with pytest.raises(ConfigError, match="extra"):
         load_config(_write(tmp_path, body))
 
 
-def test_security_field_defaults_to_safe_value(tmp_path: Path) -> None:
+def test_security_field_defaults_to_safe_value(tmp_path: pathlib.Path) -> None:
     # protect_git is a security field: omitted, it defaults to the safe value.
     body = _VALID_TOML.replace("protect_git = true\n", "")
     cfg = load_config(_write(tmp_path, body))
@@ -102,26 +102,26 @@ def test_with_sandbox_overrides_noop_returns_self() -> None:
     assert cfg.with_sandbox_overrides() is cfg
 
 
-def test_invalid_enum_literal(tmp_path: Path) -> None:
+def test_invalid_enum_literal(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace('isolation = "auto"', 'isolation = "lax"')
     with pytest.raises(ConfigError, match=r"sandbox\.isolation"):
         load_config(_write(tmp_path, body))
 
 
-def test_auto_merge_works_without_branch_per_run(tmp_path: Path) -> None:
+def test_auto_merge_works_without_branch_per_run(tmp_path: pathlib.Path) -> None:
     """auto_merge without branch_per_run is valid: it lands the hidden chain ref."""
     body = "[git]\nauto_merge = true\nbranch_per_run = false\n"
     cfg = load_config(_write(tmp_path, body))
     assert cfg.git.auto_merge and not cfg.git.branch_per_run
 
 
-def test_auto_prune_requires_auto_merge(tmp_path: Path) -> None:
+def test_auto_prune_requires_auto_merge(tmp_path: pathlib.Path) -> None:
     body = "[git]\nauto_prune = true\nauto_merge = false\n"
     with pytest.raises(ConfigError, match="auto_prune requires"):
         load_config(_write(tmp_path, body))
 
 
-def test_mcp_server_name_rejects_double_underscore(tmp_path: Path) -> None:
+def test_mcp_server_name_rejects_double_underscore(tmp_path: pathlib.Path) -> None:
     # `__` separates server from tool in mcp__<server>__<tool>, so a name containing it is rejected.
     body = _VALID_TOML + ('\n[mcp.servers.bad__name]\ncommand = ["true"]\n')
     with pytest.raises(ConfigError, match="__"):
@@ -144,7 +144,7 @@ def test_mcp_server_name_is_ascii_only() -> None:
     assert mcp_server_name_refusal("")  # empty stays refused
 
 
-def test_extra_read_paths_accepts_clean_absolute(tmp_path: Path) -> None:
+def test_extra_read_paths_accepts_clean_absolute(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
         "protect_git = true",
         'protect_git = true\nextra_read_paths = ["/opt/toolchain", "/usr/local/go"]',
@@ -153,7 +153,7 @@ def test_extra_read_paths_accepts_clean_absolute(tmp_path: Path) -> None:
     assert cfg.sandbox.extra_read_paths == ("/opt/toolchain", "/usr/local/go")
 
 
-def test_extra_read_paths_rejects_relative(tmp_path: Path) -> None:
+def test_extra_read_paths_rejects_relative(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
         "protect_git = true", 'protect_git = true\nextra_read_paths = ["opt/toolchain"]'
     )
@@ -162,7 +162,7 @@ def test_extra_read_paths_rejects_relative(tmp_path: Path) -> None:
 
 
 def test_extra_write_paths_accepts_absolute_rejects_relative_and_traversal(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     body = _VALID_TOML.replace(
         "protect_git = true", 'protect_git = true\nextra_write_paths = ["/var/cache/shared"]'
@@ -177,7 +177,7 @@ def test_extra_write_paths_accepts_absolute_rejects_relative_and_traversal(
             load_config(_write(tmp_path, body))
 
 
-def test_extra_read_paths_rejects_dotdot_traversal(tmp_path: Path) -> None:
+def test_extra_read_paths_rejects_dotdot_traversal(tmp_path: pathlib.Path) -> None:
     # extra_read_paths are bind-mounted read and execute, so a `..` component is rejected.
     body = _VALID_TOML.replace(
         "protect_git = true", 'protect_git = true\nextra_read_paths = ["/opt/../etc/shadow"]'
@@ -186,7 +186,7 @@ def test_extra_read_paths_rejects_dotdot_traversal(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_memory_limit_defaults_off(tmp_path: Path) -> None:
+def test_memory_limit_defaults_off(tmp_path: pathlib.Path) -> None:
     """The memory limit defaults off.
 
     A memory bomb is the kernel's problem and a cap costs real builds.
@@ -195,18 +195,18 @@ def test_memory_limit_defaults_off(tmp_path: Path) -> None:
     assert cfg.sandbox.memory_limit_mb == 0
 
 
-def test_memory_limit_accepts_a_cap(tmp_path: Path) -> None:
+def test_memory_limit_accepts_a_cap(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace("protect_git = true", "protect_git = true\nmemory_limit_mb = 2048")
     assert load_config(_write(tmp_path, body)).sandbox.memory_limit_mb == 2048
 
 
-def test_memory_limit_rejects_negative(tmp_path: Path) -> None:
+def test_memory_limit_rejects_negative(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace("protect_git = true", "protect_git = true\nmemory_limit_mb = -1")
     with pytest.raises(ConfigError, match=r"memory_limit_mb"):
         load_config(_write(tmp_path, body))
 
 
-def test_openai_base_url_accepts_http_and_https(tmp_path: Path) -> None:
+def test_openai_base_url_accepts_http_and_https(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
         "[models.worker]",
         '[providers.local]\napi_format = "openai"\nbase_url = "http://localhost:11434/v1"\n\n[models.worker]',
@@ -215,7 +215,7 @@ def test_openai_base_url_accepts_http_and_https(tmp_path: Path) -> None:
     assert cfg.providers["local"].base_url == "http://localhost:11434/v1"  # type: ignore[union-attr]
 
 
-def test_openai_base_url_rejects_schemeless(tmp_path: Path) -> None:
+def test_openai_base_url_rejects_schemeless(tmp_path: pathlib.Path) -> None:
     # The classic paste error: an API key dropped into the base_url field.
     body = _VALID_TOML.replace(
         "[models.worker]",
@@ -226,7 +226,7 @@ def test_openai_base_url_rejects_schemeless(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_openai_base_url_rejects_hostless(tmp_path: Path) -> None:
+def test_openai_base_url_rejects_hostless(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
         "[models.worker]",
         '[providers.bad]\napi_format = "openai"\nbase_url = "https://"\n\n[models.worker]',
@@ -235,7 +235,7 @@ def test_openai_base_url_rejects_hostless(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_role_temperature_defaults_to_zero(tmp_path: Path) -> None:
+def test_role_temperature_defaults_to_zero(tmp_path: pathlib.Path) -> None:
     # The tool-use loop is a feedback loop; the default temperature is pinned to 0.0.
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.models.worker is not None
@@ -244,7 +244,7 @@ def test_role_temperature_defaults_to_zero(tmp_path: Path) -> None:
     assert cfg.models.reviewer.temperature == 0.0
 
 
-def test_role_temperature_override(tmp_path: Path) -> None:
+def test_role_temperature_override(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"',
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\ntemperature = 0.7',
@@ -256,7 +256,7 @@ def test_role_temperature_override(tmp_path: Path) -> None:
     assert cfg.models.reviewer.temperature == 0.0  # unchanged
 
 
-def test_role_temperature_nan_rejected(tmp_path: Path) -> None:
+def test_role_temperature_nan_rejected(tmp_path: pathlib.Path) -> None:
     # None (the provider's default) is reachable via the Python API; nan and out-of-range fail loud.
     from agent6.config import RoleModel
 
@@ -270,7 +270,7 @@ def test_role_temperature_nan_rejected(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_role_temperature_out_of_range(tmp_path: Path) -> None:
+def test_role_temperature_out_of_range(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"',
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\ntemperature = 3.0',
@@ -279,7 +279,7 @@ def test_role_temperature_out_of_range(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_empty_verify_command_loads_and_is_runnable(tmp_path: Path) -> None:
+def test_empty_verify_command_loads_and_is_runnable(tmp_path: pathlib.Path) -> None:
     # verify_command is optional: `run` and `plan` infer one, so require_runnable allows empty.
     body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
     cfg = load_config(_write(tmp_path, body))
@@ -287,7 +287,7 @@ def test_empty_verify_command_loads_and_is_runnable(tmp_path: Path) -> None:
     cfg.require_runnable("worker")  # does not raise
 
 
-def test_with_verify_command_injects_in_memory(tmp_path: Path) -> None:
+def test_with_verify_command_injects_in_memory(tmp_path: pathlib.Path) -> None:
     # An inferred verify command is injected in memory for one run, never mutating the config.
     body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
     cfg = load_config(_write(tmp_path, body))
@@ -297,13 +297,13 @@ def test_with_verify_command_injects_in_memory(tmp_path: Path) -> None:
     assert cfg.with_verify_command(()).harness.verify_command == ()
 
 
-def test_verify_timeout_s_defaults_to_600(tmp_path: Path) -> None:
+def test_verify_timeout_s_defaults_to_600(tmp_path: pathlib.Path) -> None:
     """Default verify_timeout_s matches jail default (600s)."""
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.harness.verify_timeout_s == 600.0
 
 
-def test_verify_timeout_s_overridable(tmp_path: Path) -> None:
+def test_verify_timeout_s_overridable(tmp_path: pathlib.Path) -> None:
     """Bench configs set verify_timeout_s = 30 for fast failure on infinite-loop edits."""
     body = _VALID_TOML.replace(
         'verify_command = ["true"]',
@@ -313,7 +313,7 @@ def test_verify_timeout_s_overridable(tmp_path: Path) -> None:
     assert cfg.harness.verify_timeout_s == 30.0
 
 
-def test_verify_timeout_s_must_be_positive(tmp_path: Path) -> None:
+def test_verify_timeout_s_must_be_positive(tmp_path: pathlib.Path) -> None:
     """0 or negative timeout is rejected (gt=0.0 constraint)."""
     body = _VALID_TOML.replace(
         'verify_command = ["true"]',
@@ -323,25 +323,25 @@ def test_verify_timeout_s_must_be_positive(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_revise_prompt_defaults_off(tmp_path: Path) -> None:
+def test_revise_prompt_defaults_off(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.prompt.revise_prompt == "off"
 
 
 @pytest.mark.parametrize("mode", ["off", "auto", "interactive"])
-def test_revise_prompt_modes_load(tmp_path: Path, mode: str) -> None:
+def test_revise_prompt_modes_load(tmp_path: pathlib.Path, mode: str) -> None:
     body = _VALID_TOML + f'\n[prompt]\nrevise_prompt = "{mode}"\n'
     cfg = load_config(_write(tmp_path, body))
     assert cfg.prompt.revise_prompt == mode
 
 
-def test_revise_prompt_invalid_mode_rejected(tmp_path: Path) -> None:
+def test_revise_prompt_invalid_mode_rejected(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML + '\n[prompt]\nrevise_prompt = "always"\n'
     with pytest.raises(ConfigError):
         load_config(_write(tmp_path, body))
 
 
-def test_role_routes_to_unconfigured_provider_rejected(tmp_path: Path) -> None:
+def test_role_routes_to_unconfigured_provider_rejected(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
         '[models.reviewer]\nprovider = "anthropic"\nmodel = "claude-x"',
         '[models.reviewer]\nprovider = "openrouter"\nmodel = "gpt-x"',
@@ -350,7 +350,7 @@ def test_role_routes_to_unconfigured_provider_rejected(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_no_providers_loads_but_not_runnable(tmp_path: Path) -> None:
+def test_no_providers_loads_but_not_runnable(tmp_path: pathlib.Path) -> None:
     # A config with no providers is valid; require_runnable refuses to start without one.
     body = _VALID_TOML.replace(
         '[providers.anthropic]\napi_format = "anthropic"\n'
@@ -363,7 +363,7 @@ def test_no_providers_loads_but_not_runnable(tmp_path: Path) -> None:
         cfg.require_runnable("worker")
 
 
-def test_openai_provider_with_no_api_key_env_loads(tmp_path: Path) -> None:
+def test_openai_provider_with_no_api_key_env_loads(tmp_path: pathlib.Path) -> None:
     """Ollama-style local endpoint: api_key_env is omitted entirely."""
     body = _VALID_TOML.replace(
         '[providers.anthropic]\napi_format = "anthropic"\n'
@@ -380,7 +380,7 @@ def test_openai_provider_with_no_api_key_env_loads(tmp_path: Path) -> None:
     assert ollama.api_key_env is None
 
 
-def test_chatgpt_provider_defaults_and_refusals(tmp_path: Path) -> None:
+def test_chatgpt_provider_defaults_and_refusals(tmp_path: pathlib.Path) -> None:
     """A bare api_format = "chatgpt" fills the Codex defaults.
 
     The other formats' knobs are refused by name.
@@ -415,7 +415,7 @@ def test_chatgpt_provider_defaults_and_refusals(tmp_path: Path) -> None:
         assert named in str(exc.value)
 
 
-def test_claude_code_provider_entry_has_no_transport_fields(tmp_path: Path) -> None:
+def test_claude_code_provider_entry_has_no_transport_fields(tmp_path: pathlib.Path) -> None:
     """A bare api_format = "claude_code" validates with binary "claude".
 
     HTTP and auth knobs are refused.
@@ -455,7 +455,7 @@ def test_claude_code_provider_entry_has_no_transport_fields(tmp_path: Path) -> N
         assert named in str(exc.value)
 
 
-def test_multiple_openai_providers_load(tmp_path: Path) -> None:
+def test_multiple_openai_providers_load(tmp_path: pathlib.Path) -> None:
     """Both OpenAI and OpenRouter side-by-side, distinct keys, routed per role."""
     body = _VALID_TOML.replace(
         '[providers.anthropic]\napi_format = "anthropic"\n'
@@ -481,7 +481,7 @@ def test_multiple_openai_providers_load(tmp_path: Path) -> None:
     assert cfg.models.reviewer.provider == "openrouter"
 
 
-def test_metric_block_loads(tmp_path: Path) -> None:
+def test_metric_block_loads(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML + (
         "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "bench.py"]\n'
@@ -494,12 +494,12 @@ def test_metric_block_loads(tmp_path: Path) -> None:
     assert cfg.harness.metric.goal == "minimize"
 
 
-def test_metric_block_absent_is_none(tmp_path: Path) -> None:
+def test_metric_block_absent_is_none(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.harness.metric is None
 
 
-def test_metric_goal_invalid(tmp_path: Path) -> None:
+def test_metric_goal_invalid(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML + (
         '\n[harness.metric]\ncommand = ["true"]\npattern = "x"\ngoal = "sideways"\n'
     )
@@ -507,7 +507,7 @@ def test_metric_goal_invalid(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_operational_fields_have_defaults(tmp_path: Path) -> None:
+def test_operational_fields_have_defaults(tmp_path: pathlib.Path) -> None:
     """Every field has a default, security fields the safe one, so a minimal TOML loads.
 
     Completeness is enforced per command by require_runnable, never at load time.
@@ -553,7 +553,7 @@ max_tokens_fallback = 100000
     assert anthro.http_timeout_s == 600.0
 
 
-def test_compaction_defaults(tmp_path: Path) -> None:
+def test_compaction_defaults(tmp_path: pathlib.Path) -> None:
     # The default None means adaptive, sized from the worker model's context window.
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.context.drop_at_chars is None
@@ -561,7 +561,7 @@ def test_compaction_defaults(tmp_path: Path) -> None:
     assert cfg.context.summary_max_tokens == 2048
 
 
-def test_compaction_both_or_neither(tmp_path: Path) -> None:
+def test_compaction_both_or_neither(tmp_path: pathlib.Path) -> None:
     # A lone threshold is ambiguous, so the loader rejects setting only one.
     body = _VALID_TOML + "\n[context]\ndrop_at_chars = 100000\n"
     with pytest.raises(ConfigError) as exc:
@@ -569,7 +569,7 @@ def test_compaction_both_or_neither(tmp_path: Path) -> None:
     assert "BOTH" in str(exc.value) or "NEITHER" in str(exc.value)
 
 
-def test_compaction_thresholds_overridable(tmp_path: Path) -> None:
+def test_compaction_thresholds_overridable(tmp_path: pathlib.Path) -> None:
     body = (
         _VALID_TOML
         + "\n[context]\n"
@@ -583,13 +583,13 @@ def test_compaction_thresholds_overridable(tmp_path: Path) -> None:
     assert cfg.context.summary_max_tokens == 1024
 
 
-def test_compaction_threshold_must_be_positive(tmp_path: Path) -> None:
+def test_compaction_threshold_must_be_positive(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML + "\n[context]\ndrop_at_chars = 0\n"
     with pytest.raises(ConfigError):
         load_config(_write(tmp_path, body))
 
 
-def test_compaction_summarise_must_exceed_drop(tmp_path: Path) -> None:
+def test_compaction_summarise_must_exceed_drop(tmp_path: pathlib.Path) -> None:
     # Inverted ordering (tier-2 <= tier-1) makes tier-2 unreachable; the loader rejects it.
     body = _VALID_TOML + "\n[context]\ndrop_at_chars = 300000\nsummarise_at_chars = 200000\n"
     with pytest.raises(ConfigError) as exc:
@@ -597,7 +597,7 @@ def test_compaction_summarise_must_exceed_drop(tmp_path: Path) -> None:
     assert "must be greater than" in str(exc.value)
 
 
-def test_compaction_summarise_must_exceed_the_verbatim_tail(tmp_path: Path) -> None:
+def test_compaction_summarise_must_exceed_the_verbatim_tail(tmp_path: pathlib.Path) -> None:
     """A tier-2 threshold at or under keep_recent_chars is rejected.
 
     The tail alone would re-trigger it.
@@ -607,14 +607,14 @@ def test_compaction_summarise_must_exceed_the_verbatim_tail(tmp_path: Path) -> N
         load_config(_write(tmp_path, body))
 
 
-def test_auto_stash_pop_requires_the_stash_choice(tmp_path: Path) -> None:
+def test_auto_stash_pop_requires_the_stash_choice(tmp_path: pathlib.Path) -> None:
     # A pop with nothing ever stashed is inert; rejected with a pointer, like auto_merge.
     body = _VALID_TOML.replace('dirty_tree = "ask"', 'dirty_tree = "ask"\nauto_stash_pop = true')
     with pytest.raises(ConfigError, match="auto_stash_pop"):
         load_config(_write(tmp_path, body))
 
 
-def test_with_budget_overrides(tmp_path: Path) -> None:
+def test_with_budget_overrides(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     out = cfg.with_budget_overrides(max_usd=5.0, max_tokens_fallback=7)
     assert out.budget.max_usd == 5.0
@@ -623,12 +623,12 @@ def test_with_budget_overrides(tmp_path: Path) -> None:
     assert cfg.budget.max_tokens_fallback == 100000
 
 
-def test_with_budget_overrides_noop_returns_self(tmp_path: Path) -> None:
+def test_with_budget_overrides_noop_returns_self(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.with_budget_overrides() is cfg
 
 
-def test_budget_max_usd_rejects_non_finite(tmp_path: Path) -> None:
+def test_budget_max_usd_rejects_non_finite(tmp_path: pathlib.Path) -> None:
     # TOML nan and inf parse as floats and a non-finite cap never binds; refused at the boundary.
     for literal in ("nan", "-nan", "inf", "-inf"):
         body = _VALID_TOML.replace("[budget]", "[budget]\nmax_usd = " + literal)
@@ -636,33 +636,33 @@ def test_budget_max_usd_rejects_non_finite(tmp_path: Path) -> None:
             load_config(_write(tmp_path, body))
 
 
-def test_budget_flag_override_rejects_non_finite(tmp_path: Path) -> None:
+def test_budget_flag_override_rejects_non_finite(tmp_path: pathlib.Path) -> None:
     # --max-usd routes through the same validator, so `--max-usd inf` cannot disable the meter.
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    with pytest.raises(ValidationError, match="finite"):
+    with pytest.raises(pydantic.ValidationError, match="finite"):
         cfg.with_budget_overrides(max_usd=float("inf"))
 
 
-def test_string_for_bool_rejected(tmp_path: Path) -> None:
+def test_string_for_bool_rejected(tmp_path: pathlib.Path) -> None:
     # Strict mode: a quoted "true" is a typo, not a bool.
     body = _VALID_TOML.replace("protect_git = true", 'protect_git = "true"')
     with pytest.raises(ConfigError, match=r"protect_git.*valid boolean"):
         load_config(_write(tmp_path, body))
 
 
-def test_string_for_int_rejected(tmp_path: Path) -> None:
+def test_string_for_int_rejected(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace("max_tokens_fallback = 100000", 'max_tokens_fallback = "100000"')
     with pytest.raises(ConfigError, match=r"max_tokens_fallback.*valid integer"):
         load_config(_write(tmp_path, body))
 
 
-def test_bool_for_number_rejected(tmp_path: Path) -> None:
+def test_bool_for_number_rejected(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace("[budget]", "[budget]\nmax_usd = true")
     with pytest.raises(ConfigError, match=r"max_usd.*valid number"):
         load_config(_write(tmp_path, body))
 
 
-def test_provider_timeout_rejects_non_finite(tmp_path: Path) -> None:
+def test_provider_timeout_rejects_non_finite(tmp_path: pathlib.Path) -> None:
     # TOML parses inf as a float; an infinite HTTP timeout is a config error, not an OverflowError.
     body = _with_openai_provider(
         '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
@@ -672,7 +672,7 @@ def test_provider_timeout_rejects_non_finite(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_extra_body_rejects_a_toml_date(tmp_path: Path) -> None:
+def test_extra_body_rejects_a_toml_date(tmp_path: pathlib.Path) -> None:
     # TOML parses bare dates into objects JSON cannot carry; refused at load, not at serialization.
     body = _with_openai_provider(
         '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
@@ -682,7 +682,7 @@ def test_extra_body_rejects_a_toml_date(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_argv_rejects_blank_element(tmp_path: Path) -> None:
+def test_argv_rejects_blank_element(tmp_path: pathlib.Path) -> None:
     for literal in (
         'verify_command = ["uv", " "]',
         '[notify]\non_complete = ["notify-send", ""]',
@@ -692,7 +692,7 @@ def test_argv_rejects_blank_element(tmp_path: Path) -> None:
             load_config(_write(tmp_path, body))
 
 
-def test_with_machine_agent_overrides(tmp_path: Path) -> None:
+def test_with_machine_agent_overrides(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     out = cfg.with_machine_agent_overrides(
         model="claude-y",
@@ -709,7 +709,7 @@ def test_with_machine_agent_overrides(tmp_path: Path) -> None:
     assert out.models.worker.provider == "anthropic"
 
 
-def test_with_machine_agent_overrides_provider(tmp_path: Path) -> None:
+def test_with_machine_agent_overrides_provider(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     out = cfg.with_machine_agent_overrides(provider="anthropic", model="claude-z")
     assert out.models.worker is not None
@@ -721,7 +721,7 @@ def _with_openai_provider(block: str) -> str:
     return _VALID_TOML.replace("[models.worker]", f"{block}\n\n[models.worker]")
 
 
-def test_token_command_parses(tmp_path: Path) -> None:
+def test_token_command_parses(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
         '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
         'token_command = ["mint-token", "--json"]\ntoken_command_ttl_s = 60.0'
@@ -732,7 +732,7 @@ def test_token_command_parses(tmp_path: Path) -> None:
     assert entry.token_command_ttl_s == 60.0  # type: ignore[union-attr]
 
 
-def test_token_command_ttl_defaults_to_300(tmp_path: Path) -> None:
+def test_token_command_ttl_defaults_to_300(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
         '[providers.gw]\napi_format = "openai"\ntoken_command = ["mint-token"]'
     )
@@ -740,7 +740,9 @@ def test_token_command_ttl_defaults_to_300(tmp_path: Path) -> None:
     assert cfg.providers["gw"].token_command_ttl_s == 300.0  # type: ignore[union-attr]
 
 
-def test_token_command_empty_reads_as_unset_and_a_blank_element_refuses(tmp_path: Path) -> None:
+def test_token_command_empty_reads_as_unset_and_a_blank_element_refuses(
+    tmp_path: pathlib.Path,
+) -> None:
     """An empty `token_command` reads as unset; an empty element is refused as a typo."""
     body = _with_openai_provider('[providers.gw]\napi_format = "openai"\ntoken_command = []')
     entry = load_config(_write(tmp_path, body)).providers["gw"]
@@ -750,7 +752,7 @@ def test_token_command_empty_reads_as_unset_and_a_blank_element_refuses(tmp_path
         load_config(_write(tmp_path, body))
 
 
-def test_token_command_rejects_blank_arg(tmp_path: Path) -> None:
+def test_token_command_rejects_blank_arg(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
         '[providers.gw]\napi_format = "openai"\ntoken_command = ["mint", "  "]'
     )
@@ -758,7 +760,7 @@ def test_token_command_rejects_blank_arg(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_token_command_ttl_must_be_positive(tmp_path: Path) -> None:
+def test_token_command_ttl_must_be_positive(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
         '[providers.gw]\napi_format = "openai"\ntoken_command = ["mint"]\ntoken_command_ttl_s = 0'
     )
@@ -772,7 +774,7 @@ _VERTEX_CLAUDE = (
 )
 
 
-def test_deployment_and_auth_defaults(tmp_path: Path) -> None:
+def test_deployment_and_auth_defaults(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     a = cfg.providers["anthropic"]
     assert isinstance(a, AnthropicProviderEntry)
@@ -781,7 +783,7 @@ def test_deployment_and_auth_defaults(tmp_path: Path) -> None:
     assert a.base_url == "https://api.anthropic.com/v1"
 
 
-def test_vertex_anthropic_defaults_bearer(tmp_path: Path) -> None:
+def test_vertex_anthropic_defaults_bearer(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
         '[providers.v]\napi_format = "anthropic"\ndeployment = "vertex"\n'
         f'base_url = "{_VERTEX_CLAUDE}"'
@@ -793,13 +795,13 @@ def test_vertex_anthropic_defaults_bearer(tmp_path: Path) -> None:
     assert v.auth_style == "bearer"
 
 
-def test_non_direct_deployment_requires_base_url(tmp_path: Path) -> None:
+def test_non_direct_deployment_requires_base_url(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider('[providers.v]\napi_format = "anthropic"\ndeployment = "vertex"')
     with pytest.raises(ConfigError, match="base_url is required"):
         load_config(_write(tmp_path, body))
 
 
-def test_azure_requires_openai_format(tmp_path: Path) -> None:
+def test_azure_requires_openai_format(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
         '[providers.a]\napi_format = "anthropic"\ndeployment = "azure"\n'
         'base_url = "https://r.openai.azure.com"\nextra_query = { "api-version" = "2024-06-01" }'
@@ -808,7 +810,7 @@ def test_azure_requires_openai_format(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_azure_requires_api_version_query(tmp_path: Path) -> None:
+def test_azure_requires_api_version_query(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
         '[providers.a]\napi_format = "openai"\ndeployment = "azure"\nbase_url = "https://r.openai.azure.com"'
     )
@@ -816,7 +818,7 @@ def test_azure_requires_api_version_query(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_azure_defaults_api_key_header(tmp_path: Path) -> None:
+def test_azure_defaults_api_key_header(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
         '[providers.a]\napi_format = "openai"\ndeployment = "azure"\n'
         'base_url = "https://r.openai.azure.com"\nextra_query = { "api-version" = "2024-06-01" }'
@@ -825,7 +827,7 @@ def test_azure_defaults_api_key_header(tmp_path: Path) -> None:
     assert cfg.providers["a"].auth_style == "api_key_header"  # type: ignore[union-attr]
 
 
-def test_unknown_deployment_rejected(tmp_path: Path) -> None:
+def test_unknown_deployment_rejected(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
         '[providers.x]\napi_format = "openai"\ndeployment = "bedrock"\nbase_url = "https://x.example.com"'
     )
@@ -833,7 +835,7 @@ def test_unknown_deployment_rejected(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_explicit_auth_style_preserved(tmp_path: Path) -> None:
+def test_explicit_auth_style_preserved(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider('[providers.x]\napi_format = "openai"\nauth_style = "none"')
     cfg = load_config(_write(tmp_path, body))
     assert cfg.providers["x"].auth_style == "none"  # type: ignore[union-attr]
@@ -843,7 +845,9 @@ def test_explicit_auth_style_preserved(tmp_path: Path) -> None:
     "cred_line",
     ['api_key_env = "OPENAI_API_KEY"', 'token_command = ["mint-token"]'],
 )
-def test_none_auth_with_a_credential_source_is_refused(tmp_path: Path, cred_line: str) -> None:
+def test_none_auth_with_a_credential_source_is_refused(
+    tmp_path: pathlib.Path, cred_line: str
+) -> None:
     """auth_style = 'none' with api_key_env or token_command is refused as a contradiction."""
     body = _with_openai_provider(
         f'[providers.x]\napi_format = "openai"\nauth_style = "none"\n{cred_line}'
@@ -859,27 +863,27 @@ def test_skills_defaults() -> None:
     assert cfg.skills.state == {}
 
 
-def test_skills_state_map_loads(tmp_path: Path) -> None:
+def test_skills_state_map_loads(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML + '\n[skills.state]\ncaveman = "always"\ntidy = "disabled"\n'
     cfg = load_config(_write(tmp_path, body))
     assert cfg.skills.state == {"caveman": "always", "tidy": "disabled"}
 
 
-def test_skills_state_rejects_unknown_value(tmp_path: Path) -> None:
+def test_skills_state_rejects_unknown_value(tmp_path: pathlib.Path) -> None:
     # One value per skill; only the three states exist.
     body = _VALID_TOML + '\n[skills.state]\ncaveman = "sometimes"\n'
     with pytest.raises(ConfigError, match="skills"):
         load_config(_write(tmp_path, body))
 
 
-def test_skills_rejects_unknown_key(tmp_path: Path) -> None:
+def test_skills_rejects_unknown_key(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML + "\n[skills]\nallow_repo_skills = true\n"
     with pytest.raises(ConfigError, match="skills"):
         load_config(_write(tmp_path, body))
 
 
 def test_extra_paths_never_target_the_private_dirs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An extra grant at or inside a private dir is refused at load.
 
@@ -899,7 +903,7 @@ def test_extra_paths_never_target_the_private_dirs(
 
 
 def test_a_symlink_to_a_private_dir_is_refused_like_the_dir_itself(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A grant naming a symlink to a private dir is refused like the dir itself.
 
@@ -915,7 +919,7 @@ def test_a_symlink_to_a_private_dir_is_refused_like_the_dir_itself(
         load_config(_write(tmp_path, body))
 
 
-def test_hide_paths_validate_like_the_other_path_lists(tmp_path: Path) -> None:
+def test_hide_paths_validate_like_the_other_path_lists(tmp_path: pathlib.Path) -> None:
     with pytest.raises(ConfigError, match="absolute"):
         load_config(_write(tmp_path, '[sandbox]\nhide_paths = ["relative/x"]\n'))
     with pytest.raises(ConfigError, match=r"\.\."):
@@ -923,7 +927,7 @@ def test_hide_paths_validate_like_the_other_path_lists(tmp_path: Path) -> None:
 
 
 def test_the_skills_dir_can_be_granted_to_the_jail(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The skills data dir and its cache are grantable to the jail, unlike config and state."""
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
@@ -939,7 +943,7 @@ def test_the_skills_dir_can_be_granted_to_the_jail(
         load_config(_write(tmp_path, body))
 
 
-def test_api_format_discriminates_the_provider_entry(tmp_path: Path) -> None:
+def test_api_format_discriminates_the_provider_entry(tmp_path: pathlib.Path) -> None:
     """`api_format` routes a `[providers.*]` block to its entry class.
 
     Declared on the shared base so it leads every entry's order; each subclass's annotation stays
@@ -960,7 +964,7 @@ def test_api_format_discriminates_the_provider_entry(tmp_path: Path) -> None:
     assert next(iter(OpenAIProviderEntry.model_fields)) == "api_format"
 
 
-def test_a_provider_block_without_api_format_names_the_key(tmp_path: Path) -> None:
+def test_a_provider_block_without_api_format_names_the_key(tmp_path: pathlib.Path) -> None:
     """A provider block without api_format is refused naming the key and its values."""
     cfg = tmp_path / "config.toml"
     cfg.write_text('[providers.anthropic]\napi_key_env = "K"\n', encoding="utf-8")
@@ -975,10 +979,10 @@ def test_chatgpt_oauth_endpoints_are_constants_not_config() -> None:
     A config setting them is refused as an unknown key.
     """
     from agent6.config import ChatGPTProviderEntry
-    from agent6.providers.chatgpt_oauth import CHATGPT_CLIENT_ID, CHATGPT_ISSUER
+    from agent6.providers import chatgpt_oauth
 
-    assert CHATGPT_ISSUER == "https://auth.openai.com"
-    assert CHATGPT_CLIENT_ID
+    assert chatgpt_oauth.CHATGPT_ISSUER == "https://auth.openai.com"
+    assert chatgpt_oauth.CHATGPT_CLIENT_ID
     with pytest.raises(ValueError, match="oauth_issuer"):
         ChatGPTProviderEntry.model_validate(
             {"api_format": "chatgpt", "oauth_issuer": "https://auth.example.com"}
@@ -997,7 +1001,7 @@ def test_extra_device_paths_must_live_under_dev() -> None:
             SandboxConfig(extra_device_paths=(bad,))
 
 
-def test_model_git_control_requires_git_writes(tmp_path: Path) -> None:
+def test_model_git_control_requires_git_writes(tmp_path: pathlib.Path) -> None:
     """git.control = "model" with protect_git = true is refused naming both keys."""
     body = _VALID_TOML.replace("[git]\n", '[git]\ncontrol = "model"\n')
     with pytest.raises(ConfigError, match="protect_git"):
@@ -1006,12 +1010,12 @@ def test_model_git_control_requires_git_writes(tmp_path: Path) -> None:
     assert ok.git.control == "model"
 
 
-def test_max_iterations_defaults_to_200(tmp_path: Path) -> None:
+def test_max_iterations_defaults_to_200(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.harness.max_iterations == 200
 
 
-def test_max_iterations_unlimited_is_minus_one(tmp_path: Path) -> None:
+def test_max_iterations_unlimited_is_minus_one(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
         'verify_command = ["true"]',
         'verify_command = ["true"]\nmax_iterations = -1',
@@ -1019,7 +1023,7 @@ def test_max_iterations_unlimited_is_minus_one(tmp_path: Path) -> None:
     assert load_config(_write(tmp_path, body)).harness.max_iterations == -1
 
 
-def test_max_iterations_zero_is_rejected(tmp_path: Path) -> None:
+def test_max_iterations_zero_is_rejected(tmp_path: pathlib.Path) -> None:
     """0 would end every execution before its first call; the sentinel is exactly -1."""
     body = _VALID_TOML.replace(
         'verify_command = ["true"]',
@@ -1029,7 +1033,7 @@ def test_max_iterations_zero_is_rejected(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_cleartext_rejection_is_scheme_case_insensitive(tmp_path: Path) -> None:
+def test_cleartext_rejection_is_scheme_case_insensitive(tmp_path: pathlib.Path) -> None:
     """The cleartext check on the chatgpt endpoints is scheme case-insensitive.
 
     `HTTP://` is cleartext.
@@ -1046,14 +1050,14 @@ def test_auto_stash_pop_needs_the_stash_choice() -> None:
     """auto_stash_pop needs the stash choice: one knob answers the dirty tree."""
     import pytest
 
-    from agent6.config._git import GitConfig
+    from agent6.config import _git
 
-    assert GitConfig(dirty_tree="stash", auto_stash_pop=True).auto_stash_pop
+    assert _git.GitConfig(dirty_tree="stash", auto_stash_pop=True).auto_stash_pop
     with pytest.raises(ValueError, match='dirty_tree = "stash"'):
-        GitConfig(dirty_tree="include", auto_stash_pop=True)
+        _git.GitConfig(dirty_tree="include", auto_stash_pop=True)
 
 
-def test_with_model_route_names_a_provider_or_keeps_the_roles(tmp_path: Path) -> None:
+def test_with_model_route_names_a_provider_or_keeps_the_roles(tmp_path: pathlib.Path) -> None:
     """`--model provider/model` routes the role.
 
     A bare or unknown-provider id keeps the role's provider.
@@ -1096,7 +1100,7 @@ def test_with_model_route_names_a_provider_or_keeps_the_roles(tmp_path: Path) ->
     assert cfg.models.worker is not None and cfg.models.worker.model == "claude-x"
 
 
-def test_with_model_route_refuses_what_it_cannot_route(tmp_path: Path) -> None:
+def test_with_model_route_refuses_what_it_cannot_route(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     with pytest.raises(ConfigError, match="no model id"):
         cfg.model_route("worker", "anthropic/")
@@ -1107,7 +1111,7 @@ def test_with_model_route_refuses_what_it_cannot_route(tmp_path: Path) -> None:
         roleless.model_route("worker", "claude-y")
 
 
-def test_with_model_route_refuses_a_blank_and_an_empty_provider(tmp_path: Path) -> None:
+def test_with_model_route_refuses_a_blank_and_an_empty_provider(tmp_path: pathlib.Path) -> None:
     """`--model` refuses a blank id and `/model` with no provider."""
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     with pytest.raises(ConfigError, match="no model id") as exc:

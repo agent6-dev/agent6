@@ -5,36 +5,20 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess
-from pathlib import Path
-from types import SimpleNamespace
+import types
 from typing import Any, cast
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
+from agent6 import kinds
 from agent6.config import Config, load_config
+from agent6.harness import _chain, _loop_state, _provider_call
 from agent6.harness import loop as loopmod
-from agent6.harness._chain import RunChain
-from agent6.harness._loop_state import LoopState
-from agent6.harness._provider_call import CallSettings
-from agent6.harness.loop import Harness
-from agent6.kinds import RepoSummary
 from agent6.providers import ProviderResponse
-from agent6.tools.dispatch import ToolDispatcher, ToolError
-from agent6.tools.mcp_client import MCPManager
-from agent6.tools.results import RawResult
-from agent6.tools.schema import (
-    PLAN_EXTRA_TOOLS,
-    ApplyEditInput,
-    ApplyPatchInput,
-    DagAddTaskInput,
-    FinishPlanningInput,
-    FinishSessionInput,
-    ReadFileInput,
-    RunCommandInput,
-    RunMetricInput,
-)
+from agent6.tools import dispatch, errors, mcp_client, results, schema
 
 _VALID_TOML = """
 [agent6]
@@ -67,7 +51,7 @@ def _silent(_msg: str) -> None:
     return None
 
 
-def _config(tmp_path: Path) -> Config:
+def _config(tmp_path: pathlib.Path) -> Config:
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML, encoding="utf-8")
     return load_config(p)
@@ -78,13 +62,13 @@ def _config(tmp_path: Path) -> Config:
 
 def test_finish_planning_requires_nonempty_fields() -> None:
     with pytest.raises(ValueError):
-        FinishPlanningInput(summary="", plan_markdown="x")
+        schema.FinishPlanningInput(summary="", plan_markdown="x")
     with pytest.raises(ValueError):
-        FinishPlanningInput(summary="x", plan_markdown="")
+        schema.FinishPlanningInput(summary="x", plan_markdown="")
 
 
 def test_finish_planning_tool_name() -> None:
-    assert FinishPlanningInput.TOOL_NAME == "finish_planning"
+    assert schema.FinishPlanningInput.TOOL_NAME == "finish_planning"
 
 
 def test_finish_planning_fields_are_documented_in_the_schema() -> None:
@@ -92,7 +76,7 @@ def test_finish_planning_fields_are_documented_in_the_schema() -> None:
     # model disambiguates plan_markdown (the deliverable) from summary at the
     # exact surface it fills -- without it, models dumped the whole plan into
     # `summary` and left a degenerate plan.md.
-    props = FinishPlanningInput.model_json_schema()["properties"]
+    props = schema.FinishPlanningInput.model_json_schema()["properties"]
     assert (
         "plan_markdown" in props["plan_markdown"]["description"]
         or "plan.md" in (props["plan_markdown"]["description"])
@@ -101,17 +85,17 @@ def test_finish_planning_fields_are_documented_in_the_schema() -> None:
 
 
 def test_plan_extra_tools_includes_finish_planning_excludes_finish_session() -> None:
-    names = {t.TOOL_NAME for t in PLAN_EXTRA_TOOLS}
-    assert FinishPlanningInput.TOOL_NAME in names
-    assert FinishSessionInput.TOOL_NAME not in names
+    names = {t.TOOL_NAME for t in schema.PLAN_EXTRA_TOOLS}
+    assert schema.FinishPlanningInput.TOOL_NAME in names
+    assert schema.FinishSessionInput.TOOL_NAME not in names
 
 
 # --- dispatcher ---------------------------------------------------------
 
 
-def test_dispatch_finish_planning_returns_ack(tmp_path: Path) -> None:
+def test_dispatch_finish_planning_returns_ack(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
     out = d.dispatch(
         "finish_planning",
         {"summary": "looks good", "plan_markdown": "# Plan\n\n## Tasks\n- t1\n"},
@@ -121,23 +105,23 @@ def test_dispatch_finish_planning_returns_ack(tmp_path: Path) -> None:
     assert out["plan_bytes"] == len(b"# Plan\n\n## Tasks\n- t1\n")
 
 
-def test_dispatch_finish_planning_rejects_empty(tmp_path: Path) -> None:
+def test_dispatch_finish_planning_rejects_empty(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
-    with pytest.raises(ToolError, match="summary"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
+    with pytest.raises(errors.ToolError, match="summary"):
         d.dispatch("finish_planning", {"summary": "", "plan_markdown": "x"})
 
 
-def test_dispatch_finish_session_echoes_structured_result(tmp_path: Path) -> None:
+def test_dispatch_finish_session_echoes_structured_result(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("finish_session", {"summary": "done", "result": {"approved": True}}).to_wire()
     assert out == {"acknowledged": True, "summary": "done", "result": {"approved": True}}
 
 
-def test_dispatch_finish_session_result_defaults_none(tmp_path: Path) -> None:
+def test_dispatch_finish_session_result_defaults_none(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("finish_session", {"summary": "done"}).to_wire()
     assert out == {"acknowledged": True, "summary": "done", "result": None}
 
@@ -145,9 +129,9 @@ def test_dispatch_finish_session_result_defaults_none(tmp_path: Path) -> None:
 # --- system prompt & tool definitions -----------------------------------
 
 
-def test_build_system_prompt_plan_mode_mentions_plan(tmp_path: Path) -> None:
+def test_build_system_prompt_plan_mode_mentions_plan(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    repo = RepoSummary(
+    repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
         head_sha="0" * 40,
@@ -162,11 +146,11 @@ def test_build_system_prompt_plan_mode_mentions_plan(tmp_path: Path) -> None:
     assert "PLAN mode" in text or "plan mode" in text.lower()
 
 
-def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: Path) -> None:
+def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: pathlib.Path) -> None:
     custom = tmp_path / "prompt.txt"
     custom.write_text("<role>CUSTOM WORKER. apply_edit + finish_session.</role>", encoding="utf-8")
     cfg = Config.model_validate({"prompt": {"system_prompt_file": str(custom)}})
-    repo = RepoSummary(
+    repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
         head_sha="0" * 40,
@@ -185,13 +169,13 @@ def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: Pa
     assert "CUSTOM WORKER" not in plan
 
 
-def test_decompose_swaps_dag_rules_block(tmp_path: Path) -> None:
+def test_decompose_swaps_dag_rules_block(tmp_path: pathlib.Path) -> None:
     """`[prompt].decompose` swaps the run-mode 'DAG optional' block for the 'decompose first' one.
 
     The default keeps the optional block; the sentinel is always filled (never leaks), and only run
     mode is affected.
     """
-    repo = RepoSummary(
+    repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
         head_sha="0" * 40,
@@ -217,7 +201,7 @@ def test_decompose_swaps_dag_rules_block(tmp_path: Path) -> None:
         assert "__DAG_RULES_BLOCK__" not in text and "<decompose-first>" not in text
 
 
-def test_decompose_defaults_auto(tmp_path: Path) -> None:
+def test_decompose_defaults_auto(tmp_path: pathlib.Path) -> None:
     assert Config().prompt.decompose == "auto"
 
 
@@ -241,39 +225,39 @@ def test_dag_hint_renders_only_where_the_dag_tools_exist() -> None:
     assert hint(None, "run", True) == ""
 
 
-def test_system_prompt_file_validator_rejects_missing(tmp_path: Path) -> None:
+def test_system_prompt_file_validator_rejects_missing(tmp_path: pathlib.Path) -> None:
     with pytest.raises(ValueError, match="not a readable file"):
         Config.model_validate({"prompt": {"system_prompt_file": str(tmp_path / "nope.txt")}})
 
 
 def testwarn_if_prompt_override_incomplete(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.app.preflight import warn_if_prompt_override_incomplete
+    from agent6.app import preflight
 
     good = tmp_path / "good.txt"
     good.write_text("use apply_edit and call finish_session when done", encoding="utf-8")
     bad = tmp_path / "bad.txt"
     bad.write_text("just go do stuff", encoding="utf-8")
     # complete override -> silent
-    warn_if_prompt_override_incomplete(
+    preflight.warn_if_prompt_override_incomplete(
         Config.model_validate({"prompt": {"system_prompt_file": str(good)}})
     )
     assert capsys.readouterr().err == ""
     # missing both contracts -> warns about each
-    warn_if_prompt_override_incomplete(
+    preflight.warn_if_prompt_override_incomplete(
         Config.model_validate({"prompt": {"system_prompt_file": str(bad)}})
     )
     err = capsys.readouterr().err
     assert "finish_session" in err and "apply_edit/apply_patch" in err
     # no override -> silent
-    warn_if_prompt_override_incomplete(Config())
+    preflight.warn_if_prompt_override_incomplete(Config())
     assert capsys.readouterr().err == ""
 
 
-def test_build_system_prompt_warns_against_git_checkout_revert(tmp_path: Path) -> None:
+def test_build_system_prompt_warns_against_git_checkout_revert(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    repo = RepoSummary(
+    repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
         head_sha="0" * 40,
@@ -290,7 +274,7 @@ def test_build_system_prompt_warns_against_git_checkout_revert(tmp_path: Path) -
     assert "git show HEAD:path" in text
 
 
-def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> None:
+def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "agent6.toml"
     # `run_commands = "no"` withholds every command tool, the metric included,
     # and the block describing it goes with the tool.
@@ -301,7 +285,7 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> N
         encoding="utf-8",
     )
     cfg = load_config(p)
-    repo = RepoSummary(
+    repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
         head_sha="0" * 40,
@@ -326,7 +310,7 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> N
 
 
 def test_run_commands_no_withholds_the_command_tools_and_every_rule_about_them(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """`run_commands = "no"` withholds the command tools and every rule about them.
 
@@ -345,7 +329,7 @@ def test_run_commands_no_withholds_the_command_tools_and_every_rule_about_them(
         encoding="utf-8",
     )
     cfg = load_config(p)
-    repo = RepoSummary(
+    repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
         head_sha="0" * 40,
@@ -363,15 +347,19 @@ def test_run_commands_no_withholds_the_command_tools_and_every_rule_about_them(
     assert "after each passing verify" not in text
     assert "commits each editing turn" in text
 
-    names = {t.name for t in loopmod.tool_definitions(ToolDispatcher(root=tmp_path, config=cfg))}  # pyright: ignore[reportPrivateUsage]
-    assert RunMetricInput.TOOL_NAME not in names
-    assert RunCommandInput.TOOL_NAME not in names
+    names = {
+        t.name for t in loopmod.tool_definitions(dispatch.ToolDispatcher(root=tmp_path, config=cfg))
+    }  # pyright: ignore[reportPrivateUsage]
+    assert schema.RunMetricInput.TOOL_NAME not in names
+    assert schema.RunCommandInput.TOOL_NAME not in names
 
 
-def test_no_commands_removes_run_command_from_read_only_mode_prompts(tmp_path: Path) -> None:
+def test_no_commands_removes_run_command_from_read_only_mode_prompts(
+    tmp_path: pathlib.Path,
+) -> None:
     """Plan and ask do not advertise probes when run_command is withheld from the tools."""
     cfg = _config(tmp_path)  # run_commands = "no"
-    repo = RepoSummary(
+    repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
         head_sha="0" * 40,
@@ -380,7 +368,7 @@ def test_no_commands_removes_run_command_from_read_only_mode_prompts(tmp_path: P
         agents_md="",
         recent_log="",
     )
-    dispatcher = ToolDispatcher(root=tmp_path, config=cfg)
+    dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     for mode in ("plan", "ask"):
         prompt = loopmod.build_system_prompt(config=cfg, repo=repo, mode=mode, skills=None)  # pyright: ignore[reportPrivateUsage]
         names = {tool.name for tool in loopmod.tool_definitions(dispatcher, mode=mode)}  # pyright: ignore[reportPrivateUsage]
@@ -389,7 +377,7 @@ def test_no_commands_removes_run_command_from_read_only_mode_prompts(tmp_path: P
         assert "probe's writes" not in prompt, mode
 
 
-def test_read_only_mode_prompts_splice_the_command_note_cleanly(tmp_path: Path) -> None:
+def test_read_only_mode_prompts_splice_the_command_note_cleanly(tmp_path: pathlib.Path) -> None:
     """The read-only mode prompts splice the command note cleanly.
 
     Plan's rule block opens on a bullet with no blank line, and ask's prose carries the command note
@@ -397,7 +385,7 @@ def test_read_only_mode_prompts_splice_the_command_note_cleanly(tmp_path: Path) 
     """
     from agent6.config import Config
 
-    repo = RepoSummary(
+    repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
         head_sha="0" * 40,
@@ -416,47 +404,49 @@ def test_read_only_mode_prompts_splice_the_command_note_cleanly(tmp_path: Path) 
         assert ("not exposed. run_command runs jailed" in ask) == (commands == "ask")
 
 
-def test_tool_definitions_plan_mode_filters_edit_tools(tmp_path: Path) -> None:
+def test_tool_definitions_plan_mode_filters_edit_tools(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     defs = loopmod.tool_definitions(d, mode="plan")  # pyright: ignore[reportPrivateUsage]
     names = {t.name for t in defs}
-    assert ApplyEditInput.TOOL_NAME not in names
-    assert ApplyPatchInput.TOOL_NAME not in names
-    assert FinishSessionInput.TOOL_NAME not in names
-    assert FinishPlanningInput.TOOL_NAME in names
+    assert schema.ApplyEditInput.TOOL_NAME not in names
+    assert schema.ApplyPatchInput.TOOL_NAME not in names
+    assert schema.FinishSessionInput.TOOL_NAME not in names
+    assert schema.FinishPlanningInput.TOOL_NAME in names
 
 
-def test_tool_definitions_run_mode_includes_edit_tools(tmp_path: Path) -> None:
+def test_tool_definitions_run_mode_includes_edit_tools(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     defs = loopmod.tool_definitions(d, mode="run")  # pyright: ignore[reportPrivateUsage]
     names = {t.name for t in defs}
-    assert ApplyEditInput.TOOL_NAME in names
-    assert ApplyPatchInput.TOOL_NAME in names
-    assert FinishSessionInput.TOOL_NAME in names
-    assert FinishPlanningInput.TOOL_NAME not in names
+    assert schema.ApplyEditInput.TOOL_NAME in names
+    assert schema.ApplyPatchInput.TOOL_NAME in names
+    assert schema.FinishSessionInput.TOOL_NAME in names
+    assert schema.FinishPlanningInput.TOOL_NAME not in names
 
 
-def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(tmp_path: Path) -> None:
+def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(
+    tmp_path: pathlib.Path,
+) -> None:
     # a read-only machine agent state: navigation + finish_session, NO
     # edit/patch/verify/run_command/DAG (the deliverable is a finish_session result).
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"'), "utf-8")
     cfg = load_config(p)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     for mode in ("machine", "agent"):
         names = {t.name for t in loopmod.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
-        assert ReadFileInput.TOOL_NAME in names, mode
-        assert FinishSessionInput.TOOL_NAME in names, mode
-        assert ApplyEditInput.TOOL_NAME not in names, mode
-        assert ApplyPatchInput.TOOL_NAME not in names, mode
-        assert RunCommandInput.TOOL_NAME not in names, mode
-        assert DagAddTaskInput.TOOL_NAME not in names, mode
-        assert FinishPlanningInput.TOOL_NAME not in names, mode
+        assert schema.ReadFileInput.TOOL_NAME in names, mode
+        assert schema.FinishSessionInput.TOOL_NAME in names, mode
+        assert schema.ApplyEditInput.TOOL_NAME not in names, mode
+        assert schema.ApplyPatchInput.TOOL_NAME not in names, mode
+        assert schema.RunCommandInput.TOOL_NAME not in names, mode
+        assert schema.DagAddTaskInput.TOOL_NAME not in names, mode
+        assert schema.FinishPlanningInput.TOOL_NAME not in names, mode
 
 
-def test_mcp_tools_are_run_mode_only(tmp_path: Path) -> None:
+def test_mcp_tools_are_run_mode_only(tmp_path: pathlib.Path) -> None:
     """MCP tools are arbitrary external capabilities agent6 cannot classify as read-only.
 
     Appended to the tool list in every mode, or routed by the dispatcher before its mode guards, a
@@ -464,14 +454,10 @@ def test_mcp_tools_are_run_mode_only(tmp_path: Path) -> None:
     mutating filesystem/GitHub MCP tool. Both layers gate on run mode: the list omits them, and the
     dispatcher refuses them.
     """
-    from types import SimpleNamespace
-
-    from agent6.tools.dispatch import ToolError
-
     cfg = _config(tmp_path)
-    fake_mgr = SimpleNamespace(
+    fake_mgr = types.SimpleNamespace(
         descriptors=lambda: [
-            SimpleNamespace(
+            types.SimpleNamespace(
                 qualified_name="mcp__fs__write_file",
                 server_name="fs",
                 tool_name="write_file",
@@ -481,28 +467,28 @@ def test_mcp_tools_are_run_mode_only(tmp_path: Path) -> None:
         ]
     )
 
-    d_run = ToolDispatcher(root=tmp_path, config=cfg)
-    d_run._mcp_manager = cast("MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
+    d_run = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    d_run._mcp_manager = cast("mcp_client.MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
     run_names = {t.name for t in loopmod.tool_definitions(d_run, mode="run")}
     assert "mcp__fs__write_file" in run_names
 
     for mode in ("plan", "ask", "machine", "agent"):
-        d = ToolDispatcher(root=tmp_path, config=cfg)
-        d._mcp_manager = cast("MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
+        d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+        d._mcp_manager = cast("mcp_client.MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
         names = {t.name for t in loopmod.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert "mcp__fs__write_file" not in names, mode
 
     # The dispatcher backstop: a read-only-mode dispatcher refuses mcp__* even
     # if a tool-list regression re-exposed it.
-    d_plan = ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
-    d_plan._mcp_manager = cast("MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
-    with pytest.raises(ToolError, match="not available in plan mode"):
+    d_plan = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
+    d_plan._mcp_manager = cast("mcp_client.MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(errors.ToolError, match="not available in plan mode"):
         d_plan._dispatch_inner("mcp__fs__write_file", {})  # pyright: ignore[reportPrivateUsage]
 
 
-def test_build_system_prompt_machine_and_agent_modes(tmp_path: Path) -> None:
+def test_build_system_prompt_machine_and_agent_modes(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    repo = RepoSummary(
+    repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
         head_sha="0" * 40,
@@ -516,33 +502,33 @@ def test_build_system_prompt_machine_and_agent_modes(tmp_path: Path) -> None:
     assert "run_verify_command" not in agent
 
 
-def test_tool_definitions_ask_mode_is_read_only_with_commands(tmp_path: Path) -> None:
+def test_tool_definitions_ask_mode_is_read_only_with_commands(tmp_path: pathlib.Path) -> None:
     # ask: read tools + run_command (when the config allows it), but NO edits and
     # NO control tools (no finish_session/finish_planning/DAG) -- it silent-finishes.
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"'), "utf-8")
     cfg = load_config(p)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     names = {t.name for t in loopmod.tool_definitions(d, mode="ask")}  # pyright: ignore[reportPrivateUsage]
-    assert ReadFileInput.TOOL_NAME in names  # can read
-    assert RunCommandInput.TOOL_NAME in names  # can run commands to investigate
-    assert ApplyEditInput.TOOL_NAME not in names  # but not edit
-    assert ApplyPatchInput.TOOL_NAME not in names
-    assert FinishSessionInput.TOOL_NAME not in names
-    assert FinishPlanningInput.TOOL_NAME not in names
-    assert DagAddTaskInput.TOOL_NAME not in names
+    assert schema.ReadFileInput.TOOL_NAME in names  # can read
+    assert schema.RunCommandInput.TOOL_NAME in names  # can run commands to investigate
+    assert schema.ApplyEditInput.TOOL_NAME not in names  # but not edit
+    assert schema.ApplyPatchInput.TOOL_NAME not in names
+    assert schema.FinishSessionInput.TOOL_NAME not in names
+    assert schema.FinishPlanningInput.TOOL_NAME not in names
+    assert schema.DagAddTaskInput.TOOL_NAME not in names
     assert "agent6_docs" in names  # self-help is available in ask mode
 
 
-def test_dispatcher_refuses_mutations_in_ask_mode(tmp_path: Path) -> None:
+def test_dispatcher_refuses_mutations_in_ask_mode(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg, mode="ask")
-    with pytest.raises(ToolError, match="ask mode"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="ask")
+    with pytest.raises(errors.ToolError, match="ask mode"):
         d.dispatch(
             "apply_edit",
             {"path": "f.py", "edits": [{"kind": "create", "old_string": "", "new_string": "x\n"}]},
         )
-    with pytest.raises(ToolError, match="ask mode"):
+    with pytest.raises(errors.ToolError, match="ask mode"):
         d.dispatch("apply_patch", {"patch": "--- a\n+++ b\n"})
 
 
@@ -550,7 +536,7 @@ def test_dispatcher_refuses_mutations_in_ask_mode(tmp_path: Path) -> None:
 
 
 def _wf(
-    root: Path | None = None,
+    root: pathlib.Path | None = None,
     *,
     ref: str | None = None,
     fallback_parent: str | None = None,
@@ -558,19 +544,19 @@ def _wf(
     per_step: bool = True,
     base_sha: str = "",
     **kw: Any,
-) -> Harness:
+) -> loopmod.Harness:
     defaults: dict[str, Any] = {
-        "chain": RunChain(
-            root or Path("/tmp"),
+        "chain": _chain.RunChain(
+            root or pathlib.Path("/tmp"),
             ref=ref,
             branch=branch,
             fallback_parent=fallback_parent,
             per_step=per_step,
             base_sha=base_sha,
         ),
-        "config": MagicMock(
-            prompt=MagicMock(system_prompt_file=""),
-            harness=MagicMock(
+        "config": mock.MagicMock(
+            prompt=mock.MagicMock(system_prompt_file=""),
+            harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -580,13 +566,13 @@ def _wf(
                 verify_retries=2,
             ),
         ),
-        "provider": MagicMock(),
-        "dispatcher": MagicMock(),
+        "provider": mock.MagicMock(),
+        "dispatcher": mock.MagicMock(),
         "logger": _silent,
-        "call": CallSettings(retry_delay_s=0.01),
+        "call": _provider_call.CallSettings(retry_delay_s=0.01),
     }
     defaults.update(kw)
-    return Harness(**defaults)
+    return loopmod.Harness(**defaults)
 
 
 def test_workflow_plan_mode_without_output_path_raises() -> None:
@@ -602,7 +588,7 @@ _STALE_PLAN = "# Plan: X\n\n## Open questions\n> **Q:** which store?\n> **A:**\n
 _ANSWERED_PLAN = "# Plan: X\n\n## Open questions\n> **Q:** which store?\n> **A:** postgres\n"
 
 
-def _init_repo(repo: Path) -> None:
+def _init_repo(repo: pathlib.Path) -> None:
     repo.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
     subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
@@ -626,13 +612,15 @@ def _tool_use(name: str, args: dict[str, Any], tu_id: str = "tu1") -> ProviderRe
     )
 
 
-def _plan_wf(repo: Path, provider: Any, plan_path: Path, state_path: Path) -> Harness:
-    return Harness(
-        chain=RunChain(repo),
-        config=MagicMock(
-            budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=MagicMock(system_prompt_file="", decompose="off"),
-            harness=MagicMock(
+def _plan_wf(
+    repo: pathlib.Path, provider: Any, plan_path: pathlib.Path, state_path: pathlib.Path
+) -> loopmod.Harness:
+    return loopmod.Harness(
+        chain=_chain.RunChain(repo),
+        config=mock.MagicMock(
+            budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+            prompt=mock.MagicMock(system_prompt_file="", decompose="off"),
+            harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -643,9 +631,11 @@ def _plan_wf(repo: Path, provider: Any, plan_path: Path, state_path: Path) -> Ha
             ),
         ),
         provider=provider,
-        dispatcher=MagicMock(dispatch=MagicMock(return_value=RawResult({"acknowledged": True}))),
+        dispatcher=mock.MagicMock(
+            dispatch=mock.MagicMock(return_value=results.RawResult({"acknowledged": True}))
+        ),
         logger=_silent,
-        call=CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=5,
         mode="plan",
         plan_output_path=plan_path,
@@ -653,7 +643,9 @@ def _plan_wf(repo: Path, provider: Any, plan_path: Path, state_path: Path) -> Ha
     )
 
 
-def test_an_operator_edit_to_plan_md_survives_the_next_finish_planning(tmp_path: Path) -> None:
+def test_an_operator_edit_to_plan_md_survives_the_next_finish_planning(
+    tmp_path: pathlib.Path,
+) -> None:
     """An operator edit to plan.md survives the next finish_planning.
 
     `agent6 plan edit` writes plan.md, then `agent6 resume --steer` continues the planner; plan.md
@@ -664,7 +656,7 @@ def test_an_operator_edit_to_plan_md_survives_the_next_finish_planning(tmp_path:
     _init_repo(repo)
     plan_path, state_path = tmp_path / "plan.md", tmp_path / "loop_state.json"
 
-    first = MagicMock()
+    first = mock.MagicMock()
     first.call.return_value = _tool_use(
         "finish_planning", {"summary": "s", "plan_markdown": _STALE_PLAN}
     )
@@ -691,7 +683,7 @@ def test_an_operator_edit_to_plan_md_survives_the_next_finish_planning(tmp_path:
     assert plan_path.read_text(encoding="utf-8") == _ANSWERED_PLAN  # the edit survived
 
 
-def test_an_unchanged_plan_md_is_not_injected_twice(tmp_path: Path) -> None:
+def test_an_unchanged_plan_md_is_not_injected_twice(tmp_path: pathlib.Path) -> None:
     """Re-read every turn, inject only on change.
 
     An untouched plan.md costs tokens once, not once per turn.
@@ -700,13 +692,13 @@ def test_an_unchanged_plan_md_is_not_injected_twice(tmp_path: Path) -> None:
     _init_repo(repo)
     plan_path, state_path = tmp_path / "plan.md", tmp_path / "loop_state.json"
 
-    first = MagicMock()
+    first = mock.MagicMock()
     first.call.return_value = _tool_use(
         "finish_planning", {"summary": "s", "plan_markdown": _STALE_PLAN}
     )
     _plan_wf(repo, first, plan_path, state_path).run("plan it")
 
-    resumed = MagicMock()
+    resumed = mock.MagicMock()
     resumed.call.side_effect = [
         _tool_use("read_file", {"path": "x.txt"}, tu_id="t1"),
         _tool_use("read_file", {"path": "x.txt"}, tu_id="t2"),
@@ -718,50 +710,49 @@ def test_an_unchanged_plan_md_is_not_injected_twice(tmp_path: Path) -> None:
     assert final.count("which store?") == 2  # the finish_planning arg, plus ONE injection
 
 
-def test_an_unreadable_plan_parks_the_execution(tmp_path: Path) -> None:
+def test_an_unreadable_plan_parks_the_execution(tmp_path: pathlib.Path) -> None:
     """An unreadable plan parks the execution.
 
     Continuing on the planner's own copy burns budget on direction the operator may have superseded;
     the execution ends with the remedy instead.
     """
-    from agent6.harness.loop import SessionResult
+    from agent6.harness import _snapshot
 
     plan = tmp_path / "plan.md"
     plan.write_text("# Plan\n", encoding="utf-8")
     plan.chmod(0o000)
     try:
         wf = loopmod.Harness(
-            chain=RunChain(tmp_path),
-            config=MagicMock(),
-            provider=MagicMock(),
-            dispatcher=MagicMock(),
+            chain=_chain.RunChain(tmp_path),
+            config=mock.MagicMock(),
+            provider=mock.MagicMock(),
+            dispatcher=mock.MagicMock(),
             mode="plan",
             plan_output_path=plan,
             logger=lambda _m: None,
         )
         got = wf._maybe_inject_plan(  # pyright: ignore[reportPrivateUsage]
-            MagicMock(), LoopState(original_task="t", tool_calls=4), iteration=3
+            mock.MagicMock(), _loop_state.LoopState(original_task="t", tool_calls=4), iteration=3
         )
     finally:
         plan.chmod(0o600)
-    assert isinstance(got, SessionResult)
+    assert isinstance(got, _snapshot.SessionResult)
     assert got.reason == "plan_unreadable" and got.completed is False
     assert "plan.md unreadable" in got.summary
     assert "agent6 resume" in got.summary  # the remedy is in hand
     assert got.iterations == 3 and got.tool_calls == 4
 
 
-def test_the_decisions_block_renders_when_rulings_exist(tmp_path: Path) -> None:
+def test_the_decisions_block_renders_when_rulings_exist(tmp_path: pathlib.Path) -> None:
     """The decisions block renders when rulings exist.
 
     The operator's rulings ride the system prompt in every mode, after the memory block; nothing
     renders when none are recorded.
     """
     from agent6.config import Config
-    from agent6.harness.loop import build_system_prompt  # pyright: ignore[reportPrivateUsage]
-    from agent6.kinds import RepoSummary
+    from agent6.harness import _prompt_blocks  # pyright: ignore[reportPrivateUsage]
 
-    repo = RepoSummary(
+    repo = kinds.RepoSummary(
         root=tmp_path,
         branch="",
         head_sha="",
@@ -772,7 +763,7 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: Path) -> None:
         is_git=False,
     )
     for mode in ("run", "plan", "ask"):
-        text = build_system_prompt(
+        text = _prompt_blocks.build_system_prompt(
             config=Config(),
             repo=repo,
             mode=mode,
@@ -782,6 +773,6 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: Path) -> None:
         )
         assert "<decisions>" in text and "A: No." in text and "/m/DECISIONS.md" in text
         assert "recorded rulings" in text and "each ask_user answer" not in text
-    assert "<decisions>" not in build_system_prompt(
+    assert "<decisions>" not in _prompt_blocks.build_system_prompt(
         config=Config(), repo=repo, mode="run", skills=None
     )

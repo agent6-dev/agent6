@@ -19,17 +19,14 @@ must remove) and the jailed command reports its own sets via capget(2) --
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
 from agent6.config import Config
-from agent6.sandbox.jail import (
-    _policy_spec,  # pyright: ignore[reportPrivateUsage]
-    locate_jail_binary,
-)
-from agent6.tools.dispatch import jail_policy
+from agent6.sandbox import jail
+from agent6.tools import policy as tools_policy
 
 pytestmark = pytest.mark.needs_namespaces
 
@@ -75,24 +72,26 @@ def _scaffold_available() -> bool:
     return probe.returncode == 0
 
 
-def test_a_launcher_without_cap_setpcap_still_strips_the_child(tmp_path: Path) -> None:
+def test_a_launcher_without_cap_setpcap_still_strips_the_child(tmp_path: pathlib.Path) -> None:
     """Under the ambient-caps/no-CAP_SETPCAP profile the jailed command's effective set is empty.
 
     The bounding-set EPERM does not skip the capset.
     """
-    binary = locate_jail_binary()
+    binary = jail.locate_jail_binary()
     if binary is None:
         pytest.skip("no agent6-jail binary")
     if not _scaffold_available():
         pytest.skip("host cannot build the ambient-caps profile (subuid/setpriv)")
     # World-traversable cwd: inside the scaffold this test runs as an
     # unprivileged subuid, which cannot enter the pytest tmp dir.
-    cwd = Path("/tmp") / f"agent6-capdrop-{tmp_path.name}"
+    cwd = pathlib.Path("/tmp") / f"agent6-capdrop-{tmp_path.name}"
     cwd.mkdir(mode=0o777)
     try:
         policy = json.dumps(
-            _policy_spec(
-                jail_policy(cwd, Config(), "hardened", ("python3", "-c", _CAPGET), network="none")
+            jail._policy_spec(
+                tools_policy.jail_policy(
+                    cwd, Config(), "hardened", ("python3", "-c", _CAPGET), network="none"
+                )
             )
         )
         res = subprocess.run(

@@ -4,38 +4,38 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
 from agent6.config import Config
 from agent6.harness import _chain as chain_mod
-from agent6.harness._chain import RunChain
-from agent6.harness.loop import (
-    Harness,
-    TurnState,
-)
-from agent6.tools.dispatch import ToolDispatcher
+from agent6.harness import _loop_state, loop
+from agent6.tools import dispatch
 
 
-def _wf(tmp_path: Path, style: str, provider: Any = None, logger: Any = print) -> Harness:
+def _wf(
+    tmp_path: pathlib.Path, style: str, provider: Any = None, logger: Any = print
+) -> loop.Harness:
     cfg = Config.model_validate({"git": {"commit": {"checkpoint": {"message": style}}}})
-    return Harness(
-        chain=RunChain(tmp_path),
+    return loop.Harness(
+        chain=chain_mod.RunChain(tmp_path),
         config=cfg,
-        provider=provider or MagicMock(),
-        dispatcher=ToolDispatcher(root=tmp_path, config=cfg),
+        provider=provider or mock.MagicMock(),
+        dispatcher=dispatch.ToolDispatcher(root=tmp_path, config=cfg),
         logger=logger,
     )
 
 
-def _turn(text: str) -> TurnState:
-    return TurnState(iteration=3, resp=MagicMock(text=text), assistant=MagicMock())
+def _turn(text: str) -> _loop_state.TurnState:
+    return _loop_state.TurnState(
+        iteration=3, resp=mock.MagicMock(text=text), assistant=mock.MagicMock()
+    )
 
 
-def test_agent6_style_is_the_default_and_unchanged(tmp_path: Path) -> None:
+def test_agent6_style_is_the_default_and_unchanged(tmp_path: pathlib.Path) -> None:
     wf = _wf(tmp_path, "agent6")
     got = wf.checkpoints.subject(
         _turn("Add the unified write path.\nmore prose"), fallback="verify passed"
@@ -44,9 +44,9 @@ def test_agent6_style_is_the_default_and_unchanged(tmp_path: Path) -> None:
 
 
 def test_conventional_style_derives_from_the_worktree(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def _one_added(_p: Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
+    def _one_added(_p: pathlib.Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
         return (("A", "src/agent6/config/write.py"),)
 
     monkeypatch.setattr(chain_mod, "worktree_name_status", _one_added)
@@ -56,27 +56,27 @@ def test_conventional_style_derives_from_the_worktree(
 
 
 def test_model_style_uses_the_provider_text(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def _one_modified(_p: Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
+    def _one_modified(_p: pathlib.Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
         return (("M", "a.py"),)
 
     monkeypatch.setattr(chain_mod, "worktree_name_status", _one_modified)
-    provider = MagicMock()
-    provider.call.return_value = MagicMock(text=" fix: tighten the resolver \n")
+    provider = mock.MagicMock()
+    provider.call.return_value = mock.MagicMock(text=" fix: tighten the resolver \n")
     wf = _wf(tmp_path, "model", provider=provider)
     got = wf.checkpoints.subject(_turn("prose"), fallback="verify passed")
     assert got == "fix: tighten the resolver"
 
 
 def test_model_style_degrades_to_agent6_with_a_warning(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def _one_modified(_p: Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
+    def _one_modified(_p: pathlib.Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
         return (("M", "a.py"),)
 
     monkeypatch.setattr(chain_mod, "worktree_name_status", _one_modified)
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = RuntimeError("no endpoint")
     logged: list[str] = []
     wf = _wf(tmp_path, "model", provider=provider, logger=logged.append)

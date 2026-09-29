@@ -9,29 +9,24 @@ and the summary run end-to-end.
 
 from __future__ import annotations
 
+import datetime
+import pathlib
 import subprocess as _sp
-from datetime import UTC, datetime
-from pathlib import Path
-from types import SimpleNamespace
+import types
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
-from agent6.app.parallel import build_coordinator_spawner
+from agent6.app import parallel
 from agent6.config import Config
-from agent6.graph.curator import CuratorError
-from agent6.graph.models import TaskNode
+from agent6.graph import curator, models
 from agent6.harness import _chain as chain_mod
-from agent6.harness._chain import RunChain
-from agent6.harness._operator import OperatorBridge
-from agent6.harness._provider_call import CallSettings
-from agent6.harness.loop import Harness
-from agent6.harness.subrun import LaneResult, LaneSpec, LaneTask
+from agent6.harness import _operator, _provider_call, loop, subrun
 from agent6.providers import ProviderResponse
-from agent6.tools.results import RawResult
-from agent6.ui.cli.parallel import lane_runtime
-from agent6.viewmodel.transcript import fold_transcript
+from agent6.tools import results as tools_results
+from agent6.ui.cli import parallel as cli_parallel
+from agent6.viewmodel import transcript as viewmodel_transcript
 
 
 def _silent(_msg: str) -> None:
@@ -44,13 +39,13 @@ def _silent(_msg: str) -> None:
 # Loop-driving harness.
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: pathlib.Path, *args: str) -> str:
     return _sp.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
     ).stdout.strip()
 
 
-def _init_repo(repo: Path) -> None:
+def _init_repo(repo: pathlib.Path) -> None:
     repo.mkdir(parents=True, exist_ok=True)
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "user.email", "t@example.com")
@@ -60,7 +55,7 @@ def _init_repo(repo: Path) -> None:
     _git(repo, "commit", "-q", "-m", "init")
 
 
-def _head(repo: Path) -> str:
+def _head(repo: pathlib.Path) -> str:
     return _git(repo, "rev-parse", "HEAD")
 
 
@@ -103,11 +98,11 @@ class _FakeGraph:
 
     def __init__(self) -> None:
         self._seq = 0
-        self.entries: dict[str, TaskNode] = {}
+        self.entries: dict[str, models.TaskNode] = {}
         self.status_calls: list[tuple[str, str, str]] = []
         self.commit_calls: list[tuple[str, str]] = []
 
-    def nodes(self) -> dict[str, TaskNode]:
+    def nodes(self) -> dict[str, models.TaskNode]:
         return dict(self.entries)
 
     def cursor(self) -> str | None:
@@ -116,11 +111,11 @@ class _FakeGraph:
     def add_subtask(self, intent: Any) -> Any:
         parent = self.entries.get(intent.parent_id) if intent.parent_id else None
         if intent.parent_id and parent is None:
-            raise CuratorError(f"add_subtask: unknown parent {intent.parent_id!r}")
+            raise curator.CuratorError(f"add_subtask: unknown parent {intent.parent_id!r}")
         self._seq += 1
         nid = f"N{self._seq:025d}"  # 26 chars, matches TaskNode.id width
-        now = datetime.now(UTC)
-        self.entries[nid] = TaskNode(
+        now = datetime.datetime.now(datetime.UTC)
+        self.entries[nid] = models.TaskNode(
             id=nid,
             parent_id=intent.parent_id,
             title=intent.draft.title,
@@ -132,23 +127,23 @@ class _FakeGraph:
             self.entries[parent.id] = parent.model_copy(
                 update={"children": (*parent.children, nid)}
             )
-        return SimpleNamespace(id=nid)
+        return types.SimpleNamespace(id=nid)
 
     def update_status(self, intent: Any) -> Any:
         self.status_calls.append((intent.id, intent.new_status, intent.note))
         node = self.entries[intent.id]
         self.entries[intent.id] = node.model_copy(update={"status": intent.new_status})
-        return SimpleNamespace(id=intent.id)
+        return types.SimpleNamespace(id=intent.id)
 
     def record_commit(self, intent: Any) -> Any:
         self.commit_calls.append((intent.id, intent.sha))
         node = self.entries[intent.id]
         self.entries[intent.id] = node.model_copy(update={"commit_sha": intent.sha})
-        return SimpleNamespace(id=intent.id)
+        return types.SimpleNamespace(id=intent.id)
 
 
 class _FakeEvents:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: pathlib.Path) -> None:
         self.path = path
         self.emitted: list[tuple[str, dict[str, Any]]] = []
 
@@ -160,7 +155,7 @@ class _FakeEvents:
 
 
 def _make_branch(
-    repo: Path, branch: str, base_sha: str, fname: str, content: str, wt_dir: Path
+    repo: pathlib.Path, branch: str, base_sha: str, fname: str, content: str, wt_dir: pathlib.Path
 ) -> None:
     """Create *branch* at a divergent commit off *base_sha* via a throwaway worktree."""
     _git(repo, "worktree", "add", "-b", branch, str(wt_dir), base_sha)
@@ -178,9 +173,9 @@ class _FakeGroupSpawner:
 
     def __init__(
         self,
-        repo: Path,
+        repo: pathlib.Path,
         coord_id: str,
-        wt_root: Path,
+        wt_root: pathlib.Path,
         *,
         fail: set[int] | None = None,
         conflict: set[int] | None = None,
@@ -192,25 +187,25 @@ class _FakeGroupSpawner:
         self.fail = fail or set()
         self.conflict = conflict or set()
         self.base_by_lane = base_by_lane or {}
-        self.calls: list[tuple[list[LaneTask], str]] = []
+        self.calls: list[tuple[list[subrun.LaneTask], str]] = []
 
     def tasks(self, call: int = 0) -> list[str]:
         return [lane.task for lane in self.calls[call][0]]
 
     def __call__(
-        self, lanes: list[LaneTask], group: str, *, at: str | None = None
-    ) -> list[LaneResult]:
+        self, lanes: list[subrun.LaneTask], group: str, *, at: str | None = None
+    ) -> list[subrun.LaneResult]:
         self.calls.append((list(lanes), group))
-        results: list[LaneResult] = []
+        results: list[subrun.LaneResult] = []
         for i in range(1, len(lanes) + 1):
             session_id = f"{self.coord_id}-{group}-l{i}"
             branch = f"agent6/{session_id}"
-            spec = LaneSpec(
+            spec = subrun.LaneSpec(
                 lane=i, session_id=session_id, workdir=self.wt_root / session_id, route=None
             )
             if i in self.fail:
                 results.append(
-                    LaneResult(
+                    subrun.LaneResult(
                         spec=spec,
                         session_dir=spec.workdir,
                         branch=branch,
@@ -229,34 +224,36 @@ class _FakeGroupSpawner:
                     self.repo, branch, base, f"lane{i}.txt", f"lane {i}\n", self.wt_root / f"wt{i}"
                 )
             results.append(
-                LaneResult(spec=spec, session_dir=spec.workdir, branch=branch, ok=True, error="")
+                subrun.LaneResult(
+                    spec=spec, session_dir=spec.workdir, branch=branch, ok=True, error=""
+                )
             )
         return results
 
 
 def _build_wf(
-    repo: Path,
-    provider: MagicMock,
+    repo: pathlib.Path,
+    provider: mock.MagicMock,
     *,
     steer_text: str,
     lane_spawner: Any = None,
     graph: Any = None,
     events: Any = None,
-    dispatcher: MagicMock | None = None,
+    dispatcher: mock.MagicMock | None = None,
     verify_command: tuple[str, ...] = (),
     verify_when: str = "finish",
     max_iterations: int = 2,
-) -> Harness:
+) -> loop.Harness:
     steer = _OneShotSteer(steer_text)
-    disp = dispatcher if dispatcher is not None else MagicMock()
+    disp = dispatcher if dispatcher is not None else mock.MagicMock()
     if dispatcher is None:
-        disp.dispatch.return_value = RawResult({"content": "hi\n"})
-    return Harness(
-        chain=RunChain(repo, ref="refs/agent6/coord", fallback_parent=_head(repo)),
-        config=MagicMock(
-            budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=MagicMock(system_prompt_file=""),
-            harness=MagicMock(
+        disp.dispatch.return_value = tools_results.RawResult({"content": "hi\n"})
+    return loop.Harness(
+        chain=chain_mod.RunChain(repo, ref="refs/agent6/coord", fallback_parent=_head(repo)),
+        config=mock.MagicMock(
+            budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+            prompt=mock.MagicMock(system_prompt_file=""),
+            harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -266,20 +263,20 @@ def _build_wf(
                 verify_retries=2,
             ),
             # A real int, not a Mock: segment_lanes compares the lane count against this cap.
-            parallel=SimpleNamespace(max_lanes=4),
+            parallel=types.SimpleNamespace(max_lanes=4),
         ),
         provider=provider,
         dispatcher=disp,
         logger=_silent,
         events=events,
         curator=graph,
-        bridge=OperatorBridge(
+        bridge=_operator.OperatorBridge(
             lane_spawner=lane_spawner,
             steer_requested=steer.requested,
             steer_prompt=steer.prompt,
             steer_clear=steer.clear,
         ),
-        call=CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=max_iterations,
     )
 
@@ -297,7 +294,7 @@ def _user_texts(messages: list[dict[str, Any]]) -> list[str]:
     return out
 
 
-def _final_messages(provider: MagicMock) -> list[dict[str, Any]]:
+def _final_messages(provider: mock.MagicMock) -> list[dict[str, Any]]:
     last = provider.call.call_args_list[-1]
     return last.kwargs.get("messages") or last.args[1]
 
@@ -305,12 +302,14 @@ def _final_messages(provider: MagicMock) -> list[dict[str, Any]]:
 # Dispatch behaviour.
 
 
-def test_the_root_task_is_titled_by_the_headline_every_listing_shows(tmp_path: Path) -> None:
+def test_the_root_task_is_titled_by_the_headline_every_listing_shows(
+    tmp_path: pathlib.Path,
+) -> None:
     """The root's title drops a `<prior-run>` opener and a TASK.md task's `# `."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     graph = _FakeGraph()
-    wf = _build_wf(repo, MagicMock(), steer_text="", graph=graph)
+    wf = _build_wf(repo, mock.MagicMock(), steer_text="", graph=graph)
     seeded = '<prior-run id="agile-echo-H2EWX5">\ndigest\n</prior-run>\n\n# Fix the parser\n\nbody'
     root_id = wf.operator_tasks.seed_root(seeded)
     assert root_id is not None
@@ -319,11 +318,11 @@ def test_the_root_task_is_titled_by_the_headline_every_listing_shows(tmp_path: P
     assert [n.title for n in graph.nodes().values()] == ["Fix the parser", "(run)"]
 
 
-def test_none_spawner_answers_with_feedback_and_continues(tmp_path: Path) -> None:
+def test_none_spawner_answers_with_feedback_and_continues(tmp_path: pathlib.Path) -> None:
     """Without a lane spawner the directive is answered with a notice and the run continues."""
     repo = tmp_path / "repo"
     _init_repo(repo)
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
@@ -337,12 +336,12 @@ def test_none_spawner_answers_with_feedback_and_continues(tmp_path: Path) -> Non
     assert any("parallel dispatch is not available" in t for t in texts)
 
 
-def test_parallel_lookalike_steer_flows_through_as_plain_steer(tmp_path: Path) -> None:
+def test_parallel_lookalike_steer_flows_through_as_plain_steer(tmp_path: pathlib.Path) -> None:
     """A steer beginning `/parallelfoo ...` is not a directive and reaches the model verbatim."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "run-lk", tmp_path / "wt")
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
@@ -356,7 +355,7 @@ def test_parallel_lookalike_steer_flows_through_as_plain_steer(tmp_path: Path) -
     assert not any(t.startswith("[parallel]") for t in texts)
 
 
-def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:
+def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
     """Two clean lanes join in dispatch order with their DAG nodes passed and events fired."""
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -365,7 +364,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:
     graph = _FakeGraph()
     spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt")
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
@@ -415,7 +414,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:
     assert "joined at" in summary[0]
 
 
-def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: Path) -> None:
+def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: pathlib.Path) -> None:
     """`/parallel m1,m2 <task>` runs one lane per model under a single segment node."""
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -423,7 +422,7 @@ def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: Path) -> None:
     events = _FakeEvents(tmp_path / coord_id / "logs.jsonl")
     graph = _FakeGraph()
     spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt")
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
@@ -458,14 +457,14 @@ def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: Path) -> None:
     ]
 
 
-def test_lane_count_spec_expands_to_n_default_lanes(tmp_path: Path) -> None:
+def test_lane_count_spec_expands_to_n_default_lanes(tmp_path: pathlib.Path) -> None:
     """`/parallel 3 <task>` -> three lanes on the default model, one segment node."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     coord_id = "run-cnt"
     graph = _FakeGraph()
     spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt")
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
@@ -485,7 +484,7 @@ def test_lane_count_spec_expands_to_n_default_lanes(tmp_path: Path) -> None:
     assert len(steering) == 1  # one node for the segment, not three
 
 
-def test_join_conflict_emits_event_message_and_continues(tmp_path: Path) -> None:
+def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path) -> None:
     """A conflicting lane fails its node, the summary says merge by hand, and the run continues."""
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -501,7 +500,7 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: Path) -> None
     spawner = _FakeGroupSpawner(
         repo, coord_id, tmp_path / "wt", conflict={2}, base_by_lane={2: base}
     )
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
@@ -533,7 +532,7 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: Path) -> None
     assert "git merge agent6/run-cf-p1-l2" in summary
 
 
-def test_failed_lane_is_reported_truthfully(tmp_path: Path) -> None:
+def test_failed_lane_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
     """A lane the spawner could not run fails its node with the reason; the run continues."""
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -541,7 +540,7 @@ def test_failed_lane_is_reported_truthfully(tmp_path: Path) -> None:
     events = _FakeEvents(tmp_path / coord_id / "logs.jsonl")
     graph = _FakeGraph()
     spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt", fail={1})
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
@@ -564,7 +563,7 @@ def test_failed_lane_is_reported_truthfully(tmp_path: Path) -> None:
     assert sorted(n.status for n in steering) == ["failed", "passed"]
     failed_note = next(note for _id, status, note in graph.status_calls if status == "failed")
     assert "lane boom" in failed_note
-    transcript = fold_transcript(
+    transcript = viewmodel_transcript.fold_transcript(
         [{"type": event_type, **fields} for event_type, fields in events.emitted]
     )
     assert any(item.kind == "marker" and "lane boom" in item.body for item in transcript)
@@ -572,7 +571,7 @@ def test_failed_lane_is_reported_truthfully(tmp_path: Path) -> None:
     assert "FAILED -- lane boom" in summary
 
 
-def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: Path) -> None:
+def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) -> None:
     """A raising group spawner does not abort the coordinator.
 
     The run continues, loop.parallel.failed fires, truthful feedback is injected, and no steering
@@ -587,12 +586,12 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: Path) -> None:
     calls: list[str] = []
 
     def exploding_spawner(
-        lanes: list[LaneTask], group: str, *, at: str | None = None
-    ) -> list[LaneResult]:
+        lanes: list[subrun.LaneTask], group: str, *, at: str | None = None
+    ) -> list[subrun.LaneResult]:
         calls.append(group)
         raise OSError("disk full while cloning lane 2")
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
@@ -622,11 +621,11 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: Path) -> None:
     assert all(n.status == "failed" for n in steering)
 
 
-def test_bare_parallel_directive_dispatches_nothing(tmp_path: Path) -> None:
+def test_bare_parallel_directive_dispatches_nothing(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "run-x", tmp_path / "wt")
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
@@ -638,7 +637,7 @@ def test_bare_parallel_directive_dispatches_nothing(tmp_path: Path) -> None:
     assert any("nothing dispatched" in t for t in texts)
 
 
-def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: Path) -> None:
+def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) -> None:
     """A changed worktree at the boundary is chain-committed before dispatch cuts the lanes."""
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -647,15 +646,15 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: Path) -> None:
     spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt")
 
     # The first turn's tool "edits" the tree (an uncommitted run_command write).
-    dispatcher = MagicMock()
+    dispatcher = mock.MagicMock()
 
-    def dispatch(_name: str, _input: dict[str, Any]) -> RawResult:
+    def dispatch(_name: str, _input: dict[str, Any]) -> tools_results.RawResult:
         (repo / "wip.txt").write_text("uncommitted work\n", encoding="utf-8")
-        return RawResult({"content": "wrote wip.txt"})
+        return tools_results.RawResult({"content": "wrote wip.txt"})
 
     dispatcher.dispatch.side_effect = dispatch
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("run_command", {"command": "echo hi > wip.txt"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
@@ -682,7 +681,7 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: Path) -> None:
     diffs = events.of("diff.updated")
     assert commits  # the state fold sees the checkpoint step
     assert diffs and diffs[-1]["sha"] == commits[-1]["sha"]
-    transcript = fold_transcript(
+    transcript = viewmodel_transcript.fold_transcript(
         [{"type": event_type, **fields} for event_type, fields in events.emitted]
     )
     shown = [item for item in transcript if item.kind == "commit"]
@@ -690,7 +689,7 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: Path) -> None:
 
 
 def test_dirty_tree_that_cannot_be_cleaned_refuses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A tree still dirty after the auto-commit refuses dispatch and the run continues."""
 
@@ -704,15 +703,15 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "run-nd", tmp_path / "wt")
 
-    dispatcher = MagicMock()
+    dispatcher = mock.MagicMock()
 
-    def dispatch(_name: str, _input: dict[str, Any]) -> RawResult:
+    def dispatch(_name: str, _input: dict[str, Any]) -> tools_results.RawResult:
         (repo / "wip.txt").write_text("uncommitted\n", encoding="utf-8")
-        return RawResult({"content": "ok"})
+        return tools_results.RawResult({"content": "ok"})
 
     dispatcher.dispatch.side_effect = dispatch
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("run_command", {"command": "x"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
@@ -737,28 +736,33 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
 
 
 def test_coordinator_spawner_gate_under_subrun(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = Config()
     monkeypatch.delenv("AGENT6_SUBRUN", raising=False)
     # A write run outside a lane gets a real dispatcher.
     assert callable(
-        build_coordinator_spawner(
-            cfg, tmp_path, tmp_path, mode="run", session_id="r", runtime=lane_runtime()
+        parallel.build_coordinator_spawner(
+            cfg, tmp_path, tmp_path, mode="run", session_id="r", runtime=cli_parallel.lane_runtime()
         )
     )
     # plan/ask make no commits to clone -> no dispatcher.
     assert (
-        build_coordinator_spawner(
-            cfg, tmp_path, tmp_path, mode="plan", session_id="r", runtime=lane_runtime()
+        parallel.build_coordinator_spawner(
+            cfg,
+            tmp_path,
+            tmp_path,
+            mode="plan",
+            session_id="r",
+            runtime=cli_parallel.lane_runtime(),
         )
         is None
     )
     # Inside a subordinate lane -> no dispatcher (depth 1).
     monkeypatch.setenv("AGENT6_SUBRUN", "1")
     assert (
-        build_coordinator_spawner(
-            cfg, tmp_path, tmp_path, mode="run", session_id="r", runtime=lane_runtime()
+        parallel.build_coordinator_spawner(
+            cfg, tmp_path, tmp_path, mode="run", session_id="r", runtime=cli_parallel.lane_runtime()
         )
         is None
     )

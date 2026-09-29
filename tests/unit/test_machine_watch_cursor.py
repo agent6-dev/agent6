@@ -8,17 +8,16 @@ byte offset, never consuming a partial line.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
-from agent6.viewmodel import MachineWatchCursor, read_complete_lines
-from agent6.viewmodel.machine_state import MachineState, NotificationView, TransitionView
+from agent6.viewmodel import MachineWatchCursor, machine_state, read_complete_lines
 
 
 def _ms(
-    transitions: tuple[TransitionView, ...] = (),
-    notifications: tuple[NotificationView, ...] = (),
-) -> MachineState:
-    return MachineState(
+    transitions: tuple[machine_state.TransitionView, ...] = (),
+    notifications: tuple[machine_state.NotificationView, ...] = (),
+) -> machine_state.MachineState:
+    return machine_state.MachineState(
         machine="m",
         version=1,
         initial="a",
@@ -30,12 +29,12 @@ def _ms(
     )
 
 
-def _t(seq: int) -> TransitionView:
-    return TransitionView(seq=seq, state="a", label="ok", goto="b")
+def _t(seq: int) -> machine_state.TransitionView:
+    return machine_state.TransitionView(seq=seq, state="a", label="ok", goto="b")
 
 
-def _n(ts: str, message: str = "hi") -> NotificationView:
-    return NotificationView(ts=ts, state="a", message=message, level="info")
+def _n(ts: str, message: str = "hi") -> machine_state.NotificationView:
+    return machine_state.NotificationView(ts=ts, state="a", message=message, level="info")
 
 
 def test_new_transitions_are_yielded_once() -> None:
@@ -59,7 +58,7 @@ def test_seed_notifications_silences_history() -> None:
     assert cur.new_notifications(_ms(notifications=(_n("1"), _n("2")))) == [_n("2")]
 
 
-def test_advance_log_switches_and_resets_offset(tmp_path: Path) -> None:
+def test_advance_log_switches_and_resets_offset(tmp_path: pathlib.Path) -> None:
     s1 = tmp_path / "states" / "001-first"
     s1.mkdir(parents=True)
     (s1 / "logs.jsonl").write_text('{"a":1}\n', encoding="utf-8")
@@ -83,7 +82,7 @@ def test_advance_log_switches_and_resets_offset(tmp_path: Path) -> None:
     assert cur.read_log_lines() == ['{"b":2}\n']
 
 
-def test_read_complete_lines_leaves_partial_tail_unconsumed(tmp_path: Path) -> None:
+def test_read_complete_lines_leaves_partial_tail_unconsumed(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_bytes(b'{"a":1}\n{"b":')
     lines, off = read_complete_lines(p, 0)
@@ -95,6 +94,6 @@ def test_read_complete_lines_leaves_partial_tail_unconsumed(tmp_path: Path) -> N
     assert lines == ['{"b":"é"}\n']
 
 
-def test_read_complete_lines_missing_file(tmp_path: Path) -> None:
+def test_read_complete_lines_missing_file(tmp_path: pathlib.Path) -> None:
     lines, off = read_complete_lines(tmp_path / "absent.jsonl", 7)
     assert lines == [] and off == 7

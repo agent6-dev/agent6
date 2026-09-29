@@ -4,17 +4,16 @@
 
 from __future__ import annotations
 
+import datetime
 import os
-from datetime import UTC, datetime
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.graph.models import TaskNode
-from agent6.graph.storage import write_node
-from agent6.paths import state_dir
-from agent6.sessions.ipc import register_frontend
-from agent6.sessions.layout import SessionLayout
+from agent6 import paths
+from agent6.graph import models, storage
+from agent6.sessions import ipc
+from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
 
 
@@ -26,9 +25,9 @@ def _node(
     children: tuple[str, ...] = (),
     status: str = "pending",
     commit_sha: str = "",
-) -> TaskNode:
-    now = datetime(2025, 1, 1, tzinfo=UTC)
-    return TaskNode.model_validate(
+) -> models.TaskNode:
+    now = datetime.datetime(2025, 1, 1, tzinfo=datetime.UTC)
+    return models.TaskNode.model_validate(
         {
             "id": nid,
             "parent_id": parent,
@@ -47,9 +46,11 @@ def _node(
     )
 
 
-def _seed_tree(tmp_path: Path, session_id: str) -> None:
+def _seed_tree(tmp_path: pathlib.Path, session_id: str) -> None:
     """Build a small tree: root step1 (passed, commit aaaaaaa...) sub1a sub1b step2 (failed)."""
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id=session_id)
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id=session_id
+    )
     layout.ensure()
     (layout.session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     root_id, s1_id, s1a_id, s1b_id, s2_id = "0001", "0002", "0003", "0004", "0005"
@@ -67,11 +68,11 @@ def _seed_tree(tmp_path: Path, session_id: str) -> None:
     s1b = _node(s1b_id, parent=s1_id, title="sub 1b")
     nodes = {n.id: n for n in (root, s1, s2, s1a, s1b)}
     for n in nodes.values():
-        write_node(layout, nodes, n)
+        storage.write_node(layout, nodes, n)
 
 
 def test_history_graph_renders_dfs_order(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_tree(tmp_path, "test-run-AAAA11")
@@ -90,7 +91,7 @@ def test_history_graph_renders_dfs_order(
 
 
 def test_a_half_linked_task_is_still_shown(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A half-linked task is still shown by the CLI, as the frontier and the TUI show it.
 
@@ -98,7 +99,9 @@ def test_a_half_linked_task_is_still_shown(
     a node with a valid parent_id that no parent names.
     """
     monkeypatch.chdir(tmp_path)
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="half-run-AAAA11")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="half-run-AAAA11"
+    )
     layout.ensure()
     (layout.session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     root_id, orphan_id = "0" * 25 + "R", "0" * 25 + "C"
@@ -106,7 +109,7 @@ def test_a_half_linked_task_is_still_shown(
     orphan = _node(orphan_id, parent=root_id, title="step A")
     nodes = {n.id: n for n in (root, orphan)}
     for n in nodes.values():
-        write_node(layout, nodes, n)
+        storage.write_node(layout, nodes, n)
 
     assert main(["sessions", "graph", "half-run-AAAA11"]) == 0
 
@@ -115,17 +118,17 @@ def test_a_half_linked_task_is_still_shown(
 
 
 def test_history_graph_uses_most_recent_when_no_arg(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_tree(tmp_path, "older-run-AAAA11")
     _seed_tree(tmp_path, "newer-run-BBBB22")
-    runs = state_dir(tmp_path) / "sessions" / "runs"
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs"
     for name in ("older-run-AAAA11", "newer-run-BBBB22"):
         (runs / name / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
     os.utime(runs / "older-run-AAAA11" / "logs.jsonl", (100, 100))
     os.utime(runs / "newer-run-BBBB22" / "logs.jsonl", (1000, 1000))
-    register_frontend(runs / "older-run-AAAA11", 12345)
+    ipc.register_frontend(runs / "older-run-AAAA11", 12345)
     rc = main(["sessions", "graph"])
     captured = capsys.readouterr()
     assert rc == 0
@@ -134,7 +137,7 @@ def test_history_graph_uses_most_recent_when_no_arg(
 
 
 def test_history_graph_missing_run_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     rc = main(["sessions", "graph", "nonexistent"])
@@ -144,10 +147,12 @@ def test_history_graph_missing_run_errors(
 
 
 def test_history_graph_empty_graph_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="empty-run-CCCC33")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="empty-run-CCCC33"
+    )
     layout.ensure()
     (layout.session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     rc = main(["sessions", "graph", "empty-run-CCCC33"])

@@ -6,14 +6,14 @@ from __future__ import annotations
 
 import json
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http import server
 from typing import Any
 
 import pytest
 
 from agent6.config import Config
-from agent6.tools.mcp_client import MCPManager, MCPServerSpec
-from agent6.tools.mcp_http import MAX_BODY_BYTES, HttpTransport, MCPHttpError
+from agent6.tools import mcp_client
+from agent6.tools import mcp_http as tools_mcp_http
 
 
 def _serve(
@@ -27,7 +27,7 @@ def _serve(
     """A one-connection MCP server on loopback. Returns (url, seen_headers)."""
     seen: dict[str, str] = {}
 
-    class _Handler(BaseHTTPRequestHandler):
+    class _Handler(server.BaseHTTPRequestHandler):
         def do_POST(self) -> None:
             seen.update({k.lower(): v for k, v in self.headers.items()})
             request = json.loads(self.rfile.read(int(self.headers["content-length"])))
@@ -46,7 +46,7 @@ def _serve(
         def log_message(self, format: str, *args: Any) -> None:
             return  # a test server must not print to stderr
 
-    httpd = HTTPServer(("127.0.0.1", 0), _Handler)
+    httpd = server.HTTPServer(("127.0.0.1", 0), _Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return f"http://127.0.0.1:{httpd.server_port}/mcp", seen, httpd
 
@@ -71,14 +71,14 @@ def test_agent6_connects_instead_of_spawning() -> None:
     url, _seen, httpd = _serve(_mcp_reply)
     logs: list[str] = []
     try:
-        mgr = MCPManager.start(
+        mgr = mcp_client.MCPManager.start(
             [
-                MCPServerSpec(
+                mcp_client.MCPServerSpec(
                     name="remote",
                     command=(),
                     startup_timeout_s=10.0,
                     call_timeout_s=10.0,
-                    http=HttpTransport(name="remote", url=url),
+                    http=tools_mcp_http.HttpTransport(name="remote", url=url),
                 )
             ],
             logger=logs.append,
@@ -103,28 +103,23 @@ def test_a_failed_initialized_notification_fails_the_handshake(
 
     Ignoring it registered tools from a server that rejected the required initialized notification.
     """
-    from agent6.tools.mcp_client import (
-        MCPError,
-        _MCPServer,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    transport = HttpTransport(name="s", url="https://example.invalid/mcp")
+    transport = tools_mcp_http.HttpTransport(name="s", url="https://example.invalid/mcp")
 
     def send(
-        _transport: HttpTransport, payload: dict[str, Any], *, timeout_s: float
+        _transport: tools_mcp_http.HttpTransport, payload: dict[str, Any], *, timeout_s: float
     ) -> dict[str, Any] | None:
         del timeout_s
         method = payload["method"]
         if method == "initialize":
             return {"jsonrpc": "2.0", "id": payload["id"], "result": {}}
         if method == "notifications/initialized":
-            raise MCPHttpError("notification refused")
+            raise tools_mcp_http.MCPHttpError("notification refused")
         if method == "tools/list":
             return {"jsonrpc": "2.0", "id": payload["id"], "result": {"tools": []}}
         pytest.fail(f"unexpected request: {payload}")
 
-    monkeypatch.setattr(HttpTransport, "send", send)
-    srv = _MCPServer(  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(tools_mcp_http.HttpTransport, "send", send)
+    srv = mcp_client._MCPServer(  # pyright: ignore[reportPrivateUsage]
         name="s",
         command=(),
         startup_timeout_s=5.0,
@@ -132,7 +127,7 @@ def test_a_failed_initialized_notification_fails_the_handshake(
         http=transport,
     )
 
-    with pytest.raises(MCPError, match="notification refused"):
+    with pytest.raises(mcp_client.MCPError, match="notification refused"):
         srv.start()
 
 
@@ -142,24 +137,19 @@ def test_a_transport_error_is_redacted_of_the_token(monkeypatch: pytest.MonkeyPa
     A proxy or server can echo the bearer token in its error; the MCPError every caller journals
     must not carry it.
     """
-    from agent6.tools.mcp_client import (
-        MCPError,
-        _MCPServer,  # pyright: ignore[reportPrivateUsage]
-    )
-
     monkeypatch.setenv("MCP_TEST_TOKEN", "secret-token-value")
-    transport = HttpTransport(
+    transport = tools_mcp_http.HttpTransport(
         name="s", url="https://example.invalid/mcp", token_env="MCP_TEST_TOKEN"
     )
 
     def send(
-        _transport: HttpTransport, payload: dict[str, Any], *, timeout_s: float
+        _transport: tools_mcp_http.HttpTransport, payload: dict[str, Any], *, timeout_s: float
     ) -> dict[str, Any] | None:
         del payload, timeout_s
-        raise MCPHttpError("proxy rejected bearer secret-token-value")
+        raise tools_mcp_http.MCPHttpError("proxy rejected bearer secret-token-value")
 
-    monkeypatch.setattr(HttpTransport, "send", send)
-    srv = _MCPServer(  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(tools_mcp_http.HttpTransport, "send", send)
+    srv = mcp_client._MCPServer(  # pyright: ignore[reportPrivateUsage]
         name="s",
         command=(),
         startup_timeout_s=5.0,
@@ -167,7 +157,7 @@ def test_a_transport_error_is_redacted_of_the_token(monkeypatch: pytest.MonkeyPa
         http=transport,
     )
 
-    with pytest.raises(MCPError) as caught:
+    with pytest.raises(mcp_client.MCPError) as caught:
         srv.start()
     assert "secret-token-value" not in str(caught.value)
     assert "<REDACTED>" in str(caught.value)
@@ -180,7 +170,9 @@ def test_a_streamed_answer_is_read_like_any_other() -> None:
     """
     url, _seen, httpd = _serve(_mcp_reply, sse=True)
     try:
-        got = HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
+        got = tools_mcp_http.HttpTransport(name="s", url=url).send(
+            {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
+        )
         assert got is not None and got["id"] == 1
     finally:
         httpd.shutdown()
@@ -193,7 +185,7 @@ def test_the_token_is_read_from_the_environment_never_the_config(
     monkeypatch.setenv("MCP_TEST_TOKEN", "s3cr3t")
     url, seen, httpd = _serve(_mcp_reply)
     try:
-        HttpTransport(name="s", url=url, token_env="MCP_TEST_TOKEN").send(
+        tools_mcp_http.HttpTransport(name="s", url=url, token_env="MCP_TEST_TOKEN").send(
             {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
         )
         assert seen["authorization"] == "Bearer s3cr3t"
@@ -219,8 +211,10 @@ def test_httpx_trust_env_reaches_the_client(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(mcp_http.httpx2, "Client", _spy)
     url, _s, httpd = _serve(_mcp_reply)
     try:
-        HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
-        HttpTransport(name="s", url=url, httpx_trust_env=True).send(
+        tools_mcp_http.HttpTransport(name="s", url=url).send(
+            {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
+        )
+        tools_mcp_http.HttpTransport(name="s", url=url, httpx_trust_env=True).send(
             {"jsonrpc": "2.0", "id": 2}, timeout_s=5.0
         )
     finally:
@@ -248,10 +242,12 @@ def test_an_oversized_body_is_refused_rather_than_buffered() -> None:
 
     A runaway server must not be able to buffer an unbounded body into the agent.
     """
-    url, _seen, httpd = _serve(None, body=b"x" * (MAX_BODY_BYTES + 64))
+    url, _seen, httpd = _serve(None, body=b"x" * (tools_mcp_http.MAX_BODY_BYTES + 64))
     try:
-        with pytest.raises(MCPHttpError, match="larger than"):
-            HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=10.0)
+        with pytest.raises(tools_mcp_http.MCPHttpError, match="larger than"):
+            tools_mcp_http.HttpTransport(name="s", url=url).send(
+                {"jsonrpc": "2.0", "id": 1}, timeout_s=10.0
+            )
     finally:
         httpd.shutdown()
 
@@ -267,8 +263,10 @@ def test_a_compressed_answer_is_refused_not_decoded() -> None:
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "result": "ok"}).encode()
     url, _seen, httpd = _serve(None, body=gzip.compress(payload), encoding="gzip")
     try:
-        with pytest.raises(MCPHttpError, match="content-encoding"):
-            HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
+        with pytest.raises(tools_mcp_http.MCPHttpError, match="content-encoding"):
+            tools_mcp_http.HttpTransport(name="s", url=url).send(
+                {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
+            )
     finally:
         httpd.shutdown()
 
@@ -276,8 +274,10 @@ def test_a_compressed_answer_is_refused_not_decoded() -> None:
 def test_an_http_failure_is_a_clean_tool_error() -> None:
     url, _seen, httpd = _serve(_mcp_reply, status=503)
     try:
-        with pytest.raises(MCPHttpError, match="HTTP 503"):
-            HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
+        with pytest.raises(tools_mcp_http.MCPHttpError, match="HTTP 503"):
+            tools_mcp_http.HttpTransport(name="s", url=url).send(
+                {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
+            )
     finally:
         httpd.shutdown()
 
@@ -290,8 +290,10 @@ def test_a_non_2xx_body_is_kept_in_the_error() -> None:
     """
     url, _seen, httpd = _serve(None, status=429, body=b'{"error": "rate limited, retry after 30s"}')
     try:
-        with pytest.raises(MCPHttpError, match="retry after 30s"):
-            HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
+        with pytest.raises(tools_mcp_http.MCPHttpError, match="retry after 30s"):
+            tools_mcp_http.HttpTransport(name="s", url=url).send(
+                {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
+            )
     finally:
         httpd.shutdown()
 
@@ -304,7 +306,7 @@ def test_a_redirect_is_an_error_not_a_silent_accept() -> None:
     unnoticed instead of failing loudly.
     """
 
-    class _Handler(BaseHTTPRequestHandler):
+    class _Handler(server.BaseHTTPRequestHandler):
         def do_POST(self) -> None:
             self.rfile.read(int(self.headers.get("content-length", "0")))
             self.send_response(302)
@@ -314,12 +316,14 @@ def test_a_redirect_is_an_error_not_a_silent_accept() -> None:
         def log_message(self, format: str, *args: Any) -> None:
             return
 
-    httpd = HTTPServer(("127.0.0.1", 0), _Handler)
+    httpd = server.HTTPServer(("127.0.0.1", 0), _Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{httpd.server_port}/mcp"
     try:
-        with pytest.raises(MCPHttpError, match="HTTP 302"):
-            HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
+        with pytest.raises(tools_mcp_http.MCPHttpError, match="HTTP 302"):
+            tools_mcp_http.HttpTransport(name="s", url=url).send(
+                {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
+            )
     finally:
         httpd.shutdown()
 
@@ -348,10 +352,10 @@ def test_a_token_that_cannot_be_a_header_is_refused_before_it_leaks(
     stderr, the launch log and the model's context.
     """
     monkeypatch.setenv("MCP_TEST_TOKEN", "sk-live-DEADBEEF\r")
-    with pytest.raises(MCPHttpError) as caught:
-        HttpTransport(name="s", url="https://h/mcp", token_env="MCP_TEST_TOKEN").send(
-            {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
-        )
+    with pytest.raises(tools_mcp_http.MCPHttpError) as caught:
+        tools_mcp_http.HttpTransport(
+            name="s", url="https://h/mcp", token_env="MCP_TEST_TOKEN"
+        ).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
     assert "DEADBEEF" not in str(caught.value)
     assert "not a usable header value" in str(caught.value)
 
@@ -365,10 +369,10 @@ def test_an_unreachable_server_never_quotes_the_exception_text(
     from HTTPError, so a narrower catch let an operator typo crash the run.
     """
     monkeypatch.setenv("MCP_TEST_TOKEN", "s3cr3t")
-    with pytest.raises(MCPHttpError) as caught:
-        HttpTransport(name="s", url="http://[::1/mcp", token_env="MCP_TEST_TOKEN").send(
-            {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
-        )
+    with pytest.raises(tools_mcp_http.MCPHttpError) as caught:
+        tools_mcp_http.HttpTransport(
+            name="s", url="http://[::1/mcp", token_env="MCP_TEST_TOKEN"
+        ).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
     assert "s3cr3t" not in str(caught.value)
     assert "unreachable" in str(caught.value)
 
@@ -385,8 +389,10 @@ def test_a_body_is_capped_while_it_arrives_not_after() -> None:
     try:
         tracemalloc.start()
         try:
-            with pytest.raises(MCPHttpError, match="larger than"):
-                HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=30.0)
+            with pytest.raises(tools_mcp_http.MCPHttpError, match="larger than"):
+                tools_mcp_http.HttpTransport(name="s", url=url).send(
+                    {"jsonrpc": "2.0", "id": 1}, timeout_s=30.0
+                )
             peak = tracemalloc.get_traced_memory()[1]
         finally:
             tracemalloc.stop()
@@ -407,7 +413,7 @@ def test_an_ambient_proxy_does_not_capture_the_token(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("MCP_TEST_TOKEN", "s3cr3t")
     url, seen, httpd = _serve(_mcp_reply)
     try:
-        HttpTransport(name="s", url=url, token_env="MCP_TEST_TOKEN").send(
+        tools_mcp_http.HttpTransport(name="s", url=url, token_env="MCP_TEST_TOKEN").send(
             {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
         )
     finally:
@@ -422,47 +428,37 @@ def test_another_requests_answer_is_not_taken_as_this_one() -> None:
     message first; the stdio reader checks the id, and taking the first frame hands the model
     another call's answer.
     """
-    from agent6.tools.mcp_client import (
-        MCPError,
-        _MCPServer,  # pyright: ignore[reportPrivateUsage]
-    )
-
     body = (
         b'data: {"jsonrpc":"2.0","id":4242,"result":"ANOTHER ANSWER"}\n\n'
         b'data: {"jsonrpc":"2.0","id":1,"result":"MINE"}\n\n'
     )
     url, _seen, httpd = _serve(None, sse=True, body=body)
     try:
-        srv = _MCPServer(  # pyright: ignore[reportPrivateUsage]
+        srv = mcp_client._MCPServer(  # pyright: ignore[reportPrivateUsage]
             name="s",
             command=(),
             startup_timeout_s=5.0,
             call_timeout_s=5.0,
-            http=HttpTransport(name="s", url=url),
+            http=tools_mcp_http.HttpTransport(name="s", url=url),
         )
-        with pytest.raises(MCPError, match="a response to id 4242"):
+        with pytest.raises(mcp_client.MCPError, match="a response to id 4242"):
             srv._request("tools/call", {}, timeout_s=5.0)  # pyright: ignore[reportPrivateUsage]
     finally:
         httpd.shutdown()
 
 
 def test_a_server_request_is_not_taken_as_a_response() -> None:
-    from agent6.tools.mcp_client import (
-        MCPError,
-        _MCPServer,  # pyright: ignore[reportPrivateUsage]
-    )
-
     body = b'data: {"jsonrpc":"2.0","id":1,"method":"sampling/createMessage","params":{}}\n\n'
     url, _seen, httpd = _serve(None, sse=True, body=body)
     try:
-        srv = _MCPServer(  # pyright: ignore[reportPrivateUsage]
+        srv = mcp_client._MCPServer(  # pyright: ignore[reportPrivateUsage]
             name="s",
             command=(),
             startup_timeout_s=5.0,
             call_timeout_s=5.0,
-            http=HttpTransport(name="s", url=url),
+            http=tools_mcp_http.HttpTransport(name="s", url=url),
         )
-        with pytest.raises(MCPError, match="its own"):
+        with pytest.raises(mcp_client.MCPError, match="its own"):
             srv._request("tools/call", {}, timeout_s=5.0)  # pyright: ignore[reportPrivateUsage]
     finally:
         httpd.shutdown()
@@ -484,7 +480,9 @@ def test_every_spec_legal_sse_framing_is_read(body: bytes) -> None:
     """A line scan rejected all of these as invalid JSON."""
     url, _seen, httpd = _serve(None, sse=True, body=body)
     try:
-        got = HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
+        got = tools_mcp_http.HttpTransport(name="s", url=url).send(
+            {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
+        )
         assert got is not None and got["result"] == "ok"
     finally:
         httpd.shutdown()
@@ -501,7 +499,9 @@ def test_a_line_separator_inside_a_json_string_does_not_cut_the_message() -> Non
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "result": f"a{sep}bc"})
     url, _seen, httpd = _serve(None, sse=True, body=f"data: {payload}\n\n".encode())
     try:
-        got = HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
+        got = tools_mcp_http.HttpTransport(name="s", url=url).send(
+            {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
+        )
         assert got is not None and got["result"] == f"a{sep}bc"
     finally:
         httpd.shutdown()

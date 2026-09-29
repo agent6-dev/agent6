@@ -7,14 +7,13 @@ A probe in a throwaway directory cannot start a server whose script lives in the
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.app._setup import MCPServerSpec
 from agent6.config import Config
-from agent6.sandbox.jail import JailUnavailableError, SessionNetwork
-from agent6.tools.mcp_client import MCPToolDescriptor
+from agent6.sandbox import jail
+from agent6.tools import mcp_client
 from agent6.ui.cli import check_cmds
 
 # The interpreter a jailed probe can reach: the run's sandbox grants /usr, not the venv.
@@ -44,8 +43,8 @@ def test_an_http_only_mcp_check_does_not_create_a_command_network(
             self.networks = {"remote": "host"}
             self.failures: tuple[()] = ()
 
-        def descriptors(self) -> list[MCPToolDescriptor]:
-            return [MCPToolDescriptor("remote", "ping", "", {})]
+        def descriptors(self) -> list[mcp_client.MCPToolDescriptor]:
+            return [mcp_client.MCPToolDescriptor("remote", "ping", "", {})]
 
         def close(self) -> None:
             return None
@@ -54,12 +53,12 @@ def test_an_http_only_mcp_check_does_not_create_a_command_network(
         return "strict"
 
     def _start(
-        _specs: list[MCPServerSpec], *, session_net: SessionNetwork | None = None
+        _specs: list[mcp_client.MCPServerSpec], *, session_net: jail.SessionNetwork | None = None
     ) -> _Manager:
         assert session_net is None
         return _Manager()
 
-    def _unexpected_network() -> SessionNetwork:
+    def _unexpected_network() -> jail.SessionNetwork:
         raise AssertionError("HTTP-only check created a command session network")
 
     monkeypatch.setattr(check_cmds, "detect_env", object)
@@ -83,8 +82,8 @@ def test_mcp_check_reports_a_session_network_refusal(
     def _strict(_requested: str, _env: object) -> str:
         return "strict"
 
-    def _refuse_network() -> SessionNetwork:
-        raise JailUnavailableError("the session network could not be created: denied")
+    def _refuse_network() -> jail.SessionNetwork:
+        raise jail.JailUnavailableError("the session network could not be created: denied")
 
     monkeypatch.setattr(check_cmds, "detect_env", object)
     monkeypatch.setattr(check_cmds, "resolve_isolation", _strict)
@@ -112,7 +111,7 @@ def test_mcp_check_reports_a_session_network_refusal(
 
 @pytest.mark.needs_namespaces
 def test_a_server_script_inside_the_workspace_is_checked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A server script inside the workspace is checked.
 

@@ -9,20 +9,19 @@ state-dir denial for exactly the memory dir and nothing else.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
+from agent6 import kinds
+from agent6 import memory as agent6_memory
 from agent6.config import Config
 from agent6.harness import _prompt_blocks as pb
-from agent6.kinds import RepoSummary
-from agent6.memory import INDEX_INJECT_CAP, add, memory_dir
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.errors import ToolError
+from agent6.tools import dispatch, errors
 
 
-def _repo(root: Path) -> RepoSummary:
-    return RepoSummary(
+def _repo(root: pathlib.Path) -> kinds.RepoSummary:
+    return kinds.RepoSummary(
         root=root,
         branch="main",
         head_sha="0" * 40,
@@ -33,7 +32,7 @@ def _repo(root: Path) -> RepoSummary:
     )
 
 
-def _build(mode: str, index: str, tmp_path: Path) -> str:
+def _build(mode: str, index: str, tmp_path: pathlib.Path) -> str:
     return pb.build_system_prompt(
         config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
         repo=_repo(tmp_path),
@@ -44,7 +43,7 @@ def _build(mode: str, index: str, tmp_path: Path) -> str:
     )
 
 
-def test_run_mode_always_carries_the_memory_header(tmp_path: Path) -> None:
+def test_run_mode_always_carries_the_memory_header(tmp_path: pathlib.Path) -> None:
     out = _build("run", "", tmp_path)
     assert "<memory>" in out
     assert "(none recorded yet; an index line is `- <name>: <one line>`)" in out
@@ -53,37 +52,39 @@ def test_run_mode_always_carries_the_memory_header(tmp_path: Path) -> None:
     assert "deleted" in memory
 
 
-def test_index_content_renders_and_clips(tmp_path: Path) -> None:
+def test_index_content_renders_and_clips(tmp_path: pathlib.Path) -> None:
     out = _build("run", "- fact: the hook", tmp_path)
     assert "- fact: the hook" in out
     big = "\n".join(f"- fact-{i}: {'x' * 80}" for i in range(200))
     out = _build("run", big, tmp_path)
     assert "index clipped" in out
     body = out.split("<memory>", 1)[1].split("\n\n", 1)[1].split("\n</memory>", 1)[0]
-    assert len(body) <= INDEX_INJECT_CAP
+    assert len(body) <= agent6_memory.INDEX_INJECT_CAP
 
 
-def test_an_index_of_one_long_line_keeps_its_head(tmp_path: Path) -> None:
+def test_an_index_of_one_long_line_keeps_its_head(tmp_path: pathlib.Path) -> None:
     """A single index line longer than the cap rendered the clip marker alone."""
-    big = "- fact: " + "x" * (INDEX_INJECT_CAP + 500)
+    big = "- fact: " + "x" * (agent6_memory.INDEX_INJECT_CAP + 500)
     out = _build("run", big, tmp_path)
     assert "index clipped" in out
     assert "- fact: " + "x" * 100 in out
     body = out.split("<memory>", 1)[1].split("\n\n", 1)[1].split("\n</memory>", 1)[0]
-    assert len(body) <= INDEX_INJECT_CAP
+    assert len(body) <= agent6_memory.INDEX_INJECT_CAP
 
 
-def test_readonly_modes_render_only_with_content(tmp_path: Path) -> None:
+def test_readonly_modes_render_only_with_content(tmp_path: pathlib.Path) -> None:
     assert "<memory>" not in _build("plan", "", tmp_path)
     assert "<memory>" in _build("plan", "- fact: hook", tmp_path)
     assert "<memory>" not in _build("ask", "", tmp_path)
 
 
-def test_agent_mode_never_sees_memory(tmp_path: Path) -> None:
+def test_agent_mode_never_sees_memory(tmp_path: pathlib.Path) -> None:
     assert "<memory>" not in _build("agent", "- fact: hook", tmp_path)
 
 
-def _dispatcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ToolDispatcher, Path]:
+def _dispatcher(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[dispatch.ToolDispatcher, pathlib.Path]:
     """The real topology: the state dir sits under the hidden state home.
 
     The memory grant must beat the denial; a resolve-path denial check that bypasses the exemption
@@ -95,13 +96,13 @@ def _dispatcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ToolDi
     (repo / "code.py").write_text("x = 1\n")
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "statehome"))
     state = tmp_path / "statehome" / "repo-id"
-    add(state, "seeded", "a seeded fact")
+    agent6_memory.add(state, "seeded", "a seeded fact")
     cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
-    return ToolDispatcher(root=repo, config=cfg, state_dir=state), state
+    return dispatch.ToolDispatcher(root=repo, config=cfg, state_dir=state), state
 
 
 def test_tools_reach_the_memory_dir_and_nothing_else_in_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The carve-out pin: the tools reach the memory dir and nothing else in the state dir.
 
@@ -109,7 +110,7 @@ def test_tools_reach_the_memory_dir_and_nothing_else_in_state(
     rest of the state dir stays refused (denied beats every grant, except this one exempt subtree).
     """
     d, state = _dispatcher(tmp_path, monkeypatch)
-    mem = memory_dir(state)
+    mem = agent6_memory.memory_dir(state)
 
     out = d.dispatch("read_file", {"path": str(mem / "MEMORY.md")}).to_wire()
     assert "seeded" in out["content"]
@@ -124,9 +125,9 @@ def test_tools_reach_the_memory_dir_and_nothing_else_in_state(
     assert (mem / "new-fact.md").read_text() == "learned\n"
 
     (state / "secretish.txt").write_text("run state\n")
-    with pytest.raises(ToolError):
+    with pytest.raises(errors.ToolError):
         d.dispatch("read_file", {"path": str(state / "secretish.txt")})
-    with pytest.raises(ToolError):
+    with pytest.raises(errors.ToolError):
         d.dispatch(
             "apply_edit",
             {
@@ -136,17 +137,17 @@ def test_tools_reach_the_memory_dir_and_nothing_else_in_state(
         )
 
 
-def test_memory_grant_absent_without_state_dir(tmp_path: Path) -> None:
+def test_memory_grant_absent_without_state_dir(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
-    d = ToolDispatcher(root=repo, config=cfg)
-    with pytest.raises(ToolError):
+    d = dispatch.ToolDispatcher(root=repo, config=cfg)
+    with pytest.raises(errors.ToolError):
         d.dispatch("read_file", {"path": str(tmp_path / "state" / "memory" / "MEMORY.md")})
 
 
 def test_the_memory_dir_exists_the_moment_the_grant_does(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The memory dir exists the moment the grant does.
 
@@ -160,13 +161,13 @@ def test_the_memory_dir_exists_the_moment_the_grant_does(
     state = tmp_path / "statehome" / "repo-id"
     state.mkdir(parents=True)
     cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
-    assert not memory_dir(state).exists()
-    ToolDispatcher(root=repo, config=cfg, state_dir=state)
-    assert memory_dir(state).is_dir()
+    assert not agent6_memory.memory_dir(state).exists()
+    dispatch.ToolDispatcher(root=repo, config=cfg, state_dir=state)
+    assert agent6_memory.memory_dir(state).is_dir()
 
 
 def test_a_memory_write_does_not_withdraw_a_green_verify(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A memory write does not withdraw a green verify.
 
@@ -175,27 +176,22 @@ def test_a_memory_write_does_not_withdraw_a_green_verify(
     a tree edit, and the run ends gate_red_at_base with all_passed=false over the suite it just
     fixed.
     """
-    from unittest.mock import MagicMock
+    from unittest import mock
 
-    from agent6.harness.loop import (
-        Harness,
-        LoopState,
-        TurnState,
-    )
-    from agent6.memory import memory_dir
+    from agent6.harness import _loop_state, loop
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "statehome"))
     state_dir = tmp_path / "statehome" / "repo-id"
     state_dir.mkdir(parents=True)
 
-    wf = Harness.__new__(Harness)
+    wf = loop.Harness.__new__(loop.Harness)
     wf.state_dir = state_dir
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_pass()
-    turn = MagicMock(spec=TurnState)
-    target = memory_dir(state_dir) / "fact.md"
+    turn = mock.MagicMock(spec=_loop_state.TurnState)
+    target = agent6_memory.memory_dir(state_dir) / "fact.md"
 
-    result = MagicMock()
+    result = mock.MagicMock()
     result.path = "fact.md"  # the store-relative spelling EditResult uses
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "apply_edit", result, {"path": str(target), "edits": []}

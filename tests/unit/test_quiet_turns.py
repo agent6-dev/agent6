@@ -8,25 +8,13 @@ each bounded.
 
 from __future__ import annotations
 
-from agent6.harness._loop_state import LoopState
-from agent6.harness._nudges import (
-    QUESTION_NUDGE,
-    SILENT_NO_WORK_NUDGE,
-    SILENT_NO_WORK_PATIENCE,
-    WENT_QUIET_NUDGE,
-)
-from agent6.harness._quiet_turns import (
-    SILENT_NO_WORK_UNTIL,
-    question_in_prose,
-    silent_no_work,
-    went_quiet,
-)
+from agent6.harness import _loop_state, _nudges, _quiet_turns
 from agent6.providers import ProviderResponse
 from tests.unit.turn_context import turn_context
 
 
-def _state() -> LoopState:
-    return LoopState(original_task="t", tool_calls=0)
+def _state() -> _loop_state.LoopState:
+    return _loop_state.LoopState(original_task="t", tool_calls=0)
 
 
 def _empty(output_tokens: int = 0, *, starved: bool = False) -> ProviderResponse:
@@ -45,41 +33,46 @@ def _empty(output_tokens: int = 0, *, starved: bool = False) -> ProviderResponse
 def test_an_early_prose_stall_is_steered_back_a_bounded_number_of_times() -> None:
     state = _state()
     early = turn_context(iteration=2)
-    answers = [silent_no_work(state, early) for _ in range(SILENT_NO_WORK_PATIENCE + 1)]
+    answers = [
+        _quiet_turns.silent_no_work(state, early)
+        for _ in range(_nudges.SILENT_NO_WORK_PATIENCE + 1)
+    ]
     assert [a is not None for a in answers] == [True, True, False]
     first = answers[0]
-    assert first is not None and first.text == SILENT_NO_WORK_NUDGE
+    assert first is not None and first.text == _nudges.SILENT_NO_WORK_NUDGE
     assert first.event == "loop.silent_no_work.nudge"
     assert first.fields == {"iteration": 2, "nudges_used": 1}
     assert first.log == "  silent finish rejected: no work yet (nudge #1) at iter 2"
-    late = turn_context(iteration=SILENT_NO_WORK_UNTIL + 1)
-    assert silent_no_work(_state(), late) is None
+    late = turn_context(iteration=_quiet_turns.SILENT_NO_WORK_UNTIL + 1)
+    assert _quiet_turns.silent_no_work(_state(), late) is None
     edited = _state()
     edited.ever_edited = True
-    assert silent_no_work(edited, early) is None
-    assert silent_no_work(_state(), turn_context(iteration=2, mode="ask")) is None
+    assert _quiet_turns.silent_no_work(edited, early) is None
+    assert _quiet_turns.silent_no_work(_state(), turn_context(iteration=2, mode="ask")) is None
 
 
 def test_a_question_in_prose_draws_one_nudge_per_run() -> None:
     state = _state()
-    nudge = question_in_prose(state, turn_context(iteration=5), "Should I keep squash?")
-    assert nudge is not None and nudge.text == QUESTION_NUDGE
+    nudge = _quiet_turns.question_in_prose(
+        state, turn_context(iteration=5), "Should I keep squash?"
+    )
+    assert nudge is not None and nudge.text == _nudges.QUESTION_NUDGE
     assert nudge.event == "loop.question_nudge" and nudge.fields == {"iteration": 5}
-    assert question_in_prose(state, turn_context(), "And this one?") is None
-    assert question_in_prose(_state(), turn_context(), "Done.") is None
-    assert question_in_prose(_state(), turn_context(mode="plan"), "Which?") is None
+    assert _quiet_turns.question_in_prose(state, turn_context(), "And this one?") is None
+    assert _quiet_turns.question_in_prose(_state(), turn_context(), "Done.") is None
+    assert _quiet_turns.question_in_prose(_state(), turn_context(mode="plan"), "Which?") is None
 
 
 def test_an_empty_turn_is_nudged_up_to_the_cap_with_the_starved_wording() -> None:
     state = _state()
     ctx = turn_context(iteration=3, went_quiet_max_nudges=2)
-    first = went_quiet(state, ctx, _empty())
-    assert first is not None and first.text == WENT_QUIET_NUDGE
+    first = _quiet_turns.went_quiet(state, ctx, _empty())
+    assert first is not None and first.text == _nudges.WENT_QUIET_NUDGE
     assert first.event == "loop.went_quiet.nudge"
     assert first.fields == {"iteration": 3, "nudges_used": 1, "nudges_max": 2, "output_tokens": 0}
-    second = went_quiet(state, ctx, _empty(900, starved=True))
+    second = _quiet_turns.went_quiet(state, ctx, _empty(900, starved=True))
     assert second is not None and "900 tokens" in second.text
-    assert went_quiet(state, ctx, _empty()) is None
+    assert _quiet_turns.went_quiet(state, ctx, _empty()) is None
 
 
 def test_the_config_knob_sets_the_cap() -> None:
@@ -87,6 +80,8 @@ def test_the_config_knob_sets_the_cap() -> None:
 
     0 ends the run on the first empty turn (no nudge), and the default caps the streak at 4.
     """
-    assert went_quiet(_state(), turn_context(went_quiet_max_nudges=0), _empty()) is None
-    default = went_quiet(_state(), turn_context(), _empty())
+    assert (
+        _quiet_turns.went_quiet(_state(), turn_context(went_quiet_max_nudges=0), _empty()) is None
+    )
+    default = _quiet_turns.went_quiet(_state(), turn_context(), _empty())
     assert default is not None and default.fields["nudges_max"] == 4

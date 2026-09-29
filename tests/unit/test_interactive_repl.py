@@ -9,23 +9,20 @@ Empty input and `/continue` continue, `/quit` and EOF stop, `/cost` prints the b
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
-from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
-from agent6.budget import BudgetTracker
-from agent6.harness._chain import RunChain
-from agent6.harness._operator import OperatorBridge
-from agent6.paths import state_dir
-from agent6.ui.cli._repl import REPL_HELP
-from agent6.ui.cli.run import build_repl_hook  # pyright: ignore[reportPrivateUsage]
-from agent6.ui.steer import SteerState
+from agent6 import budget, paths
+from agent6.harness import _chain, _operator
+from agent6.ui import steer
+from agent6.ui.cli import _repl
 
 
-def _init_repo(path: Path) -> None:
+def _init_repo(path: pathlib.Path) -> None:
     subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
     subprocess.run(["git", "-C", str(path), "config", "user.email", "t@t"], check=True)
     subprocess.run(["git", "-C", str(path), "config", "user.name", "t"], check=True)
@@ -34,7 +31,7 @@ def _init_repo(path: Path) -> None:
     subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "init"], check=True)
 
 
-def _commit(path: Path, name: str, body: str, msg: str) -> str:
+def _commit(path: pathlib.Path, name: str, body: str, msg: str) -> str:
     (path / name).write_text(body, encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", msg], check=True)
@@ -50,12 +47,12 @@ def _commit(path: Path, name: str, body: str, msg: str) -> str:
 # --- _build_repl_hook dispatch -------------------------------------------
 
 
-def _budget() -> BudgetTracker:
-    return BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+def _budget() -> budget.BudgetTracker:
+    return budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
 
 
 def test_hook_pauses_the_console_heartbeat_while_prompting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The REPL prompt sits inside the console view's pause(), or the heartbeat erases it."""
     states: list[str] = []
@@ -76,19 +73,21 @@ def test_hook_pauses_the_console_heartbeat_while_prompting(
         return ""
 
     monkeypatch.setattr("builtins.input", _input)
-    hook = build_repl_hook(tmp_path, _budget(), console_view=_FakeConsole())  # type: ignore[arg-type]
+    hook = _repl.build_repl_hook(tmp_path, _budget(), console_view=_FakeConsole())  # type: ignore[arg-type]
     assert hook(1, "a" * 40) == "continue"
     assert states == ["paused", "resumed"]
 
 
-def test_hook_empty_input_continues(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hook_empty_input_continues(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr("builtins.input", lambda _p="": "")
-    hook = build_repl_hook(tmp_path, _budget())
+    hook = _repl.build_repl_hook(tmp_path, _budget())
     assert hook(1, "deadbeefcafe1234") == "continue"
 
 
-def _steer(*, armed: bool) -> SteerState:
-    return SteerState(
+def _steer(*, armed: bool) -> steer.SteerState:
+    return steer.SteerState(
         requested=lambda: False,
         clear=lambda: None,
         prompt=lambda: None,
@@ -101,7 +100,7 @@ def _steer(*, armed: bool) -> SteerState:
 
 
 def test_the_banner_names_a_ctrl_c_pause_armed_during_the_commit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A Ctrl-C during the committing step arms a pause whose menu opens after this prompt.
 
@@ -109,56 +108,56 @@ def test_the_banner_names_a_ctrl_c_pause_armed_during_the_commit(
     """
     monkeypatch.setattr("builtins.input", lambda _p="": "/continue")
     assert (
-        build_repl_hook(tmp_path, _budget(), steer_cell=[_steer(armed=True)])(2, "abc")
+        _repl.build_repl_hook(tmp_path, _budget(), steer_cell=[_steer(armed=True)])(2, "abc")
         == "continue"
     )
     assert "Ctrl-C pause armed: the steer menu opens after /continue" in capsys.readouterr().err
     assert (
-        build_repl_hook(tmp_path, _budget(), steer_cell=[_steer(armed=False)])(3, "abc")
+        _repl.build_repl_hook(tmp_path, _budget(), steer_cell=[_steer(armed=False)])(3, "abc")
         == "continue"
     )
     assert "pause armed" not in capsys.readouterr().err
 
 
-def test_hook_slash_continue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hook_slash_continue(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("builtins.input", lambda _p="": "/continue")
-    hook = build_repl_hook(tmp_path, _budget())
+    hook = _repl.build_repl_hook(tmp_path, _budget())
     assert hook(2, "abc") == "continue"
 
 
-def test_hook_quit_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hook_quit_stops(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("builtins.input", lambda _p="": "/quit")
-    hook = build_repl_hook(tmp_path, _budget())
+    hook = _repl.build_repl_hook(tmp_path, _budget())
     assert hook(3, "abc") == "stop"
 
 
 def test_hook_exit_is_the_loops_exit_directive(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`/exit` stops and leaves: the run ends `steer_exit`, which the follow-up prompt skips."""
     monkeypatch.setattr("builtins.input", lambda _p="": "/exit")
-    hook = build_repl_hook(tmp_path, _budget())
+    hook = _repl.build_repl_hook(tmp_path, _budget())
     assert hook(3, "abc") == "exit"
-    assert "/exit" in REPL_HELP
+    assert "/exit" in _repl.REPL_HELP
 
 
-def test_hook_eof_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hook_eof_stops(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def _raise(_p: str = "") -> str:
         raise EOFError
 
     monkeypatch.setattr("builtins.input", _raise)
-    hook = build_repl_hook(tmp_path, _budget())
+    hook = _repl.build_repl_hook(tmp_path, _budget())
     assert hook(1, "abc") == "stop"
 
 
 def test_hook_ctrl_c_stops_without_calling_it_eof(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     def _raise(_p: str = "") -> str:
         raise KeyboardInterrupt
 
     monkeypatch.setattr("builtins.input", _raise)
-    hook = build_repl_hook(tmp_path, _budget())
+    hook = _repl.build_repl_hook(tmp_path, _budget())
     assert hook(1, "abc") == "stop"
     err = capsys.readouterr().err
     assert "Ctrl-C - stopping interactively" in err
@@ -166,23 +165,23 @@ def test_hook_ctrl_c_stops_without_calling_it_eof(
 
 
 def test_hook_cost_reprompts_then_continues(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     answers = iter(["/cost", ""])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
-    hook = build_repl_hook(tmp_path, _budget())
+    hook = _repl.build_repl_hook(tmp_path, _budget())
     assert hook(1, "abc") == "continue"
 
 
-def test_hook_unknown_reprompts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hook_unknown_reprompts(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     answers = iter(["/wat", "/quit"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
-    hook = build_repl_hook(tmp_path, _budget())
+    hook = _repl.build_repl_hook(tmp_path, _budget())
     assert hook(1, "abc") == "stop"
 
 
 def test_hook_undo_is_the_loops_undo_directive(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`/undo` hands the loop its own undo (fork back before the last message), touching no git.
 
@@ -192,7 +191,7 @@ def test_hook_undo_is_the_loops_undo_directive(
     head = _commit(tmp_path, "b.txt", "theirs\n", "the operator's commit")
     answers = iter(["/undo"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
-    hook = build_repl_hook(tmp_path, _budget())
+    hook = _repl.build_repl_hook(tmp_path, _budget())
     assert hook(1, "abc") == "undo"
     assert (tmp_path / "b.txt").exists()
     argv = ["git", "-C", str(tmp_path), "rev-parse", "HEAD"]
@@ -204,13 +203,13 @@ def test_hook_undo_is_the_loops_undo_directive(
 
 def test_after_auto_commit_default_continues() -> None:
     """Default hook is a no-op lambda returning "continue"."""
-    from agent6.harness.loop import Harness
+    from agent6.harness import loop
 
-    wf = Harness(
-        chain=RunChain(Path("/tmp")),
-        config=MagicMock(
-            prompt=MagicMock(system_prompt_file=""),
-            harness=MagicMock(
+    wf = loop.Harness(
+        chain=_chain.RunChain(pathlib.Path("/tmp")),
+        config=mock.MagicMock(
+            prompt=mock.MagicMock(system_prompt_file=""),
+            harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -220,8 +219,8 @@ def test_after_auto_commit_default_continues() -> None:
                 verify_retries=2,
             ),
         ),
-        provider=MagicMock(),
-        dispatcher=MagicMock(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
         logger=lambda _m: None,
     )
     # Field exists and defaults to the no-op shape.
@@ -230,7 +229,7 @@ def test_after_auto_commit_default_continues() -> None:
 
 def test_after_auto_commit_field_is_overridable() -> None:
     """Custom hook is honoured (called with iteration + sha)."""
-    from agent6.harness.loop import Harness
+    from agent6.harness import loop
 
     calls: list[tuple[int, str]] = []
 
@@ -238,11 +237,11 @@ def test_after_auto_commit_field_is_overridable() -> None:
         calls.append((it, sha))
         return "stop"
 
-    wf = Harness(
-        chain=RunChain(Path("/tmp")),
-        config=MagicMock(
-            prompt=MagicMock(system_prompt_file=""),
-            harness=MagicMock(
+    wf = loop.Harness(
+        chain=_chain.RunChain(pathlib.Path("/tmp")),
+        config=mock.MagicMock(
+            prompt=mock.MagicMock(system_prompt_file=""),
+            harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -252,10 +251,10 @@ def test_after_auto_commit_field_is_overridable() -> None:
                 verify_retries=2,
             ),
         ),
-        provider=MagicMock(),
-        dispatcher=MagicMock(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
         logger=lambda _m: None,
-        bridge=OperatorBridge(after_auto_commit=hook),
+        bridge=_operator.OperatorBridge(after_auto_commit=hook),
     )
     assert wf.bridge.after_auto_commit(7, "deadbeef") == "stop"
     assert calls == [(7, "deadbeef")]
@@ -264,63 +263,63 @@ def test_after_auto_commit_field_is_overridable() -> None:
 # --- steer marker self-heals on a dismissed/timed-out TUI modal ------------
 
 
-def _tui_live(_session_dir: Path) -> bool:
+def _tui_live(_session_dir: pathlib.Path) -> bool:
     return True
 
 
-def _answer_none(_session_dir: Path) -> str | None:
+def _answer_none(_session_dir: pathlib.Path) -> str | None:
     return None  # modal dismissed / read_steer_answer timed out
 
 
-def _answer_text(_session_dir: Path) -> str | None:
+def _answer_text(_session_dir: pathlib.Path) -> str | None:
     return "do the thing"
 
 
 def test_steer_prompt_clears_request_marker_on_no_answer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A dismissed steer modal clears the `steer.request` marker; no later boundary re-blocks."""
-    from agent6.sessions.ipc import request_steer, steer_request_pending
+    from agent6.sessions import ipc
     from agent6.ui.cli import _steer
 
     session_dir = tmp_path
-    request_steer(session_dir)  # TUI `s`-key dropped the marker
-    assert steer_request_pending(session_dir)
+    ipc.request_steer(session_dir)  # TUI `s`-key dropped the marker
+    assert ipc.steer_request_pending(session_dir)
 
     # TUI is live but the modal yields no answer (dismissed / 600s timeout).
     monkeypatch.setattr(_steer, "frontend_is_live", _tui_live)
     monkeypatch.setattr(_steer, "read_steer_answer", _answer_none)
 
-    state = _steer.install_steer_sigint(MagicMock(), session_dir)
+    state = _steer.install_steer_sigint(mock.MagicMock(), session_dir)
     try:
         assert state.requested() is True  # marker seen -> would prompt
         assert state.prompt() is None  # dismissed modal
         # The marker is gone, so the next boundary does NOT re-trigger a steer.
-        assert not steer_request_pending(session_dir)
+        assert not ipc.steer_request_pending(session_dir)
         assert state.requested() is False
     finally:
         state.restore()
 
 
 def test_steer_prompt_keeps_marker_on_real_answer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An answered steer returns the answer and leaves clearing to the caller's clear()."""
-    from agent6.sessions.ipc import request_steer, steer_request_pending
+    from agent6.sessions import ipc
     from agent6.ui.cli import _steer
 
     session_dir = tmp_path
-    request_steer(session_dir)
+    ipc.request_steer(session_dir)
     monkeypatch.setattr(_steer, "frontend_is_live", _tui_live)
     monkeypatch.setattr(_steer, "read_steer_answer", _answer_text)
 
-    state = _steer.install_steer_sigint(MagicMock(), session_dir)
+    state = _steer.install_steer_sigint(mock.MagicMock(), session_dir)
     try:
         assert state.prompt() == "do the thing"
         # prompt() must NOT clear on the answered path (caller's clear() owns it).
-        assert steer_request_pending(session_dir)
+        assert ipc.steer_request_pending(session_dir)
         state.clear()  # caller clears after consuming the answer
-        assert not steer_request_pending(session_dir)
+        assert not ipc.steer_request_pending(session_dir)
     finally:
         state.restore()
 
@@ -328,10 +327,9 @@ def test_steer_prompt_keeps_marker_on_real_answer(
 def test_mcp_lists_a_running_server_that_exposes_no_tools(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from agent6.tools.mcp_client import MCPManager
-    from agent6.ui.cli._repl import repl_list_mcp
+    from agent6.tools import mcp_client
 
-    repl_list_mcp(MCPManager(networks={"empty-server": "strict"}))
+    _repl.repl_list_mcp(mcp_client.MCPManager(networks={"empty-server": "strict"}))
 
     out = capsys.readouterr()
     assert "1 server(s)" in out.out
@@ -341,26 +339,28 @@ def test_mcp_lists_a_running_server_that_exposes_no_tools(
 
 def test_mcp_lists_a_server_that_failed_to_start(capsys: pytest.CaptureFixture[str]) -> None:
     """The MCP listing names every configured server, a failed start included."""
-    from agent6.tools.mcp_client import MCPManager, MCPStartFailure
-    from agent6.ui.cli._repl import repl_list_mcp
+    from agent6.tools import mcp_client
 
-    repl_list_mcp(MCPManager(failures=(MCPStartFailure(name="browser", error="no such binary"),)))
+    _repl.repl_list_mcp(
+        mcp_client.MCPManager(
+            failures=(mcp_client.MCPStartFailure(name="browser", error="no such binary"),)
+        )
+    )
 
     assert "browser: failed to start (no such binary)" in capsys.readouterr().out
 
 
 def test_watch_shows_audit_events_not_streaming_fragments(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`/watch` shows the audit lines every other log view shows, not raw delta fragments."""
     import json
 
-    from agent6.sessions.layout import SessionLayout
-    from agent6.ui.cli._repl import repl_show_recent_events
+    from agent6.sessions import layout as sessions_layout
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    layout = SessionLayout(
-        state_dir=state_dir(tmp_path), session_id="watchy-run-AAAAAA", subdir="runs"
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="watchy-run-AAAAAA", subdir="runs"
     )
     layout.session_dir.mkdir(parents=True)
     events: list[dict[str, object]] = [
@@ -374,7 +374,7 @@ def test_watch_shows_audit_events_not_streaming_fragments(
         {"type": "tool.result", "ts": "2026-01-01T00:00:03Z", "name": "read_file", "ok": True},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-    repl_show_recent_events(tmp_path, "watchy-run-AAAAAA", n=20)
+    _repl.repl_show_recent_events(tmp_path, "watchy-run-AAAAAA", n=20)
     out = capsys.readouterr()
     assert "thinking_delta" not in out.out and "loop.tool.call" not in out.out
     assert "tool.call" in out.out and "tool.result" in out.out and "session.start" in out.out
@@ -458,7 +458,7 @@ def test_bare_ask_from_a_background_process_group_refuses(
 
 
 def test_init_wizard_ctrl_c_aborts_init_not_the_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Ctrl-C at an /init wizard question aborts /init and returns to the REPL.
 
@@ -482,7 +482,7 @@ def test_init_wizard_ctrl_c_aborts_init_not_the_run(
 
     previous = signal.signal(signal.SIGINT, _execution_handler)
     try:
-        directive = build_repl_hook(tmp_path, _budget())(1, "a" * 40)
+        directive = _repl.build_repl_hook(tmp_path, _budget())(1, "a" * 40)
     except KeyboardInterrupt:
         pytest.fail("Ctrl-C in the /init wizard escaped the REPL hook: the run ends")
     finally:
@@ -493,7 +493,7 @@ def test_init_wizard_ctrl_c_aborts_init_not_the_run(
 
 
 def test_diff_ctrl_c_aborts_diff_not_the_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Ctrl-C while /diff prints aborts /diff and returns to the REPL, never past the hook."""
     import signal
@@ -507,7 +507,7 @@ def test_diff_ctrl_c_aborts_diff_not_the_run(
 
     previous = signal.signal(signal.SIGINT, signal.default_int_handler)
     try:
-        directive = build_repl_hook(tmp_path, _budget(), session_id="run-AAAAAA")(1, "a" * 40)
+        directive = _repl.build_repl_hook(tmp_path, _budget(), session_id="run-AAAAAA")(1, "a" * 40)
     except KeyboardInterrupt:
         pytest.fail("Ctrl-C during /diff escaped the REPL hook: the run ends interrupted")
     finally:

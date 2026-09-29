@@ -10,30 +10,24 @@ every front-end steer was silently dropped.
 from __future__ import annotations
 
 import builtins
-from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock
+import pathlib
+import types
+from unittest import mock
 
 import pytest
 
-from agent6.events import EventSink
-from agent6.harness._chain import RunChain
-from agent6.harness._operator import OperatorBridge
-from agent6.harness._provider_call import CallSettings
-from agent6.sessions.ipc import (
-    request_steer,
-    steer_request_pending,
-    submit_steer,
-    write_steer_answer,
-)
-from agent6.ui.cli._steer import file_bridge_steer, install_steer_sigint, make_steer_state
+from agent6 import events as agent6_events
+from agent6.harness import _chain, _operator, _provider_call
+from agent6.sessions import ipc as sessions_ipc
+from agent6.ui import steer as ui_steer
+from agent6.ui.cli import _steer
 
 
-def test_prompt_consumes_bridged_answer(tmp_path: Path) -> None:
-    steer = file_bridge_steer(tmp_path)
+def test_prompt_consumes_bridged_answer(tmp_path: pathlib.Path) -> None:
+    steer = ui_steer.file_bridge_steer(tmp_path)
     assert steer.requested() is False
-    write_steer_answer(tmp_path, "focus on the tests")
-    request_steer(tmp_path)
+    sessions_ipc.write_steer_answer(tmp_path, "focus on the tests")
+    sessions_ipc.request_steer(tmp_path)
     assert steer.requested() is True
     # The ruled default: a plain steer waits for the step boundary (aborting
     # the in-flight call wastes the streamed tokens); only the `now` urgency
@@ -43,8 +37,8 @@ def test_prompt_consumes_bridged_answer(tmp_path: Path) -> None:
     steer.clear()
     assert steer.requested() is False
 
-    write_steer_answer(tmp_path, "wrap up")
-    request_steer(tmp_path, now=True)
+    sessions_ipc.write_steer_answer(tmp_path, "wrap up")
+    sessions_ipc.request_steer(tmp_path, now=True)
     assert steer.requested() is True
     assert steer.interrupt() is True
     assert steer.prompt() == "wrap up"
@@ -52,22 +46,22 @@ def test_prompt_consumes_bridged_answer(tmp_path: Path) -> None:
 
 
 def test_prompt_without_answer_clears_request(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A dead/abandoned front-end yields None; the request marker must go with
     # it or the next loop boundary re-triggers another blocking read forever.
-    def no_answer(session_dir: Path) -> str | None:
+    def no_answer(session_dir: pathlib.Path) -> str | None:
         return None
 
     monkeypatch.setattr("agent6.ui.cli._steer.read_steer_answer", no_answer)
-    request_steer(tmp_path)
-    steer = file_bridge_steer(tmp_path)
+    sessions_ipc.request_steer(tmp_path)
+    steer = ui_steer.file_bridge_steer(tmp_path)
     assert steer.prompt() is None
-    assert steer_request_pending(tmp_path) is False
+    assert sessions_ipc.steer_request_pending(tmp_path) is False
 
 
 def test_make_steer_state_without_tty_uses_bridge(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     real_open = builtins.open
 
@@ -77,31 +71,31 @@ def test_make_steer_state_without_tty_uses_bridge(
         return real_open(file, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr("builtins.open", fake_open)
-    events = EventSink(tmp_path / "logs.jsonl")
-    steer = make_steer_state(events, tmp_path)
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    steer = _steer.make_steer_state(events, tmp_path)
     # The old null steer answered False here even with a request pending.
-    request_steer(tmp_path)
+    sessions_ipc.request_steer(tmp_path)
     assert steer.requested() is True
 
 
-def test_steer_answer_is_abort_peeks_without_consuming(tmp_path: Path) -> None:
+def test_steer_answer_is_abort_peeks_without_consuming(tmp_path: pathlib.Path) -> None:
     """The non-blocking stop peek is True only for abort or stop and never consumes the answer."""
-    from agent6.sessions.ipc import steer_answer_is_abort
-
-    assert not steer_answer_is_abort(tmp_path)  # no answer file yet
-    write_steer_answer(tmp_path, "focus on the parser")
-    assert not steer_answer_is_abort(tmp_path)  # a steering instruction is not a stop
-    write_steer_answer(tmp_path, "stop")
+    assert not sessions_ipc.steer_answer_is_abort(tmp_path)  # no answer file yet
+    sessions_ipc.write_steer_answer(tmp_path, "focus on the parser")
+    assert not sessions_ipc.steer_answer_is_abort(tmp_path)  # a steering instruction is not a stop
+    sessions_ipc.write_steer_answer(tmp_path, "stop")
     # Even "stop" is a steer instruction, not a stop -- the Stop button writes
     # "abort", and the between-step boundary stops only on "abort". Consistency.
-    assert not steer_answer_is_abort(tmp_path)
-    write_steer_answer(tmp_path, "  ABORT  ")
-    assert steer_answer_is_abort(tmp_path)  # exactly the Stop contract, case/space-insensitive
+    assert not sessions_ipc.steer_answer_is_abort(tmp_path)
+    sessions_ipc.write_steer_answer(tmp_path, "  ABORT  ")
+    assert sessions_ipc.steer_answer_is_abort(
+        tmp_path
+    )  # exactly the Stop contract, case/space-insensitive
     assert (tmp_path / "steer.answer").exists()  # peek did not consume it
     # A non-UTF-8 answer must read as "no abort", never raise -- a raising peek
     # would kill the streaming watchdog thread (and its idle-hang detection).
     (tmp_path / "steer.answer").write_bytes(b"\xff\xfe not utf8")
-    assert not steer_answer_is_abort(tmp_path)
+    assert not sessions_ipc.steer_answer_is_abort(tmp_path)
 
 
 def _silent_banner(text: str) -> None:
@@ -109,14 +103,14 @@ def _silent_banner(text: str) -> None:
 
 
 def test_sigint_escalates_boundary_interrupt_stop(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Ctrl-C's stages: pause at the next boundary, interrupt the in-flight call, stop."""
     import signal
 
     monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
-    events = EventSink(tmp_path / "logs.jsonl")
-    steer = install_steer_sigint(events, tmp_path)
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    steer = _steer.install_steer_sigint(events, tmp_path)
     try:
         assert steer.requested() is False
         signal.raise_signal(signal.SIGINT)  # 1st: graceful pause
@@ -133,7 +127,9 @@ def test_sigint_escalates_boundary_interrupt_stop(
         steer.restore()
 
 
-def test_sigint_at_the_pause_prompt_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sigint_at_the_pause_prompt_stops(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """At the pause prompt a Ctrl-C stops the run outright, whatever the stage.
 
     The banner promised it, and there is nothing in flight to interrupt.
@@ -148,8 +144,8 @@ def test_sigint_at_the_pause_prompt_stops(tmp_path: Path, monkeypatch: pytest.Mo
         return ""
 
     monkeypatch.setattr("agent6.ui.cli._steer.tty_prompt", prompt_hit_by_ctrl_c)
-    events = EventSink(tmp_path / "logs.jsonl")
-    steer = install_steer_sigint(events, tmp_path)
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    steer = _steer.install_steer_sigint(events, tmp_path)
     try:
         signal.raise_signal(signal.SIGINT)  # stage 1: the boundary pause
         with pytest.raises(KeyboardInterrupt):
@@ -159,7 +155,7 @@ def test_sigint_at_the_pause_prompt_stops(tmp_path: Path, monkeypatch: pytest.Mo
 
 
 def test_a_seeded_steer_is_the_answer_on_the_terminal_too(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The terminal steer path consumes an answer seeded before the loop's first boundary.
 
@@ -168,13 +164,13 @@ def test_a_seeded_steer_is_the_answer_on_the_terminal_too(
     """
     monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: True)
 
-    def no_menu(session_dir: Path, **_kw: object) -> str | None:
+    def no_menu(session_dir: pathlib.Path, **_kw: object) -> str | None:
         pytest.fail("the menu opened over a seeded steer")
 
     monkeypatch.setattr("agent6.ui.cli._steer.pause_menu", no_menu)
-    events = EventSink(tmp_path / "logs.jsonl")
-    submit_steer(tmp_path, "also add a test that mul(2, 0) == 0")
-    steer = install_steer_sigint(events, tmp_path)
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    sessions_ipc.submit_steer(tmp_path, "also add a test that mul(2, 0) == 0")
+    steer = _steer.install_steer_sigint(events, tmp_path)
     try:
         assert steer.requested()
         assert steer.prompt() == "also add a test that mul(2, 0) == 0"
@@ -184,13 +180,15 @@ def test_a_seeded_steer_is_the_answer_on_the_terminal_too(
     assert not (tmp_path / "steer.answer").exists()
 
 
-def test_prompt_pauses_the_console_spinner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_prompt_pauses_the_console_spinner(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The pause menu runs inside ConsoleView.pause(), out of the spinner's line-erase."""
     import contextlib
     from collections.abc import Generator
     from typing import cast
 
-    from agent6.ui.cli._console_view import ConsoleView
+    from agent6.ui.cli import _console_view
 
     calls: list[str] = []
 
@@ -203,13 +201,15 @@ def test_prompt_pauses_the_console_spinner(tmp_path: Path, monkeypatch: pytest.M
 
     monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: True)
 
-    def fake_menu(session_dir: Path, **_kw: object) -> str | None:
+    def fake_menu(session_dir: pathlib.Path, **_kw: object) -> str | None:
         calls.append("prompt")
         return "steer text"
 
     monkeypatch.setattr("agent6.ui.cli._steer.pause_menu", fake_menu)
-    events = EventSink(tmp_path / "logs.jsonl")
-    steer = install_steer_sigint(events, tmp_path, cast(ConsoleView, FakeView()))
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    steer = _steer.install_steer_sigint(
+        events, tmp_path, cast(_console_view.ConsoleView, FakeView())
+    )
     try:
         assert steer.prompt() == "steer text"
     finally:
@@ -227,8 +227,7 @@ def test_revision_selector_pauses_the_console_spinner(monkeypatch: pytest.Monkey
     from collections.abc import Generator
     from typing import cast
 
-    from agent6.ui.cli._console_view import ConsoleView
-    from agent6.ui.cli._steer import select_revised_prompt
+    from agent6.ui.cli import _console_view
 
     calls: list[str] = []
 
@@ -244,14 +243,16 @@ def test_revision_selector_pauses_the_console_spinner(monkeypatch: pytest.Monkey
         return "a"
 
     monkeypatch.setattr("builtins.input", fake_input)
-    out = select_revised_prompt("orig", "rev", (), cast("ConsoleView", FakeView()))
+    out = _steer.select_revised_prompt(
+        "orig", "rev", (), cast("_console_view.ConsoleView", FakeView())
+    )
     assert out == "rev"
     assert calls == ["pause", "prompt", "resume"]
     # And the bare (console_view=None) path still works.
-    assert select_revised_prompt("orig", "rev", ()) == "rev"
+    assert _steer.select_revised_prompt("orig", "rev", ()) == "rev"
 
 
-def test_reset_stage_disarms_without_touching_the_markers(tmp_path: Path) -> None:
+def test_reset_stage_disarms_without_touching_the_markers(tmp_path: pathlib.Path) -> None:
     """reset_stage zeroes only the SIGINT stage; the steer marker files stay.
 
     A stage armed in one execution leaked into the next (a phantom pause menu, stage 2
@@ -259,11 +260,8 @@ def test_reset_stage_disarms_without_touching_the_markers(tmp_path: Path) -> Non
     """
     import signal
 
-    from agent6.sessions.ipc import request_steer, steer_request_pending, write_steer_answer
-    from agent6.ui.cli._steer import install_steer_sigint
-
-    events = MagicMock()
-    steer = install_steer_sigint(events, tmp_path)
+    events = mock.MagicMock()
+    steer = _steer.install_steer_sigint(events, tmp_path)
     try:
         handler = signal.getsignal(signal.SIGINT)
         assert callable(handler)
@@ -274,11 +272,11 @@ def test_reset_stage_disarms_without_touching_the_markers(tmp_path: Path) -> Non
         # A front-end marker steer is the OTHER requested() source and must
         # survive an execution boundary (a web steer typed near execution end reaches the
         # next execution); reset_stage leaves both files alone.
-        write_steer_answer(tmp_path, "carry on")
-        request_steer(tmp_path)
+        sessions_ipc.write_steer_answer(tmp_path, "carry on")
+        sessions_ipc.request_steer(tmp_path)
         steer.reset_stage()
         assert (tmp_path / "steer.answer").exists()
-        assert steer_request_pending(tmp_path)
+        assert sessions_ipc.steer_request_pending(tmp_path)
         assert steer.requested()  # marker-driven, by design
     finally:
         steer.restore()
@@ -291,20 +289,20 @@ def test_workflow_run_resets_the_steer_stage_at_execution_entry() -> None:
     """
     import contextlib
 
-    from agent6.harness.loop import Harness
+    from agent6.harness import loop
 
     resets: list[bool] = []
 
     def spy() -> None:
         resets.append(True)
 
-    wf = Harness(
-        chain=RunChain(Path("/tmp")),
-        config=MagicMock(),
-        provider=MagicMock(),
-        dispatcher=MagicMock(),
+    wf = loop.Harness(
+        chain=_chain.RunChain(pathlib.Path("/tmp")),
+        config=mock.MagicMock(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
         mode="ask",
-        bridge=OperatorBridge(steer_reset=spy),
+        bridge=_operator.OperatorBridge(steer_reset=spy),
     )
     for expected in (1, 2):
         with contextlib.suppress(Exception):  # mocks explode later in the execution
@@ -312,18 +310,18 @@ def test_workflow_run_resets_the_steer_stage_at_execution_entry() -> None:
         assert len(resets) == expected
 
 
-def test_the_turn_boundary_settles_background_commands(tmp_path: Path) -> None:
+def test_the_turn_boundary_settles_background_commands(tmp_path: pathlib.Path) -> None:
     """The between-step boundary observes background commands once per turn.
 
     An ending reaches disk when someone observes it; a model that never asked again left
     `/shells`, which reads off disk, reporting maybe-running for the rest of the run.
     """
-    from agent6.harness.loop import Harness
+    from agent6.harness import loop
     from agent6.providers import ProviderResponse
 
     repo = tmp_path / "repo"
     repo.mkdir()
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.return_value = ProviderResponse(
         text="done",
         tool_uses=(),
@@ -334,13 +332,13 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: Path) -> None:
         cache_creation_tokens=0,
         raw={"content": [{"type": "text", "text": "done"}]},
     )
-    dispatcher = MagicMock()
-    wf = Harness(
-        chain=RunChain(repo),
-        config=MagicMock(
-            budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=MagicMock(system_prompt_file=""),
-            harness=MagicMock(
+    dispatcher = mock.MagicMock()
+    wf = loop.Harness(
+        chain=_chain.RunChain(repo),
+        config=mock.MagicMock(
+            budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+            prompt=mock.MagicMock(system_prompt_file=""),
+            harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -353,53 +351,49 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: Path) -> None:
         provider=provider,
         dispatcher=dispatcher,
         logger=lambda _msg: None,
-        call=CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=3,
     )
     wf.run("do something")
     assert dispatcher.settle_background.called, "no turn boundary observed the background commands"
 
 
-def test_compact_request_carries_focus(tmp_path: Path) -> None:
+def test_compact_request_carries_focus(tmp_path: pathlib.Path) -> None:
     """The compact marker body is the optional summary focus: "" is plain, None is no request."""
-    from agent6.sessions.ipc import clear_compact_request, read_compact_request, request_compact
-
-    assert read_compact_request(tmp_path) is None
-    request_compact(tmp_path)
-    assert read_compact_request(tmp_path) == ""
-    request_compact(tmp_path, focus="weigh the auth decisions")
-    assert read_compact_request(tmp_path) == "weigh the auth decisions"
-    clear_compact_request(tmp_path)
-    assert read_compact_request(tmp_path) is None
+    assert sessions_ipc.read_compact_request(tmp_path) is None
+    sessions_ipc.request_compact(tmp_path)
+    assert sessions_ipc.read_compact_request(tmp_path) == ""
+    sessions_ipc.request_compact(tmp_path, focus="weigh the auth decisions")
+    assert sessions_ipc.read_compact_request(tmp_path) == "weigh the auth decisions"
+    sessions_ipc.clear_compact_request(tmp_path)
+    assert sessions_ipc.read_compact_request(tmp_path) is None
 
 
-def test_compact_request_reports_a_failed_write(tmp_path: Path) -> None:
+def test_compact_request_reports_a_failed_write(tmp_path: pathlib.Path) -> None:
     """A marker that could not be written must read as a failure.
 
     The write was wrapped in suppress(OSError) while every front-end reported "compaction requested"
     unconditionally, so a read-only or full state dir looked like success and nothing ever
     compacted.
     """
-    from agent6.sessions.ipc import read_compact_request, request_compact
-
-    assert request_compact(tmp_path) is True
+    assert sessions_ipc.request_compact(tmp_path) is True
     # A run dir that is really a file: the publish cannot succeed.
     blocked = tmp_path / "not-a-dir"
     blocked.write_text("x", encoding="utf-8")
-    assert request_compact(blocked) is False
-    assert read_compact_request(blocked) is None
+    assert sessions_ipc.request_compact(blocked) is False
+    assert sessions_ipc.read_compact_request(blocked) is None
 
 
 def test_an_urgent_steer_request_publishes_atomically(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The loop must never consume an urgent marker before its `now` body lands."""
     from agent6.sessions import ipc
 
-    calls: list[tuple[Path, str]] = []
+    calls: list[tuple[pathlib.Path, str]] = []
     real = ipc.atomic_write
 
-    def spy(path: Path, data: str) -> None:
+    def spy(path: pathlib.Path, data: str) -> None:
         calls.append((path, data))
         real(path, data)
 
@@ -411,7 +405,7 @@ def test_an_urgent_steer_request_publishes_atomically(
 
 
 def test_compact_request_publishes_atomically(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """request_compact publishes via tmp+rename (portable.atomic_write).
 
@@ -421,10 +415,10 @@ def test_compact_request_publishes_atomically(
     """
     from agent6.sessions import ipc
 
-    calls: list[tuple[Path, str]] = []
+    calls: list[tuple[pathlib.Path, str]] = []
     real = ipc.atomic_write
 
-    def spy(path: Path, data: str) -> None:
+    def spy(path: pathlib.Path, data: str) -> None:
         calls.append((path, data))
         real(path, data)
 
@@ -435,7 +429,7 @@ def test_compact_request_publishes_atomically(
 
 
 def test_the_fallback_pause_prompt_takes_a_steer_written_while_it_waits(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The plain prompt reads the steer file while it waits, like the menu.
 
@@ -447,13 +441,13 @@ def test_the_fallback_pause_prompt_takes_a_steer_written_while_it_waits(
     def prompt_superseded(text: str, **kw: object) -> str | None:
         until = kw.get("until")
         assert callable(until) and not until()
-        submit_steer(tmp_path, "from the web")
+        sessions_ipc.submit_steer(tmp_path, "from the web")
         assert until()  # the prompt would now end
         return None
 
     monkeypatch.setattr("agent6.ui.cli._steer.tty_prompt", prompt_superseded)
-    events = EventSink(tmp_path / "logs.jsonl")
-    steer = install_steer_sigint(events, tmp_path)
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    steer = _steer.install_steer_sigint(events, tmp_path)
     try:
         import signal
 
@@ -474,34 +468,30 @@ def test_edit_survives_an_unparsable_editor(
     import io
     import sys
 
-    from agent6.ui.cli._steer import _select_revised_prompt  # pyright: ignore[reportPrivateUsage]
-
     monkeypatch.setenv("EDITOR", 'code --wait "')
     monkeypatch.setattr(sys, "stdin", io.StringIO("e\na\n"))
-    assert _select_revised_prompt("orig", "revised", ()) == "revised"
+    assert _steer._select_revised_prompt("orig", "revised", ()) == "revised"
     assert "$EDITOR" in capsys.readouterr().err
 
 
 def test_edit_survives_a_non_utf8_save(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An editor that writes back non-UTF-8 bytes is a choose-again, not a crashed run."""
     import io
     import sys
-
-    from agent6.ui.cli._steer import _select_revised_prompt  # pyright: ignore[reportPrivateUsage]
 
     script = tmp_path / "fake_editor.sh"
     script.write_text("#!/bin/sh\nprintf '\\377\\376x' > \"$1\"\n", encoding="utf-8")
     script.chmod(0o755)
     monkeypatch.setenv("EDITOR", str(script))
     monkeypatch.setattr(sys, "stdin", io.StringIO("e\na\n"))
-    assert _select_revised_prompt("orig", "revised", ()) == "revised"
+    assert _steer._select_revised_prompt("orig", "revised", ()) == "revised"
     assert "not UTF-8" in capsys.readouterr().err
 
 
 def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """One Ctrl-C leaves the revise_prompt choice, as at every other idle CLI prompt.
 
@@ -518,8 +508,6 @@ def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
     import time
     from typing import Any
 
-    from agent6.ui.cli._steer import select_revised_prompt
-
     read_fd, write_fd = os.pipe()
     reader = os.fdopen(read_fd, encoding="utf-8")
     blocked = threading.Event()
@@ -533,7 +521,7 @@ def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
             return getattr(reader, name)
 
     monkeypatch.setattr(sys, "stdin", NotifyingStdin())
-    steer = install_steer_sigint(MagicMock(), tmp_path)
+    steer = _steer.install_steer_sigint(mock.MagicMock(), tmp_path)
 
     def press_then_rescue() -> None:
         blocked.wait(10.0)
@@ -547,7 +535,7 @@ def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
     presser = threading.Thread(target=press_then_rescue)
     presser.start()
     try:
-        assert select_revised_prompt("original", "revised", ()) is None
+        assert _steer.select_revised_prompt("original", "revised", ()) is None
         assert steer.armed() is False
     finally:
         steer.restore()

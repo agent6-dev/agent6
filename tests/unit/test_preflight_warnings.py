@@ -4,12 +4,12 @@
 
 from __future__ import annotations
 
+import pathlib
 import time
-from pathlib import Path
 
 import pytest
 
-from agent6.app.preflight import headless_approval_refusal, headless_parking_note
+from agent6.app import preflight as app_preflight
 from agent6.config import Config
 
 
@@ -26,7 +26,9 @@ def test_a_run_that_cannot_be_asked_refuses_instead_of_hanging(
     verify gate is a command too, that is essentially every run, every /parallel lane included. A
     note alone does not stop the hang; the run is refused.
     """
-    refusal = headless_approval_refusal(_ask_cfg(), tui_enabled=False, away="", can_ask=False)
+    refusal = app_preflight.headless_approval_refusal(
+        _ask_cfg(), tui_enabled=False, away="", can_ask=False
+    )
     assert refusal is not None
     assert "would wait forever" in refusal
     assert "--auto-approve" in refusal  # the fix is named
@@ -37,7 +39,7 @@ def test_a_clamped_session_kind_names_the_flag_not_the_config_value() -> None:
 
     The remedy names --auto-approve and the clamp, never the value that is already set.
     """
-    refusal = headless_approval_refusal(
+    refusal = app_preflight.headless_approval_refusal(
         _ask_cfg(), tui_enabled=False, away="", can_ask=False, clamped=True
     )
     assert refusal is not None
@@ -60,11 +62,14 @@ def test_answerable_runs_are_not_refused(
     tui: bool, away: str, commands: str, can_ask: bool
 ) -> None:
     cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
-    assert headless_approval_refusal(cfg, tui_enabled=tui, away=away, can_ask=can_ask) is None
+    assert (
+        app_preflight.headless_approval_refusal(cfg, tui_enabled=tui, away=away, can_ask=can_ask)
+        is None
+    )
 
 
 def test_the_lifecycle_sets_the_repos_hook_policy_itself(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The lifecycle sets the repo's hook policy itself.
 
@@ -72,9 +77,9 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
     into its own hooks with them silently off; the setting fails safe, which is how a knob `config
     show` reports can go ignored on one surface unnoticed.
     """
+    from agent6.app import frontend
     from agent6.app import preflight as preflight_mod
     from agent6.app import run as lifecycle
-    from agent6.app.frontend import FrontendCapabilities
 
     seen: list[bool] = []
 
@@ -86,12 +91,12 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
     cfg = Config.model_validate({"git": {"run_repo_hooks": True}})
     # It refuses immediately after (no git identity here); the policy is set
     # before anything git touches the repo, which is the point.
-    from agent6.app.reporter import Reporter
-    from agent6.ui.acp.frontend import acp_frontend
+    from agent6.app import reporter
+    from agent6.ui.acp import frontend as acp_frontend
 
-    front = acp_frontend(
+    front = acp_frontend.acp_frontend(
         ask=lambda _p, _o, _s, _c, _u=None: None,
-        capabilities=FrontendCapabilities(),
+        capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
         spawn_detached_resume=lambda _cwd, _rid, _flags: "",
     )
@@ -101,7 +106,7 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
         "t",
         started_at=time.time(),
         frontend=front,
-        reporter=Reporter(out=said.append, err=said.append),
+        reporter=reporter.Reporter(out=said.append, err=said.append),
     )
     assert seen == [True], said
 
@@ -112,7 +117,9 @@ def test_a_misspelled_away_mode_refuses_instead_of_reading_as_intent() -> None:
     Any non-empty AGENT6_DETACHED_AWAY lifting the refusal lets a typo start the run, and the first
     approval then waits forever.
     """
-    refusal = headless_approval_refusal(_ask_cfg(), tui_enabled=False, away="denied", can_ask=False)
+    refusal = app_preflight.headless_approval_refusal(
+        _ask_cfg(), tui_enabled=False, away="denied", can_ask=False
+    )
     assert refusal is not None
     assert "'denied' is not an away-mode" in refusal
     assert "AGENT6_DETACHED_AWAY=wait|deny|approve" in refusal
@@ -124,7 +131,9 @@ def test_a_misspelled_away_mode_refuses_even_where_a_person_could_answer() -> No
     Refuse naming the accepted set rather than prompting as if it were unset.
     """
     assert (
-        headless_approval_refusal(_ask_cfg(), tui_enabled=True, away="Deny", can_ask=True)
+        app_preflight.headless_approval_refusal(
+            _ask_cfg(), tui_enabled=True, away="Deny", can_ask=True
+        )
         is not None
     )
 
@@ -137,7 +146,9 @@ def test_a_misspelled_away_mode_refuses_when_commands_are_settled(commands: str)
     invalid launcher value harmless.
     """
     cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
-    refusal = headless_approval_refusal(cfg, tui_enabled=False, away="denied", can_ask=False)
+    refusal = app_preflight.headless_approval_refusal(
+        cfg, tui_enabled=False, away="denied", can_ask=False
+    )
     assert refusal is not None
     assert "'denied' is not an away-mode" in refusal
 
@@ -145,7 +156,9 @@ def test_a_misspelled_away_mode_refuses_when_commands_are_settled(commands: str)
 def test_an_away_mode_that_is_honored_starts_the_run() -> None:
     for away in ("wait", "deny", "approve"):
         assert (
-            headless_approval_refusal(_ask_cfg(), tui_enabled=False, away=away, can_ask=False)
+            app_preflight.headless_approval_refusal(
+                _ask_cfg(), tui_enabled=False, away=away, can_ask=False
+            )
             is None
         )
 
@@ -174,17 +187,27 @@ def test_a_headless_run_with_settled_commands_is_told_what_still_parks_it() -> N
     that can be asked, or one with an away mode, gets no note.
     """
     yes = Config.model_validate({"sandbox": {"run_commands": "yes"}})
-    note = headless_parking_note(yes, tui_enabled=False, away="", can_ask=False)
+    note = app_preflight.headless_parking_note(yes, tui_enabled=False, away="", can_ask=False)
     assert note is not None
     assert "parks the run" in note and "AGENT6_DETACHED_AWAY=deny" in note
-    assert headless_parking_note(_ask_cfg(), tui_enabled=False, away="", can_ask=False) is None
-    assert headless_parking_note(yes, tui_enabled=False, away="deny", can_ask=False) is None
-    assert headless_parking_note(yes, tui_enabled=False, away="", can_ask=True) is None
-    assert headless_parking_note(yes, tui_enabled=True, away="", can_ask=False) is None
+    assert (
+        app_preflight.headless_parking_note(_ask_cfg(), tui_enabled=False, away="", can_ask=False)
+        is None
+    )
+    assert (
+        app_preflight.headless_parking_note(yes, tui_enabled=False, away="deny", can_ask=False)
+        is None
+    )
+    assert (
+        app_preflight.headless_parking_note(yes, tui_enabled=False, away="", can_ask=True) is None
+    )
+    assert (
+        app_preflight.headless_parking_note(yes, tui_enabled=True, away="", can_ask=False) is None
+    )
 
 
 def test_the_route_preflight_precedes_isolation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The route preflight precedes isolation.
 
@@ -192,10 +215,9 @@ def test_the_route_preflight_precedes_isolation(
     route preflight's key check refreshes; with the key check after it, a cold cache makes a first
     run refuse (max_tokens_fallback 0) or print a price notice a second run never sees.
     """
+    from agent6.app import frontend, reporter
     from agent6.app import run as lifecycle
-    from agent6.app.frontend import FrontendCapabilities
-    from agent6.app.reporter import Reporter
-    from agent6.ui.acp.frontend import acp_frontend
+    from agent6.ui.acp import frontend as acp_frontend
 
     seen: list[str] = []
 
@@ -213,9 +235,9 @@ def test_the_route_preflight_precedes_isolation(
     monkeypatch.setattr(lifecycle, "route_preflight", _route)
     monkeypatch.setattr(lifecycle, "select_isolation", _isolation)
     monkeypatch.chdir(tmp_path)
-    front = acp_frontend(
+    front = acp_frontend.acp_frontend(
         ask=lambda _p, _o, _s, _c, _u=None: None,
-        capabilities=FrontendCapabilities(),
+        capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
         spawn_detached_resume=lambda _cwd, _rid, _flags: "",
     )
@@ -226,6 +248,6 @@ def test_the_route_preflight_precedes_isolation(
             "t",
             started_at=time.time(),
             frontend=front,
-            reporter=Reporter(out=said.append, err=said.append),
+            reporter=reporter.Reporter(out=said.append, err=said.append),
         )
     assert seen == ["route_preflight", "select_isolation"], said

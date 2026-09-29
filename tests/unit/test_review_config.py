@@ -9,18 +9,18 @@ reviewer-model seat) rather than a dead gate.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest import mock
 
+import pydantic
 import pytest
-from pydantic import ValidationError
 
-from agent6.app.providers import build_review_seats
+from agent6.app import providers
 from agent6.config import Config, ReviewConfig
 
 
 def test_review_seats_malformed_rejected() -> None:
     for bad in (("security@@x",), ("security@anthropic",), ("@/model",), ("  ",)):
-        with pytest.raises(ValidationError):
+        with pytest.raises(pydantic.ValidationError):
             ReviewConfig(seats=bad)
 
 
@@ -31,7 +31,7 @@ def test_review_seats_valid_forms_accepted() -> None:
 
 def test_quorum_gt1_needs_distinct_models() -> None:
     # Same-model panel can reach at most one block -> quorum=2 is unreachable.
-    with pytest.raises(ValidationError, match="distinct"):
+    with pytest.raises(pydantic.ValidationError, match="distinct"):
         ReviewConfig(decision="quorum", quorum=2)
     # Two distinct models satisfy it.
     ok = ReviewConfig(
@@ -58,7 +58,9 @@ def test_trigger_on_with_no_seats_builds_the_one_seat_roster() -> None:
             "review": {"trigger": "before_finish"},
         }
     )
-    seats = build_review_seats(cfg, transcript_sink=MagicMock(), budget=MagicMock(), n=1)
+    seats = providers.build_review_seats(
+        cfg, transcript_sink=mock.MagicMock(), budget=mock.MagicMock(), n=1
+    )
     assert len(seats) == 1
     assert seats[0].model == "o/rm"
     assert seats[0].persona  # a built-in persona, not an empty stance

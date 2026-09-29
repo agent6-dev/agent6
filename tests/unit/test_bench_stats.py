@@ -4,11 +4,11 @@
 
 from __future__ import annotations
 
+import pathlib
 import statistics
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bench" / "sweep"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "bench" / "sweep"))
 
 import stats  # path-injected bench module  # pyright: ignore[reportMissingImports]
 

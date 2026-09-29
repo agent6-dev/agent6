@@ -6,18 +6,18 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 import pytest
 
+from agent6 import paths
 from agent6.app import stop as stop_mod
-from agent6.paths import state_dir
-from agent6.sessions.ipc import STEER_ANSWER_FILE, STOP_REQUEST_FILE, write_worker_pid
+from agent6.sessions import ipc
 from agent6.ui.cli import main
-from agent6.ui.cli.parser import build_parser
+from agent6.ui.cli import parser as cli_parser
 
 _ANSWERING_WORKER = """
 import json, sys, time
@@ -31,7 +31,7 @@ with (d / "logs.jsonl").open("a") as fh:
 """
 
 
-def _wait_for_file(path: Path, timeout_s: float = 20.0) -> None:
+def _wait_for_file(path: pathlib.Path, timeout_s: float = 20.0) -> None:
     """Block until the path exists.
 
     A helper interpreter takes seconds to import agent6 under load.
@@ -42,8 +42,8 @@ def _wait_for_file(path: Path, timeout_s: float = 20.0) -> None:
         time.sleep(0.02)
 
 
-def _run(repo: Path, name: str, *, finished: bool = False) -> Path:
-    d = state_dir(repo) / "sessions" / "runs" / name
+def _run(repo: pathlib.Path, name: str, *, finished: bool = False) -> pathlib.Path:
+    d = paths.state_dir(repo) / "sessions" / "runs" / name
     d.mkdir(parents=True)
     events: list[dict[str, object]] = [
         {"type": "session.start", "session_id": name, "mode": "run", "user_task": "t"}
@@ -63,7 +63,7 @@ def test_stop_is_a_top_level_verb_and_sessions_stop_is_gone() -> None:
 
     `sessions stop` is gone.
     """
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     args = parser.parse_args(["stop", "some-run", "--after-step", "--all"])
     assert (args.command, args.session_id, args.after_step, args.all) == (
         "stop",
@@ -76,20 +76,20 @@ def test_stop_is_a_top_level_verb_and_sessions_stop_is_gone() -> None:
 
 
 def test_after_step_writes_the_marker_and_names_the_resume(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     d = _run(tmp_path, "step-run-AAAAAA")
-    write_worker_pid(d, os.getpid())
+    ipc.write_worker_pid(d, os.getpid())
     assert main(["stop", "step-run", "--after-step"]) == 0
     out = capsys.readouterr().out
     assert "step-run-AAAAAA stops after its current step" in out
     assert "resume with:  agent6 resume step-run-AAAAAA" in out
-    assert (d / STOP_REQUEST_FILE).exists() and not (d / STEER_ANSWER_FILE).exists()
+    assert (d / ipc.STOP_REQUEST_FILE).exists() and not (d / ipc.STEER_ANSWER_FILE).exists()
 
 
 def test_all_stops_every_live_session(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     live = [_run(tmp_path, "live-one-AAAAAA"), _run(tmp_path, "live-two-BBBBBB")]
@@ -99,7 +99,7 @@ def test_all_stops_every_live_session(
         for d in live
     ]
     for d, proc in zip(live, workers, strict=True):
-        write_worker_pid(d, proc.pid)
+        ipc.write_worker_pid(d, proc.pid)
     try:
         assert main(["stop", "--all"]) == 0
         out = capsys.readouterr().out
@@ -113,7 +113,7 @@ def test_all_stops_every_live_session(
 
 
 def test_all_with_nothing_live_is_a_successful_noop(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _run(tmp_path, "done-run-AAAAAA", finished=True)
@@ -123,7 +123,7 @@ def test_all_with_nothing_live_is_a_successful_noop(
 
 
 def test_a_fanout_stops_only_its_live_lanes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     fan = _run(tmp_path, "fan-run-AAAAAA")
@@ -159,7 +159,7 @@ def test_a_fanout_stops_only_its_live_lanes(
         for d in (fan, live)
     ]
     for d, proc in zip((fan, live), workers, strict=True):
-        write_worker_pid(d, proc.pid)
+        ipc.write_worker_pid(d, proc.pid)
     try:
         assert main(["stop", "fan-run-AAAAAA"]) == 0
         out = capsys.readouterr().out
@@ -187,7 +187,7 @@ with (d / "logs.jsonl").open("a") as fh:
 """
 
 
-def _fanout(tmp_path: Path, fan: str, lane: str) -> tuple[Path, Path]:
+def _fanout(tmp_path: pathlib.Path, fan: str, lane: str) -> tuple[pathlib.Path, pathlib.Path]:
     fan_dir, lane_dir = _run(tmp_path, fan), _run(tmp_path, lane)
     (fan_dir / "manifest.json").write_text(
         json.dumps(
@@ -217,7 +217,7 @@ def _fanout(tmp_path: Path, fan: str, lane: str) -> tuple[Path, Path]:
 
 
 def test_a_fanouts_lanes_end_before_its_coordinator_drains(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A fan-out's lanes end before its coordinator drains.
 
@@ -230,12 +230,12 @@ def test_a_fanouts_lanes_end_before_its_coordinator_drains(
     worker = subprocess.Popen(
         [sys.executable, "-c", _ANSWERING_WORKER, str(lane)], start_new_session=True
     )
-    write_worker_pid(lane, worker.pid)
+    ipc.write_worker_pid(lane, worker.pid)
     coordinator = subprocess.Popen(
         [sys.executable, "-c", _DRAINING_COORDINATOR, str(fan), str(lane)],
         start_new_session=True,
     )
-    write_worker_pid(fan, coordinator.pid)
+    ipc.write_worker_pid(fan, coordinator.pid)
     _wait_for_file(fan / "draining")  # the drain loop is running, so the wait times a drain
     try:
         assert main(["stop", "drain-run-AAAAAA"]) == 0
@@ -249,7 +249,7 @@ def test_a_fanouts_lanes_end_before_its_coordinator_drains(
 
 
 def test_a_session_that_is_not_live_gets_a_note_and_exit_0(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A stop that finds nothing running has done what was asked."""
     monkeypatch.chdir(tmp_path)
@@ -260,7 +260,7 @@ def test_a_session_that_is_not_live_gets_a_note_and_exit_0(
 
 
 def test_an_unknown_session_is_an_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _run(tmp_path, "some-run-AAAAAA")
@@ -268,10 +268,10 @@ def test_an_unknown_session_is_an_error(
     assert capsys.readouterr().err
 
 
-def _session_dir(repo: Path, session_id: str) -> Path:
-    from agent6.sessions.layout import SessionLayout
+def _session_dir(repo: pathlib.Path, session_id: str) -> pathlib.Path:
+    from agent6.sessions import layout as sessions_layout
 
-    layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
     layout.ensure()
     layout.manifest_path.write_text('{"version": 2}', encoding="utf-8")
     (layout.session_dir / "logs.jsonl").write_text("", encoding="utf-8")
@@ -280,18 +280,16 @@ def _session_dir(repo: Path, session_id: str) -> Path:
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root writes through a read-only dir")
 def test_a_marker_that_cannot_be_written_is_an_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A stop marker that cannot be written is an error, not an announced stop."""
-    from agent6.sessions.ipc import stop_request_pending
-
     monkeypatch.chdir(tmp_path)
     rd = _session_dir(tmp_path, "live-run-RO1111")
-    write_worker_pid(rd, os.getpid())
+    ipc.write_worker_pid(rd, os.getpid())
     rd.chmod(0o555)
     try:
         assert main(["stop", "live-run-RO1111", "--after-step"]) == 1
-        assert not stop_request_pending(rd)
+        assert not ipc.stop_request_pending(rd)
     finally:
         rd.chmod(0o700)
     captured = capsys.readouterr()
@@ -300,14 +298,12 @@ def test_a_marker_that_cannot_be_written_is_an_error(
 
 
 def test_a_finished_run_with_a_lingering_pid_is_already_over(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A finished run with a lingering pid is already over: the gate owns liveness, not the pid.
 
     session.end lands before teardown clears worker.pid.
     """
-    from agent6.sessions.ipc import stop_request_pending
-
     monkeypatch.chdir(tmp_path)
     rd = _session_dir(tmp_path, "done-run-CCC333")
     (rd / "logs.jsonl").write_text(
@@ -315,18 +311,16 @@ def test_a_finished_run_with_a_lingering_pid_is_already_over(
         '{"type": "session.end", "all_passed": true, "reason": "finish_session"}\n',
         encoding="utf-8",
     )
-    write_worker_pid(rd, os.getpid())  # teardown not finished yet
+    ipc.write_worker_pid(rd, os.getpid())  # teardown not finished yet
     assert main(["stop", "done-run-CCC333"]) == 0
-    assert not stop_request_pending(rd)
+    assert not ipc.stop_request_pending(rd)
     err = capsys.readouterr().err
     assert "already passed" in err and "not running" not in err
 
 
 def test_a_parked_run_says_it_has_not_started(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.sessions.ipc import stop_request_pending
-
     monkeypatch.chdir(tmp_path)
     rd = _session_dir(tmp_path, "parked-run-DDD444")
     (rd / "manifest.json").write_text(
@@ -335,37 +329,33 @@ def test_a_parked_run_says_it_has_not_started(
         encoding="utf-8",
     )
     assert main(["stop", "parked-run-DDD444"]) == 0
-    assert not stop_request_pending(rd)
+    assert not ipc.stop_request_pending(rd)
     err = capsys.readouterr().err
     assert "is parked" in err and "has not started" in err
 
 
 def test_a_dead_run_is_not_running(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.sessions.ipc import stop_request_pending
-
     monkeypatch.chdir(tmp_path)
     rd = _session_dir(tmp_path, "dead-run-BBB222")
-    write_worker_pid(rd, 2**31 - 1)  # no such process
+    ipc.write_worker_pid(rd, 2**31 - 1)  # no such process
     assert main(["stop", "dead-run-BBB222"]) == 0
-    assert not stop_request_pending(rd)
+    assert not ipc.stop_request_pending(rd)
     assert "not running" in capsys.readouterr().err
 
 
 def test_a_fan_out_gets_no_resume_hint(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A fan-out coordinator has no loop to resume, so its stop message promises no resume."""
-    from agent6.sessions.ipc import stop_request_pending
-
     monkeypatch.chdir(tmp_path)
     rd = _session_dir(tmp_path, "fan-AAAA11")
     (rd / "manifest.json").write_text(
         '{"version": 3, "mode": "run", "fanout": {"lanes": 2, "spec": "2"}}', encoding="utf-8"
     )
-    write_worker_pid(rd, os.getpid())
+    ipc.write_worker_pid(rd, os.getpid())
     assert main(["stop", "fan-AAAA11", "--after-step"]) == 0
-    assert stop_request_pending(rd)
+    assert ipc.stop_request_pending(rd)
     out = capsys.readouterr().out
     assert "fan-AAAA11 stops after its current step" in out and "resume" not in out

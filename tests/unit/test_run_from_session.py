@@ -5,15 +5,15 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 import agent6.app._session as session_mod
 import agent6.app.run as run_mod
-from agent6.paths import state_dir
+from agent6 import paths
 from agent6.providers import ProviderResponse
 from agent6.ui.cli import cli_main
 
@@ -71,7 +71,9 @@ class _Finisher:
         )
 
 
-def _setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, _Finisher]:
+def _setup(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[pathlib.Path, _Finisher]:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     config_home = tmp_path / "config"
     (config_home / "agent6").mkdir(parents=True)
@@ -102,8 +104,8 @@ def _setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, _Fini
     return repo, provider
 
 
-def _seed_source(repo: Path, bucket: str, session_id: str) -> None:
-    source = state_dir(repo) / "sessions" / bucket / session_id
+def _seed_source(repo: pathlib.Path, bucket: str, session_id: str) -> None:
+    source = paths.state_dir(repo) / "sessions" / bucket / session_id
     source.mkdir(parents=True)
     mode = {"asks": "ask", "plans": "plan", "runs": "run"}[bucket]
     (source / "manifest.json").write_text(
@@ -141,7 +143,7 @@ def _seed_source(repo: Path, bucket: str, session_id: str) -> None:
 
 @pytest.mark.parametrize("bucket", ["asks", "plans", "runs"])
 def test_a_seeded_runs_manifest_records_its_resolved_source(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bucket: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, bucket: str
 ) -> None:
     repo, provider = _setup(tmp_path, monkeypatch)
     source_id = f"source-{bucket}-AAA111"
@@ -155,7 +157,7 @@ def test_a_seeded_runs_manifest_records_its_resolved_source(
     assert cli_main(args) == 0
 
     manifest = json.loads(
-        (state_dir(repo) / "sessions" / "runs" / destination_id / "manifest.json").read_text(
+        (paths.state_dir(repo) / "sessions" / "runs" / destination_id / "manifest.json").read_text(
             encoding="utf-8"
         )
     )
@@ -176,7 +178,7 @@ def test_a_seeded_runs_manifest_records_its_resolved_source(
 
 
 def test_a_seeded_asks_manifest_records_its_resolved_source(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo, provider = _setup(tmp_path, monkeypatch)
     source_id = "source-run-AAA111"
@@ -185,7 +187,7 @@ def test_a_seeded_asks_manifest_records_its_resolved_source(
 
     assert cli_main(["ask", "--from", "source-run-", "what should I do next?"]) == 0
 
-    asks = list((state_dir(repo) / "sessions" / "asks").iterdir())
+    asks = list((paths.state_dir(repo) / "sessions" / "asks").iterdir())
     assert len(asks) == 1
     manifest = json.loads((asks[0] / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["source_session_id"] == source_id

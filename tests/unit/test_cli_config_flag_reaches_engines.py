@@ -8,22 +8,22 @@ load_effective.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.layout import bucket_dir
+from agent6 import paths
+from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import sessions_merge
 
 
 def test_merge_planner_passes_the_explicit_config_path(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    seen: list[Path | None] = []
+    seen: list[pathlib.Path | None] = []
 
-    def fake_load(cwd: Path, explicit: Path | None) -> Any:
+    def fake_load(cwd: pathlib.Path, explicit: pathlib.Path | None) -> Any:
         seen.append(explicit)
         raise sessions_merge.ConfigError("stop here")
 
@@ -35,7 +35,7 @@ def test_merge_planner_passes_the_explicit_config_path(
 
     layout = _Layout()
 
-    def _dead(d: Path) -> bool:
+    def _dead(d: pathlib.Path) -> bool:
         return False
 
     monkeypatch.setattr(sessions_merge, "worker_is_alive", _dead)
@@ -46,10 +46,10 @@ def test_merge_planner_passes_the_explicit_config_path(
         base_sha = "0" * 40
         run_branch = "agent6/x"
 
-    def _resolved(cwd: Path, sid: str) -> Any:
+    def _resolved(cwd: pathlib.Path, sid: str) -> Any:
         return (layout, _Manifest())
 
-    def _exists(cwd: Path, b: str) -> bool:
+    def _exists(cwd: pathlib.Path, b: str) -> bool:
         return True
 
     monkeypatch.setattr(sessions_merge, "_resolve_session_manifest", _resolved)
@@ -63,7 +63,7 @@ def test_merge_planner_passes_the_explicit_config_path(
 
 
 def test_acp_run_bridge_passes_the_explicit_config_path(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """The ACP run bridge loads the explicit config path, so its model.
 
@@ -71,12 +71,12 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
     """
     from agent6.config import ConfigError as _ConfigError
     from agent6.ui.acp import runner as acp_runner
-    from agent6.ui.acp.session import Session
+    from agent6.ui.acp import session as acp_session
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    seen: list[Path | None] = []
+    seen: list[pathlib.Path | None] = []
 
-    def fake_load(cwd: Path, explicit: Path | None = None, **_kw: Any) -> Any:
+    def fake_load(cwd: pathlib.Path, explicit: pathlib.Path | None = None, **_kw: Any) -> Any:
         seen.append(explicit)
         raise _ConfigError("stop here")
 
@@ -92,20 +92,22 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
     server = _Server()
     cfg_path = tmp_path / "overlay.toml"
     bridge = acp_runner.RunBridge(server=server, config_path=cfg_path)  # type: ignore[arg-type]
-    session = Session(acp_id="t", cwd=tmp_path)
+    session = acp_session.Session(acp_id="t", cwd=tmp_path)
     assert bridge.run(session, "task") == "refusal"
     assert seen == [cfg_path]
 
 
 def test_hub_spawns_stamp_the_explicit_config_into_argv(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A hub started with --config F stamps F into the argv of everything it spawns."""
     from agent6.ui import spawn
 
     argvs: list[list[str]] = []
 
-    def fake_spawn(argv: list[str], cwd: Path, **_kw: Any) -> tuple[Path | None, str]:
+    def fake_spawn(
+        argv: list[str], cwd: pathlib.Path, **_kw: Any
+    ) -> tuple[pathlib.Path | None, str]:
         argvs.append(argv)
         return None, "stubbed"
 
@@ -120,7 +122,7 @@ def test_hub_spawns_stamp_the_explicit_config_into_argv(
 
 
 def test_detached_resume_reapplies_the_overlay(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     import agent6.ui.spawn as spawn_mod
 
@@ -142,7 +144,7 @@ def test_detached_resume_reapplies_the_overlay(
         pass
 
     monkeypatch.setattr(spawn_mod, "keep_out_of_the_sweep", _no_sweep)
-    run = bucket_dir(state_dir(tmp_path), "runs") / "run-1"
+    run = sessions_layout.bucket_dir(paths.state_dir(tmp_path), "runs") / "run-1"
     run.mkdir(parents=True)
     (run / "worker.pid").write_text("4242", encoding="utf-8")  # the fake child owns the run
     cfg = tmp_path / "overlay.toml"

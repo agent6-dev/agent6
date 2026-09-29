@@ -8,19 +8,19 @@ Keyed on cargo's presence alone, a mac with cargo failed the sdist install on Li
 from __future__ import annotations
 
 import importlib.util
+import pathlib
 import sys
-from pathlib import Path
-from types import ModuleType
+import types
 from typing import Any
 
 import pytest
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
-def _load_hook_module() -> ModuleType:
+def _load_hook_module() -> types.ModuleType:
     # hatchling is absent from the dev venv; the subject is the hook's gate, so a bare base does.
-    iface = ModuleType("hatchling.builders.hooks.plugin.interface")
+    iface = types.ModuleType("hatchling.builders.hooks.plugin.interface")
     iface.BuildHookInterface = object  # type: ignore[attr-defined]
     for name in (
         "hatchling",
@@ -28,7 +28,7 @@ def _load_hook_module() -> ModuleType:
         "hatchling.builders.hooks",
         "hatchling.builders.hooks.plugin",
     ):
-        sys.modules.setdefault(name, ModuleType(name))
+        sys.modules.setdefault(name, types.ModuleType(name))
     sys.modules["hatchling.builders.hooks.plugin.interface"] = iface
     spec = importlib.util.spec_from_file_location("hatch_build", _ROOT / "hatch_build.py")
     assert spec and spec.loader
@@ -39,7 +39,7 @@ def _load_hook_module() -> ModuleType:
 
 
 def test_a_non_linux_host_never_invokes_cargo(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     mod = _load_hook_module()
     monkeypatch.setattr(mod.sys, "platform", "darwin")

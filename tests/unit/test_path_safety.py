@@ -5,24 +5,15 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import signal
-from pathlib import Path
 
 import pytest
 
-from agent6.tools._path_safety import (
-    SafePath,
-    Workspace,
-    contain,
-    list_contained,
-    open_contained,
-    read_contained,
-    write_contained,
-)
-from agent6.tools.dispatch import ToolError
+from agent6.tools import _path_safety, errors
 
 
-def test_contain_refuses_an_uncontained_relative_path(tmp_path: Path) -> None:
+def test_contain_refuses_an_uncontained_relative_path(tmp_path: pathlib.Path) -> None:
     """Containment is the walk, and the walk cannot express `..`.
 
     The SafePath holds the invariant, not a per-caller convention, so a caller that forgets to
@@ -30,43 +21,47 @@ def test_contain_refuses_an_uncontained_relative_path(tmp_path: Path) -> None:
     """
     (tmp_path / "root").mkdir()
     (tmp_path / "outside.txt").write_text("host\n", encoding="utf-8")
-    with pytest.raises(ToolError, match=r"\.\."):
-        contain(tmp_path / "root", "../outside.txt")
+    with pytest.raises(errors.ToolError, match=r"\.\."):
+        _path_safety.contain(tmp_path / "root", "../outside.txt")
 
 
-def test_contain_refuses_an_absolute_path(tmp_path: Path) -> None:
+def test_contain_refuses_an_absolute_path(tmp_path: pathlib.Path) -> None:
     """`contain` refuses an absolute path.
 
     An absolute rel_path drops the base entirely (pathlib's join rule), so the fd would be on a host
     file no containment check ever saw.
     """
     (tmp_path / "root").mkdir()
-    with pytest.raises(ToolError, match="Absolute"):
-        contain(tmp_path / "root", "/etc/hostname")
+    with pytest.raises(errors.ToolError, match="Absolute"):
+        _path_safety.contain(tmp_path / "root", "/etc/hostname")
 
 
 @pytest.mark.parametrize("rel", ["/etc/hostname", "../outside.txt"])
-def test_open_contained_re_checks_a_hand_built_safe_path(tmp_path: Path, rel: str) -> None:
+def test_open_contained_re_checks_a_hand_built_safe_path(tmp_path: pathlib.Path, rel: str) -> None:
     """The walk keeps its own `..`/absolute guard rather than trusting the SafePath.
 
     Containment must hold even for one built directly, since the type is constructible without going
     through `contain` or a `Workspace`.
     """
     (tmp_path / "root").mkdir()
-    forged = SafePath(base=tmp_path / "root", rel_path=Path(rel), abs_path=Path(rel))
-    with pytest.raises(ToolError):
-        open_contained(forged, os.O_RDONLY)
+    forged = _path_safety.SafePath(
+        base=tmp_path / "root", rel_path=pathlib.Path(rel), abs_path=pathlib.Path(rel)
+    )
+    with pytest.raises(errors.ToolError):
+        _path_safety.open_contained(forged, os.O_RDONLY)
 
 
-def test_open_contained_reads_a_contained_path(tmp_path: Path) -> None:
+def test_open_contained_reads_a_contained_path(tmp_path: pathlib.Path) -> None:
     (tmp_path / "root" / "sub").mkdir(parents=True)
     (tmp_path / "root" / "sub" / "f.txt").write_text("ok\n", encoding="utf-8")
-    fd = open_contained(contain(tmp_path / "root", "sub/f.txt"), os.O_RDONLY)
+    fd = _path_safety.open_contained(
+        _path_safety.contain(tmp_path / "root", "sub/f.txt"), os.O_RDONLY
+    )
     with os.fdopen(fd, encoding="utf-8") as handle:
         assert handle.read() == "ok\n"
 
 
-def test_a_leaf_swapped_for_a_fifo_cannot_block_a_read(tmp_path: Path) -> None:
+def test_a_leaf_swapped_for_a_fifo_cannot_block_a_read(tmp_path: pathlib.Path) -> None:
     """`is_file()` then open is two lookups, and O_NOFOLLOW stops a symlink but not a FIFO.
 
     A jailed background command can swap a regular file for a FIFO in that
@@ -78,7 +73,7 @@ def test_a_leaf_swapped_for_a_fifo_cannot_block_a_read(tmp_path: Path) -> None:
     root = tmp_path / "ws"
     root.mkdir()
     os.mkfifo(root / "notes.txt")
-    ws = Workspace(root=root)
+    ws = _path_safety.Workspace(root=root)
 
     def _timeout(*_a: object) -> None:
         raise AssertionError("the contained read blocked on a FIFO")
@@ -86,101 +81,96 @@ def test_a_leaf_swapped_for_a_fifo_cannot_block_a_read(tmp_path: Path) -> None:
     signal.signal(signal.SIGALRM, _timeout)
     signal.alarm(5)
     try:
-        with pytest.raises(ToolError, match="Not a regular file"):
-            read_contained(ws.resolve_read("notes.txt"))
+        with pytest.raises(errors.ToolError, match="Not a regular file"):
+            _path_safety.read_contained(ws.resolve_read("notes.txt"))
         # The write side blocks the same way (O_WRONLY on a reader-less FIFO).
-        with pytest.raises(ToolError, match="Not a regular file"):
-            write_contained(ws.resolve_write("notes.txt"), "payload")
+        with pytest.raises(errors.ToolError, match="Not a regular file"):
+            _path_safety.write_contained(ws.resolve_write("notes.txt"), "payload")
     finally:
         signal.alarm(0)
 
     # Regular files and directory listings are untouched.
     (root / "ok.txt").write_text("hello\n", encoding="utf-8")
-    assert read_contained(ws.resolve_read("ok.txt")) == "hello\n"
+    assert _path_safety.read_contained(ws.resolve_read("ok.txt")) == "hello\n"
     (root / "sub").mkdir()
-    assert [e.name for e in list_contained(ws.resolve_read("sub"))] == []
+    assert [e.name for e in _path_safety.list_contained(ws.resolve_read("sub"))] == []
 
 
-def test_a_harness_owned_file_is_readable_but_never_writable(tmp_path: Path) -> None:
+def test_a_harness_owned_file_is_readable_but_never_writable(tmp_path: pathlib.Path) -> None:
     """DECISIONS.md sits inside the memory grant (the model may read it) but is harness-owned.
 
     An in-process write refuses, loudly.
     """
     from agent6.config import Config
-    from agent6.tools.errors import ToolError
-    from agent6.tools.policy import workspace_for
+    from agent6.tools import policy
 
     mem = tmp_path / "state" / "memory"
     mem.mkdir(parents=True)
     (mem / "DECISIONS.md").write_text("- ruling\n", encoding="utf-8")
     (mem / "MEMORY.md").write_text("", encoding="utf-8")
-    ws = workspace_for(Config(), tmp_path, memory_dir=mem)
+    ws = policy.workspace_for(Config(), tmp_path, memory_dir=mem)
     assert ws.resolve_read(str(mem / "DECISIONS.md")).abs_path == (mem / "DECISIONS.md").resolve()
     ws.resolve_write(str(mem / "MEMORY.md"))
-    with pytest.raises(ToolError, match="harness-owned"):
+    with pytest.raises(errors.ToolError, match="harness-owned"):
         ws.resolve_write(str(mem / "DECISIONS.md"))
     # The state dir reached through a symlink (a relocated XDG_STATE_HOME):
     # the guard compares resolved paths, so the grant must be resolved too.
     link = tmp_path / "link"
     link.symlink_to(tmp_path / "state", target_is_directory=True)
-    ws = workspace_for(Config(), tmp_path, memory_dir=link / "memory")
-    with pytest.raises(ToolError, match="harness-owned"):
+    ws = policy.workspace_for(Config(), tmp_path, memory_dir=link / "memory")
+    with pytest.raises(errors.ToolError, match="harness-owned"):
         ws.resolve_write(str(link / "memory" / "DECISIONS.md"))
-    with pytest.raises(ToolError, match="harness-owned"):
+    with pytest.raises(errors.ToolError, match="harness-owned"):
         ws.resolve_write(str(mem / "DECISIONS.md"))
 
 
-def test_unlink_walks_to_the_parent_like_a_write(tmp_path: Path) -> None:
+def test_unlink_walks_to_the_parent_like_a_write(tmp_path: pathlib.Path) -> None:
     """The patch delete was the one mutation that unlinked by full path.
 
     A component swapped for a symlink between staging and the write loop sent the delete outside the
     workspace, where the write walk refuses it.
     """
-    from agent6.tools._path_safety import unlink_contained, write_contained
-
     root = tmp_path / "root"
     outside = tmp_path / "outside"
     (root / "sub").mkdir(parents=True)
     outside.mkdir()
     (root / "sub" / "victim.txt").write_text("in repo\n", encoding="utf-8")
     (outside / "victim.txt").write_text("operator file\n", encoding="utf-8")
-    sp = Workspace(root=root).resolve_write("sub/victim.txt")
+    sp = _path_safety.Workspace(root=root).resolve_write("sub/victim.txt")
     # A jailed command swaps the parent component after staging.
     (root / "sub" / "victim.txt").unlink()
     (root / "sub").rmdir()
     (root / "sub").symlink_to(outside)
 
-    with pytest.raises(ToolError, match="symlink"):
-        write_contained(sp, "x")
-    with pytest.raises(ToolError, match="symlink"):
-        unlink_contained(sp)
+    with pytest.raises(errors.ToolError, match="symlink"):
+        _path_safety.write_contained(sp, "x")
+    with pytest.raises(errors.ToolError, match="symlink"):
+        _path_safety.unlink_contained(sp)
     assert (outside / "victim.txt").read_text(encoding="utf-8") == "operator file\n"
 
 
-def test_write_contained_keeps_the_files_line_ending(tmp_path: Path) -> None:
+def test_write_contained_keeps_the_files_line_ending(tmp_path: pathlib.Path) -> None:
     """write_contained keeps the file's line ending.
 
     The file's first line ending decides; a new file gets LF, and CRLF in the text is normalized
     first. A text read translating CRLF to LF with a write emitting LF rewrites every line ending of
     a CRLF file for one edited word, and the run's diff and `sessions diff` carry the churn.
     """
-    from agent6.tools._path_safety import Workspace, read_contained, write_contained
-
     root = tmp_path / "ws"
     root.mkdir()
     (root / "crlf.txt").write_bytes(b"alpha\r\nbeta\r\ngamma\r\n")
     (root / "lf.txt").write_bytes(b"alpha\nbeta\n")
-    ws = Workspace(root=root)
-    text = read_contained(ws.resolve_read("crlf.txt"))
+    ws = _path_safety.Workspace(root=root)
+    text = _path_safety.read_contained(ws.resolve_read("crlf.txt"))
     assert text == "alpha\nbeta\ngamma\n"
-    write_contained(ws.resolve_write("crlf.txt"), text.replace("beta", "BETA"))
+    _path_safety.write_contained(ws.resolve_write("crlf.txt"), text.replace("beta", "BETA"))
     assert (root / "crlf.txt").read_bytes() == b"alpha\r\nBETA\r\ngamma\r\n"
-    write_contained(ws.resolve_write("crlf.txt"), "one\r\ntwo\n")
+    _path_safety.write_contained(ws.resolve_write("crlf.txt"), "one\r\ntwo\n")
     assert (root / "crlf.txt").read_bytes() == b"one\r\ntwo\r\n"
-    write_contained(ws.resolve_write("lf.txt"), "alpha\nBETA\n")
+    _path_safety.write_contained(ws.resolve_write("lf.txt"), "alpha\nBETA\n")
     assert (root / "lf.txt").read_bytes() == b"alpha\nBETA\n"
-    assert write_contained(ws.resolve_write("new.txt"), "x\ny\n") == 4
+    assert _path_safety.write_contained(ws.resolve_write("new.txt"), "x\ny\n") == 4
     assert (root / "new.txt").read_bytes() == b"x\ny\n"
     # A new file keeps the content's own endings: a CRLF fixture can be made.
-    write_contained(ws.resolve_write("new-crlf.txt"), "x\r\ny\r\n")
+    _path_safety.write_contained(ws.resolve_write("new-crlf.txt"), "x\r\ny\r\n")
     assert (root / "new-crlf.txt").read_bytes() == b"x\r\ny\r\n"

@@ -4,17 +4,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
 import agent6
 from agent6.app import _session as session_mod
-from agent6.app.reporter import Reporter
+from agent6.app import reporter
 
 
 def test_detects_an_install_root_inside_the_workspace(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ws = tmp_path / "ws"
     pkg = ws / ".venv" / "lib" / "site-packages" / "agent6"
@@ -25,7 +25,7 @@ def test_detects_an_install_root_inside_the_workspace(
 
 
 def test_run_entry_warns_once_and_never_refuses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The warning names the install root and the remedy, and the session still starts."""
     ws = tmp_path / "ws"
@@ -34,13 +34,15 @@ def test_run_entry_warns_once_and_never_refuses(
     monkeypatch.setattr(agent6, "__file__", str(pkg / "__init__.py"))
     said: list[str] = []
     session_mod.warn_install_inside_workspace(
-        ws, reporter=Reporter(out=said.append, err=said.append)
+        ws, reporter=reporter.Reporter(out=said.append, err=said.append)
     )
     warnings = [line for line in said if "WARNING" in line]
     assert any("installed inside" in w and "pipx" in w for w in warnings)
 
 
-def test_no_warning_for_an_outside_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_no_warning_for_an_outside_install(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     outside = tmp_path / "opt" / "agent6"
     outside.mkdir(parents=True)
     monkeypatch.setattr(agent6, "__file__", str(outside / "__init__.py"))
@@ -48,6 +50,6 @@ def test_no_warning_for_an_outside_install(tmp_path: Path, monkeypatch: pytest.M
     ws.mkdir()
     said: list[str] = []
     session_mod.warn_install_inside_workspace(
-        ws, reporter=Reporter(out=said.append, err=said.append)
+        ws, reporter=reporter.Reporter(out=said.append, err=said.append)
     )
     assert not [line for line in said if "installed inside" in line]

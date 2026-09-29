@@ -11,15 +11,15 @@ Two readers of one stream drift; this folds every fixture both ways.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import pytest
 
-from agent6.viewmodel.listing import scan_session_log
-from agent6.viewmodel.state import fold_session, status_facts
+from agent6.viewmodel import listing as viewmodel_listing
+from agent6.viewmodel import state as viewmodel_state
 
-_GOLDEN = Path(__file__).parent / "data" / "golden_session_logs.jsonl"
+_GOLDEN = pathlib.Path(__file__).parent / "data" / "golden_session_logs.jsonl"
 
 _START: dict[str, Any] = {
     "ts": "2026-07-14T10:00:00+00:00",
@@ -170,11 +170,13 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
 }
 
 
-def _shared_facts(events: list[dict[str, Any]], tmp_path: Path) -> tuple[dict[str, Any], ...]:
+def _shared_facts(
+    events: list[dict[str, Any]], tmp_path: pathlib.Path
+) -> tuple[dict[str, Any], ...]:
     log = tmp_path / "logs.jsonl"
     log.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-    scan = scan_session_log(log)
-    state = fold_session(events)
+    scan = viewmodel_listing.scan_session_log(log)
+    state = viewmodel_state.fold_session(events)
     listing: dict[str, Any] = {
         "task": scan.task,
         "finished": scan.finished,
@@ -201,7 +203,7 @@ def _shared_facts(events: list[dict[str, Any]], tmp_path: Path) -> tuple[dict[st
         "end_reason": state.end_reason if state.finished else "",
         "all_passed": state.all_passed if state.finished else None,
         "verify_scoped": state.verify_scoped,
-        "gate_red": status_facts(state).gate_red,
+        "gate_red": viewmodel_state.status_facts(state).gate_red,
         "cost_usd": state.budget.usd_total if scan.cost_usd is not None else None,
         "usd_partial": state.budget.usd_partial,
         "tokens": (
@@ -221,13 +223,13 @@ def _shared_facts(events: list[dict[str, Any]], tmp_path: Path) -> tuple[dict[st
 
 
 @pytest.mark.parametrize("shape", sorted(_SHAPES))
-def test_the_listing_and_the_viewer_fold_agree(shape: str, tmp_path: Path) -> None:
+def test_the_listing_and_the_viewer_fold_agree(shape: str, tmp_path: pathlib.Path) -> None:
     listing, viewer = _shared_facts(_SHAPES[shape], tmp_path)
     assert listing == viewer, shape
 
 
-def test_the_folds_agree_on_the_golden_log(tmp_path: Path) -> None:
-    from agent6.viewmodel.tail import tail_events
+def test_the_folds_agree_on_the_golden_log(tmp_path: pathlib.Path) -> None:
+    from agent6.viewmodel import tail
 
-    listing, viewer = _shared_facts(list(tail_events(_GOLDEN, follow=False)), tmp_path)
+    listing, viewer = _shared_facts(list(tail.tail_events(_GOLDEN, follow=False)), tmp_path)
     assert listing == viewer

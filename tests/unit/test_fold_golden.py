@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from pathlib import Path
+import pathlib
 
 from agent6.viewmodel import fold_session, fold_transcript, session_state_as_dict, tail_events
 
-_DATA = Path(__file__).parent / "data"
+_DATA = pathlib.Path(__file__).parent / "data"
 _FIXTURE = _DATA / "golden_session_logs.jsonl"
 _STATE = _DATA / "golden_session_state.json"
 _TRANSCRIPT = _DATA / "golden_transcript.json"

@@ -15,28 +15,28 @@ shim onto the shared jail launcher.
 from __future__ import annotations
 
 import os
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
+from agent6 import kinds
 from agent6.config import Config
-from agent6.kinds import NetworkMode
-from agent6.sandbox.jail import spawn_in_jail
-from agent6.tools.policy import jail_policy
+from agent6.sandbox import jail
+from agent6.tools import policy as tools_policy
 
 pytestmark = pytest.mark.needs_namespaces
 
 
-def _probe(script: str, cwd: Path, *, network: NetworkMode = "none") -> str:
+def _probe(script: str, cwd: pathlib.Path, *, network: kinds.NetworkMode = "none") -> str:
     """Run one probe as a server would run.
 
     Spawned through the jail with a server policy, stdio inherited, output collected off its
     stdout pipe.
     """
     argv = ("/usr/bin/python3", "-c", script)
-    policy = jail_policy(cwd, Config(), "strict", argv, network=network)
-    proc = spawn_in_jail(
+    policy = tools_policy.jail_policy(cwd, Config(), "strict", argv, network=network)
+    proc = jail.spawn_in_jail(
         policy,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
@@ -46,7 +46,7 @@ def _probe(script: str, cwd: Path, *, network: NetworkMode = "none") -> str:
     return out.decode(errors="replace")
 
 
-def test_a_confined_server_gains_no_capabilities(tmp_path: Path) -> None:
+def test_a_confined_server_gains_no_capabilities(tmp_path: pathlib.Path) -> None:
     """Confinement is never a privilege trade: the server's capability sets are empty.
 
     The launcher holds a full capability set between `unshare` and `execve`, and any of it
@@ -70,7 +70,7 @@ def test_a_confined_server_gains_no_capabilities(tmp_path: Path) -> None:
     assert made.stat().st_uid == os.getuid(), "the server acted as someone other than the operator"
 
 
-def test_the_server_lands_in_a_namespace_it_cannot_leave(tmp_path: Path) -> None:
+def test_the_server_lands_in_a_namespace_it_cannot_leave(tmp_path: pathlib.Path) -> None:
     """A server cannot rejoin the host network.
 
     That needs a handle on its namespace and CAP_SYS_ADMIN there; a process in the parent
@@ -88,10 +88,10 @@ def test_the_server_lands_in_a_namespace_it_cannot_leave(tmp_path: Path) -> None
     )
     out = _probe(script, tmp_path)
     assert "ESCAPE-REFUSED" in out, out
-    assert str(Path("/proc/self/ns/net").readlink()) not in out
+    assert str(pathlib.Path("/proc/self/ns/net").readlink()) not in out
 
 
-def test_a_confined_server_cannot_reach_a_live_listener(tmp_path: Path) -> None:
+def test_a_confined_server_cannot_reach_a_live_listener(tmp_path: pathlib.Path) -> None:
     """A connect to a real listener on this machine is denied without the network, allowed with it.
 
     The positive control matters: a DNS probe fails inside any jail and on any offline host
@@ -115,13 +115,13 @@ def test_a_confined_server_cannot_reach_a_live_listener(tmp_path: Path) -> None:
     assert "CONNECT 0" in allowed, f"network = host did not reach the listener: {allowed}"
 
 
-def test_the_jail_binary_is_what_confines_a_server(tmp_path: Path) -> None:
+def test_the_jail_binary_is_what_confines_a_server(tmp_path: pathlib.Path) -> None:
     """A server is confined by the same launcher a jailed command uses.
 
     One implementation, so there is no second code path to keep in step; a Python Landlock
     shim for MCP would fail this.
     """
-    assert not (Path(__file__).parents[2] / "src/agent6/sandbox/exec_confined.py").exists()
+    assert not (pathlib.Path(__file__).parents[2] / "src/agent6/sandbox/exec_confined.py").exists()
     # A confined server is PID 2 in its OWN pid namespace (the launcher is PID
     # 1). An unconfined spawn keeps a host pid, so this fails if confinement is
     # ever bypassed -- unlike "python3 is in the cmdline", true of any spawn.

@@ -5,33 +5,32 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import pathlib
 
 import pytest
-from textual.app import App, ComposeResult
-from textual.widgets import Static
+from textual import app as textual_app
+from textual import widgets
 
-from agent6.ui.tui.settings import get_theme, save_theme
-from agent6.ui.tui.theme import ThemePicker, setup_theme
-from agent6.ui.tui.widgets import ChoiceField
+from agent6.ui.tui import settings, theme
+from agent6.ui.tui import widgets as tui_widgets
 
 
 @pytest.fixture
-def cfg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def cfg(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     return tmp_path
 
 
-class _Host(App[None]):
-    def compose(self) -> ComposeResult:
-        yield Static("host")
+class _Host(textual_app.App[None]):
+    def compose(self) -> textual_app.ComposeResult:
+        yield widgets.Static("host")
 
     def on_mount(self) -> None:
-        setup_theme(self)
+        theme.setup_theme(self)
 
 
-def test_setup_registers_applies_saved_and_persists(cfg: Path) -> None:
-    save_theme("nord")
+def test_setup_registers_applies_saved_and_persists(cfg: pathlib.Path) -> None:
+    settings.save_theme("nord")
 
     async def scenario() -> None:
         app = _Host()
@@ -43,13 +42,13 @@ def test_setup_registers_applies_saved_and_persists(cfg: Path) -> None:
             # Any later change is persisted by the theme_changed_signal hook.
             app.theme = "gruvbox"
             await pilot.pause()
-            assert get_theme() == "gruvbox"
+            assert settings.get_theme() == "gruvbox"
 
     asyncio.run(scenario())
 
 
-def test_unknown_saved_theme_falls_back(cfg: Path) -> None:
-    save_theme("no-such-theme")
+def test_unknown_saved_theme_falls_back(cfg: pathlib.Path) -> None:
+    settings.save_theme("no-such-theme")
 
     async def scenario() -> None:
         app = _Host()
@@ -60,7 +59,7 @@ def test_unknown_saved_theme_falls_back(cfg: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_extra_builtin_themes_register_and_apply(cfg: Path) -> None:
+def test_extra_builtin_themes_register_and_apply(cfg: pathlib.Path) -> None:
     """The four extra built-in themes are registered by setup_theme and each applies cleanly."""
 
     async def scenario() -> None:
@@ -80,8 +79,8 @@ def test_extra_builtin_themes_register_and_apply(cfg: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_saved_extra_theme_applies_on_mount(cfg: Path) -> None:
-    save_theme("grimm")
+def test_saved_extra_theme_applies_on_mount(cfg: pathlib.Path) -> None:
+    settings.save_theme("grimm")
 
     async def scenario() -> None:
         app = _Host()
@@ -92,7 +91,7 @@ def test_saved_extra_theme_applies_on_mount(cfg: Path) -> None:
     asyncio.run(scenario())
 
 
-async def _select_theme(pilot: object, field: ChoiceField, target: str) -> None:
+async def _select_theme(pilot: object, field: tui_widgets.ChoiceField, target: str) -> None:
     """Highlight down to *target*, then Space to select it (applies live)."""
     for _ in range(len(field._options)):  # pyright: ignore[reportPrivateUsage]
         if field._options[field._cursor] == target:  # pyright: ignore[reportPrivateUsage]
@@ -105,15 +104,15 @@ async def _select_theme(pilot: object, field: ChoiceField, target: str) -> None:
     await pilot.pause()  # type: ignore[attr-defined]
 
 
-def test_picker_preview_on_select_and_esc_keeps(cfg: Path) -> None:
+def test_picker_preview_on_select_and_esc_keeps(cfg: pathlib.Path) -> None:
     async def scenario() -> None:
         app = _Host()
         async with app.run_test() as pilot:
             await pilot.pause()
             assert app.theme == "agent6-dark"
-            app.push_screen(ThemePicker())
+            app.push_screen(theme.ThemePicker())
             await pilot.pause()
-            await _select_theme(pilot, app.screen.query_one(ChoiceField), "nord")
+            await _select_theme(pilot, app.screen.query_one(tui_widgets.ChoiceField), "nord")
             assert app.theme == "nord"  # Space applies the highlighted theme live
             await pilot.press("escape")
             await pilot.pause()
@@ -122,51 +121,51 @@ def test_picker_preview_on_select_and_esc_keeps(cfg: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_picker_enter_keeps_and_persists(cfg: Path) -> None:
+def test_picker_enter_keeps_and_persists(cfg: pathlib.Path) -> None:
     async def scenario() -> None:
         app = _Host()
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(ThemePicker())
+            app.push_screen(theme.ThemePicker())
             await pilot.pause()
-            await _select_theme(pilot, app.screen.query_one(ChoiceField), "dracula")
+            await _select_theme(pilot, app.screen.query_one(tui_widgets.ChoiceField), "dracula")
             await pilot.press("enter")  # confirm + close
             await pilot.pause()
             assert app.theme == "dracula"
-            assert get_theme() == "dracula"  # persisted
+            assert settings.get_theme() == "dracula"  # persisted
 
     asyncio.run(scenario())
 
 
-def test_picker_selects_extra_builtin_and_persists(cfg: Path) -> None:
+def test_picker_selects_extra_builtin_and_persists(cfg: pathlib.Path) -> None:
     async def scenario() -> None:
         app = _Host()
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(ThemePicker())
+            app.push_screen(theme.ThemePicker())
             await pilot.pause()
-            await _select_theme(pilot, app.screen.query_one(ChoiceField), "alice")
+            await _select_theme(pilot, app.screen.query_one(tui_widgets.ChoiceField), "alice")
             assert app.theme == "alice"  # listed and applied live
             await pilot.press("enter")
             await pilot.pause()
-            assert get_theme() == "alice"  # persisted
+            assert settings.get_theme() == "alice"  # persisted
 
     asyncio.run(scenario())
 
 
-def test_picker_backdrop_click_closes(cfg: Path) -> None:
-    from textual.geometry import Offset
+def test_picker_backdrop_click_closes(cfg: pathlib.Path) -> None:
+    from textual import geometry
 
     async def scenario() -> None:
         app = _Host()
         async with app.run_test(size=(80, 30)) as pilot:
             await pilot.pause()
-            app.push_screen(ThemePicker())
+            app.push_screen(theme.ThemePicker())
             await pilot.pause()
-            assert isinstance(app.screen, ThemePicker)
-            await pilot.click(offset=Offset(2, 2))  # click the backdrop, outside the box
+            assert isinstance(app.screen, theme.ThemePicker)
+            await pilot.click(offset=geometry.Offset(2, 2))  # click the backdrop, outside the box
             await pilot.pause()
-            assert not isinstance(app.screen, ThemePicker)  # mouse-closed, no Esc needed
+            assert not isinstance(app.screen, theme.ThemePicker)  # mouse-closed, no Esc needed
 
     asyncio.run(scenario())
 
@@ -178,9 +177,7 @@ def test_horizontal_scrollbar_thumb_is_half_height() -> None:
     """
     from rich.color import Color
 
-    from agent6.ui.tui.theme import ThinScrollBarRender
-
-    seg = ThinScrollBarRender.render_bar(
+    seg = theme.ThinScrollBarRender.render_bar(
         size=10,
         virtual_size=100,
         window_size=50,
@@ -196,7 +193,7 @@ def test_horizontal_scrollbar_thumb_is_half_height() -> None:
     assert not any(s.style and s.style.reverse for s in seg.segments)
     assert not any(ch in row for ch in "▉▊▋▌▍▎▏█")
     # Vertical bars keep textual's default full-cell rendering (reverse blanks).
-    vseg = ThinScrollBarRender.render_bar(
+    vseg = theme.ThinScrollBarRender.render_bar(
         size=10,
         virtual_size=100,
         window_size=50,

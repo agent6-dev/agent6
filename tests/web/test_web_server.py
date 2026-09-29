@@ -11,27 +11,24 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import socket
 import subprocess
 import sys
 import threading
 import time
+import types
 from collections.abc import Callable, Iterator
-from http.client import HTTPConnection
-from pathlib import Path
-from types import SimpleNamespace
+from http import client
 from typing import Any, cast
 
 import pytest
 
-from agent6.machine.journal import MachineJournal, PendingWait
-from agent6.paths import state_dir
-from agent6.sessions.ipc import register_frontend, write_worker_pid
+from agent6 import paths
+from agent6.machine import journal as machine_journal
+from agent6.sessions import ipc
 from agent6.ui.cli import main
-from agent6.ui.web.server import (
-    WebServer,
-    _create_web_server,  # pyright: ignore[reportPrivateUsage]
-)
+from agent6.ui.web import server as web_server
 
 TINY = """
 machine = "tiny"
@@ -68,17 +65,17 @@ with (d / "logs.jsonl").open("a") as fh:
 """
 
 
-def _make_run(cwd: Path, session_id: str, events: list[dict[str, object]]) -> None:
-    runs = state_dir(cwd) / "sessions" / "runs" / session_id
+def _make_run(cwd: pathlib.Path, session_id: str, events: list[dict[str, object]]) -> None:
+    runs = paths.state_dir(cwd) / "sessions" / "runs" / session_id
     runs.mkdir(parents=True)
     body = "".join(json.dumps(e) + "\n" for e in events)
     (runs / "logs.jsonl").write_text(body, encoding="utf-8")
 
 
 @pytest.fixture
-def server(tmp_path: Path) -> Iterator[tuple[WebServer, int]]:
+def server(tmp_path: pathlib.Path) -> Iterator[tuple[web_server.WebServer, int]]:
     """A WebServer bound to an ephemeral loopback port, serving from tmp_path."""
-    srv = WebServer(("127.0.0.1", 0), tmp_path, "")
+    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "")
     port = srv.server_address[1]
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -90,7 +87,7 @@ def server(tmp_path: Path) -> Iterator[tuple[WebServer, int]]:
 
 
 def _get(port: int, path: str) -> tuple[int, bytes, str]:
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         conn.request("GET", path)
         resp = conn.getresponse()
@@ -100,7 +97,7 @@ def _get(port: int, path: str) -> tuple[int, bytes, str]:
 
 
 def _post(port: int, path: str, body: dict[str, object]) -> tuple[int, dict[str, object]]:
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         payload = json.dumps(body).encode()
         conn.request("POST", path, payload, {"Content-Type": "application/json"})
@@ -114,7 +111,7 @@ def _post_raw(
     port: int, path: str, body: bytes, headers: dict[str, str]
 ) -> tuple[int, dict[str, object]]:
     """POST with caller-controlled headers (for the CSRF checks)."""
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         conn.request("POST", path, body, headers)
         resp = conn.getresponse()
@@ -123,7 +120,7 @@ def _post_raw(
         conn.close()
 
 
-def test_page_served(server: tuple[WebServer, int]) -> None:
+def test_page_served(server: tuple[web_server.WebServer, int]) -> None:
     _srv, port = server
     status, body, ctype = _get(port, "/")
     assert status == 200
@@ -132,21 +129,21 @@ def test_page_served(server: tuple[WebServer, int]) -> None:
 
 
 @pytest.mark.parametrize("host", ["::1", "[::1]"])
-def test_ipv6_loopback_bind_uses_ipv6_socket(tmp_path: Path, host: str) -> None:
-    srv = _create_web_server(host, 0, tmp_path, "")  # pyright: ignore[reportPrivateUsage]
+def test_ipv6_loopback_bind_uses_ipv6_socket(tmp_path: pathlib.Path, host: str) -> None:
+    srv = web_server._create_web_server(host, 0, tmp_path, "")  # pyright: ignore[reportPrivateUsage]
     try:
         assert srv.address_family == socket.AF_INET6
     finally:
         srv.server_close()
 
 
-def test_explicit_config_reaches_the_server(tmp_path: Path) -> None:
+def test_explicit_config_reaches_the_server(tmp_path: pathlib.Path) -> None:
     """`agent6 --config F web` threads F to the server object every route reads.
 
     A dropped path ran the whole browser surface on the default layers.
     """
     cfg = tmp_path / "f.toml"
-    srv = _create_web_server("127.0.0.1", 0, tmp_path, "", cfg)  # pyright: ignore[reportPrivateUsage]
+    srv = web_server._create_web_server("127.0.0.1", 0, tmp_path, "", cfg)  # pyright: ignore[reportPrivateUsage]
     try:
         assert srv.config_path == cfg
     finally:
@@ -154,8 +151,8 @@ def test_explicit_config_reaches_the_server(tmp_path: Path) -> None:
 
 
 def test_run_snapshot_matches_watch_json(
-    server: tuple[WebServer, int],
-    tmp_path: Path,
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -184,7 +181,7 @@ def test_run_snapshot_matches_watch_json(
     assert from_web["session_id"] == "willing-glen-001"
 
 
-def test_hub_lists_runs(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_hub_lists_runs(server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path) -> None:
     _srv, port = server
     _make_run(tmp_path, "run-a", [{"type": "session.start", "mode": "run", "user_task": "task a"}])
     _make_run(
@@ -206,8 +203,8 @@ def test_hub_lists_runs(server: tuple[WebServer, int], tmp_path: Path) -> None:
 
 
 def test_machine_snapshot_matches_watch_json(
-    server: tuple[WebServer, int],
-    tmp_path: Path,
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -228,19 +225,19 @@ def test_machine_snapshot_matches_watch_json(
     assert from_web["ended"]["status"] == "ok"
 
 
-def test_unknown_run_is_404(server: tuple[WebServer, int]) -> None:
+def test_unknown_run_is_404(server: tuple[web_server.WebServer, int]) -> None:
     _srv, port = server
     status, body, _ = _get(port, "/api/session/nope")
     assert status == 404
     assert "no session" in json.loads(body)["error"]
 
 
-def test_meta_resolves_the_target_kind(tmp_path: Path) -> None:
+def test_meta_resolves_the_target_kind(tmp_path: pathlib.Path) -> None:
     # `agent6 web <target>` deep-links on load; the page asks /api/meta what the target names.
-    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-t"
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-t"
     runs.mkdir(parents=True)
     (runs / "logs.jsonl").write_text('{"type": "session.start"}\n', encoding="utf-8")
-    srv = WebServer(("127.0.0.1", 0), tmp_path, "run-t")
+    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "run-t")
     port = srv.server_address[1]
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -256,16 +253,18 @@ def test_meta_resolves_the_target_kind(tmp_path: Path) -> None:
 
 
 def test_resume_spawns_a_detached_resume_with_the_follow_up(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from agent6.ui.web import actions
 
     _srv, port = server
     _make_run(tmp_path, "run-r", [{"type": "session.start"}, {"type": "session.end"}])
-    calls: list[tuple[Path, str, str, str, str]] = []
+    calls: list[tuple[pathlib.Path, str, str, str, str]] = []
 
     def fake_resume(
-        cwd: Path,
+        cwd: pathlib.Path,
         session_id: str,
         *,
         steer: str = "",
@@ -287,12 +286,14 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
 
 
 def test_run_plan_http_returns_the_child_and_leaves_the_plan_unchanged(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from agent6.ui.web import actions
 
     _srv, port = server
-    plan = state_dir(tmp_path) / "sessions" / "plans" / "plan-http-AAAAAA"
+    plan = paths.state_dir(tmp_path) / "sessions" / "plans" / "plan-http-AAAAAA"
     plan.mkdir(parents=True)
     (plan / "manifest.json").write_text(
         json.dumps({"version": 3, "session_id": plan.name, "mode": "plan"}), encoding="utf-8"
@@ -300,9 +301,11 @@ def test_run_plan_http_returns_the_child_and_leaves_the_plan_unchanged(
     (plan / "logs.jsonl").write_text("", encoding="utf-8")
     (plan / "plan.md").write_text("# Plan: via HTTP\n\n1. Run it.\n", encoding="utf-8")
     before = {path.name: path.read_bytes() for path in plan.iterdir()}
-    child = state_dir(tmp_path) / "sessions" / "runs" / "run-http-BBBBBB"
+    child = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-http-BBBBBB"
 
-    def fake_spawn(argv: list[str], _cwd: Path, **_kwargs: object) -> tuple[Path, str]:
+    def fake_spawn(
+        argv: list[str], _cwd: pathlib.Path, **_kwargs: object
+    ) -> tuple[pathlib.Path, str]:
         assert argv[-3:] == ["run", "--from", plan.name]
         child.mkdir(parents=True)
         return child, ""
@@ -317,13 +320,13 @@ def test_run_plan_http_returns_the_child_and_leaves_the_plan_unchanged(
 
 
 def test_resume_refused_while_the_worker_is_alive(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     import os
 
     _srv, port = server
     _make_run(tmp_path, "run-l", [{"type": "session.start"}])
-    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-l"
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-l"
     (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     status, data = _post(port, "/api/session/run-l/resume", {"text": ""})
     assert status == 422
@@ -331,13 +334,13 @@ def test_resume_refused_while_the_worker_is_alive(
 
 
 def test_stop_after_step_and_compact_drop_markers_on_a_live_run(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     import os
 
     _srv, port = server
     _make_run(tmp_path, "run-m", [{"type": "session.start"}])
-    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-m"
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-m"
     (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     status, data = _post(port, "/api/session/run-m/stop", {"after_step": True})
     assert status == 200 and data["ok"] is True
@@ -349,7 +352,7 @@ def test_stop_after_step_and_compact_drop_markers_on_a_live_run(
 
 
 def test_stop_now_lands_both_bridges_and_reports_the_run_stopped(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     """The Stop now button posted a steer text; it is the one stop `agent6 stop` is.
 
@@ -357,11 +360,11 @@ def test_stop_now_lands_both_bridges_and_reports_the_run_stopped(
     """
     _srv, port = server
     _make_run(tmp_path, "run-n", [{"type": "session.start"}])
-    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-n"
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-n"
     worker = subprocess.Popen(
         [sys.executable, "-c", _STOP_WORKER, str(runs)], start_new_session=True
     )
-    write_worker_pid(runs, worker.pid)
+    ipc.write_worker_pid(runs, worker.pid)
     try:
         status, data = _post(port, "/api/session/run-n/stop", {})
         assert status == 200 and data["ok"] is True
@@ -374,7 +377,9 @@ def test_stop_now_lands_both_bridges_and_reports_the_run_stopped(
         worker.wait()
 
 
-def test_stop_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_stop_refused_on_a_dead_run(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     _srv, port = server
     _make_run(tmp_path, "run-d", [{"type": "session.start"}, {"type": "session.end"}])
     status, data = _post(port, "/api/session/run-d/stop", {})
@@ -383,11 +388,11 @@ def test_stop_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Pat
 
 
 def test_stop_rejects_a_non_boolean_after_step(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     _srv, port = server
     _make_run(tmp_path, "run-bad-stop", [{"type": "session.start"}])
-    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-bad-stop"
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-bad-stop"
     status, data = _post(port, "/api/session/run-bad-stop/stop", {"after_step": "false"})
     assert status == 400
     assert "after_step" in str(data["error"])
@@ -396,12 +401,12 @@ def test_stop_rejects_a_non_boolean_after_step(
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root writes through a read-only dir")
 def test_stop_that_cannot_write_the_marker_is_refused(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     """A stop-marker write that fails is a refusal, as compact's is."""
     _srv, port = server
     _make_run(tmp_path, "run-ro", [{"type": "session.start"}])
-    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-ro"
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-ro"
     (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     runs.chmod(0o555)
     try:
@@ -412,7 +417,7 @@ def test_stop_that_cannot_write_the_marker_is_refused(
 
 
 def test_session_payload_names_the_ref_holding_the_commits(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     """The Merge button gates on `commits_ref`: the branch while it exists, else the chain ref.
 
@@ -420,7 +425,7 @@ def test_session_payload_names_the_ref_holding_the_commits(
     """
     import subprocess as sp
 
-    from agent6.git_ops import chain_ref_for
+    from agent6 import git_ops
 
     _srv, port = server
     sp.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
@@ -432,7 +437,7 @@ def test_session_payload_names_the_ref_holding_the_commits(
         check=True,
     )
     _make_run(tmp_path, "run-chain", [{"type": "session.start", "mode": "run"}])
-    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-chain"
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-chain"
     (runs / "manifest.json").write_text(
         json.dumps(
             {
@@ -447,13 +452,15 @@ def test_session_payload_names_the_ref_holding_the_commits(
     )
     status, body, _ = _get(port, "/api/session/run-chain")
     assert status == 200 and "commits_ref" not in json.loads(body)  # nothing committed yet
-    chain = chain_ref_for("run-chain")
+    chain = git_ops.chain_ref_for("run-chain")
     sp.run(["git", "update-ref", chain, "HEAD"], cwd=tmp_path, check=True)
     status, body, _ = _get(port, "/api/session/run-chain")
     assert status == 200 and json.loads(body)["commits_ref"] == chain
 
 
-def test_run_conversation_endpoint(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_run_conversation_endpoint(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     _srv, port = server
     _make_run(
         tmp_path,
@@ -476,7 +483,7 @@ def test_run_conversation_endpoint(server: tuple[WebServer, int], tmp_path: Path
     assert "read_file" in flat and "12 bytes" in flat
 
 
-def test_config_endpoint(server: tuple[WebServer, int]) -> None:
+def test_config_endpoint(server: tuple[web_server.WebServer, int]) -> None:
     _srv, port = server
     status, body, _ = _get(port, "/api/config")
     assert status == 200
@@ -488,7 +495,9 @@ def test_config_endpoint(server: tuple[WebServer, int]) -> None:
 
 
 def test_config_endpoint_sets_typed_values_and_unsets_to_the_next_layer(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _srv, port = server
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
@@ -522,24 +531,26 @@ def test_config_endpoint_sets_typed_values_and_unsets_to_the_next_layer(
     assert json.loads(body)["git.commit.name"]["source"] == "default"
 
 
-def test_approve_writes_answer_file(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_approve_writes_answer_file(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     _srv, port = server
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "appr-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "appr-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text(
         '{"type":"approval.prompt","id":"p1","prompt":"Allow it?"}\n', encoding="utf-8"
     )
-    write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    ipc.write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
     # The watching browser's own claim; without one the answer would reach nobody.
-    register_frontend(session_dir, os.getpid())
+    ipc.register_frontend(session_dir, os.getpid())
     status, body = _post(port, "/api/session/appr-run/approve", {"id": "p1", "answer": "yes"})
     assert status == 200
     assert body["ok"] is True
     assert (session_dir / "approvals" / "p1.answer").read_text(encoding="utf-8") == "yes"
 
 
-def _run_asking_one_question(tmp_path: Path, session_id: str) -> Path:
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / session_id
+def _run_asking_one_question(tmp_path: pathlib.Path, session_id: str) -> pathlib.Path:
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / session_id
     session_dir.mkdir(parents=True)
     events = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
@@ -548,13 +559,15 @@ def _run_asking_one_question(tmp_path: Path, session_id: str) -> Path:
     (session_dir / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
     )
-    write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    ipc.write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
     # The watching browser's own claim; without one the answer would reach nobody.
-    register_frontend(session_dir, os.getpid())
+    ipc.register_frontend(session_dir, os.getpid())
     return session_dir
 
 
-def test_answer_writes_question_file(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_answer_writes_question_file(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     _srv, port = server
     session_dir = _run_asking_one_question(tmp_path, "q-run")
     status, body = _post(port, "/api/session/q-run/answer", {"id": "q1", "answers": ["option B"]})
@@ -565,7 +578,7 @@ def test_answer_writes_question_file(server: tuple[WebServer, int], tmp_path: Pa
 
 
 def test_answer_refuses_a_list_that_does_not_match_the_prompt(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     """An answer list is checked against the prompt before its file is written.
 
@@ -581,9 +594,11 @@ def test_answer_refuses_a_list_that_does_not_match_the_prompt(
     assert not (session_dir / "questions" / "q1.answer").exists()
 
 
-def test_steer_writes_answer_and_request(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_steer_writes_answer_and_request(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     _srv, port = server
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "steer-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "steer-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -593,7 +608,9 @@ def test_steer_writes_answer_and_request(server: tuple[WebServer, int], tmp_path
     assert (session_dir / "steer.request").exists()
 
 
-def test_steer_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_steer_refused_on_a_dead_run(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     """Steering a crashed run is refused, as stop and compact are.
 
     It folds as unfinished, so the composer offers steer for a marker nothing will read.
@@ -603,22 +620,24 @@ def test_steer_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Pa
     status, data = _post(port, "/api/session/run-sd/steer", {"text": "abort"})
     assert status == 422
     assert "not live" in str(data["error"])
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "run-sd"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-sd"
     assert not (session_dir / "steer.answer").exists()
     assert not (session_dir / "steer.request").exists()
 
 
-def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_approve_id_traversal_is_contained(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     # A malicious answer id must not escape the run's approvals/ dir.
     _srv, port = server
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "trav-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "trav-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text(
         '{"type":"approval.prompt","id":"p1","prompt":"Allow it?"}\n', encoding="utf-8"
     )
-    write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    ipc.write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
     # The watching browser's own claim; without one the answer would reach nobody.
-    register_frontend(session_dir, os.getpid())
+    ipc.register_frontend(session_dir, os.getpid())
     escape = tmp_path / "pwned.answer"
     status, _ = _post(
         port, "/api/session/trav-run/approve", {"id": "../../../../pwned", "answer": "yes"}
@@ -631,14 +650,14 @@ def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_pa
 
 
 def _make_machine_with_state(
-    cwd: Path, name: str, seq_state: str, *, running: bool = False
-) -> tuple[Path, Path]:
+    cwd: pathlib.Path, name: str, seq_state: str, *, running: bool = False
+) -> tuple[pathlib.Path, pathlib.Path]:
     """A machine instance dir + one per-state agent-log dir.
 
     Returns (instance, state). ``running`` records this test process as the machine's worker, so
     steer (which refuses a machine no state is executing under) is offered.
     """
-    inst = state_dir(cwd) / "machines" / name
+    inst = paths.state_dir(cwd) / "machines" / name
     inst.mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (inst / "journal.jsonl").write_text("", encoding="utf-8")
@@ -652,30 +671,38 @@ def _make_machine_with_state(
         encoding="utf-8",
     )
     if running:
-        write_worker_pid(inst, os.getpid())
+        ipc.write_worker_pid(inst, os.getpid())
     return inst, state
 
 
-def test_machine_poke_writes_signal(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_machine_poke_writes_signal(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "pokable", "0000-review")
-    MachineJournal(inst).write_pending_wait(PendingWait(state="route", wake_epoch=None))
+    machine_journal.MachineJournal(inst).write_pending_wait(
+        machine_journal.PendingWait(state="route", wake_epoch=None)
+    )
     status, body = _post(port, "/api/machine/pokable/poke", {"message": "reload"})
     assert status == 200 and body["ok"] is True
     assert json.loads((inst / "signal").read_text(encoding="utf-8")) == "reload"
 
 
-def test_machine_poke_json_data_payload(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_machine_poke_json_data_payload(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "datapoke", "0000-review")
-    MachineJournal(inst).write_pending_wait(PendingWait(state="route", wake_epoch=None))
+    machine_journal.MachineJournal(inst).write_pending_wait(
+        machine_journal.PendingWait(state="route", wake_epoch=None)
+    )
     status, body = _post(port, "/api/machine/datapoke/poke", {"data": {"cmd": "go", "n": 2}})
     assert status == 200 and body["ok"] is True
     assert json.loads((inst / "signal").read_text(encoding="utf-8")) == {"cmd": "go", "n": 2}
 
 
 def test_machine_approve_and_steer_target_per_state_dir(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     _srv, port = server
     _inst, state = _make_machine_with_state(tmp_path, "acter", "0001-work", running=True)
@@ -687,7 +714,7 @@ def test_machine_approve_and_steer_target_per_state_dir(
 
 
 def test_machine_answer_id_traversal_is_contained(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     _srv, port = server
     # running=True so the liveness gate passes and only the id-component check can refuse.
@@ -698,7 +725,7 @@ def test_machine_answer_id_traversal_is_contained(
     assert not escape.exists()
 
 
-def test_pwa_assets_served(server: tuple[WebServer, int]) -> None:
+def test_pwa_assets_served(server: tuple[web_server.WebServer, int]) -> None:
     _srv, port = server
     st, body, ctype = _get(port, "/manifest.webmanifest")
     assert st == 200 and "manifest" in ctype
@@ -707,28 +734,30 @@ def test_pwa_assets_served(server: tuple[WebServer, int]) -> None:
     assert _get(port, "/icon.svg")[0] == 200
 
 
-def test_favicon_matches_the_docs_asset(server: tuple[WebServer, int]) -> None:
+def test_favicon_matches_the_docs_asset(server: tuple[web_server.WebServer, int]) -> None:
     # The favicon is docs/assets/favicon.svg verbatim; the padded /icon.svg tile is for the PWA.
     _srv, port = server
     st, body, ctype = _get(port, "/favicon.svg")
     assert st == 200 and "svg" in ctype
-    docs_svg = Path(__file__).parents[2] / "docs" / "assets" / "favicon.svg"
+    docs_svg = pathlib.Path(__file__).parents[2] / "docs" / "assets" / "favicon.svg"
     assert body == docs_svg.read_bytes()
 
 
-def test_run_id_traversal_is_404(server: tuple[WebServer, int]) -> None:
+def test_run_id_traversal_is_404(server: tuple[web_server.WebServer, int]) -> None:
     _srv, port = server
     status, _body, _ = _get(port, "/api/session/..")
     assert status == 404
 
 
-def test_extra_api_path_segments_are_404(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_extra_api_path_segments_are_404(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     _srv, port = server
     _make_run(tmp_path, "seg-run", [{"type": "session.start", "user_task": "x"}])
-    machine = state_dir(tmp_path) / "machines" / "tiny"
+    machine = paths.state_dir(tmp_path) / "machines" / "tiny"
     machine.mkdir(parents=True)
     (machine / "machine.asm.toml").write_text(TINY, encoding="utf-8")
-    draft = state_dir(tmp_path) / "sessions" / "machines" / "drafty"
+    draft = paths.state_dir(tmp_path) / "sessions" / "machines" / "drafty"
     draft.mkdir(parents=True)
     (draft / "logs.jsonl").write_text('{"type": "session.start"}\n', encoding="utf-8")
 
@@ -737,10 +766,12 @@ def test_extra_api_path_segments_are_404(server: tuple[WebServer, int], tmp_path
     assert _get(port, "/api/draft/drafty/events/extra")[0] == 404
 
 
-def test_draft_snapshot_folds_the_draft_log(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_draft_snapshot_folds_the_draft_log(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     # A machine-create draft is watched through the run endpoints.
     _srv, port = server
-    draft = state_dir(tmp_path) / "sessions" / "machines" / "brave-otter"
+    draft = paths.state_dir(tmp_path) / "sessions" / "machines" / "brave-otter"
     draft.mkdir(parents=True)
     (draft / "logs.jsonl").write_text(
         '{"type": "session.start", "user_task": "author a fixer machine"}\n', encoding="utf-8"
@@ -753,7 +784,7 @@ def test_draft_snapshot_folds_the_draft_log(server: tuple[WebServer, int], tmp_p
 
 
 def test_web_refuses_non_loopback_host_without_optin(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `--host 0.0.0.0` must be refused before binding unless opted in.
     monkeypatch.chdir(tmp_path)
@@ -761,21 +792,23 @@ def test_web_refuses_non_loopback_host_without_optin(
     assert "binding non-loopback host '0.0.0.0' requires opt-in" in capsys.readouterr().err
 
 
-def test_new_work_empty_task_rejected(server: tuple[WebServer, int]) -> None:
+def test_new_work_empty_task_rejected(server: tuple[web_server.WebServer, int]) -> None:
     _srv, port = server
     status, body = _post(port, "/api/new", {"mode": "run", "task": "   "})
     assert status == 422
     assert body["ok"] is False
 
 
-def test_machine_run_rejects_unknown_file(server: tuple[WebServer, int]) -> None:
+def test_machine_run_rejects_unknown_file(server: tuple[web_server.WebServer, int]) -> None:
     _srv, port = server
     status, body = _post(port, "/api/machine/run", {"file": "/etc/passwd"})
     assert status == 422
     assert "unknown machine file" in str(body["error"])
 
 
-def test_bad_post_body_is_400_with_the_field_named(server: tuple[WebServer, int]) -> None:
+def test_bad_post_body_is_400_with_the_field_named(
+    server: tuple[web_server.WebServer, int],
+) -> None:
     """A validation failure toasts one human line per failed field, not pydantic's error list."""
     _srv, port = server
     status, body = _post(port, "/api/new", {"mode": "run"})
@@ -786,7 +819,7 @@ def test_bad_post_body_is_400_with_the_field_named(server: tuple[WebServer, int]
 
 
 def test_a_post_on_an_unknown_session_or_machine_is_404_like_its_get(
-    server: tuple[WebServer, int],
+    server: tuple[web_server.WebServer, int],
 ) -> None:
     """A verb on an unknown session answers 404, as the GET of the same id does."""
     _srv, port = server
@@ -799,7 +832,7 @@ def test_a_post_on_an_unknown_session_or_machine_is_404_like_its_get(
 
 
 def test_two_posts_on_one_connection_stay_framed(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     """Every verb drains its body, or the unread `{}` is parsed as the next request line.
 
@@ -807,7 +840,7 @@ def test_two_posts_on_one_connection_stay_framed(
     """
     _srv, port = server
     _make_machine_with_state(tmp_path, "stoppable", "0000-review", running=True)
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         for _ in range(2):
             conn.request(
@@ -848,7 +881,9 @@ def _read_until(
     raise AssertionError("no SSE frame matched before the deadline")
 
 
-def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_sse_run_streams_snapshot(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     _srv, port = server
     _make_run(
         tmp_path,
@@ -858,7 +893,7 @@ def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path)
             {"type": "session.end", "all_passed": True},
         ],
     )
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         conn.request("GET", "/api/session/stream-run/events")
         resp = conn.getresponse()
@@ -871,7 +906,9 @@ def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path)
 
 
 def test_sse_run_emits_the_last_delta_of_a_burst(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A delta inside the coalescing window is deferred, not skipped.
 
@@ -889,9 +926,9 @@ def test_sse_run_emits_the_last_delta_of_a_burst(
             {"type": "role.call", "role": "worker", "model": "model"},
         ],
     )
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "delta-run"
-    write_worker_pid(session_dir, os.getpid())
-    conn = HTTPConnection("127.0.0.1", port, timeout=5)
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "delta-run"
+    ipc.write_worker_pid(session_dir, os.getpid())
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
         conn.request("GET", "/api/session/delta-run/events")
         resp = conn.getresponse()
@@ -911,7 +948,7 @@ def test_sse_run_emits_the_last_delta_of_a_burst(
 
 
 def test_an_action_on_a_session_that_is_not_live_names_resume(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     """The refusal said "not live" and left the operator to guess the way on."""
     _srv, port = server
@@ -926,7 +963,7 @@ def test_an_action_on_a_session_that_is_not_live_names_resume(
 
 
 def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     """The stream stays open across a finish and paints an execution resumed elsewhere.
 
@@ -941,8 +978,8 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
             {"type": "session.end", "all_passed": True},
         ],
     )
-    logs = state_dir(tmp_path) / "sessions" / "runs" / "resume-run" / "logs.jsonl"
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    logs = paths.state_dir(tmp_path) / "sessions" / "runs" / "resume-run" / "logs.jsonl"
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         conn.request("GET", "/api/session/resume-run/events")
         resp = conn.getresponse()
@@ -964,7 +1001,7 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
 
 
 def test_sse_run_frame_carries_the_compare_outcome(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     """The SSE frame carries the manifest's compare block, since the run view paints from it.
 
@@ -973,12 +1010,12 @@ def test_sse_run_frame_carries_the_compare_outcome(
     _srv, port = server
     _make_run(tmp_path, "cmp-run", [{"type": "session.start", "user_task": "x"},
                                     {"type": "session.end", "all_passed": True}])  # fmt: skip
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "cmp-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "cmp-run"
     (session_dir / "manifest.json").write_text(
         json.dumps({"compare": {"rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}}),
         encoding="utf-8",
     )
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         conn.request("GET", "/api/session/cmp-run/events")
         resp = conn.getresponse()
@@ -992,12 +1029,12 @@ def test_sse_run_frame_carries_the_compare_outcome(
 # --- a corrupt journal degrades, never 500s / kills the stream ---------------
 
 
-def _corrupt_journal(inst: Path) -> None:
+def _corrupt_journal(inst: pathlib.Path) -> None:
     (inst / "journal.jsonl").write_text('{"type": "step", "bogus": true}\n', encoding="utf-8")
 
 
 def test_corrupt_journal_hub_shows_unreadable(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     # One corrupt journal line does not 500 the landing page; the entry lists as unreadable.
     _srv, port = server
@@ -1011,11 +1048,15 @@ def test_corrupt_journal_hub_shows_unreadable(
     assert entry["status"] == "unreadable"
 
 
-def test_hub_parked_instance_reads_waiting(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_hub_parked_instance_reads_waiting(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     # A parked --exit-on-wait instance reads "waiting" on the hub, never busy.
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "parked", "0000-poll")
-    MachineJournal(inst).write_pending_wait(PendingWait(state="route", wake_epoch=None))
+    machine_journal.MachineJournal(inst).write_pending_wait(
+        machine_journal.PendingWait(state="route", wake_epoch=None)
+    )
     status, body, _ = _get(port, "/api/hub")
     assert status == 200
     (entry,) = [m for m in json.loads(body)["machines"] if m["name"] == "parked"]
@@ -1023,7 +1064,7 @@ def test_hub_parked_instance_reads_waiting(server: tuple[WebServer, int], tmp_pa
 
 
 def test_corrupt_journal_machine_snapshot_is_422(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "sick2", "0000-review")
@@ -1034,13 +1075,13 @@ def test_corrupt_journal_machine_snapshot_is_422(
 
 
 def test_corrupt_journal_machine_sse_sends_error_frame(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     # The stream emits an in-band error frame and closes, never a second HTTP status line.
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "sick3", "0000-review")
     _corrupt_journal(inst)
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         conn.request("GET", "/api/machine/sick3/events")
         resp = conn.getresponse()
@@ -1058,7 +1099,7 @@ def test_corrupt_journal_machine_sse_sends_error_frame(
 
 
 def test_sse_run_catchup_folds_history_into_few_frames(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     # The backlog folds into one snapshot, not one frame per event (13 MB on a 502-event run).
     _srv, port = server
@@ -1068,7 +1109,7 @@ def test_sse_run_catchup_folds_history_into_few_frames(
         events.append({"type": "tool.result", "name": f"t{i}", "ok": True, "summary": "ok"})
     events.append({"type": "session.end", "all_passed": True})
     _make_run(tmp_path, "big-run", events)
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         conn.request("GET", "/api/session/big-run/events")
         resp = conn.getresponse()
@@ -1088,7 +1129,9 @@ def test_sse_run_catchup_folds_history_into_few_frames(
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
 def test_sse_run_closes_even_if_tailer_dies(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The tail thread always enqueues its None sentinel, so a raise there closes the stream.
     import agent6.ui.web._sse as sse_mod
@@ -1099,7 +1142,7 @@ def test_sse_run_closes_even_if_tailer_dies(
     monkeypatch.setattr(sse_mod, "tail_events", _boom)
     _srv, port = server
     _make_run(tmp_path, "dead-tail", [{"type": "session.start", "user_task": "x"}])
-    conn = HTTPConnection("127.0.0.1", port, timeout=5)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
         conn.request("GET", "/api/session/dead-tail/events")
         resp = conn.getresponse()
@@ -1112,7 +1155,9 @@ def test_sse_run_closes_even_if_tailer_dies(
 
 
 def test_sse_run_dead_worker_frame_is_terminal(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A run whose worker died without a session.end closes its stream with a terminal frame.
 
@@ -1127,10 +1172,10 @@ def test_sse_run_dead_worker_frame_is_terminal(
         "dead-worker",
         [{"type": "session.start", "user_task": "x"}, {"type": "role.call", "role": "worker"}],
     )
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "dead-worker"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "dead-worker"
     (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
     _srv, port = server
-    conn = HTTPConnection("127.0.0.1", port, timeout=5)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
         conn.request("GET", "/api/session/dead-worker/events")
         resp = conn.getresponse()
@@ -1146,7 +1191,9 @@ def test_sse_run_dead_worker_frame_is_terminal(
 
 
 def test_sse_run_pidless_stale_frame_is_terminal(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A crashed run that never recorded worker.pid closes its stream on the same frame.
 
@@ -1160,12 +1207,12 @@ def test_sse_run_pidless_stale_frame_is_terminal(
         "pidless-stale",
         [{"type": "session.start", "user_task": "x"}, {"type": "role.call", "role": "worker"}],
     )
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "pidless-stale"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "pidless-stale"
     assert not (session_dir / "worker.pid").exists()
     old = 1_000_000_000.0  # silent far past the stale window
     os.utime(session_dir / "logs.jsonl", (old, old))
     _srv, port = server
-    conn = HTTPConnection("127.0.0.1", port, timeout=1)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=1)
     seen = b""
     eof = False
     try:
@@ -1196,7 +1243,9 @@ def test_sse_run_pidless_stale_frame_is_terminal(
 
 
 def test_sse_run_created_frame_is_terminal(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A `created` run that reached its end without a session.end closes its stream.
 
@@ -1205,11 +1254,11 @@ def test_sse_run_created_frame_is_terminal(
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "created-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "created-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")  # no events, no pid
     _srv, port = server
-    conn = HTTPConnection("127.0.0.1", port, timeout=1)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=1)
     seen = b""
     eof = False
     try:
@@ -1240,13 +1289,15 @@ def test_sse_run_created_frame_is_terminal(
 
 
 def test_sse_run_parked_keeps_streaming(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A parked run's stream stays open: a resumed submission logs into this same stream."""
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "parked-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "parked-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     (session_dir / "manifest.json").write_text(
@@ -1254,7 +1305,7 @@ def test_sse_run_parked_keeps_streaming(
         encoding="utf-8",
     )
     _srv, port = server
-    conn = HTTPConnection("127.0.0.1", port, timeout=1)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=1)
     eof = False
     try:
         conn.request("GET", "/api/session/parked-run/events")
@@ -1277,8 +1328,8 @@ def test_sse_run_parked_keeps_streaming(
 
 
 def test_sse_machine_frame_carries_the_idle_age(
-    server: tuple[WebServer, int],
-    tmp_path: Path,
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1293,7 +1344,7 @@ def test_sse_machine_frame_carries_the_idle_age(
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
     capsys.readouterr()
-    inst = state_dir(tmp_path) / "machines" / "tiny"
+    inst = paths.state_dir(tmp_path) / "machines" / "tiny"
     log = next(inst.glob("states/*/logs.jsonl"), None)
     if log is None:  # a pure wait/branch machine runs no agent state
         log = inst / "states" / "0001-work" / "logs.jsonl"
@@ -1305,7 +1356,7 @@ def test_sse_machine_frame_carries_the_idle_age(
         encoding="utf-8",
     )
     _srv, port = server
-    conn = HTTPConnection("127.0.0.1", port, timeout=5)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
         conn.request("GET", "/api/machine/tiny/events")
         resp = conn.getresponse()
@@ -1321,8 +1372,8 @@ def test_sse_machine_frame_carries_the_idle_age(
 
 @pytest.mark.parametrize("stale_pid", [True, False])
 def test_sse_machine_stream_spans_a_stop_and_its_resume(
-    server: tuple[WebServer, int],
-    tmp_path: Path,
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     *,
@@ -1341,7 +1392,7 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
     capsys.readouterr()
-    inst = state_dir(tmp_path) / "machines" / "tiny"
+    inst = paths.state_dir(tmp_path) / "machines" / "tiny"
     # Dropping the MachineEnd line makes the machine read as mid-state with no worker.
     journal = inst / "journal.jsonl"
     lines = journal.read_text(encoding="utf-8").splitlines()
@@ -1352,7 +1403,7 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
     else:
         assert not (inst / "worker.pid").exists()
     _srv, port = server
-    conn = HTTPConnection("127.0.0.1", port, timeout=5)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
         conn.request("GET", "/api/machine/tiny/events")
         resp = conn.getresponse()
@@ -1365,7 +1416,7 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
         assert machine["ended"] is None  # no journaled end was invented
         assert machine["status"] == "stopped"
         assert machine["worker_lost"]["reason"] == "no worker running"
-        write_worker_pid(inst, os.getpid())  # `machine run` resumes it
+        ipc.write_worker_pid(inst, os.getpid())  # `machine run` resumes it
         resumed = _read_until(
             resp, lambda f: cast("dict[str, Any]", f.get("machine", {})).get("status") != "stopped"
         )
@@ -1377,10 +1428,10 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
 # --- POST hardening -----------------------------------------------------------
 
 
-def test_oversize_post_body_is_413(server: tuple[WebServer, int]) -> None:
+def test_oversize_post_body_is_413(server: tuple[web_server.WebServer, int]) -> None:
     # Headers only: the refusal is on Content-Length alone, and streaming 1 MiB races the close.
     _srv, port = server
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         conn.putrequest("POST", "/api/new")
         conn.putheader("Content-Type", "application/json")
@@ -1394,7 +1445,7 @@ def test_oversize_post_body_is_413(server: tuple[WebServer, int]) -> None:
 
 
 def test_prune_body_is_drained_so_keepalive_is_not_poisoned(
-    server: tuple[WebServer, int],
+    server: tuple[web_server.WebServer, int],
 ) -> None:
     # Pipeline prune and a GET on one socket: an undrained `{}` body would prepend to the GET line.
     _srv, port = server
@@ -1424,7 +1475,7 @@ def test_prune_body_is_drained_so_keepalive_is_not_poisoned(
     assert b'"sessions":' in raw, raw  # the GET /api/hub payload came back intact
 
 
-def test_negative_content_length_is_rejected(server: tuple[WebServer, int]) -> None:
+def test_negative_content_length_is_rejected(server: tuple[web_server.WebServer, int]) -> None:
     # A negative Content-Length never reaches rfile.read(n), which would read to EOF and park.
     _srv, port = server
     status, body = _post_raw(
@@ -1437,7 +1488,7 @@ def test_negative_content_length_is_rejected(server: tuple[WebServer, int]) -> N
     assert "Content-Length" in str(body["error"])
 
 
-def test_conflicting_content_lengths_are_rejected(server: tuple[WebServer, int]) -> None:
+def test_conflicting_content_lengths_are_rejected(server: tuple[web_server.WebServer, int]) -> None:
     """Two Content-Length values are refused before one makes body bytes parse as a request."""
     _srv, port = server
     sock = socket.create_connection(("127.0.0.1", port), timeout=10)
@@ -1457,7 +1508,9 @@ def test_conflicting_content_lengths_are_rejected(server: tuple[WebServer, int])
     assert b"Connection: close" in raw, raw
 
 
-def test_a_non_canonical_content_length_is_rejected(server: tuple[WebServer, int]) -> None:
+def test_a_non_canonical_content_length_is_rejected(
+    server: tuple[web_server.WebServer, int],
+) -> None:
     """Content-Length is ASCII digits only; `int()` accepts what a front proxy does not."""
     _srv, port = server
     sock = socket.create_connection(("127.0.0.1", port), timeout=10)
@@ -1474,7 +1527,7 @@ def test_a_non_canonical_content_length_is_rejected(server: tuple[WebServer, int
     assert b"Connection: close" in raw, raw
 
 
-def test_a_get_with_a_body_is_refused(server: tuple[WebServer, int]) -> None:
+def test_a_get_with_a_body_is_refused(server: tuple[web_server.WebServer, int]) -> None:
     """A GET body is never read; on a keep-alive connection it would parse as the next request."""
     _srv, port = server
     sock = socket.create_connection(("127.0.0.1", port), timeout=10)
@@ -1491,7 +1544,7 @@ def test_a_get_with_a_body_is_refused(server: tuple[WebServer, int]) -> None:
     assert raw.count(b"HTTP/1.1 ") == 1, raw
 
 
-def test_chunked_post_body_is_refused(server: tuple[WebServer, int]) -> None:
+def test_chunked_post_body_is_refused(server: tuple[web_server.WebServer, int]) -> None:
     # Only Content-Length bodies are read; a chunked body would sit unread like an error body.
     _srv, port = server
     status, body = _post_raw(
@@ -1505,12 +1558,12 @@ def test_chunked_post_body_is_refused(server: tuple[WebServer, int]) -> None:
 
 
 def test_unknown_post_verb_does_not_poison_keepalive(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     # A 404 closes the connection, or the undrained body would parse as the next request line.
     _srv, port = server
     _make_run(tmp_path, "ka-run", [{"type": "session.start", "user_task": "x"}])
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         payload = json.dumps({"text": "hello"}).encode()
         conn.request(
@@ -1531,7 +1584,9 @@ def test_unknown_post_verb_does_not_poison_keepalive(
 # --- CSRF: cross-site state-changing POSTs are refused -----------------------
 
 
-def test_cross_origin_post_refused(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_cross_origin_post_refused(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     _srv, port = server
     _make_machine_with_state(tmp_path, "csrf1", "0000-review")
     status, body = _post_raw(
@@ -1548,7 +1603,9 @@ def test_cross_origin_post_refused(server: tuple[WebServer, int], tmp_path: Path
     assert "cross-origin" in str(body.get("error", ""))
 
 
-def test_non_json_content_type_post_refused(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_non_json_content_type_post_refused(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "csrf2", "0000-review")
     # A JSON body smuggled as a CORS-simple text/plain request is refused; the file is not written.
@@ -1562,10 +1619,14 @@ def test_non_json_content_type_post_refused(server: tuple[WebServer, int], tmp_p
     assert not (inst / "signal").exists()
 
 
-def test_same_origin_post_allowed(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_same_origin_post_allowed(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "csrf3", "0000-review")
-    MachineJournal(inst).write_pending_wait(PendingWait(state="route", wake_epoch=None))
+    machine_journal.MachineJournal(inst).write_pending_wait(
+        machine_journal.PendingWait(state="route", wake_epoch=None)
+    )
     status, body = _post_raw(
         port,
         "/api/machine/csrf3/poke",
@@ -1584,7 +1645,7 @@ def test_same_origin_post_allowed(server: tuple[WebServer, int], tmp_path: Path)
 
 
 def test_machine_answer_for_a_state_the_machine_left_is_refused(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     """The client names the state it rendered the prompt from.
 
@@ -1612,7 +1673,7 @@ def test_machine_answer_for_a_state_the_machine_left_is_refused(
 
 
 def test_machine_answer_defaults_to_newest_state_without_hint(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     _srv, port = server
     inst, _old = _make_machine_with_state(tmp_path, "adv2", "0001-work", running=True)
@@ -1630,7 +1691,7 @@ def test_machine_answer_defaults_to_newest_state_without_hint(
 
 
 def test_machine_answer_state_hint_traversal_is_contained(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     _srv, port = server
     # running=True so the refusal rests on the state-hint component check.
@@ -1645,7 +1706,7 @@ def test_machine_answer_state_hint_traversal_is_contained(
     assert not escape.exists()
 
 
-def test_config_suggest_endpoint(server: tuple[WebServer, int]) -> None:
+def test_config_suggest_endpoint(server: tuple[web_server.WebServer, int]) -> None:
     # Best-effort suggestions: an env with no providers suggests nothing, and the endpoint answers.
     _srv, port = server
     st, body, _ = _get(port, "/api/config/suggest/models.worker.provider")
@@ -1654,11 +1715,11 @@ def test_config_suggest_endpoint(server: tuple[WebServer, int]) -> None:
 
 
 def test_steer_compact_directive_routes_to_compact_request(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     """A composer `/compact <focus>` on a live run is a compact request carrying the focus."""
     _srv, port = server
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "compact-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "compact-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -1675,7 +1736,7 @@ def test_steer_compact_directive_routes_to_compact_request(
 
 
 def test_a_failed_frontend_claim_does_not_consume_the_first_viewer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A failed claim-file write leaves the viewer count untouched.
 
@@ -1687,14 +1748,14 @@ def test_a_failed_frontend_claim_does_not_consume_the_first_viewer(
     session_dir.mkdir()
     attempts = 0
 
-    def register(_session_dir: Path, _pid: int) -> None:
+    def register(_session_dir: pathlib.Path, _pid: int) -> None:
         nonlocal attempts
         attempts += 1
         if attempts == 1:
             raise OSError("disk was briefly read-only")
 
     monkeypatch.setattr(server_mod, "register_frontend", register)
-    srv = WebServer(("127.0.0.1", 0), tmp_path, "")
+    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "")
     try:
         with pytest.raises(OSError, match="read-only"):
             srv.claim_session(session_dir)
@@ -1705,12 +1766,14 @@ def test_a_failed_frontend_claim_does_not_consume_the_first_viewer(
         srv.server_close()
 
 
-def test_client_disconnects_are_quiet(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_client_disconnects_are_quiet(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A client vanishing at the request-line read is routine and logs no traceback.
 
     A browser sends RST on navigate-away or reload; real handler errors keep their report.
     """
-    srv = WebServer(("127.0.0.1", 0), tmp_path, "")
+    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "")
     try:
         for quiet_exc in (ConnectionResetError(104, "reset by peer"), BrokenPipeError()):
             try:
@@ -1728,19 +1791,21 @@ def test_client_disconnects_are_quiet(tmp_path: Path, capsys: pytest.CaptureFixt
 
 
 def test_steer_btw_opens_a_side_ask(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`/btw <question>` from the web composer opens the side ask; a bare `/btw` is refused."""
     import agent6.ui.btw as btw_mod
 
     _srv, port = server
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "btw-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "btw-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    asks = state_dir(tmp_path) / "sessions" / "asks"
+    asks = paths.state_dir(tmp_path) / "sessions" / "asks"
 
-    def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
+    def launch(cwd: pathlib.Path, argv: list[str], env: dict[str, str]) -> str:
         d = asks / "quiet-fox-DDDDDD"
         d.mkdir(parents=True)
         (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "ask"}))
@@ -1760,7 +1825,7 @@ def test_steer_btw_opens_a_side_ask(
     assert not (session_dir / "steer.request").exists()
 
 
-def _git_chain(repo: Path) -> tuple[str, str, str]:
+def _git_chain(repo: pathlib.Path) -> tuple[str, str, str]:
     """A repo with a base commit and two run commits; returns (base, c1, c2)."""
     import subprocess as sp
 
@@ -1789,7 +1854,7 @@ def _git_chain(repo: Path) -> tuple[str, str, str]:
 
 
 def test_step_diff_serves_one_step_or_the_cumulative_chain(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     """The diff card reads `/diff?sha=`: one step's patch, or `base..sha` with `cumulative=1`.
 
@@ -1797,7 +1862,7 @@ def test_step_diff_serves_one_step_or_the_cumulative_chain(
     """
     _srv, port = server
     base, c1, c2 = _git_chain(tmp_path)
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "steps-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "steps-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     (session_dir / "manifest.json").write_text(
@@ -1822,13 +1887,15 @@ def test_step_diff_serves_one_step_or_the_cumulative_chain(
     assert status == 422 and "owns git" in str(json.loads(raw)["error"])
 
 
-def test_session_snapshot_as_of_a_step(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def test_session_snapshot_as_of_a_step(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
     """`?step=<sha>` folds the log up to that commit and stamps `as_of`.
 
     A sha the run never made is refused.
     """
     _srv, port = server
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "asof-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "asof-run"
     session_dir.mkdir(parents=True)
     events = [
         {"type": "session.start", "session_id": "asof-run", "mode": "run", "user_task": "t"},
@@ -1849,7 +1916,7 @@ def test_session_snapshot_as_of_a_step(server: tuple[WebServer, int], tmp_path: 
     assert status == 422
 
 
-def test_a_malformed_body_is_the_clients_error(server: tuple[WebServer, int]) -> None:
+def test_a_malformed_body_is_the_clients_error(server: tuple[web_server.WebServer, int]) -> None:
     """A body that is not JSON, or not an object, is a 400 with the reason, never a 500."""
     _srv, port = server
     headers = {"Content-Type": "application/json"}
@@ -1860,14 +1927,14 @@ def test_a_malformed_body_is_the_clients_error(server: tuple[WebServer, int]) ->
 
 
 def test_prune_route_passes_the_squash_opt_in_through(
-    server: tuple[WebServer, int], monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The prune button's checkbox reaches the CLI flag."""
     from agent6.ui.web import actions as web_actions
 
     seen: list[bool] = []
 
-    def _fake_prune(cwd: Path, **kw: object) -> tuple[bool, str]:
+    def _fake_prune(cwd: pathlib.Path, **kw: object) -> tuple[bool, str]:
         seen.append(bool(kw.get("delete_squashed")))
         return True, "pruned"
 
@@ -1880,10 +1947,10 @@ def test_prune_route_passes_the_squash_opt_in_through(
     assert seen == [False, True]
 
 
-def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: Path) -> None:
+def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: pathlib.Path) -> None:
     """The run stream's frames stamp `shells`, so the Background shells card survives them."""
-    from agent6.tools.background import SHELLS_DIR
-    from agent6.ui.web._sse import SseChannel, stream_session
+    from agent6.tools import background
+    from agent6.ui.web import _sse as web__sse
 
     d = tmp_path / "sessions" / "runs" / "shellrun-AAAAAA"
     d.mkdir(parents=True)
@@ -1897,7 +1964,7 @@ def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: Path) -> None
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    bg = d / SHELLS_DIR / "bg1"
+    bg = d / background.SHELLS_DIR / "bg1"
     bg.mkdir(parents=True)
     (bg / "meta.json").write_text(
         json.dumps({"id": "bg1", "command": "python -m http.server"}), encoding="utf-8"
@@ -1908,28 +1975,30 @@ def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: Path) -> None
         frames.append(cast(dict[str, Any], payload))
         return False  # one frame, then the client leaves
 
-    stream_session(SseChannel(send=send, ping=lambda: False), d, repo=tmp_path)
+    web__sse.stream_session(web__sse.SseChannel(send=send, ping=lambda: False), d, repo=tmp_path)
 
     assert frames and frames[0].get("shells") == [
         "[bg1] still running (or the run that owns it ended): python -m http.server"
     ]
 
 
-def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: Path) -> None:
+def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path) -> None:
     """The finished heartbeat pushes a refreshed header when a merge lands after session.end.
 
     Read once per connection, the branch line and Merge button kept the pre-merge answer.
     """
     import threading
 
-    from agent6.sessions.layout import SessionLayout
+    from agent6.sessions import layout as sessions_layout
     from agent6.ui.web import _sse
-    from agent6.ui.web._sse import SseChannel, stream_session
+    from agent6.ui.web import _sse as web__sse
 
     monkeypatch_heartbeat = 0.05
-    d = state_dir(tmp_path) / "sessions" / "runs" / "mergerun-AAAAAA"
+    d = paths.state_dir(tmp_path) / "sessions" / "runs" / "mergerun-AAAAAA"
     d.mkdir(parents=True)
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="mergerun-AAAAAA")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="mergerun-AAAAAA"
+    )
     manifest = {
         "version": 3,
         "session_id": "mergerun-AAAAAA",
@@ -1973,7 +2042,7 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: Path) -> Non
     orig = _sse.HEARTBEAT_S
     _sse.HEARTBEAT_S = monkeypatch_heartbeat
     try:
-        stream_session(SseChannel(send=send, ping=ping), d, repo=tmp_path)
+        web__sse.stream_session(web__sse.SseChannel(send=send, ping=ping), d, repo=tmp_path)
     finally:
         _sse.HEARTBEAT_S = orig
 
@@ -1984,19 +2053,19 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: Path) -> Non
 
 def test_the_step_picker_fetches_through_the_base_it_was_rendered_with() -> None:
     """A machine-create draft's fetches go through `/api/draft/<name>`."""
-    from agent6.ui.web.page import CLIENT_JS
+    from agent6.ui.web import page
 
-    start = CLIENT_JS.index("function paintRun(")
-    body = CLIENT_JS[start : CLIENT_JS.index("function renderDiff(", start)]
+    start = page.CLIENT_JS.index("function paintRun(")
+    body = page.CLIENT_JS[start : page.CLIENT_JS.index("function renderDiff(", start)]
     assert "'/api/session/'" not in body
     assert body.count("cards._base") >= 2
 
 
 def test_the_draft_route_serves_what_the_step_picker_asks_for(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     _, port = server
-    draft = state_dir(tmp_path) / "sessions" / "machines" / "draft-AAAAAAAA"
+    draft = paths.state_dir(tmp_path) / "sessions" / "machines" / "draft-AAAAAAAA"
     draft.mkdir(parents=True)
     sha = "1" * 40
     draft.joinpath("logs.jsonl").write_text(
@@ -2018,25 +2087,25 @@ def test_the_draft_route_serves_what_the_step_picker_asks_for(
 
 
 def test_the_web_names_a_crashed_run_where_it_paints_no_conversation(
-    server: tuple[WebServer, int], tmp_path: Path
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     """The web names a crashed run and a never-started one as the CLI and the TUI do."""
-    from agent6.ui.web.page import CLIENT_JS
+    from agent6.ui.web import page
 
     _, port = server
     _make_run(tmp_path, "stale-run1", [{"type": "session.start", "mode": "run", "user_task": "t"}])
-    d = state_dir(tmp_path) / "sessions" / "runs" / "stale-run1"
+    d = paths.state_dir(tmp_path) / "sessions" / "runs" / "stale-run1"
     (d / "worker.pid").write_text("999999999", encoding="utf-8")
 
     status, body, _ = _get(port, "/api/session/stale-run1")
 
     assert status == 200
     assert json.loads(body)["dead_state"].startswith("worker exited without finishing")
-    assert "conv.deadState" in CLIENT_JS and "s.dead_state" in CLIENT_JS
+    assert "conv.deadState" in page.CLIENT_JS and "s.dead_state" in page.CLIENT_JS
 
 
 def test_a_content_length_that_is_not_a_number_closes_the_connection(
-    server: tuple[WebServer, int],
+    server: tuple[web_server.WebServer, int],
 ) -> None:
     """A bad Content-Length closes the connection, so the unread body is never a request."""
     _srv, port = server
@@ -2063,7 +2132,7 @@ def test_a_content_length_that_is_not_a_number_closes_the_connection(
 
 
 def test_a_stream_header_error_does_not_start_an_orphaned_tailer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The manifest read finishes before the log tailer starts.
 
@@ -2085,7 +2154,7 @@ def test_a_stream_header_error_does_not_start_an_orphaned_tailer(
 
     # The module's own binding: patching `threading.Thread` would replace every other thread too.
     monkeypatch.setattr(
-        _sse, "threading", SimpleNamespace(Thread=FakeThread, Event=threading.Event)
+        _sse, "threading", types.SimpleNamespace(Thread=FakeThread, Event=threading.Event)
     )
     monkeypatch.setattr(_sse, "manifest_header", boom)
     channel = _sse.SseChannel(send=lambda _frame: True, ping=lambda: True)
@@ -2097,7 +2166,9 @@ def test_a_stream_header_error_does_not_start_an_orphaned_tailer(
 
 
 def test_an_error_after_the_sse_headers_is_a_frame_not_a_second_status_line(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A stream that raises after `_begin_sse` reports its reason in the event body, not a 500."""
     from agent6.ui.web import _sse
@@ -2108,7 +2179,7 @@ def test_an_error_after_the_sse_headers_is_a_frame_not_a_second_status_line(
     monkeypatch.setattr(_sse, "manifest_header", boom)
     _srv, port = server
     _make_run(tmp_path, "sse-err", [{"type": "session.start", "user_task": "t"}])
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         conn.request("GET", "/api/session/sse-err/events")
         resp = conn.getresponse()
@@ -2120,19 +2191,23 @@ def test_an_error_after_the_sse_headers_is_a_frame_not_a_second_status_line(
     assert b'"error": "header exploded"' in body, body
 
 
-def test_the_machine_stream_error_frame_is_typed_like_the_run_streams(tmp_path: Path) -> None:
+def test_the_machine_stream_error_frame_is_typed_like_the_run_streams(
+    tmp_path: pathlib.Path,
+) -> None:
     """The machine stream's error frame has the run stream's shape."""
-    from agent6.ui.web._sse import SseChannel, stream_machine
+    from agent6.ui.web import _sse as web__sse
 
     sent: list[Any] = []
-    chan = SseChannel(send=lambda frame: sent.append(frame) or True, ping=lambda: True)
-    stream_machine(chan, tmp_path / "no-such-machine")
+    chan = web__sse.SseChannel(send=lambda frame: sent.append(frame) or True, ping=lambda: True)
+    web__sse.stream_machine(chan, tmp_path / "no-such-machine")
     assert len(sent) == 1
     assert sent[0]["type"] == "error" and sent[0]["error"]
 
 
 def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The CLI has `fork` and the TUI Run > Fork; the web run view had only /undo.
 
@@ -2143,9 +2218,11 @@ def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
 
     _srv, port = server
     _make_run(tmp_path, "run-f", [{"type": "session.start"}])
-    calls: list[tuple[str, Path]] = []
+    calls: list[tuple[str, pathlib.Path]] = []
 
-    def _fake_fork(config_path: object, source: str, *, cwd: Path, **_k: object) -> tuple[str, int]:
+    def _fake_fork(
+        config_path: object, source: str, *, cwd: pathlib.Path, **_k: object
+    ) -> tuple[str, int]:
         calls.append((source, cwd))
         return "run-f-child", 0
 
@@ -2158,7 +2235,7 @@ def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
     assert status == 404
 
 
-def test_the_config_page_adds_a_provider_block(server: tuple[WebServer, int]) -> None:
+def test_the_config_page_adds_a_provider_block(server: tuple[web_server.WebServer, int]) -> None:
     """The web creates a `[providers.<name>]` block through one POST, as the TUI's form does.
 
     The choices endpoint serves the form its fixed values.
@@ -2182,7 +2259,9 @@ def test_the_config_page_adds_a_provider_block(server: tuple[WebServer, int]) ->
     assert status == 422
 
 
-def test_re_adding_a_provider_keeps_its_other_keys(server: tuple[WebServer, int]) -> None:
+def test_re_adding_a_provider_keeps_its_other_keys(
+    server: tuple[web_server.WebServer, int],
+) -> None:
     """The add-provider form over an existing name updates the block, keeping keys it omits."""
     _srv, port = server
     status, data = _post(
@@ -2204,7 +2283,9 @@ def test_re_adding_a_provider_keeps_its_other_keys(server: tuple[WebServer, int]
 
 
 def test_routes_payload_lists_every_route_and_the_modes_default(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`/api/routes?mode=&preset=` feeds the composer's model box.
 
@@ -2234,7 +2315,7 @@ def test_routes_payload_lists_every_route_and_the_modes_default(
     status, body, _ = _get(port, "/api/hub")
     assert json.loads(body)["preset_default_label"] == "none (config default)"
     _make_run(tmp_path, "run-r", [{"type": "session.start", "mode": "run", "user_task": "r"}])
-    manifest = state_dir(tmp_path) / "sessions" / "runs" / "run-r" / "manifest.json"
+    manifest = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-r" / "manifest.json"
     manifest.write_text(json.dumps({"session_id": "run-r", "mode": "run"}), encoding="utf-8")
     status, body, _ = _get(port, "/api/session/run-r/resume_defaults?preset=fast")
     assert (status, json.loads(body)) == (
@@ -2251,7 +2332,9 @@ def test_routes_payload_lists_every_route_and_the_modes_default(
 
 
 def test_new_work_carries_the_picked_model(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The composer's model pick reaches the one spawn every hub makes."""
     import agent6.ui.web.server as server_mod
@@ -2260,14 +2343,14 @@ def test_new_work_carries_the_picked_model(
     seen: list[tuple[str, str, str, str]] = []
 
     def _spawn(
-        cwd: Path,
+        cwd: pathlib.Path,
         mode: str,
         task: str,
         *,
         preset: str = "",
         model: str = "",
         config_path: object = None,
-    ) -> tuple[Path | None, str]:
+    ) -> tuple[pathlib.Path | None, str]:
         seen.append((mode, task, preset, model))
         return tmp_path / "sid", ""
 
@@ -2280,7 +2363,9 @@ def test_new_work_carries_the_picked_model(
 
 
 def test_review_answers_with_the_cli_review_of_a_finished_run(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The web review verb runs `sessions review` and answers with its markdown or refusal."""
     from agent6.ui.web import actions
@@ -2294,9 +2379,11 @@ def test_review_answers_with_the_cli_review_of_a_finished_run(
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    calls: list[tuple[list[str], Path]] = []
+    calls: list[tuple[list[str], pathlib.Path]] = []
 
-    def _fake_output(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+    def _fake_output(
+        argv: list[str], cwd: pathlib.Path, *, timeout_s: float = 120.0
+    ) -> tuple[bool, str]:
         calls.append((argv[-3:], cwd))
         return True, "## Outcome\nfinished green"
 
@@ -2306,7 +2393,9 @@ def test_review_answers_with_the_cli_review_of_a_finished_run(
     assert data["review"] == "## Outcome\nfinished green"
     assert calls == [(["review", "--", "run-r"], tmp_path)]
 
-    def _refused(_argv: list[str], _cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+    def _refused(
+        _argv: list[str], _cwd: pathlib.Path, *, timeout_s: float = 120.0
+    ) -> tuple[bool, str]:
         return False, "run-r is live; its record is not complete."
 
     monkeypatch.setattr(actions, "run_cli_output", _refused)

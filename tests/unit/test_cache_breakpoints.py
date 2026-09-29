@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.harness._conversation import Conversation
-from agent6.providers.anthropic import strip_cache_control_messages
+from agent6.harness import _conversation
+from agent6.providers import anthropic
 
 
 def _marked_wire() -> list[dict[str, Any]]:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.roll_cache_marks()
     return conv.to_wire()
@@ -23,7 +23,7 @@ def _marked_wire() -> list[dict[str, Any]]:
 
 def test_strip_cache_control_is_copy_on_write() -> None:
     messages = _marked_wire()
-    stripped = strip_cache_control_messages(messages)
+    stripped = anthropic.strip_cache_control_messages(messages)
     assert stripped is not messages
     assert "cache_control" not in stripped[0]["content"][0]
     # The original (loop-owned, snapshot-shared) list keeps its marker.
@@ -35,4 +35,4 @@ def test_strip_cache_control_passthrough_when_unmarked() -> None:
         {"role": "user", "content": [{"type": "text", "text": "TASK"}]},
         {"role": "user", "content": "plain"},
     ]
-    assert strip_cache_control_messages(messages) is messages
+    assert anthropic.strip_cache_control_messages(messages) is messages

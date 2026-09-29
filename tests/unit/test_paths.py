@@ -5,9 +5,9 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -15,7 +15,7 @@ from agent6 import paths
 
 
 def test_global_config_dir_follows_xdg_config_home(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.setattr(os, "geteuid", lambda: 1000)  # not root: XDG is honored
@@ -24,7 +24,9 @@ def test_global_config_dir_follows_xdg_config_home(
     assert paths.secrets_path() == tmp_path / "g" / "agent6" / "secrets.toml"
 
 
-def test_state_dir_and_repo_config_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_state_dir_and_repo_config_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
     base = tmp_path / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(base))
     repo = tmp_path / "myrepo"
@@ -40,7 +42,7 @@ def test_state_dir_and_repo_config_path(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert paths.repo_config_path(repo) == base / "agent6" / rid / "config.toml"
 
 
-def test_state_tree_dirs_are_created_private_0700(tmp_path: Path) -> None:
+def test_state_tree_dirs_are_created_private_0700(tmp_path: pathlib.Path) -> None:
     """State tree dirs are created private, 0700.
 
     agent6's state tree is single-user (transcripts, memory, run history, secrets), so it is created
@@ -56,7 +58,7 @@ def test_state_tree_dirs_are_created_private_0700(tmp_path: Path) -> None:
     assert (outer.stat().st_mode & 0o777) == 0o755  # pre-existing, untouched
 
 
-def test_repo_id_distinguishes_paths(tmp_path: Path) -> None:
+def test_repo_id_distinguishes_paths(tmp_path: pathlib.Path) -> None:
     a = tmp_path / "a"
     b = tmp_path / "b"
     a.mkdir()
@@ -64,7 +66,7 @@ def test_repo_id_distinguishes_paths(tmp_path: Path) -> None:
     assert paths.repo_id(a) != paths.repo_id(b)
 
 
-def test_repo_id_separates_paths_that_flatten_alike(tmp_path: Path) -> None:
+def test_repo_id_separates_paths_that_flatten_alike(tmp_path: pathlib.Path) -> None:
     """`/a/b/c` and `/a/b-c` both flatten to `a-b-c`.
 
     Sharing one state dir between two real workspaces is worse than an unreadable name, so the hash
@@ -86,7 +88,7 @@ def test_repo_id_separates_paths_that_flatten_alike(tmp_path: Path) -> None:
         "ünïcödé-àccénts",  # 2 bytes per char
     ],
 )
-def test_repo_id_stays_a_usable_directory_name(tmp_path: Path, segment: str) -> None:
+def test_repo_id_stays_a_usable_directory_name(tmp_path: pathlib.Path, segment: str) -> None:
     """The filesystem limit is 255 BYTES per component.
 
     Capping CHARACTERS gave a 271-byte name for a CJK path, and every state-dir command died with an
@@ -94,7 +96,7 @@ def test_repo_id_stays_a_usable_directory_name(tmp_path: Path, segment: str) -> 
     """
     # Rooted at `/`: under `tmp_path` the ASCII prefix would take the whole
     # head cut, leaving only the tail cut inside a multi-byte segment.
-    deep = Path("/", *[f"{segment}{i}" for i in range(30)])
+    deep = pathlib.Path("/", *[f"{segment}{i}" for i in range(30)])
     rid = paths.repo_id(deep)
     assert len(rid.encode()) < 255
     # Every kept character comes from the path, a separator or the hex tail:
@@ -103,19 +105,25 @@ def test_repo_id_stays_a_usable_directory_name(tmp_path: Path, segment: str) -> 
     (tmp_path / rid).mkdir()  # the real filesystem accepts it
 
 
-def test_state_base_uses_xdg_when_not_sudo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_state_base_uses_xdg_when_not_sudo(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
     monkeypatch.setattr(os, "geteuid", lambda: 1000)
     assert paths.state_base() == tmp_path / "xdg" / "agent6"
 
 
-def test_data_dir_follows_xdg_data_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_data_dir_follows_xdg_data_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "d"))
     monkeypatch.setattr(os, "geteuid", lambda: 1000)
     assert paths.data_dir() == tmp_path / "d" / "agent6"
 
 
-def test_data_dir_falls_back_to_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_data_dir_falls_back_to_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.setattr(os, "geteuid", lambda: 1000)
     home = paths.effective_user().home
@@ -158,7 +166,7 @@ def test_root_optin(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_mkdir_for_real_user_hands_back_created_ancestors(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """Under sudo, every directory the call CREATES is handed back to the real operator.
 
@@ -168,13 +176,13 @@ def test_mkdir_for_real_user_hands_back_created_ancestors(
     monkeypatch.setattr(os, "geteuid", lambda: 0)
     monkeypatch.setenv("SUDO_UID", "1234")
     monkeypatch.setenv("SUDO_GID", "1234")
-    chowned: list[Path] = []
+    chowned: list[pathlib.Path] = []
 
     def _record(*a: object) -> None:
-        chowned.append(Path(str(a[0])))
+        chowned.append(pathlib.Path(str(a[0])))
 
     def _record_at(target: object, _uid: int, _gid: int, **kw: object) -> None:
-        chowned.append(Path(f"/proc/self/fd/{kw['dir_fd']}").readlink() / str(target))
+        chowned.append(pathlib.Path(f"/proc/self/fd/{kw['dir_fd']}").readlink() / str(target))
 
     monkeypatch.setattr(os, "lchown", _record)
     monkeypatch.setattr(os, "chown", _record_at)
@@ -194,7 +202,7 @@ def test_mkdir_for_real_user_hands_back_created_ancestors(
 
 
 def test_chown_to_real_user_is_noop_when_not_root(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setattr(os, "geteuid", lambda: 1000)
     f = tmp_path / "x"
@@ -211,7 +219,7 @@ def test_chown_to_real_user_is_noop_when_not_root(
 
 
 def test_a_chown_never_resolves_a_symlink_swapped_in_mid_walk(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """Under sudo this runs as root over trees a jailed command holds RW.
 
@@ -232,7 +240,7 @@ def test_a_chown_never_resolves_a_symlink_swapped_in_mid_walk(
     monkeypatch.setattr(
         paths,
         "effective_user",
-        lambda: paths.RealUser(1000, 1000, "op", Path("/home/op"), True),
+        lambda: paths.RealUser(1000, 1000, "op", pathlib.Path("/home/op"), True),
     )
     hit: list[tuple[int, int]] = []
 
@@ -243,7 +251,7 @@ def test_a_chown_never_resolves_a_symlink_swapped_in_mid_walk(
             (tree / "sub").symlink_to(outside, target_is_directory=True)
 
     def _fake_lchown(target: object, _uid: int, _gid: int) -> None:
-        _swap_then_record(Path(str(target)).lstat())
+        _swap_then_record(pathlib.Path(str(target)).lstat())
 
     def _fake_chown(target: object, _uid: int, _gid: int, **kw: object) -> None:
         assert kw.get("follow_symlinks") is False, "a chown that follows links is the bug"
@@ -257,7 +265,9 @@ def test_a_chown_never_resolves_a_symlink_swapped_in_mid_walk(
     assert secret_id not in hit, "root chowned a file outside the tree"
 
 
-def test_state_is_keyed_on_the_project_not_the_directory_you_stood_in(tmp_path: Path) -> None:
+def test_state_is_keyed_on_the_project_not_the_directory_you_stood_in(
+    tmp_path: pathlib.Path,
+) -> None:
     """The state dir is keyed on the project, not on the directory the command ran from.
 
     From a subdirectory, `runs`, `resume`, read_session and memory saw an empty history, silently,
@@ -269,7 +279,7 @@ def test_state_is_keyed_on_the_project_not_the_directory_you_stood_in(tmp_path: 
     assert paths.state_dir(repo / "src" / "deep") == paths.state_dir(repo)
 
 
-def test_one_repo_is_one_project_even_when_the_repo_is_your_home(tmp_path: Path) -> None:
+def test_one_repo_is_one_project_even_when_the_repo_is_your_home(tmp_path: pathlib.Path) -> None:
     """One repo is one project, even when the repo is your home.
 
     Stopping the walk at $HOME gives each subdirectory of a dotfiles repo its own state dir, and its
@@ -284,16 +294,16 @@ def test_one_repo_is_one_project_even_when_the_repo_is_your_home(tmp_path: Path)
     assert dirs == {paths.state_dir(home)}, "one working tree must be one lock"
 
 
-def test_the_filesystem_root_is_not_a_directory_named_root(tmp_path: Path) -> None:
+def test_the_filesystem_root_is_not_a_directory_named_root(tmp_path: pathlib.Path) -> None:
     """`/` flattens to nothing, and the sentinel word for it was also a legal directory name.
 
     `/` and `/root` were one id, so a container with WORKDIR / shared config, runs and repo.lock
     with anything under /root.
     """
-    assert paths.repo_id(Path("/")) != paths.repo_id(Path("/root"))
+    assert paths.repo_id(pathlib.Path("/")) != paths.repo_id(pathlib.Path("/root"))
 
 
-def test_a_worktree_is_the_project_it_is_a_worktree_of(tmp_path: Path) -> None:
+def test_a_worktree_is_the_project_it_is_a_worktree_of(tmp_path: pathlib.Path) -> None:
     """A worktree is the project it is a worktree of.
 
     A linked worktree's `.git` is a file, so an is_dir() walk would climb past it into whatever repo
@@ -306,7 +316,7 @@ def test_a_worktree_is_the_project_it_is_a_worktree_of(tmp_path: Path) -> None:
     assert paths.project_root(tree / "sub") == tree.resolve()
 
 
-def test_a_linked_worktree_is_the_repository_it_belongs_to(tmp_path: Path) -> None:
+def test_a_linked_worktree_is_the_repository_it_belongs_to(tmp_path: pathlib.Path) -> None:
     """`git worktree add` writes a `.git` FILE naming the repository's `.git/worktrees/<name>`.
 
     The worktree is that repository's project (one state dir, config and memory), the way a
@@ -326,11 +336,11 @@ def test_a_linked_worktree_is_the_repository_it_belongs_to(tmp_path: Path) -> No
     assert paths.state_dir(worktree) == paths.state_dir(repo)
 
 
-def _git(repo: Path, *args: str) -> None:
+def _git(repo: pathlib.Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
 
 
-def test_outside_a_repo_the_directory_is_the_project(tmp_path: Path) -> None:
+def test_outside_a_repo_the_directory_is_the_project(tmp_path: pathlib.Path) -> None:
     plain = tmp_path / "notarepo"
     plain.mkdir()
     assert paths.project_root(plain) == plain.resolve()
@@ -347,7 +357,7 @@ def test_the_id_decodes_back_to_the_path_it_names(path: str) -> None:
     24 bits, brute-forced in 11 seconds, after which one project reads another's config, runs and
     transcripts.
     """
-    rid = paths.repo_id(Path(path))
+    rid = paths.repo_id(pathlib.Path(path))
     flat, tag = rid.rsplit("-", 1)
     # The name fixes the bit LENGTH, which is what makes leading zeros safe.
     marks = bin(int(tag, 16))[2:].zfill(flat.count("-"))
@@ -362,10 +372,10 @@ def test_the_id_decodes_back_to_the_path_it_names(path: str) -> None:
     assert seen == flat.count("-"), "the tag describes exactly the dashes in the name"
 
 
-def test_the_common_case_carries_no_hash_at_all(tmp_path: Path) -> None:
+def test_the_common_case_carries_no_hash_at_all(tmp_path: pathlib.Path) -> None:
     """A hash is unreadable and, here, unnecessary: the 1-4 character tag means something."""
-    assert paths.repo_id(Path("/home/u/agent6")) == "home-u-agent6-3"
-    assert paths.repo_id(Path("/tmp")) == "tmp-0"
+    assert paths.repo_id(pathlib.Path("/home/u/agent6")) == "home-u-agent6-3"
+    assert paths.repo_id(pathlib.Path("/tmp")) == "tmp-0"
 
 
 def test_repo_root_of_id_inverts_repo_id() -> None:
@@ -374,19 +384,19 @@ def test_repo_root_of_id_inverts_repo_id() -> None:
     The inverse must round-trip every dash/slash mix, reject junk names, and reject a candidate that
     does not re-encode identically (the elided-hash form).
     """
-    from agent6.paths import repo_id, repo_root_of_id
-
     for path in ("/a/b/c", "/a/b-c", "/a-b-c", "/x---y/z-", "/tmp/a--b", "/"):
-        rid = repo_id(Path(path))
-        assert repo_root_of_id(rid) == Path(path), path
-    assert repo_root_of_id("not-a-tag-zz") is None
-    assert repo_root_of_id("plain-file") is None
+        rid = paths.repo_id(pathlib.Path(path))
+        assert paths.repo_root_of_id(rid) == pathlib.Path(path), path
+    assert paths.repo_root_of_id("not-a-tag-zz") is None
+    assert paths.repo_root_of_id("plain-file") is None
     long = "/" + "/".join(["seg"] * 80)
-    assert repo_root_of_id(repo_id(Path(long))) is None  # elided form: not reversible
+    assert (
+        paths.repo_root_of_id(paths.repo_id(pathlib.Path(long))) is None
+    )  # elided form: not reversible
 
 
 def test_cmd_ps_lists_live_sessions_with_decoded_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """One row per LIVE session across every repo state dir.
 
@@ -396,20 +406,19 @@ def test_cmd_ps_lists_live_sessions_with_decoded_directory(
     import json
     import os
 
-    from agent6.paths import repo_id
     from agent6.ui.cli import ps_cmd
 
     base = tmp_path / "state"
     repo = tmp_path / "proj"
     repo.mkdir()
-    live = base / repo_id(repo) / "sessions" / "runs" / "brave-fox-AAAAAA"
+    live = base / paths.repo_id(repo) / "sessions" / "runs" / "brave-fox-AAAAAA"
     live.mkdir(parents=True)
     (live / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (live / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    dead = base / repo_id(repo) / "sessions" / "runs" / "dead-oak-BBBBBB"
+    dead = base / paths.repo_id(repo) / "sessions" / "runs" / "dead-oak-BBBBBB"
     dead.mkdir(parents=True)
     (dead / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
@@ -418,7 +427,7 @@ def test_cmd_ps_lists_live_sessions_with_decoded_directory(
     monkeypatch.setattr(ps_cmd, "state_base", lambda: base)
     assert ps_cmd.cmd_ps() == 0
     out = capsys.readouterr().out
-    assert "brave-fox-AAAAAA" in out and str(repo) in out.replace("~", str(Path.home()))
+    assert "brave-fox-AAAAAA" in out and str(repo) in out.replace("~", str(pathlib.Path.home()))
     assert "dead-oak-BBBBBB" not in out
     assert "agent6 attach" in out
 
@@ -426,7 +435,7 @@ def test_cmd_ps_lists_live_sessions_with_decoded_directory(
     # directory cell says so instead of offering a state-dir name to cd into.
     long_repo = tmp_path / ("q" * 200)
     long_repo.mkdir()
-    elided = base / repo_id(long_repo) / "sessions" / "runs" / "long-elm-EEEEEE"
+    elided = base / paths.repo_id(long_repo) / "sessions" / "runs" / "long-elm-EEEEEE"
     elided.mkdir(parents=True)
     (elided / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (elided / "logs.jsonl").write_text(

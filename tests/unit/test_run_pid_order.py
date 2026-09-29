@@ -11,20 +11,20 @@ none, and the teardown clears it on every exit path.
 
 from __future__ import annotations
 
+import pathlib
 import subprocess as sp
 import time
-from pathlib import Path
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
+from agent6 import paths
 from agent6.app import run as run_mod
 from agent6.config import Config
-from agent6.paths import state_dir
-from agent6.tools.operator_prompts import QuestionAnswer, QuestionRequest
+from agent6.tools import operator_prompts
 
 
-def _repo(root: Path) -> None:
+def _repo(root: pathlib.Path) -> None:
     root.mkdir()
     sp.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
     sp.run(["git", "config", "user.email", "t@example.com"], cwd=root, check=True)
@@ -35,7 +35,7 @@ def _repo(root: Path) -> None:
 
 
 def test_run_writes_its_worker_pid_before_it_asks_the_operator(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -43,7 +43,7 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
     monkeypatch.chdir(repo)
     order: list[str] = []
 
-    def _pid(_session_dir: Path, _pid: int) -> None:
+    def _pid(_session_dir: pathlib.Path, _pid: int) -> None:
         order.append("pid")
 
     def _isolation(*_a: object, **_k: object) -> str:
@@ -59,12 +59,12 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
     monkeypatch.setattr(run_mod, "run_execution", _execution)
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
 
-    def _cancel(_request: QuestionRequest, /) -> QuestionAnswer:
+    def _cancel(_request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         order.append("ask")
-        return QuestionAnswer(("cancel",), "stdin")
+        return operator_prompts.QuestionAnswer(("cancel",), "stdin")
 
     # A front-end whose operator cancels the dirty-tree start question.
-    frontend = MagicMock()
+    frontend = mock.MagicMock()
     frontend.build_questioner.return_value = _cancel
     # The pid lands BEFORE the question: while a run waits on it, `agent6
     # answer` and the listings must read it as the live worker it is.
@@ -83,7 +83,7 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
 
 
 def test_a_cancelled_start_question_leaves_no_pid_behind(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A cancelled start question leaves no pid behind.
 
@@ -100,10 +100,10 @@ def test_a_cancelled_start_question_leaves_no_pid_behind(
 
     monkeypatch.setattr(run_mod, "select_isolation", _isolation)
 
-    def _cancel(_request: QuestionRequest, /) -> QuestionAnswer:
-        return QuestionAnswer(("cancel",), "stdin")
+    def _cancel(_request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
+        return operator_prompts.QuestionAnswer(("cancel",), "stdin")
 
-    frontend = MagicMock()
+    frontend = mock.MagicMock()
     frontend.build_questioner.return_value = _cancel
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
 
@@ -118,22 +118,22 @@ def test_a_cancelled_start_question_leaves_no_pid_behind(
         == 2
     )
 
-    from agent6.sessions.layout import bucket_dir
+    from agent6.sessions import layout
 
-    runs = bucket_dir(state_dir(repo), "runs")
+    runs = layout.bucket_dir(paths.state_dir(repo), "runs")
     pids = list(runs.glob("*/worker.pid"))
     assert [p for p in pids if p.read_text(encoding="utf-8").strip()] == []
 
 
 def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A front-end teardown failure still clears the worker pid.
 
     An in-process front-end outlives the run, so its pid must not remain the session's worker
     identity when closing its console view fails.
     """
-    from agent6.app._execution import ExecutionEnd
+    from agent6.app import _execution as app__execution
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -143,12 +143,12 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
     def _strict(*_args: object, **_kwargs: object) -> str:
         return "strict"
 
-    def _finished(*_args: object, **_kwargs: object) -> ExecutionEnd:
-        return ExecutionEnd(0)
+    def _finished(*_args: object, **_kwargs: object) -> app__execution.ExecutionEnd:
+        return app__execution.ExecutionEnd(0)
 
     monkeypatch.setattr(run_mod, "select_isolation", _strict)
     monkeypatch.setattr(run_mod, "run_execution", _finished)
-    frontend = MagicMock()
+    frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
 
     with pytest.raises(OSError, match="console teardown failed"):
@@ -161,19 +161,19 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
             mode="run",
         )
 
-    session = state_dir(repo) / "sessions" / "runs" / "pid-teardown"
+    session = paths.state_dir(repo) / "sessions" / "runs" / "pid-teardown"
     assert not (session / "worker.pid").exists()
 
 
 def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The stash pop shares the teardown with the pid clear.
 
     A console teardown that raises must not leave the operator's pre-run changes stashed with
     nothing said.
     """
-    from agent6.app._execution import ExecutionEnd
+    from agent6.app import _execution as app__execution
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -184,12 +184,12 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
     def _strict(*_args: object, **_kwargs: object) -> str:
         return "strict"
 
-    def _finished(*_args: object, **_kwargs: object) -> ExecutionEnd:
-        return ExecutionEnd(0)
+    def _finished(*_args: object, **_kwargs: object) -> app__execution.ExecutionEnd:
+        return app__execution.ExecutionEnd(0)
 
     monkeypatch.setattr(run_mod, "select_isolation", _strict)
     monkeypatch.setattr(run_mod, "run_execution", _finished)
-    frontend = MagicMock()
+    frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
     cfg = Config.model_validate(
         {

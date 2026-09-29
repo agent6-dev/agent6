@@ -4,21 +4,13 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from pathlib import Path
+import datetime
+import pathlib
 
 import pytest
 
-from agent6.graph.models import TaskNode
-from agent6.graph.storage import (
-    SessionLayout,
-    _dump_frontmatter,  # pyright: ignore[reportPrivateUsage]
-    _parse_frontmatter,  # pyright: ignore[reportPrivateUsage]
-    load_graph,
-    read_cursor,
-    write_cursor,
-    write_node,
-)
+from agent6.graph import models, storage
+from agent6.sessions import layout as sessions_layout
 
 
 def _mk_node(
@@ -29,9 +21,9 @@ def _mk_node(
     rationale: str = "r",
     relevant_paths: tuple[str, ...] = (),
     children: tuple[str, ...] = (),
-) -> TaskNode:
-    now = datetime(2025, 1, 1, tzinfo=UTC)
-    return TaskNode(
+) -> models.TaskNode:
+    now = datetime.datetime(2025, 1, 1, tzinfo=datetime.UTC)
+    return models.TaskNode(
         id=nid,
         parent_id=parent,
         title=title,
@@ -68,89 +60,84 @@ def test_frontmatter_round_trips_adversarial_scalars(evil: str) -> None:
     """A task title with line-separator chars survives the frontmatter round-trip."""
     node = _mk_node("0" * 25 + "A", title=evil, rationale=evil)
     node = node.model_copy(update={"acceptance": evil})
-    rt = _parse_frontmatter(_dump_frontmatter(node))  # must not raise
+    rt = storage._parse_frontmatter(storage._dump_frontmatter(node))  # must not raise
     assert rt.title == evil
     assert rt.rationale == evil
     assert rt.acceptance == evil
 
 
-def test_layout_ensure_creates_dirs(tmp_path: Path) -> None:
-    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
+def test_layout_ensure_creates_dirs(tmp_path: pathlib.Path) -> None:
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     layout.ensure()
     assert layout.graph_dir.is_dir()
     assert layout.transcripts_dir.is_dir()
 
 
-def test_write_and_load_single_node(tmp_path: Path) -> None:
-    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
+def test_write_and_load_single_node(tmp_path: pathlib.Path) -> None:
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     layout.ensure()
     n = _mk_node("0" * 25 + "A", relevant_paths=("src/a.py", "src/b.py"))
-    write_node(layout, {n.id: n}, n)
-    loaded = load_graph(layout)
+    storage.write_node(layout, {n.id: n}, n)
+    loaded = storage.load_graph(layout)
     assert n.id in loaded
     got = loaded[n.id]
     assert got.title == "t"
     assert got.relevant_paths == ("src/a.py", "src/b.py")
 
 
-def test_frontmatter_quotes_special_chars(tmp_path: Path) -> None:
-    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
+def test_frontmatter_quotes_special_chars(tmp_path: pathlib.Path) -> None:
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     layout.ensure()
     n = _mk_node(
         "0" * 25 + "B",
         title='has "quotes" and \\backslash',
         rationale="line1\nline2",
     )
-    write_node(layout, {n.id: n}, n)
-    loaded = load_graph(layout)
+    storage.write_node(layout, {n.id: n}, n)
+    loaded = storage.load_graph(layout)
     assert loaded[n.id].title == 'has "quotes" and \\backslash'
     assert loaded[n.id].rationale == "line1\nline2"
 
 
-def test_load_graph_reconstructs_parent_dir_layout(tmp_path: Path) -> None:
-    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
+def test_load_graph_reconstructs_parent_dir_layout(tmp_path: pathlib.Path) -> None:
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     layout.ensure()
     root = _mk_node("0" * 25 + "C", children=("0" * 25 + "D",))
     child = _mk_node("0" * 25 + "D", parent=root.id)
     nodes = {root.id: root, child.id: child}
-    write_node(layout, nodes, root)
-    write_node(layout, nodes, child)
-    loaded = load_graph(layout)
+    storage.write_node(layout, nodes, root)
+    storage.write_node(layout, nodes, child)
+    loaded = storage.load_graph(layout)
     assert loaded[root.id].children == (child.id,)
     assert loaded[child.id].parent_id == root.id
 
 
-def test_checkpoints_dir_and_path(tmp_path: Path) -> None:
-    layout = SessionLayout(state_dir=tmp_path, session_id="run1")
+def test_checkpoints_dir_and_path(tmp_path: pathlib.Path) -> None:
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run1")
     layout.ensure()
     assert layout.checkpoints_dir.is_dir()
     assert layout.checkpoint_path(7) == layout.checkpoints_dir / "0007.json"
     assert layout.checkpoint_path(1234) == layout.checkpoints_dir / "1234.json"
 
 
-def test_list_checkpoint_turns(tmp_path: Path) -> None:
-    from agent6.graph.storage import list_checkpoint_turns
-
-    layout = SessionLayout(state_dir=tmp_path, session_id="run1")
+def test_list_checkpoint_turns(tmp_path: pathlib.Path) -> None:
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run1")
     # No checkpoints dir yet (old run): empty.
-    assert list_checkpoint_turns(layout) == []
+    assert storage.list_checkpoint_turns(layout) == []
     layout.ensure()
     for turn in (3, 1, 10, 2):
         layout.checkpoint_path(turn).write_text("{}", encoding="utf-8")
     # A stray non-numeric file is ignored.
     (layout.checkpoints_dir / "notes.json").write_text("{}", encoding="utf-8")
-    assert list_checkpoint_turns(layout) == [1, 2, 3, 10]
+    assert storage.list_checkpoint_turns(layout) == [1, 2, 3, 10]
 
 
-def test_load_graph_skips_a_path_traversing_node_id(tmp_path: Path, capsys: object) -> None:
+def test_load_graph_skips_a_path_traversing_node_id(tmp_path: pathlib.Path, capsys: object) -> None:
     """A node file whose id carries path separators is skipped like every other corrupt file.
 
     Unvalidated, the next write_node resolved outside graph_dir.
     """
-    from agent6.graph.storage import load_graph
-    from agent6.sessions.layout import SessionLayout
-
-    layout = SessionLayout(state_dir=tmp_path / "state", session_id="r1")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="r1")
     layout.ensure()
     bad_id = "../zzzzzzzzzzzzzzzzzzzzzzz"
     assert len(bad_id) == 26
@@ -160,17 +147,17 @@ def test_load_graph_skips_a_path_traversing_node_id(tmp_path: Path, capsys: obje
         "updated_at: 2026-01-01T00:00:00+00:00\ncreated_by: worker\n---\nbody\n",
         encoding="utf-8",
     )
-    nodes = load_graph(layout)
+    nodes = storage.load_graph(layout)
     assert bad_id not in nodes  # skipped, not loaded
 
 
-def test_graph_version_round_trips_and_old_files_default_zero(tmp_path: Path) -> None:
+def test_graph_version_round_trips_and_old_files_default_zero(tmp_path: pathlib.Path) -> None:
     """The node file carries the mutation stamp; a file written before stamps existed loads as 0."""
-    layout = SessionLayout(state_dir=tmp_path, session_id="s")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="s")
     layout.ensure()
     node = _mk_node("0" * 26).model_copy(update={"graph_version": 7})
-    write_node(layout, {node.id: node}, node)
-    loaded = load_graph(layout)
+    storage.write_node(layout, {node.id: node}, node)
+    loaded = storage.load_graph(layout)
     assert loaded[node.id].graph_version == 7
     # Strip the stamp line: the pre-stamp file shape.
     md = next(layout.graph_dir.rglob("*.md"))
@@ -182,18 +169,18 @@ def test_graph_version_round_trips_and_old_files_default_zero(tmp_path: Path) ->
         ),
         encoding="utf-8",
     )
-    assert load_graph(layout)[node.id].graph_version == 0
+    assert storage.load_graph(layout)[node.id].graph_version == 0
 
 
 def test_a_malformed_cursor_reads_as_none_and_says_so(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A torn or hand-edited cursor.json reads as no cursor, so fork and `/undo` degrade."""
-    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     layout.ensure()
     for bad in ("[]", '{"node_id"', '{"node_id": 5}', '"n9"', "{}"):
         layout.cursor_path.write_text(bad, encoding="utf-8")
-        assert read_cursor(layout) is None
+        assert storage.read_cursor(layout) is None
     assert capsys.readouterr().err.count("ignoring malformed") == 5
-    write_cursor(layout, "n1")
-    assert read_cursor(layout) == "n1"
+    storage.write_cursor(layout, "n1")
+    assert storage.read_cursor(layout) == "n1"

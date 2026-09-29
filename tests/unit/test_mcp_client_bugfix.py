@@ -18,12 +18,7 @@ from typing import Any
 
 import pytest
 
-from agent6.tools.mcp_client import (
-    MCP_TOOL_PREFIX,
-    MCPError,
-    MCPManager,
-    MCPServerSpec,
-)
+from agent6.tools import mcp_client
 
 
 def _iserror_server_argv() -> tuple[str, ...]:
@@ -105,9 +100,9 @@ def test_a_passed_secret_echoed_in_a_protocol_error_is_redacted(
     """A passed credential stays out of the transcript when a JSON-RPC error echoes it."""
     secret = "secret-from-environment-" + "x" * 3000
     monkeypatch.setenv("MCP_TEST_SECRET", secret)
-    mgr = MCPManager.start(
+    mgr = mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            mcp_client.MCPServerSpec(
                 name="leaky",
                 command=_echoed_secret_server_argv(),
                 startup_timeout_s=5.0,
@@ -117,8 +112,8 @@ def test_a_passed_secret_echoed_in_a_protocol_error_is_redacted(
         ]
     )
     try:
-        with pytest.raises(MCPError) as caught:
-            mgr.call(f"{MCP_TOOL_PREFIX}leaky__fail", {})
+        with pytest.raises(mcp_client.MCPError) as caught:
+            mgr.call(f"{mcp_client.MCP_TOOL_PREFIX}leaky__fail", {})
     finally:
         mgr.close()
 
@@ -130,9 +125,9 @@ def test_a_passed_secret_echoed_in_a_tool_error_is_redacted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("MCP_TEST_SECRET", "secret-from-environment")
-    mgr = MCPManager.start(
+    mgr = mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            mcp_client.MCPServerSpec(
                 name="leaky",
                 command=_echoed_secret_server_argv(tool_level=True),
                 startup_timeout_s=5.0,
@@ -142,8 +137,8 @@ def test_a_passed_secret_echoed_in_a_tool_error_is_redacted(
         ]
     )
     try:
-        with pytest.raises(MCPError) as caught:
-            mgr.call(f"{MCP_TOOL_PREFIX}leaky__fail", {})
+        with pytest.raises(mcp_client.MCPError) as caught:
+            mgr.call(f"{mcp_client.MCP_TOOL_PREFIX}leaky__fail", {})
     finally:
         mgr.close()
 
@@ -207,27 +202,22 @@ def test_a_json_rpc_error_cannot_flood_the_context() -> None:
     A server controls its error message, which reaches the model's context, so it gets the same
     inline bound as a tool-level error.
     """
-    from agent6.tools.mcp_client import (
-        _MAX_INLINE_TEXT_CHARS,  # pyright: ignore[reportPrivateUsage]
-        _result_of,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    with pytest.raises(MCPError) as caught:
-        _result_of(
-            {"error": {"message": "x" * (_MAX_INLINE_TEXT_CHARS * 4)}},
+    with pytest.raises(mcp_client.MCPError) as caught:
+        mcp_client._result_of(
+            {"error": {"message": "x" * (mcp_client._MAX_INLINE_TEXT_CHARS * 4)}},
             name="fake",
             method="tools/call",
         )
 
     message = str(caught.value)
-    assert len(message) < _MAX_INLINE_TEXT_CHARS + 100
+    assert len(message) < mcp_client._MAX_INLINE_TEXT_CHARS + 100
     assert "[agent6: truncated]" in message
 
 
 def test_iserror_tool_result_surfaces_as_error() -> None:
-    mgr = MCPManager.start(
+    mgr = mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            mcp_client.MCPServerSpec(
                 name="fake",
                 command=_iserror_server_argv(),
                 startup_timeout_s=5.0,
@@ -236,17 +226,17 @@ def test_iserror_tool_result_surfaces_as_error() -> None:
         ]
     )
     try:
-        with pytest.raises(MCPError) as ei:
-            mgr.call(f"{MCP_TOOL_PREFIX}fake__boom", {})
+        with pytest.raises(mcp_client.MCPError) as ei:
+            mgr.call(f"{mcp_client.MCP_TOOL_PREFIX}fake__boom", {})
         assert "disk on fire" in str(ei.value)
     finally:
         mgr.close()
 
 
 def test_server_initiated_request_not_treated_as_response() -> None:
-    mgr = MCPManager.start(
+    mgr = mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            mcp_client.MCPServerSpec(
                 name="fake",
                 command=_server_request_collision_argv(),
                 startup_timeout_s=5.0,
@@ -258,7 +248,7 @@ def test_server_initiated_request_not_treated_as_response() -> None:
         # Pre-fix: the colliding server request (id=N, method=roots/list) was
         # popped as the response, failing the non-dict-result check. Post-fix:
         # it's ignored and the genuine response is returned.
-        out = mgr.call(f"{MCP_TOOL_PREFIX}fake__echo", {"text": "ok"})
+        out = mgr.call(f"{mcp_client.MCP_TOOL_PREFIX}fake__echo", {"text": "ok"})
         assert out["content"][0]["text"] == "ok"
     finally:
         mgr.close()
@@ -269,11 +259,10 @@ def test_tools_list_follows_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
 
     Every page is part of one listing; stopping at nextCursor hides every tool after the first page.
     """
-    from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
-    from agent6.tools.mcp_http import HttpTransport
+    from agent6.tools import mcp_http
 
     def send(
-        _transport: HttpTransport, payload: dict[str, Any], *, timeout_s: float
+        _transport: mcp_http.HttpTransport, payload: dict[str, Any], *, timeout_s: float
     ) -> dict[str, Any] | None:
         del timeout_s
         method = payload["method"]
@@ -290,13 +279,13 @@ def test_tools_list_follows_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
             }
         return {"jsonrpc": "2.0", "id": payload["id"], "result": result}
 
-    monkeypatch.setattr(HttpTransport, "send", send)
-    srv = _MCPServer(  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(mcp_http.HttpTransport, "send", send)
+    srv = mcp_client._MCPServer(  # pyright: ignore[reportPrivateUsage]
         name="pages",
         command=(),
         startup_timeout_s=5.0,
         call_timeout_s=5.0,
-        http=HttpTransport(name="pages", url="https://example.invalid/mcp"),
+        http=mcp_http.HttpTransport(name="pages", url="https://example.invalid/mcp"),
     )
 
     srv.start()
@@ -310,13 +299,12 @@ def test_tools_list_pagination_is_bounded(monkeypatch: pytest.MonkeyPatch) -> No
     A server minting a fresh nextCursor on every page would otherwise hold the handshake forever and
     grow the roster without bound.
     """
-    from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
-    from agent6.tools.mcp_http import HttpTransport
+    from agent6.tools import mcp_http
 
     pages = 0
 
     def send(
-        _transport: HttpTransport, payload: dict[str, Any], *, timeout_s: float
+        _transport: mcp_http.HttpTransport, payload: dict[str, Any], *, timeout_s: float
     ) -> dict[str, Any] | None:
         nonlocal pages
         del timeout_s
@@ -330,16 +318,16 @@ def test_tools_list_pagination_is_bounded(monkeypatch: pytest.MonkeyPatch) -> No
             result = {"tools": [], "nextCursor": f"page-{pages}"}
         return {"jsonrpc": "2.0", "id": payload["id"], "result": result}
 
-    monkeypatch.setattr(HttpTransport, "send", send)
-    srv = _MCPServer(  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(mcp_http.HttpTransport, "send", send)
+    srv = mcp_client._MCPServer(  # pyright: ignore[reportPrivateUsage]
         name="endless",
         command=(),
         startup_timeout_s=5.0,
         call_timeout_s=5.0,
-        http=HttpTransport(name="endless", url="https://example.invalid/mcp"),
+        http=mcp_http.HttpTransport(name="endless", url="https://example.invalid/mcp"),
     )
 
-    with pytest.raises(MCPError, match="paged past"):
+    with pytest.raises(mcp_client.MCPError, match="paged past"):
         srv.start()
     assert pages == 64
 
@@ -392,9 +380,9 @@ def test_registration_skips_tools_that_would_poison_the_tools_array() -> None:
     An over-64-character qualified name or a duplicate name would 400 the whole provider tools array
     every turn; both are dropped at registration (first occurrence wins) like the invalid-char skip.
     """
-    mgr = MCPManager.start(
+    mgr = mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            mcp_client.MCPServerSpec(
                 name="fake",
                 command=_poison_tools_server_argv(),
                 startup_timeout_s=5.0,
@@ -404,7 +392,7 @@ def test_registration_skips_tools_that_would_poison_the_tools_array() -> None:
     )
     try:
         descs = mgr.descriptors()
-        assert [d.qualified_name for d in descs] == [f"{MCP_TOOL_PREFIX}fake__echo"]
+        assert [d.qualified_name for d in descs] == [f"{mcp_client.MCP_TOOL_PREFIX}fake__echo"]
         assert descs[0].description == "first"
     finally:
         mgr.close()
@@ -458,9 +446,9 @@ def test_timed_out_requests_leave_no_pending_residue() -> None:
     response-shaped message once no request is left to pop it grows `_pending` (up to 8 MiB per
     entry) without bound against a slow or runaway server.
     """
-    mgr = MCPManager.start(
+    mgr = mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            mcp_client.MCPServerSpec(
                 name="fake",
                 command=_slow_call_server_argv(),
                 startup_timeout_s=5.0,
@@ -471,8 +459,8 @@ def test_timed_out_requests_leave_no_pending_residue() -> None:
     try:
         srv = mgr._servers["fake"]  # pyright: ignore[reportPrivateUsage]
         for _ in range(2):
-            with pytest.raises(MCPError, match="timed out"):
-                mgr.call(f"{MCP_TOOL_PREFIX}fake__slow", {})
+            with pytest.raises(mcp_client.MCPError, match="timed out"):
+                mgr.call(f"{mcp_client.MCP_TOOL_PREFIX}fake__slow", {})
         # The server answers sequentially (0.5s each), so both late replies
         # have flushed well before 2s; the drop is unobservable from outside,
         # so wait past that point and then prove nothing was retained.

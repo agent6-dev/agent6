@@ -7,8 +7,8 @@ Its argv, its `/parallel` fan-out and its refusals.
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -18,7 +18,9 @@ from agent6.ui import spawn
 def _capture_locate(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     captured: list[list[str]] = []
 
-    def _fake_locate(argv: list[str], cwd: Path, **_k: object) -> tuple[Path | None, str]:
+    def _fake_locate(
+        argv: list[str], cwd: pathlib.Path, **_k: object
+    ) -> tuple[pathlib.Path | None, str]:
         captured.append(list(argv))
         return None, "not started"
 
@@ -27,7 +29,7 @@ def _capture_locate(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
 
 
 def test_argv_ends_options_before_task_and_carries_the_preset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A task that looks like a flag rides behind `--`; the config-default preset adds no flag."""
     captured = _capture_locate(monkeypatch)
@@ -37,14 +39,16 @@ def test_argv_ends_options_before_task_and_carries_the_preset(
     assert captured[-1][1:] == ["plan", "--", "do it"]
 
 
-def test_config_path_stamps_the_argv_head(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_path_stamps_the_argv_head(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "ask", "why?", config_path=tmp_path / "c.toml")
     assert captured[-1][1:] == ["--config", str(tmp_path / "c.toml"), "ask", "--", "why?"]
 
 
 def test_unknown_mode_and_empty_task_are_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured = _capture_locate(monkeypatch)
     assert spawn.spawn_new_work(tmp_path, "machine", "x") == (None, "unknown mode 'machine'")
@@ -52,7 +56,9 @@ def test_unknown_mode_and_empty_task_are_refused(
     assert captured == []
 
 
-def test_detached_env_streams_and_waits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_detached_env_streams_and_waits(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The child streams to logs.jsonl and its prompts wait for a front-end; PATH is inherited."""
     captured_env: dict[str, str] = {}
 
@@ -79,7 +85,7 @@ def test_detached_env_streams_and_waits(tmp_path: Path, monkeypatch: pytest.Monk
 # --- the `/parallel` new-work directive: fan out lanes ------------------------
 
 
-def test_parallel_lane_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_parallel_lane_count(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "run", "/parallel 2 add a greeting")
     assert captured[-1][1:] == ["run", "--parallel", "2", "--", "add a greeting"]
@@ -87,9 +93,9 @@ def test_parallel_lane_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
 def _configure_worker() -> None:
     """A worker route in the global config, so a lane's bare model id has a provider to run on."""
-    from agent6.paths import global_config_dir
+    from agent6 import paths
 
-    cfg_home = global_config_dir()
+    cfg_home = paths.global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
         '[providers.o]\napi_format = "openai"\nbase_url = "https://x/v1"\n'
@@ -98,7 +104,9 @@ def _configure_worker() -> None:
     )
 
 
-def test_parallel_model_list_with_preset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_parallel_model_list_with_preset(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _configure_worker()
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "run", "/parallel gpt-5,opus refactor", preset="quick")
@@ -107,7 +115,9 @@ def test_parallel_model_list_with_preset(tmp_path: Path, monkeypatch: pytest.Mon
     ]  # fmt: skip
 
 
-def test_malformed_parallel_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_malformed_parallel_is_refused(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     captured = _capture_locate(monkeypatch)
     session_dir, err = spawn.spawn_new_work(tmp_path, "run", "/parallel")
     assert session_dir is None
@@ -132,7 +142,7 @@ def _provider_cfg() -> object:
 
 
 def test_parallel_refuses_unknown_model_before_spawn(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A cache exists to validate against -> a typo'd model is the composer's normal
     # error path, nothing spawned.
@@ -168,7 +178,7 @@ def test_parallel_refuses_unknown_model_before_spawn(
 
 
 def test_parallel_validation_uses_the_picked_model_provider(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A hub model pick changes the worker provider before a `/parallel` segment is checked."""
     from agent6.config import Config
@@ -212,7 +222,7 @@ def test_parallel_validation_uses_the_picked_model_provider(
 
 
 def test_parallel_unknown_model_no_cache_proceeds(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # No cache to validate against -> never block; the detached lane's own
     # preflight warns. The spawn happens.
@@ -230,14 +240,18 @@ def test_parallel_unknown_model_no_cache_proceeds(
     assert captured[-1][1:] == ["run", "--parallel", "made-up/model", "--", "fix it"]
 
 
-def test_parallel_only_for_run_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_parallel_only_for_run_mode(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # plan/ask cannot fan out: the text is a literal task (rides behind `--`).
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "plan", "/parallel 2 add a greeting")
     assert captured[-1][1:] == ["plan", "--", "/parallel 2 add a greeting"]
 
 
-def test_parallel_omitted_spec_is_one_lane(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_parallel_omitted_spec_is_one_lane(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # No spec -> one isolated lane: --parallel 1 (a clone lane, not an in-place run).
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "run", "/parallel refactor the parser")
@@ -245,7 +259,7 @@ def test_parallel_omitted_spec_is_one_lane(tmp_path: Path, monkeypatch: pytest.M
 
 
 def test_parallel_multi_segment_spawns_one_fanout_per_segment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _configure_worker()
     captured = _capture_locate(monkeypatch)
@@ -257,12 +271,12 @@ def test_parallel_multi_segment_spawns_one_fanout_per_segment(
 
 
 def test_parallel_partial_spawn_failure_surfaces(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """One lane failing to spawn fails the whole message: open the run or show the error."""
 
     def fake_spawn(
-        cwd: Path,
+        cwd: pathlib.Path,
         mode: str,
         task: str,
         *,
@@ -270,7 +284,7 @@ def test_parallel_partial_spawn_failure_surfaces(
         model: str,
         spec: str,
         config_path: object = None,
-    ) -> tuple[Path | None, str]:
+    ) -> tuple[pathlib.Path | None, str]:
         if "task B" in task:
             return None, "boom"
         return tmp_path / "run-A", ""
@@ -278,7 +292,7 @@ def test_parallel_partial_spawn_failure_surfaces(
     monkeypatch.setattr(spawn, "_spawn_run", fake_spawn)
 
     def no_refusal(
-        cwd: Path,
+        cwd: pathlib.Path,
         segments: object,
         config_path: object = None,
         *,
@@ -299,7 +313,7 @@ def test_parallel_partial_spawn_failure_surfaces(
 
 
 def test_multi_segment_malformed_spawns_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # all-or-nothing: a later empty segment refuses the whole message, no spawn.
     captured = _capture_locate(monkeypatch)
@@ -309,15 +323,15 @@ def test_multi_segment_malformed_spawns_nothing(
 
 
 def test_a_busy_checkout_is_refused_at_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A run into a checkout another run is driving is refused at once; plan and ask spawn."""
     captured = _capture_locate(monkeypatch)
 
-    def _held(_state: Path, _checkout: Path) -> bool:
+    def _held(_state: pathlib.Path, _checkout: pathlib.Path) -> bool:
         return True
 
-    def _holder(_state: Path, _checkout: Path) -> str:
+    def _holder(_state: pathlib.Path, _checkout: pathlib.Path) -> str:
         return "busy-run"
 
     monkeypatch.setattr(spawn, "repo_writer_held", _held)
@@ -330,7 +344,7 @@ def test_a_busy_checkout_is_refused_at_once(
 
 
 def test_detached_resume_refuses_a_malformed_steer_before_spawning(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A bare `/pin` on a finished run is refused here, with the child's message.
 
@@ -348,7 +362,7 @@ def test_detached_resume_refuses_a_malformed_steer_before_spawning(
     )
 
 
-def test_a_timeout_says_what_it_knows(tmp_path: Path) -> None:
+def test_a_timeout_says_what_it_knows(tmp_path: pathlib.Path) -> None:
     """A child still starting after the wait is not known to have failed.
 
     A slow resume preflight read as "has not started" while the run went on.
@@ -359,7 +373,9 @@ def test_a_timeout_says_what_it_knows(tmp_path: Path) -> None:
     assert "has not reported starting within 0s (`agent6 ps` shows whether it is running)" in err
 
 
-def test_argv_carries_the_model_route(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_argv_carries_the_model_route(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The picker's route rides as `--model` after the preset, on every /parallel lane too."""
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "plan", "t", preset="quick", model="o/m")
@@ -369,7 +385,7 @@ def test_argv_carries_the_model_route(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 def test_a_composer_command_as_the_task_is_refused_before_any_spawn(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`/task` typed in the new-work box is named before a run starts.
 

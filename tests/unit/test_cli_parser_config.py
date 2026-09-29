@@ -8,14 +8,11 @@ A subparser `default=None` would clobber the top-level form back to None.
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.ui.cli.parser import (
-    _inject_default_verb,  # pyright: ignore[reportPrivateUsage]
-    build_parser,
-)
+from agent6.ui.cli import parser as cli_parser
 
 
 @pytest.mark.parametrize(
@@ -33,42 +30,44 @@ from agent6.ui.cli.parser import (
     ],
 )
 def test_config_flag_parses_in_both_positions(argv: list[str]) -> None:
-    args = build_parser().parse_args(_inject_default_verb(argv))
-    assert args.config == Path("c.toml")
+    args = cli_parser.build_parser().parse_args(cli_parser._inject_default_verb(argv))
+    assert args.config == pathlib.Path("c.toml")
 
 
 def test_config_defaults_to_none_when_absent() -> None:
-    args = build_parser().parse_args(["run", "task"])
+    args = cli_parser.build_parser().parse_args(["run", "task"])
     assert args.config is None
 
 
 def test_run_decompose_flag_defaults_off_and_parses() -> None:
     # --decompose is plan-first (overrides [prompt].decompose for the run); off by default.
-    p = build_parser()
+    p = cli_parser.build_parser()
     assert p.parse_args(["run", "fix it"]).decompose is False
     assert p.parse_args(["run", "--decompose", "fix it"]).decompose is True
 
 
 def test_history_bare_query_defaults_to_search() -> None:
     # `history "divide"` == `history search "divide"`, like `runs` -> list and bare `ask`.
-    args = build_parser().parse_args(_inject_default_verb(["history", "divide"]))
+    args = cli_parser.build_parser().parse_args(
+        cli_parser._inject_default_verb(["history", "divide"])
+    )
     assert args.history_command == "search" and args.query == "divide"
 
 
 def test_a_bare_sessions_is_list_with_its_flags() -> None:
     """A bare `sessions` is `list` with its flags, through `_DEFAULT_VERBS` like every shorthand."""
-    args = build_parser().parse_args(_inject_default_verb(["sessions"]))
+    args = cli_parser.build_parser().parse_args(cli_parser._inject_default_verb(["sessions"]))
     assert args.sessions_command == "list"
-    args = build_parser().parse_args(_inject_default_verb(["sessions", "--json"]))
+    args = cli_parser.build_parser().parse_args(
+        cli_parser._inject_default_verb(["sessions", "--json"])
+    )
     assert args.sessions_command == "list" and args.list_json is True
 
 
 def test_ask_has_one_verb() -> None:
     """`ask list` was a poorer `sessions list`: one listing, one verb."""
-    from agent6.ui.cli.parser import _DEFAULT_VERBS  # pyright: ignore[reportPrivateUsage]
-
-    assert _DEFAULT_VERBS["ask"] == ("query", frozenset({"query"}))
-    args = build_parser().parse_args(_inject_default_verb(["ask", "list"]))
+    assert cli_parser._DEFAULT_VERBS["ask"] == ("query", frozenset({"query"}))
+    args = cli_parser.build_parser().parse_args(cli_parser._inject_default_verb(["ask", "list"]))
     assert args.ask_command == "query" and args.task == "list"
 
 
@@ -85,24 +84,26 @@ def test_a_bare_history_names_the_query_it_needs(capsys: pytest.CaptureFixture[s
 
 
 def test_history_explicit_search_still_works() -> None:
-    args = build_parser().parse_args(_inject_default_verb(["history", "search", "divide"]))
+    args = cli_parser.build_parser().parse_args(
+        cli_parser._inject_default_verb(["history", "search", "divide"])
+    )
     assert args.history_command == "search" and args.query == "divide"
     # A flag after the bare query is carried onto the injected verb too.
-    a2 = build_parser().parse_args(_inject_default_verb(["history", "--regex", "d.v"]))
+    a2 = cli_parser.build_parser().parse_args(
+        cli_parser._inject_default_verb(["history", "--regex", "d.v"])
+    )
     assert a2.history_command == "search" and a2.query == "d.v" and a2.regex is True
 
 
 def test_config_get_does_not_offer_keys_it_rejects(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`config get` completion offers no preset key, since get rejects them.
 
     `[presets.*]` tables are stripped before validation, so they are not effective-config leaves;
     they stay on the write verbs, where they are accepted.
     """
-    from agent6.ui.cli.completers import (
-        _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.ui.cli import completers
 
     (tmp_path / "agent6").mkdir()
     (tmp_path / "agent6" / "config.toml").write_text(
@@ -111,8 +112,8 @@ def test_config_get_does_not_offer_keys_it_rejects(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.chdir(tmp_path)
 
-    for_set = _complete_config_keys("presets.")
-    for_get = _complete_config_keys("presets.", settable=False)
+    for_set = completers._complete_config_keys("presets.")
+    for_get = completers._complete_config_keys("presets.", settable=False)
 
     assert any(k.startswith("presets.mine.") for k in for_set), "the write verbs still offer them"
     assert not any(k.startswith("presets.") for k in for_get), f"get offered: {for_get[:3]}"
@@ -124,19 +125,18 @@ def test_fork_carries_the_same_sandbox_flags_as_its_siblings() -> None:
     A fork without `--no-run` continues a run, so it is a paid command and takes `--auto-approve`
     like the rest.
     """
-    from agent6.app._setup import SandboxOverrides
-    from agent6.ui.cli.parser import build_parser
+    from agent6.app import _setup
 
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     args = parser.parse_args(["fork", "--auto-approve", "some-session-id"])
-    assert SandboxOverrides.from_args(args).auto_approve is True
+    assert _setup.SandboxOverrides.from_args(args).auto_approve is True
 
     args = parser.parse_args(["fork", "--no-commands", "some-session-id"])
-    assert SandboxOverrides.from_args(args).no_commands is True
+    assert _setup.SandboxOverrides.from_args(args).no_commands is True
 
 
 def test_get_completion_offers_no_key_get_rejects(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Get completion offers no enum key `config get` rejects.
 
@@ -144,12 +144,9 @@ def test_get_completion_offers_no_key_get_rejects(
     """
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)
-    from agent6.ui.cli import main
-    from agent6.ui.cli.completers import (
-        _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.ui.cli import completers, main
 
-    for key in _complete_config_keys("models.", settable=False):
+    for key in completers._complete_config_keys("models.", settable=False):
         assert main(["config", "get", key]) == 0, f"completion offered {key!r}, which get rejects"
 
 
@@ -165,10 +162,8 @@ def test_default_verb_sets_are_the_parsers_real_subcommands() -> None:
 
     A verb added to a parser and not here would be swallowed as the default verb's first argument.
     """
-    from agent6.ui.cli.parser import _DEFAULT_VERBS  # pyright: ignore[reportPrivateUsage]
-
-    groups = _subcommands(build_parser())
-    for group, (default, verbs) in _DEFAULT_VERBS.items():
+    groups = _subcommands(cli_parser.build_parser())
+    for group, (default, verbs) in cli_parser._DEFAULT_VERBS.items():
         real = set(_subcommands(groups[group]))
         assert verbs == real, f"{group}: {sorted(verbs ^ real)}"
         assert default in real
@@ -176,21 +171,16 @@ def test_default_verb_sets_are_the_parsers_real_subcommands() -> None:
 
 def test_bare_default_groups_are_those_whose_default_verb_takes_no_positional() -> None:
     """A group is bare exactly when its default verb takes no positional."""
-    from agent6.ui.cli.parser import (
-        _BARE_DEFAULT_GROUPS,  # pyright: ignore[reportPrivateUsage]
-        _DEFAULT_VERBS,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    groups = _subcommands(build_parser())
+    groups = _subcommands(cli_parser.build_parser())
     bare = {
         group
-        for group, (default, _verbs) in _DEFAULT_VERBS.items()
+        for group, (default, _verbs) in cli_parser._DEFAULT_VERBS.items()
         if not any(
             not a.option_strings and a.dest != "==SUPPRESS=="
             for a in _subcommands(groups[group])[default]._actions  # pyright: ignore[reportPrivateUsage]
         )
     }
-    assert bare == _BARE_DEFAULT_GROUPS
+    assert bare == cli_parser._BARE_DEFAULT_GROUPS
 
 
 def test_a_mistyped_verb_after_a_bare_group_names_the_choices(
@@ -198,7 +188,7 @@ def test_a_mistyped_verb_after_a_bare_group_names_the_choices(
 ) -> None:
     """A mistyped verb after a bare group names the choices, not "unrecognized arguments"."""
     with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(_inject_default_verb(["skills", "show"]))
+        cli_parser.build_parser().parse_args(cli_parser._inject_default_verb(["skills", "show"]))
     assert exc.value.code == 2
     err = capsys.readouterr().err
     assert "invalid choice: 'show'" in err and "install" in err
@@ -218,5 +208,5 @@ def test_a_mistyped_verb_after_a_bare_group_names_the_choices(
 )
 def test_a_bare_group_runs_its_listing(argv: list[str], dest: str, verb: str) -> None:
     """A bare group runs its listing; a key after `config` is a `show` of that key."""
-    args = build_parser().parse_args(_inject_default_verb(argv))
+    args = cli_parser.build_parser().parse_args(cli_parser._inject_default_verb(argv))
     assert getattr(args, dest) == verb

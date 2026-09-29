@@ -9,14 +9,18 @@ land on disk. The http_post seam is stubbed so no network call is made.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import httpx2
 import pytest
 
-from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink
-from agent6.providers.types import _redact_headers  # pyright: ignore[reportPrivateUsage]
+from agent6.providers import (
+    AnthropicProvider,
+    ProviderError,
+    TranscriptSink,
+    types,  # pyright: ignore[reportPrivateUsage]
+)
 
 
 class _FakeResponse:
@@ -31,8 +35,8 @@ class _FakeResponse:
         return self._payload
 
 
-def _scan_for_secret(transcripts_dir: Path, secret: str) -> list[Path]:
-    matches: list[Path] = []
+def _scan_for_secret(transcripts_dir: pathlib.Path, secret: str) -> list[pathlib.Path]:
+    matches: list[pathlib.Path] = []
     for p in transcripts_dir.rglob("*"):
         if not p.is_file():
             continue
@@ -42,7 +46,7 @@ def _scan_for_secret(transcripts_dir: Path, secret: str) -> list[Path]:
 
 
 def test_transcript_redacts_api_key_on_success(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     sink = TranscriptSink(tmp_path / "transcripts")
     api_key = "sk-ant-supersecret-do-not-leak"
@@ -73,7 +77,7 @@ def test_transcript_redacts_api_key_on_success(
 
 
 def test_transcript_redacts_api_key_on_http_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     sink = TranscriptSink(tmp_path / "transcripts")
     api_key = "sk-ant-secret-error-path"
@@ -92,7 +96,7 @@ def test_transcript_redacts_api_key_on_http_error(
 
 
 def test_transcript_redacts_api_key_on_network_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     sink = TranscriptSink(tmp_path / "transcripts")
     api_key = "sk-ant-secret-net-error"
@@ -111,7 +115,7 @@ def test_transcript_redacts_api_key_on_network_error(
 
 
 def test_a_response_body_echoing_the_credential_is_scrubbed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A 401 body echoing the key carries the marker, in the transcript and the error text."""
     sink = TranscriptSink(tmp_path / "transcripts")
@@ -133,7 +137,7 @@ def test_a_response_body_echoing_the_credential_is_scrubbed(
     assert len(files) == 1 and "<REDACTED>" in files[0].read_text(encoding="utf-8")
 
 
-def test_record_scrubs_credential_values_from_the_bodies(tmp_path: Path) -> None:
+def test_record_scrubs_credential_values_from_the_bodies(tmp_path: pathlib.Path) -> None:
     """A body string equal to a credential in the auth headers is scrubbed at serialization."""
     sink = TranscriptSink(tmp_path / "t")
     path = sink.record(
@@ -148,7 +152,7 @@ def test_record_scrubs_credential_values_from_the_bodies(tmp_path: Path) -> None
 
 
 def test_redact_headers_unit() -> None:
-    out = _redact_headers(  # pyright: ignore[reportPrivateUsage]
+    out = types._redact_headers(  # pyright: ignore[reportPrivateUsage]
         {
             "x-api-key": "secret",
             "Authorization": "Bearer t",
@@ -162,7 +166,7 @@ def test_redact_headers_unit() -> None:
     assert out["Other"] == "keep"
 
 
-def test_seq_continues_across_resume_executions(tmp_path: Path) -> None:
+def test_seq_continues_across_resume_executions(tmp_path: pathlib.Path) -> None:
     """Seq is per run: a new sink continues from the highest seq present.
 
     Restarting at 1 produced duplicate seqs that interleaved the executions, a scrambled
@@ -175,13 +179,13 @@ def test_seq_continues_across_resume_executions(tmp_path: Path) -> None:
     leg2 = TranscriptSink(d)  # the resume's fresh sink over the same dir
     p = leg2.record(request_headers={}, request_body={}, response_status=200, response_body={})
     assert json.loads(p.read_text(encoding="utf-8"))["seq"] == 3
-    from agent6.viewmodel.transcript_render import load_transcripts
+    from agent6.viewmodel import transcript_render
 
-    assert [t["seq"] for t in load_transcripts(d)] == [1, 2, 3]
+    assert [t["seq"] for t in transcript_render.load_transcripts(d)] == [1, 2, 3]
 
 
 def test_transcript_record_publishes_via_atomic_write(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The writer publishes through atomic_write, never a predictable temp name a symlink can plant.
 
@@ -189,10 +193,10 @@ def test_transcript_record_publishes_via_atomic_write(
     """
     import agent6.providers.types as types_mod
 
-    calls: list[Path] = []
+    calls: list[pathlib.Path] = []
     real = types_mod.atomic_write
 
-    def spy(path: Path, data: str | bytes) -> None:
+    def spy(path: pathlib.Path, data: str | bytes) -> None:
         calls.append(path)
         real(path, data)
 

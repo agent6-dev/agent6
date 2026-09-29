@@ -4,59 +4,59 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import pathlib
+import types
 from collections.abc import Callable, Sequence
-from dataclasses import replace
-from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 import agent6.app._execution as execution_mod
-from agent6.app._execution import ExecutionInputs, detach_to_background, run_execution
-from agent6.app.frontend import FrontendCapabilities, SessionFrontend
-from agent6.app.reporter import Reporter
+from agent6 import events
+from agent6.app import frontend, reporter
 from agent6.config import Config
-from agent6.events import EventSink
-from agent6.harness.loop import SessionResult
-from agent6.sessions.ipc import read_worker_pid, write_worker_pid
-from agent6.sessions.layout import SessionLayout
-from agent6.tools.operator_prompts import OperatorPrompts
-from agent6.ui.acp.frontend import acp_frontend
+from agent6.harness import _snapshot
+from agent6.sessions import ipc
+from agent6.sessions import layout as sessions_layout
+from agent6.tools import operator_prompts
+from agent6.ui.acp import frontend as acp_frontend
 
 
-def _frontend(calls: list[tuple[str, Any]], *, spawn_err: str = "") -> SessionFrontend:
-    def _spawn(_cwd: Path, sid: str, flags: Sequence[str]) -> str:
+def _frontend(calls: list[tuple[str, Any]], *, spawn_err: str = "") -> frontend.SessionFrontend:
+    def _spawn(_cwd: pathlib.Path, sid: str, flags: Sequence[str]) -> str:
         calls.append(("spawn", (sid, list(flags))))
         return spawn_err
 
-    def _ask_away(_dir: Path, scopes: tuple[str, ...]) -> None:
+    def _ask_away(_dir: pathlib.Path, scopes: tuple[str, ...]) -> None:
         calls.append(("ask", scopes))
 
-    front = acp_frontend(
+    front = acp_frontend.acp_frontend(
         ask=lambda _p, _o, _s, _c, _u=None: None,
-        capabilities=FrontendCapabilities(),
+        capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
         spawn_detached_resume=_spawn,
     )
     # The ACP front-end has no away-mode prompt; record when the lifecycle asks.
-    return replace(front, prompt_detach_away_mode=_ask_away)
+    return dataclasses.replace(front, prompt_detach_away_mode=_ask_away)
 
 
-def test_ask_policy_is_asked_before_the_spawn_and_the_flags_ride_along(tmp_path: Path) -> None:
+def test_ask_policy_is_asked_before_the_spawn_and_the_flags_ride_along(
+    tmp_path: pathlib.Path,
+) -> None:
     calls: list[tuple[str, Any]] = []
     said: list[str] = []
-    layout = SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
-    detach_to_background(
+    execution_mod.detach_to_background(
         frontend=_frontend(calls),
         cfg=Config(),  # run_commands = ask, nothing granted
         layout=layout,
         cwd=tmp_path,
         flags=["--max-usd", "0.25"],
-        reporter=Reporter(out=said.append, err=said.append),
+        reporter=reporter.Reporter(out=said.append, err=said.append),
     )
     assert [c[0] for c in calls] == ["ask", "spawn"]
     assert calls[1][1] == ("runny-one-AAAAAA", ["--max-usd", "0.25"])
@@ -64,65 +64,61 @@ def test_ask_policy_is_asked_before_the_spawn_and_the_flags_ride_along(tmp_path:
     assert any("agent6 attach runny-one-AAAAAA" in s for s in said)
 
 
-def test_a_failed_spawn_is_reported_and_never_called_a_continuation(tmp_path: Path) -> None:
+def test_a_failed_spawn_is_reported_and_never_called_a_continuation(tmp_path: pathlib.Path) -> None:
     """The reattach line prints after the spawn, so a failed spawn never claims a background run."""
     calls: list[tuple[str, Any]] = []
     said: list[str] = []
-    layout = SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
-    detach_to_background(
+    execution_mod.detach_to_background(
         frontend=_frontend(calls, spawn_err="agent6 exe not found"),
         cfg=cfg,
         layout=layout,
         cwd=tmp_path,
         flags=[],
-        reporter=Reporter(out=said.append, err=said.append),
+        reporter=reporter.Reporter(out=said.append, err=said.append),
     )
     assert [c[0] for c in calls] == ["spawn"]  # yes-policy: nothing to ask
     assert said == ["[agent6] agent6 exe not found"]
 
 
 def test_a_recorded_away_mode_is_the_runs_away_answer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The detached run's away mode is read from the run dir, not only the environment.
 
     A run detached from a terminal carries the operator's choice in `approvals/away.mode`; a later
     resume from cron or a script reads it there, as the approver does.
     """
-    from agent6.sessions.ipc import effective_away, set_away_mode
-
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
     session_dir = tmp_path / "run"
     session_dir.mkdir()
 
-    assert effective_away(session_dir) == ""
+    assert ipc.effective_away(session_dir) == ""
 
-    set_away_mode(session_dir, "wait")
-    assert effective_away(session_dir) == "wait"
+    ipc.set_away_mode(session_dir, "wait")
+    assert ipc.effective_away(session_dir) == "wait"
 
     # A launcher's env still wins: it is this invocation's own intent.
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
-    assert effective_away(session_dir) == "deny"
+    assert ipc.effective_away(session_dir) == "deny"
 
 
 def test_an_invalid_detached_away_env_is_not_an_away_answer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A typo must not tell preflight that an unattended run has a policy."""
-    from agent6.sessions.ipc import effective_away, set_away_mode
-
     session_dir = tmp_path / "run"
     session_dir.mkdir()
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "denny")
 
-    assert effective_away(session_dir) == ""
-    set_away_mode(session_dir, "wait")
-    assert effective_away(session_dir) == "wait"
+    assert ipc.effective_away(session_dir) == ""
+    ipc.set_away_mode(session_dir, "wait")
+    assert ipc.effective_away(session_dir) == "wait"
 
 
-def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: Path) -> None:
+def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: pathlib.Path) -> None:
     """A fresh run asks about the operator's uncommitted changes rather than sweeping them in.
 
     Swept in, they land in the run's next auto-commit under the agent's identity and read as the
@@ -131,7 +127,7 @@ def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: Path) 
     """
     import subprocess as sp
 
-    from agent6.git_ops import chain_commit, chain_dirty_paths, chain_ref_for
+    from agent6 import git_ops
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -146,44 +142,44 @@ def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: Path) 
     base = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
-    ref = chain_ref_for("resume-run-A1")
+    ref = git_ops.chain_ref_for("resume-run-A1")
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # the run's own execution-1 work
-    chain_commit(repo, "iter 1", ref=ref, fallback_parent=base)
+    git_ops.chain_commit(repo, "iter 1", ref=ref, fallback_parent=base)
 
-    assert chain_dirty_paths(repo, ref, base, 5) == []
+    assert git_ops.chain_dirty_paths(repo, ref, base, 5) == []
 
     (repo / "a.py").write_text("x = 2\n# the operator's note\n", encoding="utf-8")
 
-    assert chain_dirty_paths(repo, ref, base, 5) == ["a.py"]
+    assert git_ops.chain_dirty_paths(repo, ref, base, 5) == ["a.py"]
 
 
-def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: Path) -> None:
+def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pathlib.Path) -> None:
     """The worker pid is cleared after the spawn, so a detaching run never reads as stale."""
     calls: list[tuple[str, Any]] = []
-    layout = SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
-    write_worker_pid(layout.session_dir, os.getpid())
+    ipc.write_worker_pid(layout.session_dir, os.getpid())
 
-    detach_to_background(
+    execution_mod.detach_to_background(
         frontend=_frontend(calls),
         cfg=cfg,
         layout=layout,
         cwd=tmp_path,
         flags=[],
-        reporter=Reporter(out=lambda _s: None, err=lambda _s: None),
+        reporter=reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
     )
-    assert read_worker_pid(layout.session_dir) == os.getpid()  # the child overwrites it
+    assert ipc.read_worker_pid(layout.session_dir) == os.getpid()  # the child overwrites it
 
-    detach_to_background(
+    execution_mod.detach_to_background(
         frontend=_frontend(calls, spawn_err="agent6 exe not found"),
         cfg=cfg,
         layout=layout,
         cwd=tmp_path,
         flags=[],
-        reporter=Reporter(out=lambda _s: None, err=lambda _s: None),
+        reporter=reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
     )
-    assert read_worker_pid(layout.session_dir) is None  # nothing took over: really dead
+    assert ipc.read_worker_pid(layout.session_dir) is None  # nothing took over: really dead
 
 
 def _returning(value: object) -> Callable[..., object]:
@@ -195,7 +191,7 @@ def _returning(value: object) -> Callable[..., object]:
 
 def _stub_execution_internals(
     monkeypatch: pytest.MonkeyPatch,
-    result: SessionResult | Exception,
+    result: _snapshot.SessionResult | Exception,
     built: dict[str, Any] | None = None,
 ) -> None:
     class _Workflow:
@@ -208,26 +204,26 @@ def _stub_execution_internals(
                 "bridge"
             ].undo_forker
 
-        def run(self, _task: str) -> SessionResult:
+        def run(self, _task: str) -> _snapshot.SessionResult:
             if isinstance(result, Exception):
                 raise result
             if result.reason == "undone" and self._undo_forker is not None:
                 self._undo_forker()  # what the loop does before an `undone` end
             return result
 
-    session = SimpleNamespace(
-        budget=SimpleNamespace(
+    session = types.SimpleNamespace(
+        budget=types.SimpleNamespace(
             format_summary=lambda: "[agent6] cost $0.01", estimate_usd=lambda: (0.01, False)
         ),
-        rm_role=SimpleNamespace(model="fake/model"),
+        rm_role=types.SimpleNamespace(model="fake/model"),
         provider=None,
         summariser_provider=None,
         review_seats=[],
         close=lambda: None,
     )
-    tools = SimpleNamespace(
+    tools = types.SimpleNamespace(
         curator=None,
-        dispatcher=SimpleNamespace(settle_background=lambda: None, close=lambda: None),
+        dispatcher=types.SimpleNamespace(settle_background=lambda: None, close=lambda: None),
         compact_drop_at_chars=1,
         compact_summarise_at_chars=1,
         keep_recent_chars=1,
@@ -243,16 +239,18 @@ def _stub_execution_internals(
 
 
 def test_a_loop_crash_prints_the_end_that_it_journals(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A loop exception is a crashed session and exit 1, said before the CLI reports the error."""
     _stub_execution_internals(monkeypatch, RuntimeError("provider stream broke"))
-    layout = SessionLayout(state_dir=tmp_path / "state", session_id="crash-one-AAAAAA")
+    layout = sessions_layout.SessionLayout(
+        state_dir=tmp_path / "state", session_id="crash-one-AAAAAA"
+    )
     layout.ensure()
     said: list[str] = []
-    front = acp_frontend(
+    front = acp_frontend.acp_frontend(
         ask=lambda _p, _o, _s, _c, _u=None: None,
-        capabilities=FrontendCapabilities(),
+        capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
         spawn_detached_resume=lambda _cwd, _sid, _flags: "",
     )
@@ -260,10 +258,10 @@ def test_a_loop_crash_prints_the_end_that_it_journals(
     cwd.mkdir()
 
     with pytest.raises(RuntimeError, match="provider stream broke"):
-        run_execution(
+        execution_mod.run_execution(
             Config(),
             layout,
-            ExecutionInputs(
+            execution_mod.ExecutionInputs(
                 session_id=layout.session_id,
                 mode="run",
                 role="worker",
@@ -277,12 +275,12 @@ def test_a_loop_crash_prints_the_end_that_it_journals(
                 untracked_at_start=frozenset(),
                 resume_state_path=layout.session_dir / "loop_state.json",
                 undo_forker=lambda: None,
-                prompts=OperatorPrompts(session_dir=layout.session_dir),
+                prompts=operator_prompts.OperatorPrompts(session_dir=layout.session_dir),
                 ask_transcript_task=None,
             ),
             frontend=front,
-            reporter=Reporter(out=said.append, err=said.append),
-            events=EventSink(layout.logs_path),
+            reporter=reporter.Reporter(out=said.append, err=said.append),
+            events=events.EventSink(layout.logs_path),
             transcript_sink=None,  # type: ignore[arg-type]
             cwd=cwd,
             state_dir=tmp_path / "state",
@@ -294,7 +292,7 @@ def test_a_loop_crash_prints_the_end_that_it_journals(
 
 
 def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`/detach` at the pause menu is offered in every mode, the ask branch included.
 
@@ -303,7 +301,7 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
     """
     _stub_execution_internals(
         monkeypatch,
-        SessionResult(
+        _snapshot.SessionResult(
             completed=False,
             reason="detached",
             summary="operator detached at iter 3; resuming in the background",
@@ -311,27 +309,29 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
             tool_calls=7,
         ),
     )
-    layout = SessionLayout(state_dir=tmp_path / "state", session_id="asky-one-AAAAAA")
+    layout = sessions_layout.SessionLayout(
+        state_dir=tmp_path / "state", session_id="asky-one-AAAAAA"
+    )
     layout.ensure()
     saved: list[tuple[str, str]] = []
     said: list[str] = []
 
-    def _save(_layout: SessionLayout, question: str, answer: str) -> None:
+    def _save(_layout: sessions_layout.SessionLayout, question: str, answer: str) -> None:
         saved.append((question, answer))
 
-    front = acp_frontend(
+    front = acp_frontend.acp_frontend(
         ask=lambda _p, _o, _s, _c, _u=None: None,
-        capabilities=FrontendCapabilities(),
+        capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
         spawn_detached_resume=lambda _cwd, _sid, _flags: "",
     )
     cwd = tmp_path / "repo"
     cwd.mkdir()
 
-    end = run_execution(
+    end = execution_mod.run_execution(
         Config(),
         layout,
-        ExecutionInputs(
+        execution_mod.ExecutionInputs(
             session_id=layout.session_id,
             mode="ask",
             role="worker",
@@ -345,12 +345,12 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
             untracked_at_start=frozenset(),
             resume_state_path=layout.session_dir / "loop_state.json",
             undo_forker=lambda: None,
-            prompts=OperatorPrompts(session_dir=layout.session_dir),
+            prompts=operator_prompts.OperatorPrompts(session_dir=layout.session_dir),
             ask_transcript_task="what does this repo do?",
         ),
-        frontend=replace(front, save_ask_transcript=_save),
-        reporter=Reporter(out=said.append, err=said.append),
-        events=EventSink(layout.logs_path),
+        frontend=dataclasses.replace(front, save_ask_transcript=_save),
+        reporter=reporter.Reporter(out=said.append, err=said.append),
+        events=events.EventSink(layout.logs_path),
         transcript_sink=None,  # type: ignore[arg-type]
         cwd=cwd,
         state_dir=tmp_path / "state",
@@ -362,7 +362,7 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
 
 
 def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`/undo` at the pause menu is offered in every mode, the ask branch included.
 
@@ -371,7 +371,7 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
     """
     _stub_execution_internals(
         monkeypatch,
-        SessionResult(
+        _snapshot.SessionResult(
             completed=False,
             reason="undone",
             summary="operator undid the last message at iter 3",
@@ -379,27 +379,29 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
             tool_calls=7,
         ),
     )
-    layout = SessionLayout(state_dir=tmp_path / "state", session_id="asky-two-AAAAAA")
+    layout = sessions_layout.SessionLayout(
+        state_dir=tmp_path / "state", session_id="asky-two-AAAAAA"
+    )
     layout.ensure()
     saved: list[tuple[str, str]] = []
     said: list[str] = []
 
-    def _save(_layout: SessionLayout, question: str, answer: str) -> None:
+    def _save(_layout: sessions_layout.SessionLayout, question: str, answer: str) -> None:
         saved.append((question, answer))
 
-    front = acp_frontend(
+    front = acp_frontend.acp_frontend(
         ask=lambda _p, _o, _s, _c, _u=None: None,
-        capabilities=FrontendCapabilities(),
+        capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
         spawn_detached_resume=lambda _cwd, _sid, _flags: "",
     )
     cwd = tmp_path / "repo"
     cwd.mkdir()
 
-    end = run_execution(
+    end = execution_mod.run_execution(
         Config(),
         layout,
-        ExecutionInputs(
+        execution_mod.ExecutionInputs(
             session_id=layout.session_id,
             mode="ask",
             role="worker",
@@ -413,12 +415,12 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
             untracked_at_start=frozenset(),
             resume_state_path=layout.session_dir / "loop_state.json",
             undo_forker=lambda: ("fork-two-BBBBBB", "what does this repo do?"),
-            prompts=OperatorPrompts(session_dir=layout.session_dir),
+            prompts=operator_prompts.OperatorPrompts(session_dir=layout.session_dir),
             ask_transcript_task="what does this repo do?",
         ),
-        frontend=replace(front, save_ask_transcript=_save),
-        reporter=Reporter(out=said.append, err=said.append),
-        events=EventSink(layout.logs_path),
+        frontend=dataclasses.replace(front, save_ask_transcript=_save),
+        reporter=reporter.Reporter(out=said.append, err=said.append),
+        events=events.EventSink(layout.logs_path),
         transcript_sink=None,  # type: ignore[arg-type]
         cwd=cwd,
         state_dir=tmp_path / "state",
@@ -431,23 +433,25 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
 
 
 def test_a_surface_without_the_revise_choice_skips_revision(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A surface with no selector skips the revise_prompt choice; None is not a quit."""
     built: dict[str, Any] = {}
     _stub_execution_internals(
         monkeypatch,
-        SessionResult(
+        _snapshot.SessionResult(
             completed=True, reason="finish_session", summary="ok", iterations=1, tool_calls=0
         ),
         built,
     )
-    layout = SessionLayout(state_dir=tmp_path / "state", session_id="acp-one-AAAAAA")
+    layout = sessions_layout.SessionLayout(
+        state_dir=tmp_path / "state", session_id="acp-one-AAAAAA"
+    )
     layout.ensure()
     said: list[str] = []
-    front = acp_frontend(
+    front = acp_frontend.acp_frontend(
         ask=lambda _p, _o, _s, _c, _u=None: None,
-        capabilities=FrontendCapabilities(),
+        capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
         spawn_detached_resume=lambda _cwd, _sid, _flags: "",
     )
@@ -455,10 +459,10 @@ def test_a_surface_without_the_revise_choice_skips_revision(
     cwd = tmp_path / "repo"
     cwd.mkdir()
 
-    end = run_execution(
+    end = execution_mod.run_execution(
         Config.model_validate({"prompt": {"revise_prompt": "interactive"}}),
         layout,
-        ExecutionInputs(
+        execution_mod.ExecutionInputs(
             session_id=layout.session_id,
             mode="run",
             role="worker",
@@ -472,12 +476,12 @@ def test_a_surface_without_the_revise_choice_skips_revision(
             untracked_at_start=frozenset(),
             resume_state_path=layout.session_dir / "loop_state.json",
             undo_forker=lambda: None,
-            prompts=OperatorPrompts(session_dir=layout.session_dir),
+            prompts=operator_prompts.OperatorPrompts(session_dir=layout.session_dir),
             ask_transcript_task=None,
         ),
         frontend=front,
-        reporter=Reporter(out=said.append, err=said.append),
-        events=EventSink(layout.logs_path),
+        reporter=reporter.Reporter(out=said.append, err=said.append),
+        events=events.EventSink(layout.logs_path),
         transcript_sink=None,  # type: ignore[arg-type]
         cwd=cwd,
         state_dir=tmp_path / "state",

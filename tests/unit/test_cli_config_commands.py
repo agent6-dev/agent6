@@ -4,16 +4,16 @@
 
 from __future__ import annotations
 
+import pathlib
 import tomllib
-from pathlib import Path
 
 import pytest
 
-from agent6.paths import state_dir
+from agent6 import paths
 
 
 @pytest.fixture
-def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     """Isolated global config home + cwd inside a fresh repo."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)
@@ -33,33 +33,35 @@ def _refuse(args: list[str]) -> int:
     return cli_main(args)
 
 
-def _global_toml(tmp_path: Path) -> dict[str, object]:
+def _global_toml(tmp_path: pathlib.Path) -> dict[str, object]:
     return tomllib.loads((tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8"))
 
 
 # --- set / get / unset (scalars) -------------------------------------------
 
 
-def test_set_bool_is_typed_not_string(iso: Path) -> None:
+def test_set_bool_is_typed_not_string(iso: pathlib.Path) -> None:
     assert _run(["config", "set", "sandbox.protect_git", "false"]) == 0
     sandbox = _global_toml(iso)["sandbox"]
     assert isinstance(sandbox, dict)
     assert sandbox["protect_git"] is False  # parsed as bool, not the string "false"
 
 
-def test_get_default_source_for_unset(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_get_default_source_for_unset(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     assert _run(["config", "get", "sandbox.protect_git"]) == 0
     out = capsys.readouterr().out
     assert "sandbox.protect_git = true" in out
     assert "[default]" in out
 
 
-def test_get_unknown_key_errors(iso: Path) -> None:
+def test_get_unknown_key_errors(iso: pathlib.Path) -> None:
     assert _run(["config", "get", "sandbox.nope"]) == 2
 
 
 def test_machine_get_on_malformed_toml_is_clean_error(
-    iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A malformed --machine-file is a clean ERROR at exit 2, not a TOMLDecodeError traceback.
     bad = tmp_path / "broken.asm.toml"
@@ -70,13 +72,15 @@ def test_machine_get_on_malformed_toml_is_clean_error(
     assert "report this" not in err
 
 
-def test_unset_refuses_an_unknown_key(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_unset_refuses_an_unknown_key(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An unknown key is an error, not a successful no-op."""
     assert _run(["config", "unset", "nope.nope"]) == 2
     assert "unknown config key 'nope.nope'" in capsys.readouterr().err
 
 
-def test_unset_reverts_to_default(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_unset_reverts_to_default(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     _run(["config", "set", "sandbox.protect_git", "false"])
     assert _run(["config", "unset", "sandbox.protect_git"]) == 0
     capsys.readouterr()
@@ -84,19 +88,18 @@ def test_unset_reverts_to_default(iso: Path, capsys: pytest.CaptureFixture[str])
     assert "[default]" in capsys.readouterr().out
 
 
-def test_unset_last_leaf_drops_the_empty_table(iso: Path) -> None:
+def test_unset_last_leaf_drops_the_empty_table(iso: pathlib.Path) -> None:
     # Unsetting a section's only key leaves no dangling [sandbox] header; a sibling keeps it.
-    from agent6.paths import global_config_path
 
     _run(["config", "set", "git.dirty_tree", "stash"])
     _run(["config", "set", "sandbox.run_commands", "yes"])
     assert _run(["config", "unset", "sandbox.run_commands"]) == 0
-    text = global_config_path().read_text(encoding="utf-8")
+    text = paths.global_config_path().read_text(encoding="utf-8")
     assert "[sandbox]" not in text
     assert "[git]" in text  # untouched sibling section survives
     _run(["config", "set", "git.run_repo_hooks", "true"])
     assert _run(["config", "unset", "git.dirty_tree"]) == 0
-    text = global_config_path().read_text(encoding="utf-8")
+    text = paths.global_config_path().read_text(encoding="utf-8")
     assert "[git]" in text  # still holds run_repo_hooks
     assert "run_repo_hooks" in text and "dirty_tree" not in text
 
@@ -104,7 +107,9 @@ def test_unset_last_leaf_drops_the_empty_table(iso: Path) -> None:
 # --- top-level `preset` (the one section-less leaf) -------------------------
 
 
-def test_set_top_level_profile_and_get(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_set_top_level_profile_and_get(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     assert _run(["config", "set", "preset", "ultra"]) == 0
     assert _global_toml(iso)["preset"] == "ultra"
     capsys.readouterr()
@@ -114,14 +119,16 @@ def test_set_top_level_profile_and_get(iso: Path, capsys: pytest.CaptureFixture[
     assert "[global]" in out
 
 
-def test_set_unknown_profile_name_reverts(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_set_unknown_profile_name_reverts(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     assert _run(["config", "set", "preset", "ultra"]) == 0
     assert _run(["config", "set", "preset", "porifle"]) == 2
     assert "unknown preset" in capsys.readouterr().err
     assert _global_toml(iso)["preset"] == "ultra"  # rolled back to the prior value
 
 
-def test_unset_top_level_profile(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_unset_top_level_profile(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     _run(["config", "set", "preset", "quick"])
     assert _run(["config", "unset", "preset"]) == 0
     assert "preset" not in _global_toml(iso)
@@ -130,7 +137,7 @@ def test_unset_top_level_profile(iso: Path, capsys: pytest.CaptureFixture[str]) 
     assert "[default]" in capsys.readouterr().out
 
 
-def test_set_profile_heals_a_profile_table_typo(iso: Path) -> None:
+def test_set_profile_heals_a_profile_table_typo(iso: pathlib.Path) -> None:
     # A leftover `[preset]` table breaks the config; `config set preset <name>` heals it.
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "agent6" / "config.toml").write_text(
@@ -141,7 +148,7 @@ def test_set_profile_heals_a_profile_table_typo(iso: Path) -> None:
 
 
 def test_set_profile_table_typo_reports_profile_error(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `config set preset.porifle x` fails with the preset-must-be-a-string message and rolls back.
     assert _run(["config", "set", "preset", "ultra"]) == 0
@@ -150,15 +157,15 @@ def test_set_profile_table_typo_reports_profile_error(
     assert _global_toml(iso) == {"preset": "ultra"}
 
 
-def test_set_profile_repo_targets_repo_config(iso: Path) -> None:
+def test_set_profile_repo_targets_repo_config(iso: pathlib.Path) -> None:
     assert _run(["config", "set", "preset", "quick", "--repo"]) == 0
-    repo_cfg = (state_dir(iso) / "config.toml").read_text(encoding="utf-8")
+    repo_cfg = (paths.state_dir(iso) / "config.toml").read_text(encoding="utf-8")
     assert 'preset = "quick"' in repo_cfg
     assert not (iso / "g" / "agent6" / "config.toml").is_file()
 
 
 def test_set_profile_machine_file_is_refused(
-    iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A machine [config] overlay cannot smuggle a preset selection; the write is rolled back.
     mf = tmp_path / "m.asm.toml"
@@ -172,7 +179,7 @@ def test_set_profile_machine_file_is_refused(
 
 
 def test_config_profiles_lists_builtins_and_user(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "agent6" / "config.toml").write_text(
@@ -189,7 +196,9 @@ def test_config_profiles_lists_builtins_and_user(
     assert "review.concurrency = 2" in out
 
 
-def test_config_profiles_none_selected(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_config_profiles_none_selected(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     assert _run(["config", "presets"]) == 0
     out = capsys.readouterr().out
     assert "no preset selected" in out
@@ -197,7 +206,7 @@ def test_config_profiles_none_selected(iso: Path, capsys: pytest.CaptureFixture[
 
 
 def test_config_profiles_user_shadow_replaces_builtin(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A user [presets.ultra] replaces the built-in wholesale; the listing shows the user's contents.
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
@@ -217,11 +226,11 @@ def test_config_profiles_user_shadow_replaces_builtin(
 # --- add / remove (list fields) ---------------------------------------------
 
 
-def test_repo_list_edits_keep_values_inherited_from_global(iso: Path) -> None:
+def test_repo_list_edits_keep_values_inherited_from_global(iso: pathlib.Path) -> None:
     assert _run(["config", "set", "sandbox.fetch_hosts", '["one.example", "two.example"]']) == 0
 
     assert _run(["config", "add", "--repo", "sandbox.fetch_hosts", "three.example"]) == 0
-    repo = tomllib.loads((state_dir(iso) / "config.toml").read_text(encoding="utf-8"))
+    repo = tomllib.loads((paths.state_dir(iso) / "config.toml").read_text(encoding="utf-8"))
     assert repo["sandbox"]["fetch_hosts"] == [  # type: ignore[index]
         "one.example",
         "two.example",
@@ -229,7 +238,7 @@ def test_repo_list_edits_keep_values_inherited_from_global(iso: Path) -> None:
     ]
 
     assert _run(["config", "remove", "--repo", "sandbox.fetch_hosts", "one.example"]) == 0
-    repo = tomllib.loads((state_dir(iso) / "config.toml").read_text(encoding="utf-8"))
+    repo = tomllib.loads((paths.state_dir(iso) / "config.toml").read_text(encoding="utf-8"))
     assert repo["sandbox"]["fetch_hosts"] == [  # type: ignore[index]
         "two.example",
         "three.example",
@@ -239,7 +248,7 @@ def test_repo_list_edits_keep_values_inherited_from_global(iso: Path) -> None:
 # --- machine [config] overlay target ----------------------------------------
 
 
-def _machine_file(tmp_path: Path) -> Path:
+def _machine_file(tmp_path: pathlib.Path) -> pathlib.Path:
     p = tmp_path / "demo.asm.toml"
     p.write_text(
         '[machine]\nname = "demo"\nentry = "s"\n\n[states.s]\nkind = "terminal"\noutcome = "ok"\n',
@@ -248,7 +257,7 @@ def _machine_file(tmp_path: Path) -> Path:
     return p
 
 
-def test_machine_overlay_set_and_get(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_machine_overlay_set_and_get(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     mf = _machine_file(iso)
     # A non-security knob is fine in a machine overlay (review tuning).
     assert (
@@ -264,7 +273,7 @@ def test_machine_overlay_set_and_get(iso: Path, capsys: pytest.CaptureFixture[st
 
 
 def test_config_show_reads_through_a_machine_overlay(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config show` takes --machine-file like every other config verb."""
     mf = _machine_file(iso)
@@ -280,7 +289,7 @@ def test_config_show_reads_through_a_machine_overlay(
     assert _refuse(["config", "show", "--machine-file", str(iso / "missing.asm.toml")]) == 2
 
 
-def test_machine_overlay_rejects_providers(iso: Path) -> None:
+def test_machine_overlay_rejects_providers(iso: pathlib.Path) -> None:
     mf = _machine_file(iso)
     assert _run(["config", "set", "providers.x.kind", "anthropic", "--machine-file", str(mf)]) == 2
 
@@ -295,7 +304,7 @@ def test_machine_overlay_rejects_providers(iso: Path) -> None:
     ids=["show", "get", "fix"],
 )
 def test_machine_config_readers_refuse_a_hand_edited_protected_overlay(
-    iso: Path,
+    iso: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     command: list[str],
 ) -> None:
@@ -311,7 +320,7 @@ def test_machine_config_readers_refuse_a_hand_edited_protected_overlay(
 # --- egress endpoint wiring -------------------------------------------------
 
 
-def test_config_fill_has_no_repo_flag(iso: Path) -> None:
+def test_config_fill_has_no_repo_flag(iso: pathlib.Path) -> None:
     """`config fill` has no --repo flag.
 
     Filling the repo layer would shadow the global config permanently, defeating the layering
@@ -322,7 +331,7 @@ def test_config_fill_has_no_repo_flag(iso: Path) -> None:
     assert exc.value.code == 2
 
 
-def test_config_fill_serializes_against_a_concurrent_set(iso: Path) -> None:
+def test_config_fill_serializes_against_a_concurrent_set(iso: pathlib.Path) -> None:
     """`config fill` holds the target's lock across load and publish.
 
     A concurrent `config set` blocks and lands after, so its value survives.
@@ -371,7 +380,7 @@ def test_config_fill_serializes_against_a_concurrent_set(iso: Path) -> None:
 
 
 def test_unset_refuses_a_leaf_inside_an_undeclared_table(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Unset refuses a leaf inside an undeclared table, as set refuses it and fix reports it.
 
@@ -388,7 +397,7 @@ def test_unset_refuses_a_leaf_inside_an_undeclared_table(
 
 
 def test_add_rejects_a_value_masked_by_a_higher_layer(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config add` checks the whole new list as `config set` does.
 
@@ -404,7 +413,7 @@ def test_add_rejects_a_value_masked_by_a_higher_layer(
 
 
 def test_set_warns_when_another_layer_is_still_broken(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A valid write over a config broken in another layer lands.
 
@@ -417,7 +426,9 @@ def test_set_warns_when_another_layer_is_still_broken(
     assert "a value this edit did not write" in capsys.readouterr().err
 
 
-def test_get_honours_the_global_config_flag(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_get_honours_the_global_config_flag(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`--config FILE` reaches `config get`, so `get` and `show` agree about the same leaf."""
     explicit = iso / "x.toml"
     explicit.write_text("[review]\nperiod = 77\n", encoding="utf-8")
@@ -427,7 +438,7 @@ def test_get_honours_the_global_config_flag(iso: Path, capsys: pytest.CaptureFix
     assert "[flag]" in out
 
 
-def test_get_refuses_a_missing_global_config_file(iso: Path) -> None:
+def test_get_refuses_a_missing_global_config_file(iso: pathlib.Path) -> None:
     """`get` refuses a missing `--config` file, as `show` does.
 
     Instead of answering from defaults.
@@ -436,7 +447,7 @@ def test_get_refuses_a_missing_global_config_file(iso: Path) -> None:
 
 
 def test_get_refuses_a_machine_file_that_does_not_exist(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`get` refuses a --machine-file that does not exist instead of reading it as empty."""
     assert (
@@ -447,7 +458,7 @@ def test_get_refuses_a_machine_file_that_does_not_exist(
 
 
 def test_fix_refuses_a_machine_file_that_does_not_exist(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     missing = iso / "nope.asm.toml"
 
@@ -456,7 +467,7 @@ def test_fix_refuses_a_machine_file_that_does_not_exist(
 
 
 def test_set_refuses_a_machine_file_holding_a_protected_table(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`set` refuses a machine file holding a protected table, as get, show and fix do."""
     machine = iso / "protected.asm.toml"
@@ -470,7 +481,7 @@ def test_set_refuses_a_machine_file_holding_a_protected_table(
 
 
 def test_a_provider_leaf_error_names_every_valid_value(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A provider leaf error names every valid value of the `api_format` discriminator."""
     assert _run(["config", "set", "providers.p.api_format", "nonsense"]) == 2
@@ -479,7 +490,7 @@ def test_a_provider_leaf_error_names_every_valid_value(
     assert "openai" in err
 
 
-def test_an_unreadable_config_refuses_rather_than_crashing(iso: Path) -> None:
+def test_an_unreadable_config_refuses_rather_than_crashing(iso: pathlib.Path) -> None:
     """A root-owned config after a sudo run is refused as the operator's file.
 
     A crash report.
@@ -509,7 +520,7 @@ _CRASH_MARKERS = ("unexpected", "full traceback", "report this")
     ids=["set", "unset", "add", "remove"],
 )
 def test_write_commands_refuse_an_unreadable_target(
-    iso: Path, capsys: pytest.CaptureFixture[str], argv: list[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str], argv: list[str]
 ) -> None:
     """Write commands refuse an unreadable target as the readers do."""
     gdir = iso / "g" / "agent6"
@@ -528,7 +539,7 @@ def test_write_commands_refuse_an_unreadable_target(
 
 
 def test_a_write_command_bug_still_crash_reports(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An unexpected exception inside `config set` keeps the crash report at exit 1."""
     from agent6.config import write as write_mod
@@ -542,11 +553,11 @@ def test_a_write_command_bug_still_crash_reports(
     err = capsys.readouterr().err
     assert "unexpected RuntimeError" in err
     tb_line = next(line for line in err.splitlines() if "full traceback:" in line)
-    Path(tb_line.split("full traceback:", 1)[1].strip()).unlink()
+    pathlib.Path(tb_line.split("full traceback:", 1)[1].strip()).unlink()
 
 
 def test_set_of_an_unserializable_cli_value_refuses(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A value the writer cannot serialize (`2024-01-01`, a TOML date) is a refusal, not a crash."""
     assert _refuse(["config", "set", "harness.max_iterations", "2024-01-01"]) == 2
@@ -556,7 +567,7 @@ def test_set_of_an_unserializable_cli_value_refuses(
 
 
 def test_commit_trailer_validates_placeholders_and_shape(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """[git.commit].trailer takes a trailer line with {model} as its one placeholder.
 
@@ -572,19 +583,21 @@ def test_commit_trailer_validates_placeholders_and_shape(
     assert "Key: value" in capsys.readouterr().err
 
 
-def test_checkpoint_style_refuses_combine(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_checkpoint_style_refuses_combine(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The checkpoint table refuses `combine`, git's own squash message, while squash accepts it."""
     assert _run(["config", "set", "git.commit.squash.message", "combine"]) == 0
     assert _refuse(["config", "set", "git.commit.checkpoint.message", "combine"]) == 2
 
 
-def test_coauthor_is_gone(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_coauthor_is_gone(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Replaced by the trailer format string; no migration, pre-1.0."""
     assert _refuse(["config", "set", "git.commit.coauthor", "A <a@b>"]) == 2
     assert "trailer" in capsys.readouterr().err  # the did-you-mean points at it
 
 
-def test_the_paired_context_thresholds_are_settable_together(iso: Path) -> None:
+def test_the_paired_context_thresholds_are_settable_together(iso: pathlib.Path) -> None:
     """The paired context thresholds move together in one validated inline-table upsert."""
     inline = "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"
     assert _run(["config", "set", "context", inline]) == 0
@@ -594,7 +607,7 @@ def test_the_paired_context_thresholds_are_settable_together(iso: Path) -> None:
 
 
 def test_setting_one_threshold_names_the_command_that_works(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Setting one threshold alone refuses and names the inline-table command that works."""
     assert _refuse(["config", "set", "context.drop_at_chars", "200000"]) == 2
@@ -603,12 +616,12 @@ def test_setting_one_threshold_names_the_command_that_works(
     assert "summarise_at_chars =" in err
 
 
-def _fill_and_read(iso: Path) -> dict[str, object]:
+def _fill_and_read(iso: pathlib.Path) -> dict[str, object]:
     assert _run(["config", "fill", "--force"]) == 0
     return _global_toml(iso)
 
 
-def test_fill_never_bakes_the_repo_layer_into_the_global_config(iso: Path) -> None:
+def test_fill_never_bakes_the_repo_layer_into_the_global_config(iso: pathlib.Path) -> None:
     """Fill writes the global file from defaults plus global, never this repo's overrides."""
     assert _run(["config", "set", "--repo", "sandbox.memory_limit_mb", "4321"]) == 0
     filled = _fill_and_read(iso)
@@ -617,7 +630,7 @@ def test_fill_never_bakes_the_repo_layer_into_the_global_config(iso: Path) -> No
     assert sandbox["memory_limit_mb"] != 4321, "the repo layer leaked into the global config"
 
 
-def test_fill_keeps_the_preset_selector_and_does_not_bake_its_effects(iso: Path) -> None:
+def test_fill_keeps_the_preset_selector_and_does_not_bake_its_effects(iso: pathlib.Path) -> None:
     """Fill keeps a selected preset selected and does not bake its effects."""
     assert _run(["config", "set", "preset", "quick"]) == 0
     filled = _fill_and_read(iso)
@@ -630,7 +643,7 @@ def test_fill_keeps_the_preset_selector_and_does_not_bake_its_effects(iso: Path)
     assert review["trigger"] == Config().review.trigger
 
 
-def test_fill_keeps_authored_preset_bodies(iso: Path) -> None:
+def test_fill_keeps_authored_preset_bodies(iso: pathlib.Path) -> None:
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "agent6" / "config.toml").write_text(
         "[presets.myteam.review]\nconcurrency = 2\n", encoding="utf-8"
@@ -642,7 +655,7 @@ def test_fill_keeps_authored_preset_bodies(iso: Path) -> None:
 
 
 def test_config_path_lists_every_directory_agent6_writes_to(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config path` lists the config, repo and secrets files plus every directory agent6 writes to.
 
@@ -656,13 +669,13 @@ def test_config_path_lists_every_directory_agent6_writes_to(
     for label in ("global config", "repo config", "secrets", "config dir", "cache"):
         assert f"{label}" in out
     assert str(iso / "st") in out  # state base
-    assert str(state_dir(iso)) in out  # this repo's own dir
+    assert str(paths.state_dir(iso)) in out  # this repo's own dir
     assert str(iso / "dt" / "agent6" / "skills") in out
     assert str(iso / "ch") in out
 
 
 def test_top_level_help_names_the_directories(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`agent6 --help` ends with the four XDG dirs, resolved, and points at `config path`."""
     monkeypatch.setenv("XDG_STATE_HOME", str(iso / "st"))
@@ -678,7 +691,7 @@ def test_top_level_help_names_the_directories(
     assert "agent6 config path" in out
 
 
-def test_a_preset_leaf_with_a_valid_sibling_can_be_changed(iso: Path) -> None:
+def test_a_preset_leaf_with_a_valid_sibling_can_be_changed(iso: pathlib.Path) -> None:
     config = iso / "g" / "agent6" / "config.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
@@ -696,7 +709,7 @@ def test_a_preset_leaf_with_a_valid_sibling_can_be_changed(iso: Path) -> None:
 
 
 def test_a_preset_leaf_is_validated_and_has_an_inverse(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A preset leaf is validated on set, seen by fix and removable by unset.
 
@@ -717,13 +730,12 @@ def test_a_preset_leaf_is_validated_and_has_an_inverse(
 
 
 def test_config_fix_reports_an_entry_it_cannot_auto_remove(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config fix` says when an entry is not a leaf it can drop and exits non-zero."""
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text('preset = "nope"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -734,7 +746,7 @@ def test_config_fix_reports_an_entry_it_cannot_auto_remove(
 
 
 def test_nonempty_table_leaf_stays_gettable_and_unsettable(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A dict-typed field is one config leaf even when its value is nonempty."""
     assert _run(["config", "set", "providers.demo.api_format", "openai"]) == 0

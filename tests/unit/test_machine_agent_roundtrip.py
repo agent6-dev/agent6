@@ -8,17 +8,19 @@ The real subprocess runs on a request that refuses (no API key or network needed
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 
-from agent6.app.machine_agent import MachineAgentRequest
+from agent6.app import machine_agent
 from agent6.machine import AgentExecResult, AgentRequest
 
 
-def _round_trip(tmp_path: Path, req: MachineAgentRequest) -> tuple[int, AgentExecResult | None]:
+def _round_trip(
+    tmp_path: pathlib.Path, req: machine_agent.MachineAgentRequest
+) -> tuple[int, AgentExecResult | None]:
     req_file = tmp_path / "request.json"
     out_file = tmp_path / "result.json"
     req_file.write_text(req.model_dump_json(), encoding="utf-8")
@@ -36,11 +38,11 @@ def _round_trip(tmp_path: Path, req: MachineAgentRequest) -> tuple[int, AgentExe
     return proc.returncode, result
 
 
-def test_network_refusal_writes_a_valid_error_result(tmp_path: Path) -> None:
+def test_network_refusal_writes_a_valid_error_result(tmp_path: pathlib.Path) -> None:
     # network='session' on 'hardened' is unenforceable: refused before any provider call.
     cwd = tmp_path / "repo"
     cwd.mkdir()
-    req = MachineAgentRequest(
+    req = machine_agent.MachineAgentRequest(
         cwd=cwd,
         root=cwd,
         overlay={"sandbox": {"network": "session"}},
@@ -55,11 +57,11 @@ def test_network_refusal_writes_a_valid_error_result(tmp_path: Path) -> None:
     assert result.payload is None
 
 
-def test_config_error_is_salvaged_not_a_traceback(tmp_path: Path) -> None:
+def test_config_error_is_salvaged_not_a_traceback(tmp_path: pathlib.Path) -> None:
     # A bad [config] overlay lands as an `error` result, not a pydantic traceback with no result.
     cwd = tmp_path / "repo"
     cwd.mkdir()
-    req = MachineAgentRequest(
+    req = machine_agent.MachineAgentRequest(
         cwd=cwd,
         root=cwd,
         overlay={"budget": {"max_tokens_fallback": -5}},
@@ -72,7 +74,7 @@ def test_config_error_is_salvaged_not_a_traceback(tmp_path: Path) -> None:
     assert result is not None and result.reason == "error"
 
 
-def test_machine_agent_child_dies_with_its_parent(tmp_path: Path) -> None:
+def test_machine_agent_child_dies_with_its_parent(tmp_path: pathlib.Path) -> None:
     """PDEATHSIG ties the spawned tree to the supervisor: kill the parent and the child goes too."""
     import contextlib
     import os
@@ -107,7 +109,11 @@ def test_machine_agent_child_dies_with_its_parent(tmp_path: Path) -> None:
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline:
             try:
-                state = Path(f"/proc/{child_pid}/status").read_text(encoding="utf-8").splitlines()
+                state = (
+                    pathlib.Path(f"/proc/{child_pid}/status")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                )
                 if any(ln.startswith("State:") and "Z" in ln.split()[1] for ln in state):
                     return  # dead (zombie awaiting an unrelated reaper)
             except OSError:

@@ -7,50 +7,39 @@ A red finish returns `verify_retries` times; both ground on VerifyGate.tree_gree
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any, Literal
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
 from agent6.config import Config
-from agent6.harness._chain import RunChain
-from agent6.harness._finish_gates import (
-    SILENT_END_GATES,
-    FinishCall,
-    red_gate_returns,
-    verify_finish,
-)
-from agent6.harness._snapshot import End
-from agent6.harness._verify_verdict import VerifyVerdict
-from agent6.harness.loop import (
-    Harness,
-    LoopState,
-    TurnState,
-)
-from agent6.prompts.loop import V2_VERIFY_WHEN
-from agent6.viewmodel.listing import status_word
+from agent6.harness import _chain, _finish_gates, _loop_state, _snapshot, _verify_verdict, loop
+from agent6.prompts import loop as prompts_loop
+from agent6.viewmodel import listing
 
 
 def _wf(
     *,
     verify: bool,
     mode: Literal["run", "plan", "ask", "agent"] = "run",
-    root: Path = Path("/tmp"),
-) -> Harness:
+    root: pathlib.Path = pathlib.Path("/tmp"),
+) -> loop.Harness:
     data: dict[str, Any] = {"harness": {"verify_command": ["true"]}} if verify else {}
-    return Harness(
-        chain=RunChain(root),
+    return loop.Harness(
+        chain=_chain.RunChain(root),
         config=Config.model_validate(data),
-        provider=MagicMock(),
-        dispatcher=MagicMock(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
         logger=lambda _m: None,
         mode=mode,
     )
 
 
-def _green(wf: Harness, **verdict_kw: Any) -> bool | None:
-    state = LoopState(original_task="t", tool_calls=0, verify=VerifyVerdict(**verdict_kw))
+def _green(wf: loop.Harness, **verdict_kw: Any) -> bool | None:
+    state = _loop_state.LoopState(
+        original_task="t", tool_calls=0, verify=_verify_verdict.VerifyVerdict(**verdict_kw)
+    )
     return wf.gate.tree_green(state.verify)
 
 
@@ -77,23 +66,25 @@ def test_the_harness_gate_defaults_to_finish_with_two_returns() -> None:
 
 def test_a_red_gate_at_the_untouched_base_is_not_returned_to_the_worker() -> None:
     wf = _wf(verify=True)
-    state = LoopState(
+    state = _loop_state.LoopState(
         original_task="t",
         tool_calls=0,
-        verify=VerifyVerdict(last_ok=False, baseline_ok=False),
+        verify=_verify_verdict.VerifyVerdict(last_ok=False, baseline_ok=False),
     )
-    assert not red_gate_returns(
+    assert not _finish_gates.red_gate_returns(
         wf.config.harness.verify_when,
         wf.config.harness.verify_retries,
         state.verify,
         state.gates,
         gate_present=wf.gate.present(state.verify),
     )
-    assert "untouched base" in V2_VERIFY_WHEN["finish"]
+    assert "untouched base" in prompts_loop.V2_VERIFY_WHEN["finish"]
 
 
-def _verified(wf: Harness, **verdict_kw: Any) -> str:
-    state = LoopState(original_task="t", tool_calls=0, verify=VerifyVerdict(**verdict_kw))
+def _verified(wf: loop.Harness, **verdict_kw: Any) -> str:
+    state = _loop_state.LoopState(
+        original_task="t", tool_calls=0, verify=_verify_verdict.VerifyVerdict(**verdict_kw)
+    )
     return wf.gate.verification(state.verify)
 
 
@@ -127,20 +118,22 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
     def _capture(_type: str, **fields: Any) -> None:
         emitted.append(fields)
 
-    cases: tuple[tuple[bool, VerifyVerdict, bool | None, str], ...] = (
-        (False, VerifyVerdict(last_ok=None), None, "not_applicable"),
-        (True, VerifyVerdict(last_ok=True, edited_since=False), True, "passed"),
-        (True, VerifyVerdict(last_ok=False), False, "failed"),
+    cases: tuple[tuple[bool, _verify_verdict.VerifyVerdict, bool | None, str], ...] = (
+        (False, _verify_verdict.VerifyVerdict(last_ok=None), None, "not_applicable"),
+        (True, _verify_verdict.VerifyVerdict(last_ok=True, edited_since=False), True, "passed"),
+        (True, _verify_verdict.VerifyVerdict(last_ok=False), False, "failed"),
     )
     for verify, verify_verdict, all_passed, verdict in cases:
         wf = _wf(verify=verify)
-        wf.events = MagicMock(emit=_capture)
+        wf.events = mock.MagicMock(emit=_capture)
         wf.events.emit = _capture  # type: ignore[method-assign]
-        state = LoopState(original_task="t", tool_calls=0, verify=verify_verdict)
+        state = _loop_state.LoopState(original_task="t", tool_calls=0, verify=verify_verdict)
         emitted.clear()
         wf._finish(  # pyright: ignore[reportPrivateUsage]
             state,
-            End("finish_session", "", completed=True, verdict="grounded", checkpoint=False),
+            _snapshot.End(
+                "finish_session", "", completed=True, verdict="grounded", checkpoint=False
+            ),
             iteration=1,
         )
         assert emitted and emitted[-1]["all_passed"] is all_passed
@@ -163,25 +156,29 @@ def test_the_end_event_carries_whether_the_certifying_gate_ran_scoped() -> None:
         emitted.append(fields)
 
     wf = _wf(verify=True)
-    wf.events = MagicMock(emit=_capture)
+    wf.events = mock.MagicMock(emit=_capture)
     wf.events.emit = _capture  # type: ignore[method-assign]
     for scoped in (True, False):
-        state = LoopState(
-            original_task="t", tool_calls=0, verify=VerifyVerdict(last_ok=True, scoped=scoped)
+        state = _loop_state.LoopState(
+            original_task="t",
+            tool_calls=0,
+            verify=_verify_verdict.VerifyVerdict(last_ok=True, scoped=scoped),
         )
         wf._finish(  # pyright: ignore[reportPrivateUsage]
             state,
-            End("finish_session", "", completed=True, verdict="grounded", checkpoint=False),
+            _snapshot.End(
+                "finish_session", "", completed=True, verdict="grounded", checkpoint=False
+            ),
             iteration=1,
         )
         assert (emitted[-1]["all_passed"], emitted[-1]["scoped"]) == (True, scoped)
-    assert status_word(
+    assert listing.status_word(
         finished=True, all_passed=True, end_reason="finish_session", scoped=True
     ) == ("passed", "scoped gate")
-    assert status_word(
+    assert listing.status_word(
         finished=True, all_passed=False, end_reason="finish_session", scoped=True, gate_red=True
     ) == ("finished", "gate red")
-    assert status_word(finished=True, all_passed=False, end_reason="finish_session") == (
+    assert listing.status_word(finished=True, all_passed=False, end_reason="finish_session") == (
         "finished",
         "unverified",
     )
@@ -198,7 +195,9 @@ def test_plan_and_ask_are_never_gated_on_verify() -> None:
         assert _verified(_wf(verify=True, mode=mode), last_ok=False) == "not_applicable"
 
 
-def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(tmp_path: Path) -> None:
+def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(
+    tmp_path: pathlib.Path,
+) -> None:
     """A green verify does not survive a run_command that changed the tree.
 
     edited_since_verify was set only by the edit tools, so a model could verify green, mutate
@@ -231,7 +230,9 @@ def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(tmp_path: P
     assert dirty("") is False
 
 
-def test_a_read_only_command_over_uncommitted_work_keeps_the_verify_pass(tmp_path: Path) -> None:
+def test_a_read_only_command_over_uncommitted_work_keeps_the_verify_pass(
+    tmp_path: pathlib.Path,
+) -> None:
     """The edited check asks whether the command changed the tree, not whether it is uncommitted.
 
     Over work the chain had not recorded, every `rg` through run_command re-marked the tree
@@ -241,7 +242,7 @@ def test_a_read_only_command_over_uncommitted_work_keeps_the_verify_pass(tmp_pat
     (tmp_path / "a.txt").write_text("uncommitted\n", encoding="utf-8")
     wf = _wf(verify=True, root=tmp_path)
     assert wf.chain.dirty() is True
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_edit()
     state.verify.note_pass()
     turn = _turn()
@@ -259,7 +260,7 @@ def test_a_read_only_command_over_uncommitted_work_keeps_the_verify_pass(tmp_pat
     assert turn.edit_since_verify_pass is True
 
 
-def _git_seed(tmp_path: Path) -> str:
+def _git_seed(tmp_path: pathlib.Path) -> str:
     import subprocess as sp
 
     sp.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
@@ -273,8 +274,6 @@ def _git_seed(tmp_path: Path) -> str:
 
 
 def _snap(**kw: Any) -> Any:
-    from agent6.harness._snapshot import SessionSnapshot
-
     base: dict[str, Any] = {
         "system": "s",
         "messages": [],
@@ -284,19 +283,19 @@ def _snap(**kw: Any) -> Any:
         "original_task": "t",
         "verify_command": ("true",),
     }
-    return SessionSnapshot(**{**base, **kw})
+    return _snapshot.SessionSnapshot(**{**base, **kw})
 
 
-def _resumed_state(wf: Harness, snap: Any) -> LoopState:
-    from agent6.harness._conversation import Conversation
+def _resumed_state(wf: loop.Harness, snap: Any) -> _loop_state.LoopState:
+    from agent6.harness import _conversation
 
-    state = LoopState(original_task="t", tool_calls=0)
-    wf._seed_carryover(state, Conversation.from_wire([]), snap)  # pyright: ignore[reportPrivateUsage]
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    wf._seed_carryover(state, _conversation.Conversation.from_wire([]), snap)  # pyright: ignore[reportPrivateUsage]
     return state
 
 
 def test_a_resumed_execution_carries_the_verify_verdict_over_an_unmoved_tree(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """The verdict carries across executions when HEAD is the snapshot's and the worktree is clean.
 
@@ -316,7 +315,7 @@ def test_a_resumed_execution_carries_the_verify_verdict_over_an_unmoved_tree(
     assert red.verify.last_ok is False
 
 
-def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: Path) -> None:
+def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: pathlib.Path) -> None:
     """An operator commit or edit between executions starts the execution unobserved.
 
     No observation covers this tree, so it fails closed like the baseline probe.
@@ -341,7 +340,7 @@ def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: Path) -> N
     assert _resumed_state(wf, _snap(head_sha="", **green)).verify.last_ok is None
 
 
-def test_a_resumed_execution_carries_the_scoped_gate(tmp_path: Path) -> None:
+def test_a_resumed_execution_carries_the_scoped_gate(tmp_path: pathlib.Path) -> None:
     """After the full gate overran once, a resumed execution goes straight to the scoped form.
 
     The fact is about the suite, so it carries whatever the tree did; the verdict still drops
@@ -359,22 +358,26 @@ def test_a_resumed_execution_carries_the_scoped_gate(tmp_path: Path) -> None:
 
 
 def _exec(rc: int, out: str = "") -> Any:
-    from agent6.tools.results import ExecResult
+    from agent6.tools import results
 
-    return ExecResult(returncode=rc, stdout=out, stderr="", duration_s=1.0, exec_failed=False)
+    return results.ExecResult(
+        returncode=rc, stdout=out, stderr="", duration_s=1.0, exec_failed=False
+    )
 
 
-def _harness_wf(when: str, retries: int = 2, *, policy: str = "yes") -> tuple[Harness, MagicMock]:
+def _harness_wf(
+    when: str, retries: int = 2, *, policy: str = "yes"
+) -> tuple[loop.Harness, mock.MagicMock]:
     """A run-mode loop over a gate, and the mock dispatcher that owns `run_verify`."""
     data: dict[str, Any] = {
         "harness": {"verify_command": ["true"], "verify_when": when, "verify_retries": retries}
     }
-    dispatcher = MagicMock()
+    dispatcher = mock.MagicMock()
     dispatcher.command_policy.return_value = policy
-    wf = Harness(
-        chain=RunChain(Path("/tmp")),
+    wf = loop.Harness(
+        chain=_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate(data),
-        provider=MagicMock(),
+        provider=mock.MagicMock(),
         dispatcher=dispatcher,
         logger=lambda _m: None,
         mode="run",
@@ -383,27 +386,25 @@ def _harness_wf(when: str, retries: int = 2, *, policy: str = "yes") -> tuple[Ha
 
 
 def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
-    from agent6.harness.loop import TurnState
-
-    turn = TurnState(iteration=3, resp=MagicMock(), assistant=MagicMock())
+    turn = _loop_state.TurnState(iteration=3, resp=mock.MagicMock(), assistant=mock.MagicMock())
     if finishing:
-        turn.finish = FinishCall("finish_session", "done")
+        turn.finish = _finish_gates.FinishCall("finish_session", "done")
     if edited:
         turn.edited = True
         turn.edit_since_verify_pass = True
     return turn
 
 
-def _verify_gate(wf: Harness, state: LoopState, turn: Any) -> None:
+def _verify_gate(wf: loop.Harness, state: _loop_state.LoopState, turn: Any) -> None:
     """The verify gate's answer over *turn*, applied through the loop."""
     ctx = wf._turn_context(state, iteration=turn.iteration, execution_start=1)  # pyright: ignore[reportPrivateUsage]
-    wf._refuse(state, turn, verify_finish(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
+    wf._refuse(state, turn, _finish_gates.verify_finish(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
 def _notices(turn: Any) -> list[str]:
-    from agent6.harness._conversation import Notice
+    from agent6.harness import _conversation
 
-    return [r.text for r in turn.tool_results if isinstance(r, Notice)]
+    return [r.text for r in turn.tool_results if isinstance(r, _conversation.Notice)]
 
 
 def test_finish_mode_runs_the_gate_when_a_finish_arrives_over_an_unverified_tree() -> None:
@@ -413,7 +414,7 @@ def test_finish_mode_runs_the_gate_when_a_finish_arrives_over_an_unverified_tree
     """
     wf, dispatcher = _harness_wf("finish")
     dispatcher.run_verify.return_value = _exec(0, "3 passed")
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
 
     assert wf.gate.harness_verify(state, turn) is None
@@ -422,14 +423,14 @@ def test_finish_mode_runs_the_gate_when_a_finish_arrives_over_an_unverified_tree
     assert state.verify.green_and_untouched and turn.verify_just_passed
     assert _notices(turn) == ["[harness verify] finish: verify_command passed (1s).\n3 passed"]
     _verify_gate(wf, state, turn)
-    assert turn.finish == FinishCall("finish_session", "done")
+    assert turn.finish == _finish_gates.FinishCall("finish_session", "done")
 
 
 def test_a_red_finish_certification_returns_to_the_model_verify_retries_times() -> None:
     """A red gate at finish returns the finish `verify_retries` times; the next red stands."""
     wf, dispatcher = _harness_wf("finish", retries=2)
     dispatcher.run_verify.return_value = _exec(1, "1 failed")
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     seen: list[str | None] = []
     notices: list[str] = []
     for _ in range(3):
@@ -448,11 +449,11 @@ def test_a_red_finish_certification_returns_to_the_model_verify_retries_times() 
 def test_zero_retries_lets_the_first_red_finish_stand() -> None:
     wf, dispatcher = _harness_wf("finish", retries=0)
     dispatcher.run_verify.return_value = _exec(1)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf.gate.harness_verify(state, turn)
     _verify_gate(wf, state, turn)
-    assert turn.finish == FinishCall("finish_session", "done")
+    assert turn.finish == _finish_gates.FinishCall("finish_session", "done")
     assert wf.gate.verification(state.verify) == "failed"
 
 
@@ -462,7 +463,7 @@ def test_a_tree_the_model_already_certified_is_not_judged_twice() -> None:
     And a turn whose own run_verify_command judged the tree is never judged on top.
     """
     wf, dispatcher = _harness_wf("finish")
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_pass()
     turn = _turn(finishing=True)
     wf.gate.harness_verify(state, turn)
@@ -472,7 +473,7 @@ def test_a_tree_the_model_already_certified_is_not_judged_twice() -> None:
     # (the finish reports the red it knows), where a green-only skip re-judged
     # it and fed the no-progress streak the one red a second time.
     wf2, dispatcher2 = _harness_wf("finish")
-    state2 = LoopState(original_task="t", tool_calls=0)
+    state2 = _loop_state.LoopState(original_task="t", tool_calls=0)
     state2.verify.note_edit()
     state2.verify.note_fail("sig")  # the model's own red verify, tree untouched since
     wf2.gate.harness_verify(state2, _turn(finishing=True))
@@ -483,7 +484,7 @@ def test_step_mode_judges_every_editing_turn_and_finish_mode_does_not() -> None:
     for when, calls in (("step", 1), ("finish", 0), ("never", 0)):
         wf, dispatcher = _harness_wf(when)
         dispatcher.run_verify.return_value = _exec(0)
-        state = LoopState(original_task="t", tool_calls=0)
+        state = _loop_state.LoopState(original_task="t", tool_calls=0)
         wf.gate.harness_verify(state, _turn(edited=True))
         assert dispatcher.run_verify.call_count == calls, when
 
@@ -495,23 +496,23 @@ def test_never_mode_leaves_a_finish_over_an_unverified_tree_alone() -> None:
     passed.
     """
     wf, dispatcher = _harness_wf("never")
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf.gate.harness_verify(state, turn)
     _verify_gate(wf, state, turn)
     dispatcher.run_verify.assert_not_called()
-    assert turn.finish == FinishCall("finish_session", "done")
+    assert turn.finish == _finish_gates.FinishCall("finish_session", "done")
     assert wf.gate.verification(state.verify) == "unverified"
 
 
 def test_run_commands_no_withholds_the_gate_from_the_harness_too() -> None:
     wf, dispatcher = _harness_wf("finish", policy="no")
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf.gate.harness_verify(state, turn)
     _verify_gate(wf, state, turn)
     dispatcher.run_verify.assert_not_called()
-    assert turn.finish == FinishCall("finish_session", "done")
+    assert turn.finish == _finish_gates.FinishCall("finish_session", "done")
 
 
 def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
@@ -520,11 +521,11 @@ def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
     The model is told so; bouncing the finish against a denial burned every retry on a wall
     nobody could open.
     """
-    from agent6.tools.errors import ToolDeniedError
+    from agent6.tools import errors
 
     wf, dispatcher = _harness_wf("finish", retries=2)
-    dispatcher.run_verify.side_effect = ToolDeniedError("run_verify_command not approved")
-    state = LoopState(original_task="t", tool_calls=0)
+    dispatcher.run_verify.side_effect = errors.ToolDeniedError("run_verify_command not approved")
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf.gate.harness_verify(state, turn)
     assert _notices(turn) == [
@@ -532,7 +533,7 @@ def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
         " The gate is withheld for the rest of the run; the run ends unverified."
     ]
     _verify_gate(wf, state, turn)
-    assert turn.finish == FinishCall("finish_session", "done")  # no bounce
+    assert turn.finish == _finish_gates.FinishCall("finish_session", "done")  # no bounce
     assert state.gates.verify_retries_used == 0
     assert wf.gate.verification(state.verify) == "unverified"
 
@@ -544,11 +545,11 @@ def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
 
 
 def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
-    from agent6.harness._prompt_blocks import build_system_prompt
-    from agent6.kinds import RepoSummary
+    from agent6 import kinds
+    from agent6.harness import _prompt_blocks
 
-    repo = RepoSummary(
-        root=Path("/tmp"),
+    repo = kinds.RepoSummary(
+        root=pathlib.Path("/tmp"),
         branch="main",
         head_sha="0" * 40,
         file_count=0,
@@ -561,7 +562,7 @@ def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
         cfg = Config.model_validate(
             {"harness": {"verify_command": ["true"], "verify_when": when, "verify_retries": 1}}
         )
-        return build_system_prompt(config=cfg, repo=repo, mode=mode, skills=None)
+        return _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode=mode, skills=None)
 
     assert "The harness runs it when finish_session is called" in block("finish")
     assert "returns to you 1 time(s)" in block("finish")
@@ -579,7 +580,7 @@ def test_a_verify_followed_by_an_edit_in_one_turn_is_judged_again() -> None:
     """Under `step` an edit after a green gate in the same turn makes the harness run it again."""
     wf, dispatcher = _harness_wf("step")
     dispatcher.run_verify.return_value = _exec(0)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(edited=True)
     turn.verify_just_passed = True  # the model's own green, then the edit
     turn.edit_since_verify_pass = True
@@ -588,19 +589,19 @@ def test_a_verify_followed_by_an_edit_in_one_turn_is_judged_again() -> None:
 
 
 def _scoped_wf(
-    root: Path, command: list[str], *, when: str = "finish"
-) -> tuple[Harness, MagicMock]:
+    root: pathlib.Path, command: list[str], *, when: str = "finish"
+) -> tuple[loop.Harness, mock.MagicMock]:
     """A harness-gated loop whose root holds pkg/mod.py + tests/test_mod.py."""
     for rel in ("pkg/mod.py", "tests/test_mod.py"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text("")
     data: dict[str, Any] = {"harness": {"verify_command": command, "verify_when": when}}
-    dispatcher = MagicMock()
+    dispatcher = mock.MagicMock()
     dispatcher.command_policy.return_value = "yes"
-    wf = Harness(
-        chain=RunChain(root),
+    wf = loop.Harness(
+        chain=_chain.RunChain(root),
         config=Config.model_validate(data),
-        provider=MagicMock(),
+        provider=mock.MagicMock(),
         dispatcher=dispatcher,
         logger=lambda _m: None,
         mode="run",
@@ -608,28 +609,28 @@ def _scoped_wf(
     return wf, dispatcher
 
 
-def _fake_diff(_self: Harness) -> str:
+def _fake_diff(_self: loop.Harness) -> str:
     return "diff --git a/pkg/mod.py b/pkg/mod.py\n"
 
 
 def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """A full gate that overran verify_timeout_s is re-run scoped to the tests nearest the diff.
 
     The verdict comes from the scoped run and the notice names the scope; later gates go straight
     to the scoped form. Big-repo executions had finished over a gate that certified nothing.
     """
-    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
+    monkeypatch.setattr(_chain.RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     emitted: list[tuple[str, dict[str, Any]]] = []
 
     def _capture(event_type: str, **fields: Any) -> None:
         emitted.append((event_type, fields))
 
-    wf.events = MagicMock(emit=_capture)
+    wf.events = mock.MagicMock(emit=_capture)
     dispatcher.run_verify.side_effect = [_exec(124), _exec(0)]
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)
     wf.gate.harness_verify(state, turn)
     assert [c.kwargs["extra_argv"] for c in dispatcher.run_verify.call_args_list] == [
@@ -652,13 +653,13 @@ def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
 
 
 def test_a_timed_out_non_pytest_gate_stays_a_plain_timeout(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """Only pytest takes file-path selection; another gate that times out is reported as is."""
-    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
+    monkeypatch.setattr(_chain.RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["make", "test"])
     dispatcher.run_verify.return_value = _exec(124)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)
     wf.gate.harness_verify(state, turn)
     dispatcher.run_verify.assert_called_once_with(extra_argv=())
@@ -675,17 +676,17 @@ def test_a_timed_out_non_pytest_gate_stays_a_plain_timeout(
     ids=["sh-c-pipeline", "pytest-naming-a-path"],
 )
 def test_a_gate_that_cannot_take_appended_paths_stays_a_plain_timeout(
-    tmp_path: Path, monkeypatch: Any, command: list[str]
+    tmp_path: pathlib.Path, monkeypatch: Any, command: list[str]
 ) -> None:
     """Neither a `sh -c` script nor `pytest tests` scopes.
 
     The script binds appended paths as $0 and $1, and the dir unions with the files: an identical
     full command, a second timeout, and a false "ran scoped" notice.
     """
-    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
+    monkeypatch.setattr(_chain.RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, command)
     dispatcher.run_verify.return_value = _exec(124)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)
     wf.gate.harness_verify(state, turn)
     dispatcher.run_verify.assert_called_once_with(extra_argv=())
@@ -693,16 +694,16 @@ def test_a_gate_that_cannot_take_appended_paths_stays_a_plain_timeout(
     assert _notices(turn) == ["[harness verify] finish: verify_command exit 124 (1s)."]
 
 
-def test_a_timeout_with_no_nearby_tests_stands(tmp_path: Path, monkeypatch: Any) -> None:
+def test_a_timeout_with_no_nearby_tests_stands(tmp_path: pathlib.Path, monkeypatch: Any) -> None:
     """With nothing near the change to run, the timeout is the verdict and scoping never arms."""
 
-    def no_tests_diff(_self: Harness) -> str:
+    def no_tests_diff(_self: loop.Harness) -> str:
         return "diff --git a/docs/page.md b/docs/page.md\n"
 
-    monkeypatch.setattr(RunChain, "diff_since_base", no_tests_diff)
+    monkeypatch.setattr(_chain.RunChain, "diff_since_base", no_tests_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.return_value = _exec(124)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)
     wf.gate.harness_verify(state, turn)
     dispatcher.run_verify.assert_called_once_with(extra_argv=())
@@ -711,17 +712,17 @@ def test_a_timeout_with_no_nearby_tests_stands(tmp_path: Path, monkeypatch: Any)
 
 
 def test_a_models_own_timed_out_gate_gets_the_scoped_followup(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """run_verify_command exit 124 from the model's OWN call gets the scoped follow-up too.
 
     The harness-gate fallback alone never reached this flow (a self-judged turn is not re-judged),
     so pilot executions timed out at the full budget with no scoped re-run ever firing.
     """
-    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
+    monkeypatch.setattr(_chain.RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.return_value = _exec(0)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn()
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "run_verify_command", _exec(124), {}
@@ -739,12 +740,12 @@ def test_a_models_own_timed_out_gate_gets_the_scoped_followup(
 
 
 def test_never_mode_leaves_the_models_timed_out_gate_alone(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """Under `never` a timeout in the model's own run_verify_command gets no harness re-run."""
-    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
+    monkeypatch.setattr(_chain.RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"], when="never")
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn()
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "run_verify_command", _exec(124), {}
@@ -755,13 +756,13 @@ def test_never_mode_leaves_the_models_timed_out_gate_alone(
 
 
 def test_a_full_green_from_the_models_own_gate_unarms_scoping(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """A green from the model's own full run_verify_command ends scoping and reads "passed"."""
-    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
+    monkeypatch.setattr(_chain.RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.return_value = _exec(0)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, _turn(), "run_verify_command", _exec(124), {}
     )
@@ -776,18 +777,18 @@ def test_a_full_green_from_the_models_own_gate_unarms_scoping(
 
 
 def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """One denial means the same on both call sites, and a later finish never asks again."""
-    from agent6.tools.errors import ToolDeniedError
+    from agent6.tools import errors
 
-    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
+    monkeypatch.setattr(_chain.RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.side_effect = [
         _exec(124),
-        ToolDeniedError("run_verify_command not approved"),
+        errors.ToolDeniedError("run_verify_command not approved"),
     ]
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)
     wf.gate.harness_verify(state, turn)
     assert state.verify.denied is True
@@ -799,7 +800,7 @@ def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
     wf.gate.harness_verify(state, turn2)
     assert dispatcher.run_verify.call_count == 2
     _verify_gate(wf, state, turn2)
-    assert turn2.finish == FinishCall("finish_session", "done")
+    assert turn2.finish == _finish_gates.FinishCall("finish_session", "done")
 
 
 def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
@@ -809,34 +810,34 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     THIS turn, and the end was accepted as if the gate had never been red. The standing verdict
     decides.
     """
-    from agent6.tools.results import ExecResult
+    from agent6.tools import results
 
-    dispatcher = MagicMock()
+    dispatcher = mock.MagicMock()
     dispatcher.command_policy.return_value = "yes"
-    dispatcher.run_verify.return_value = ExecResult(
+    dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
     )
-    wf = Harness(
-        chain=RunChain(Path("/tmp")),
+    wf = loop.Harness(
+        chain=_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate(
             {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 2}}
         ),
-        provider=MagicMock(),
+        provider=mock.MagicMock(),
         dispatcher=dispatcher,
         logger=lambda _m: None,
         mode="run",
     )
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_edit()
     state.verify.note_fail("sig")
-    turn = TurnState(iteration=4, resp=MagicMock(), assistant=MagicMock())
+    turn = _loop_state.TurnState(iteration=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
     wf._end_gates(  # pyright: ignore[reportPrivateUsage]
         state,
         turn,
         wf._turn_context(state, iteration=turn.iteration, execution_start=1),  # pyright: ignore[reportPrivateUsage]
         ending="silent_finish",
-        gates=SILENT_END_GATES,
+        gates=_finish_gates.SILENT_END_GATES,
     )
 
     assert dispatcher.run_verify.call_count == 0, "the standing red covers the tree"
@@ -852,31 +853,31 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
 
     A withheld or denied gate is not the model's to fix, and bouncing the end told it to.
     """
-    dispatcher = MagicMock()
+    dispatcher = mock.MagicMock()
     dispatcher.command_policy.return_value = policy
-    wf = Harness(
-        chain=RunChain(Path("/tmp")),
+    wf = loop.Harness(
+        chain=_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate(
             {"harness": {"verify_command": ["true"], "verify_when": "step", "verify_retries": 2}}
         ),
-        provider=MagicMock(),
+        provider=mock.MagicMock(),
         dispatcher=dispatcher,
         logger=lambda _m: None,
         mode="run",
     )
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_edit()
     state.verify.note_fail("sig")
     state.verify.denied = denied
     state.verify.note_edit()
-    turn = TurnState(iteration=7, resp=MagicMock(), assistant=MagicMock())
+    turn = _loop_state.TurnState(iteration=7, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
     wf._end_gates(  # pyright: ignore[reportPrivateUsage]
         state,
         turn,
         wf._turn_context(state, iteration=turn.iteration, execution_start=1),  # pyright: ignore[reportPrivateUsage]
         ending="silent_finish",
-        gates=SILENT_END_GATES,
+        gates=_finish_gates.SILENT_END_GATES,
     )
 
     assert turn.end_returned is False

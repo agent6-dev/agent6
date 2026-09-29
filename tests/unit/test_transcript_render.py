@@ -6,20 +6,14 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.ipc import register_frontend
-from agent6.viewmodel.transcript_render import (
-    conversation_transcripts,
-    fold_conversation,
-    load_transcripts,
-    render_markdown,
-    window_turns,
-)
+from agent6 import paths
+from agent6.sessions import ipc
+from agent6.viewmodel import transcript_render
 
 _OPENAI = [
     {
@@ -241,7 +235,7 @@ def test_fold_and_render_the_responses_shape() -> None:
     `instructions` is the system turn; one model response's reasoning, message and calls make
     one assistant turn; a call output is labelled with its call's name.
     """
-    turns = fold_conversation(_RESPONSES)
+    turns = transcript_render.fold_conversation(_RESPONSES)
     assert [(t.role, t.seq) for t in turns] == [
         ("system", 1),
         ("user", 1),
@@ -255,14 +249,14 @@ def test_fold_and_render_the_responses_shape() -> None:
     assert first.tool_calls == [("read_file", '{"path": "a.py"}')]
     assert turns[3].text == "file body" and turns[3].tool_name == "read_file"
     assert turns[4].text == "done"
-    md = render_markdown(turns, session_id="s")
+    md = transcript_render.render_markdown(turns, session_id="s")
     assert "<thinking>\nlet me think\n</thinking>" in md
     assert md.count("working on it") == 1 and "-> read_file" in md
 
 
 @pytest.mark.parametrize("transcripts", [_OPENAI, _ANTHROPIC], ids=["openai", "anthropic"])
 def test_fold_and_render_both_shapes(transcripts: list[dict[str, Any]]) -> None:
-    turns = fold_conversation(transcripts)
+    turns = transcript_render.fold_conversation(transcripts)
     roles = [t.role for t in turns]
     # system, user, assistant(seq1 w/ tool_call), tool result, assistant(seq2)
     assert roles == ["system", "user", "assistant", "tool", "assistant"]
@@ -275,7 +269,7 @@ def test_fold_and_render_both_shapes(transcripts: list[dict[str, Any]]) -> None:
     assert tool.text == "FULL FILE CONTENTS"  # full result, not a summary
     assert turns[4].text == "all done"
 
-    md = render_markdown(turns, session_id="r1", show_thinking=True)
+    md = transcript_render.render_markdown(turns, session_id="r1", show_thinking=True)
     assert "SYSTEM PROMPT" in md and "do X" in md and "all done" in md
     assert "-> read_file(" in md and "FULL FILE CONTENTS" in md
     assert "let me think" in md  # thinking shown
@@ -292,25 +286,27 @@ def test_an_anthropic_notice_does_not_hide_its_tool_result() -> None:
         {"type": "text", "text": "review found one concern"}
     )
 
-    turns = fold_conversation(transcripts)
+    turns = transcript_render.fold_conversation(transcripts)
 
     assert [(turn.role, turn.text) for turn in turns[3:]] == [
         ("tool", "FULL FILE CONTENTS"),
         ("user", "review found one concern"),
         ("assistant", "all done"),
     ]
-    rendered = render_markdown(turns, session_id="r1")
+    rendered = transcript_render.render_markdown(turns, session_id="r1")
     assert "FULL FILE CONTENTS" in rendered
     assert "review found one concern" in rendered
 
 
 def test_render_flags_hide_thinking_and_tools() -> None:
-    turns = fold_conversation(_OPENAI)
-    md = render_markdown(turns, session_id="r1", show_thinking=False, tools="none")
+    turns = transcript_render.fold_conversation(_OPENAI)
+    md = transcript_render.render_markdown(
+        turns, session_id="r1", show_thinking=False, tools="none"
+    )
     assert "let me think" not in md
     assert "-> read_file" not in md and "FULL FILE CONTENTS" not in md
     # calls-only keeps the call line but drops the result
-    md2 = render_markdown(turns, session_id="r1", tools="calls")
+    md2 = transcript_render.render_markdown(turns, session_id="r1", tools="calls")
     assert "-> read_file(" in md2 and "FULL FILE CONTENTS" not in md2
 
 
@@ -320,7 +316,7 @@ def test_seq_window_never_splits_a_call_from_its_result() -> None:
     A result is stamped with the seq of the request that echoes it back, one round after the
     call, so windowing by that seq alone dropped one or the other.
     """
-    turns = fold_conversation(_OPENAI)
+    turns = transcript_render.fold_conversation(_OPENAI)
     assert [(t.role, t.seq) for t in turns] == [
         ("system", 1),
         ("user", 1),
@@ -329,10 +325,10 @@ def test_seq_window_never_splits_a_call_from_its_result() -> None:
         ("assistant", 2),
     ]
     # A window ending at the call's own round (1) must still show its result.
-    kept = [t.role for t in window_turns(turns, 1, 1)]
+    kept = [t.role for t in transcript_render.window_turns(turns, 1, 1)]
     assert kept == ["system", "user", "assistant", "tool"]
     # A window starting at the result's round (2) must still show its call.
-    kept = [t.role for t in window_turns(turns, 2, 2)]
+    kept = [t.role for t in transcript_render.window_turns(turns, 2, 2)]
     assert kept == ["assistant", "tool", "assistant"]
 
 
@@ -347,7 +343,7 @@ def test_provider_retry_does_not_duplicate_history() -> None:
         "response": {"status": 502, "body": "Bad Gateway"},
     }
     retry = {**_OPENAI[1], "seq": 3}
-    turns = fold_conversation([_OPENAI[0], error_attempt, retry])
+    turns = transcript_render.fold_conversation([_OPENAI[0], error_attempt, retry])
     assert [t.role for t in turns] == ["system", "user", "assistant", "tool", "assistant"]
     assert not any(t.role == "marker" for t in turns)
 
@@ -371,7 +367,7 @@ def test_compaction_restart_shows_marker() -> None:
             },
         },
     ]
-    turns = fold_conversation(transcripts)
+    turns = transcript_render.fold_conversation(transcripts)
     assert any(t.role == "marker" for t in turns)
     assert turns[-1].text == "resumed"
 
@@ -431,7 +427,7 @@ def _anthropic_followup(elided_content: str) -> dict[str, Any]:
 
 def test_tier1_elision_shows_marker_with_identity() -> None:
     """The conversation view says when a later request elided an old tool_result."""
-    turns = fold_conversation([*_ANTHROPIC, _anthropic_followup(_BARE_ELIDED_A)])
+    turns = transcript_render.fold_conversation([*_ANTHROPIC, _anthropic_followup(_BARE_ELIDED_A)])
     markers = [t for t in turns if t.role == "marker"]
     assert len(markers) == 1
     assert "elided 1 older tool result" in markers[0].text
@@ -442,7 +438,7 @@ def test_tier1_elision_shows_marker_with_identity() -> None:
 
 
 def test_tier1_elision_marker_flags_kept_gists() -> None:
-    turns = fold_conversation([*_ANTHROPIC, _anthropic_followup(_GIST_ELIDED_A)])
+    turns = transcript_render.fold_conversation([*_ANTHROPIC, _anthropic_followup(_GIST_ELIDED_A)])
     markers = [t for t in turns if t.role == "marker"]
     assert len(markers) == 1
     assert "read_file a.py (distilled gist kept)" in markers[0].text
@@ -474,7 +470,7 @@ def test_tier1_elision_marker_openai_shape() -> None:
         },
         "response": {"body": {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}},
     }
-    turns = fold_conversation([*_OPENAI, followup])
+    turns = transcript_render.fold_conversation([*_OPENAI, followup])
     markers = [t for t in turns if t.role == "marker"]
     assert len(markers) == 1
     assert "elided 1 older tool result" in markers[0].text
@@ -485,7 +481,9 @@ def test_gist_demotion_is_not_reported_as_a_fresh_elision() -> None:
     """A gist decaying to the bare marker draws no second 'elided' marker."""
     seq4 = _anthropic_followup(_BARE_ELIDED_A)
     seq4["seq"] = 4
-    turns = fold_conversation([*_ANTHROPIC, _anthropic_followup(_GIST_ELIDED_A), seq4])
+    turns = transcript_render.fold_conversation(
+        [*_ANTHROPIC, _anthropic_followup(_GIST_ELIDED_A), seq4]
+    )
     markers = [t for t in turns if t.role == "marker"]
     assert len(markers) == 1  # the original gist elision only
     assert "distilled gist kept" in markers[0].text
@@ -536,7 +534,7 @@ def test_second_same_identity_elision_in_a_later_pass_is_counted() -> None:
         ],
     }
     grow = {"role": "user", "content": [{"type": "text", "text": "next"}]}
-    turns = fold_conversation(
+    turns = transcript_render.fold_conversation(
         [
             call(1, [task, assistant, both]),
             call(2, [task, assistant, one_elided, grow]),
@@ -551,47 +549,46 @@ def test_second_same_identity_elision_in_a_later_pass_is_counted() -> None:
 
 def test_elision_marker_prefix_matches_the_compaction_placeholder() -> None:
     """The renderer detects placeholders by prefix, pinned without a viewmodel-to-harness import."""
-    from agent6.harness._compaction import ELISION_PREFIX
-    from agent6.viewmodel.transcript_render import ELISION_MARKER_PREFIX
+    from agent6.harness import _compaction
 
-    assert ELISION_MARKER_PREFIX == ELISION_PREFIX
+    assert transcript_render.ELISION_MARKER_PREFIX == _compaction.ELISION_PREFIX
 
 
-def test_load_transcripts_sorted_by_seq(tmp_path: Path) -> None:
+def test_load_transcripts_sorted_by_seq(tmp_path: pathlib.Path) -> None:
     d = tmp_path / "transcripts"
     d.mkdir()
     (d / "20260101T2-000002.json").write_text(json.dumps({"seq": 2, "x": "b"}), encoding="utf-8")
     (d / "20260101T1-000001.json").write_text(json.dumps({"seq": 1, "x": "a"}), encoding="utf-8")
     (d / "bad.json").write_text("{not json", encoding="utf-8")  # skipped, not fatal
-    loaded = load_transcripts(d)
+    loaded = transcript_render.load_transcripts(d)
     assert [t["seq"] for t in loaded] == [1, 2]
-    assert load_transcripts(tmp_path / "nope") == []
+    assert transcript_render.load_transcripts(tmp_path / "nope") == []
 
 
 def test_cmd_history_transcript_end_to_end(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`agent6 sessions transcript <run>` folds the run's transcripts; --json is the raw escape."""
-    from agent6.ui.cli.history_cmds import (
-        _cmd_history_transcript,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.ui.cli import history_cmds
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "st"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    tdir = state_dir(repo) / "sessions" / "runs" / "my-run" / "transcripts"
+    tdir = paths.state_dir(repo) / "sessions" / "runs" / "my-run" / "transcripts"
     tdir.mkdir(parents=True)
     (tdir.parent / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     (tdir / "20260101-000001.json").write_text(json.dumps(_OPENAI[0]), encoding="utf-8")
     (tdir / "20260101-000002.json").write_text(json.dumps(_OPENAI[1]), encoding="utf-8")
 
-    rc = _cmd_history_transcript("my-run", as_json=False, no_thinking=False, tools="both", seq="")
+    rc = history_cmds._cmd_history_transcript(
+        "my-run", as_json=False, no_thinking=False, tools="both", seq=""
+    )
     assert rc == 0
     out = capsys.readouterr().out
     assert "Transcript: my-run" in out and "-> read_file(" in out and "FULL FILE CONTENTS" in out
 
-    rc_json = _cmd_history_transcript(
+    rc_json = history_cmds._cmd_history_transcript(
         "my-run", as_json=True, no_thinking=False, tools="both", seq="2"
     )
     assert rc_json == 0
@@ -599,22 +596,23 @@ def test_cmd_history_transcript_end_to_end(
     assert [t["seq"] for t in data] == [2]  # --seq windowed the raw transcripts
 
     assert (
-        _cmd_history_transcript("nope", as_json=False, no_thinking=False, tools="both", seq="") == 2
+        history_cmds._cmd_history_transcript(
+            "nope", as_json=False, no_thinking=False, tools="both", seq=""
+        )
+        == 2
     )
 
 
 def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli.history_cmds import (
-        _cmd_history_transcript,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.ui.cli import history_cmds
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "st"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = state_dir(repo) / "sessions" / "runs"
+    runs = paths.state_dir(repo) / "sessions" / "runs"
     for name in ("older-run", "newer-run"):
         tdir = runs / name / "transcripts"
         tdir.mkdir(parents=True)
@@ -622,9 +620,14 @@ def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
         (runs / name / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
     os.utime(runs / "older-run" / "logs.jsonl", (100, 100))
     os.utime(runs / "newer-run" / "logs.jsonl", (1000, 1000))
-    register_frontend(runs / "older-run", 12345)
+    ipc.register_frontend(runs / "older-run", 12345)
 
-    assert _cmd_history_transcript("", as_json=True, no_thinking=False, tools="both", seq="") == 0
+    assert (
+        history_cmds._cmd_history_transcript(
+            "", as_json=True, no_thinking=False, tools="both", seq=""
+        )
+        == 0
+    )
     captured = capsys.readouterr()
     assert json.loads(captured.out)[0]["seq"] == 1
     assert "newer-run" in captured.err
@@ -688,17 +691,17 @@ def test_streamed_openai_response_without_a_role_is_the_assistant() -> None:
             "response": {"body": {"choices": [{"message": {"content": "all done"}}]}},
         },
     ]
-    turns = fold_conversation(streamed)
+    turns = transcript_render.fold_conversation(streamed)
     assert [t.role for t in turns] == ["user", "assistant", "tool", "assistant"]
     a1 = turns[1]
     assert a1.thinking == "let me think"
     assert a1.tool_calls and a1.tool_calls[0][0] == "read_file"
     assert turns[2].tool_name == "read_file"  # the call id resolved to a name
-    md = render_markdown(turns, session_id="r1", show_thinking=True)
+    md = transcript_render.render_markdown(turns, session_id="r1", show_thinking=True)
     assert "## assistant" in md and "-> read_file(" in md
 
 
-def test_a_compaction_side_call_is_not_a_conversation_turn(tmp_path: Path) -> None:
+def test_a_compaction_side_call_is_not_a_conversation_turn(tmp_path: pathlib.Path) -> None:
     """Only the worker seat is the conversation; a side call's one-message request is no restart.
 
     The gist distiller and the tier-2 summariser share the sink; the fold printed a phantom
@@ -740,14 +743,16 @@ def test_a_compaction_side_call_is_not_a_conversation_turn(tmp_path: Path) -> No
         "done",
     )
 
-    turns = fold_conversation(load_transcripts(d))
+    turns = transcript_render.fold_conversation(transcript_render.load_transcripts(d))
     body = "\n".join(f"{t.role}:{t.text}" for t in turns)
     assert "context summarised" not in body, "a restart that never happened"
     assert "=== FILE a.py ===" not in body, "the side-call's scratch prompt became a turn"
     assert body.count("reading") == 1, "the history was re-emitted behind the side-call"
 
 
-def test_the_conversation_seat_is_the_driving_provider_not_always_worker(tmp_path: Path) -> None:
+def test_the_conversation_seat_is_the_driving_provider_not_always_worker(
+    tmp_path: pathlib.Path,
+) -> None:
     """The seat filter keeps the mode's driving role, plan mode's "planner" included.
 
     Keeping only "worker" filtered every plan run out; review seats stay excluded since their
@@ -770,13 +775,16 @@ def test_the_conversation_seat_is_the_driving_provider_not_always_worker(tmp_pat
             encoding="utf-8",
         )
 
-    kept = [t["seat"] for t in conversation_transcripts(load_transcripts(d))]
+    kept = [
+        t["seat"]
+        for t in transcript_render.conversation_transcripts(transcript_render.load_transcripts(d))
+    ]
     assert "planner" in kept, "a plan run lost its whole conversation"
     assert "" in kept, "a transcript written before seats existed is the driving seat's"
     assert "reviewer" not in kept and "review:security" not in kept
 
 
-def test_load_transcripts_stays_raw_for_the_json_dump(tmp_path: Path) -> None:
+def test_load_transcripts_stays_raw_for_the_json_dump(tmp_path: pathlib.Path) -> None:
     """`sessions transcript --json` keeps every seat; the seat filter is the conversation fold's.
 
     It is the one CLI surface for a side call's actual request and response.
@@ -797,7 +805,11 @@ def test_load_transcripts_stays_raw_for_the_json_dump(tmp_path: Path) -> None:
             ),
             encoding="utf-8",
         )
-    assert [t["seat"] for t in load_transcripts(d)] == ["worker", "reviewer", "review:security"]
+    assert [t["seat"] for t in transcript_render.load_transcripts(d)] == [
+        "worker",
+        "reviewer",
+        "review:security",
+    ]
 
 
 def test_a_replayed_message_stripped_of_its_id_is_not_printed_twice() -> None:
@@ -811,7 +823,7 @@ def test_a_replayed_message_stripped_of_its_id_is_not_printed_twice() -> None:
     recorded = transcripts[0]["response"]["body"]["output"][1]
     recorded.update({"id": "msg_1", "status": "completed", "phase": "commentary"})
     recorded["content"][0].update({"annotations": [], "logprobs": []})
-    turns = fold_conversation(transcripts)
+    turns = transcript_render.fold_conversation(transcripts)
     assert [(t.role, t.seq) for t in turns] == [
         ("system", 1),
         ("user", 1),
@@ -819,13 +831,11 @@ def test_a_replayed_message_stripped_of_its_id_is_not_printed_twice() -> None:
         ("tool", 2),
         ("assistant", 2),
     ]
-    assert render_markdown(turns, session_id="s").count("working on it") == 1
+    assert transcript_render.render_markdown(turns, session_id="s").count("working on it") == 1
 
 
-def test_a_transcript_whose_seq_is_not_a_number_is_kept_and_marked(tmp_path: Path) -> None:
+def test_a_transcript_whose_seq_is_not_a_number_is_kept_and_marked(tmp_path: pathlib.Path) -> None:
     """A non-integer `seq` orders as 0, reaches `--json` verbatim, and the fold says so."""
-    from agent6.viewmodel.transcript_render import fold_conversation, load_transcripts
-
     tdir = tmp_path / "transcripts"
     tdir.mkdir()
     (tdir / "0000001.json").write_text(
@@ -836,16 +846,14 @@ def test_a_transcript_whose_seq_is_not_a_number_is_kept_and_marked(tmp_path: Pat
         json.dumps({"seq": 2, "seat": "worker", "request": {}, "response": {}}),
         encoding="utf-8",
     )
-    loaded = load_transcripts(tdir)
+    loaded = transcript_render.load_transcripts(tdir)
     assert [t["seq"] for t in loaded] == ["notanumber", 2]
-    marks = [t.text for t in fold_conversation(loaded) if t.role == "marker"]
+    marks = [t.text for t in transcript_render.fold_conversation(loaded) if t.role == "marker"]
     assert any("unreadable seq 'notanumber'" in m for m in marks)
 
 
 def test_two_text_blocks_in_one_turn_render_as_two_paragraphs() -> None:
     """A turn's text blocks keep the providers' blank line, a paragraph break in Markdown."""
-    from agent6.viewmodel.transcript_render import fold_conversation
-
     anthropic = [
         {
             "seq": 1,
@@ -907,5 +915,5 @@ def test_two_text_blocks_in_one_turn_render_as_two_paragraphs() -> None:
         }
     ]
     for data in (anthropic, responses):
-        turn = next(t for t in fold_conversation(data) if t.role == "assistant")
+        turn = next(t for t in transcript_render.fold_conversation(data) if t.role == "assistant")
         assert turn.text == "First message.\n\nSecond message."

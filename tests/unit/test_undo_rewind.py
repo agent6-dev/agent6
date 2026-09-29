@@ -8,28 +8,31 @@ The operator's own files stay, and the later chain commits stay on the undone se
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess as sp
-from pathlib import Path
 
 import pytest
 
-from agent6.app.reporter import Reporter
-from agent6.app.undo import undo_fork
-from agent6.git_ops import chain_commit, chain_ref_for, chain_tip
-from agent6.harness._snapshot import SessionSnapshot
-from agent6.paths import state_dir
-from agent6.sessions.layout import SessionLayout, write_untracked_at_start
-from agent6.sessions.lock import acquire_repo_writer, release_single_writer
+from agent6 import git_ops, paths
+from agent6.app import reporter, undo
+from agent6.harness import _snapshot
+from agent6.sessions import layout as sessions_layout
+from agent6.sessions import lock
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: pathlib.Path, *args: str) -> str:
     return sp.run(
         ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True
     ).stdout.strip()
 
 
 def _checkpoint(
-    layout: SessionLayout, turn: int, *, head_sha: str, ops: int, at: int | None = None
+    layout: sessions_layout.SessionLayout,
+    turn: int,
+    *,
+    head_sha: str,
+    ops: int,
+    at: int | None = None,
 ) -> None:
     """A checkpoint at *turn* holding *ops* operator messages and *head_sha* as the workspace head.
 
@@ -43,7 +46,7 @@ def _checkpoint(
                 "content": [{"type": "text", "text": f"OPERATOR STEERING (x):\nsteer {i}"}],
             }
         )
-    snap = SessionSnapshot(
+    snap = _snapshot.SessionSnapshot(
         system="s",
         messages=messages,
         tool_calls=0,
@@ -58,7 +61,9 @@ def _checkpoint(
     )
 
 
-def _run_that_moved_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, str, str]:
+def _run_that_moved_on(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[pathlib.Path, str, str]:
     """A repo and a run whose turn-1 checkpoint sits at c1, with edits committed and in flight.
 
     The chain committed c2 (a.txt edited, gen.txt created), then a.txt and more.txt changed
@@ -74,8 +79,8 @@ def _run_that_moved_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple
     c1 = _git(repo, "rev-parse", "HEAD")
     monkeypatch.chdir(repo)
     (repo / "notes.md").write_text("mine\n", encoding="utf-8")
-    state = state_dir(repo)
-    layout = SessionLayout(state_dir=state, session_id="run-AAAA11")
+    state = paths.state_dir(repo)
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="run-AAAA11")
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -91,14 +96,14 @@ def _run_that_moved_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple
         ),
         encoding="utf-8",
     )
-    write_untracked_at_start(layout.session_dir, {"notes.md"})
+    sessions_layout.write_untracked_at_start(layout.session_dir, {"notes.md"})
     _checkpoint(layout, 1, head_sha=c1, ops=1)
     (repo / "a.txt").write_text("two\n", encoding="utf-8")
     (repo / "gen.txt").write_text("generated\n", encoding="utf-8")
-    c2 = chain_commit(
+    c2 = git_ops.chain_commit(
         repo,
         "step",
-        ref=chain_ref_for("run-AAAA11"),
+        ref=git_ops.chain_ref_for("run-AAAA11"),
         fallback_parent=c1,
         also_branch="agent6/run-AAAA11",
         exclude={"notes.md"},
@@ -114,7 +119,7 @@ def _run_that_moved_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple
 
 
 def test_undo_of_a_model_controlled_run_refuses_before_committing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A `git.control = "model"` run has no agent6 chain.
 
@@ -130,7 +135,9 @@ def test_undo_of_a_model_controlled_run_refuses_before_committing(
     _git(repo, "commit", "-q", "-m", "c1")
     c1 = _git(repo, "rev-parse", "HEAD")
     monkeypatch.chdir(repo)
-    layout = SessionLayout(state_dir=state_dir(repo), session_id="model-AAAA11")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo), session_id="model-AAAA11"
+    )
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -151,16 +158,16 @@ def test_undo_of_a_model_controlled_run_refuses_before_committing(
     _checkpoint(layout, 2, head_sha=c1, ops=2)
     (repo / "a.txt").write_text("two\n", encoding="utf-8")  # the model's own uncommitted edit
     said: list[str] = []
-    got = undo_fork(
-        None, "model-AAAA11", cwd=repo, reporter=Reporter(out=said.append, err=said.append)
+    got = undo.undo_fork(
+        None, "model-AAAA11", cwd=repo, reporter=reporter.Reporter(out=said.append, err=said.append)
     )
     assert got is None
     assert any("managed git itself" in s for s in said), said
-    assert chain_tip(repo, chain_ref_for("model-AAAA11")) is None
+    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("model-AAAA11")) is None
 
 
 def test_undo_puts_the_checkout_back_and_keeps_the_tree_as_it_stood(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The tree as it stands goes onto the run's ref first, then every differing path is put back.
 
@@ -170,7 +177,9 @@ def test_undo_puts_the_checkout_back_and_keeps_the_tree_as_it_stood(
     repo, c1, c2 = _run_that_moved_on(tmp_path, monkeypatch)
     said: list[str] = []
 
-    result = undo_fork(None, "run-AAAA11", cwd=repo, reporter=Reporter(said.append, said.append))
+    result = undo.undo_fork(
+        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+    )
 
     assert result is not None
     child, undone_text = result
@@ -181,13 +190,13 @@ def test_undo_puts_the_checkout_back_and_keeps_the_tree_as_it_stood(
     assert (repo / "notes.md").read_text(encoding="utf-8") == "mine\n"
     assert _git(repo, "rev-parse", "HEAD") == c1  # HEAD and the index untouched
     assert _git(repo, "diff", "--cached", "--name-only") == ""
-    tip = chain_tip(repo, chain_ref_for("run-AAAA11"))
+    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("run-AAAA11"))
     assert tip is not None and tip != c2
     assert _git(repo, "rev-parse", f"{tip}^") == c2  # the pre-undo commit sits on c2
     assert _git(repo, "show", f"{tip}:a.txt") == "three"  # the in-flight edit, kept
     assert _git(repo, "show", f"{tip}:more.txt") == "in flight"  # the mid-run file, kept
     assert _git(repo, "rev-parse", "agent6/run-AAAA11") == tip
-    assert chain_tip(repo, chain_ref_for(child)) == c1
+    assert git_ops.chain_tip(repo, git_ops.chain_ref_for(child)) == c1
     text = "\n".join(said)
     assert "a.txt" in text and "gen.txt" in text and "more.txt" in text
     assert f"commit {tip[:12]} on agent6/run-AAAA11" in text
@@ -195,14 +204,16 @@ def test_undo_puts_the_checkout_back_and_keeps_the_tree_as_it_stood(
 
 
 def test_undo_leaves_a_staged_copy_in_the_index_and_says_so(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The index is the operator's: a staged copy of a rewound file stays staged, and it is said."""
     repo, _c1, _c2 = _run_that_moved_on(tmp_path, monkeypatch)
     _git(repo, "add", "a.txt")
     said: list[str] = []
 
-    assert undo_fork(None, "run-AAAA11", cwd=repo, reporter=Reporter(said.append, said.append))
+    assert undo.undo_fork(
+        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+    )
     assert (repo / "a.txt").read_text(encoding="utf-8") == "one\n"
     assert _git(repo, "diff", "--cached", "--name-only") == "a.txt"
     assert _git(repo, "status", "--short", "--", "a.txt") == "MM a.txt"
@@ -210,37 +221,37 @@ def test_undo_leaves_a_staged_copy_in_the_index_and_says_so(
 
 
 def test_undo_refuses_while_another_live_run_drives_the_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A rewind under a live worker is refused, naming the run, before anything is committed.
 
     Only the process holding the checkout is exempt.
     """
     repo, _c1, c2 = _run_that_moved_on(tmp_path, monkeypatch)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     for holder in ("other-LIVE11", "run-AAAA11"):
         said: list[str] = []
-        fd = acquire_repo_writer(state, repo, holder)
+        fd = lock.acquire_repo_writer(state, repo, holder)
         try:
-            result = undo_fork(
-                None, "run-AAAA11", cwd=repo, reporter=Reporter(said.append, said.append)
+            result = undo.undo_fork(
+                None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
             )
         finally:
-            release_single_writer(fd)
+            lock.release_single_writer(fd)
         assert result is None
         assert any(holder in line for line in said)
         assert (repo / "a.txt").read_text(encoding="utf-8") == "three\n"
-        assert chain_tip(repo, chain_ref_for("run-AAAA11")) == c2
+        assert git_ops.chain_tip(repo, git_ops.chain_ref_for("run-AAAA11")) == c2
         assert not (state / "lineage.jsonl").exists()
 
 
 def test_undo_of_a_live_plan_session_refuses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A live plan or ask session refuses /undo too, though it takes no checkout writer lock."""
     import subprocess as sp2
 
-    from agent6.sessions.ipc import write_worker_pid
+    from agent6.sessions import ipc
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -250,8 +261,10 @@ def test_undo_of_a_live_plan_session_refuses(
     _git(repo, "commit", "-q", "-m", "c1")
     c1 = _git(repo, "rev-parse", "HEAD")
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
-    layout = SessionLayout(state_dir=state, session_id="plan-AAAA11", subdir="plans")
+    state = paths.state_dir(repo)
+    layout = sessions_layout.SessionLayout(
+        state_dir=state, session_id="plan-AAAA11", subdir="plans"
+    )
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -271,51 +284,54 @@ def test_undo_of_a_live_plan_session_refuses(
     _checkpoint(layout, 2, head_sha=c1, ops=2)
     proc = sp2.Popen(["sleep", "30"])
     try:
-        write_worker_pid(layout.session_dir, proc.pid)
+        ipc.write_worker_pid(layout.session_dir, proc.pid)
         said: list[str] = []
 
-        result = undo_fork(
-            None, "plan-AAAA11", cwd=repo, reporter=Reporter(said.append, said.append)
+        result = undo.undo_fork(
+            None, "plan-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
         )
 
         assert result is None
         assert any("plan-AAAA11" in line for line in said)
-        assert chain_tip(repo, chain_ref_for("plan-AAAA11")) is None
+        assert git_ops.chain_tip(repo, git_ops.chain_ref_for("plan-AAAA11")) is None
     finally:
         proc.terminate()
         proc.wait()
 
 
 def test_undo_from_the_live_session_itself_is_allowed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The loop's own /undo runs inside the worker holding the checkout; its lock is no obstacle."""
     import os
 
-    from agent6.sessions.ipc import write_worker_pid
+    from agent6.sessions import ipc
 
     repo, c1, _c2 = _run_that_moved_on(tmp_path, monkeypatch)
-    state = state_dir(repo)
-    write_worker_pid(
-        SessionLayout(state_dir=state, session_id="run-AAAA11").session_dir, os.getpid()
+    state = paths.state_dir(repo)
+    ipc.write_worker_pid(
+        sessions_layout.SessionLayout(state_dir=state, session_id="run-AAAA11").session_dir,
+        os.getpid(),
     )
-    fd = acquire_repo_writer(state, repo, "run-AAAA11")
+    fd = lock.acquire_repo_writer(state, repo, "run-AAAA11")
     try:
-        result = undo_fork(None, "run-AAAA11", cwd=repo, reporter=Reporter(print, print))
+        result = undo.undo_fork(
+            None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(print, print)
+        )
     finally:
-        release_single_writer(fd)
+        lock.release_single_writer(fd)
     assert result is not None
     assert (repo / "a.txt").read_text(encoding="utf-8") == "one\n"
     assert _git(repo, "rev-parse", "HEAD") == c1
 
 
 def test_undo_of_a_fork_whose_worktree_is_gone_refuses_before_creating_anything(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A recorded worktree that is gone is named, with the recovery, before any child."""
     repo, _c1, _c2 = _run_that_moved_on(tmp_path, monkeypatch)
-    state = state_dir(repo)
-    layout = SessionLayout(state_dir=state, session_id="run-AAAA11")
+    state = paths.state_dir(repo)
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="run-AAAA11")
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest["worktree"] = str(tmp_path / "gone-worktree")
     manifest["worktree_git_dir"] = str((repo / ".git").resolve())
@@ -323,7 +339,9 @@ def test_undo_of_a_fork_whose_worktree_is_gone_refuses_before_creating_anything(
     said: list[str] = []
     before = sorted(p.name for p in (state / "sessions" / "runs").iterdir())
 
-    result = undo_fork(None, "run-AAAA11", cwd=repo, reporter=Reporter(said.append, said.append))
+    result = undo.undo_fork(
+        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+    )
 
     assert result is None
     assert any("gone-worktree" in line and "agent6 fork run-AAAA11" in line for line in said)
@@ -338,14 +356,17 @@ def test_undo_of_a_fork_whose_worktree_is_gone_refuses_before_creating_anything(
     _git(repo, "branch", "-D", "agent6/run-AAAA11")
     said.clear()
     assert (
-        undo_fork(None, "run-AAAA11", cwd=repo, reporter=Reporter(said.append, said.append)) is None
+        undo.undo_fork(
+            None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+        )
+        is None
     )
     assert any(f"merged into main as {_c2[:12]}" in line for line in said)
     assert not any("agent6/run-AAAA11" in line or "refs/agent6" in line for line in said)
 
 
 def test_undo_names_the_turn_every_other_surface_names(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An /undo resolved at a fork's seed checkpoint names the source's turn, not "turn 0"."""
     repo = tmp_path / "repo"
@@ -356,8 +377,8 @@ def test_undo_names_the_turn_every_other_surface_names(
     _git(repo, "commit", "-q", "-m", "c1")
     c1 = _git(repo, "rev-parse", "HEAD")
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
-    fork = SessionLayout(state_dir=state, session_id="fork-BBBB22")
+    state = paths.state_dir(repo)
+    fork = sessions_layout.SessionLayout(state_dir=state, session_id="fork-BBBB22")
     fork.ensure()
     fork.manifest_path.write_text(
         json.dumps(
@@ -381,30 +402,33 @@ def test_undo_names_the_turn_every_other_surface_names(
     (repo / "a.txt").write_text("two\n", encoding="utf-8")
     said: list[str] = []
 
-    result = undo_fork(None, "fork-BBBB22", cwd=repo, reporter=Reporter(said.append, said.append))
+    result = undo.undo_fork(
+        None, "fork-BBBB22", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+    )
 
     assert result is not None
     child, _text = result
     text = "\n".join(said)
     assert f"back to turn 3 ({c1[:12]})" in text and "turn 0" not in text
     child_manifest = json.loads(
-        SessionLayout(state_dir=state, session_id=child).manifest_path.read_text(encoding="utf-8")
+        sessions_layout.SessionLayout(state_dir=state, session_id=child).manifest_path.read_text(
+            encoding="utf-8"
+        )
     )
     assert child_manifest["forked_from_turn"] == 3
-    subject = _git(repo, "log", "-1", "--format=%s", chain_ref_for("fork-BBBB22"))
+    subject = _git(repo, "log", "-1", "--format=%s", git_ops.chain_ref_for("fork-BBBB22"))
     assert subject == "agent6 undo: the tree before turn 3 was taken back"
 
 
 def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A fork's /undo resolves in its parent, and the child keeps the undone fork's checkout.
 
     Recording the parent's checkout handed the child's model a writable checkout it was never given.
     """
-    from agent6.app.manifest import write_session_manifest
+    from agent6.app import manifest as app_manifest
     from agent6.config import Config
-    from agent6.git_ops import add_worktree
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -417,10 +441,10 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
     _git(repo, "commit", "-qam", "c2")
     c2 = _git(repo, "rev-parse", "HEAD")
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
-    parent = SessionLayout(state_dir=state, session_id="parent-AAAA11")
+    state = paths.state_dir(repo)
+    parent = sessions_layout.SessionLayout(state_dir=state, session_id="parent-AAAA11")
     parent.ensure()
-    write_session_manifest(
+    app_manifest.write_session_manifest(
         parent,
         session_id="parent-AAAA11",
         user_task="do the thing",
@@ -433,10 +457,10 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
     _checkpoint(parent, 1, head_sha=c1, ops=1)
     _checkpoint(parent, 2, head_sha=c2, ops=2)
     worktree = tmp_path / "fork-wt"
-    add_worktree(repo, worktree, c2)
-    fork = SessionLayout(state_dir=state, session_id="fork-BBBB22")
+    git_ops.add_worktree(repo, worktree, c2)
+    fork = sessions_layout.SessionLayout(state_dir=state, session_id="fork-BBBB22")
     fork.ensure()
-    write_session_manifest(
+    app_manifest.write_session_manifest(
         fork,
         session_id="fork-BBBB22",
         user_task="do the thing",
@@ -453,13 +477,15 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
     )
     _checkpoint(fork, 0, head_sha=c2, ops=2)  # the seed: the parent's turn-2 conversation
 
-    result = undo_fork(None, "fork-BBBB22", cwd=repo, reporter=Reporter(print, print))
+    result = undo.undo_fork(None, "fork-BBBB22", cwd=repo, reporter=reporter.Reporter(print, print))
 
     assert result is not None
     child, undone_text = result
     assert undone_text == "steer 1"
     child_manifest = json.loads(
-        SessionLayout(state_dir=state, session_id=child).manifest_path.read_text(encoding="utf-8")
+        sessions_layout.SessionLayout(state_dir=state, session_id=child).manifest_path.read_text(
+            encoding="utf-8"
+        )
     )
     assert child_manifest["parent_session_id"] == "parent-AAAA11"
     assert child_manifest["worktree"] == str(worktree)
@@ -468,19 +494,21 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
 
 
 def test_an_undo_fork_keeps_the_source_run_untracked_set(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An /undo fork continuing in the source's checkout keeps the run's untracked files."""
-    from agent6.sessions.layout import read_untracked_at_start
-
     repo, _c1, _c2 = _run_that_moved_on(tmp_path, monkeypatch)
     said: list[str] = []
 
-    result = undo_fork(None, "run-AAAA11", cwd=repo, reporter=Reporter(said.append, said.append))
+    result = undo.undo_fork(
+        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+    )
 
     assert result is not None
     child, _text = result
-    child_dir = SessionLayout(state_dir=state_dir(repo), session_id=child).session_dir
-    assert read_untracked_at_start(child_dir) == frozenset({"notes.md"}), (
+    child_dir = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo), session_id=child
+    ).session_dir
+    assert sessions_layout.read_untracked_at_start(child_dir) == frozenset({"notes.md"}), (
         "the child inherits the operator's set, not the run's own output"
     )

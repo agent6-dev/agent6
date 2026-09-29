@@ -14,11 +14,11 @@ contract and the refuse/degrade split.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.app.confine import check_mcp_network_support
+from agent6.app import confine
 from agent6.config import Config
 
 
@@ -65,13 +65,13 @@ def test_explicit_block_refuses_where_there_is_no_namespace() -> None:
     namespace refuses rather than running the server connected.
     """
     cfg = _server({"network": "none"})
-    err = check_mcp_network_support(cfg, "hardened")
+    err = confine.check_mcp_network_support(cfg, "hardened")
     assert err is not None and "'s'" in err and "strict" in err
-    assert check_mcp_network_support(cfg, "strict") is None
+    assert confine.check_mcp_network_support(cfg, "strict") is None
 
 
 def test_auto_degrades_with_a_warning_naming_the_server(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
+    capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
 ) -> None:
     """`auto` degrades with a warning naming the server.
 
@@ -79,17 +79,17 @@ def test_auto_degrades_with_a_warning_naming_the_server(
     MCP setup, where the operator is already being told about their servers, rather than inside the
     isolation warner, which is about the level's own gaps.
     """
-    from agent6.app._setup import start_mcp_manager_if_enabled
+    from agent6.app import _setup
 
     cfg = _server({})
-    assert check_mcp_network_support(cfg, "hardened") is None  # never a refusal
-    start_mcp_manager_if_enabled(cfg, tmp_path, "hardened")
+    assert confine.check_mcp_network_support(cfg, "hardened") is None  # never a refusal
+    _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "hardened")
     err = capsys.readouterr().err
     assert "MCP server 's'" in err and "network" in err
 
 
 def test_a_table_less_server_degrades_with_the_same_warning(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
+    capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
 ) -> None:
     """A table-less server degrades with the same warning.
 
@@ -98,24 +98,24 @@ def test_a_table_less_server_degrades_with_the_same_warning(
     hardened), and the degrade warning reads the same effective value, or a table-less server keeps
     the host's network on hardened with nothing said.
     """
-    from agent6.app._setup import start_mcp_manager_if_enabled
+    from agent6.app import _setup
 
     cfg = Config.model_validate({"mcp": {"enabled": True, "servers": {"s": {"command": ["x"]}}}})
     assert cfg.mcp.servers["s"].sandbox is None
     assert cfg.mcp.servers["s"].effective_network == "auto"
-    assert check_mcp_network_support(cfg, "hardened") is None  # auto never refuses
-    start_mcp_manager_if_enabled(cfg, tmp_path, "hardened")
+    assert confine.check_mcp_network_support(cfg, "hardened") is None  # auto never refuses
+    _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "hardened")
     err = capsys.readouterr().err
     assert "MCP server 's'" in err and "network" in err
 
 
-def test_host_is_silent(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+def test_host_is_silent(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:
     """An operator who granted the network asked for it; nothing degraded."""
-    from agent6.app._setup import start_mcp_manager_if_enabled
+    from agent6.app import _setup
 
     cfg = _server({"network": "host"})
-    assert check_mcp_network_support(cfg, "hardened") is None
-    start_mcp_manager_if_enabled(cfg, tmp_path, "hardened")
+    assert confine.check_mcp_network_support(cfg, "hardened") is None
+    _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "hardened")
     assert "MCP server" not in capsys.readouterr().err
 
 
@@ -129,11 +129,10 @@ def test_the_per_server_knob_answers_exactly_like_tool_network(value: str, isola
     anyway and the blanket unsandboxed warning covers it. A table of the two side by side is what
     caught it, so here is the table.
     """
-    from agent6.app.confine import check_network_support
     from agent6.config import SandboxConfig
 
-    per_server = check_mcp_network_support(_server({"network": value}), isolation)  # type: ignore[arg-type]
-    global_knob = check_network_support(
+    per_server = confine.check_mcp_network_support(_server({"network": value}), isolation)  # type: ignore[arg-type]
+    global_knob = confine.check_network_support(
         Config(sandbox=SandboxConfig(network=value)),  # type: ignore[arg-type]
         isolation,  # type: ignore[arg-type]
     )

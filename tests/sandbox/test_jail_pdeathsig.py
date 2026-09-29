@@ -14,12 +14,12 @@ must be gone from the host within a bound.
 from __future__ import annotations
 
 import os
+import pathlib
 import signal
 import subprocess
 import sys
 import textwrap
 import time
-from pathlib import Path
 
 from tests.jail_env import require_userns_jail
 
@@ -29,7 +29,7 @@ def _pgrep(token: str) -> list[str]:
     return [ln for ln in out.stdout.split() if ln.strip()]
 
 
-def test_sigkilled_agent_takes_its_jailed_command_down(tmp_path: Path) -> None:
+def test_sigkilled_agent_takes_its_jailed_command_down(tmp_path: pathlib.Path) -> None:
     require_userns_jail()
     token = f"60.{os.getpid()}"  # a unique sleep duration doubling as the pgrep handle
     script = tmp_path / "agent.py"

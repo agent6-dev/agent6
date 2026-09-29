@@ -8,62 +8,62 @@ operator saw nothing.
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
-from pathlib import Path
 
-from agent6.harness._context import AGENTS_MD_WARN_CHARS, agents_md_notices, agents_md_text
+from agent6.harness import _context
 
 
-def _git_repo(root: Path) -> None:
+def _git_repo(root: pathlib.Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
 
 
-def test_large_agents_md_is_injected_whole(tmp_path: Path) -> None:
+def test_large_agents_md_is_injected_whole(tmp_path: pathlib.Path) -> None:
     _git_repo(tmp_path)
     body = "x" * 50_000
     (tmp_path / "AGENTS.md").write_text(body, encoding="utf-8")
-    assert agents_md_text(tmp_path) == body  # no clip, no marker
+    assert _context.agents_md_text(tmp_path) == body  # no clip, no marker
 
 
-def test_oversize_warns_the_operator(tmp_path: Path) -> None:
+def test_oversize_warns_the_operator(tmp_path: pathlib.Path) -> None:
     _git_repo(tmp_path)
-    (tmp_path / "AGENTS.md").write_text("y" * (AGENTS_MD_WARN_CHARS + 1), encoding="utf-8")
-    notices = agents_md_notices(tmp_path)
+    (tmp_path / "AGENTS.md").write_text("y" * (_context.AGENTS_MD_WARN_CHARS + 1), encoding="utf-8")
+    notices = _context.agents_md_notices(tmp_path)
     assert any("WARNING" in n and "chars" in n for n in notices)
 
 
-def test_under_the_line_stays_silent(tmp_path: Path) -> None:
+def test_under_the_line_stays_silent(tmp_path: pathlib.Path) -> None:
     _git_repo(tmp_path)
     (tmp_path / "AGENTS.md").write_text("small\n", encoding="utf-8")
-    assert agents_md_notices(tmp_path) == ()
+    assert _context.agents_md_notices(tmp_path) == ()
 
 
-def test_subdirectory_start_loads_the_repo_roots_file(tmp_path: Path) -> None:
+def test_subdirectory_start_loads_the_repo_roots_file(tmp_path: pathlib.Path) -> None:
     """A subdirectory start loads the repo root's file."""
     _git_repo(tmp_path)
     (tmp_path / "AGENTS.md").write_text("ROOT RULES\n", encoding="utf-8")
     sub = tmp_path / "pkg"
     sub.mkdir()
-    text = agents_md_text(sub)
+    text = _context.agents_md_text(sub)
     assert "ROOT RULES" in text
-    notices = agents_md_notices(sub)
+    notices = _context.agents_md_notices(sub)
     assert any("repo root" in n for n in notices)
 
 
-def test_subdirectory_with_its_own_file_gets_both_labeled(tmp_path: Path) -> None:
+def test_subdirectory_with_its_own_file_gets_both_labeled(tmp_path: pathlib.Path) -> None:
     _git_repo(tmp_path)
     (tmp_path / "AGENTS.md").write_text("ROOT RULES\n", encoding="utf-8")
     sub = tmp_path / "pkg"
     sub.mkdir()
     (sub / "AGENTS.md").write_text("SUB RULES\n", encoding="utf-8")
-    text = agents_md_text(sub)
+    text = _context.agents_md_text(sub)
     # Root first (broader), the subdir's under a heading naming its directory.
     assert text.index("ROOT RULES") < text.index("SUB RULES")
     assert "pkg/" in text
-    assert any("plus this directory's" in n for n in agents_md_notices(sub))
+    assert any("plus this directory's" in n for n in _context.agents_md_notices(sub))
 
 
-def test_nested_start_loads_each_ancestor_file_in_order(tmp_path: Path) -> None:
+def test_nested_start_loads_each_ancestor_file_in_order(tmp_path: pathlib.Path) -> None:
     """A nested start loads each ancestor file in order, the intermediate package's included."""
     _git_repo(tmp_path)
     (tmp_path / "AGENTS.md").write_text("ROOT RULES\n", encoding="utf-8")
@@ -74,35 +74,35 @@ def test_nested_start_loads_each_ancestor_file_in_order(tmp_path: Path) -> None:
     leaf.mkdir()
     (leaf / "AGENTS.md").write_text("API RULES\n", encoding="utf-8")
 
-    text = agents_md_text(leaf)
+    text = _context.agents_md_text(leaf)
 
     assert text.index("ROOT RULES") < text.index("PACKAGE RULES") < text.index("API RULES")
     assert "packages/" in text and "packages/api/" in text
-    notice = " ".join(agents_md_notices(leaf))
+    notice = " ".join(_context.agents_md_notices(leaf))
     assert "2 ancestor" in notice and "this directory's" in notice
 
 
-def test_a_start_below_a_root_without_agents_md_labels_the_file(tmp_path: Path) -> None:
+def test_a_start_below_a_root_without_agents_md_labels_the_file(tmp_path: pathlib.Path) -> None:
     """A start below a root without AGENTS.md labels the file as a subdirectory's."""
     _git_repo(tmp_path)
     sub = tmp_path / "a"
     sub.mkdir()
     (sub / "AGENTS.md").write_text("A RULES\n", encoding="utf-8")
 
-    text = agents_md_text(sub)
+    text = _context.agents_md_text(sub)
 
     assert text.startswith("# AGENTS.md in a/ (this run's working directory)")
     assert text.endswith("A RULES\n")
 
 
-def test_repo_root_start_emits_no_subdir_notice(tmp_path: Path) -> None:
+def test_repo_root_start_emits_no_subdir_notice(tmp_path: pathlib.Path) -> None:
     _git_repo(tmp_path)
     (tmp_path / "AGENTS.md").write_text("ROOT RULES\n", encoding="utf-8")
-    assert agents_md_notices(tmp_path) == ()
+    assert _context.agents_md_notices(tmp_path) == ()
 
 
-def test_non_git_dir_reads_only_its_own_file(tmp_path: Path) -> None:
+def test_non_git_dir_reads_only_its_own_file(tmp_path: pathlib.Path) -> None:
     """`agent6 ask` runs outside git; the loader must not crash or wander."""
     (tmp_path / "AGENTS.md").write_text("LOCAL\n", encoding="utf-8")
-    assert agents_md_text(tmp_path) == "LOCAL\n"
-    assert agents_md_notices(tmp_path) == ()
+    assert _context.agents_md_text(tmp_path) == "LOCAL\n"
+    assert _context.agents_md_notices(tmp_path) == ()

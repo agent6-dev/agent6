@@ -11,19 +11,18 @@ so a pass cannot be vacuous.
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
 import tempfile
 import time
-from pathlib import Path
 
 import pytest
 
+from agent6 import kinds
 from agent6.config import Config
-from agent6.kinds import NetworkMode
-from agent6.sandbox.jail import SessionNetwork, spawn_in_jail
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.policy import jail_policy
-from agent6.tools.results import ExecResult
+from agent6.sandbox import jail
+from agent6.tools import dispatch, results
+from agent6.tools import policy as tools_policy
 
 pytestmark = pytest.mark.needs_namespaces
 
@@ -74,11 +73,13 @@ def test_a_self_connect_reads_as_refused() -> None:
     )
 
 
-def _net_of(cwd: Path, network: NetworkMode, session_net: SessionNetwork | None) -> str:
+def _net_of(
+    cwd: pathlib.Path, network: kinds.NetworkMode, session_net: jail.SessionNetwork | None
+) -> str:
     """The network namespace a child with this policy lands in."""
     argv = ("/usr/bin/python3", "-c", "import os;print(os.readlink('/proc/self/ns/net'))")
-    policy = jail_policy(cwd, Config(), "strict", argv, network=network)
-    proc = spawn_in_jail(
+    policy = tools_policy.jail_policy(cwd, Config(), "strict", argv, network=network)
+    proc = jail.spawn_in_jail(
         policy,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
@@ -89,15 +90,17 @@ def _net_of(cwd: Path, network: NetworkMode, session_net: SessionNetwork | None)
     return out.decode().strip()
 
 
-def test_private_children_share_one_network_and_none_children_do_not(tmp_path: Path) -> None:
+def test_private_children_share_one_network_and_none_children_do_not(
+    tmp_path: pathlib.Path,
+) -> None:
     """`private` is one namespace for every child that asks; `none` is a fresh one each time."""
-    net = SessionNetwork.open()
+    net = jail.SessionNetwork.open()
     try:
         first = _net_of(tmp_path, "session", net)
         second = _net_of(tmp_path, "session", net)
         alone_a = _net_of(tmp_path, "none", net)
         alone_b = _net_of(tmp_path, "none", net)
-        host = Path("/proc/self/ns/net").readlink().name
+        host = pathlib.Path("/proc/self/ns/net").readlink().name
         assert first and first == second, f"private children landed apart: {first} {second}"
         assert host not in first, "the session network IS the host network"
         assert first not in (alone_a, alone_b), "a `none` child joined the shared network"
@@ -107,9 +110,9 @@ def test_private_children_share_one_network_and_none_children_do_not(tmp_path: P
         net.close()
 
 
-def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: Path) -> None:
+def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: pathlib.Path) -> None:
     """The dev-server case in the jail: one child listens, one connects, neither leaves the box."""
-    net = SessionNetwork.open()
+    net = jail.SessionNetwork.open()
     listener = None
     try:
         script = (
@@ -118,8 +121,8 @@ def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: Path
             f"s.bind(('127.0.0.1',{_PORT}));s.listen(1);print('UP',flush=True);time.sleep(60)"
         )
         argv = ("/usr/bin/python3", "-u", "-c", script)
-        listener = spawn_in_jail(
-            jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+        listener = jail.spawn_in_jail(
+            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -141,8 +144,8 @@ def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: Path
             "    print('NO EGRESS',type(e).__name__)\n"
         )
         argv = ("/usr/bin/python3", "-c", probe)
-        client = spawn_in_jail(
-            jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+        client = jail.spawn_in_jail(
+            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -159,12 +162,12 @@ def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: Path
         net.close()
 
 
-def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: Path) -> None:
+def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: pathlib.Path) -> None:
     """`none` is not a weaker `private`.
 
     A server left on the default does not see the dev server the tools are sharing.
     """
-    net = SessionNetwork.open()
+    net = jail.SessionNetwork.open()
     listener = None
     try:
         script = (
@@ -173,8 +176,8 @@ def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: Path) -> N
             f"s.bind(('127.0.0.1',{_PORT + 1}));s.listen(1);print('UP',flush=True);time.sleep(60)"
         )
         argv = ("/usr/bin/python3", "-u", "-c", script)
-        listener = spawn_in_jail(
-            jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+        listener = jail.spawn_in_jail(
+            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -185,8 +188,8 @@ def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: Path) -> N
 
         probe = _connect_probe(_PORT + 1, "REACHED")
         argv = ("/usr/bin/python3", "-c", probe)
-        outsider = spawn_in_jail(
-            jail_policy(tmp_path, Config(), "strict", argv, network="none"),
+        outsider = jail.spawn_in_jail(
+            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="none"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -202,13 +205,15 @@ def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: Path) -> N
         net.close()
 
 
-def test_a_private_child_cannot_re_enter_a_network_after_the_run_drops_it(tmp_path: Path) -> None:
+def test_a_private_child_cannot_re_enter_a_network_after_the_run_drops_it(
+    tmp_path: pathlib.Path,
+) -> None:
     """The descriptors are the run's, not the child's.
 
     Nothing is inherited, and seccomp blocks setns anyway, so a child cannot rejoin or reach
     sideways.
     """
-    net = SessionNetwork.open()
+    net = jail.SessionNetwork.open()
     try:
         probe = (
             "import os\n"
@@ -220,8 +225,8 @@ def test_a_private_child_cannot_re_enter_a_network_after_the_run_drops_it(tmp_pa
             "print('SETNS',libc.setns(fd,0),ctypes.get_errno())\n"
         )
         argv = ("/usr/bin/python3", "-c", probe)
-        proc = spawn_in_jail(
-            jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+        proc = jail.spawn_in_jail(
+            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -239,36 +244,36 @@ def test_a_private_child_cannot_re_enter_a_network_after_the_run_drops_it(tmp_pa
 
 def test_the_network_is_the_runs_and_dies_with_it() -> None:
     """Closing the run's descriptors releases the namespace; nothing else holds it open."""
-    net = SessionNetwork.open()
+    net = jail.SessionNetwork.open()
     userns, netns = net.fds()
-    assert Path(f"/proc/self/fd/{userns}").exists()
+    assert pathlib.Path(f"/proc/self/fd/{userns}").exists()
     net.close()
-    assert not Path(f"/proc/self/fd/{netns}").exists(), "the run still holds its network"
+    assert not pathlib.Path(f"/proc/self/fd/{netns}").exists(), "the run still holds its network"
     net.close()  # idempotent: teardown runs on every exit path
 
 
 def test_a_private_policy_without_a_network_refuses_rather_than_running_alone(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """A child that asked for the shared network never silently gets its own.
 
     That failure would be invisible: the child would look confined and be isolated.
     """
-    from agent6.sandbox.jail import JailUnavailableError, run_in_jail
+    policy = tools_policy.jail_policy(
+        tmp_path, Config(), "strict", ("/usr/bin/true",), network="session"
+    )
+    with pytest.raises(jail.JailUnavailableError, match="session"):
+        jail.run_in_jail(policy)
 
-    policy = jail_policy(tmp_path, Config(), "strict", ("/usr/bin/true",), network="session")
-    with pytest.raises(JailUnavailableError, match="session"):
-        run_in_jail(policy)
 
-
-def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: Path) -> None:
+def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: pathlib.Path) -> None:
     """A run whose commands and servers all take the host network creates no holder."""
-    from agent6.app._setup import wants_session_network
+    from agent6.app import _setup
 
     host_only = Config.model_validate({"sandbox": {"network": "host"}})
-    assert not wants_session_network(host_only, "strict")
-    assert not wants_session_network(Config(), "hardened"), "hardened has none to give"
-    assert wants_session_network(Config(), "strict"), "the default puts commands on one"
+    assert not _setup.wants_session_network(host_only, "strict")
+    assert not _setup.wants_session_network(Config(), "hardened"), "hardened has none to give"
+    assert _setup.wants_session_network(Config(), "strict"), "the default puts commands on one"
 
     with_server = Config.model_validate(
         {
@@ -279,17 +284,17 @@ def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: Path
             },
         }
     )
-    assert wants_session_network(with_server, "strict"), "a private server needs one too"
+    assert _setup.wants_session_network(with_server, "strict"), "a private server needs one too"
 
 
-def test_the_dev_server_case_end_to_end(tmp_path: Path) -> None:
+def test_the_dev_server_case_end_to_end(tmp_path: pathlib.Path) -> None:
     """A background dev server answers the next command, and the run still has no egress.
 
     What the feature is for, through the dispatcher a run uses.
     """
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
-    sess = Path(tempfile.mkdtemp(prefix="privnet-", dir=tmp_path))
-    d = ToolDispatcher(
+    sess = pathlib.Path(tempfile.mkdtemp(prefix="privnet-", dir=tmp_path))
+    d = dispatch.ToolDispatcher(
         root=tmp_path, config=cfg, isolation="strict", session_dir=sess, use_jail_session=True
     )
     try:
@@ -311,7 +316,7 @@ def test_the_dev_server_case_end_to_end(tmp_path: Path) -> None:
                 ]
             },
         )
-        assert isinstance(got, ExecResult)
+        assert isinstance(got, results.ExecResult)
         assert got.returncode == 0 and "200" in got.stdout, (got.returncode, got.stderr[-300:])
         out = d.dispatch(
             "run_command",
@@ -323,14 +328,14 @@ def test_the_dev_server_case_end_to_end(tmp_path: Path) -> None:
                 ]
             },
         )
-        assert isinstance(out, ExecResult)
+        assert isinstance(out, results.ExecResult)
         assert out.returncode != 0, "the run's session network reached the internet"
     finally:
         d.close()
 
 
 def test_a_launcher_that_never_reports_ready_is_refused_not_waited_on(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A launcher too old to know `--hold-netns` is refused within a bound, naming the likely cause.
 
@@ -338,8 +343,6 @@ def test_a_launcher_that_never_reports_ready_is_refused_not_waited_on(
     with nothing to explain it. Reading its stderr to EOF hangs the same way when it left a
     child on the pipe, so that read is bounded too; this fake keeps one alive to prove it.
     """
-    from agent6.sandbox.jail import JailUnavailableError
-
     fake = tmp_path / "stale-jail"
     fake.write_text("#!/bin/sh\ncat > /dev/null\n", encoding="utf-8")
     fake.chmod(0o755)
@@ -347,20 +350,20 @@ def test_a_launcher_that_never_reports_ready_is_refused_not_waited_on(
     monkeypatch.setattr("agent6.sandbox.jail._HOLDER_READY_TIMEOUT_S", 1.0)
 
     started = time.monotonic()
-    with pytest.raises(JailUnavailableError, match="stale AGENT6_JAIL_BIN"):
-        SessionNetwork.open()
+    with pytest.raises(jail.JailUnavailableError, match="stale AGENT6_JAIL_BIN"):
+        jail.SessionNetwork.open()
     assert time.monotonic() - started < 20.0, "the run hung on the handshake"
 
 
 def test_a_private_server_gets_one_even_when_the_commands_are_on_the_host(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """`sandbox.network = "host"` with one private server is a session network with one member.
 
     `private` means the same thing however many children ask for it, so there is no
     cross-key refusal to write.
     """
-    from agent6.app._setup import mcp_server_policy, wants_session_network
+    from agent6.app import _setup
 
     cfg = Config.model_validate(
         {
@@ -371,10 +374,10 @@ def test_a_private_server_gets_one_even_when_the_commands_are_on_the_host(
             },
         }
     )
-    assert wants_session_network(cfg, "strict")
-    server = mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["b"])
+    assert _setup.wants_session_network(cfg, "strict")
+    server = _setup.mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["b"])
     assert server is not None and server.network == "session"
-    command = jail_policy(tmp_path, cfg, "strict", ("true",))
+    command = tools_policy.jail_policy(tmp_path, cfg, "strict", ("true",))
     assert command.network == "host", "the operator put the commands on the host network"
 
 
@@ -412,7 +415,7 @@ for line in sys.stdin:
     [("session", True, False), ("auto", False, False), ("host", False, True)],
 )
 def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
-    tmp_path: Path, server_network: str, sees_dev_server: bool, sees_host: bool
+    tmp_path: pathlib.Path, server_network: str, sees_dev_server: bool, sees_host: bool
 ) -> None:
     """A server sees exactly one of two real listeners, and `auto` sees neither.
 
@@ -424,8 +427,8 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
     import socketserver
     import threading
 
-    from agent6.app._setup import mcp_server_policy, wants_session_network
-    from agent6.tools.mcp_client import MCPManager, MCPServerSpec
+    from agent6.app import _setup
+    from agent6.tools import mcp_client
 
     script = tmp_path / "browser_server.py"
     script.write_text(_BROWSER_SERVER, encoding="utf-8")
@@ -450,22 +453,22 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
     host_port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
-    net = SessionNetwork.open() if wants_session_network(cfg, "strict") else None
+    net = jail.SessionNetwork.open() if _setup.wants_session_network(cfg, "strict") else None
     srv = cfg.mcp.servers["browser"]
-    mgr = MCPManager.start(
+    mgr = mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            mcp_client.MCPServerSpec(
                 name="browser",
                 command=srv.command,
                 startup_timeout_s=15.0,
                 call_timeout_s=20.0,
-                policy=mcp_server_policy(cfg, tmp_path, "strict", srv),
+                policy=_setup.mcp_server_policy(cfg, tmp_path, "strict", srv),
             )
         ],
         session_net=net,
     )
-    sess = Path(tempfile.mkdtemp(prefix="browser-", dir=tmp_path))
-    d = ToolDispatcher(
+    sess = pathlib.Path(tempfile.mkdtemp(prefix="browser-", dir=tmp_path))
+    d = dispatch.ToolDispatcher(
         root=tmp_path,
         config=cfg,
         isolation="strict",
@@ -498,18 +501,20 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
         httpd.server_close()
 
 
-def test_members_of_the_private_network_cannot_see_or_signal_each_other(tmp_path: Path) -> None:
+def test_members_of_the_private_network_cannot_see_or_signal_each_other(
+    tmp_path: pathlib.Path,
+) -> None:
     """Members of a shared network still cannot name or signal a sibling.
 
     Sharing a network means sharing a user namespace (entering one needs capabilities in its
     owner); each member still unshares its own PID namespace.
     """
-    net = SessionNetwork.open()
+    net = jail.SessionNetwork.open()
     victim = None
     try:
         argv = ("/usr/bin/python3", "-u", "-c", "import time;print('UP',flush=True);time.sleep(60)")
-        victim = spawn_in_jail(
-            jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+        victim = jail.spawn_in_jail(
+            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -531,8 +536,8 @@ def test_members_of_the_private_network_cannot_see_or_signal_each_other(tmp_path
             "print('SIGNALABLE', hits)\n"
         )
         argv = ("/usr/bin/python3", "-c", probe)
-        attacker = spawn_in_jail(
-            jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+        attacker = jail.spawn_in_jail(
+            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -550,7 +555,7 @@ def test_members_of_the_private_network_cannot_see_or_signal_each_other(tmp_path
         net.close()
 
 
-def test_two_runs_can_each_hold_the_same_port(tmp_path: Path) -> None:
+def test_two_runs_can_each_hold_the_same_port(tmp_path: pathlib.Path) -> None:
     """Two runs each start a dev server on the conventional port without colliding.
 
     A property of per-run networks people lean on; neither collides with the other or with
@@ -568,11 +573,11 @@ def test_two_runs_can_each_hold_the_same_port(tmp_path: Path) -> None:
         f"'http://127.0.0.1:{port}/', timeout=4).status)"
     )
     runs = [
-        ToolDispatcher(
+        dispatch.ToolDispatcher(
             root=tmp_path,
             config=cfg,
             isolation="strict",
-            session_dir=Path(tempfile.mkdtemp(prefix=f"run{i}-", dir=tmp_path)),
+            session_dir=pathlib.Path(tempfile.mkdtemp(prefix=f"run{i}-", dir=tmp_path)),
             use_jail_session=True,
         )
         for i in (1, 2)
@@ -585,7 +590,7 @@ def test_two_runs_can_each_hold_the_same_port(tmp_path: Path) -> None:
         time.sleep(2.5)
         for i, run in enumerate(runs, 1):
             got = run.dispatch("run_command", {"argv": ["/usr/bin/python3", "-c", check]})
-            assert isinstance(got, ExecResult)
+            assert isinstance(got, results.ExecResult)
             assert got.returncode == 0 and "200" in got.stdout, (
                 f"run {i} could not reach its own dev server: {got.stderr[-200:]}"
             )
@@ -594,12 +599,12 @@ def test_two_runs_can_each_hold_the_same_port(tmp_path: Path) -> None:
             run.close()
 
 
-def test_a_member_cannot_retune_the_network_everyone_shares(tmp_path: Path) -> None:
+def test_a_member_cannot_retune_the_network_everyone_shares(tmp_path: pathlib.Path) -> None:
     """The jail's read-only /proc refuses a sysctl write.
 
     Sharing a network namespace shares its sysctls, so tampering would hurt every sibling.
     """
-    net = SessionNetwork.open()
+    net = jail.SessionNetwork.open()
     try:
         probe = (
             "import pathlib\n"
@@ -612,8 +617,8 @@ def test_a_member_cannot_retune_the_network_everyone_shares(tmp_path: Path) -> N
             "    print('REFUSED', type(exc).__name__)\n"
         )
         argv = ("/usr/bin/python3", "-c", probe)
-        proc = spawn_in_jail(
-            jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+        proc = jail.spawn_in_jail(
+            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -628,20 +633,20 @@ def test_a_member_cannot_retune_the_network_everyone_shares(tmp_path: Path) -> N
         net.close()
 
 
-def test_joining_a_network_costs_no_other_layer(tmp_path: Path) -> None:
+def test_joining_a_network_costs_no_other_layer(tmp_path: pathlib.Path) -> None:
     """A joined child is as confined as an unjoined one.
 
     Entering someone else's user namespace instead of making its own is the one thing that
     could quietly weaken the rest; the private dirs are still masked, the host is still
     read-only, and it is still PID 2 in a namespace of its own.
     """
-    from agent6.paths import private_dirs
+    from agent6 import paths
 
-    net = SessionNetwork.open()
+    net = jail.SessionNetwork.open()
     try:
         probe = (
             "import os, pathlib\n"
-            f"p = pathlib.Path({str(private_dirs()[0])!r})\n"
+            f"p = pathlib.Path({str(paths.private_dirs()[0])!r})\n"
             "print('SECRETS', 'VISIBLE' if p.exists() and any(p.iterdir()) else 'MASKED')\n"
             "try:\n"
             "    pathlib.Path('/etc/agent6-escape-probe').write_text('x')\n"
@@ -651,8 +656,8 @@ def test_joining_a_network_costs_no_other_layer(tmp_path: Path) -> None:
             "print('PID', os.getpid())\n"
         )
         argv = ("/usr/bin/python3", "-c", probe)
-        proc = spawn_in_jail(
-            jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+        proc = jail.spawn_in_jail(
+            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -663,12 +668,12 @@ def test_joining_a_network_costs_no_other_layer(tmp_path: Path) -> None:
         assert "SECRETS MASKED" in text, f"a joined child saw agent6's private dirs: {text}"
         assert "ETC WRITABLE" not in text, f"a joined child wrote the host: {text}"
         assert "PID 2" in text, f"a joined child kept the host PID namespace: {text}"
-        assert not Path("/etc/agent6-escape-probe").exists()
+        assert not pathlib.Path("/etc/agent6-escape-probe").exists()
     finally:
         net.close()
 
 
-def test_closing_a_network_releases_every_descriptor(tmp_path: Path) -> None:
+def test_closing_a_network_releases_every_descriptor(tmp_path: pathlib.Path) -> None:
     """A run's network costs nothing once the run ends.
 
     The holder is a live process with pipes; `close()` releases the two namespace
@@ -678,10 +683,10 @@ def test_closing_a_network_releases_every_descriptor(tmp_path: Path) -> None:
     """
 
     def open_fds() -> int:
-        return len(list(Path("/proc/self/fd").iterdir()))
+        return len(list(pathlib.Path("/proc/self/fd").iterdir()))
 
     baseline = open_fds()
-    held = [SessionNetwork.open() for _ in range(8)]
+    held = [jail.SessionNetwork.open() for _ in range(8)]
     assert open_fds() > baseline, "the probe is not measuring anything"
     for net in held:
         net.close()
@@ -690,7 +695,7 @@ def test_closing_a_network_releases_every_descriptor(tmp_path: Path) -> None:
     )
 
 
-def test_one_runs_network_cannot_reach_another_runs(tmp_path: Path) -> None:
+def test_one_runs_network_cannot_reach_another_runs(tmp_path: pathlib.Path) -> None:
     """Runs are isolated from each other, not just from the machine.
 
     Two runs on one box (two `--parallel` lanes, or two terminals) each get a network of
@@ -698,7 +703,7 @@ def test_one_runs_network_cannot_reach_another_runs(tmp_path: Path) -> None:
     agent6 and the same user.
     """
     port = _PORT + 5
-    first, second = SessionNetwork.open(), SessionNetwork.open()
+    first, second = jail.SessionNetwork.open(), jail.SessionNetwork.open()
     listener = None
     try:
         script = (
@@ -706,8 +711,8 @@ def test_one_runs_network_cannot_reach_another_runs(tmp_path: Path) -> None:
             "s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1);"
             f"s.bind(('127.0.0.1',{port}));s.listen(1);print('UP',flush=True);time.sleep(60)"
         )
-        listener = spawn_in_jail(
-            jail_policy(
+        listener = jail.spawn_in_jail(
+            tools_policy.jail_policy(
                 tmp_path,
                 Config(),
                 "strict",
@@ -723,8 +728,8 @@ def test_one_runs_network_cannot_reach_another_runs(tmp_path: Path) -> None:
         assert b"UP" in listener.stdout.readline()
 
         probe = _connect_probe(port, "REACHED")
-        intruder = spawn_in_jail(
-            jail_policy(
+        intruder = jail.spawn_in_jail(
+            tools_policy.jail_policy(
                 tmp_path, Config(), "strict", ("/usr/bin/python3", "-c", probe), network="session"
             ),
             stdin=subprocess.DEVNULL,

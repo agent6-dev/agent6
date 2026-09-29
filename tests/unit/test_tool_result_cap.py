@@ -19,34 +19,29 @@ from __future__ import annotations
 
 import json
 
-from agent6.harness._compaction import (
-    TOOL_RESULT_CAP_BYTES as _TOOL_RESULT_CAP_BYTES,
-)
-from agent6.harness._compaction import (
-    cap_tool_result as _cap_tool_result,
-)
+from agent6.harness import _compaction
 
 
 def test_small_payload_passes_through_unchanged() -> None:
     payload = json.dumps({"content": "hello", "size": 5})
-    assert _cap_tool_result(payload, tool_name="read_file") == payload
+    assert _compaction.cap_tool_result(payload, tool_name="read_file") == payload
 
 
 def test_payload_at_cap_passes_through_unchanged() -> None:
-    payload = "x" * _TOOL_RESULT_CAP_BYTES
-    assert _cap_tool_result(payload, tool_name="read_file") == payload
+    payload = "x" * _compaction.TOOL_RESULT_CAP_BYTES
+    assert _compaction.cap_tool_result(payload, tool_name="read_file") == payload
 
 
 def test_oversized_read_file_payload_yields_valid_truncation_envelope() -> None:
     """A capped read_file result is valid JSON with an explicit truncation signal."""
-    big = "A" * (_TOOL_RESULT_CAP_BYTES * 2)
+    big = "A" * (_compaction.TOOL_RESULT_CAP_BYTES * 2)
     raw = json.dumps({"content": big, "size": len(big), "lines_total": 1})
-    capped = _cap_tool_result(raw, tool_name="read_file")
+    capped = _compaction.cap_tool_result(raw, tool_name="read_file")
     parsed = json.loads(capped)  # must be valid JSON, no mid-string cut
     assert parsed["_tool_result_truncated"] is True
     assert parsed["tool"] == "read_file"
     assert parsed["total_chars"] == len(raw)
-    assert parsed["shown_chars"] <= _TOOL_RESULT_CAP_BYTES
+    assert parsed["shown_chars"] <= _compaction.TOOL_RESULT_CAP_BYTES
     assert "start_line" in parsed["guidance"]
     assert "limit" in parsed["guidance"]
     # Head should be a prefix of the original raw payload so the model
@@ -55,8 +50,8 @@ def test_oversized_read_file_payload_yields_valid_truncation_envelope() -> None:
 
 
 def test_oversized_run_command_payload_guidance_points_at_narrowing() -> None:
-    big = "B" * (_TOOL_RESULT_CAP_BYTES + 1)
-    capped = _cap_tool_result(big, tool_name="run_command")
+    big = "B" * (_compaction.TOOL_RESULT_CAP_BYTES + 1)
+    capped = _compaction.cap_tool_result(big, tool_name="run_command")
     parsed = json.loads(capped)
     assert parsed["_tool_result_truncated"] is True
     assert "narrower" in parsed["guidance"] or "narrower scope" in parsed["guidance"]
@@ -69,24 +64,24 @@ def test_cap_total_envelope_size_stays_under_cap() -> None:
     escape-heavy content (118k chars emitted against the 60k cap).
     """
     for big in (
-        "C" * (_TOOL_RESULT_CAP_BYTES * 5),  # no escaping: raw == encoded
-        '"\\' * (_TOOL_RESULT_CAP_BYTES * 2),  # every char doubles when encoded
+        "C" * (_compaction.TOOL_RESULT_CAP_BYTES * 5),  # no escaping: raw == encoded
+        '"\\' * (_compaction.TOOL_RESULT_CAP_BYTES * 2),  # every char doubles when encoded
         ('He said "use \\n"\n' * 20_000),  # mixed quotes/backslashes/newlines
     ):
-        capped = _cap_tool_result(big, tool_name="grep")
-        assert len(capped.encode()) <= _TOOL_RESULT_CAP_BYTES
+        capped = _compaction.cap_tool_result(big, tool_name="grep")
+        assert len(capped.encode()) <= _compaction.TOOL_RESULT_CAP_BYTES
         parsed = json.loads(capped)  # still a well-formed envelope
         assert parsed["_tool_result_truncated"] is True
         assert parsed["total_chars"] == len(big)
         # A useful amount of head survives; big.startswith proves it is a
         # clean prefix, not a mid-escape cut.
-        assert parsed["shown_chars"] > _TOOL_RESULT_CAP_BYTES // 4
+        assert parsed["shown_chars"] > _compaction.TOOL_RESULT_CAP_BYTES // 4
         assert big.startswith(parsed["head"])
 
 
 def test_truncation_envelope_for_unknown_tool_still_well_formed() -> None:
-    big = "D" * (_TOOL_RESULT_CAP_BYTES + 100)
-    capped = _cap_tool_result(big, tool_name="some_new_tool")
+    big = "D" * (_compaction.TOOL_RESULT_CAP_BYTES + 100)
+    capped = _compaction.cap_tool_result(big, tool_name="some_new_tool")
     parsed = json.loads(capped)
     assert parsed["tool"] == "some_new_tool"
     assert parsed["_tool_result_truncated"] is True
@@ -95,8 +90,8 @@ def test_truncation_envelope_for_unknown_tool_still_well_formed() -> None:
 def test_the_cap_is_a_parameter() -> None:
     """A provider with a tighter window gets a tighter bound through the same envelope."""
     content = json.dumps({"content": "x" * 3_000})
-    assert _cap_tool_result(content, tool_name="read_file") == content
-    capped = _cap_tool_result(content, tool_name="read_file", cap=2_000)
+    assert _compaction.cap_tool_result(content, tool_name="read_file") == content
+    capped = _compaction.cap_tool_result(content, tool_name="read_file", cap=2_000)
     assert len(capped) <= 2_000 and json.loads(capped) != json.loads(content)
 
 
@@ -107,7 +102,7 @@ def test_the_cap_is_a_byte_budget() -> None:
     persistence threshold as a fatal provider error.
     """
     wide = "\u6f22" * 45_000
-    capped = _cap_tool_result(wide, tool_name="read_file", cap=49_000)
+    capped = _compaction.cap_tool_result(wide, tool_name="read_file", cap=49_000)
     assert len(capped.encode()) <= 49_000
     parsed = json.loads(capped)
     assert parsed["_tool_result_truncated"] is True

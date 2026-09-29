@@ -9,7 +9,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from agent6.tools.http_body import BodyRefusedError, read_capped
+from agent6.tools import http_body
 
 
 class _Response:
@@ -30,11 +30,18 @@ def test_the_read_refuses_compression_a_cap_and_a_dribble() -> None:
     A server dribbling a byte at a time cannot hold `skills install` open.
     """
     later = time.monotonic() + 5
-    assert read_capped(_Response([b"ab", b"c"]), cap=3, deadline=later, timeout_s=5) == b"abc"
-    with pytest.raises(BodyRefusedError, match="content-encoding 'gzip'"):
-        read_capped(_Response([b"x"], encoding="gzip"), cap=3, deadline=later, timeout_s=5)
-    with pytest.raises(BodyRefusedError, match="larger than 3 bytes"):
-        read_capped(_Response([b"ab", b"cd"]), cap=3, deadline=later, timeout_s=5)
-    with pytest.raises(BodyRefusedError, match=r"still arriving after 0\.01s"):
+    assert (
+        http_body.read_capped(_Response([b"ab", b"c"]), cap=3, deadline=later, timeout_s=5)
+        == b"abc"
+    )
+    with pytest.raises(http_body.BodyRefusedError, match="content-encoding 'gzip'"):
+        http_body.read_capped(
+            _Response([b"x"], encoding="gzip"), cap=3, deadline=later, timeout_s=5
+        )
+    with pytest.raises(http_body.BodyRefusedError, match="larger than 3 bytes"):
+        http_body.read_capped(_Response([b"ab", b"cd"]), cap=3, deadline=later, timeout_s=5)
+    with pytest.raises(http_body.BodyRefusedError, match=r"still arriving after 0\.01s"):
         soon = time.monotonic() + 0.01
-        read_capped(_Response([b"a", b"b"], slow=0.02), cap=9, deadline=soon, timeout_s=0.01)
+        http_body.read_capped(
+            _Response([b"a", b"b"], slow=0.02), cap=9, deadline=soon, timeout_s=0.01
+        )

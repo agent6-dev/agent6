@@ -16,20 +16,15 @@ from __future__ import annotations
 
 import copy
 import json
-from pathlib import Path
-from types import SimpleNamespace
+import pathlib
+import types
 from typing import Any
 
-from agent6.harness._chain import RunChain
-from agent6.harness._compaction import CompactionSettings
-from agent6.harness._conversation import Conversation
-from agent6.harness._operator import OperatorBridge
-from agent6.harness.loop import Harness
+from agent6.harness import _chain, _compaction, _conversation, _operator, loop
 from agent6.providers import ProviderResponse
-from agent6.tools.mcp_client import MCPToolDescriptor
-from agent6.tools.results import ExecResult, RawResult, ToolResult
+from agent6.tools import mcp_client, results
 
-_GOLDEN = Path(__file__).parent / "data" / "golden_loop_wire.json"
+_GOLDEN = pathlib.Path(__file__).parent / "data" / "golden_loop_wire.json"
 
 _TASK = "Fix the parser bug in a.md"
 
@@ -45,7 +40,7 @@ class _StubDispatcher:
     def available_tool_names(self) -> tuple[str, ...]:
         return ()
 
-    def mcp_descriptors(self) -> tuple[MCPToolDescriptor, ...]:
+    def mcp_descriptors(self) -> tuple[mcp_client.MCPToolDescriptor, ...]:
         """No MCP servers, so nothing to add to the per-turn tool list."""
         return ()
 
@@ -96,7 +91,7 @@ def _resp(
 class _WorkerScript:
     """Scripted worker provider capturing each call's messages and the pre-call loop_state bytes."""
 
-    def __init__(self, responses: list[ProviderResponse], snap_path: Path) -> None:
+    def __init__(self, responses: list[ProviderResponse], snap_path: pathlib.Path) -> None:
         self._responses = responses
         self._snap_path = snap_path
         self.captured: list[dict[str, str]] = []
@@ -142,15 +137,15 @@ class _Dispatcher(_StubDispatcher):
         return None
 
     def resolved_skills(self) -> Any:  # pragma: no cover - not used by _drive_loop
-        return SimpleNamespace(warnings=[], enabled=[], always=[])
+        return types.SimpleNamespace(warnings=[], enabled=[], always=[])
 
-    def dispatch(self, name: str, tool_input: dict[str, Any]) -> ToolResult:
+    def dispatch(self, name: str, tool_input: dict[str, Any]) -> results.ToolResult:
         if name == "read_file":
             path = str(tool_input.get("path", ""))
             body = {"a.md": "A" * 4000, "b.md": "B" * 600}[path]
-            return RawResult({"content": body, "size": len(body)})
+            return results.RawResult({"content": body, "size": len(body)})
         if name == "run_verify_command":
-            return ExecResult(
+            return results.ExecResult(
                 returncode=1,
                 stdout="",
                 stderr="sh: 1: pytest: command not found",
@@ -159,9 +154,9 @@ class _Dispatcher(_StubDispatcher):
             )
         if name == "list_dir":
             self._compact_flag[0] = True
-            return RawResult({"entries": ["b.md"]})
+            return results.RawResult({"entries": ["b.md"]})
         if name == "finish_session":
-            return RawResult({"acknowledged": True})
+            return results.RawResult({"acknowledged": True})
         raise AssertionError(f"unexpected tool: {name}")
 
 
@@ -182,8 +177,8 @@ class _SteerOnce:
 
 
 def _config() -> Any:
-    return SimpleNamespace(
-        harness=SimpleNamespace(
+    return types.SimpleNamespace(
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -195,8 +190,10 @@ def _config() -> Any:
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
-        prompt=SimpleNamespace(decompose="off"),
-        git=SimpleNamespace(commit=SimpleNamespace(checkpoint=SimpleNamespace(message="agent6"))),
+        prompt=types.SimpleNamespace(decompose="off"),
+        git=types.SimpleNamespace(
+            commit=types.SimpleNamespace(checkpoint=types.SimpleNamespace(message="agent6"))
+        ),
     )
 
 
@@ -222,7 +219,7 @@ _RESPONSES = [
 ]
 
 
-def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
+def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
     snap_path = tmp_dir / "loop_state.json"
     compact_flag = [False]
     worker = _WorkerScript(list(_RESPONSES), snap_path)
@@ -239,18 +236,18 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
     def _compact_clear() -> None:
         compact_flag[0] = False
 
-    wf = Harness(
-        chain=RunChain(tmp_dir),
+    wf = loop.Harness(
+        chain=_chain.RunChain(tmp_dir),
         config=_config(),
         provider=worker,  # type: ignore[arg-type]
         dispatcher=_Dispatcher(compact_flag),  # type: ignore[arg-type]
         logger=lambda _msg: None,
-        compaction=CompactionSettings(
+        compaction=_compaction.CompactionSettings(
             summariser=summariser,  # type: ignore[arg-type]
             drop_at_chars=2_000,
         ),
         resume_state_path=snap_path,
-        bridge=OperatorBridge(
+        bridge=_operator.OperatorBridge(
             steer_requested=steer.requested,
             steer_prompt=steer.prompt,
             steer_clear=steer.clear,
@@ -261,7 +258,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
     initial = {"role": "user", "content": [{"type": "text", "text": f"TASK:\n{_TASK}\n\nBegin."}]}
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="SYSTEM",
-        conversation=Conversation.from_wire([initial]),
+        conversation=_conversation.Conversation.from_wire([initial]),
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -284,13 +281,13 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
         ],
         resume_snap,
     )
-    wf2 = Harness(
-        chain=RunChain(tmp_dir),
+    wf2 = loop.Harness(
+        chain=_chain.RunChain(tmp_dir),
         config=_config(),
         provider=resume_worker,  # type: ignore[arg-type]
         dispatcher=_Dispatcher([False]),  # type: ignore[arg-type]
         logger=lambda _msg: None,
-        compaction=CompactionSettings(drop_at_chars=2_000),
+        compaction=_compaction.CompactionSettings(drop_at_chars=2_000),
         resume_state_path=resume_snap,
     )
     resumed = wf2.resume()
@@ -305,7 +302,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
     }
 
 
-def test_loop_wire_matches_golden(tmp_path: Path) -> None:
+def test_loop_wire_matches_golden(tmp_path: pathlib.Path) -> None:
     got = _run_scenario(tmp_path)
     want = json.loads(_GOLDEN.read_text(encoding="utf-8"))
     # Compare piecewise so a mismatch names the drifted surface, not a wall.
@@ -318,7 +315,7 @@ def test_loop_wire_matches_golden(tmp_path: Path) -> None:
     assert got["resume_call"] == want["resume_call"]
 
 
-def test_scenario_exercises_the_shaping_paths(tmp_path: Path) -> None:
+def test_scenario_exercises_the_shaping_paths(tmp_path: pathlib.Path) -> None:
     """Guard the scenario itself: the pin is only as strong as what the run walked through."""
     got = _run_scenario(tmp_path)
     calls = [json.loads(c["messages"]) for c in got["worker_calls"]]
@@ -359,7 +356,7 @@ def _regenerate() -> None:
     import tempfile
 
     with tempfile.TemporaryDirectory() as td:
-        got = _run_scenario(Path(td))
+        got = _run_scenario(pathlib.Path(td))
     _GOLDEN.write_text(json.dumps(got, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 

@@ -5,24 +5,16 @@
 from __future__ import annotations
 
 import contextlib
+import pathlib
 import subprocess
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
+from http import server
 
 import pytest
 
-from agent6.config.write import set_config_value
-from agent6.errors import OperatorError
-from agent6.ui.cli.skills_cmds import (
-    _cmd_skills_disable,  # pyright: ignore[reportPrivateUsage]
-    _cmd_skills_enable,  # pyright: ignore[reportPrivateUsage]
-    _cmd_skills_install,  # pyright: ignore[reportPrivateUsage]
-    _cmd_skills_list,  # pyright: ignore[reportPrivateUsage]
-    _cmd_skills_remove,  # pyright: ignore[reportPrivateUsage]
-    _cmd_skills_update,  # pyright: ignore[reportPrivateUsage]
-    resolved_skill_names_for_completion,
-)
+from agent6 import errors
+from agent6.config import write
+from agent6.ui.cli import skills_cmds as cli_skills_cmds
 
 SKILL_MD = """---
 name: {name}
@@ -34,7 +26,7 @@ Body of {name}.
 
 
 @pytest.fixture
-def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     """Hermetic data/config/state homes; returns the tmp root."""
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -43,27 +35,29 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def _write_skill_file(path: Path, name: str) -> Path:
+def _write_skill_file(path: pathlib.Path, name: str) -> pathlib.Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(SKILL_MD.format(name=name), encoding="utf-8")
     return path
 
 
-def _installed(tmp_path: Path, name: str) -> Path:
+def _installed(tmp_path: pathlib.Path, name: str) -> pathlib.Path:
     return tmp_path / "data" / "agent6" / "skills" / name
 
 
 class TestInstall:
-    def test_local_skill_md_file(self, env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_local_skill_md_file(
+        self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
-        assert _cmd_skills_install(str(src), force=False) == 0
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
         assert (_installed(env, "tidy") / "SKILL.md").is_file()
         assert (_installed(env, "tidy") / ".origin.toml").is_file()
         out = capsys.readouterr().out
         assert "Installed tidy" in out
         assert "Use when testing tidy." in out
 
-    def test_traversing_frontmatter_name_refused(self, env: Path) -> None:
+    def test_traversing_frontmatter_name_refused(self, env: pathlib.Path) -> None:
         """The install target is `<skills>/<name>` (and, under --force, an rmtree target).
 
         A SKILL.md `name` with `..` or an absolute path from an untrusted source must be refused,
@@ -78,21 +72,21 @@ class TestInstall:
             "---\nname: ../../precious\ndescription: evil traversal skill.\n---\nbody\n",
             encoding="utf-8",
         )
-        with pytest.raises(OperatorError, match="invalid skill name"):
-            _cmd_skills_install(str(src), force=True)
+        with pytest.raises(errors.OperatorError, match="invalid skill name"):
+            cli_skills_cmds._cmd_skills_install(str(src), force=True)
         assert (outside / "keep.txt").read_text() == "do not delete"  # untouched
 
-    def test_local_repo_with_skills_dir(self, env: Path) -> None:
+    def test_local_repo_with_skills_dir(self, env: pathlib.Path) -> None:
         repo = env / "pack"
         _write_skill_file(repo / "skills" / "aa" / "SKILL.md", "aa")
         _write_skill_file(repo / "skills" / "bb" / "SKILL.md", "bb")
         (repo / "skills" / "aa" / "references").mkdir()
         (repo / "skills" / "aa" / "references" / "x.md").write_text("REF\n", encoding="utf-8")
-        assert _cmd_skills_install(str(repo), force=False) == 0
+        assert cli_skills_cmds._cmd_skills_install(str(repo), force=False) == 0
         assert (_installed(env, "aa") / "references" / "x.md").read_text() == "REF\n"
         assert (_installed(env, "bb") / "SKILL.md").is_file()
 
-    def test_git_repo_install(self, env: Path) -> None:
+    def test_git_repo_install(self, env: pathlib.Path) -> None:
         repo = env / "gitpack"
         _write_skill_file(repo / "skills" / "gg" / "SKILL.md", "gg")
         subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
@@ -102,13 +96,13 @@ class TestInstall:
         subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
         # a git URL that is not an existing local path exercises the clone path;
         # file:// URLs hit git's local transport, no network involved
-        assert _cmd_skills_install(f"file://{repo}", force=False) == 0
+        assert cli_skills_cmds._cmd_skills_install(f"file://{repo}", force=False) == 0
         assert (_installed(env, "gg") / "SKILL.md").is_file()
         origin = (_installed(env, "gg") / ".origin.toml").read_text()
         assert 'kind = "git"' in origin
         assert "source_sha" in origin
 
-    def test_a_symlinked_skill_file_is_not_installed_as_its_target(self, env: Path) -> None:
+    def test_a_symlinked_skill_file_is_not_installed_as_its_target(self, env: pathlib.Path) -> None:
         """`copytree` defaults to `symlinks=False`, which copies the CONTENT a link points at.
 
         A skill shipping `reference.md -> secrets.toml` then installs as a real file holding the
@@ -124,7 +118,7 @@ class TestInstall:
         (src / "reference.md").symlink_to(secrets)
         (src / "refs").symlink_to(secrets.parent, target_is_directory=True)
 
-        assert _cmd_skills_install(str(src), force=False) == 0
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
 
         installed = _installed(env, "leaky")
         real_files = [p for p in installed.rglob("*") if p.is_file() and not p.is_symlink()]
@@ -136,21 +130,21 @@ class TestInstall:
         assert (installed / "reference.md").is_symlink()
         assert (installed / "refs").is_symlink()
 
-    def test_conflict_refused_then_forced(self, env: Path) -> None:
+    def test_conflict_refused_then_forced(self, env: pathlib.Path) -> None:
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
-        assert _cmd_skills_install(str(src), force=False) == 0
-        with pytest.raises(OperatorError, match="already installed"):
-            _cmd_skills_install(str(src), force=False)
-        assert _cmd_skills_install(str(src), force=True) == 0
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
+        with pytest.raises(errors.OperatorError, match="already installed"):
+            cli_skills_cmds._cmd_skills_install(str(src), force=False)
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=True) == 0
 
-    def test_missing_frontmatter_rejected(self, env: Path) -> None:
+    def test_missing_frontmatter_rejected(self, env: pathlib.Path) -> None:
         bad = env / "bad.md"
         bad.write_text("no frontmatter\n", encoding="utf-8")
-        with pytest.raises(OperatorError, match="frontmatter"):
-            _cmd_skills_install(str(bad), force=False)
+        with pytest.raises(errors.OperatorError, match="frontmatter"):
+            cli_skills_cmds._cmd_skills_install(str(bad), force=False)
 
     def test_unreadable_source_refuses_in_the_shared_voice(
-        self, env: Path, capsys: pytest.CaptureFixture[str]
+        self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """`skills install` refuses an unreadable source through the one error boundary.
 
@@ -171,61 +165,65 @@ class TestInstall:
 
 class TestUpdate:
     def test_update_reports_changed_and_unchanged(
-        self, env: Path, capsys: pytest.CaptureFixture[str]
+        self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
-        assert _cmd_skills_install(str(src), force=False) == 0
-        assert _cmd_skills_update("tidy") == 0
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
+        assert cli_skills_cmds._cmd_skills_update("tidy") == 0
         out = capsys.readouterr().out
         assert "tidy" in out and "unchanged" in out
         src.write_text(SKILL_MD.format(name="tidy") + "\nMore.\n", encoding="utf-8")
-        assert _cmd_skills_update("tidy") == 0
+        assert cli_skills_cmds._cmd_skills_update("tidy") == 0
         assert "updated" in capsys.readouterr().out
         assert "More." in (_installed(env, "tidy") / "SKILL.md").read_text()
 
-    def test_update_unknown_name(self, env: Path) -> None:
-        with pytest.raises(OperatorError, match="not installed"):
-            _cmd_skills_update("ghost")
+    def test_update_unknown_name(self, env: pathlib.Path) -> None:
+        with pytest.raises(errors.OperatorError, match="not installed"):
+            cli_skills_cmds._cmd_skills_update("ghost")
 
     def test_update_skips_when_local_source_gone(
-        self, env: Path, capsys: pytest.CaptureFixture[str]
+        self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
-        assert _cmd_skills_install(str(src), force=False) == 0
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
         src.unlink()  # the source file the operator installed from is deleted
         capsys.readouterr()
-        assert _cmd_skills_update("tidy") == 0  # a vanished source is a skip, not an abort
+        assert (
+            cli_skills_cmds._cmd_skills_update("tidy") == 0
+        )  # a vanished source is a skip, not an abort
         out = capsys.readouterr().out
         assert "skipped" in out and "gone from origin" in out
         assert (_installed(env, "tidy") / "SKILL.md").is_file()  # left intact
 
     def test_update_dir_install_reinstalls(
-        self, env: Path, capsys: pytest.CaptureFixture[str]
+        self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         repo = env / "pack"
         _write_skill_file(repo / "SKILL.md", "dd")
-        assert _cmd_skills_install(str(repo), force=False) == 0
+        assert cli_skills_cmds._cmd_skills_install(str(repo), force=False) == 0
         capsys.readouterr()
-        assert _cmd_skills_update("dd") == 0  # dir-kind origin must not read_text a directory
+        assert (
+            cli_skills_cmds._cmd_skills_update("dd") == 0
+        )  # dir-kind origin must not read_text a directory
         assert "unchanged" in capsys.readouterr().out
 
     def test_update_repo_style_dir_install(
-        self, env: Path, capsys: pytest.CaptureFixture[str]
+        self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         # a repo with skills/*/SKILL.md records the repo root as each skill's
         # origin; update must find the skill in its subdir, not the root.
         repo = env / "pack"
         _write_skill_file(repo / "skills" / "aa" / "SKILL.md", "aa")
         _write_skill_file(repo / "skills" / "bb" / "SKILL.md", "bb")
-        assert _cmd_skills_install(str(repo), force=False) == 0
+        assert cli_skills_cmds._cmd_skills_install(str(repo), force=False) == 0
         capsys.readouterr()
-        assert _cmd_skills_update("") == 0
+        assert cli_skills_cmds._cmd_skills_update("") == 0
         out = capsys.readouterr().out
         assert "aa" in out and "bb" in out and "unchanged" in out
         assert "gone from origin" not in out
 
     def test_update_finds_a_skill_installed_under_its_frontmatter_name(
-        self, env: Path, capsys: pytest.CaptureFixture[str]
+        self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """The refetch looks a repo skill up by the name its SKILL.md declares.
 
@@ -235,11 +233,11 @@ class TestUpdate:
         repo = env / "pack"
         _write_skill_file(repo / "skills" / "aa" / "SKILL.md", "aa")
         _write_skill_file(repo / "skills" / "beta" / "SKILL.md", "renamed-beta")
-        assert _cmd_skills_install(str(repo), force=False) == 0
+        assert cli_skills_cmds._cmd_skills_install(str(repo), force=False) == 0
         capsys.readouterr()
         bumped = (repo / "skills" / "beta" / "SKILL.md").read_text(encoding="utf-8") + "\nmore\n"
         (repo / "skills" / "beta" / "SKILL.md").write_text(bumped, encoding="utf-8")
-        assert _cmd_skills_update("") == 0
+        assert cli_skills_cmds._cmd_skills_update("") == 0
         out = capsys.readouterr().out
         assert "gone from origin" not in out
         assert "renamed-beta" in out and "updated" in out
@@ -248,30 +246,32 @@ class TestUpdate:
 
 
 class TestStateCommands:
-    def _install_tidy(self, env: Path) -> None:
+    def _install_tidy(self, env: pathlib.Path) -> None:
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
-        assert _cmd_skills_install(str(src), force=False) == 0
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
 
-    def test_disable_writes_global_state(self, env: Path) -> None:
+    def test_disable_writes_global_state(self, env: pathlib.Path) -> None:
         self._install_tidy(env)
-        assert _cmd_skills_disable("tidy", repo=False) == 0
+        assert cli_skills_cmds._cmd_skills_disable("tidy", repo=False) == 0
         cfg = (env / "config" / "agent6" / "config.toml").read_text()
         assert 'tidy = "disabled"' in cfg
 
-    def test_enable_always_and_back(self, env: Path) -> None:
+    def test_enable_always_and_back(self, env: pathlib.Path) -> None:
         self._install_tidy(env)
-        assert _cmd_skills_enable("tidy", always=True, repo=False) == 0
+        assert cli_skills_cmds._cmd_skills_enable("tidy", always=True, repo=False) == 0
         assert 'tidy = "always"' in (env / "config" / "agent6" / "config.toml").read_text()
-        assert _cmd_skills_enable("tidy", always=False, repo=False) == 0
+        assert cli_skills_cmds._cmd_skills_enable("tidy", always=False, repo=False) == 0
         assert "tidy" not in (env / "config" / "agent6" / "config.toml").read_text()
 
-    def test_unknown_skill_refused(self, env: Path) -> None:
-        with pytest.raises(OperatorError, match="unknown skill"):
-            _cmd_skills_disable("ghost", repo=False)
-        with pytest.raises(OperatorError, match="unknown skill"):
-            _cmd_skills_enable("ghost", always=False, repo=False)
+    def test_unknown_skill_refused(self, env: pathlib.Path) -> None:
+        with pytest.raises(errors.OperatorError, match="unknown skill"):
+            cli_skills_cmds._cmd_skills_disable("ghost", repo=False)
+        with pytest.raises(errors.OperatorError, match="unknown skill"):
+            cli_skills_cmds._cmd_skills_enable("ghost", always=False, repo=False)
 
-    def test_disable_over_a_headerless_state_table_errors_not_crashes(self, env: Path) -> None:
+    def test_disable_over_a_headerless_state_table_errors_not_crashes(
+        self, env: pathlib.Path
+    ) -> None:
         """A hand-written inline `state` table refuses with an operator error, not a traceback."""
         self._install_tidy(env)
         cfg = env / "config" / "agent6" / "config.toml"
@@ -279,112 +279,114 @@ class TestStateCommands:
         before = '[skills]\nstate = { tidy = "always" }\n'
         cfg.write_text(before, encoding="utf-8")
 
-        with pytest.raises(OperatorError, match="cannot be set on its own"):
-            _cmd_skills_disable("tidy", repo=False)
+        with pytest.raises(errors.OperatorError, match="cannot be set on its own"):
+            cli_skills_cmds._cmd_skills_disable("tidy", repo=False)
         assert cfg.read_text(encoding="utf-8") == before  # untouched
 
 
 class TestRemoveListComplete:
-    def test_remove_installed(self, env: Path) -> None:
+    def test_remove_installed(self, env: pathlib.Path) -> None:
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
-        assert _cmd_skills_install(str(src), force=False) == 0
-        assert _cmd_skills_remove("tidy") == 0
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
+        assert cli_skills_cmds._cmd_skills_remove("tidy") == 0
         assert not _installed(env, "tidy").exists()
-        with pytest.raises(OperatorError, match="not installed"):
-            _cmd_skills_remove("tidy")
+        with pytest.raises(errors.OperatorError, match="not installed"):
+            cli_skills_cmds._cmd_skills_remove("tidy")
 
-    def test_remove_refuses_a_traversal_name(self, env: Path) -> None:
+    def test_remove_refuses_a_traversal_name(self, env: pathlib.Path) -> None:
         """A `../` skill name is refused before any path op; the name becomes an rmtree target."""
         (env / "data" / "agent6" / "skills").mkdir(parents=True, exist_ok=True)
         victim = env / "data" / "victim"
         victim.mkdir()
         (victim / "keep.txt").write_text("important", encoding="utf-8")
-        with pytest.raises(OperatorError, match="invalid skill name"):
-            _cmd_skills_remove("../victim")
+        with pytest.raises(errors.OperatorError, match="invalid skill name"):
+            cli_skills_cmds._cmd_skills_remove("../victim")
         assert victim.is_dir()  # never touched
 
     def test_list_shows_state_and_origin(
-        self, env: Path, capsys: pytest.CaptureFixture[str]
+        self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
-        assert _cmd_skills_install(str(src), force=False) == 0
-        assert _cmd_skills_disable("tidy", repo=False) == 0
-        assert _cmd_skills_list() == 0
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
+        assert cli_skills_cmds._cmd_skills_disable("tidy", repo=False) == 0
+        assert cli_skills_cmds._cmd_skills_list() == 0
         out = capsys.readouterr().out
         assert "tidy" in out
         assert "[disabled]" in out
         assert "Use when testing tidy." in out
 
-    def test_completion_names(self, env: Path) -> None:
+    def test_completion_names(self, env: pathlib.Path) -> None:
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
-        assert _cmd_skills_install(str(src), force=False) == 0
-        assert resolved_skill_names_for_completion(Path.cwd()) == ["tidy"]
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
+        assert cli_skills_cmds.resolved_skill_names_for_completion(pathlib.Path.cwd()) == ["tidy"]
 
 
 class TestSkillsTaskPrefix:
-    def test_prefix_contains_skill_and_unknown_errors(self, env: Path) -> None:
-        from agent6.config.layer import load_effective
-        from agent6.ui.cli.run import _skills_task_prefix  # pyright: ignore[reportPrivateUsage]
+    def test_prefix_contains_skill_and_unknown_errors(self, env: pathlib.Path) -> None:
+        from agent6.config import layer
+        from agent6.ui.cli import run  # pyright: ignore[reportPrivateUsage]
 
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
-        assert _cmd_skills_install(str(src), force=False) == 0
-        cfg = load_effective(Path.cwd()).config
-        prefix, err = _skills_task_prefix(cfg, ("tidy",))
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
+        cfg = layer.load_effective(pathlib.Path.cwd()).config
+        prefix, err = run._skills_task_prefix(cfg, ("tidy",))
         assert err == ""
         assert '<skill name="tidy">' in prefix
         assert "Body of tidy." in prefix
-        _, err2 = _skills_task_prefix(cfg, ("ghost",))
+        _, err2 = run._skills_task_prefix(cfg, ("ghost",))
         assert "ghost" in err2
         assert "tidy" in err2
 
     def test_the_master_switch_covers_the_skill_flag_and_the_listing(
-        self, env: Path, capsys: pytest.CaptureFixture[str]
+        self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """`[skills].enabled` is the master switch: off means no skills anywhere.
 
         `--skill` resolved discovery for itself and injected the text regardless, and `skills list`
         printed the installed set with nothing saying no run would load any of it.
         """
-        from agent6.config.layer import load_effective
-        from agent6.ui.cli.run import _skills_task_prefix  # pyright: ignore[reportPrivateUsage]
+        from agent6.config import layer
+        from agent6.ui.cli import run  # pyright: ignore[reportPrivateUsage]
 
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
-        assert _cmd_skills_install(str(src), force=False) == 0
-        assert set_config_value(Path.cwd(), "skills.enabled", "false") is None
-        cfg = load_effective(Path.cwd()).config
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
+        assert write.set_config_value(pathlib.Path.cwd(), "skills.enabled", "false") is None
+        cfg = layer.load_effective(pathlib.Path.cwd()).config
 
-        prefix, err = _skills_task_prefix(cfg, ("tidy",))
+        prefix, err = run._skills_task_prefix(cfg, ("tidy",))
 
         assert prefix == ""
         # The refusal names the switch, not "(none installed)": the skill IS
         # installed, and the listing beside it says exactly that.
         assert "skills are disabled" in err and "skills.enabled true" in err
-        assert _cmd_skills_list() == 0
+        assert cli_skills_cmds._cmd_skills_list() == 0
         assert "skills are DISABLED" in capsys.readouterr().out
 
 
 class TestAtomicMultiInstall:
     def test_repo_conflict_refuses_whole_install(
-        self, env: Path, capsys: pytest.CaptureFixture[str]
+        self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         # zz already installed; a repo carrying aa+zz must install NOTHING.
         # The conflict is the LAST entry in sort order on purpose: with the
         # conflict first, the install aborts before reaching the sibling and a
         # pre-check narrowed to the first dir would still look atomic.
         src = _write_skill_file(env / "one" / "SKILL.md", "zz")
-        assert _cmd_skills_install(str(src), force=False) == 0
+        assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
         repo = env / "pack"
         _write_skill_file(repo / "skills" / "aa" / "SKILL.md", "aa")
         _write_skill_file(repo / "skills" / "zz" / "SKILL.md", "zz")
-        with pytest.raises(OperatorError, match="nothing was installed"):
-            _cmd_skills_install(str(repo), force=False)
+        with pytest.raises(errors.OperatorError, match="nothing was installed"):
+            cli_skills_cmds._cmd_skills_install(str(repo), force=False)
         assert not _installed(env, "aa").exists()  # the pre-conflict skill too
         # --force replaces and installs both
-        assert _cmd_skills_install(str(repo), force=True) == 0
+        assert cli_skills_cmds._cmd_skills_install(str(repo), force=True) == 0
         assert _installed(env, "aa").exists() and _installed(env, "zz").exists()
 
 
-def test_force_reinstall_survives_a_copy_fault(env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_force_reinstall_survives_a_copy_fault(
+    env: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """`--force` stages the replacement beside the target and swaps it in only when fully built.
 
     Removing the old install before copying left nothing behind on a copy fault.
@@ -398,7 +400,7 @@ def test_force_reinstall_survives_a_copy_fault(env: Path, monkeypatch: pytest.Mo
     (src / "SKILL.md").write_text(
         "---\nname: keeper\ndescription: good\n---\nold body\n", encoding="utf-8"
     )
-    assert _cmd_skills_install(str(src), force=False) == 0
+    assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
     installed = env / "data" / "agent6" / "skills" / "keeper" / "SKILL.md"
     assert "old body" in installed.read_text(encoding="utf-8")
 
@@ -406,54 +408,47 @@ def test_force_reinstall_survives_a_copy_fault(env: Path, monkeypatch: pytest.Mo
         raise OSError("disk full")
 
     monkeypatch.setattr(skills_cmds.shutil, "copytree", boom)
-    with pytest.raises(OperatorError, match="could not install"):
-        _cmd_skills_install(str(src), force=True)
+    with pytest.raises(errors.OperatorError, match="could not install"):
+        cli_skills_cmds._cmd_skills_install(str(src), force=True)
     monkeypatch.setattr(skills_cmds.shutil, "copytree", _shutil.copytree)
     assert "old body" in installed.read_text(encoding="utf-8")  # the good install survived
     assert not list((env / "data" / "agent6" / "skills").glob(".staging-*"))
 
 
-def test_origin_toml_round_trips_a_quoted_source(env: Path) -> None:
+def test_origin_toml_round_trips_a_quoted_source(env: pathlib.Path) -> None:
     """A quote in a source path is escaped in the recorded origin."""
-    from agent6.ui.cli.skills_cmds import (
-        _read_origin,  # pyright: ignore[reportPrivateUsage]
-        _write_origin,  # pyright: ignore[reportPrivateUsage]
-    )
-
     skill = env / "data" / "agent6" / "skills" / "quoty"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text("---\nname: quoty\ndescription: d\n---\n", encoding="utf-8")
     url = 'file:///tmp/we"ird\\path/skill'
-    _write_origin(skill, url=url, kind="dir", source_sha="")
-    origin = _read_origin(skill)
+    cli_skills_cmds._write_origin(skill, url=url, kind="dir", source_sha="")
+    origin = cli_skills_cmds._read_origin(skill)
     assert origin is not None and origin["url"] == url
 
 
 def test_repo_skill_state_honors_the_custom_state_base(
-    env: Path, monkeypatch: pytest.MonkeyPatch
+    env: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """--repo skill state must write the config the effective loader READS.
 
     The raw path helper ignored an XDG_STATE_HOME relocation, so a custom-state setup wrote the
     default tree, printed success, and the skill stayed enabled.
     """
-    from agent6.ui.cli.skills_cmds import (
-        _state_target,  # pyright: ignore[reportPrivateUsage]
-    )
-
     custom = env / "custom-state"
     monkeypatch.setenv("XDG_STATE_HOME", str(custom))
-    target = _state_target(repo=True)
+    target = cli_skills_cmds._state_target(repo=True)
     assert target.is_relative_to(custom / "agent6"), f"wrote {target}, outside the custom base"
 
 
-def test_update_follows_an_upstream_rename(env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_update_follows_an_upstream_rename(
+    env: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A skillmd origin declaring a new name reinstalls under it, never as two copies."""
     src = _write_skill_file(env / "src" / "SKILL.md", "old-name")
-    assert _cmd_skills_install(str(src), force=False) == 0
+    assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
     _write_skill_file(src, "new-name")
     capsys.readouterr()
-    assert _cmd_skills_update("old-name") == 0
+    assert cli_skills_cmds._cmd_skills_update("old-name") == 0
     out = capsys.readouterr().out
     assert "renamed to new-name" in out
     assert _installed(env, "new-name").is_dir()
@@ -461,43 +456,43 @@ def test_update_follows_an_upstream_rename(env: Path, capsys: pytest.CaptureFixt
 
 
 def test_install_names_a_surviving_disabled_state(
-    env: Path, capsys: pytest.CaptureFixture[str]
+    env: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A reinstall under a name whose state is "disabled" never claims "Enabled and active now"."""
     src = _write_skill_file(env / "src" / "SKILL.md", "sleeper")
-    assert _cmd_skills_install(str(src), force=False) == 0
-    _cmd_skills_disable("sleeper", repo=False)
-    assert _cmd_skills_remove("sleeper") == 0
+    assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
+    cli_skills_cmds._cmd_skills_disable("sleeper", repo=False)
+    assert cli_skills_cmds._cmd_skills_remove("sleeper") == 0
     out = capsys.readouterr().out
     assert 'skills.state.sleeper = "disabled" remains' in out
-    assert _cmd_skills_install(str(src), force=False) == 0
+    assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
     out = capsys.readouterr().out
     assert "Enabled and active now" not in out
     assert 'skills.state.sleeper = "disabled"' in out
 
 
 def test_enable_clears_a_state_leaf_whose_skill_is_gone(
-    env: Path, capsys: pytest.CaptureFixture[str]
+    env: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Remove deletes the install, never the operator's config leaf the CLI can still clear."""
     src = _write_skill_file(env / "src" / "SKILL.md", "ghost")
-    assert _cmd_skills_install(str(src), force=False) == 0
-    _cmd_skills_disable("ghost", repo=False)
-    assert _cmd_skills_remove("ghost") == 0
+    assert cli_skills_cmds._cmd_skills_install(str(src), force=False) == 0
+    cli_skills_cmds._cmd_skills_disable("ghost", repo=False)
+    assert cli_skills_cmds._cmd_skills_remove("ghost") == 0
     capsys.readouterr()
-    assert _cmd_skills_enable("ghost", always=False, repo=False) == 0
+    assert cli_skills_cmds._cmd_skills_enable("ghost", always=False, repo=False) == 0
     out = capsys.readouterr().out
     assert "Unset skills.state.ghost" in out
     # A name with no leaf and no skill is still a typo, not cleanup.
-    with pytest.raises(OperatorError, match="unknown skill"):
-        _cmd_skills_enable("nonexistent", always=False, repo=False)
+    with pytest.raises(errors.OperatorError, match="unknown skill"):
+        cli_skills_cmds._cmd_skills_enable("nonexistent", always=False, repo=False)
 
 
-def _serve_bytes(body: bytes) -> tuple[str, dict[str, str], ThreadingHTTPServer]:
+def _serve_bytes(body: bytes) -> tuple[str, dict[str, str], server.ThreadingHTTPServer]:
     """A loopback server answering every GET with *body*: (url, seen headers, server)."""
     seen: dict[str, str] = {}
 
-    class _Handler(BaseHTTPRequestHandler):
+    class _Handler(server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             seen.update({k.lower(): v for k, v in self.headers.items()})
             self.send_response(200)
@@ -510,7 +505,7 @@ def _serve_bytes(body: bytes) -> tuple[str, dict[str, str], ThreadingHTTPServer]
         def log_message(self, format: str, *args: object) -> None:
             return
 
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return f"http://127.0.0.1:{httpd.server_address[1]}/SKILL.md", seen, httpd
 
@@ -522,14 +517,12 @@ def test_a_remote_skill_is_capped_while_it_arrives_not_after() -> None:
     """
     import tracemalloc
 
-    from agent6.ui.cli.skills_cmds import _fetch_url  # pyright: ignore[reportPrivateUsage]
-
     url, seen, httpd = _serve_bytes(b"x" * (8 << 20))
     try:
         tracemalloc.start()
         try:
-            with pytest.raises(OperatorError, match="larger than"):
-                _fetch_url(url)
+            with pytest.raises(errors.OperatorError, match="larger than"):
+                cli_skills_cmds._fetch_url(url)
             peak = tracemalloc.get_traced_memory()[1]
         finally:
             tracemalloc.stop()
@@ -572,7 +565,7 @@ def test_the_skill_fetch_clock_starts_with_the_body(monkeypatch: pytest.MonkeyPa
 
 
 def test_a_config_defect_reaches_the_crash_path_and_an_unreadable_config_degrades(
-    env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    env: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Only a ConfigError reads as "config unreadable"; anything else reaches the crash reporter.
 
@@ -580,21 +573,20 @@ def test_a_config_defect_reaches_the_crash_path_and_an_unreadable_config_degrade
     nothing at all, and `skills install` closes with "Enabled and active now".
     """
     from agent6.config import ConfigError
-    from agent6.ui.cli.skills_cmds import _state_map  # pyright: ignore[reportPrivateUsage]
 
     def broken(*_a: object, **_k: object) -> object:
         raise AttributeError("a defect in the config subsystem")
 
     monkeypatch.setattr("agent6.ui.cli.skills_cmds.load_effective", broken)
     with pytest.raises(AttributeError):
-        _state_map(None)
+        cli_skills_cmds._state_map(None)
     with pytest.raises(AttributeError):
-        _cmd_skills_list()
+        cli_skills_cmds._cmd_skills_list()
 
     def unreadable(*_a: object, **_k: object) -> object:
         raise ConfigError("bad toml")
 
     monkeypatch.setattr("agent6.ui.cli.skills_cmds.load_effective", unreadable)
-    assert _state_map(None) == {}
-    assert _cmd_skills_list() == 0
+    assert cli_skills_cmds._state_map(None) == {}
+    assert cli_skills_cmds._cmd_skills_list() == 0
     assert "config unreadable" in capsys.readouterr().err

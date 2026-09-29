@@ -10,29 +10,29 @@ from __future__ import annotations
 
 import io
 import json
+import pathlib
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-from agent6.app.stop import StopOutcome
-from agent6.ui.acp.server import ACPServer
-from agent6.ui.acp.session import Session, Sessions, prompt_text
+from agent6.app import stop
+from agent6.ui.acp import server as acp_server
+from agent6.ui.acp import session as acp_session
 
 
-def _ends(_session: Session, _text: str) -> str:
+def _ends(_session: acp_session.Session, _text: str) -> str:
     return "end_turn"
 
 
-def _sessions(run: Any) -> Sessions:
-    return Sessions(run=run, state_dir_for=lambda cwd: cwd / ".state")
+def _sessions(run: Any) -> acp_session.Sessions:
+    return acp_session.Sessions(run=run, state_dir_for=lambda cwd: cwd / ".state")
 
 
-def _drive(payload: bytes, sessions: Sessions) -> list[dict[str, Any]]:
+def _drive(payload: bytes, sessions: acp_session.Sessions) -> list[dict[str, Any]]:
     out = io.BytesIO()
-    ACPServer(stdin=io.BytesIO(payload), stdout=out, sessions=sessions).serve()
+    acp_server.ACPServer(stdin=io.BytesIO(payload), stdout=out, sessions=sessions).serve()
     return [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
 
 
@@ -47,7 +47,7 @@ def test_a_new_session_needs_an_absolute_cwd() -> None:
     assert "absolute" in reply["error"]["message"]
 
 
-def test_a_new_session_refuses_editor_supplied_mcp_servers(tmp_path: Path) -> None:
+def test_a_new_session_refuses_editor_supplied_mcp_servers(tmp_path: pathlib.Path) -> None:
     """Editor-supplied MCP servers are refused, naming where operator config holds them.
 
     A nonempty list read for nothing showed servers connected that never existed.
@@ -66,7 +66,7 @@ def test_a_new_session_refuses_editor_supplied_mcp_servers(tmp_path: Path) -> No
     assert "sessionId" in reply["result"]
 
 
-def test_a_new_session_refuses_unsupported_additional_directories(tmp_path: Path) -> None:
+def test_a_new_session_refuses_unsupported_additional_directories(tmp_path: pathlib.Path) -> None:
     """An additional workspace root the sandbox cannot reach is refused, not silently ignored."""
     import subprocess
 
@@ -87,7 +87,7 @@ def test_a_new_session_refuses_unsupported_additional_directories(tmp_path: Path
     assert "additionalDirectories" in reply["error"]["message"]
 
 
-def test_a_new_session_names_non_list_optional_fields(tmp_path: Path) -> None:
+def test_a_new_session_names_non_list_optional_fields(tmp_path: pathlib.Path) -> None:
     import subprocess
 
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
@@ -110,9 +110,9 @@ def test_a_resource_link_rides_as_its_uri() -> None:
         {"type": "text", "text": "fix this"},
         {"type": "resource_link", "uri": "file:///w/x.py", "name": "x.py"},
     ]
-    assert prompt_text({"prompt": blocks}) == "fix this\n\nAttached: file:///w/x.py"
+    assert acp_session.prompt_text({"prompt": blocks}) == "fix this\n\nAttached: file:///w/x.py"
     only_link = [{"type": "resource_link", "uri": "file:///w/x.py"}]
-    assert prompt_text({"prompt": only_link}) == "Attached: file:///w/x.py"
+    assert acp_session.prompt_text({"prompt": only_link}) == "Attached: file:///w/x.py"
 
 
 def test_a_malformed_prompt_block_names_its_bad_field() -> None:
@@ -123,23 +123,23 @@ def test_a_malformed_prompt_block_names_its_bad_field() -> None:
     )
     for prompt, cause in malformed:
         with pytest.raises(Exception, match=cause):
-            prompt_text({"prompt": prompt})
+            acp_session.prompt_text({"prompt": prompt})
 
 
 def test_a_prompt_runs_and_answers_with_its_stop_reason() -> None:
     ran: list[str] = []
 
-    def _run(_session: Session, text: str) -> str:
+    def _run(_session: acp_session.Session, text: str) -> str:
         ran.append(text)
         return "end_turn"
 
     sessions = _sessions(_run)
-    session = Session(acp_id="s1", cwd=Path("/repo"))
+    session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
     payload = _msg(2, "session/prompt", sessionId="s1", prompt=[{"type": "text", "text": "fix it"}])
     # The reply is written by the turn thread, so reading before its join raced it.
     out = io.BytesIO()
-    ACPServer(stdin=io.BytesIO(payload + b"\n"), stdout=out, sessions=sessions).serve()
+    acp_server.ACPServer(stdin=io.BytesIO(payload + b"\n"), stdout=out, sessions=sessions).serve()
     if session.thread is not None:
         session.thread.join(timeout=5)
     replies = [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
@@ -157,19 +157,19 @@ def test_the_read_loop_stays_free_while_a_turn_runs() -> None:
     release = threading.Event()
     cancelled_during: list[bool] = []
 
-    def _run(session: Session, _text: str) -> str:
+    def _run(session: acp_session.Session, _text: str) -> str:
         started.set()
         release.wait(timeout=5)
         cancelled_during.append(session.cancelled)
         return "end_turn"
 
     sessions = _sessions(_run)
-    session = Session(acp_id="s1", cwd=Path("/repo"))
+    session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
 
     out = io.BytesIO()
     reader, writer = _pipe()
-    server = ACPServer(stdin=reader, stdout=out, sessions=sessions)
+    server = acp_server.ACPServer(stdin=reader, stdout=out, sessions=sessions)
     loop = threading.Thread(target=server.serve, daemon=True)
     loop.start()
     try:
@@ -199,13 +199,13 @@ def test_a_turn_cancelled_while_it_runs_reports_itself_as_cancelled() -> None:
     started = threading.Event()
     release = threading.Event()
 
-    def _slow(_session: Session, _text: str) -> str:
+    def _slow(_session: acp_session.Session, _text: str) -> str:
         started.set()
         release.wait(timeout=5)
         return "end_turn"
 
     sessions = _sessions(_slow)
-    session = Session(acp_id="s1", cwd=Path("/repo"))
+    session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     seen: list[str] = []
     sessions.start_turn(session, "go", finish=seen.append)
     assert started.wait(timeout=5)
@@ -222,7 +222,7 @@ def test_a_stale_cancel_does_not_kill_the_next_turn() -> None:
     Carrying it forward would make the following prompt end before it began.
     """
     sessions = _sessions(_ends)
-    session = Session(acp_id="s1", cwd=Path("/repo"), cancelled=True)
+    session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"), cancelled=True)
     seen: list[str] = []
     sessions.start_turn(session, "go", finish=seen.append)
     if session.thread is not None:
@@ -230,31 +230,31 @@ def test_a_stale_cancel_does_not_kill_the_next_turn() -> None:
     assert seen == ["end_turn"]
 
 
-def test_a_cancel_while_the_run_starts_reaches_its_first_boundary(tmp_path: Path) -> None:
+def test_a_cancel_while_the_run_starts_reaches_its_first_boundary(tmp_path: pathlib.Path) -> None:
     """A turn is live before its worker pid exists, so a cancel leaves the marker startup keeps."""
-    from agent6.sessions.ipc import stop_request_pending
+    from agent6.sessions import ipc
 
     sessions = _sessions(_ends)
-    session = Session(acp_id="s1", cwd=tmp_path, session_id="run-1", turn_live=True)
+    session = acp_session.Session(acp_id="s1", cwd=tmp_path, session_id="run-1", turn_live=True)
 
     sessions.cancel(session)
 
-    assert stop_request_pending(session.layout(tmp_path / ".state").session_dir)
+    assert ipc.stop_request_pending(session.layout(tmp_path / ".state").session_dir)
 
 
 def test_a_cancel_while_idle_does_not_poison_the_next_turn(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An idle cancel leaves no stop marker for the next resume to inherit."""
-    stopped: list[Path] = []
+    stopped: list[pathlib.Path] = []
 
-    def _stop(path: Path, *, after_step: bool = False) -> StopOutcome:
+    def _stop(path: pathlib.Path, *, after_step: bool = False) -> stop.StopOutcome:
         stopped.append(path)
-        return StopOutcome(path.name, True, "after_step", "")
+        return stop.StopOutcome(path.name, True, "after_step", "")
 
     monkeypatch.setattr("agent6.ui.acp.session.stop_session", _stop)
     sessions = _sessions(_ends)
-    session = Session(acp_id="s1", cwd=tmp_path, session_id="run-1")
+    session = acp_session.Session(acp_id="s1", cwd=tmp_path, session_id="run-1")
 
     sessions.cancel(session)
 
@@ -265,11 +265,11 @@ def test_a_cancel_while_idle_does_not_poison_the_next_turn(
 def test_a_run_that_dies_still_ends_the_turn() -> None:
     """An editor waiting forever on a prompt is worse than a refusal."""
 
-    def _boom(_session: Session, _text: str) -> str:
+    def _boom(_session: acp_session.Session, _text: str) -> str:
         raise RuntimeError("the provider fell over")
 
     sessions = _sessions(_boom)
-    session = Session(acp_id="s1", cwd=Path("/repo"))
+    session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     seen: list[str] = []
     sessions.start_turn(session, "go", finish=seen.append)
     if session.thread is not None:
@@ -281,12 +281,12 @@ def test_a_second_turn_on_a_busy_session_is_refused() -> None:
     """Two runs in one workspace is what the repo lock exists to prevent."""
     release = threading.Event()
 
-    def _slow(_session: Session, _text: str) -> str:
+    def _slow(_session: acp_session.Session, _text: str) -> str:
         release.wait(timeout=5)
         return "end_turn"
 
     sessions = _sessions(_slow)
-    session = Session(acp_id="s1", cwd=Path("/repo"))
+    session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     try:
         sessions.start_turn(session, "one", finish=lambda _r: None)
         with pytest.raises(Exception, match="already has a turn"):
@@ -306,13 +306,13 @@ def test_a_second_turn_on_a_busy_session_is_refused() -> None:
 )
 def test_only_text_blocks_become_the_task(blocks: list[Any], expected: str) -> None:
     """A placeholder for an image is something the model would try to read."""
-    assert prompt_text({"prompt": blocks}) == expected
+    assert acp_session.prompt_text({"prompt": blocks}) == expected
 
 
 @pytest.mark.parametrize("blocks", [[], [{"type": "image", "data": "x"}], "not a list"])
 def test_a_prompt_with_no_text_is_refused(blocks: Any) -> None:
     with pytest.raises(Exception, match="prompt"):
-        prompt_text({"prompt": blocks})
+        acp_session.prompt_text({"prompt": blocks})
 
 
 def _pipe() -> tuple[Any, Any]:
@@ -328,7 +328,7 @@ def test_the_next_prompt_is_not_refused_by_the_reply_it_just_read() -> None:
     `thread.is_alive()` is still true while `finish` runs, and `finish` is the reply.
     """
     sessions = _sessions(_ends)
-    session = Session(acp_id="s1", cwd=Path("/repo"))
+    session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     seen: list[bool] = []
 
     def _finish(_reason: str) -> None:
@@ -348,19 +348,19 @@ def test_eof_lets_a_live_turn_reach_a_boundary() -> None:
     started = threading.Event()
     finished = threading.Event()
 
-    def _slow(_session: Session, _text: str) -> str:
+    def _slow(_session: acp_session.Session, _text: str) -> str:
         started.set()
         time.sleep(0.2)
         finished.set()
         return "end_turn"
 
     sessions = _sessions(_slow)
-    session = Session(acp_id="s1", cwd=Path("/repo"))
+    session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
 
     out = io.BytesIO()
     reader, writer = _pipe()
-    server = ACPServer(stdin=reader, stdout=out, sessions=sessions)
+    server = acp_server.ACPServer(stdin=reader, stdout=out, sessions=sessions)
     loop = threading.Thread(target=server.serve, daemon=True)
     loop.start()
     writer.write(
@@ -376,7 +376,7 @@ def test_eof_lets_a_live_turn_reach_a_boundary() -> None:
 def test_a_prompt_sent_as_a_notification_is_refused() -> None:
     """A turn's reply carries its stopReason under the request's id, never a null id."""
     sessions = _sessions(_ends)
-    sessions._by_id["s1"] = Session(acp_id="s1", cwd=Path("/repo"))  # pyright: ignore[reportPrivateUsage]
+    sessions._by_id["s1"] = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))  # pyright: ignore[reportPrivateUsage]
     payload = json.dumps(
         {
             "jsonrpc": "2.0",
@@ -403,13 +403,13 @@ def test_eof_grace_is_one_deadline_across_sessions() -> None:
     sessions = _sessions(_ends)
     release = threading.Event()
 
-    def _hold(_session: Session, _text: str) -> str:
+    def _hold(_session: acp_session.Session, _text: str) -> str:
         release.wait(timeout=10)
         return "end_turn"
 
-    held = Sessions(run=_hold, state_dir_for=lambda cwd: cwd / ".state")
+    held = acp_session.Sessions(run=_hold, state_dir_for=lambda cwd: cwd / ".state")
     for i in range(3):
-        s = Session(acp_id=f"s{i}", cwd=Path("/repo"))
+        s = acp_session.Session(acp_id=f"s{i}", cwd=pathlib.Path("/repo"))
         held._by_id[s.acp_id] = s  # pyright: ignore[reportPrivateUsage]
         held.start_turn(s, "go", finish=lambda _r: None)
     start = time.monotonic()

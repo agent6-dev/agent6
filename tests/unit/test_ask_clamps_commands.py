@@ -4,10 +4,10 @@
 
 from __future__ import annotations
 
+import pathlib
 import time
-from pathlib import Path
 from typing import Literal
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
@@ -44,17 +44,17 @@ def test_the_clamp_leaves_the_rest_of_the_config_alone() -> None:
 
 
 def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """The ask lifecycle clamps before the session is built, so every reader of the knob agrees."""
+    from agent6.app import preflight
     from agent6.app import run as run_mod
-    from agent6.app.preflight import SessionRefusedError
 
     seen: list[str] = []
 
     def capture(cfg: Config, **_kw: object) -> str:
         seen.append(cfg.sandbox.run_commands)
-        raise SessionRefusedError(2)
+        raise preflight.SessionRefusedError(2)
 
     monkeypatch.setattr(run_mod, "select_isolation", capture)
     monkeypatch.chdir(tmp_path)
@@ -64,7 +64,9 @@ def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
     )
     for mode, expected in modes:
         seen.clear()
-        run_mod.run_task(_cfg("yes"), "q", started_at=time.time(), frontend=MagicMock(), mode=mode)
+        run_mod.run_task(
+            _cfg("yes"), "q", started_at=time.time(), frontend=mock.MagicMock(), mode=mode
+        )
         assert seen == [expected], f"{mode} saw {seen}"
 
 
@@ -87,22 +89,21 @@ def test_tightening_needs_no_permission_but_widening_does() -> None:
 
 
 def test_an_explicit_auto_approve_survives_the_ask_clamp(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """An explicit --auto-approve survives the ask clamp.
 
     The clamp stops an ask inheriting a standing `run_commands = "yes"`; the flag typed on this
     invocation is the most specific layer and unreachable by the LLM.
     """
+    from agent6.app import _setup, preflight
     from agent6.app import run as run_mod
-    from agent6.app._setup import SandboxOverrides
-    from agent6.app.preflight import SessionRefusedError
 
     seen: list[str] = []
 
     def capture(cfg: Config, **_kw: object) -> str:
         seen.append(cfg.sandbox.run_commands)
-        raise SessionRefusedError(2)
+        raise preflight.SessionRefusedError(2)
 
     monkeypatch.setattr(run_mod, "select_isolation", capture)
     monkeypatch.chdir(tmp_path)
@@ -110,8 +111,8 @@ def test_an_explicit_auto_approve_survives_the_ask_clamp(
         _cfg("ask"),
         "q",
         started_at=time.time(),
-        frontend=MagicMock(),
+        frontend=mock.MagicMock(),
         mode="ask",
-        sandbox_overrides=SandboxOverrides(auto_approve=True),
+        sandbox_overrides=_setup.SandboxOverrides(auto_approve=True),
     )
     assert seen == ["yes"], f"the operator's own flag was undone: {seen}"

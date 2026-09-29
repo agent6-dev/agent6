@@ -9,15 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
+import pathlib
 
-from textual.widgets import DataTable, Footer
+from textual import widgets
 
-from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
+from agent6.ui.tui import app, home
 
 
-def test_the_footer_clips_instead_of_scrolling_at_80_columns(tmp_path: Path) -> None:
+def test_the_footer_clips_instead_of_scrolling_at_80_columns(tmp_path: pathlib.Path) -> None:
     run = tmp_path / "sessions" / "runs" / "narrow-run-AAAAAA"
     run.mkdir(parents=True)
     (run / "logs.jsonl").write_text(
@@ -30,15 +29,15 @@ def test_the_footer_clips_instead_of_scrolling_at_80_columns(tmp_path: Path) -> 
 
     async def scenario() -> list[tuple[str, int, bool]]:
         seen: list[tuple[str, int, bool]] = []
-        hub = Agent6HomeApp(tmp_path, tmp_path)
+        hub = home.Agent6HomeApp(tmp_path, tmp_path)
         async with hub.run_test(size=(80, 24)) as pilot:
             await pilot.pause()
-            f = hub.screen.query_one(Footer)
+            f = hub.screen.query_one(widgets.Footer)
             seen.append(("hub", f.styles.scrollbar_size_horizontal, f.virtual_size.width > 80))
-        view = Agent6TUI(run)
+        view = app.Agent6TUI(run)
         async with view.run_test(size=(80, 24)) as pilot:
             await pilot.pause()
-            f = view.screen.query_one(Footer)
+            f = view.screen.query_one(widgets.Footer)
             seen.append(("run", f.styles.scrollbar_size_horizontal, f.virtual_size.width > 80))
         return seen
 
@@ -47,7 +46,7 @@ def test_the_footer_clips_instead_of_scrolling_at_80_columns(tmp_path: Path) -> 
         assert scrollbar == 0, f"{name}: the footer's scrollbar would replace its hints"
 
 
-def _hub_with_a_fan_out(a6: Path) -> None:
+def _hub_with_a_fan_out(a6: pathlib.Path) -> None:
     start = {"type": "session.start", "mode": "run", "user_task": "t"}
     for name, manifest in (
         ("plain-run-AAAAAA", {"mode": "run"}),
@@ -61,19 +60,19 @@ def _hub_with_a_fan_out(a6: Path) -> None:
 
 
 def test_the_hub_footer_shows_lanes_only_on_a_fan_out_and_keeps_logs_and_refresh_off_it(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """Lanes, View logs and Refresh stay in the menus, so the row actions fit at 100 columns."""
     a6 = tmp_path / ".agent6"
     _hub_with_a_fan_out(a6)
 
     async def scenario() -> None:
-        hub = Agent6HomeApp(a6, tmp_path)
+        hub = home.Agent6HomeApp(a6, tmp_path)
         async with hub.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
             screen = hub.screen
-            assert isinstance(screen, HomeScreen)
-            table = screen.query_one("#sessions", DataTable)
+            assert isinstance(screen, home.HomeScreen)
+            table = screen.query_one("#sessions", widgets.DataTable)
 
             async def select(name: str) -> None:
                 runs = screen._runs  # pyright: ignore[reportPrivateUsage]

@@ -4,21 +4,18 @@
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
-from pathlib import Path
-from types import SimpleNamespace
+import types
 from typing import cast
 
 import pytest
 
-from agent6.app.preflight import headless_approval_refusal, require_git_repo
+from agent6 import errors, git_ops, paths
+from agent6.app import preflight
 from agent6.config import Config, ConfigError
-from agent6.errors import OperatorError
-from agent6.git_ops import GitError, init_repo, is_git_repo
-from agent6.paths import state_dir
 from agent6.ui.cli import init_cmds as ic
 from agent6.ui.cli import main
-from agent6.ui.cli.init_cmds import _offer_git_setup  # pyright: ignore[reportPrivateUsage]
 
 
 def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -26,18 +23,30 @@ def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
 
     The helper both lifecycles call first.
     """
-    ask = cast(Config, SimpleNamespace(sandbox=SimpleNamespace(run_commands="ask")))
-    assert headless_approval_refusal(ask, tui_enabled=False, away="", can_ask=False) is not None
+    ask = cast(Config, types.SimpleNamespace(sandbox=types.SimpleNamespace(run_commands="ask")))
+    assert (
+        preflight.headless_approval_refusal(ask, tui_enabled=False, away="", can_ask=False)
+        is not None
+    )
     # Answerable: a TUI, a front-end that can ask, an away-mode, or nothing to approve.
-    assert headless_approval_refusal(ask, tui_enabled=True, away="", can_ask=False) is None
-    assert headless_approval_refusal(ask, tui_enabled=False, away="deny", can_ask=False) is None
-    assert headless_approval_refusal(ask, tui_enabled=False, away="", can_ask=True) is None
-    yes = cast(Config, SimpleNamespace(sandbox=SimpleNamespace(run_commands="yes")))
-    assert headless_approval_refusal(yes, tui_enabled=False, away="", can_ask=False) is None
+    assert (
+        preflight.headless_approval_refusal(ask, tui_enabled=True, away="", can_ask=False) is None
+    )
+    assert (
+        preflight.headless_approval_refusal(ask, tui_enabled=False, away="deny", can_ask=False)
+        is None
+    )
+    assert (
+        preflight.headless_approval_refusal(ask, tui_enabled=False, away="", can_ask=True) is None
+    )
+    yes = cast(Config, types.SimpleNamespace(sandbox=types.SimpleNamespace(run_commands="yes")))
+    assert (
+        preflight.headless_approval_refusal(yes, tui_enabled=False, away="", can_ask=False) is None
+    )
 
 
 def test_run_surfaces_git_wall_before_provider_wall(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Non-git scratch dir with no provider: the not-a-git-repo error surfaces first.
     monkeypatch.chdir(tmp_path)
@@ -49,36 +58,36 @@ def test_run_surfaces_git_wall_before_provider_wall(
 
 
 def test_require_git_repo_errors_outside_repo(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert require_git_repo(tmp_path) is False
+    assert preflight.require_git_repo(tmp_path) is False
     err = capsys.readouterr().err
     assert "not a git repository" in err
     assert "agent6 init" in err  # points at the guided fix
 
 
-def test_require_git_repo_ok_inside_repo(tmp_path: Path) -> None:
-    init_repo(tmp_path)
-    assert require_git_repo(tmp_path) is True
+def test_require_git_repo_ok_inside_repo(tmp_path: pathlib.Path) -> None:
+    git_ops.init_repo(tmp_path)
+    assert preflight.require_git_repo(tmp_path) is True
 
 
 def test_offer_git_setup_noninteractive_just_notes(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _offer_git_setup(tmp_path, (tmp_path / "AGENTS.md",), interactive=False)
+    ic._offer_git_setup(tmp_path, (tmp_path / "AGENTS.md",), interactive=False)
     out = capsys.readouterr().out
     assert "not a git repository" in out
-    assert is_git_repo(tmp_path) is False  # did NOT create a repo non-interactively
+    assert git_ops.is_git_repo(tmp_path) is False  # did NOT create a repo non-interactively
 
 
 def test_offer_git_setup_instructions_stage_only_the_scaffold(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     scaffold = tmp_path / "AGENTS.md"
     scaffold.write_text("new\n", encoding="utf-8")
     (tmp_path / "operator-wip.txt").write_text("mine\n", encoding="utf-8")
 
-    _offer_git_setup(tmp_path, (scaffold,), interactive=False)
+    ic._offer_git_setup(tmp_path, (scaffold,), interactive=False)
 
     out = capsys.readouterr().out
     assert "git add -A" not in out
@@ -87,7 +96,7 @@ def test_offer_git_setup_instructions_stage_only_the_scaffold(
 
 
 def test_offer_git_setup_commit_failure_stages_only_the_scaffold(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     scaffold = tmp_path / "AGENTS.md"
     scaffold.write_text("new\n", encoding="utf-8")
@@ -95,12 +104,12 @@ def test_offer_git_setup_commit_failure_stages_only_the_scaffold(
     def _yes(_prompt: str, default: bool) -> bool:
         return True
 
-    def _fail_commit(_root: Path, _message: str, _paths: tuple[str, ...]) -> str:
-        raise GitError("identity missing")
+    def _fail_commit(_root: pathlib.Path, _message: str, _paths: tuple[str, ...]) -> str:
+        raise git_ops.GitError("identity missing")
 
     monkeypatch.setattr(ic, "_ask", _yes)
     monkeypatch.setattr(ic, "commit_paths", _fail_commit)
-    _offer_git_setup(tmp_path, (scaffold,), interactive=True)
+    ic._offer_git_setup(tmp_path, (scaffold,), interactive=True)
 
     out = capsys.readouterr().out
     assert "git add -A" not in out
@@ -108,7 +117,7 @@ def test_offer_git_setup_commit_failure_stages_only_the_scaffold(
 
 
 def test_offer_git_setup_interactive_inits_and_commits(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def _yes(_prompt: str) -> str:
         return "y"
@@ -126,13 +135,13 @@ def test_offer_git_setup_interactive_inits_and_commits(
     out_of_repo_cfg.parent.mkdir(parents=True, exist_ok=True)
     out_of_repo_cfg.write_text("# cfg\n", encoding="utf-8")
 
-    _offer_git_setup(
+    ic._offer_git_setup(
         tmp_path,
         (out_of_repo_cfg, tmp_path / "AGENTS.md", tmp_path / ".gitignore"),
         interactive=True,
     )
 
-    assert is_git_repo(tmp_path) is True
+    assert git_ops.is_git_repo(tmp_path) is True
     tracked = subprocess.run(
         ["git", "-C", str(tmp_path), "ls-files"], capture_output=True, text=True, check=True
     ).stdout.split()
@@ -141,19 +150,19 @@ def test_offer_git_setup_interactive_inits_and_commits(
     assert "config.toml" not in tracked  # out-of-repo config is never committed
 
 
-def _existing_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _existing_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A repo with one commit and an identity from GIT_* env."""
     for k in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
         monkeypatch.setenv(k, "Test")
     for k in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
         monkeypatch.setenv(k, "t@t.t")
-    init_repo(tmp_path)
+    git_ops.init_repo(tmp_path)
     (tmp_path / "README.md").write_text("x\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "init"], check=True)
 
 
-def _porcelain(tmp_path: Path) -> str:
+def _porcelain(tmp_path: pathlib.Path) -> str:
     return subprocess.run(
         ["git", "-C", str(tmp_path), "status", "--porcelain"],
         capture_output=True,
@@ -163,18 +172,20 @@ def _porcelain(tmp_path: Path) -> str:
 
 
 def test_offer_git_setup_existing_repo_commits_scaffold_noninteractive(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Non-interactive means --yes; the scaffold is committed so `agent6 run` finds a clean tree.
     _existing_repo(tmp_path, monkeypatch)
     (tmp_path / "AGENTS.md").write_text("# AGENTS\n", encoding="utf-8")
     (tmp_path / ".gitignore").write_text(".env\n", encoding="utf-8")
-    _offer_git_setup(tmp_path, (tmp_path / "AGENTS.md", tmp_path / ".gitignore"), interactive=False)
+    ic._offer_git_setup(
+        tmp_path, (tmp_path / "AGENTS.md", tmp_path / ".gitignore"), interactive=False
+    )
     assert _porcelain(tmp_path) == ""  # scaffold committed, tree clean
 
 
 def test_offer_git_setup_existing_repo_declined_prints_exact_command(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _existing_repo(tmp_path, monkeypatch)
     (tmp_path / "AGENTS.md").write_text("# AGENTS\n", encoding="utf-8")
@@ -183,40 +194,40 @@ def test_offer_git_setup_existing_repo_declined_prints_exact_command(
         return "n"
 
     monkeypatch.setattr("builtins.input", _decline)
-    _offer_git_setup(tmp_path, (tmp_path / "AGENTS.md",), interactive=True)
+    ic._offer_git_setup(tmp_path, (tmp_path / "AGENTS.md",), interactive=True)
     out = capsys.readouterr().out
     assert "git add AGENTS.md && git commit -m" in out
     assert _porcelain(tmp_path) != ""  # nothing committed
 
 
 def test_offer_git_setup_scaffold_committed_but_tree_dirty_elsewhere(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The scaffold is committed and the tree dirty for another reason: no path-limited commit.
     _existing_repo(tmp_path, monkeypatch)
     scaffold = (tmp_path / "AGENTS.md", tmp_path / ".gitignore")
     scaffold[0].write_text("# AGENTS\n", encoding="utf-8")
     scaffold[1].write_text(".env\n", encoding="utf-8")
-    _offer_git_setup(tmp_path, scaffold, interactive=False)  # first: commits scaffold
+    ic._offer_git_setup(tmp_path, scaffold, interactive=False)  # first: commits scaffold
     (tmp_path / "README.md").write_text("wip edit\n", encoding="utf-8")  # unrelated dirt
 
-    _offer_git_setup(tmp_path, scaffold, interactive=False)  # second: must be a no-op
+    ic._offer_git_setup(tmp_path, scaffold, interactive=False)  # second: must be a no-op
     out = capsys.readouterr().out
     assert "commit failed" not in out
     assert _porcelain(tmp_path) == " M README.md\n"  # unrelated dirt untouched, not swept
 
 
 def test_offer_git_setup_existing_clean_repo_is_silent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Scaffold already committed: no prompt, no output, nothing to do.
     _existing_repo(tmp_path, monkeypatch)
-    _offer_git_setup(tmp_path, (tmp_path / "README.md",), interactive=True)
+    ic._offer_git_setup(tmp_path, (tmp_path / "README.md",), interactive=True)
     assert capsys.readouterr().out == ""
 
 
 def test_init_refuses_without_tty_or_yes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `echo n | agent6 init` declines and writes nothing.
     monkeypatch.chdir(tmp_path)
@@ -229,24 +240,24 @@ def test_init_refuses_without_tty_or_yes(
 
 
 def test_failed_init_hands_new_scaffold_back_to_the_sudo_user(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     target = tmp_path / "state" / "config.toml"
     monkeypatch.chdir(tmp_path)
 
-    def _target(_root: Path) -> Path:
+    def _target(_root: pathlib.Path) -> pathlib.Path:
         return target
 
-    def _not_a_repo(_root: Path) -> bool:
+    def _not_a_repo(_root: pathlib.Path) -> bool:
         return False
 
     def _fail(
-        root: Path,
+        root: pathlib.Path,
         *,
         ecosystem: str,
-        repo_config_target: Path,
+        repo_config_target: pathlib.Path,
         interactive: bool,
-        config_path: Path | None,
+        config_path: pathlib.Path | None,
     ) -> int:
         target.parent.mkdir()
         target.write_text("", encoding="utf-8")
@@ -254,27 +265,27 @@ def test_failed_init_hands_new_scaffold_back_to_the_sudo_user(
         (root / ".gitignore").write_text("new", encoding="utf-8")
         raise ConfigError("broken")
 
-    handed_back: list[Path] = []
+    handed_back: list[pathlib.Path] = []
     monkeypatch.setattr(ic, "repo_config_path", _target)
     monkeypatch.setattr(ic, "is_git_repo", _not_a_repo)
     monkeypatch.setattr(ic, "init_workspace", _fail)
     monkeypatch.setattr(ic, "chown_to_real_user", handed_back.append)
 
-    with pytest.raises(OperatorError):
+    with pytest.raises(errors.OperatorError):
         ic._cmd_init(ecosystem="", assume_yes=True)  # pyright: ignore[reportPrivateUsage]
 
     assert handed_back == [target.parent, tmp_path / "AGENTS.md", tmp_path / ".gitignore"]
 
 
 def test_an_unanswerable_run_creates_no_session(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A refused start leaves no session behind, so its id stays usable.
 
     A dir created before the refusal answers "already exists, use resume" to the retried
     `--session-id` while resume finds no snapshot, and sits in `agent6 sessions` forever.
     """
-    init_repo(tmp_path)
+    git_ops.init_repo(tmp_path)
     for key, value in (("user.email", "t@example.com"), ("user.name", "t")):
         subprocess.run(["git", "-C", str(tmp_path), "config", key, value], check=True)
     (tmp_path / "agent6.toml").write_text(
@@ -312,11 +323,11 @@ def test_an_unanswerable_run_creates_no_session(
 
     assert rc == 2
     assert "needs someone to answer" in capsys.readouterr().err
-    assert not (state_dir(tmp_path) / "sessions" / "runs" / "picked-id").exists()
+    assert not (paths.state_dir(tmp_path) / "sessions" / "runs" / "picked-id").exists()
 
 
 def test_init_never_commits_the_operators_own_edits(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Init never commits the operator's own in-flight edit to AGENTS.md.
 
@@ -324,7 +335,7 @@ def test_init_never_commits_the_operators_own_edits(
     """
     repo = tmp_path / "repo"
     repo.mkdir()
-    init_repo(repo)
+    git_ops.init_repo(repo)
     (repo / "AGENTS.md").write_text("theirs v1\n", encoding="utf-8")
     (repo / ".gitignore").write_text("x\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
@@ -354,7 +365,7 @@ def test_init_never_commits_the_operators_own_edits(
 
 
 def test_init_never_commits_a_gitignore_with_existing_edits(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -383,7 +394,7 @@ def test_init_never_commits_a_gitignore_with_existing_edits(
 
 
 def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Init in a fresh repo leaves out an AGENTS.md the operator wrote, untracked though it is."""
     repo = tmp_path / "fresh"
@@ -414,7 +425,7 @@ def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
 
 
 def test_init_leaves_a_modified_preexisting_file_out_of_a_fresh_repo_commit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "fresh"
     repo.mkdir()
@@ -442,12 +453,12 @@ def test_init_leaves_a_modified_preexisting_file_out_of_a_fresh_repo_commit(
 
 
 def test_init_does_not_call_a_committed_scaffold_uncommitted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Init leaves a committed, untouched AGENTS.md alone and does not call it uncommitted."""
     repo = tmp_path / "repo"
     repo.mkdir()
-    init_repo(repo)
+    git_ops.init_repo(repo)
     (repo / "AGENTS.md").write_text("theirs v1\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(

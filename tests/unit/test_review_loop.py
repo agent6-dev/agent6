@@ -9,13 +9,10 @@ gating decision (no network).
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest import mock
 
-from agent6.harness._chain import RunChain
-from agent6.harness._conversation import Conversation
-from agent6.harness._reviewer import ReviewSeat, ReviewSettings
-from agent6.harness.loop import Harness
-from agent6.tools.results import RawResult
+from agent6.harness import _chain, _conversation, _reviewer, loop
+from agent6.tools import results
 from tests.unit.test_review_gate import (
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
     _resp,  # pyright: ignore[reportPrivateUsage]
@@ -42,13 +39,13 @@ _NONGATING = (  # grounded but a non-block-eligible category -> downgraded, neve
 )
 
 
-def _seat(provider: Any, persona: str = "security", model: str = "m1") -> ReviewSeat:
-    return ReviewSeat(persona=persona, model=model, provider=provider)
+def _seat(provider: Any, persona: str = "security", model: str = "m1") -> _reviewer.ReviewSeat:
+    return _reviewer.ReviewSeat(persona=persona, model=model, provider=provider)
 
 
-def _disp() -> MagicMock:
-    d = MagicMock()
-    d.dispatch.return_value = RawResult(
+def _disp() -> mock.MagicMock:
+    d = mock.MagicMock()
+    d.dispatch.return_value = results.RawResult(
         {"ok": True}
     )  # JSON-serializable (finish_session is dispatched)
     return d
@@ -58,9 +55,9 @@ def _begin() -> list[dict[str, Any]]:
     return [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo\n\nBegin."}]}]
 
 
-def _drive(wf: Harness, messages: list[dict[str, Any]]) -> Any:
-    conversation = Conversation.from_wire(messages)
-    with patch.object(RunChain, "diff_since_base", return_value=_DIFF):
+def _drive(wf: loop.Harness, messages: list[dict[str, Any]]) -> Any:
+    conversation = _conversation.Conversation.from_wire(messages)
+    with mock.patch.object(_chain.RunChain, "diff_since_base", return_value=_DIFF):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=conversation,
@@ -75,9 +72,9 @@ def _drive(wf: Harness, messages: list[dict[str, Any]]) -> Any:
 
 
 def test_has_reviewer_true_with_seats() -> None:
-    wf = _wf(review=ReviewSettings(seats=[_seat(MagicMock())]))
+    wf = _wf(review=_reviewer.ReviewSettings(seats=[_seat(mock.MagicMock())]))
     assert wf.reviewer.available() is True
-    assert _wf(review=ReviewSettings(seats=[])).reviewer.available() is False
+    assert _wf(review=_reviewer.ReviewSettings(seats=[])).reviewer.available() is False
 
 
 def test_panel_blocks_finish_under_veto_then_accepts() -> None:
@@ -85,17 +82,17 @@ def test_panel_blocks_finish_under_veto_then_accepts() -> None:
 
     The first `finish_session` is revoked; once the seat passes, the second is accepted.
     """
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("f1", _finish_tool_use("a", "done")),
         _resp_with_tool_use("f2", _finish_tool_use("b", "done")),
     ]
-    seat_provider = MagicMock()
+    seat_provider = mock.MagicMock()
     seat_provider.call.side_effect = [_resp(_BLOCK), _resp(_PASS)]
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=ReviewSettings(
+        review=_reviewer.ReviewSettings(
             seats=[_seat(seat_provider)], decision="veto", trigger="before_finish"
         ),
         base_sha="b",
@@ -117,19 +114,19 @@ def test_panel_skipped_when_budget_fraction_low() -> None:
     Reviewing costs most when budget is scarcest. The seat that WOULD block is never called, and
     finish_session is accepted. This is the only behavioural test of review_budget_fraction.
     """
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.return_value = _resp_with_tool_use("f1", _finish_tool_use("a", "done"))
-    seat_provider = MagicMock()
+    seat_provider = mock.MagicMock()
     seat_provider.call.side_effect = [_resp(_BLOCK)]  # would block IF the panel ran
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=ReviewSettings(
+        review=_reviewer.ReviewSettings(
             seats=[_seat(seat_provider)], decision="veto", trigger="before_finish"
         ),
         base_sha="b",
     )  # review_budget_fraction defaults to 0.25
-    with patch.object(Harness, "_budget_fraction_remaining", return_value=0.10):
+    with mock.patch.object(loop.Harness, "_budget_fraction_remaining", return_value=0.10):
         result = _drive(wf, _begin())
     assert seat_provider.call.call_count == 0  # panel skipped, not run
     assert result.reason == "finish_session" and result.iterations == 1
@@ -137,14 +134,14 @@ def test_panel_skipped_when_budget_fraction_low() -> None:
 
 def test_panel_advisory_does_not_block_finish() -> None:
     """The SAME grounded block under advisory does not gate -> finish on iter 1."""
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.side_effect = [_resp_with_tool_use("f1", _finish_tool_use("a", "done"))]
-    seat_provider = MagicMock()
+    seat_provider = mock.MagicMock()
     seat_provider.call.return_value = _resp(_BLOCK)
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=ReviewSettings(
+        review=_reviewer.ReviewSettings(
             seats=[_seat(seat_provider)], decision="advisory", trigger="before_finish"
         ),
         base_sha="b",
@@ -159,14 +156,14 @@ def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
 
     The aggregator downgrades it, so the finish is accepted on the first iteration.
     """
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.side_effect = [_resp_with_tool_use("f1", _finish_tool_use("a", "done"))]
-    seat_provider = MagicMock()
+    seat_provider = mock.MagicMock()
     seat_provider.call.return_value = _resp(_NONGATING)
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=ReviewSettings(
+        review=_reviewer.ReviewSettings(
             seats=[_seat(seat_provider)], decision="veto", trigger="before_finish"
         ),
         base_sha="b",
@@ -180,17 +177,17 @@ def test_disarm_after_max_total_rejections_lets_finish_through() -> None:
 
     A persistently blocking panel cannot stall the run forever.
     """
-    worker = MagicMock()
+    worker = mock.MagicMock()
     # the worker keeps trying to finish; the seat keeps blocking
     worker.call.side_effect = [
         _resp_with_tool_use(f"f{i}", _finish_tool_use(str(i), "done")) for i in range(6)
     ]
-    seat_provider = MagicMock()
+    seat_provider = mock.MagicMock()
     seat_provider.call.return_value = _resp(_BLOCK)
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=ReviewSettings(
+        review=_reviewer.ReviewSettings(
             seats=[_seat(seat_provider)],
             decision="veto",
             trigger="before_finish",
@@ -212,11 +209,10 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     through, since a panel never deadlocks a run.
     """
     import agent6.harness._reviewer as review_mod
-    from agent6.harness._panel import PanelResult, ReviewVerdict
-    from agent6.harness.loop import LoopState
+    from agent6.harness import _loop_state, _panel
 
-    abstain = ReviewVerdict(seat="s", model="m", verdict="pass", error="output hit the cap")
-    res = PanelResult(
+    abstain = _panel.ReviewVerdict(seat="s", model="m", verdict="pass", error="output hit the cap")
+    res = _panel.PanelResult(
         panel_id="p",
         decision="advisory",
         blocked=False,
@@ -226,15 +222,15 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
         n_abstain=3,
     )
     wf = _wf(
-        provider=MagicMock(),
+        provider=mock.MagicMock(),
         dispatcher=_disp(),
-        review=ReviewSettings(seats=[_seat(MagicMock())], decision="advisory"),
+        review=_reviewer.ReviewSettings(seats=[_seat(mock.MagicMock())], decision="advisory"),
         base_sha="b",
     )
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     with (
-        patch.object(RunChain, "diff_since_base", return_value=_DIFF),
-        patch.object(review_mod, "run_panel", return_value=res),
+        mock.patch.object(_chain.RunChain, "diff_since_base", return_value=_DIFF),
+        mock.patch.object(review_mod, "run_panel", return_value=res),
     ):
         out = wf.reviewer.critique(state, trigger="periodic", iteration=1)
     assert out is not None

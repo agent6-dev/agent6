@@ -8,27 +8,27 @@ import asyncio
 import bisect
 import json
 import os
-from pathlib import Path
+import pathlib
 
-from textual.containers import VerticalScroll
-from textual.widgets import Static
+from textual import containers, widgets
 
-from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.composer import ApprovalRow
-from agent6.ui.tui.conversation import ConversationScreen, SteerInput
+from agent6.ui.tui import app as tui_app
+from agent6.ui.tui import composer, conversation
 from tests.tui._waits import wait_for
 
 
-def _following(scroll: VerticalScroll) -> bool:
+def _following(scroll: containers.VerticalScroll) -> bool:
     return scroll.max_scroll_y - scroll.scroll_y <= 2.0
 
 
-def _body_text(app: Agent6TUI) -> str:
+def _body_text(app: tui_app.Agent6TUI) -> str:
     # The scrollback is a sequence of chunk Statics (selectable), in DOM order.
-    return "\n".join(str(w.content) for w in app.screen.query(".conv-chunk").results(Static))
+    return "\n".join(
+        str(w.content) for w in app.screen.query(".conv-chunk").results(widgets.Static)
+    )
 
 
-def _nlines(app: Agent6TUI) -> int:
+def _nlines(app: tui_app.Agent6TUI) -> int:
     return len([ln for ln in _body_text(app).splitlines() if ln.strip()])
 
 
@@ -45,11 +45,13 @@ _EVENTS: list[dict[str, object]] = [
 ]
 
 
-def _write(logs: Path, events: list[dict[str, object]]) -> None:
+def _write(logs: pathlib.Path, events: list[dict[str, object]]) -> None:
     logs.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
 
-def _hosted(run: Path, events: list[dict[str, object]] | None, *, live: bool = False) -> Agent6TUI:
+def _hosted(
+    run: pathlib.Path, events: list[dict[str, object]] | None, *, live: bool = False
+) -> tui_app.Agent6TUI:
     """Return the run app over the run, with the conversation screen as its first view.
 
     `live` plants this process as the run's worker, so the dir status reads live; None writes
@@ -60,16 +62,16 @@ def _hosted(run: Path, events: list[dict[str, object]] | None, *, live: bool = F
         _write(run / "logs.jsonl", events)
     if live:
         (run / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    return Agent6TUI(run)
+    return tui_app.Agent6TUI(run)
 
 
-def test_conversation_screen_cycles_detail_level(tmp_path: Path) -> None:
+def test_conversation_screen_cycles_detail_level(tmp_path: pathlib.Path) -> None:
     async def scenario() -> None:
         app = _hosted(tmp_path / "run", _EVENTS)
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, ConversationScreen)
+            assert isinstance(screen, conversation.ConversationScreen)
 
             def body_text() -> str:
                 return _body_text(app)
@@ -92,7 +94,7 @@ def test_conversation_screen_cycles_detail_level(tmp_path: Path) -> None:
 
 
 def test_an_unrendered_finish_call_with_bad_args_does_not_crash_the_screen(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """A corrupt finish call's non-object args do not take down the conversation screen."""
     events: list[dict[str, object]] = [
@@ -105,13 +107,13 @@ def test_an_unrendered_finish_call_with_bad_args_does_not_crash_the_screen(
         app = _hosted(tmp_path / "run", events)
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert isinstance(app.screen, ConversationScreen)
+            assert isinstance(app.screen, conversation.ConversationScreen)
             assert "● passed" in _body_text(app)
 
     asyncio.run(scenario())
 
 
-def test_conversation_screen_follows_live(tmp_path: Path) -> None:
+def test_conversation_screen_follows_live(tmp_path: pathlib.Path) -> None:
     """Events appended after mount (a live run / a resume) show up via the poll."""
     run = tmp_path / "run"
     logs = run / "logs.jsonl"
@@ -129,20 +131,20 @@ def test_conversation_screen_follows_live(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_steer_bar_stays_for_a_finished_run_as_the_resume_composer(tmp_path: Path) -> None:
+def test_steer_bar_stays_for_a_finished_run_as_the_resume_composer(tmp_path: pathlib.Path) -> None:
     """After the run ends the bar stays, and Enter resumes the run with the typed follow-up."""
 
     async def scenario() -> None:
         app = _hosted(tmp_path / "run", _EVENTS)  # ends with session.end: finished
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert app.screen.query_one("#conv-input", SteerInput).display
+            assert app.screen.query_one("#conv-input", composer.SteerInput).display
 
     asyncio.run(scenario())
 
 
-def test_steer_bar_shows_for_a_live_run_and_submits_over_the_bridge(tmp_path: Path) -> None:
-    from agent6.sessions.ipc import STEER_ANSWER_FILE, steer_request_pending
+def test_steer_bar_shows_for_a_live_run_and_submits_over_the_bridge(tmp_path: pathlib.Path) -> None:
+    from agent6.sessions import ipc
 
     run = tmp_path / "run"
 
@@ -150,24 +152,24 @@ def test_steer_bar_shows_for_a_live_run_and_submits_over_the_bridge(tmp_path: Pa
         app = _hosted(run, _EVENTS[:-1], live=True)  # no session.end, a live worker
         async with app.run_test() as pilot:
             await pilot.pause()
-            bar = app.screen.query_one("#conv-input", SteerInput)
+            bar = app.screen.query_one("#conv-input", composer.SteerInput)
             assert bar.display  # a live run shows the steer bar
-            bar.post_message(SteerInput.Submitted("go left"))
+            bar.post_message(composer.SteerInput.Submitted("go left"))
             await pilot.pause()
 
     asyncio.run(scenario())
-    assert steer_request_pending(run)  # the run was asked to steer
-    assert (run / STEER_ANSWER_FILE).read_text(encoding="utf-8") == "go left"
+    assert ipc.steer_request_pending(run)  # the run was asked to steer
+    assert (run / ipc.STEER_ANSWER_FILE).read_text(encoding="utf-8") == "go left"
 
 
-def test_resumed_execution_is_live_and_steers_over_the_bridge(tmp_path: Path) -> None:
+def test_resumed_execution_is_live_and_steers_over_the_bridge(tmp_path: pathlib.Path) -> None:
     """A resumed execution emits ONLY loop.resume.start (never a second session.start).
 
     The screen must read it as live, as the host's dir status does once the execution's worker is
     up, so a submit routes to the steer bridge; an execution read as finished had Enter spawn a
     second resume that died on the run lock while the toast claimed the instruction was delivered.
     """
-    from agent6.sessions.ipc import STEER_ANSWER_FILE, steer_request_pending
+    from agent6.sessions import ipc
 
     run = tmp_path / "run"
     logs = run / "logs.jsonl"
@@ -177,47 +179,47 @@ def test_resumed_execution_is_live_and_steers_over_the_bridge(tmp_path: Path) ->
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, ConversationScreen)
+            assert isinstance(screen, conversation.ConversationScreen)
             assert not app.session_controllable()  # finished execution
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "loop.resume.start", "iteration": 1}) + "\n")
                 fh.write(json.dumps({"type": "role.call", "role": "worker"}) + "\n")
             (run / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
             await wait_for(pilot, app.session_controllable, "the resumed execution to read live")
-            bar = screen.query_one("#conv-input", SteerInput)
-            bar.post_message(SteerInput.Submitted("also update docs"))
+            bar = screen.query_one("#conv-input", composer.SteerInput)
+            bar.post_message(composer.SteerInput.Submitted("also update docs"))
             await pilot.pause()
 
     asyncio.run(scenario())
     # Routed over the steer bridge, not a second doomed `agent6 resume`.
-    assert steer_request_pending(run)
-    assert (run / STEER_ANSWER_FILE).read_text(encoding="utf-8") == "also update docs"
+    assert ipc.steer_request_pending(run)
+    assert (run / ipc.STEER_ANSWER_FILE).read_text(encoding="utf-8") == "also update docs"
 
 
-def test_live_run_auto_focuses_the_steer_bar(tmp_path: Path) -> None:
+def test_live_run_auto_focuses_the_steer_bar(tmp_path: pathlib.Path) -> None:
     async def scenario() -> None:
         app = _hosted(tmp_path / "run", _EVENTS[:-1], live=True)  # bar ready to type
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert isinstance(app.focused, SteerInput)
+            assert isinstance(app.focused, composer.SteerInput)
 
     asyncio.run(scenario())
 
 
-def test_esc_backs_out_even_with_the_bar_focused(tmp_path: Path) -> None:
+def test_esc_backs_out_even_with_the_bar_focused(tmp_path: pathlib.Path) -> None:
     # Esc is a priority binding, so it leaves the view instead of the focused bar eating the key.
     async def scenario() -> None:
         app = _hosted(tmp_path / "run", _EVENTS[:-1], live=True)
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert isinstance(app.focused, SteerInput)
+            assert isinstance(app.focused, composer.SteerInput)
             await pilot.press("escape")
         assert app.return_code == 0  # to_hub: back to the hub loop
 
     asyncio.run(scenario())
 
 
-def test_follow_survives_the_live_pane_growing(tmp_path: Path) -> None:
+def test_follow_survives_the_live_pane_growing(tmp_path: pathlib.Path) -> None:
     # A turn that only thinks grows the live pane and shrinks the viewport; follow survives it.
     logs = tmp_path / "logs.jsonl"
     events: list[dict[str, object]] = [{"type": "session.start", "user_task": "x"}]
@@ -234,11 +236,11 @@ def test_follow_survives_the_live_pane_growing(tmp_path: Path) -> None:
         app = _hosted(run, events, live=True)  # no session.end, a live worker
         async with app.run_test(size=(60, 12)) as pilot:
             await pilot.pause()
-            scroll = app.screen.query_one("#conv-scroll", VerticalScroll)
+            scroll = app.screen.query_one("#conv-scroll", containers.VerticalScroll)
             assert _following(scroll)  # _reload pins to the bottom
             # Expanded detail streams the reasoning tail into the live pane, growing it.
             conv_screen = app.screen
-            assert isinstance(conv_screen, ConversationScreen)
+            assert isinstance(conv_screen, conversation.ConversationScreen)
             conv_screen._detail = "expanded"
             overflow_before = scroll.max_scroll_y
             with logs.open("a", encoding="utf-8") as fh:
@@ -254,7 +256,7 @@ def test_follow_survives_the_live_pane_growing(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_detail_cycle_keeps_the_top_block_anchored(tmp_path: Path) -> None:
+def test_detail_cycle_keeps_the_top_block_anchored(tmp_path: pathlib.Path) -> None:
     # Expanding a big block above the viewport keeps the block at the top of the viewport in place.
     events: list[dict[str, object]] = [{"type": "session.start", "user_task": "x"}]
     big: list[dict[str, object]] = [
@@ -279,8 +281,8 @@ def test_detail_cycle_keeps_the_top_block_anchored(tmp_path: Path) -> None:
         async with app.run_test(size=(80, 16)) as pilot:
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, ConversationScreen)
-            scroll = screen.query_one("#conv-scroll", VerticalScroll)
+            assert isinstance(screen, conversation.ConversationScreen)
+            scroll = screen.query_one("#conv-scroll", containers.VerticalScroll)
             scroll.scroll_to(y=18, animate=False)  # a mid position, past the failed tool
             await pilot.pause()
             starts = screen._item_visual_starts()
@@ -294,7 +296,7 @@ def test_detail_cycle_keeps_the_top_block_anchored(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: Path) -> None:
+def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: pathlib.Path) -> None:
     # A turn still thinking shows in the live pane, so a long generation does not look frozen.
     run = tmp_path / "run"
     logs = run / "logs.jsonl"
@@ -308,7 +310,7 @@ def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: Path) -> No
         app = _hosted(run, events, live=True)
         async with app.run_test() as pilot:
             await pilot.pause()
-            live = app.screen.query_one("#conv-live", Static)
+            live = app.screen.query_one("#conv-live", widgets.Static)
             assert live.display  # the in-progress turn is shown live
             # A completed turn hands its prose to the scrollback; no next call is implied.
             with logs.open("a", encoding="utf-8") as fh:
@@ -318,7 +320,7 @@ def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: Path) -> No
     asyncio.run(scenario())
 
 
-def test_conversation_screen_empty(tmp_path: Path) -> None:
+def test_conversation_screen_empty(tmp_path: pathlib.Path) -> None:
     async def scenario() -> None:
         app = _hosted(tmp_path / "run", None, live=True)  # a live run, no journal yet
         async with app.run_test() as pilot:
@@ -328,24 +330,22 @@ def test_conversation_screen_empty(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_conversation_screen_esc_backs_out(tmp_path: Path) -> None:
+def test_conversation_screen_esc_backs_out(tmp_path: pathlib.Path) -> None:
     """Esc leaves the conversation view: the host's to_hub exits with the back-to-hub code."""
 
     async def scenario() -> None:
         app = _hosted(tmp_path / "run", _EVENTS)
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert isinstance(app.screen, ConversationScreen)
+            assert isinstance(app.screen, conversation.ConversationScreen)
             await pilot.press("escape")
         assert app.return_code == 0
 
     asyncio.run(scenario())
 
 
-def test_jump_to_bottom_pill_shows_when_scrolled_up(tmp_path: Path) -> None:
+def test_jump_to_bottom_pill_shows_when_scrolled_up(tmp_path: pathlib.Path) -> None:
     """The jump pill overlays only while scrolled up; its action returns to the tail."""
-    from agent6.ui.tui.conversation import _JumpButton
-
     many = [dict(e) for _ in range(30) for e in _EVENTS[:-1]]  # a tall transcript
 
     async def scenario() -> None:
@@ -353,8 +353,8 @@ def test_jump_to_bottom_pill_shows_when_scrolled_up(tmp_path: Path) -> None:
         async with app.run_test(size=(90, 24)) as pilot:
             await pilot.pause()
             await pilot.pause()
-            jump = app.screen.query_one("#conv-jump", _JumpButton)
-            scroll = app.screen.query_one("#conv-scroll", VerticalScroll)
+            jump = app.screen.query_one("#conv-jump", conversation._JumpButton)
+            scroll = app.screen.query_one("#conv-scroll", containers.VerticalScroll)
             assert scroll.max_scroll_y > 0  # tall enough to scroll
             assert not jump.display  # following the tail: hidden
             await pilot.press("ctrl+home")
@@ -369,7 +369,7 @@ def test_jump_to_bottom_pill_shows_when_scrolled_up(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: Path) -> None:
+def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: pathlib.Path) -> None:
     """A worker killed mid-stream leaves no "thinking…" over a corpse on the primary view.
 
     Only role.call and role.result clear the delta buffers; the host's dir status knows the corpse.
@@ -387,7 +387,7 @@ def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause()
             await pilot.pause()
-            pane = app.screen.query_one("#conv-live", Static)
+            pane = app.screen.query_one("#conv-live", widgets.Static)
             return bool(pane.display), str(pane.content)
 
     shown_live, text_live = asyncio.run(scenario(True))
@@ -397,7 +397,7 @@ def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: Path) -> None:
     assert not shown_dead, "a dead worker has no in-progress turn to show"
 
 
-def test_live_pane_says_waiting_while_the_operator_holds_the_answer(tmp_path: Path) -> None:
+def test_live_pane_says_waiting_while_the_operator_holds_the_answer(tmp_path: pathlib.Path) -> None:
     """Blocked on an approval or a question, the pane says waiting, not "thinking…"."""
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "fix it"},
@@ -412,7 +412,7 @@ def test_live_pane_says_waiting_while_the_operator_holds_the_answer(tmp_path: Pa
         async with app.run_test() as pilot:
             await pilot.pause()
             await pilot.pause()
-            pane = app.screen.query_one("#conv-live", Static)
+            pane = app.screen.query_one("#conv-live", widgets.Static)
             assert pane.display
             return str(pane.content)
 
@@ -421,7 +421,9 @@ def test_live_pane_says_waiting_while_the_operator_holds_the_answer(tmp_path: Pa
     assert "thinking" not in text and "working" not in text
 
 
-def test_an_ended_run_with_no_conversation_says_so_in_the_past_tense(tmp_path: Path) -> None:
+def test_an_ended_run_with_no_conversation_says_so_in_the_past_tense(
+    tmp_path: pathlib.Path,
+) -> None:
     """The placeholder of a dead run says the worker died, not that output will stream."""
     events: list[dict[str, object]] = [{"type": "session.start", "user_task": "do X"}]
 
@@ -436,15 +438,13 @@ def test_an_ended_run_with_no_conversation_says_so_in_the_past_tense(tmp_path: P
     asyncio.run(scenario())
 
 
-def test_live_pane_moves_only_while_a_model_call_is_in_flight(tmp_path: Path) -> None:
+def test_live_pane_moves_only_while_a_model_call_is_in_flight(tmp_path: pathlib.Path) -> None:
     """A live worker between calls is not a model at work.
 
     The live pane stays hidden after role.result, then appears and advances when the next role.call
     enters flight.
     """
     import os
-
-    from agent6.ui.tui.app import Agent6TUI
 
     d = tmp_path / "live-spin"
     d.mkdir()
@@ -458,12 +458,12 @@ def test_live_pane_moves_only_while_a_model_call_is_in_flight(tmp_path: Path) ->
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             conv = app._conv
             conv._poll()
-            live = conv.query_one("#conv-live", Static)
+            live = conv.query_one("#conv-live", widgets.Static)
             assert not live.display
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(
@@ -487,7 +487,7 @@ def test_live_pane_moves_only_while_a_model_call_is_in_flight(tmp_path: Path) ->
     asyncio.run(scenario())
 
 
-def test_an_in_flight_tool_call_shows_in_the_live_pane_then_settles(tmp_path: Path) -> None:
+def test_an_in_flight_tool_call_shows_in_the_live_pane_then_settles(tmp_path: pathlib.Path) -> None:
     """A long run_command read as a bare "working…" until its result.
 
     The call shows in the live pane as soon as it is seen; its settled item lands in the scrollback
@@ -501,7 +501,7 @@ def test_an_in_flight_tool_call_shows_in_the_live_pane_then_settles(tmp_path: Pa
         app = _hosted(run, [_EVENTS[0], {**call, "call_id": 1}], live=True)
         async with app.run_test() as pilot:
             await pilot.pause()
-            live = app.screen.query_one("#conv-live", Static)
+            live = app.screen.query_one("#conv-live", widgets.Static)
             await wait_for(pilot, lambda: "running" in str(live.render()), "the call in the pane")
             pane = str(live.render())
             assert "→ run_command" in pane and "sleep 60" in pane
@@ -516,7 +516,7 @@ def test_an_in_flight_tool_call_shows_in_the_live_pane_then_settles(tmp_path: Pa
     asyncio.run(scenario())
 
 
-def test_the_live_pane_says_awaiting_approval_under_an_open_prompt(tmp_path: Path) -> None:
+def test_the_live_pane_says_awaiting_approval_under_an_open_prompt(tmp_path: pathlib.Path) -> None:
     """A call in flight while its approval prompt is open reads as waiting, never running.
 
     The dispatcher journals tool.call before the approval gate.
@@ -532,9 +532,11 @@ def test_the_live_pane_says_awaiting_approval_under_an_open_prompt(tmp_path: Pat
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, ConversationScreen)
-            await wait_for(pilot, lambda: bool(screen.query(ApprovalRow)), "the approval row")
-            live = screen.query_one("#conv-live", Static)
+            assert isinstance(screen, conversation.ConversationScreen)
+            await wait_for(
+                pilot, lambda: bool(screen.query(composer.ApprovalRow)), "the approval row"
+            )
+            live = screen.query_one("#conv-live", widgets.Static)
             assert "waiting · needs answer" in str(live.render())
             assert "running" not in str(live.render())
 

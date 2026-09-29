@@ -12,8 +12,8 @@ all spawn children too, and a regex for run|Popen alone would wave them through.
 
 from __future__ import annotations
 
+import pathlib
 import re
-from pathlib import Path
 
 import pytest
 
@@ -65,7 +65,7 @@ ALLOWED = {
 
 
 def test_direct_subprocess_stays_on_the_allowlist() -> None:
-    src = Path(agent6.__file__).resolve().parent
+    src = pathlib.Path(agent6.__file__).resolve().parent
     matches = {
         p.relative_to(src).as_posix()
         for p in src.rglob("*.py")

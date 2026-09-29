@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 from agent6.app.machine import machine_spend
 from agent6.machine import AgentFact, StepEvent
@@ -29,7 +29,7 @@ def _agent_step(seq: int, usd: float) -> StepEvent:
     )
 
 
-def _state_log(root: Path, seq: int, name: str, usd: float) -> None:
+def _state_log(root: pathlib.Path, seq: int, name: str, usd: float) -> None:
     d = root / "states" / f"{seq:04d}-{name}"
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text(
@@ -41,7 +41,7 @@ def _state_log(root: Path, seq: int, name: str, usd: float) -> None:
     )
 
 
-def test_spend_folds_the_running_state_when_alive(tmp_path: Path) -> None:
+def test_spend_folds_the_running_state_when_alive(tmp_path: pathlib.Path) -> None:
     # A booked step at seq 0, plus a running state at seq 1 whose live spend must be added.
     events = [_agent_step(0, 0.10)]
     _state_log(tmp_path, 1, "hunt", 0.059)  # in-flight, unbooked
@@ -51,7 +51,7 @@ def test_spend_folds_the_running_state_when_alive(tmp_path: Path) -> None:
     assert spend.input_tokens == 170 and spend.output_tokens == 80
 
 
-def test_spend_ignores_the_state_log_when_not_alive(tmp_path: Path) -> None:
+def test_spend_ignores_the_state_log_when_not_alive(tmp_path: pathlib.Path) -> None:
     # A dead/parked machine: do not fold a stale in-flight log (only booked steps).
     events = [_agent_step(0, 0.10)]
     _state_log(tmp_path, 1, "hunt", 0.059)
@@ -59,7 +59,7 @@ def test_spend_ignores_the_state_log_when_not_alive(tmp_path: Path) -> None:
     assert abs(spend.usd - 0.10) < 1e-9 and inflight == ""
 
 
-def test_spend_does_not_double_count_a_booked_state(tmp_path: Path) -> None:
+def test_spend_does_not_double_count_a_booked_state(tmp_path: pathlib.Path) -> None:
     # The newest log's seq matches a booked StepEvent, so its cost must not be added again.
     events = [_agent_step(0, 0.10)]
     _state_log(tmp_path, 0, "s0", 0.10)  # same seq as the booked step
@@ -67,14 +67,14 @@ def test_spend_does_not_double_count_a_booked_state(tmp_path: Path) -> None:
     assert abs(spend.usd - 0.10) < 1e-9 and inflight == ""
 
 
-def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: Path) -> None:
+def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: pathlib.Path) -> None:
     """A retry that died before its first budget.update salvages $0, not a prior attempt's total.
 
     from_offset scopes the read to events after the caller's spawn point in the shared draft log.
     """
     import json
 
-    from agent6.viewmodel.machine_state import Spend, read_budget_totals
+    from agent6.viewmodel import machine_state
 
     log = tmp_path / "logs.jsonl"
     log.write_text(
@@ -86,9 +86,9 @@ def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: Path) -> None:
     )
     offset = log.stat().st_size
     # Attempt 2 died before any budget.update: nothing after the offset.
-    assert read_budget_totals(log, from_offset=offset) == Spend()
+    assert machine_state.read_budget_totals(log, from_offset=offset) == machine_state.Spend()
     # Without the offset the prior attempt's totals still read.
-    assert read_budget_totals(log).usd == 0.90
+    assert machine_state.read_budget_totals(log).usd == 0.90
     # Attempt 2 then emits its own update: only ITS totals salvage.
     with log.open("a", encoding="utf-8") as fh:
         fh.write(
@@ -97,15 +97,17 @@ def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: Path) -> None:
             )
             + "\n"
         )
-    assert read_budget_totals(log, from_offset=offset) == Spend(0.05, 2, 1)
+    assert machine_state.read_budget_totals(log, from_offset=offset) == machine_state.Spend(
+        0.05, 2, 1
+    )
 
 
-def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: Path) -> None:
+def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: pathlib.Path) -> None:
     """An unpriced model's spend is a lower bound, marked '~' on every surface."""
     import json
 
-    from agent6.viewmodel.format import format_usd
-    from agent6.viewmodel.machine_state import Spend, read_budget_totals
+    from agent6 import budget
+    from agent6.viewmodel import machine_state
 
     log = tmp_path / "logs.jsonl"
     log.write_text(
@@ -121,21 +123,21 @@ def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    spend = read_budget_totals(log)
+    spend = machine_state.read_budget_totals(log)
     assert spend.partial is True
-    assert format_usd(spend.usd, partial=spend.partial).startswith("~$")
+    assert budget.format_usd(spend.usd, partial=spend.partial).startswith("~$")
     # The flag survives folding with priced (non-partial) slices.
-    assert (spend + Spend(1.0)).partial is True
+    assert (spend + machine_state.Spend(1.0)).partial is True
 
 
-def test_spend_of_a_state_whose_capture_failed_is_still_booked(tmp_path: Path) -> None:
+def test_spend_of_a_state_whose_capture_failed_is_still_booked(tmp_path: pathlib.Path) -> None:
     """A capture that cannot be reduced halts before the StepEvent, but its spend is booked."""
-    from agent6.machine.journal import MachineEnd
+    from agent6.machine import journal as machine_journal
 
     root = tmp_path / "inst"
     root.mkdir()
     events = [
-        MachineEnd(
+        machine_journal.MachineEnd(
             ts="2026-07-27T00:00:00+00:00",
             status="failed",
             reason="state 'judge': record has no field 'note'",
@@ -154,13 +156,13 @@ def test_spend_of_a_state_whose_capture_failed_is_still_booked(tmp_path: Path) -
     assert spend.partial is True  # an unpriced slice keeps its lower-bound flag
 
 
-def test_an_unpriced_unbooked_slice_keeps_its_tokens_and_its_marker(tmp_path: Path) -> None:
+def test_an_unpriced_unbooked_slice_keeps_its_tokens_and_its_marker(tmp_path: pathlib.Path) -> None:
     """An unpriced slice reports usd 0.0 with usd_partial True, and its tokens still fold."""
-    from agent6.machine.journal import MachineEnd
+    from agent6.machine import journal as machine_journal
 
     root = tmp_path / "inst"
     root.mkdir()
-    end = MachineEnd(
+    end = machine_journal.MachineEnd(
         ts="2026-07-28T00:00:00+00:00",
         status="failed",
         reason="state 'judge': record has no field 'note'",
@@ -177,7 +179,7 @@ def test_an_unpriced_unbooked_slice_keeps_its_tokens_and_its_marker(tmp_path: Pa
     assert spend.partial is True, "the '~' lower-bound marker was dropped"
 
 
-def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: Path) -> None:
+def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: pathlib.Path) -> None:
     """A supervisor crash mid-agent-state books the per-state log's spend as an AttemptSpend."""
     from agent6.app.machine import book_crashed_attempt
     from agent6.machine import AttemptSpend, MachineJournal
@@ -218,10 +220,9 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: Path) -> None:
     assert len(list((tmp_path / "states").glob("crashed-*-0001-hunt"))) == 2
 
 
-def test_booked_attempt_spend_counts_against_max_usd(tmp_path: Path) -> None:
+def test_booked_attempt_spend_counts_against_max_usd(tmp_path: pathlib.Path) -> None:
     """The engine's budget check folds AttemptSpend, so a crashed slice is never re-granted."""
-    from agent6.machine import AttemptSpend, MachineJournal, load_machine
-    from agent6.machine.engine import drive
+    from agent6.machine import AttemptSpend, MachineJournal, engine, load_machine
 
     f = tmp_path / "m.asm.toml"
     f.write_text(
@@ -252,20 +253,20 @@ reason = "routed"
     journal.append(
         AttemptSpend(ts="t", seq=0, state="route", usd=0.06, input_tokens=10, output_tokens=5)
     )
-    result = drive(spec, journal, None, live=False)  # replay tolerates the event
+    result = engine.drive(spec, journal, None, live=False)  # replay tolerates the event
     assert result.status == "incomplete"
     from tests.unit.test_machine_engine import FakeWorld
 
-    live = drive(spec, journal, FakeWorld({}), live=True)
+    live = engine.drive(spec, journal, FakeWorld({}), live=True)
     assert live.status == "failed"
     assert "max_usd" in live.reason
 
 
-def test_transitions_carry_bounded_failure_evidence(tmp_path: Path) -> None:
+def test_transitions_carry_bounded_failure_evidence(tmp_path: pathlib.Path) -> None:
     """A failed edge carries why on the shared fold's transition view; success stays one line."""
+    from agent6.machine import journal as machine_journal
     from agent6.machine import load_machine
-    from agent6.machine.journal import ToolFact
-    from agent6.viewmodel.machine_state import fold_machine
+    from agent6.viewmodel import machine_state
 
     f = tmp_path / "m.asm.toml"
     f.write_text(
@@ -313,7 +314,9 @@ reason = "r"
             state="probe",
             label="nonzero",
             goto="fix",
-            fact=ToolFact(exit_code=2, stdout="", timed_out=False, stderr="boom\nno such file\n"),
+            fact=machine_journal.ToolFact(
+                exit_code=2, stdout="", timed_out=False, stderr="boom\nno such file\n"
+            ),
         ),
         StepEvent(
             ts="t",
@@ -331,7 +334,7 @@ reason = "r"
             ),
         ),
     ]
-    ms = fold_machine(spec, events)
+    ms = machine_state.fold_machine(spec, events)
     assert ms.transitions[0].detail == "exit 2: no such file"
     assert ms.transitions[1].detail == "failed: budget_exhausted"
 
@@ -342,17 +345,17 @@ reason = "r"
             state="probe",
             label="ok",
             goto="done",
-            fact=ToolFact(exit_code=0, stdout="fine", timed_out=False),
+            fact=machine_journal.ToolFact(exit_code=0, stdout="fine", timed_out=False),
         )
     ]
-    assert fold_machine(spec, ok_events).transitions[0].detail == ""
+    assert machine_state.fold_machine(spec, ok_events).transitions[0].detail == ""
 
 
-def test_the_ledger_carries_the_cached_tokens_and_sums_them(tmp_path: Path) -> None:
+def test_the_ledger_carries_the_cached_tokens_and_sums_them(tmp_path: pathlib.Path) -> None:
     """`machine status` counts cached input tokens across states."""
     import json
 
-    from agent6.viewmodel.machine_state import Spend, read_budget_totals
+    from agent6.viewmodel import machine_state
 
     log = tmp_path / "events.jsonl"
     log.write_text(
@@ -369,7 +372,7 @@ def test_the_ledger_carries_the_cached_tokens_and_sums_them(tmp_path: Path) -> N
         + "\n",
         encoding="utf-8",
     )
-    spend = read_budget_totals(log)
+    spend = machine_state.read_budget_totals(log)
     assert (spend.cache_read_tokens, spend.cache_creation_tokens) == (42486, 22617)
-    total = spend + Spend(0.0, 1, 1, False, 4, 6)
+    total = spend + machine_state.Spend(0.0, 1, 1, False, 4, 6)
     assert (total.cache_read_tokens, total.cache_creation_tokens) == (42490, 22623)

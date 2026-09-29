@@ -11,18 +11,15 @@ so 0.15625 printed `$0.1562` on the CLI and `$0.1563` on the web.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.layout import bucket_dir, machines_root
+from agent6 import paths
+from agent6.sessions import layout
 from agent6.ui.cli import main
-from agent6.ui.web.page import PAGE_HTML
-from agent6.viewmodel.format import budget_usd_text
-from agent6.viewmodel.listing import summarize_session_dir, summary_row
-from agent6.viewmodel.state import task_tree_views
-from agent6.viewmodel.wire import machine_snapshot, session_snapshot
+from agent6.ui.web import page
+from agent6.viewmodel import format, listing, state, wire
 
 ROUTER = """
 machine = "router"
@@ -43,39 +40,42 @@ reason = "routed"
 """
 
 
-def _run(tmp_path: Path, name: str, events: list[dict[str, object]]) -> Path:
-    d = bucket_dir(state_dir(tmp_path), "runs") / name
+def _run(tmp_path: pathlib.Path, name: str, events: list[dict[str, object]]) -> pathlib.Path:
+    d = layout.bucket_dir(paths.state_dir(tmp_path), "runs") / name
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return d
 
 
 def test_the_page_carries_no_cost_formatter_and_no_glyph_map() -> None:
-    assert "fmtUsd" not in PAGE_HTML and "toFixed(4)" not in PAGE_HTML
-    assert "★" not in PAGE_HTML and "▸" not in PAGE_HTML
+    assert "fmtUsd" not in page.PAGE_HTML and "toFixed(4)" not in page.PAGE_HTML
+    assert "★" not in page.PAGE_HTML and "▸" not in page.PAGE_HTML
 
 
 def test_the_budget_line_is_rendered_once() -> None:
-    assert budget_usd_text(0.42, partial=False, usd_cap=0.0, usd_prior_executions=0.0) == "$0.42"
-    assert budget_usd_text(0.42, partial=True, usd_cap=-1, usd_prior_executions=0.0) == (
+    assert (
+        format.budget_usd_text(0.42, partial=False, usd_cap=0.0, usd_prior_executions=0.0)
+        == "$0.42"
+    )
+    assert format.budget_usd_text(0.42, partial=True, usd_cap=-1, usd_prior_executions=0.0) == (
         "~$0.42 (unlimited)"
     )
-    assert budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_executions=0.0) == (
+    assert format.budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_executions=0.0) == (
         "$0.42 / $1.00"
     )
-    assert budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_executions=0.1) == (
+    assert format.budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_executions=0.1) == (
         "$0.42 · execution $0.32 / $1.00"
     )
 
 
 def test_a_partial_total_marks_the_execution_figure_too() -> None:
     """A resumed execution's dollar figure carries the `~` its cumulative total carries."""
-    assert budget_usd_text(0.42, partial=True, usd_cap=1.0, usd_prior_executions=0.1) == (
+    assert format.budget_usd_text(0.42, partial=True, usd_cap=1.0, usd_prior_executions=0.1) == (
         "~$0.42 · execution ~$0.32 / $1.00"
     )
 
 
-def test_the_hub_row_and_the_run_view_carry_rendered_cells(tmp_path: Path) -> None:
+def test_the_hub_row_and_the_run_view_carry_rendered_cells(tmp_path: pathlib.Path) -> None:
     spent = _run(
         tmp_path,
         "spent",
@@ -85,28 +85,31 @@ def test_the_hub_row_and_the_run_view_carry_rendered_cells(tmp_path: Path) -> No
         ],
     )
     clean = _run(tmp_path, "clean", [{"type": "session.start", "mode": "run", "user_task": "y"}])
-    assert summary_row(summarize_session_dir(spent))["cost"] == "$0.16"
-    assert summary_row(summarize_session_dir(clean))["cost"] == ""
-    assert summary_row(summarize_session_dir(clean), winner=True)["id_cell"] == "clean ★"
-    assert summary_row(summarize_session_dir(clean))["id_cell"] == "clean"
-    assert session_snapshot(spent)["budget"]["usd_text"] == "$0.16 / $1.00"
+    assert listing.summary_row(listing.summarize_session_dir(spent))["cost"] == "$0.16"
+    assert listing.summary_row(listing.summarize_session_dir(clean))["cost"] == ""
+    assert (
+        listing.summary_row(listing.summarize_session_dir(clean), winner=True)["id_cell"]
+        == "clean ★"
+    )
+    assert listing.summary_row(listing.summarize_session_dir(clean))["id_cell"] == "clean"
+    assert wire.session_snapshot(spent)["budget"]["usd_text"] == "$0.16 / $1.00"
 
     (spent / "manifest.json").write_text(
         json.dumps({"compare": {"rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}}),
         encoding="utf-8",
     )
-    assert session_snapshot(spent)["compare"]["line"] == "rank 1/2 · winner · judge"
+    assert wire.session_snapshot(spent)["compare"]["line"] == "rank 1/2 · winner · judge"
 
 
 def test_task_rows_carry_their_glyph() -> None:
-    views = task_tree_views(
+    views = state.task_tree_views(
         {"a": {"title": "t", "status": "passed", "children": ["b"]}, "b": {"title": "u"}}, "b"
     )
     assert [(v.glyph, v.is_cursor) for v in views] == [("✓", False), ("▸", True)]
 
 
 def test_machine_transitions_and_spend_arrive_rendered(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -115,8 +118,8 @@ def test_machine_transitions_and_spend_arrive_rendered(
     f.write_text(ROUTER, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
-    md = machines_root(state_dir(tmp_path)) / "router"
-    snap = machine_snapshot(md)
+    md = layout.machines_root(paths.state_dir(tmp_path)) / "router"
+    snap = wire.machine_snapshot(md)
     (first, *_rest) = snap["transitions"]
     assert (
         first["line"] == f"[{first['seq']}] {first['state']} --{first['label']}--> {first['goto']}"

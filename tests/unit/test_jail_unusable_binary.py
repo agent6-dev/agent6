@@ -6,34 +6,33 @@ from __future__ import annotations
 
 import errno
 import os
+import pathlib
 import re
-from pathlib import Path
 
 import pytest
 
-from agent6.kinds import JailPolicy
+from agent6 import kinds
 from agent6.sandbox import jail
-from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 
 
 def test_an_unusable_launcher_binary_is_refused_with_the_remedy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An unexecutable launcher binary is named in a refusal, not a bare OSError."""
     fake = tmp_path / "agent6-jail"
     fake.write_text("#!/bin/sh\n", encoding="utf-8")
     fake.chmod(0o644)
     monkeypatch.setenv("AGENT6_JAIL_BIN", str(fake))
-    policy = JailPolicy(cwd=tmp_path, argv=("/bin/true",), isolation="strict", timeout_s=5.0)
-    with pytest.raises(JailUnavailableError, match=re.escape(str(fake))) as info:
-        run_in_jail(policy)
+    policy = kinds.JailPolicy(cwd=tmp_path, argv=("/bin/true",), isolation="strict", timeout_s=5.0)
+    with pytest.raises(jail.JailUnavailableError, match=re.escape(str(fake))) as info:
+        jail.run_in_jail(policy)
     said = str(info.value)
     assert "Permission denied" in said
     assert "uv sync --reinstall-package agent6" in said and "AGENT6_JAIL_BIN" in said
 
 
 def test_a_fork_or_descriptor_failure_is_not_blamed_on_the_binary(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Only ENOEXEC and EACCES speak about the binary; EAGAIN, EMFILE and ENOMEM pass through.
 
@@ -49,8 +48,8 @@ def test_a_fork_or_descriptor_failure_is_not_blamed_on_the_binary(
         raise OSError(errno.EAGAIN, os.strerror(errno.EAGAIN))
 
     monkeypatch.setattr(jail.subprocess, "Popen", _fork_fails)
-    policy = JailPolicy(cwd=tmp_path, argv=("/bin/true",), isolation="strict", timeout_s=5.0)
+    policy = kinds.JailPolicy(cwd=tmp_path, argv=("/bin/true",), isolation="strict", timeout_s=5.0)
     with pytest.raises(OSError) as info:
-        run_in_jail(policy)
-    assert not isinstance(info.value, JailUnavailableError)
+        jail.run_in_jail(policy)
+    assert not isinstance(info.value, jail.JailUnavailableError)
     assert info.value.errno == errno.EAGAIN

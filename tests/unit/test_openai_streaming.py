@@ -23,17 +23,16 @@ the provider:
 from __future__ import annotations
 
 import json
+import pathlib
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 from unittest import mock
 
 import httpx2
 import pytest
 
-from agent6.budget import BudgetTracker
-from agent6.providers import ProviderError
-from agent6.providers.openai import OpenAIProvider
+from agent6 import budget
+from agent6.providers import ProviderError, openai
 
 
 class _FakeStreamResponse:
@@ -169,7 +168,7 @@ def _tool_stream() -> list[str]:
 
 
 def test_streaming_calls_back_on_each_text_delta() -> None:
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
     captured_bodies: list[dict[str, Any]] = []
 
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
@@ -198,7 +197,7 @@ def test_streaming_calls_back_on_each_text_delta() -> None:
 
 
 def test_streaming_reassembles_tool_call_arguments_across_chunks() -> None:
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
         return _FakeStreamResponse(status_code=200, lines=_tool_stream())
@@ -222,7 +221,7 @@ def test_streaming_reassembles_tool_call_arguments_across_chunks() -> None:
 
 
 def test_streaming_swallows_callback_exception() -> None:
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
     def boom(_p: str) -> None:
         raise RuntimeError("ui exploded")
@@ -241,7 +240,7 @@ def test_streaming_swallows_callback_exception() -> None:
 
 
 def test_streaming_http_error_raises_provider_error() -> None:
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
         return _FakeStreamResponse(status_code=429, lines=[], error_body='{"error": "rate limit"}')
@@ -258,7 +257,7 @@ def test_streaming_http_error_raises_provider_error() -> None:
 
 
 def test_streaming_httpx_transport_error_raises_provider_error() -> None:
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
     def boom(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
         raise httpx2.ReadTimeout("timed out")
@@ -282,9 +281,9 @@ def test_streaming_mid_stream_error_frame_raises_not_silent() -> None:
     streaming is the default and a permanent code would otherwise be retried every turn. A 502 stays
     retryable; insufficient_quota is permanent.
     """
-    from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
+    from agent6.harness import _provider_call
 
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
     def _run(err: dict[str, Any]) -> ProviderError:
         lines = _chunk(
@@ -308,11 +307,11 @@ def test_streaming_mid_stream_error_frame_raises_not_silent() -> None:
     transient = _run({"code": 502, "message": "upstream gateway error"})
     assert "stream error: 502" in str(transient)
     assert transient.status_code == 502  # carried, not dropped to None
-    assert transient.status_code not in NON_RETRYABLE_HTTP_STATUSES  # retryable
+    assert transient.status_code not in _provider_call.NON_RETRYABLE_HTTP_STATUSES  # retryable
 
     permanent = _run({"code": "insufficient_quota", "message": "no credits"})
     assert permanent.status_code == 402  # permanent string code classified
-    assert permanent.status_code in NON_RETRYABLE_HTTP_STATUSES  # not retried
+    assert permanent.status_code in _provider_call.NON_RETRYABLE_HTTP_STATUSES  # not retried
 
 
 def test_streaming_premature_end_without_done_or_finish_raises() -> None:
@@ -320,7 +319,7 @@ def test_streaming_premature_end_without_done_or_finish_raises() -> None:
 
     It was cut off mid-generation; its partial content must not be returned as a finished turn.
     """
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
     lines = _chunk(
         {"choices": [{"index": 0, "delta": {"content": "half a sentence"}, "finish_reason": None}]}
     )
@@ -341,7 +340,7 @@ def test_streaming_premature_end_without_done_or_finish_raises() -> None:
 
 def test_streaming_finish_reason_without_done_is_complete() -> None:
     """A real `finish_reason` without `[DONE]` is a completed turn, not a premature end."""
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
     lines = _chunk(
         {"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}
     )
@@ -367,10 +366,10 @@ def test_streaming_with_budget_requires_usage_trailer() -> None:
     $0.09), and the bounded retry lane converts the permanent case into at-most-N attempts while
     saving the transient one.
     """
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="sk-test",
         model="kimi",
-        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1),
     )
     lines = [
         *_chunk({"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}),
@@ -404,10 +403,10 @@ def test_streaming_cut_before_the_usage_trailer_is_retryable() -> None:
     for missing usage accounting, which kills the run on a blip every other truncation retries
     through.
     """
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="sk-test",
         model="kimi",
-        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
     )
     lines = _chunk(  # finish_reason, then the connection drops: no usage, no [DONE]
         {"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}
@@ -430,7 +429,7 @@ def test_streaming_cut_before_the_usage_trailer_is_retryable() -> None:
 
 
 def test_no_callback_does_not_stream() -> None:
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
     def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
         return httpx2.Response(
@@ -478,7 +477,7 @@ def test_streaming_idle_watchdog_kills_heartbeat_only_stream(
     monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 0.3)
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.05)
 
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
     class _BlockingHeartbeatResponse:
         def __init__(self) -> None:
@@ -542,7 +541,7 @@ def test_streaming_idle_watchdog_mid_stream_uses_the_short_timeout(
     monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 30.0)
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.05)
 
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
     class _DataThenStallResponse:
         def __init__(self) -> None:
@@ -597,18 +596,18 @@ def test_lenient_json_object_recovers_common_malformations() -> None:
     junk) are recovered so the tool just runs, and the ambiguous ones are refused so the
     `_raw_arguments` sentinel is kept.
     """
-    from agent6.providers._openai_recovery import lenient_json_object as _lenient_json_object
+    from agent6.providers import _openai_recovery
 
     # Raw newline inside a string value (a multiline code param).
-    assert _lenient_json_object('{"new_string": "a\nb"}') == {"new_string": "a\nb"}
+    assert _openai_recovery.lenient_json_object('{"new_string": "a\nb"}') == {"new_string": "a\nb"}
     # Trailing junk after a valid object (a leaked closing tag / prose).
-    assert _lenient_json_object('{"path": "a.py"} </invoke>') == {"path": "a.py"}
+    assert _openai_recovery.lenient_json_object('{"path": "a.py"} </invoke>') == {"path": "a.py"}
     # A bad regex escape (\d) is a hard JSON error -> keep the sentinel (None).
-    assert _lenient_json_object(r'{"pattern": "\d+"}') is None
+    assert _openai_recovery.lenient_json_object(r'{"pattern": "\d+"}') is None
     # A scalar / array is not tool args -> None.
-    assert _lenient_json_object("42") is None
-    assert _lenient_json_object('["a"]') is None
-    assert _lenient_json_object("") is None
+    assert _openai_recovery.lenient_json_object("42") is None
+    assert _openai_recovery.lenient_json_object('["a"]') is None
+    assert _openai_recovery.lenient_json_object("") is None
 
 
 def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -626,7 +625,7 @@ def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.Monkey
     monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 0.6)
     monkeypatch.setattr(stream_mod, "STREAM_IDLE_TIMEOUT_S", 0.2)
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.05)
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
     class _RoleThenSilent:
         def __init__(self) -> None:
@@ -674,20 +673,20 @@ def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.Monkey
     assert time.monotonic() - started >= 0.45
 
 
-def test_a_stream_cut_before_usage_is_recorded_as_truncated(tmp_path: Path) -> None:
+def test_a_stream_cut_before_usage_is_recorded_as_truncated(tmp_path: pathlib.Path) -> None:
     """A stream cut before usage is recorded as truncated.
 
     A retryable raise landing after the 200 is written shows a clean successful call for an attempt
     that was cut and re-issued, while the sibling truncation one branch up records status 0; an
     audit of a retried run must see what happened.
     """
-    from agent6.providers.types import TranscriptSink
+    from agent6.providers import types
 
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="sk-test",
         model="kimi",
-        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
-        transcript_sink=TranscriptSink(tmp_path),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        transcript_sink=types.TranscriptSink(tmp_path),
     )
     lines = _chunk(  # finish_reason, then the connection drops: no usage, no [DONE]
         {"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}
@@ -743,7 +742,7 @@ def test_streaming_wire_fields_are_not_coerced(event: dict[str, Any]) -> None:
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
         return _FakeStreamResponse(status_code=200, lines=lines)
 
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
     with (
         mock.patch("httpx2.stream", side_effect=fake_stream),
         pytest.raises(ProviderError),
@@ -760,7 +759,7 @@ def test_streaming_joins_the_data_lines_of_one_event() -> None:
 
     As it does for every wire.
     """
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
     lines = [
         'data: {"choices": [{"index": 0, "delta": {"content": "hello"},',
         'data: "finish_reason": "stop"}],',

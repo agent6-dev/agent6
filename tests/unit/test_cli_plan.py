@@ -4,17 +4,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.errors import OperatorError
-from agent6.paths import state_dir
+from agent6 import errors, paths
 from agent6.ui.cli import cli_main, main
 
 
-def _seed_plan(tmp_path: Path, session_id: str, body: str) -> Path:
-    plan_dir = state_dir(tmp_path) / "sessions" / "plans" / session_id
+def _seed_plan(tmp_path: pathlib.Path, session_id: str, body: str) -> pathlib.Path:
+    plan_dir = paths.state_dir(tmp_path) / "sessions" / "plans" / session_id
     plan_dir.mkdir(parents=True)
     plan = plan_dir / "plan.md"
     plan.write_text(body, encoding="utf-8")
@@ -22,7 +21,7 @@ def _seed_plan(tmp_path: Path, session_id: str, body: str) -> Path:
 
 
 def test_plan_show_prints_plan(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -34,7 +33,7 @@ def test_plan_show_prints_plan(
 
 
 def test_plan_show_resolves_prefix(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -46,20 +45,20 @@ def test_plan_show_resolves_prefix(
 
 
 def test_plan_show_prefix_ignores_a_run_of_the_same_prefix(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`plan show` resolves inside plans/: a run sharing the prefix is not a second match."""
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: foo\n")
-    (state_dir(tmp_path) / "sessions" / "runs" / "happy-tree-zzzz").mkdir(parents=True)
+    (paths.state_dir(tmp_path) / "sessions" / "runs" / "happy-tree-zzzz").mkdir(parents=True)
     assert main(["plan", "show", "happy"]) == 0
     assert "# Plan: foo" in capsys.readouterr().out
 
 
 def test_plan_show_omit_id_uses_most_recent_plan(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -73,18 +72,18 @@ def test_plan_show_omit_id_uses_most_recent_plan(
 
 def test_from_plan_task_leads_with_the_plan_title() -> None:
     # The run's task reads as the plan, not the 'The following plan was prepared...' boilerplate.
-    from agent6.task_text import operator_task_text
+    from agent6 import task_text
     from agent6.ui.cli import _from_plan_task  # pyright: ignore[reportPrivateUsage]
 
     task = _from_plan_task("# Plan: Add a --count flag\n\n1. do it", "serene-geyser-NP20")
     assert task.startswith("Execute the prepared plan: Add a --count flag")
     assert "1. do it" in task  # the full plan is still fed to the agent
     # The recorded task is the headline alone; no session id or plan text reaches a listing.
-    assert operator_task_text(task) == "Execute the prepared plan: Add a --count flag"
+    assert task_text.operator_task_text(task) == "Execute the prepared plan: Add a --count flag"
 
 
 def test_plan_show_omit_id_with_no_plans_errors(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -94,24 +93,24 @@ def test_plan_show_omit_id_with_no_plans_errors(
 
 
 def test_plan_show_missing_run_errors(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    (state_dir(tmp_path) / "sessions" / "plans").mkdir(parents=True)
+    (paths.state_dir(tmp_path) / "sessions" / "plans").mkdir(parents=True)
     rc = main(["plan", "show", "nonexistent"])
     assert rc == 2
     assert "ERROR" in capsys.readouterr().err
 
 
 def test_plan_show_no_plan_md_errors(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    (state_dir(tmp_path) / "sessions" / "plans" / "happy-tree-abcd").mkdir(parents=True)
+    (paths.state_dir(tmp_path) / "sessions" / "plans" / "happy-tree-abcd").mkdir(parents=True)
     rc = main(["plan", "show", "happy-tree-abcd"])
     assert rc == 2
     err = capsys.readouterr().err
@@ -119,7 +118,7 @@ def test_plan_show_no_plan_md_errors(
 
 
 def test_plan_requires_task_or_show(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -131,7 +130,7 @@ def test_plan_requires_task_or_show(
 
 
 def test_plan_edit_invokes_editor(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -148,7 +147,7 @@ def test_plan_edit_invokes_editor(
 
 
 def test_plan_edit_honors_a_multi_word_editor(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Plan edit splits a multi-word $EDITOR ("code --wait") as the steer editor does."""
@@ -169,7 +168,7 @@ def test_plan_edit_honors_a_multi_word_editor(
 
 
 def test_run_from_a_plan_with_no_task_runs_that_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`run --from <plan>` with no task runs the plan's own text, without digesting it twice."""
     from agent6.ui import cli
@@ -193,10 +192,10 @@ def test_run_from_a_plan_with_no_task_runs_that_plan(
 
 
 def test_run_from_a_run_with_no_task_names_what_it_needs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    run_dir = state_dir(tmp_path) / "sessions" / "runs" / "busy-fox-abcd"
+    run_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "busy-fox-abcd"
     run_dir.mkdir(parents=True)
     (run_dir / "manifest.json").write_text('{"mode": "run"}', encoding="utf-8")
     assert main(["run", "--from", "busy-fox-abcd"]) == 2
@@ -204,11 +203,11 @@ def test_run_from_a_run_with_no_task_names_what_it_needs(
 
 
 def test_run_from_a_plan_missing_plan_md_names_the_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     session_id = "empty-fox-abcd"
-    (state_dir(tmp_path) / "sessions" / "plans" / session_id).mkdir(parents=True)
+    (paths.state_dir(tmp_path) / "sessions" / "plans" / session_id).mkdir(parents=True)
 
     assert cli_main(["run", "--from", session_id]) == 2
 
@@ -218,7 +217,7 @@ def test_run_from_a_plan_missing_plan_md_names_the_plan(
 
 
 def test_run_from_a_plan_with_empty_plan_md_names_the_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     session_id = "blank-owl-abcd"
@@ -232,24 +231,24 @@ def test_run_from_a_plan_with_empty_plan_md_names_the_plan(
 
 
 def test_seeding_from_a_plan_carries_its_text(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With a task, `--from <plan>` digests the plan session, plan.md included."""
     import json
 
-    from agent6.ui.cli._ask import build_session_seed
+    from agent6.ui.cli import _ask
 
     monkeypatch.chdir(tmp_path)
     plan = _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: do it\n\n1. step\n")
     (plan.parent / "manifest.json").write_text(
         json.dumps({"mode": "plan", "user_task": "plan it"}), encoding="utf-8"
     )
-    seed = build_session_seed(tmp_path, "happy-tree-abcd", latest=False)
+    seed = _ask.build_session_seed(tmp_path, "happy-tree-abcd", latest=False)
     assert seed is not None and "## Plan" in seed.text and "1. step" in seed.text
 
 
 def test_an_unreadable_plan_refuses_rather_than_crashing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An unreadable plan file raises OperatorError; cli_main turns it into `ERROR:` and exit 2."""
     monkeypatch.chdir(tmp_path)
@@ -257,7 +256,7 @@ def test_an_unreadable_plan_refuses_rather_than_crashing(
     plan = _seed_plan(tmp_path, "quiet-fox-abcd", "# Plan: do it\n")
     plan.chmod(0o000)
     try:
-        with pytest.raises(OperatorError, match="could not read"):
+        with pytest.raises(errors.OperatorError, match="could not read"):
             main(["run", "--from", "quiet-fox-abcd"])
         assert cli_main(["run", "--from", "quiet-fox-abcd"]) == 2
         err = capsys.readouterr().err
@@ -270,7 +269,7 @@ def test_an_unreadable_plan_refuses_rather_than_crashing(
 
 
 def test_an_unreadable_plan_refuses_in_plan_show_too(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`plan show` refuses an unreadable plan through the same shared reader `--from` uses."""
     monkeypatch.chdir(tmp_path)
@@ -308,7 +307,7 @@ def test_plan_takes_tui_like_run(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_plan_edit_reports_an_editor_that_failed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Plan edit reports an editor that exited non-zero instead of returning its bare code."""
     monkeypatch.chdir(tmp_path)
@@ -322,7 +321,7 @@ def test_plan_edit_reports_an_editor_that_failed(
 
 
 def test_plan_edit_refuses_a_malformed_editor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An $EDITOR shlex cannot tokenize is refused naming the setting, not crash-reported."""
     monkeypatch.chdir(tmp_path)
@@ -334,7 +333,7 @@ def test_plan_edit_refuses_a_malformed_editor(
 
 
 def test_a_bare_run_names_the_plan_the_way_its_execution_does(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A bare `agent6 run` names the most recent plan by its title.
 
@@ -351,12 +350,15 @@ def test_a_bare_run_names_the_plan_the_way_its_execution_does(
 
 @pytest.mark.parametrize("bucket", ["asks", "runs"])
 def test_plan_show_names_a_session_that_is_not_a_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], bucket: str
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    bucket: str,
 ) -> None:
     """A plan verb given an ask or a run names it as what it is, not "no session matches"."""
     monkeypatch.chdir(tmp_path)
     session_id = f"existing-{bucket}-abcd"
-    session_dir = state_dir(tmp_path) / "sessions" / bucket / session_id
+    session_dir = paths.state_dir(tmp_path) / "sessions" / bucket / session_id
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
 

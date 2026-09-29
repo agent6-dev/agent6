@@ -4,20 +4,22 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.machine.journal import JournalError, MachineJournal
+from agent6.machine import journal as machine_journal
 
 
 @pytest.mark.parametrize("contents", [b"{not json", b"\xff\xfe"])
-def test_a_corrupt_pending_wait_names_the_file_and_the_fix(tmp_path: Path, contents: bytes) -> None:
+def test_a_corrupt_pending_wait_names_the_file_and_the_fix(
+    tmp_path: pathlib.Path, contents: bytes
+) -> None:
     """A corrupt wait record is refused with its remedy: deleting the file re-arms the wait."""
-    journal = MachineJournal(tmp_path)
+    journal = machine_journal.MachineJournal(tmp_path)
     journal.wait_path.write_bytes(contents)
 
-    with pytest.raises(JournalError) as exc:
+    with pytest.raises(machine_journal.JournalError) as exc:
         journal.read_pending_wait()
 
     message = str(exc.value)

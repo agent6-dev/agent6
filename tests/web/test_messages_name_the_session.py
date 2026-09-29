@@ -12,21 +12,21 @@ from __future__ import annotations
 
 import functools
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.layout import bucket_dir
+from agent6 import paths
+from agent6.sessions import layout
 from agent6.ui.web import actions
 
 
-def _steer(cwd: Path, session_id: str, *, text: str) -> tuple[bool, str]:
+def _steer(cwd: pathlib.Path, session_id: str, *, text: str) -> tuple[bool, str]:
     return actions.steer(cwd, session_id, text)
 
 
-def _ask(state: Path) -> str:
-    session = bucket_dir(state, "asks") / "curious-otter-AAAAAA"
+def _ask(state: pathlib.Path) -> str:
+    session = layout.bucket_dir(state, "asks") / "curious-otter-AAAAAA"
     session.mkdir(parents=True)
     # FINISHED: driving a finished session is what hits the refusal path.
     (session / "logs.jsonl").write_text(
@@ -63,17 +63,18 @@ def _ask(state: Path) -> str:
     ],
 )
 def test_a_refusal_does_not_call_an_ask_a_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, call: object
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, call: object
 ) -> None:
-
     monkeypatch.chdir(tmp_path)
-    session_id = _ask(state_dir(tmp_path))
+    session_id = _ask(paths.state_dir(tmp_path))
     ok, message = call(tmp_path, session_id)  # pyright: ignore[reportCallIssue, reportGeneralTypeIssues]
     assert not ok
     assert "run" not in message, message
 
 
-def test_an_unknown_id_is_not_called_a_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_unknown_id_is_not_called_a_run(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     ok, message = actions.stop_run(tmp_path, "nope-nope-NOPE00", after_step=True)
     assert not ok

@@ -8,27 +8,20 @@ from typing import Any
 
 import pytest
 
-from agent6.harness._conversation import (
-    AssistantTurn,
-    Conversation,
-    Notice,
-    ToolResultItem,
-    ToolUse,
-    UserTurn,
-)
+from agent6.harness import _conversation
 
 
 def _tool_use_block(tid: str, name: str = "read_file", **inp: Any) -> dict[str, Any]:
     return {"type": "tool_use", "id": tid, "name": name, "input": inp}
 
 
-def _result(conv: Conversation, *contents: str) -> None:
+def _result(conv: _conversation.Conversation, *contents: str) -> None:
     """Answer the pending tool_use turn with one result per content string."""
     last = conv.turns[-1]
-    assert isinstance(last, AssistantTurn)
+    assert isinstance(last, _conversation.AssistantTurn)
     conv.results(
         [
-            ToolResultItem(tool_use_id=tu.id, content=c, for_call=tu)
+            _conversation.ToolResultItem(tool_use_id=tu.id, content=c, for_call=tu)
             for tu, c in zip(last.tool_uses, contents, strict=True)
         ]
     )
@@ -46,8 +39,8 @@ def _marked(wire: list[dict[str, Any]]) -> list[tuple[int, int]]:
 # --- wire round-trip -------------------------------------------------------
 
 
-def _rich_conversation() -> Conversation:
-    conv = Conversation()
+def _rich_conversation() -> _conversation.Conversation:
+    conv = _conversation.Conversation()
     conv.notice("TASK:\nfix it\n\nBegin.")
     conv.assistant(
         [
@@ -58,12 +51,14 @@ def _rich_conversation() -> Conversation:
         ]
     )
     last = conv.turns[-1]
-    assert isinstance(last, AssistantTurn)
+    assert isinstance(last, _conversation.AssistantTurn)
     conv.results(
         [
-            ToolResultItem(tool_use_id="t1", content="A" * 40, for_call=last.tool_uses[0]),
-            Notice("[harness] interleaved notice"),
-            ToolResultItem(
+            _conversation.ToolResultItem(
+                tool_use_id="t1", content="A" * 40, for_call=last.tool_uses[0]
+            ),
+            _conversation.Notice("[harness] interleaved notice"),
+            _conversation.ToolResultItem(
                 tool_use_id="t2", content='{"returncode": 1}', for_call=last.tool_uses[1]
             ),
         ]
@@ -77,36 +72,36 @@ def test_wire_round_trip_is_byte_identical() -> None:
     import json
 
     wire = _rich_conversation().to_wire()
-    again = Conversation.from_wire(wire).to_wire()
+    again = _conversation.Conversation.from_wire(wire).to_wire()
     assert json.dumps(again, ensure_ascii=False) == json.dumps(wire, ensure_ascii=False)
 
 
 def test_from_wire_pairs_results_to_their_calls() -> None:
-    conv = Conversation.from_wire(_rich_conversation().to_wire())
+    conv = _conversation.Conversation.from_wire(_rich_conversation().to_wire())
     results_turn = conv.turns[2]
-    assert isinstance(results_turn, UserTurn)
-    items = [it for it in results_turn.items if isinstance(it, ToolResultItem)]
+    assert isinstance(results_turn, _conversation.UserTurn)
+    items = [it for it in results_turn.items if isinstance(it, _conversation.ToolResultItem)]
     assert [it.for_call.name for it in items] == ["read_file", "run_verify_command"]
     assert items[0].for_call.input == {"path": "a.py"}
     # The notice survives, canonicalized after the results.
-    assert isinstance(results_turn.items[-1], Notice)
+    assert isinstance(results_turn.items[-1], _conversation.Notice)
 
 
 def test_assistant_raw_blocks_pass_through_verbatim() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("t")
     exotic = [{"type": "server_tool_use", "weird": {"nested": [1, 2]}}, {"not": "a block"}]
     conv.assistant(exotic)
     assert conv.to_wire()[1]["content"] == exotic
-    assert Conversation.from_wire(conv.to_wire()).to_wire()[1]["content"] == exotic
+    assert _conversation.Conversation.from_wire(conv.to_wire()).to_wire()[1]["content"] == exotic
 
 
 def test_trailing_tool_use_turn_is_accepted() -> None:
     # A crash between the assistant append and its results is transient-legal; from_wire mirrors it.
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("t")
     conv.assistant([_tool_use_block("t1")])
-    assert len(Conversation.from_wire(conv.to_wire())) == 2
+    assert len(_conversation.Conversation.from_wire(conv.to_wire())) == 2
 
 
 @pytest.mark.parametrize(
@@ -179,14 +174,14 @@ def test_from_wire_rejects_shapes_the_loop_never_writes(
     messages: list[dict[str, Any]], match: str
 ) -> None:
     with pytest.raises(ValueError, match=match):
-        Conversation.from_wire(messages)
+        _conversation.Conversation.from_wire(messages)
 
 
 # --- structural pair safety ------------------------------------------------
 
 
 def test_appends_after_an_unanswered_tool_use_raise() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("t")
     conv.assistant([_tool_use_block("t1")])
     with pytest.raises(ValueError, match="unanswered"):
@@ -198,30 +193,34 @@ def test_appends_after_an_unanswered_tool_use_raise() -> None:
 
 
 def test_results_must_cover_the_call_ids_in_order() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("t")
     turn = conv.assistant([_tool_use_block("t1"), _tool_use_block("t2")])
-    partial = [ToolResultItem(tool_use_id="t1", content="x", for_call=turn.tool_uses[0])]
+    partial = [
+        _conversation.ToolResultItem(tool_use_id="t1", content="x", for_call=turn.tool_uses[0])
+    ]
     with pytest.raises(ValueError, match="do not answer"):
         conv.results(partial)
     reordered = [
-        ToolResultItem(tool_use_id="t2", content="y", for_call=turn.tool_uses[1]),
-        ToolResultItem(tool_use_id="t1", content="x", for_call=turn.tool_uses[0]),
+        _conversation.ToolResultItem(tool_use_id="t2", content="y", for_call=turn.tool_uses[1]),
+        _conversation.ToolResultItem(tool_use_id="t1", content="x", for_call=turn.tool_uses[0]),
     ]
     with pytest.raises(ValueError, match="do not answer"):
         conv.results(reordered)
 
 
 def test_results_without_a_pending_call_raise() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("t")
-    orphan = ToolResultItem(tool_use_id="t1", content="x", for_call=ToolUse("t1", "grep", {}))
+    orphan = _conversation.ToolResultItem(
+        tool_use_id="t1", content="x", for_call=_conversation.ToolUse("t1", "grep", {})
+    )
     with pytest.raises(ValueError, match="do not answer"):
         conv.results([orphan])
 
 
 def test_pop_quiet_assistant_only_drops_dead_turns() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("t")
     conv.assistant([{"type": "thinking", "thinking": "spent the whole budget"}])
     conv.pop_quiet_assistant()
@@ -234,7 +233,7 @@ def test_pop_quiet_assistant_only_drops_dead_turns() -> None:
 
 
 def test_set_result_content_rewrites_in_place() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("t")
     conv.assistant([_tool_use_block("t1", "read_file", path="a.py")])
     _result(conv, "B" * 100)
@@ -243,13 +242,13 @@ def test_set_result_content_rewrites_in_place() -> None:
     assert wire[2]["content"][0]["content"] == "<elided>"
     assert wire[2]["content"][0]["tool_use_id"] == "t1"
     turn = conv.turns[2]
-    assert not isinstance(turn, AssistantTurn)
+    assert not isinstance(turn, _conversation.AssistantTurn)
     item = turn.items[0]
-    assert isinstance(item, ToolResultItem) and item.for_call.name == "read_file"
+    assert isinstance(item, _conversation.ToolResultItem) and item.for_call.name == "read_file"
 
 
 def test_restart_keeps_the_first_turn_and_its_marks() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.roll_cache_marks()  # marks the task turn
     conv.assistant([_tool_use_block("t1")])
@@ -267,7 +266,7 @@ def test_restart_keeps_the_first_turn_and_its_marks() -> None:
 
 
 def test_first_roll_marks_the_initial_message() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.roll_cache_marks()
     wire = conv.to_wire()
@@ -276,7 +275,7 @@ def test_first_roll_marks_the_initial_message() -> None:
 
 
 def test_roll_keeps_previous_position_and_marks_new_tail() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.roll_cache_marks()  # call 1
     conv.assistant([{"type": "text", "text": "thinking"}, _tool_use_block("t1")])
@@ -286,7 +285,7 @@ def test_roll_keeps_previous_position_and_marks_new_tail() -> None:
 
 
 def test_third_roll_unmarks_the_oldest() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("TASK")
     for i in range(1, 4):
         conv.roll_cache_marks()
@@ -299,7 +298,7 @@ def test_third_roll_unmarks_the_oldest() -> None:
 
 
 def test_nudges_between_calls_do_not_lose_the_previous_position() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.roll_cache_marks()  # call 1 marks the task
     conv.assistant([_tool_use_block("t1")])
@@ -311,7 +310,7 @@ def test_nudges_between_calls_do_not_lose_the_previous_position() -> None:
 
 
 def test_roll_is_idempotent_without_new_turns() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.roll_cache_marks()
     conv.assistant([_tool_use_block("t1")])
@@ -324,20 +323,20 @@ def test_roll_is_idempotent_without_new_turns() -> None:
 
 def test_roll_survives_the_wire_round_trip() -> None:
     # Marks persist in snapshots as cache_control keys; a resumed conversation keeps rolling.
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.roll_cache_marks()
     conv.assistant([_tool_use_block("t1")])
     _result(conv, "ok")
     conv.roll_cache_marks()
-    resumed = Conversation.from_wire(conv.to_wire())
+    resumed = _conversation.Conversation.from_wire(conv.to_wire())
     resumed.roll_cache_marks()  # idempotent on the restored positions
     assert _marked(resumed.to_wire()) == _marked(conv.to_wire())
 
 
 def test_roll_skips_a_trailing_assistant_turn() -> None:
     # The loop always rolls with a user tail; a trailing assistant turn is never stamped.
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.assistant([{"type": "thinking", "thinking": "..."}, _tool_use_block("t1")])
     conv.roll_cache_marks()
@@ -345,7 +344,7 @@ def test_roll_skips_a_trailing_assistant_turn() -> None:
 
 
 def test_restart_then_roll_starts_a_fresh_pair() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.roll_cache_marks()
     conv.assistant([_tool_use_block("t1")])
@@ -361,21 +360,23 @@ def test_wire_leads_with_tool_results_never_notice_text() -> None:
 
     Anthropic 400s a user message whose tool_result blocks do not lead.
     """
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.assistant([_tool_use_block("t1", "run_verify_command")])
     last = conv.turns[-1]
-    assert isinstance(last, AssistantTurn)
+    assert isinstance(last, _conversation.AssistantTurn)
     conv.results(
         [
-            Notice("[harness] the gate was already red"),
-            ToolResultItem(tool_use_id="t1", content="exit=1", for_call=last.tool_uses[0]),
+            _conversation.Notice("[harness] the gate was already red"),
+            _conversation.ToolResultItem(
+                tool_use_id="t1", content="exit=1", for_call=last.tool_uses[0]
+            ),
         ]
     )
     blocks = conv.to_wire()[-1]["content"]
     assert [b["type"] for b in blocks] == ["tool_result", "text"]
     # from_wire heals a persisted snapshot with the old order the same way.
-    healed = Conversation.from_wire(
+    healed = _conversation.Conversation.from_wire(
         [
             {"role": "user", "content": [{"type": "text", "text": "TASK"}]},
             {
@@ -397,7 +398,7 @@ def test_wire_leads_with_tool_results_never_notice_text() -> None:
 
 def test_restart_with_kept_tail_preserves_recent_turns_verbatim() -> None:
     """A tier-2 restart keeps the most recent turns verbatim after the summary notice."""
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("the task")
     conv.assistant([{"type": "text", "text": "old thinking"}])
     conv.assistant([_tool_use_block("t1", path="a.py")])
@@ -408,11 +409,11 @@ def test_restart_with_kept_tail_preserves_recent_turns_verbatim() -> None:
     conv.restart("[restart] summary", keep=tail)
     turns = conv.turns
     assert len(turns) == 4  # task, summary, t2 call, t2 result
-    assert isinstance(turns[2], AssistantTurn) and turns[2].tool_uses[0].id == "t2"
+    assert isinstance(turns[2], _conversation.AssistantTurn) and turns[2].tool_uses[0].id == "t2"
     last = turns[3]
-    assert isinstance(last, UserTurn)
+    assert isinstance(last, _conversation.UserTurn)
     item = last.items[0]
-    assert isinstance(item, ToolResultItem) and item.content == "fresh file body"
+    assert isinstance(item, _conversation.ToolResultItem) and item.content == "fresh file body"
 
 
 def test_restart_refuses_a_tail_leading_with_tool_results() -> None:
@@ -420,7 +421,7 @@ def test_restart_refuses_a_tail_leading_with_tool_results() -> None:
 
     The wire would refuse the orphan pairing.
     """
-    conv = Conversation()
+    conv = _conversation.Conversation()
     conv.notice("the task")
     conv.assistant([_tool_use_block("t1", path="a.py")])
     _result(conv, "body")
@@ -431,9 +432,7 @@ def test_restart_refuses_a_tail_leading_with_tool_results() -> None:
 
 def test_format_transcript_tail_renders_roles_and_strips_thinking() -> None:
     """The summariser's plain-text tail shows every role's text and tool calls, never thinking."""
-    from agent6.harness._conversation import format_transcript_tail
-
-    conversation = Conversation.from_wire(
+    conversation = _conversation.Conversation.from_wire(
         [
             {"role": "user", "content": [{"type": "text", "text": "hello"}]},
             {
@@ -450,7 +449,7 @@ def test_format_transcript_tail_renders_roles_and_strips_thinking() -> None:
             },
         ]
     )
-    out = format_transcript_tail(conversation.turns)
+    out = _conversation.format_transcript_tail(conversation.turns)
     assert "internal reasoning" not in out
     assert "hello" in out
     assert "doing it" in out

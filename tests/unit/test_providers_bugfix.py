@@ -30,11 +30,9 @@ from unittest import mock
 import httpx2
 import pytest
 
-from agent6.budget import BudgetTracker
+from agent6 import budget as agent6_budget
+from agent6.providers import _openai_parse, anthropic, openai, types
 from agent6.providers import _stream as stream_mod
-from agent6.providers._openai_parse import parse_response as _parse_response
-from agent6.providers.anthropic import AnthropicProvider, ProviderError
-from agent6.providers.openai import OpenAIProvider
 
 
 # --------------------------------------------------------------------------
@@ -51,11 +49,11 @@ class _FakeJSONResponse:
 
 
 def test_openai_non_json_200_is_provider_error() -> None:
-    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini")
     resp = _FakeJSONResponse(status_code=200, text="<html>502 Bad Gateway</html>")
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     # Retryable: status_code stays unset (None), not a non-retryable 4xx.
@@ -64,11 +62,11 @@ def test_openai_non_json_200_is_provider_error() -> None:
 
 
 def test_anthropic_non_json_200_is_provider_error() -> None:
-    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
     resp = _FakeJSONResponse(status_code=200, text="<html>502 Bad Gateway</html>")
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert ei.value.status_code is None
@@ -77,11 +75,11 @@ def test_anthropic_non_json_200_is_provider_error() -> None:
 
 def test_anthropic_redirect_status_is_preserved() -> None:
     """A redirect is not a successful Messages response and retrying it cannot help."""
-    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
     resp = _FakeJSONResponse(status_code=307, text="moved")
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as exc_info,
+        pytest.raises(types.ProviderError) as exc_info,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert exc_info.value.status_code == 307
@@ -94,42 +92,44 @@ def test_openai_2xx_envelope_permanent_status_is_not_retried() -> None:
     NON_RETRYABLE classifies it permanent and the hint (HTTP 402) survives; a status left at None
     re-creates the 402-retried-every-turn regression `ProviderCaller` documents.
     """
-    from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
+    from agent6.harness import _provider_call
 
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
-    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
         status_code=200,
         text=json.dumps({"error": {"code": 402, "message": "Insufficient credits"}}),
     )
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert ei.value.status_code == 402
-    assert ei.value.status_code in NON_RETRYABLE_HTTP_STATUSES  # permanent, not retried
+    assert (
+        ei.value.status_code in _provider_call.NON_RETRYABLE_HTTP_STATUSES
+    )  # permanent, not retried
     assert "402" in str(ei.value) and "Insufficient credits" in str(ei.value)
 
 
 def test_openai_2xx_envelope_transient_status_stays_retryable() -> None:
     # A 429/5xx envelope keeps a retryable classification (not in the set).
-    from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
+    from agent6.harness import _provider_call
 
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
-    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
         status_code=200, text=json.dumps({"error": {"code": 503, "message": "Overloaded"}})
     )
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     # Pin the CARRIED status, not just "not in the set" -- a dropped (None) status
     # also satisfies `not in`, so the weaker assertion passed on the pre-fix code.
     assert ei.value.status_code == 503
-    assert ei.value.status_code not in NON_RETRYABLE_HTTP_STATUSES  # retryable
+    assert ei.value.status_code not in _provider_call.NON_RETRYABLE_HTTP_STATUSES  # retryable
 
 
 def test_envelope_status_classifies_string_codes() -> None:
@@ -138,8 +138,8 @@ def test_envelope_status_classifies_string_codes() -> None:
     OpenAI `code` and Anthropic `type` values that are permanent fail a budgeted run fast; transient
     statuses stay retryable while keeping the provider's fact.
     """
-    from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
-    from agent6.providers._transport import envelope_status
+    from agent6.harness import _provider_call
+    from agent6.providers import _transport as providers__transport
 
     permanent = [
         ({"code": "insufficient_quota"}, 402),
@@ -151,21 +151,26 @@ def test_envelope_status_classifies_string_codes() -> None:
         ({"type": "invalid_request_error"}, 400),
     ]
     for err, status in permanent:
-        assert envelope_status(err) == status, err
-        assert status in NON_RETRYABLE_HTTP_STATUSES
+        assert providers__transport.envelope_status(err) == status, err
+        assert status in _provider_call.NON_RETRYABLE_HTTP_STATUSES
     for err, status in (
         ({"type": "rate_limit_error"}, 429),
         ({"type": "api_error"}, 500),
         ({"type": "overloaded_error"}, 529),
     ):
-        assert envelope_status(err) == status
-        assert status not in NON_RETRYABLE_HTTP_STATUSES
-    assert envelope_status({"code": "rate_limit_exceeded"}) is None
+        assert providers__transport.envelope_status(err) == status
+        assert status not in _provider_call.NON_RETRYABLE_HTTP_STATUSES
+    assert providers__transport.envelope_status({"code": "rate_limit_exceeded"}) is None
     # Numeric codes and the empty/non-dict cases are unchanged.
-    assert envelope_status({"code": 402}) == 402
-    assert envelope_status({"code": 502}) == 502
-    assert envelope_status({"code": 200}) is None  # a 2xx code is not an error status
-    assert envelope_status({}) is None and envelope_status("nope") is None
+    assert providers__transport.envelope_status({"code": 402}) == 402
+    assert providers__transport.envelope_status({"code": 502}) == 502
+    assert (
+        providers__transport.envelope_status({"code": 200}) is None
+    )  # a 2xx code is not an error status
+    assert (
+        providers__transport.envelope_status({}) is None
+        and providers__transport.envelope_status("nope") is None
+    )
 
 
 def test_openai_2xx_string_error_and_placeholder_choices_are_envelopes() -> None:
@@ -174,7 +179,7 @@ def test_openai_2xx_string_error_and_placeholder_choices_are_envelopes() -> None
     Neither falls through to the misleading metering 422; a guard that requires `error` to be a dict
     misses both.
     """
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
     for body in (
         {"error": "model not found"},
         {
@@ -182,11 +187,11 @@ def test_openai_2xx_string_error_and_placeholder_choices_are_envelopes() -> None
             "choices": [{"message": {"content": None}, "finish_reason": "error"}],
         },
     ):
-        provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+        provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
         resp = _FakeJSONResponse(status_code=200, text=json.dumps(body))
         with (
             mock.patch("agent6.providers._transport.http_post", return_value=resp),
-            pytest.raises(ProviderError) as ei,
+            pytest.raises(types.ProviderError) as ei,
         ):
             provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
         assert "usage" not in str(ei.value), f"misattributed metering 422 for {body}"
@@ -195,8 +200,8 @@ def test_openai_2xx_string_error_and_placeholder_choices_are_envelopes() -> None
 def test_openai_error_key_beside_real_content_still_parses() -> None:
     # An `error` key beside a REAL assistant message is incidental, not an
     # envelope: the response must parse normally.
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
-    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
         status_code=200,
         text=json.dumps(
@@ -221,28 +226,32 @@ def test_openai_2xx_error_envelope_is_the_upstreams_failure() -> None:
     non-streaming path must match: upstream code/message, and a 502/429 stays retryable (not in
     NON_RETRYABLE_HTTP_STATUSES).
     """
-    from agent6.harness._provider_call import NON_RETRYABLE_HTTP_STATUSES
+    from agent6.harness import _provider_call
 
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
-    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
         status_code=200,
         text=json.dumps({"error": {"code": 502, "message": "Provider returned error"}}),
     )
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert ei.value.status_code == 502  # carried, not dropped to None
-    assert ei.value.status_code not in NON_RETRYABLE_HTTP_STATUSES  # 502 -> retryable
+    assert (
+        ei.value.status_code not in _provider_call.NON_RETRYABLE_HTTP_STATUSES
+    )  # 502 -> retryable
     assert "502" in str(ei.value) and "Provider returned error" in str(ei.value)
     assert "usage" not in str(ei.value)  # names the upstream, not the accounting
 
 
 def test_anthropic_2xx_error_envelope_is_the_upstreams_failure() -> None:
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet", budget=budget)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    provider = anthropic.AnthropicProvider(
+        api_key="sk-test", model="claude-3-5-sonnet", budget=budget
+    )
     resp = _FakeJSONResponse(
         status_code=200,
         text=json.dumps(
@@ -251,7 +260,7 @@ def test_anthropic_2xx_error_envelope_is_the_upstreams_failure() -> None:
     )
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert ei.value.status_code == 529
@@ -259,7 +268,7 @@ def test_anthropic_2xx_error_envelope_is_the_upstreams_failure() -> None:
 
 
 def test_anthropic_2xx_error_envelope_keeps_retry_after() -> None:
-    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
     resp = _FakeJSONResponse(
         status_code=200,
         text=json.dumps(
@@ -272,7 +281,7 @@ def test_anthropic_2xx_error_envelope_keeps_retry_after() -> None:
     resp.headers = {"retry-after": "13"}
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as exc_info,
+        pytest.raises(types.ProviderError) as exc_info,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert exc_info.value.status_code == 429
@@ -280,8 +289,8 @@ def test_anthropic_2xx_error_envelope_keeps_retry_after() -> None:
 
 
 def test_openai_budgeted_response_requires_usage_tokens() -> None:
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
-    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
         status_code=200,
         text=json.dumps(
@@ -293,7 +302,7 @@ def test_openai_budgeted_response_requires_usage_tokens() -> None:
     )
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     # Retryable (no status): a usage-less reply is stream/gateway integrity
@@ -305,8 +314,10 @@ def test_openai_budgeted_response_requires_usage_tokens() -> None:
 
 
 def test_anthropic_budgeted_response_requires_usage_tokens() -> None:
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet", budget=budget)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    provider = anthropic.AnthropicProvider(
+        api_key="sk-test", model="claude-3-5-sonnet", budget=budget
+    )
     resp = _FakeJSONResponse(
         status_code=200,
         text=json.dumps(
@@ -319,7 +330,7 @@ def test_anthropic_budgeted_response_requires_usage_tokens() -> None:
     )
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     # Retryable (no status): a usage-less reply is stream/gateway integrity
@@ -333,8 +344,8 @@ def test_anthropic_budgeted_response_requires_usage_tokens() -> None:
 def test_openai_budgeted_response_rejects_zero_token_usage() -> None:
     # Presence is not enough: a gateway with usage tracking off returns 0/0, and
     # every turn would record zero so the budget never trips. Fail closed.
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
-    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
         status_code=200,
         text=json.dumps(
@@ -346,7 +357,7 @@ def test_openai_budgeted_response_rejects_zero_token_usage() -> None:
     )
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     # Retryable (no status): a usage-less reply is stream/gateway integrity
@@ -358,8 +369,10 @@ def test_openai_budgeted_response_rejects_zero_token_usage() -> None:
 
 
 def test_anthropic_budgeted_response_rejects_zero_token_usage() -> None:
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet", budget=budget)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    provider = anthropic.AnthropicProvider(
+        api_key="sk-test", model="claude-3-5-sonnet", budget=budget
+    )
     resp = _FakeJSONResponse(
         status_code=200,
         text=json.dumps(
@@ -372,7 +385,7 @@ def test_anthropic_budgeted_response_rejects_zero_token_usage() -> None:
     )
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     # Retryable (no status): a usage-less reply is stream/gateway integrity
@@ -386,8 +399,10 @@ def test_anthropic_budgeted_response_rejects_zero_token_usage() -> None:
 def test_anthropic_budgeted_response_accepts_fully_cached_turn() -> None:
     # A fully-cached turn legitimately reports input_tokens: 0 with a positive
     # cache_read count; the metering check must NOT false-reject it.
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet", budget=budget)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    provider = anthropic.AnthropicProvider(
+        api_key="sk-test", model="claude-3-5-sonnet", budget=budget
+    )
     resp = _FakeJSONResponse(
         status_code=200,
         text=json.dumps(
@@ -453,14 +468,14 @@ def test_anthropic_streaming_idle_watchdog_fires(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 0.05)
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
 
-    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
 
     def fake_stream(method: str, url: str, **kwargs: Any) -> _PingOnlyStreamResponse:
         return _PingOnlyStreamResponse()
 
     with (
         mock.patch("httpx2.stream", side_effect=fake_stream),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(
             system="sys",
@@ -476,7 +491,7 @@ def test_anthropic_streaming_idle_watchdog_fires(monkeypatch: pytest.MonkeyPatch
 # --------------------------------------------------------------------------
 # Bug #3: OpenAI-direct o-series uses max_completion_tokens, drops temperature
 # --------------------------------------------------------------------------
-def _capture_body(provider: OpenAIProvider) -> dict[str, Any]:
+def _capture_body(provider: openai.OpenAIProvider) -> dict[str, Any]:
     captured: dict[str, Any] = {}
 
     class _Resp:
@@ -503,7 +518,7 @@ def _capture_body(provider: OpenAIProvider) -> dict[str, Any]:
 
 
 def test_openai_direct_oseries_uses_max_completion_tokens() -> None:
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="sk-test",
         model="o3-mini",
         base_url="https://api.openai.com/v1",
@@ -519,7 +534,7 @@ def test_openai_direct_oseries_uses_max_completion_tokens() -> None:
 def test_openrouter_oseries_still_uses_max_tokens() -> None:
     # Same reasoning model, but routed via OpenRouter: must keep max_tokens
     # (OpenRouter normalises it) and forward temperature.
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="sk-test",
         model="o3-mini",
         base_url="https://openrouter.ai/api/v1",
@@ -532,7 +547,7 @@ def test_openrouter_oseries_still_uses_max_tokens() -> None:
 
 
 def test_openai_direct_nonreasoning_keeps_max_tokens() -> None:
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="sk-test",
         model="gpt-4o-mini",
         base_url="https://api.openai.com/v1",
@@ -563,7 +578,7 @@ def test_parse_response_synthesises_distinct_tool_call_ids() -> None:
         ],
         "usage": {"prompt_tokens": 1, "completion_tokens": 1},
     }
-    parsed = _parse_response(data)
+    parsed = _openai_parse.parse_response(data)
     ids = [tu["id"] for tu in parsed.tool_uses]
     assert all(i for i in ids), "every tool_use must have a non-empty id"
     assert len(set(ids)) == len(ids), "ids must be distinct"
@@ -584,7 +599,7 @@ def test_parse_response_preserves_provided_tool_call_ids() -> None:
         ],
         "usage": {"prompt_tokens": 1, "completion_tokens": 1},
     }
-    parsed = _parse_response(data)
+    parsed = _openai_parse.parse_response(data)
     assert parsed.tool_uses[0]["id"] == "call_real"
 
 
@@ -592,7 +607,7 @@ def test_parse_response_preserves_provided_tool_call_ids() -> None:
 # claude-opus-4-8 rejects `temperature` (400) -> drop it and retry, then latch
 # --------------------------------------------------------------------------
 def test_anthropic_temperature_400_retries_without_temperature_then_latches() -> None:
-    provider = AnthropicProvider(api_key="sk-test", model="claude-opus-4-8")
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-opus-4-8")
     err400 = _FakeJSONResponse(
         status_code=400,
         text=json.dumps(
@@ -653,13 +668,15 @@ def test_anthropic_temperature_400_retries_without_temperature_then_latches() ->
 # calling OpenAI" pointed users at the wrong party for local endpoints).
 # --------------------------------------------------------------------------
 def test_openai_connection_error_names_url_and_format() -> None:
-    provider = OpenAIProvider(api_key="", model="llama3", base_url="http://localhost:11434/v1")
+    provider = openai.OpenAIProvider(
+        api_key="", model="llama3", base_url="http://localhost:11434/v1"
+    )
     with (
         mock.patch(
             "agent6.providers._transport.http_post",
             side_effect=httpx2.HTTPError("[Errno 111] Connection refused"),
         ),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     msg = str(ei.value)
@@ -669,13 +686,13 @@ def test_openai_connection_error_names_url_and_format() -> None:
 
 
 def test_anthropic_connection_error_names_url_and_format() -> None:
-    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
     with (
         mock.patch(
             "agent6.providers._transport.http_post",
             side_effect=httpx2.HTTPError("[Errno 111] Connection refused"),
         ),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     msg = str(ei.value)
@@ -688,11 +705,11 @@ def test_non_object_json_200_is_retryable_provider_error() -> None:
 
     An array from a glitching gateway must not AttributeError past the ProviderError-only retry.
     """
-    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini")
     resp = _FakeJSONResponse(status_code=200, text='["not", "an", "object"]')
     with (
         mock.patch("agent6.providers._transport.http_post", return_value=resp),
-        pytest.raises(ProviderError) as ei,
+        pytest.raises(types.ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert ei.value.status_code is None
@@ -705,8 +722,8 @@ def test_openai_malformed_choices_entry_is_provider_error() -> None:
     A flaky local endpoint produces it.
     """
     for body in ('{"choices": [null]}', '{"choices": ["err"]}'):
-        with pytest.raises(ProviderError) as ei:
-            _parse_response(json.loads(body))
+        with pytest.raises(types.ProviderError) as ei:
+            _openai_parse.parse_response(json.loads(body))
         assert ei.value.status_code is None
 
 
@@ -716,16 +733,12 @@ def test_anthropic_malformed_content_is_provider_error() -> None:
     Content as a bare string, or a list holding a non-dict element, must not iterate characters into
     an AttributeError.
     """
-    from agent6.providers.anthropic import (
-        _parse_response as _anthropic_parse,  # pyright: ignore[reportPrivateUsage]
-    )
-
     for body in (
         {"content": "hello", "usage": {"input_tokens": 5, "output_tokens": 3}},
         {"content": [{"type": "text", "text": "hi"}, "oops"], "usage": {}},
     ):
-        with pytest.raises(ProviderError) as ei:
-            _anthropic_parse(body)
+        with pytest.raises(types.ProviderError) as ei:
+            anthropic._parse_response(body)
         assert ei.value.status_code is None
 
 
@@ -736,19 +749,14 @@ def test_metered_gate_coerces_gateway_typed_counts() -> None:
     coerces them; an `isinstance(int)` gate kills a budgeted run on its first call. Absent, zero or
     non-numeric still fails closed, as a retryable refusal (see test_*_requires_usage_tokens).
     """
-    from agent6.providers.anthropic import (
-        _require_metered_usage as _anthropic_gate,  # pyright: ignore[reportPrivateUsage]
-    )
-    from agent6.providers.openai import (
-        _require_metered_usage as _openai_gate,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    _openai_gate({"prompt_tokens": 700.0, "completion_tokens": 50}, source="t")
-    _openai_gate({"prompt_tokens": "700"}, source="t")  # missing completion is fine
-    _anthropic_gate({"input_tokens": 700.0, "output_tokens": 3}, source="t")
+    openai._require_metered_usage({"prompt_tokens": 700.0, "completion_tokens": 50}, source="t")
+    openai._require_metered_usage(
+        {"prompt_tokens": "700"}, source="t"
+    )  # missing completion is fine
+    anthropic._require_metered_usage({"input_tokens": 700.0, "output_tokens": 3}, source="t")
     for bad in ({"prompt_tokens": 0}, {"prompt_tokens": "abc"}, {}):
-        with pytest.raises(ProviderError) as ei:
-            _openai_gate(bad, source="t")
+        with pytest.raises(types.ProviderError) as ei:
+            openai._require_metered_usage(bad, source="t")
         assert ei.value.status_code is None
 
 
@@ -758,7 +766,7 @@ def test_boolean_reported_cost_reads_as_absent() -> None:
     Bool subclasses int: `usage.cost == true` yields float(True), a phantom $1.00 per call that
     becomes the authoritative reported figure and can trip the max_usd hard stop.
     """
-    resp = _parse_response(
+    resp = _openai_parse.parse_response(
         {
             "choices": [{"message": {"role": "assistant", "content": "hi"}}],
             "usage": {"prompt_tokens": 500, "completion_tokens": 100, "cost": True},
@@ -773,12 +781,11 @@ def test_credential_refresh_roundtrip_is_recorded(tmp_path: Any) -> None:
     The 401 or 403 that triggers a token refresh hit the wire, and the transcript contract is one
     file per round trip on the non-streaming branch as on the streaming one.
     """
-    from pathlib import Path
+    import pathlib
 
-    from agent6.providers import TranscriptSink
-    from agent6.providers.token_command import CommandToken
+    from agent6.providers import TranscriptSink, token_command
 
-    sink = TranscriptSink(Path(tmp_path) / "transcripts")
+    sink = TranscriptSink(pathlib.Path(tmp_path) / "transcripts")
     calls = {"n": 0}
 
     def _post(url: str, *, headers: Any, content: Any, timeout: Any) -> Any:
@@ -795,15 +802,15 @@ def test_credential_refresh_roundtrip_is_recorded(tmp_path: Any) -> None:
             ),
         )
 
-    cred = CommandToken(["echo", "tok"])
-    provider = OpenAIProvider(
+    cred = token_command.CommandToken(["echo", "tok"])
+    provider = openai.OpenAIProvider(
         api_key="", model="gpt-4o-mini", transcript_sink=sink, credential=cred
     )
     with mock.patch("agent6.providers._transport.http_post", side_effect=_post):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     statuses = sorted(
         json.loads(p.read_text(encoding="utf-8"))["response"]["status"]
-        for p in (Path(tmp_path) / "transcripts").glob("*.json")
+        for p in (pathlib.Path(tmp_path) / "transcripts").glob("*.json")
     )
     assert statuses == [200, 401]
 
@@ -815,14 +822,14 @@ def test_connect_phase_is_bounded_below_the_read_budget() -> None:
     timeout the 600s read default sat on a dropped SYN for ten minutes (caught live: verify
     inference wedged an ACP run).
     """
-    from agent6.providers._transport import CONNECT_TIMEOUT_S, granular_timeout
+    from agent6.providers import _transport as providers__transport
 
-    t = granular_timeout(600.0)
-    assert t.connect == CONNECT_TIMEOUT_S
+    t = providers__transport.granular_timeout(600.0)
+    assert t.connect == providers__transport.CONNECT_TIMEOUT_S
     assert t.read == 600.0
     assert t.write == 600.0
     # A budget tighter than the connect bound wins: the operator asked for it.
-    assert granular_timeout(5.0).connect == 5.0
+    assert providers__transport.granular_timeout(5.0).connect == 5.0
 
 
 def test_both_http_seams_pass_the_granular_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -864,7 +871,6 @@ def test_an_oversized_provider_response_is_refused_not_buffered(
     import contextlib
 
     from agent6.providers import _transport
-    from agent6.providers.types import ProviderError
 
     class _FakeStreamResp:
         status_code = 200
@@ -886,7 +892,7 @@ def test_an_oversized_provider_response_is_refused_not_buffered(
 
     monkeypatch.setattr(_transport, "MAX_RESPONSE_BYTES", 1024)
     monkeypatch.setattr(_transport.httpx2, "stream", _serving([b"x" * 600, b"y" * 600]))
-    with pytest.raises(ProviderError, match="exceeded"):
+    with pytest.raises(types.ProviderError, match="exceeded"):
         _transport.http_post("https://x", headers={}, content=b"", timeout=5.0)
 
     monkeypatch.setattr(_transport.httpx2, "stream", _serving([b'{"ok": true}']))
@@ -943,23 +949,15 @@ def test_a_gzip_encoded_provider_response_is_not_decoded_twice(
 @pytest.mark.parametrize("value", [-1, 1.5, True, "", {}, []])
 def test_anthropic_usage_counts_are_non_negative_integers(field: str, value: object) -> None:
     """Malformed usage must not be truncated, coerced from bool, or recorded negative."""
-    from agent6.providers.anthropic import (
-        _parse_response as parse_anthropic_response,  # pyright: ignore[reportPrivateUsage]
-    )
-
     usage: dict[str, object] = {"input_tokens": 1, "output_tokens": 1, field: value}
-    with pytest.raises(ProviderError, match=rf"usage\.{field}"):
-        parse_anthropic_response(
+    with pytest.raises(types.ProviderError, match=rf"usage\.{field}"):
+        anthropic._parse_response(
             {"content": [{"type": "text", "text": "ok"}], "stop_reason": "end_turn", "usage": usage}
         )
 
 
 def test_anthropic_usage_counts_accept_integer_strings_and_integral_floats() -> None:
-    from agent6.providers.anthropic import (
-        _parse_response as parse_anthropic_response,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    response = parse_anthropic_response(
+    response = anthropic._parse_response(
         {
             "content": [],
             "stop_reason": "end_turn",
@@ -981,12 +979,8 @@ def test_anthropic_usage_counts_accept_integer_strings_and_integral_floats() -> 
 
 @pytest.mark.parametrize("value", [None, "", True, {}, []])
 def test_anthropic_final_stop_reason_must_be_a_nonempty_string(value: object) -> None:
-    from agent6.providers.anthropic import (
-        _parse_response as parse_anthropic_response,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    with pytest.raises(ProviderError, match="stop_reason"):
-        parse_anthropic_response(
+    with pytest.raises(types.ProviderError, match="stop_reason"):
+        anthropic._parse_response(
             {
                 "content": [{"type": "text", "text": "ok"}],
                 "stop_reason": value,
@@ -1014,12 +1008,8 @@ def test_anthropic_content_block_fields_keep_the_replay_wire_valid(
     block: dict[str, object],
 ) -> None:
     """A malformed response block must not be stored verbatim for the next request."""
-    from agent6.providers.anthropic import (
-        _parse_response as parse_anthropic_response,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    with pytest.raises(ProviderError, match="content"):
-        parse_anthropic_response(
+    with pytest.raises(types.ProviderError, match="content"):
+        anthropic._parse_response(
             {
                 "content": [block],
                 "stop_reason": "end_turn",
@@ -1030,12 +1020,8 @@ def test_anthropic_content_block_fields_keep_the_replay_wire_valid(
 
 def test_anthropic_tool_use_ids_are_unique() -> None:
     """Duplicate IDs cannot be paired to distinct tool results on the next request."""
-    from agent6.providers.anthropic import (
-        _parse_response as parse_anthropic_response,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    with pytest.raises(ProviderError, match=r"duplicate.*tool_use.id"):
-        parse_anthropic_response(
+    with pytest.raises(types.ProviderError, match=r"duplicate.*tool_use.id"):
+        anthropic._parse_response(
             {
                 "content": [
                     {"type": "tool_use", "id": "tu_1", "name": "list_dir", "input": {}},

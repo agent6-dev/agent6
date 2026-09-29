@@ -13,18 +13,17 @@ loop needs a verdict from it, not a handle.
 
 from __future__ import annotations
 
+import pathlib
 import time
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 from agent6.config import Config
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.errors import ToolError
+from agent6.tools import dispatch, errors
 
 
-def _dispatcher(tmp_path: Path, checkin: float) -> ToolDispatcher:
+def _dispatcher(tmp_path: pathlib.Path, checkin: float) -> dispatch.ToolDispatcher:
     root = tmp_path / "repo"
     root.mkdir(exist_ok=True)
     session_dir = tmp_path / "session"
@@ -35,7 +34,7 @@ def _dispatcher(tmp_path: Path, checkin: float) -> ToolDispatcher:
             "harness": {"command_checkin_s": checkin},
         }
     )
-    return ToolDispatcher(
+    return dispatch.ToolDispatcher(
         root=root,
         config=cfg,
         isolation="none",
@@ -44,11 +43,11 @@ def _dispatcher(tmp_path: Path, checkin: float) -> ToolDispatcher:
     )
 
 
-def _run(d: ToolDispatcher, script: str) -> dict[str, Any]:
+def _run(d: dispatch.ToolDispatcher, script: str) -> dict[str, Any]:
     return d.dispatch("run_command", {"argv": ["/bin/sh", "-c", script]}).to_wire()
 
 
-def test_a_command_that_finishes_is_an_ordinary_result(tmp_path: Path) -> None:
+def test_a_command_that_finishes_is_an_ordinary_result(tmp_path: pathlib.Path) -> None:
     d = _dispatcher(tmp_path, checkin=30.0)
     try:
         out = _run(d, "echo fast; exit 2")
@@ -60,7 +59,9 @@ def test_a_command_that_finishes_is_an_ordinary_result(tmp_path: Path) -> None:
     assert "background_id" not in out
 
 
-def test_a_command_outliving_the_checkin_comes_back_as_a_background_job(tmp_path: Path) -> None:
+def test_a_command_outliving_the_checkin_comes_back_as_a_background_job(
+    tmp_path: pathlib.Path,
+) -> None:
     """One ExecResult shape either way: `returncode` null and a `background_id` naming the command.
 
     Nothing has to branch on "a result or a handle".
@@ -88,7 +89,7 @@ def test_a_command_outliving_the_checkin_comes_back_as_a_background_job(tmp_path
         d.close()
 
 
-def test_a_zero_checkin_waits_for_the_command(tmp_path: Path) -> None:
+def test_a_zero_checkin_waits_for_the_command(tmp_path: pathlib.Path) -> None:
     """`0` disables the hand-back.
 
     Correct when a human is watching and can interrupt, and the path a run with no background
@@ -104,7 +105,7 @@ def test_a_zero_checkin_waits_for_the_command(tmp_path: Path) -> None:
     assert "background_id" not in out
 
 
-def test_the_verify_gate_is_never_handed_back(tmp_path: Path) -> None:
+def test_the_verify_gate_is_never_handed_back(tmp_path: pathlib.Path) -> None:
     """The operator's gate returns a verdict; a handle would leave the loop nothing to decide on."""
     root = tmp_path / "repo"
     root.mkdir(exist_ok=True)
@@ -120,7 +121,7 @@ def test_the_verify_gate_is_never_handed_back(tmp_path: Path) -> None:
             },
         }
     )
-    d = ToolDispatcher(
+    d = dispatch.ToolDispatcher(
         root=root, config=cfg, isolation="none", session_dir=session_dir, use_jail_session=True
     )
     try:
@@ -134,7 +135,7 @@ def test_the_verify_gate_is_never_handed_back(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("checkin", [0.5, 0.0])
 def test_nothing_a_handed_back_command_started_outlives_the_run(
-    tmp_path: Path, checkin: float
+    tmp_path: pathlib.Path, checkin: float
 ) -> None:
     """Teardown stops the roster, so a handed-back command dies with the run like any other."""
     d = _dispatcher(tmp_path, checkin=checkin)
@@ -146,7 +147,7 @@ def test_nothing_a_handed_back_command_started_outlives_the_run(
     assert marker.exists()
     pid = int(marker.read_text().strip())
     try:
-        state = Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()[0]
+        state = pathlib.Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()[0]
     except (OSError, IndexError):
         state = "gone"
     assert state in ("gone", "Z")
@@ -155,7 +156,7 @@ def test_nothing_a_handed_back_command_started_outlives_the_run(
 # --- one exec tool -----------------------------------------------------------
 
 
-def test_background_true_returns_the_same_shape_immediately(tmp_path: Path) -> None:
+def test_background_true_returns_the_same_shape_immediately(tmp_path: pathlib.Path) -> None:
     """`background: true` is a check-in of zero: one parameter, not a second tool and shape."""
     d = _dispatcher(tmp_path, checkin=900.0)
     try:
@@ -181,7 +182,7 @@ def test_background_true_returns_the_same_shape_immediately(tmp_path: Path) -> N
         d.close()
 
 
-def test_the_background_flag_replaced_the_second_tool(tmp_path: Path) -> None:
+def test_the_background_flag_replaced_the_second_tool(tmp_path: pathlib.Path) -> None:
     """One exec tool plus read + kill, matching what models are trained on."""
     d = _dispatcher(tmp_path, checkin=900.0)
     try:
@@ -192,7 +193,7 @@ def test_the_background_flag_replaced_the_second_tool(tmp_path: Path) -> None:
         d.close()
 
 
-def test_a_read_only_mode_cannot_background(tmp_path: Path) -> None:
+def test_a_read_only_mode_cannot_background(tmp_path: pathlib.Path) -> None:
     """Only a session that edits owns a background command's lifetime.
 
     Every other mode is a short read-only pass and would kill it at the end; derived from the
@@ -203,7 +204,7 @@ def test_a_read_only_mode_cannot_background(tmp_path: Path) -> None:
     session_dir = tmp_path / "session"
     session_dir.mkdir(exist_ok=True)
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
-    d = ToolDispatcher(
+    d = dispatch.ToolDispatcher(
         root=root,
         config=cfg,
         isolation="none",
@@ -212,26 +213,26 @@ def test_a_read_only_mode_cannot_background(tmp_path: Path) -> None:
         use_jail_session=True,
     )
     try:
-        with pytest.raises(ToolError, match="not available in ask mode"):
+        with pytest.raises(errors.ToolError, match="not available in ask mode"):
             d.dispatch("run_command", {"argv": ["/bin/echo", "hi"], "background": True})
     finally:
         d.close()
 
 
-def test_an_operator_stop_cuts_a_wait_short(tmp_path: Path) -> None:
+def test_an_operator_stop_cuts_a_wait_short(tmp_path: pathlib.Path) -> None:
     """A Stop pressed during a check-in wait ends the wait.
 
     Stop is a marker file polled at a step boundary, and a tool call in flight reaches no
     boundary; unread, a Stop sits for the whole wait (measured: the full 10s of a 10s wait,
     and the default wait is 900).
     """
-    from agent6.sessions.ipc import request_stop
+    from agent6.sessions import ipc
 
     d = _dispatcher(tmp_path, checkin=900.0)
     session_dir = tmp_path / "session"
     try:
         d.dispatch("run_command", {"argv": ["/bin/sh", "-c", "sleep 60"], "background": True})
-        request_stop(session_dir)
+        ipc.request_stop(session_dir)
         started = time.monotonic()
         d.dispatch("read_background", {"id": "bg1", "wait_s": 10})
         waited = time.monotonic() - started
@@ -241,7 +242,7 @@ def test_an_operator_stop_cuts_a_wait_short(tmp_path: Path) -> None:
         d.close()
 
 
-def test_a_wait_still_waits_when_nobody_asked_to_stop(tmp_path: Path) -> None:
+def test_a_wait_still_waits_when_nobody_asked_to_stop(tmp_path: pathlib.Path) -> None:
     """The negative control: without a stop marker the wait runs to the command's end."""
     d = _dispatcher(tmp_path, checkin=900.0)
     try:
@@ -254,7 +255,7 @@ def test_a_wait_still_waits_when_nobody_asked_to_stop(tmp_path: Path) -> None:
         d.close()
 
 
-def test_an_operator_stop_hands_a_running_command_back_at_once(tmp_path: Path) -> None:
+def test_an_operator_stop_hands_a_running_command_back_at_once(tmp_path: pathlib.Path) -> None:
     """A Stop during a synchronous `run_command` hands the command back as `bg<N>`.
 
     The sibling of the wait above, and the harder half: the dispatcher blocks reading the
@@ -264,12 +265,12 @@ def test_an_operator_stop_hands_a_running_command_back_at_once(tmp_path: Path) -
     is blocked on the answer to the very request being interrupted. The command is not
     killed.
     """
-    from agent6.sessions.ipc import request_stop
+    from agent6.sessions import ipc
 
     d = _dispatcher(tmp_path, checkin=900.0)
     session_dir = tmp_path / "session"
     try:
-        request_stop(session_dir)
+        ipc.request_stop(session_dir)
         started = time.monotonic()
         out = _run(d, "sleep 30")
         waited = time.monotonic() - started
@@ -281,7 +282,7 @@ def test_an_operator_stop_hands_a_running_command_back_at_once(tmp_path: Path) -
         d.close()
 
 
-def test_a_command_runs_to_the_end_when_nobody_asked_to_stop(tmp_path: Path) -> None:
+def test_a_command_runs_to_the_end_when_nobody_asked_to_stop(tmp_path: pathlib.Path) -> None:
     """The negative control: no marker, so the same command returns its own result and no handle."""
     d = _dispatcher(tmp_path, checkin=900.0)
     try:
@@ -297,7 +298,7 @@ def test_a_command_runs_to_the_end_when_nobody_asked_to_stop(tmp_path: Path) -> 
         d.close()
 
 
-def test_a_plan_or_ask_command_runs_bounded_instead_of_handing_back(tmp_path: Path) -> None:
+def test_a_plan_or_ask_command_runs_bounded_instead_of_handing_back(tmp_path: pathlib.Path) -> None:
     """Where the hand-back is unusable the command runs bounded.
 
     Plan and ask permit `run_command` but withhold `read_background` and `stop_background`,
@@ -310,7 +311,7 @@ def test_a_plan_or_ask_command_runs_bounded_instead_of_handing_back(tmp_path: Pa
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": "yes"}, "harness": {"command_checkin_s": 0.3}}
     )
-    d = ToolDispatcher(
+    d = dispatch.ToolDispatcher(
         root=root,
         config=cfg,
         isolation="none",

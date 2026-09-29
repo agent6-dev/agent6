@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import io
 
-from agent6.ui.cli._console_view import ConsoleView
+from agent6.ui.cli import _console_view
 
 
-def _view() -> tuple[ConsoleView, io.StringIO]:
+def _view() -> tuple[_console_view.ConsoleView, io.StringIO]:
     out = io.StringIO()
-    return ConsoleView(out, color=False), out
+    return _console_view.ConsoleView(out, color=False), out
 
 
 def test_an_answer_queued_mid_stream_waits_for_the_turn_boundary() -> None:

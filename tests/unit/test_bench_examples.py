@@ -8,26 +8,26 @@ load under extra="forbid", so one stale name refuses the whole file.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
 from agent6.machine import MachineError, load_machine
 
-_REPO = Path(__file__).resolve().parents[2]
+_REPO = pathlib.Path(__file__).resolve().parents[2]
 _BENCH = _REPO / "bench"
 
 _EXPECTED_INVALID: set[str] = set()
 
 
-def _example_tomls() -> list[Path]:
+def _example_tomls() -> list[pathlib.Path]:
     tomls = sorted((_BENCH / "machines").glob("*/*.asm.toml"))
     assert tomls, f"no machine examples under {_BENCH / 'machines'}"
     return tomls
 
 
 @pytest.mark.parametrize("toml", _example_tomls(), ids=lambda p: f"{p.parent.name}/{p.name}")
-def test_shipped_machine_examples_validate(toml: Path) -> None:
+def test_shipped_machine_examples_validate(toml: pathlib.Path) -> None:
     if toml.name in _EXPECTED_INVALID:
         with pytest.raises(MachineError):
             load_machine(toml)

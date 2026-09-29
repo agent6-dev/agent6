@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.app.btw import BtwSession, btw_answer, render_btw, start_btw
-from agent6.directive import parse_btw
+from agent6 import directive
+from agent6.app import btw
 
 
 @pytest.mark.parametrize(
@@ -27,10 +27,10 @@ from agent6.directive import parse_btw
 )
 def test_the_grammar_matches_only_a_leading_btw(text: str, expected: str | None) -> None:
     """The grammar matches only a leading /btw, never the English word mid-sentence."""
-    assert parse_btw(text) == expected
+    assert directive.parse_btw(text) == expected
 
 
-def _ask_dir(root: Path, name: str, *, events: list[dict[str, object]]) -> Path:
+def _ask_dir(root: pathlib.Path, name: str, *, events: list[dict[str, object]]) -> pathlib.Path:
     d = root / name
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "ask"}), encoding="utf-8")
@@ -41,20 +41,20 @@ def _ask_dir(root: Path, name: str, *, events: list[dict[str, object]]) -> Path:
     return d
 
 
-def test_it_returns_as_soon_as_the_session_exists(tmp_path: Path) -> None:
+def test_it_returns_as_soon_as_the_session_exists(tmp_path: pathlib.Path) -> None:
     """start_btw returns the moment the session is on disk, not when it has an answer."""
     asks = tmp_path / "sessions" / "asks"
     asks.mkdir(parents=True)
     launched: list[list[str]] = []
     envs: list[dict[str, str]] = []
 
-    def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
+    def launch(cwd: pathlib.Path, argv: list[str], env: dict[str, str]) -> str:
         launched.append(argv)
         envs.append(env)
         _ask_dir(asks, "quiet-fox-AAAAAA", events=[{"type": "session.start"}])
         return ""
 
-    session, err = start_btw(
+    session, err = btw.start_btw(
         "why h265",
         "parent-BBBBBB",
         cwd=tmp_path,
@@ -67,9 +67,11 @@ def test_it_returns_as_soon_as_the_session_exists(tmp_path: Path) -> None:
     assert launched == [["ask", "--no-commands", "--from", "parent-BBBBBB", "--", "why h265"]]
 
 
-def test_a_bare_btw_asks_for_a_question_instead_of_opening_a_session(tmp_path: Path) -> None:
+def test_a_bare_btw_asks_for_a_question_instead_of_opening_a_session(
+    tmp_path: pathlib.Path,
+) -> None:
     called: list[str] = []
-    session, err = start_btw(
+    session, err = btw.start_btw(
         "",
         "parent-BBBBBB",
         cwd=tmp_path,
@@ -80,20 +82,20 @@ def test_a_bare_btw_asks_for_a_question_instead_of_opening_a_session(tmp_path: P
     assert called == []
 
 
-def test_a_launch_failure_is_reported_not_swallowed(tmp_path: Path) -> None:
-    def failing(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
+def test_a_launch_failure_is_reported_not_swallowed(tmp_path: pathlib.Path) -> None:
+    def failing(cwd: pathlib.Path, argv: list[str], env: dict[str, str]) -> str:
         return "no host launcher"
 
-    session, err = start_btw("q", "p", cwd=tmp_path, launch=failing, list_asks=list)
+    session, err = btw.start_btw("q", "p", cwd=tmp_path, launch=failing, list_asks=list)
     assert session is None and err == "no host launcher"
 
 
-def test_the_answer_is_none_until_the_btw_finishes(tmp_path: Path) -> None:
+def test_the_answer_is_none_until_the_btw_finishes(tmp_path: pathlib.Path) -> None:
     d = _ask_dir(tmp_path, "quiet-fox-AAAAAA", events=[{"type": "session.start"}])
-    assert btw_answer(BtwSession(id=d.name, dir=d, question="q")) is None
+    assert btw.btw_answer(btw.BtwSession(id=d.name, dir=d, question="q")) is None
 
 
-def test_the_answer_is_the_final_prose(tmp_path: Path) -> None:
+def test_the_answer_is_the_final_prose(tmp_path: pathlib.Path) -> None:
     """An ask ends by emitting its answer as prose, not via finish_session."""
     d = _ask_dir(
         tmp_path,
@@ -105,10 +107,12 @@ def test_the_answer_is_the_final_prose(tmp_path: Path) -> None:
             {"type": "session.end", "reason": "answered", "all_passed": True},
         ],
     )
-    assert btw_answer(BtwSession(id=d.name, dir=d, question="q")) == "use ffmpeg -c:v libx265"
+    assert (
+        btw.btw_answer(btw.BtwSession(id=d.name, dir=d, question="q")) == "use ffmpeg -c:v libx265"
+    )
 
 
-def test_a_btw_that_died_says_so_rather_than_rendering_blank(tmp_path: Path) -> None:
+def test_a_btw_that_died_says_so_rather_than_rendering_blank(tmp_path: pathlib.Path) -> None:
     d = _ask_dir(
         tmp_path,
         "quiet-fox-AAAAAA",
@@ -117,7 +121,7 @@ def test_a_btw_that_died_says_so_rather_than_rendering_blank(tmp_path: Path) -> 
             {"type": "session.end", "reason": "crashed", "all_passed": False},
         ],
     )
-    answer = btw_answer(BtwSession(id=d.name, dir=d, question="q"))
+    answer = btw.btw_answer(btw.BtwSession(id=d.name, dir=d, question="q"))
     assert answer is not None and "without an answer" in answer
 
 
@@ -127,13 +131,15 @@ def test_the_block_is_fenced_and_names_how_to_go_deeper() -> None:
     It prints into the run's view but is not part of it; a btw has no follow-up thread, so going
     deeper means resuming it as the ask it is.
     """
-    block = render_btw(BtwSession(id="quiet-fox-AAAAAA", dir=Path("/x"), question="why"), "because")
+    block = btw.render_btw(
+        btw.BtwSession(id="quiet-fox-AAAAAA", dir=pathlib.Path("/x"), question="why"), "because"
+    )
     assert block.startswith("\n--- btw: why\n")
     assert "because" in block
     assert "agent6 resume quiet-fox-AAAAAA" in block
 
 
-def test_a_btw_is_not_declared_dead_before_its_worker_starts(tmp_path: Path) -> None:
+def test_a_btw_is_not_declared_dead_before_its_worker_starts(tmp_path: pathlib.Path) -> None:
     """A /btw is not declared dead before its worker starts.
 
     `start_btw` returns as soon as the session dir appears, a few ms before the child writes its
@@ -142,30 +148,28 @@ def test_a_btw_is_not_declared_dead_before_its_worker_starts(tmp_path: Path) -> 
     """
     import os
 
-    from agent6.app.btw import BtwSession, btw_answer
-
     d = tmp_path / "sessions" / "asks" / "quiet-fox-AAAAAA"
     d.mkdir(parents=True)
-    session = BtwSession(id=d.name, dir=d, question="why h265")
+    session = btw.BtwSession(id=d.name, dir=d, question="why h265")
 
-    assert btw_answer(session) is None, "a dir with no worker yet is not an ending"
+    assert btw.btw_answer(session) is None, "a dir with no worker yet is not an ending"
 
     (d / "worker.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-    assert btw_answer(session) is None, "a live worker mid-preflight is not an ending"
+    assert btw.btw_answer(session) is None, "a live worker mid-preflight is not an ending"
 
     (d / "worker.pid").write_text("1\n", encoding="utf-8")  # foreign pid: the worker died
-    answer = btw_answer(session)
+    answer = btw.btw_answer(session)
     assert answer is not None and "died launching" in answer
 
 
 def test_a_btw_still_thinking_when_the_watcher_gives_up_is_said_so(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A /btw still thinking when the watcher gives up is said so.
 
     The give-up lands on the journal as its own block, naming how to read the answer later.
     """
-    from agent6.events import EventSink
+    from agent6 import events as agent6_events
     from agent6.ui import btw as ui_btw
 
     d = _ask_dir(tmp_path, "quiet-fox-AAAAAA", events=[{"type": "session.start"}])
@@ -174,7 +178,7 @@ def test_a_btw_still_thinking_when_the_watcher_gives_up_is_said_so(
     logs = tmp_path / "run" / "logs.jsonl"
     logs.parent.mkdir()
 
-    ui_btw._watch(BtwSession(id=d.name, dir=d, question="q"), EventSink(logs))  # pyright: ignore[reportPrivateUsage]
+    ui_btw._watch(btw.BtwSession(id=d.name, dir=d, question="q"), agent6_events.EventSink(logs))  # pyright: ignore[reportPrivateUsage]
 
     events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
     (answered,) = [e for e in events if e["type"] == "btw.answered"]

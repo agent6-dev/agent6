@@ -9,13 +9,13 @@ mount under rootless podman, a skipped grant).
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
+from agent6 import events as agent6_events
 from agent6.config import Config
-from agent6.events import EventSink
-from agent6.tools.dispatch import ToolDispatcher
+from agent6.tools import dispatch
 
 
 class _StubSession:
@@ -33,7 +33,7 @@ def _patch_open(monkeypatch: pytest.MonkeyPatch, stub: _StubSession) -> None:
     monkeypatch.setattr("agent6.tools.dispatch.JailSession.open", classmethod(fake_open))
 
 
-def _events(path: Path, kind: str) -> list[dict[str, object]]:
+def _events(path: pathlib.Path, kind: str) -> list[dict[str, object]]:
     if not path.exists():
         return []
     return [
@@ -43,10 +43,12 @@ def _events(path: Path, kind: str) -> list[dict[str, object]]:
     ]
 
 
-def _dispatcher(tmp_path: Path, events: EventSink, stub: _StubSession) -> ToolDispatcher:
+def _dispatcher(
+    tmp_path: pathlib.Path, events: agent6_events.EventSink, stub: _StubSession
+) -> dispatch.ToolDispatcher:
     # network = "host" needs no session netns; isolation must be strict for a session to open.
     (tmp_path / "s").mkdir(exist_ok=True)
-    return ToolDispatcher(
+    return dispatch.ToolDispatcher(
         root=tmp_path,
         config=Config.model_validate({"sandbox": {"network": "host"}}),
         isolation="strict",
@@ -57,13 +59,13 @@ def _dispatcher(tmp_path: Path, events: EventSink, stub: _StubSession) -> ToolDi
 
 
 def test_a_degraded_session_emits_jail_degraded_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     warning = "[agent6-jail] warning: fresh /proc mount failed (EPERM)"
     stub = _StubSession(warning)
     _patch_open(monkeypatch, stub)
     log = tmp_path / "e.jsonl"
-    d = _dispatcher(tmp_path, EventSink(log), stub)
+    d = _dispatcher(tmp_path, agent6_events.EventSink(log), stub)
     try:
         assert d._run_session() is stub  # pyright: ignore[reportPrivateUsage]
         d._run_session()  # already open -> no second emit  # pyright: ignore[reportPrivateUsage]
@@ -74,11 +76,13 @@ def test_a_degraded_session_emits_jail_degraded_once(
     assert warning in str(degraded[0].get("detail"))
 
 
-def test_a_clean_session_emits_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_clean_session_emits_nothing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     stub = _StubSession("")
     _patch_open(monkeypatch, stub)
     log = tmp_path / "e.jsonl"
-    d = _dispatcher(tmp_path, EventSink(log), stub)
+    d = _dispatcher(tmp_path, agent6_events.EventSink(log), stub)
     try:
         d._run_session()  # pyright: ignore[reportPrivateUsage]
     finally:
@@ -87,7 +91,7 @@ def test_a_clean_session_emits_nothing(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 def test_concurrent_callers_open_exactly_one_session(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The lazy session open is locked: two threads reaching it together open one launcher.
 
@@ -106,7 +110,7 @@ def test_concurrent_callers_open_exactly_one_session(
         return stub
 
     monkeypatch.setattr("agent6.tools.dispatch.JailSession.open", classmethod(slow_open))
-    d = _dispatcher(tmp_path, EventSink(tmp_path / "e.jsonl"), _StubSession(""))
+    d = _dispatcher(tmp_path, agent6_events.EventSink(tmp_path / "e.jsonl"), _StubSession(""))
     seen: list[object] = []
     try:
         threads = [

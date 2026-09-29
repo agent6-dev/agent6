@@ -4,56 +4,64 @@
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Callable
-from pathlib import Path
 
 import pytest
 
-from agent6.ui.cli._steer_menu import pause_line
+from agent6.ui.cli import _steer_menu as cli__steer_menu
 
 
 def test_both_prompts_answer_a_line_the_same_way(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """One dispatcher answers a typed line at both prompts.
 
     The plain prompt took bare words the rich menu had dropped, then its own slash table that
     swallowed `/parallel` and sent `/shells` to the model; it continues where the menu asks again.
     """
-    assert pause_line("/stop", tmp_path) == "abort"
-    assert pause_line(" /EXIT ", tmp_path) == "exit"
-    assert pause_line("/detach", tmp_path) == "detach"
-    assert pause_line("/continue", tmp_path) == ""
-    assert pause_line("/undo", tmp_path) == "/undo"
+    assert cli__steer_menu.pause_line("/stop", tmp_path) == "abort"
+    assert cli__steer_menu.pause_line(" /EXIT ", tmp_path) == "exit"
+    assert cli__steer_menu.pause_line("/detach", tmp_path) == "detach"
+    assert cli__steer_menu.pause_line("/continue", tmp_path) == ""
+    assert cli__steer_menu.pause_line("/undo", tmp_path) == "/undo"
     # The loop's directives travel verbatim, arguments and all, the word
     # lowercased for its case-sensitive parsers.
-    assert pause_line("/parallel 2 fix the tests", tmp_path) == "/parallel 2 fix the tests"
-    assert pause_line("/PIN always gate", tmp_path) == "/pin always gate"
+    assert (
+        cli__steer_menu.pause_line("/parallel 2 fix the tests", tmp_path)
+        == "/parallel 2 fix the tests"
+    )
+    assert cli__steer_menu.pause_line("/PIN always gate", tmp_path) == "/pin always gate"
     # Any other line with spaces travels verbatim, case and spacing included.
-    assert pause_line("/Users/eric/Notes.md   has it", tmp_path) == "/Users/eric/Notes.md   has it"
-    assert pause_line("/h check the logs", tmp_path) == "/h check the logs"
+    assert (
+        cli__steer_menu.pause_line("/Users/eric/Notes.md   has it", tmp_path)
+        == "/Users/eric/Notes.md   has it"
+    )
+    assert cli__steer_menu.pause_line("/h check the logs", tmp_path) == "/h check the logs"
     # A command that prints continues the run; an unknown one says so.
-    assert pause_line("/shells", tmp_path) == ""
-    assert pause_line("/statsu", tmp_path) == ""
+    assert cli__steer_menu.pause_line("/shells", tmp_path) == ""
+    assert cli__steer_menu.pause_line("/statsu", tmp_path) == ""
     out = capsys.readouterr().out
     assert "background commands" in out and "unknown command '/statsu'" in out
     for word in ("q", "Q", "quit", "stop", "abort", "d", "detach", "exit"):
-        assert pause_line(word, tmp_path) == word
+        assert cli__steer_menu.pause_line(word, tmp_path) == word
 
 
-def test_blank_continues(tmp_path: Path) -> None:
-    assert pause_line("", tmp_path) == ""
-    assert pause_line("   ", tmp_path) == ""
+def test_blank_continues(tmp_path: pathlib.Path) -> None:
+    assert cli__steer_menu.pause_line("", tmp_path) == ""
+    assert cli__steer_menu.pause_line("   ", tmp_path) == ""
 
 
-def test_none_stays_none(tmp_path: Path) -> None:
-    assert pause_line(None, tmp_path) is None
+def test_none_stays_none(tmp_path: pathlib.Path) -> None:
+    assert cli__steer_menu.pause_line(None, tmp_path) is None
 
 
-def test_instruction_passes_through(tmp_path: Path) -> None:
-    assert pause_line("focus on the parser", tmp_path) == "focus on the parser"
+def test_instruction_passes_through(tmp_path: pathlib.Path) -> None:
+    assert cli__steer_menu.pause_line("focus on the parser", tmp_path) == "focus on the parser"
     # a sentence that merely starts with a keyword is an instruction, not a command
-    assert pause_line("abort the current plan", tmp_path) == "abort the current plan"
+    assert (
+        cli__steer_menu.pause_line("abort the current plan", tmp_path) == "abort the current plan"
+    )
 
 
 def _feed(lines: list[str]) -> Callable[[str], str]:
@@ -69,12 +77,12 @@ def _feed(lines: list[str]) -> Callable[[str], str]:
     return fn
 
 
-def test_pause_menu_slash_commands(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_pause_menu_slash_commands(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Info commands re-prompt, action commands return canonical values, text passes through."""
     import json
     import os
-
-    from agent6.ui.cli._steer_menu import pause_menu
 
     # The menu IS Ctrl-C on a live attach, so the worker is alive: without its
     # pid on disk the status line reads the run as one that exited.
@@ -103,33 +111,33 @@ def test_pause_menu_slash_commands(tmp_path: Path, capsys: pytest.CaptureFixture
         encoding="utf-8",
     )
     # /help + /status + /tasks print, then the free text is the steer.
-    out = pause_menu(tmp_path, input_fn=_feed(["/help", "/status", "/tasks", "focus on tests"]))
+    out = cli__steer_menu.pause_menu(
+        tmp_path, input_fn=_feed(["/help", "/status", "/tasks", "focus on tests"])
+    )
     assert out == "focus on tests"
     printed = capsys.readouterr().out
     assert "/detach" in printed  # help listed the commands
     assert "running" in printed and "1 tool " in printed  # status line, singular at 1
     assert "fix the bars" in printed  # the task graph
 
-    assert pause_menu(tmp_path, input_fn=_feed(["/stop"])) == "abort"
-    assert pause_menu(tmp_path, input_fn=_feed(["/detach"])) == "detach"
-    assert pause_menu(tmp_path, input_fn=_feed(["/continue"])) == ""
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/stop"])) == "abort"
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/detach"])) == "detach"
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/continue"])) == ""
     # Bare keywords are gone: a plain word is a steering instruction now.
-    assert pause_menu(tmp_path, input_fn=_feed(["q"])) == "q"
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["q"])) == "q"
     # Unknown slash command re-prompts (does not steer with a typo).
-    out = pause_menu(tmp_path, input_fn=_feed(["/statsu", "real steer"]))
+    out = cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/statsu", "real steer"]))
     assert out == "real steer"
     assert "unknown command" in capsys.readouterr().out
     # EOF (Ctrl-D) means continue.
-    assert pause_menu(tmp_path, input_fn=_feed([])) is None
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed([])) is None
 
 
 def test_status_counts_a_retired_task_as_done(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """/status counts an obsolete task as done, like a skipped one."""
     import json
-
-    from agent6.ui.cli._steer_menu import pause_menu
 
     (tmp_path / "logs.jsonl").write_text(
         "\n".join(
@@ -151,13 +159,13 @@ def test_status_counts_a_retired_task_as_done(
         encoding="utf-8",
     )
 
-    assert pause_menu(tmp_path, input_fn=_feed(["/status", "/continue"])) == ""
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/status", "/continue"])) == ""
 
     assert "tasks 2/3" in capsys.readouterr().out
 
 
 def test_pause_menu_status_clips_the_task_like_every_listing(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """/status ends a long task with an ellipsis and skips a seeded run's `<prior-run>` block.
 
@@ -166,57 +174,51 @@ def test_pause_menu_status_clips_the_task_like_every_listing(
     import json
     import os
 
-    from agent6.ui.cli._steer_menu import pause_menu
-
     (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     task = "<prior-run>\nseeded context\n</prior-run>\n" + "add a function " * 12
     (tmp_path / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": task, "mode": "run"}) + "\n",
         encoding="utf-8",
     )
-    pause_menu(tmp_path, input_fn=_feed(["/status"]))
+    cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/status"]))
     status = next(ln for ln in capsys.readouterr().out.splitlines() if "task:" in ln)
     shown = status.split("task: ", 1)[1]
     assert shown.endswith("…") and len(shown) == 80
     assert shown.startswith("add a function") and "<prior-run" not in shown
 
 
-def test_pause_menu_help_names_parallel(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_pause_menu_help_names_parallel(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The mid-run steer help names `/parallel`, the directive the loop dispatches lanes for."""
-    from agent6.ui.cli._steer_menu import pause_menu
-
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-    assert pause_menu(tmp_path, input_fn=_feed(["/help", "go"])) == "go"
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/help", "go"])) == "go"
     assert "/parallel" in capsys.readouterr().out
 
 
 def test_pause_menu_bare_parallel_explains_and_reprompts(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`/parallel` is a menu command; bare, it names the missing task and re-prompts."""
-    from agent6.ui.cli._steer_menu import MENU_COMMANDS, pause_menu
-
-    assert "/parallel" in MENU_COMMANDS
+    assert "/parallel" in cli__steer_menu.MENU_COMMANDS
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-    assert pause_menu(tmp_path, input_fn=_feed(["/parallel", "go"])) == "go"
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/parallel", "go"])) == "go"
     assert "needs a task" in capsys.readouterr().out
 
 
-def test_pause_menu_parallel_directive_passes_through_verbatim(tmp_path: Path) -> None:
+def test_pause_menu_parallel_directive_passes_through_verbatim(tmp_path: pathlib.Path) -> None:
     """`/parallel <task>` has a space, so the pause menu sends it to the run verbatim.
 
     The loop parses it, which is why mid-run `/parallel` needs no composer change.
     """
-    from agent6.ui.cli._steer_menu import pause_menu
-
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-    assert pause_menu(tmp_path, input_fn=_feed(["/parallel 2 add a greeting"])) == (
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/parallel 2 add a greeting"])) == (
         "/parallel 2 add a greeting"
     )
 
 
 def test_pause_menu_prefixes_and_word_rule(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A unique prefix fires, an ambiguous one re-asks, and a line with spaces is an instruction."""
     import json
@@ -225,8 +227,6 @@ def test_pause_menu_prefixes_and_word_rule(
     # is Ctrl-C on a live attach), which is what reads "running".
     import os
 
-    from agent6.ui.cli._steer_menu import pause_menu
-
     (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (tmp_path / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "t", "mode": "run"}) + "\n",
@@ -234,34 +234,38 @@ def test_pause_menu_prefixes_and_word_rule(
     )
     # A command is typed in full; a prefix is for Tab, so it never fires and
     # says what it was near.
-    assert pause_menu(tmp_path, input_fn=_feed(["/status", "/stat", "/stop"])) == "abort"
+    assert (
+        cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/status", "/stat", "/stop"]))
+        == "abort"
+    )
     printed = capsys.readouterr().out
     assert "running" in printed  # /status printed the status line
     assert "unknown command '/stat'" in printed
     assert "/status" in printed  # the did-you-mean names what it was near
     # A multi-word line starting with "/" is a steer, never a command.
-    assert pause_menu(tmp_path, input_fn=_feed(["/stop hammering the API"])) == (
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/stop hammering the API"])) == (
         "/stop hammering the API"
     )
     # /h is the /help alias.
-    assert pause_menu(tmp_path, input_fn=_feed(["/h", "go"])) == "go"
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/h", "go"])) == "go"
     assert "/detach" in capsys.readouterr().out
 
 
 def test_pause_menu_compact_requests_compaction(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.sessions.ipc import read_compact_request
-    from agent6.ui.cli._steer_menu import pause_menu
+    from agent6.sessions import ipc
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-    assert pause_menu(tmp_path, input_fn=_feed(["/compact"])) is None  # EOF -> continue
-    assert read_compact_request(tmp_path) == ""  # marker pending, no focus
+    assert (
+        cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/compact"])) is None
+    )  # EOF -> continue
+    assert ipc.read_compact_request(tmp_path) == ""  # marker pending, no focus
     assert "compaction requested" in capsys.readouterr().out
 
 
 def test_pause_menu_status_tells_the_truth_about_a_dead_worker(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """/status on an attached run whose worker died prints the hub's word, 'stale'.
 
@@ -269,26 +273,22 @@ def test_pause_menu_status_tells_the_truth_about_a_dead_worker(
     """
     import json
 
-    from agent6.ui.cli._steer_menu import pause_menu
-
     (tmp_path / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "t", "mode": "run"}) + "\n",
         encoding="utf-8",
     )
     (tmp_path / "worker.pid").write_text("999999999", encoding="utf-8")  # dead
-    assert pause_menu(tmp_path, input_fn=_feed(["/status", "/continue"])) == ""
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/status", "/continue"])) == ""
     printed = capsys.readouterr().out
     assert "stale" in printed
     assert "running" not in printed
 
 
 def test_pause_menu_status_shows_ctx_and_profile(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """/status includes the context fill and the sandbox profile the run started with."""
     import json
-
-    from agent6.ui.cli._steer_menu import pause_menu
 
     (tmp_path / "logs.jsonl").write_text(
         "".join(
@@ -309,7 +309,7 @@ def test_pause_menu_status_shows_ctx_and_profile(
     (tmp_path / "manifest.json").write_text(
         json.dumps({"harness": {"preset": "paranoid"}}), encoding="utf-8"
     )
-    assert pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
     printed = capsys.readouterr().out
     assert "ctx 90,000 tok" in printed
     assert "(45%)" in printed  # 90k of the 200k sonnet window
@@ -318,12 +318,10 @@ def test_pause_menu_status_shows_ctx_and_profile(
 
 
 def test_pause_menu_status_shows_compaction_truth(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Once compaction has elided results, /status counts them and the surviving gists."""
     import json
-
-    from agent6.ui.cli._steer_menu import pause_menu
 
     (tmp_path / "logs.jsonl").write_text(
         "".join(
@@ -342,7 +340,7 @@ def test_pause_menu_status_shows_compaction_truth(
         ),
         encoding="utf-8",
     )
-    assert pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
     printed = capsys.readouterr().out
     assert "elided 9 (3 gists)" in printed
 
@@ -350,7 +348,7 @@ def test_pause_menu_status_shows_compaction_truth(
 # --- skill slash commands ----------------------------------------------------
 
 
-def _skill_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
+def _skill_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
     """Install fake skills into an isolated data dir and chdir to tmp."""
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -365,69 +363,66 @@ def _skill_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *names: str) -> 
         )
 
 
-def test_skill_command_whole_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent6.ui.cli._steer_menu import pause_menu
-
+def test_skill_command_whole_line(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _skill_env(tmp_path, monkeypatch, "caveman")
     # The menu passes a skill command through as typed; the loop expands it
     # (one owner for every composer).
-    assert pause_menu(tmp_path, input_fn=_feed(["/caveman"])) == "/caveman"
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/caveman"])) == "/caveman"
 
 
-def test_skill_command_with_args(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent6.ui.cli._steer_menu import pause_menu
-
+def test_skill_command_with_args(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _skill_env(tmp_path, monkeypatch, "caveman")
-    assert pause_menu(tmp_path, input_fn=_feed(["/caveman lite"])) == "/caveman lite"
+    assert (
+        cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/caveman lite"])) == "/caveman lite"
+    )
 
 
 def test_non_skill_line_with_spaces_stays_verbatim(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.ui.cli._steer_menu import pause_menu
-
     _skill_env(tmp_path, monkeypatch, "caveman")
-    assert pause_menu(tmp_path, input_fn=_feed(["/focus on tests"])) == "/focus on tests"
-    assert pause_menu(tmp_path, input_fn=_feed(["fix the parser"])) == "fix the parser"
+    assert (
+        cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/focus on tests"]))
+        == "/focus on tests"
+    )
+    assert (
+        cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["fix the parser"])) == "fix the parser"
+    )
 
 
-def test_builtin_wins_name_collision(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent6.ui.cli._steer_menu import pause_menu
-
+def test_builtin_wins_name_collision(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _skill_env(tmp_path, monkeypatch, "status")
     # /status must still be the built-in info command (prints, re-prompts, EOF)
-    assert pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
 
 
-def test_disabled_skill_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent6.ui.cli._steer_menu import pause_menu
-
+def test_disabled_skill_absent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _skill_env(tmp_path, monkeypatch, "caveman")
     (tmp_path / "config" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "config" / "agent6" / "config.toml").write_text(
         '[skills.state]\ncaveman = "disabled"\n', encoding="utf-8"
     )
-    out = pause_menu(tmp_path, input_fn=_feed(["/caveman", "steer text"]))
+    out = cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/caveman", "steer text"]))
     # unknown command message printed, then the steer line is returned
     assert out == "steer text"
 
 
-def test_skill_menu_table_lists_enabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent6.ui.cli._steer_menu import skill_menu_table
-
+def test_skill_menu_table_lists_enabled(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _skill_env(tmp_path, monkeypatch, "caveman", "tidy")
-    table = skill_menu_table()
+    table = cli__steer_menu.skill_menu_table()
     assert set(table) == {"/caveman", "/tidy"}
     assert table["/caveman"][0] == "Use when testing caveman."
 
 
 def test_pause_menu_status_and_bare_pin_list_pins(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """/status counts pins and a bare /pin lists them; `/pin <text>` stays a verbatim steer."""
     import json
-
-    from agent6.ui.cli._steer_menu import pause_menu
 
     (tmp_path / "logs.jsonl").write_text(
         "".join(
@@ -440,7 +435,10 @@ def test_pause_menu_status_and_bare_pin_list_pins(
         ),
         encoding="utf-8",
     )
-    assert pause_menu(tmp_path, input_fn=_feed(["/status", "/pin", "/stop"])) == "abort"
+    assert (
+        cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/status", "/pin", "/stop"]))
+        == "abort"
+    )
     printed = capsys.readouterr().out
     assert "pins 2" in printed  # /status
     assert "1. never touch schema" in printed  # bare /pin lists them
@@ -448,36 +446,38 @@ def test_pause_menu_status_and_bare_pin_list_pins(
     assert "/pin <text>" in printed  # usage line
     # /pin with text stays a verbatim steer for the loop's parser
     assert (
-        pause_menu(tmp_path, input_fn=_feed(["/pin keep the API stable"]))
+        cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/pin keep the API stable"]))
         == "/pin keep the API stable"
     )
 
 
 def test_pause_menu_compact_accepts_focus(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`/compact <focus>` routes to the compact request; an ambiguous prefix stays a steer."""
-    from agent6.sessions.ipc import read_compact_request
-    from agent6.ui.cli._steer_menu import pause_menu
+    from agent6.sessions import ipc
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-    assert pause_menu(tmp_path, input_fn=_feed(["/compact keep the auth decisions"])) is None
-    assert read_compact_request(tmp_path) == "keep the auth decisions"
+    assert (
+        cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/compact keep the auth decisions"]))
+        is None
+    )
+    assert ipc.read_compact_request(tmp_path) == "keep the auth decisions"
     assert "compaction requested" in capsys.readouterr().out
     # A prefix with args is not the command: it stays a steer, so adding a
     # command can never re-point a line the operator has typed for months.
     assert (
-        pause_menu(tmp_path, input_fn=_feed(["/comp focus on the parser"]))
+        cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/comp focus on the parser"]))
         == "/comp focus on the parser"
     )
-    assert read_compact_request(tmp_path) == "keep the auth decisions"  # unchanged
-    assert pause_menu(tmp_path, input_fn=_feed(["/c keep it"])) == "/c keep it"
+    assert ipc.read_compact_request(tmp_path) == "keep the auth decisions"  # unchanged
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/c keep it"])) == "/c keep it"
     # /pin with args is the loop's directive, never a menu route
-    assert pause_menu(tmp_path, input_fn=_feed(["/pin keep it"])) == "/pin keep it"
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/pin keep it"])) == "/pin keep it"
 
 
 def test_pause_menu_seeds_recall_from_the_journal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The Up/Ctrl-R history is seeded once per session from logs.jsonl.
 
@@ -487,7 +487,6 @@ def test_pause_menu_seeds_recall_from_the_journal(
     import json
 
     from agent6.ui.cli import _steer_menu
-    from agent6.ui.cli._steer_menu import pause_menu
 
     (tmp_path / "logs.jsonl").write_text(
         "".join(
@@ -510,10 +509,10 @@ def test_pause_menu_seeds_recall_from_the_journal(
         return "go"
 
     monkeypatch.setattr(_steer_menu, "menu_input", fake_menu_input)
-    assert pause_menu(tmp_path) == "go"
+    assert cli__steer_menu.pause_menu(tmp_path) == "go"
     assert seen[0] == ["polish the TUI", "focus on tests"]
     # A later pause of the same session must not reseed away in-process lines.
-    assert pause_menu(tmp_path) == "go"
+    assert cli__steer_menu.pause_menu(tmp_path) == "go"
     assert seen[1][-1] == "/status"
     # A different session dir reseeds.
     other = tmp_path / "other"
@@ -522,12 +521,12 @@ def test_pause_menu_seeds_recall_from_the_journal(
         json.dumps({"type": "session.start", "user_task": "other task", "mode": "run"}) + "\n",
         encoding="utf-8",
     )
-    assert pause_menu(other) == "go"
+    assert cli__steer_menu.pause_menu(other) == "go"
     assert seen[2] == ["other task"]
 
 
 def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Ctrl-C's first stage prints the run's facts; Ctrl-Z prints the same line and disarms.
 
@@ -536,15 +535,15 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
     """
     import signal
 
-    from agent6.app.frontend import SessionFacts
-    from agent6.events import EventSink
+    from agent6 import events
+    from agent6.app import frontend
     from agent6.ui.cli import _steer
 
     printed: list[str] = []
     monkeypatch.setattr(_steer, "tty_message", printed.append)
     monkeypatch.setattr(_steer, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
 
-    facts = SessionFacts(
+    facts = frontend.SessionFacts(
         spend_usd=1.42,
         spend_partial=False,
         model="claude-sonnet-4-6",
@@ -552,7 +551,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
         isolation="strict",
     )
     state = _steer.install_steer_sigint(
-        EventSink(tmp_path / "logs.jsonl"), tmp_path, None, lambda: facts
+        events.EventSink(tmp_path / "logs.jsonl"), tmp_path, None, lambda: facts
     )
     try:
         sigint = signal.getsignal(signal.SIGINT)
@@ -575,22 +574,23 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
         state.restore()
 
 
-def test_exit_maps_to_exit_and_stop_stays_abort(tmp_path: Path) -> None:
+def test_exit_maps_to_exit_and_stop_stays_abort(tmp_path: pathlib.Path) -> None:
     """`/exit` returns the distinct 'exit' action; /stop keeps returning 'abort'.
 
     The loop ends the run `steer_exit` and the CLI skips the follow-up prompt.
     """
-    from agent6.ui.cli._steer_menu import pause_menu
-
-    assert pause_line("/exit", tmp_path) == "exit"
+    assert cli__steer_menu.pause_line("/exit", tmp_path) == "exit"
     # a sentence starting with the word stays an instruction
-    assert pause_line("exit the retry loop early", tmp_path) == "exit the retry loop early"
-    assert pause_menu(tmp_path, input_fn=_feed(["/exit"])) == "exit"
-    assert pause_menu(tmp_path, input_fn=_feed(["/stop"])) == "abort"
+    assert (
+        cli__steer_menu.pause_line("exit the retry loop early", tmp_path)
+        == "exit the retry loop early"
+    )
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/exit"])) == "exit"
+    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/stop"])) == "abort"
 
 
 def test_ctrl_z_does_not_stand_down_the_stage_an_open_pause_menu_needs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Ctrl-Z stands an armed pause down, but not the stage an open pause menu stands on.
 
@@ -599,7 +599,7 @@ def test_ctrl_z_does_not_stand_down_the_stage_an_open_pause_menu_needs(
     """
     import signal
 
-    from agent6.events import EventSink
+    from agent6 import events
     from agent6.ui.cli import _steer
 
     monkeypatch.setattr(_steer, "tty_message", lambda _t: None)  # type: ignore[misc]
@@ -614,7 +614,7 @@ def test_ctrl_z_does_not_stand_down_the_stage_an_open_pause_menu_needs(
 
     monkeypatch.setattr(_steer, "tty_prompt", at_the_open_menu)
 
-    state = _steer.install_steer_sigint(EventSink(tmp_path / "logs.jsonl"), tmp_path)
+    state = _steer.install_steer_sigint(events.EventSink(tmp_path / "logs.jsonl"), tmp_path)
     try:
         sigint = signal.getsignal(signal.SIGINT)
         assert callable(sigint)
@@ -629,7 +629,7 @@ def test_ctrl_z_does_not_stand_down_the_stage_an_open_pause_menu_needs(
 
 
 def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The action `prompt_now` files rides the steer request marker, not the in-memory stage.
 
@@ -638,7 +638,7 @@ def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
     """
     import signal
 
-    from agent6.events import EventSink
+    from agent6 import events
     from agent6.ui.cli import _steer
 
     def typed(_text: str, **_kw: object) -> str:
@@ -649,7 +649,7 @@ def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
     monkeypatch.setattr(_steer, "menu_capable", lambda: False)
     monkeypatch.setattr(_steer, "tty_prompt", typed)
 
-    state = _steer.install_steer_sigint(EventSink(tmp_path / "logs.jsonl"), tmp_path)
+    state = _steer.install_steer_sigint(events.EventSink(tmp_path / "logs.jsonl"), tmp_path)
     try:
         sigint = signal.getsignal(signal.SIGINT)
         sigtstp = signal.getsignal(signal.SIGTSTP)
@@ -668,16 +668,16 @@ def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
 
 def test_the_menu_help_matches_the_owner_for_every_shared_command() -> None:
     """The pause menu's help words match the composers'; bare `/pin` is the one difference."""
-    from agent6.directive import STEER_COMMANDS
-    from agent6.ui.cli._steer_menu import (  # pyright: ignore[reportPrivateUsage]
-        MENU_COMMANDS,
-        MENU_ONLY_HELP,
-    )
+    from agent6 import directive
 
-    shared = set(STEER_COMMANDS) & set(MENU_COMMANDS)
-    differing = {c for c in shared if STEER_COMMANDS[c] != MENU_COMMANDS[c]}
+    shared = set(directive.STEER_COMMANDS) & set(cli__steer_menu.MENU_COMMANDS)
+    differing = {
+        c for c in shared if directive.STEER_COMMANDS[c] != cli__steer_menu.MENU_COMMANDS[c]
+    }
 
     assert differing == {"/pin"}
-    assert MENU_COMMANDS["/pin"] == MENU_ONLY_HELP["/pin"]
+    assert cli__steer_menu.MENU_COMMANDS["/pin"] == cli__steer_menu.MENU_ONLY_HELP["/pin"]
     # Every word the menu describes itself is one no composer offers.
-    assert set(MENU_ONLY_HELP) - shared == set(MENU_ONLY_HELP) - {"/pin"}
+    assert set(cli__steer_menu.MENU_ONLY_HELP) - shared == set(cli__steer_menu.MENU_ONLY_HELP) - {
+        "/pin"
+    }

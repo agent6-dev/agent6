@@ -9,39 +9,33 @@ checkpoint commits a dirty worktree on a gated run's success exit.
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess as sp
-from pathlib import Path
-from types import SimpleNamespace
+import types
 from typing import Any
 from unittest import mock
-from unittest.mock import MagicMock
 
 import pytest
 
 from agent6.config import Config
-from agent6.harness._chain import RunChain
-from agent6.harness._compactor import Compactor
-from agent6.harness._conversation import Conversation
-from agent6.harness._metric import MetricGuard
-from agent6.harness._metric import MetricSample as _MetricSample
-from agent6.harness._provider_call import CallSettings
-from agent6.harness._snapshot import (
-    SNAPSHOT_VERSION,
-    SessionSnapshot,
-    load_session_snapshot,
+from agent6.harness import (
+    _chain,
+    _compactor,
+    _conversation,
+    _loop_state,
+    _metric,
+    _provider_call,
+    _snapshot,
+    loop,
 )
-from agent6.harness.loop import (
-    Harness,
-    LoopState,
-)
-from agent6.tools.results import ExecResult, RawResult
+from agent6.tools import results
 
 # The `[git]` surface the loop reads, empty as a real Config carries it unset.
-_GIT_STUB = SimpleNamespace(
+_GIT_STUB = types.SimpleNamespace(
     control="agent6",
     commit_per_step=True,
-    commit=SimpleNamespace(
-        checkpoint=SimpleNamespace(message="agent6"), name="", email="", trailer=""
+    commit=types.SimpleNamespace(
+        checkpoint=types.SimpleNamespace(message="agent6"), name="", email="", trailer=""
     ),
 )
 
@@ -51,12 +45,12 @@ def _silent(_: str) -> None:
 
 
 def _wf(
-    root: Path | None = None,
+    root: pathlib.Path | None = None,
     *,
     ref: str | None = None,
     fallback_parent: str | None = None,
     **kw: Any,
-) -> Harness:
+) -> loop.Harness:
     """Return a loop over the root with a chain wired as run.py wires it; no root, no chain."""
     if root is not None and fallback_parent is None:
         fallback_parent = (
@@ -69,16 +63,16 @@ def _wf(
             or None
         )
     defaults: dict[str, Any] = {
-        "chain": RunChain(
-            root or Path("/tmp"),
+        "chain": _chain.RunChain(
+            root or pathlib.Path("/tmp"),
             ref=ref or ("refs/agent6/test" if root is not None else None),
             fallback_parent=fallback_parent,
         ),
-        "config": MagicMock(
+        "config": mock.MagicMock(
             git=_GIT_STUB,
-            budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=MagicMock(system_prompt_file=""),
-            harness=MagicMock(
+            budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+            prompt=mock.MagicMock(system_prompt_file=""),
+            harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -88,15 +82,15 @@ def _wf(
                 verify_retries=2,
             ),
         ),
-        "provider": MagicMock(),
-        "dispatcher": MagicMock(),
+        "provider": mock.MagicMock(),
+        "dispatcher": mock.MagicMock(),
         "logger": _silent,
     }
     defaults.update(kw)
-    return Harness(**defaults)
+    return loop.Harness(**defaults)
 
 
-def _git_repo(path: Path) -> None:
+def _git_repo(path: pathlib.Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
     sp.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
     sp.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
@@ -109,13 +103,13 @@ def _git_repo(path: Path) -> None:
 # --- #12: completion-relevant scalars round-trip + restore -----------------
 
 
-def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
+def test_snapshot_persists_completion_scalars(tmp_path: pathlib.Path) -> None:
     """verify_ever_passed, gateless_ever_edited and the metric summary survive the snapshot."""
     snap = tmp_path / "loop_state.json"
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -124,19 +118,21 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=SimpleNamespace(goal="maximize"),
+            metric=types.SimpleNamespace(goal="maximize"),
             verify_timeout_s=60.0,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
-    state = LoopState(original_task="t", tool_calls=2)
+    state = _loop_state.LoopState(original_task="t", tool_calls=2)
     state.verify.ever_passed = True
     state.verify.scoped = True
     state.settled.gateless_ever_edited = True
-    state.metric.history.append(_MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True))
+    state.metric.history.append(
+        _metric.MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True)
+    )
     state.system, state.tool_calls, state.root_task_id = "s", 2, None
     wf._save_resume_snapshot(state, [], next_iteration=4)  # pyright: ignore[reportPrivateUsage]
-    loaded = load_session_snapshot(snap)
+    loaded = _snapshot.load_session_snapshot(snap)
     assert loaded.verify_ever_passed is True
     assert loaded.verify_scoped is True
     assert loaded.gateless_ever_edited is True
@@ -144,15 +140,13 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     assert loaded.metric_at_ceiling is True
 
 
-def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: Path) -> None:
+def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: pathlib.Path) -> None:
     """A resume keeps a prior red, the memory notices and the once-only finish deferral."""
-    from agent6.harness.loop import restore_completion_state
-
     snap = tmp_path / "loop_state.json"
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -161,12 +155,12 @@ def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: Path) -> 
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.ever_failed = True
     state.memory.written = True
     state.memory.flip_nudged = True
@@ -174,9 +168,9 @@ def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: Path) -> 
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
     wf._save_resume_snapshot(state, [], next_iteration=3)  # pyright: ignore[reportPrivateUsage]
 
-    loaded = load_session_snapshot(snap)
-    fresh = LoopState(original_task="t", tool_calls=0)
-    restore_completion_state(fresh, loaded)
+    loaded = _snapshot.load_session_snapshot(snap)
+    fresh = _loop_state.LoopState(original_task="t", tool_calls=0)
+    _loop_state.restore_completion_state(fresh, loaded)
 
     assert fresh.verify.ever_failed is True
     assert fresh.memory.written is True
@@ -184,15 +178,14 @@ def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: Path) -> 
     assert fresh.memory.finish_nudged is True
 
 
-def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path) -> None:
+def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: pathlib.Path) -> None:
     """A prose turn plus its nudge is a completed iteration, so a stop there resumes after it."""
-    from agent6.harness._snapshot import SessionResult
     from agent6.providers import ProviderResponse
 
     repo = tmp_path / "repo"
     _git_repo(repo)
     snap_path = tmp_path / "loop_state.json"
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.return_value = ProviderResponse(
         text="answer in prose",
         tool_uses=(),
@@ -207,40 +200,36 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path)
         root=repo,
         provider=provider,
         resume_state_path=snap_path,
-        call=CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=5,
     )
-    stopped = SessionResult(
+    stopped = _snapshot.SessionResult(
         completed=False, reason="interactive_stop", summary="", iterations=1, tool_calls=0
     )
 
-    def stop_at_boundary(*_a: object, **_k: object) -> SessionResult:
+    def stop_at_boundary(*_a: object, **_k: object) -> _snapshot.SessionResult:
         return stopped
 
-    with mock.patch.object(Harness, "_operator_boundary", stop_at_boundary):
+    with mock.patch.object(loop.Harness, "_operator_boundary", stop_at_boundary):
         result = wf.run("do the task")
     assert result.reason == "interactive_stop"
-    loaded = load_session_snapshot(snap_path)
+    loaded = _snapshot.load_session_snapshot(snap_path)
     assert loaded.next_iteration == 2  # the prose turn is a COMPLETED iteration
     dumped = json.dumps(loaded.messages)
     assert "answer in prose" in dumped  # the model's turn survives the stop
     assert "[harness]" in dumped  # and so does the nudge that answered it
 
 
-def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -> None:
+def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: pathlib.Path) -> None:
     """The /parallel group counter is run-lifetime state, persisted like the completion scalars.
 
     Lane ids and the imported branches embed it; a reset rebuilds a prior group's ids.
     """
-    from agent6.harness.loop import (
-        restore_completion_state,
-    )
-
     snap = tmp_path / "loop_state.json"
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -249,34 +238,30 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=SimpleNamespace(goal="maximize"),
+            metric=types.SimpleNamespace(goal="maximize"),
             verify_timeout_s=60.0,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.parallel_groups_dispatched = 2
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
     wf._save_resume_snapshot(state, [], next_iteration=4)  # pyright: ignore[reportPrivateUsage]
-    loaded = load_session_snapshot(snap)
+    loaded = _snapshot.load_session_snapshot(snap)
     assert loaded.parallel_groups_dispatched == 2
 
-    fresh = LoopState(original_task="t", tool_calls=0)
-    restore_completion_state(fresh, loaded)
+    fresh = _loop_state.LoopState(original_task="t", tool_calls=0)
+    _loop_state.restore_completion_state(fresh, loaded)
     assert fresh.parallel_groups_dispatched == 2  # the next dispatch is p3, not p1
 
 
-def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
+def test_snapshot_persists_and_restores_pins(tmp_path: pathlib.Path) -> None:
     """Operator /pin instructions are run-lifetime state; an older snapshot loads with none."""
-    from agent6.harness.loop import (
-        restore_completion_state,
-    )
-
     snap = tmp_path / "loop_state.json"
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -285,30 +270,30 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=SimpleNamespace(goal="maximize"),
+            metric=types.SimpleNamespace(goal="maximize"),
             verify_timeout_s=60.0,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.pins.extend(["never touch schema files", "goal:\nship X"])
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
     wf._save_resume_snapshot(state, [], next_iteration=4)  # pyright: ignore[reportPrivateUsage]
-    loaded = load_session_snapshot(snap)
+    loaded = _snapshot.load_session_snapshot(snap)
     assert loaded.pins == ("never touch schema files", "goal:\nship X")
 
-    fresh = LoopState(original_task="t", tool_calls=0)
-    restore_completion_state(fresh, loaded)
+    fresh = _loop_state.LoopState(original_task="t", tool_calls=0)
+    _loop_state.restore_completion_state(fresh, loaded)
     assert fresh.pins == ["never touch schema files", "goal:\nship X"]
 
     # Pre-pins snapshot (no `pins` key) still loads: additive default.
     raw = json.loads(snap.read_text(encoding="utf-8"))
     del raw["pins"]
     snap.write_text(json.dumps(raw), encoding="utf-8")
-    assert load_session_snapshot(snap).pins == ()
+    assert _snapshot.load_session_snapshot(snap).pins == ()
 
 
-def test_pre_version_bump_snapshot_refused_loudly(tmp_path: Path) -> None:
+def test_pre_version_bump_snapshot_refused_loudly(tmp_path: pathlib.Path) -> None:
     """A snapshot from an older SNAPSHOT_VERSION refuses to resume or fork with a clear reason."""
     import pytest
 
@@ -327,10 +312,10 @@ def test_pre_version_bump_snapshot_refused_loudly(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="predates a state-format change"):
-        load_session_snapshot(snap)
+        _snapshot.load_session_snapshot(snap)
 
 
-def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
+def test_malformed_snapshot_shapes_fail_loud(tmp_path: pathlib.Path) -> None:
     """A wrong-shape snapshot (null, list, scalar, missing key) raises a clean ValueError."""
     import pytest
 
@@ -338,15 +323,17 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
     for bad in ("null", "[]", "123", '"str"'):
         snap.write_text(bad, encoding="utf-8")
         with pytest.raises(ValueError, match="expected a JSON object"):
-            load_session_snapshot(snap)
+            _snapshot.load_session_snapshot(snap)
     # current version, wrong internals: missing required keys, and a non-list messages
-    snap.write_text(json.dumps({"version": SNAPSHOT_VERSION, "system": "s"}), encoding="utf-8")
+    snap.write_text(
+        json.dumps({"version": _snapshot.SNAPSHOT_VERSION, "system": "s"}), encoding="utf-8"
+    )
     with pytest.raises(ValueError, match="malformed run-state snapshot"):
-        load_session_snapshot(snap)
+        _snapshot.load_session_snapshot(snap)
     snap.write_text(
         json.dumps(
             {
-                "version": SNAPSHOT_VERSION,
+                "version": _snapshot.SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": "oops",
                 "tool_calls": 0,
@@ -356,7 +343,7 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="messages"):
-        load_session_snapshot(snap)
+        _snapshot.load_session_snapshot(snap)
 
 
 def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -365,10 +352,10 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
     One iteration that finishes at once; the loop saw the restored history, so no early-finish
     rejection.
     """
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -377,12 +364,12 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=SimpleNamespace(goal="maximize"),
+            metric=types.SimpleNamespace(goal="maximize"),
             verify_timeout_s=60.0,
         ),
     )
-    provider = MagicMock()
-    provider.call.return_value = SimpleNamespace(
+    provider = mock.MagicMock()
+    provider.call.return_value = types.SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         refused={},
@@ -400,28 +387,28 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
             ]
         },
     )
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run")
 
     captured: dict[str, Any] = {}
-    orig = MetricGuard.at_ceiling
+    orig = _metric.MetricGuard.at_ceiling
 
-    def _spy(guard: MetricGuard) -> bool:
+    def _spy(guard: _metric.MetricGuard) -> bool:
         captured["at_ceiling"] = orig(guard)
         return captured["at_ceiling"]
 
-    monkeypatch.setattr(MetricGuard, "at_ceiling", _spy)
+    monkeypatch.setattr(_metric.MetricGuard, "at_ceiling", _spy)
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        conversation=Conversation.from_wire(
+        conversation=_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
         tool_calls=0,
         start_iteration=3,
         root_task_id=None,
         original_task="go",
-        resume_from=SessionSnapshot(
+        resume_from=_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -440,7 +427,7 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
 
 
 class _EventCapture:
-    def __init__(self, path: Path = Path("logs.jsonl")) -> None:
+    def __init__(self, path: pathlib.Path = pathlib.Path("logs.jsonl")) -> None:
         self.events: list[dict[str, Any]] = []
         self.path = path  # EventSink.path: the log file the emits land in
 
@@ -453,10 +440,10 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
 
     A fork's fresh log has no pin.added events, so the surfaces would show zero pins.
     """
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -465,12 +452,12 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=SimpleNamespace(goal="maximize"),
+            metric=types.SimpleNamespace(goal="maximize"),
             verify_timeout_s=60.0,
         ),
     )
-    provider = MagicMock()
-    provider.call.return_value = SimpleNamespace(
+    provider = mock.MagicMock()
+    provider.call.return_value = types.SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         refused={},
@@ -488,20 +475,20 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
             ]
         },
     )
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture()
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        conversation=Conversation.from_wire(
+        conversation=_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
         tool_calls=0,
         start_iteration=3,
         root_task_id=None,
         original_task="go",
-        resume_from=SessionSnapshot(
+        resume_from=_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -517,15 +504,13 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
     assert restored[0]["count"] == 2
 
 
-def test_resume_start_carries_the_execution_identity(tmp_path: Path) -> None:
+def test_resume_start_carries_the_execution_identity(tmp_path: pathlib.Path) -> None:
     """loop.resume.start opens a resumed or forked execution's log with session_id and mode."""
-    from agent6.harness._snapshot import SessionSnapshot as _Snap
-
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
     snap_path = session_dir / "loop_state.json"
     snap_path.write_text(
-        _Snap(
+        _snapshot.SessionSnapshot(
             system="s",
             messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
             tool_calls=0,
@@ -536,10 +521,10 @@ def test_resume_start_carries_the_execution_identity(tmp_path: Path) -> None:
         ).model_dump_json(),
         encoding="utf-8",
     )
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -548,12 +533,12 @@ def test_resume_start_carries_the_execution_identity(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=SimpleNamespace(goal="maximize"),
+            metric=types.SimpleNamespace(goal="maximize"),
             verify_timeout_s=60.0,
         ),
     )
-    provider = MagicMock()
-    provider.call.return_value = SimpleNamespace(
+    provider = mock.MagicMock()
+    provider.call.return_value = types.SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         refused={},
@@ -571,8 +556,8 @@ def test_resume_start_carries_the_execution_identity(tmp_path: Path) -> None:
             ]
         },
     )
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture(path=session_dir / "logs.jsonl")
     wf = _wf(
         provider=provider,
@@ -594,10 +579,10 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
     The fold replaces on the corrective event; guarding it on a non-empty list let the stale pin
     stand.
     """
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -606,12 +591,12 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=SimpleNamespace(goal="maximize"),
+            metric=types.SimpleNamespace(goal="maximize"),
             verify_timeout_s=60.0,
         ),
     )
-    provider = MagicMock()
-    provider.call.return_value = SimpleNamespace(
+    provider = mock.MagicMock()
+    provider.call.return_value = types.SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         refused={},
@@ -629,20 +614,20 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
             ]
         },
     )
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture()
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        conversation=Conversation.from_wire(
+        conversation=_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
         tool_calls=0,
         start_iteration=3,
         root_task_id=None,
         original_task="go",
-        resume_from=SessionSnapshot(
+        resume_from=_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -662,15 +647,15 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
 # --- #3: end-of-iteration snapshot (no replay of executed tools) -----------
 
 
-def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path) -> None:
+def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: pathlib.Path) -> None:
     """After a full iteration the snapshot advances to the next iteration with the executed turn."""
     repo = tmp_path / "repo"
     _git_repo(repo)
     snap = repo / "loop_state.json"
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -679,14 +664,14 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
         ),
     )
-    provider = MagicMock()
+    provider = mock.MagicMock()
     # Iter 1: a run_command tool_use (a side effect). Iter 2: finish_session.
     provider.call.side_effect = [
-        SimpleNamespace(
+        types.SimpleNamespace(
             text="",
             tool_uses=({"id": "a1", "name": "run_command", "input": {"command": "echo hi"}},),
             refused={},
@@ -704,7 +689,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
                 ]
             },
         ),
-        SimpleNamespace(
+        types.SimpleNamespace(
             text="",
             tool_uses=({"id": "f1", "name": "finish_session", "input": {"summary": "done"}},),
             refused={},
@@ -723,11 +708,11 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
             },
         ),
     ]
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = ExecResult(
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.ExecResult(
         returncode=0, stdout="hi", stderr="", duration_s=0.0, exec_failed=False
     )
-    dispatcher.set_run_root_node_id = MagicMock()
+    dispatcher.set_run_root_node_id = mock.MagicMock()
 
     events: list[dict[str, Any]] = []
     wf = _wf(
@@ -740,7 +725,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
     )
     orig_save = wf._save_resume_snapshot  # pyright: ignore[reportPrivateUsage]
     orig_call = provider.call
-    orig_compact = Compactor.compact
+    orig_compact = _compactor.Compactor.compact
 
     def _spy_save(state: Any, messages: list[dict[str, Any]], **kw: Any) -> None:
         orig_save(state, messages, **kw)
@@ -756,17 +741,17 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         events.append({"kind": "provider_call"})
         return orig_call(**kw)
 
-    def _spy_compact(compactor: Compactor, msgs: Any, state: Any, **kw: Any) -> bool:
+    def _spy_compact(compactor: _compactor.Compactor, msgs: Any, state: Any, **kw: Any) -> bool:
         events.append({"kind": "compact"})
         return orig_compact(compactor, msgs, state, **kw)
 
     wf._save_resume_snapshot = _spy_save  # type: ignore[method-assign]
     provider.call = _spy_call
-    compact_spy = mock.patch.object(Compactor, "compact", _spy_compact)
+    compact_spy = mock.patch.object(_compactor.Compactor, "compact", _spy_compact)
     compact_spy.start()
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        conversation=Conversation.from_wire(
+        conversation=_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
         tool_calls=0,
@@ -805,14 +790,14 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
 # --- #10: final checkpoint commits a dirty worktree on a gated run ---------
 
 
-def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) -> None:
+def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: pathlib.Path) -> None:
     """An uncommitted run_command edit on a gated run is captured by the final checkpoint."""
     repo = tmp_path / "repo"
     _git_repo(repo)
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -820,7 +805,7 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
             verify_when="never",
             verify_retries=2,
             verify_command=("pytest", "-q"),
-            metric=SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -873,14 +858,14 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
     assert "loop.auto_commit" in kinds and "diff.updated" in kinds
 
 
-def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> None:
+def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: pathlib.Path) -> None:
     """No commit when the tree is clean, and never in non-run mode."""
     repo = tmp_path / "repo"
     _git_repo(repo)
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -888,7 +873,7 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
             verify_when="never",
             verify_retries=2,
             verify_command=("pytest",),
-            metric=SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -920,12 +905,12 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
 
 def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
     """A fork re-announces its elision markers: it copies the checkpoint but not logs.jsonl."""
-    from agent6.harness._compaction import ELISION_GIST_PREFIX, ELISION_PREFIX
+    from agent6.harness import _compaction
 
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -934,12 +919,12 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=SimpleNamespace(goal="maximize"),
+            metric=types.SimpleNamespace(goal="maximize"),
             verify_timeout_s=60.0,
         ),
     )
-    provider = MagicMock()
-    provider.call.return_value = SimpleNamespace(
+    provider = mock.MagicMock()
+    provider.call.return_value = types.SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         refused={},
@@ -948,12 +933,12 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
         output_tokens=1,
         raw={"content": [{"type": "tool_use", "id": "t1", "name": "finish_session", "input": {}}]},
     )
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture()
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
     # A restored context carrying two bare elisions and one distilled gist.
-    restored = Conversation.from_wire(
+    restored = _conversation.Conversation.from_wire(
         [
             {"role": "user", "content": [{"type": "text", "text": "go"}]},
             {
@@ -963,7 +948,11 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
             {
                 "role": "user",
                 "content": [
-                    {"type": "tool_result", "tool_use_id": "a", "content": f"{ELISION_PREFIX}: x"}
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "a",
+                        "content": f"{_compaction.ELISION_PREFIX}: x",
+                    }
                 ],
             },
             {
@@ -973,7 +962,11 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
             {
                 "role": "user",
                 "content": [
-                    {"type": "tool_result", "tool_use_id": "b", "content": f"{ELISION_PREFIX}: y"}
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "b",
+                        "content": f"{_compaction.ELISION_PREFIX}: y",
+                    }
                 ],
             },
             {
@@ -986,7 +979,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
                     {
                         "type": "tool_result",
                         "tool_use_id": "c",
-                        "content": f"{ELISION_GIST_PREFIX}: z",
+                        "content": f"{_compaction.ELISION_GIST_PREFIX}: z",
                     }
                 ],
             },
@@ -999,7 +992,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
         start_iteration=3,
         root_task_id=None,
         original_task="go",
-        resume_from=SessionSnapshot(
+        resume_from=_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -1022,7 +1015,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
     """
     from agent6.providers import ProviderResponse
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.return_value = ProviderResponse(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
@@ -1042,11 +1035,11 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
             ]
         },
     )
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
-    config = MagicMock(
-        prompt=MagicMock(system_prompt_file=""),
-        harness=MagicMock(
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
+    config = mock.MagicMock(
+        prompt=mock.MagicMock(system_prompt_file=""),
+        harness=mock.MagicMock(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1065,7 +1058,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
         events=ev,
         initial_pins=("never touch schema files",),
     )
-    conversation = Conversation.from_wire(
+    conversation = _conversation.Conversation.from_wire(
         [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
     )
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1088,10 +1081,10 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
 
 def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     """`--pin` seeds pins through the same cap and non-empty check as `/pin`."""
-    from agent6.harness._operator import PINS_MAX_CHARS
+    from agent6.harness import _operator
     from agent6.providers import ProviderResponse
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.return_value = ProviderResponse(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "d"}},),
@@ -1111,11 +1104,11 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
             ]
         },
     )
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
-    config = MagicMock(
-        prompt=MagicMock(system_prompt_file=""),
-        harness=MagicMock(
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
+    config = mock.MagicMock(
+        prompt=mock.MagicMock(system_prompt_file=""),
+        harness=mock.MagicMock(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1126,7 +1119,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
         ),
     )
     ev = _EventCapture()
-    huge = "x" * (PINS_MAX_CHARS + 1)
+    huge = "x" * (_operator.PINS_MAX_CHARS + 1)
     wf = _wf(
         provider=provider,
         dispatcher=dispatcher,
@@ -1135,7 +1128,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
         events=ev,
         initial_pins=("keep this", "", huge, "   "),  # 1 good, 1 empty, 1 over-cap, 1 blank
     )
-    conversation = Conversation.from_wire(
+    conversation = _conversation.Conversation.from_wire(
         [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
     )
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1152,19 +1145,19 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     assert len(refused) == 3  # the empty, the over-cap, and the blank
 
 
-def test_a_gate_swapped_between_executions_is_announced_to_the_worker(tmp_path: Path) -> None:
+def test_a_gate_swapped_between_executions_is_announced_to_the_worker(
+    tmp_path: pathlib.Path,
+) -> None:
     """The system prompt is the run's, frozen at its start.
 
     Config that gains a verify command between executions swaps what judges the work; the notice
     says so.
     """
-    from agent6.harness._snapshot import SessionSnapshot as _Snap
-
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
     snap_path = session_dir / "loop_state.json"
     snap_path.write_text(
-        _Snap(
+        _snapshot.SessionSnapshot(
             system="s",
             messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
             tool_calls=0,
@@ -1175,10 +1168,10 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(tmp_path: 
         ).model_dump_json(),
         encoding="utf-8",
     )
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1186,13 +1179,13 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(tmp_path: 
             verify_when="never",
             verify_retries=2,
             verify_command=("make", "check"),  # the operator pinned one since
-            metric=SimpleNamespace(goal="maximize"),
+            metric=types.SimpleNamespace(goal="maximize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
     )
-    provider = MagicMock()
-    provider.call.return_value = SimpleNamespace(
+    provider = mock.MagicMock()
+    provider.call.return_value = types.SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         refused={},
@@ -1210,8 +1203,8 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(tmp_path: 
             ]
         },
     )
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture(path=session_dir / "logs.jsonl")
     wf = _wf(
         provider=provider,
@@ -1230,15 +1223,13 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(tmp_path: 
     assert "was `pytest -q`" in told and "now `make check`" in told
 
 
-def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: Path) -> None:
+def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: pathlib.Path) -> None:
     """A resumed execution starts with the gate the run adopted, so no swap notice fires."""
-    from agent6.harness._snapshot import SessionSnapshot as _Snap
-
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
     snap_path = session_dir / "loop_state.json"
     snap_path.write_text(
-        _Snap(
+        _snapshot.SessionSnapshot(
             system="s",
             messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
             tool_calls=0,
@@ -1249,10 +1240,10 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: Path) -> None
         ).model_dump_json(),
         encoding="utf-8",
     )
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1260,13 +1251,13 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: Path) -> None
             verify_when="never",
             verify_retries=2,
             verify_command=(),
-            metric=SimpleNamespace(goal="maximize"),
+            metric=types.SimpleNamespace(goal="maximize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
     )
-    provider = MagicMock()
-    provider.call.return_value = SimpleNamespace(
+    provider = mock.MagicMock()
+    provider.call.return_value = types.SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         refused={},
@@ -1284,8 +1275,8 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: Path) -> None
             ]
         },
     )
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     dispatcher.adopt_verify_command.return_value = True
     ev = _EventCapture(path=session_dir / "logs.jsonl")
     wf = _wf(
@@ -1307,13 +1298,11 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: Path) -> None
     assert tuple(written["verify_command"]) == ("pytest", "-q")
 
 
-def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Path) -> None:
+def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: pathlib.Path) -> None:
     """The snapshot's `head_sha` is the run's chain tip; the carry asks for dirt relative to it."""
     import subprocess
 
-    from agent6.git_ops import chain_commit, chain_tip
-    from agent6.git_ops import status as git_status
-    from agent6.harness._snapshot import SessionSnapshot
+    from agent6 import git_ops
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -1338,8 +1327,8 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Pat
     )
     # Execution one: the worker edits, the gate goes green, the harness chain-commits.
     (repo / "x.txt").write_text("the run's work\n", encoding="utf-8")
-    assert chain_commit(repo, "iter 1", ref=chain, fallback_parent=base) is not None
-    snap = SessionSnapshot.model_validate(
+    assert git_ops.chain_commit(repo, "iter 1", ref=chain, fallback_parent=base) is not None
+    snap = _snapshot.SessionSnapshot.model_validate(
         {
             "system": "s",
             "messages": [],
@@ -1353,27 +1342,27 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Pat
             "head_sha": wf.chain.checkpoint_head_sha(),
         }
     )
-    assert snap.head_sha == chain_tip(repo, chain) != git_status(repo).head_sha
+    assert snap.head_sha == git_ops.chain_tip(repo, chain) != git_ops.status(repo).head_sha
 
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     wf._carry_verify_verdict(state, snap)  # pyright: ignore[reportPrivateUsage]
 
     assert state.verify.last_ok is True
     assert state.verify.green_and_untouched is True
 
 
-def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(tmp_path: Path) -> None:
+def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
+    tmp_path: pathlib.Path,
+) -> None:
     """An execution that cannot run commands drops its gate before the loop sees the config.
 
     No notice and no swap event: no command can run, that one included.
     """
-    from agent6.harness._snapshot import SessionSnapshot as _Snap
-
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
     snap_path = session_dir / "loop_state.json"
     snap_path.write_text(
-        _Snap(
+        _snapshot.SessionSnapshot(
             system="s",
             messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
             tool_calls=0,
@@ -1384,10 +1373,10 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(tmp_path: 
         ).model_dump_json(),
         encoding="utf-8",
     )
-    config = SimpleNamespace(
+    config = types.SimpleNamespace(
         git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1395,13 +1384,13 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(tmp_path: 
             verify_when="never",
             verify_retries=2,
             verify_command=(),  # dropped at execution start: commands are withheld
-            metric=SimpleNamespace(goal="maximize"),
+            metric=types.SimpleNamespace(goal="maximize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
     )
-    provider = MagicMock()
-    provider.call.return_value = SimpleNamespace(
+    provider = mock.MagicMock()
+    provider.call.return_value = types.SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         refused={},
@@ -1419,8 +1408,8 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(tmp_path: 
             ]
         },
     )
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     dispatcher.command_policy.return_value = "no"
     ev = _EventCapture(path=session_dir / "logs.jsonl")
     wf = _wf(

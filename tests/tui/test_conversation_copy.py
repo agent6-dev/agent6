@@ -4,15 +4,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
-from agent6.ui.tui.conversation import ConversationScreen, _ChromeStatic
+from agent6.ui.tui import conversation
 
 
-def test_copy_text_emits_the_osc52_sequence_via_the_seam(tmp_path: Path) -> None:
+def test_copy_text_emits_the_osc52_sequence_via_the_seam(tmp_path: pathlib.Path) -> None:
     logs = tmp_path / "logs.jsonl"
     logs.write_text("", encoding="utf-8")
-    screen = ConversationScreen(logs, title=lambda _ctx: "t")
+    screen = conversation.ConversationScreen(logs, title=lambda _ctx: "t")
     written: list[str] = []
     screen._emit = written.append  # type: ignore[method-assign]  # sub the raw-write seam
     status = screen._copy_text("hello", method="osc52")
@@ -20,10 +20,10 @@ def test_copy_text_emits_the_osc52_sequence_via_the_seam(tmp_path: Path) -> None
     assert "osc" in status.lower()
 
 
-def test_copy_prefers_the_current_selection_else_whole_transcript(tmp_path: Path) -> None:
+def test_copy_prefers_the_current_selection_else_whole_transcript(tmp_path: pathlib.Path) -> None:
     logs = tmp_path / "logs.jsonl"
     logs.write_text("", encoding="utf-8")
-    screen = ConversationScreen(logs, title=lambda _ctx: "t")
+    screen = conversation.ConversationScreen(logs, title=lambda _ctx: "t")
     screen._content.append("line one\nline two")
     # No body selection (unmounted, so no #conv-body) -> whole transcript.
     text, what = screen._selected_or_all()
@@ -34,11 +34,11 @@ def test_copy_prefers_the_current_selection_else_whole_transcript(tmp_path: Path
     assert text == "one" and what == "selection"
 
 
-def test_get_selected_text_gathers_body_only(tmp_path: Path) -> None:
+def test_get_selected_text_gathers_body_only(tmp_path: pathlib.Path) -> None:
     # get_selected_text is Textual's Ctrl+C path; gathering the body only keeps footer keys out.
     logs = tmp_path / "logs.jsonl"
     logs.write_text("", encoding="utf-8")
-    screen = ConversationScreen(logs, title=lambda _ctx: "t")
+    screen = conversation.ConversationScreen(logs, title=lambda _ctx: "t")
     screen._body_selection = lambda: "body text"  # type: ignore[method-assign]
     assert screen.get_selected_text() == "body text"
     screen._body_selection = lambda: None  # type: ignore[method-assign]
@@ -46,4 +46,4 @@ def test_get_selected_text_gathers_body_only(tmp_path: Path) -> None:
 
 
 def test_chrome_static_is_not_selectable() -> None:
-    assert _ChromeStatic.ALLOW_SELECT is False
+    assert conversation._ChromeStatic.ALLOW_SELECT is False

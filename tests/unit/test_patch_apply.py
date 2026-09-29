@@ -6,16 +6,12 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.tools.patch_apply import (
-    PatchError,
-    apply_patch_text,
-    parse_patch,
-)
+from agent6.tools import patch_apply
 
 
 def test_parse_simple_single_hunk() -> None:
     patch = "--- a/foo.py\n+++ b/foo.py\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n"
-    p = parse_patch(patch)
+    p = patch_apply.parse_patch(patch)
     assert p.target_path == "foo.py"
     assert p.is_create is False
     assert len(p.hunks) == 1
@@ -24,7 +20,7 @@ def test_parse_simple_single_hunk() -> None:
 def test_apply_replace_one_line() -> None:
     original = "a\nb\nc\n"
     patch = "--- a/foo.py\n+++ b/foo.py\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n"
-    path, new, _healed = apply_patch_text(patch, original)
+    path, new, _healed = patch_apply.apply_patch_text(patch, original)
     assert path == "foo.py"
     assert new == "a\nB\nc\n"
 
@@ -48,7 +44,7 @@ def test_apply_multi_hunk_offset_tracking() -> None:
         "+EIGHT\n"
         " 9\n"
     )
-    _, new, _healed = apply_patch_text(patch, original)
+    _, new, _healed = patch_apply.apply_patch_text(patch, original)
     assert new == "1\n1.5\n2\n3\n4\n5\n6\n7\nEIGHT\n9\n"
 
 
@@ -57,41 +53,41 @@ def test_apply_pure_insertion_hunk() -> None:
     # so the `else` arm of the buf_start branch.
     original = "a\nb\nc\n"
     patch = "--- a/f.txt\n+++ b/f.txt\n@@ -3,1 +3,3 @@\n c\n+x\n+y\n"
-    _, new, _healed = apply_patch_text(patch, original)
+    _, new, _healed = patch_apply.apply_patch_text(patch, original)
     assert new == "a\nb\nc\nx\ny\n"
 
 
 def test_apply_pure_deletion_hunk() -> None:
     original = "a\nb\nc\n"
     patch = "--- a/f.txt\n+++ b/f.txt\n@@ -1,3 +1,2 @@\n a\n-b\n c\n"
-    _, new, _healed = apply_patch_text(patch, original)
+    _, new, _healed = patch_apply.apply_patch_text(patch, original)
     assert new == "a\nc\n"
 
 
 def test_create_via_dev_null() -> None:
     patch = "--- /dev/null\n+++ b/new.py\n@@ -0,0 +1,2 @@\n+x = 1\n+y = 2\n"
-    path, new, _healed = apply_patch_text(patch, None)
+    path, new, _healed = patch_apply.apply_patch_text(patch, None)
     assert path == "new.py"
     assert new == "x = 1\ny = 2\n"
 
 
 def test_create_when_file_exists_errors() -> None:
     patch = "--- /dev/null\n+++ b/exists.py\n@@ -0,0 +1,1 @@\n+x = 1\n"
-    with pytest.raises(PatchError, match="already exists"):
-        apply_patch_text(patch, "old contents\n")
+    with pytest.raises(patch_apply.PatchError, match="already exists"):
+        patch_apply.apply_patch_text(patch, "old contents\n")
 
 
 def test_context_mismatch_errors_with_helpful_message() -> None:
     original = "a\nDIFFERENT\nc\n"
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n"
-    with pytest.raises(PatchError, match="Context mismatch"):
-        apply_patch_text(patch, original)
+    with pytest.raises(patch_apply.PatchError, match="Context mismatch"):
+        patch_apply.apply_patch_text(patch, original)
 
 
 def test_missing_file_errors() -> None:
     patch = "--- a/missing.py\n+++ b/missing.py\n@@ -1,1 +1,1 @@\n-a\n+b\n"
-    with pytest.raises(PatchError, match="does not exist"):
-        apply_patch_text(patch, None)
+    with pytest.raises(patch_apply.PatchError, match="does not exist"):
+        patch_apply.apply_patch_text(patch, None)
 
 
 def test_delete_via_plus_dev_null() -> None:
@@ -100,13 +96,15 @@ def test_delete_via_plus_dev_null() -> None:
     The hunks must remove the ENTIRE on-disk content (the patch asserts what it deletes); surviving
     content is a hard error, and file-vs-patch mismatch fails the ordinary context check.
     """
-    assert apply_patch_text("--- a/f.py\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-a\n", "a\n") == (
+    assert patch_apply.apply_patch_text(
+        "--- a/f.py\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-a\n", "a\n"
+    ) == (
         "f.py",
         None,
         (),
     )
-    with pytest.raises(PatchError, match="entire file"):
-        apply_patch_text("--- a/f.py\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-a\n", "a\nb\n")
+    with pytest.raises(patch_apply.PatchError, match="entire file"):
+        patch_apply.apply_patch_text("--- a/f.py\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-a\n", "a\nb\n")
 
 
 def test_multi_file_patch_rejected() -> None:
@@ -122,8 +120,8 @@ def test_multi_file_patch_rejected() -> None:
         "-b\n"
         "+B\n"
     )
-    with pytest.raises(PatchError, match="Multi-file"):
-        apply_patch_text(patch, "a\n")
+    with pytest.raises(patch_apply.PatchError, match="Multi-file"):
+        patch_apply.apply_patch_text(patch, "a\n")
 
 
 def test_single_file_patch_removing_dash_dash_comment_not_multifile() -> None:
@@ -132,7 +130,7 @@ def test_single_file_patch_removing_dash_dash_comment_not_multifile() -> None:
     # wrongly rejected this legitimate single-file patch as multi-file.
     original = "SELECT 1;\n-- a comment\n"
     patch = "--- a/x.sql\n+++ b/x.sql\n@@ -1,2 +1,1 @@\n SELECT 1;\n--- a comment\n"
-    path, new, _healed = apply_patch_text(patch, original)
+    path, new, _healed = patch_apply.apply_patch_text(patch, original)
     assert path == "x.sql"
     assert new == "SELECT 1;\n"
 
@@ -140,8 +138,8 @@ def test_single_file_patch_removing_dash_dash_comment_not_multifile() -> None:
 def test_hunk_header_count_mismatch_rejected() -> None:
     # Header says 3 old lines but body only supplies 2.
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n"
-    with pytest.raises(PatchError, match="declares 3"):
-        apply_patch_text(patch, "a\nb\n")
+    with pytest.raises(patch_apply.PatchError, match="declares 3"):
+        patch_apply.apply_patch_text(patch, "a\nb\n")
 
 
 def test_skips_git_diff_preamble() -> None:
@@ -155,7 +153,7 @@ def test_skips_git_diff_preamble() -> None:
         "-a\n"
         "+A\n"
     )
-    _, new, _healed = apply_patch_text(patch, "a\n")
+    _, new, _healed = patch_apply.apply_patch_text(patch, "a\n")
     assert new == "A\n"
 
 
@@ -167,7 +165,7 @@ def test_standard_timestamped_headers_name_the_file() -> None:
         "-a\n"
         "+A\n"
     )
-    path, new, _healed = apply_patch_text(patch, "a\n")
+    path, new, _healed = patch_apply.apply_patch_text(patch, "a\n")
     assert path == "f.py"
     assert new == "A\n"
 
@@ -176,28 +174,28 @@ def test_no_newline_at_eof_on_old_side() -> None:
     # Original lacks a trailing newline; replacement adds one.
     original = "a\nb"
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1,2 +1,2 @@\n a\n-b\n\\ No newline at end of file\n+B\n"
-    _, new, _healed = apply_patch_text(patch, original)
+    _, new, _healed = patch_apply.apply_patch_text(patch, original)
     assert new == "a\nB\n"
 
 
 @pytest.mark.parametrize("original", ["a\n", "a\nb"])
 def test_old_no_newline_marker_must_describe_the_file_tail(original: str) -> None:
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+A\n"
-    with pytest.raises(PatchError, match="old line has no newline"):
-        apply_patch_text(patch, original)
+    with pytest.raises(patch_apply.PatchError, match="old line has no newline"):
+        patch_apply.apply_patch_text(patch, original)
 
 
 def test_no_newline_at_eof_on_new_side() -> None:
     original = "a\nb\n"
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1,2 +1,2 @@\n a\n-b\n+B\n\\ No newline at end of file\n"
-    _, new, _healed = apply_patch_text(patch, original)
+    _, new, _healed = patch_apply.apply_patch_text(patch, original)
     assert new == "a\nB"
 
 
 def test_nonstandard_no_newline_marker_is_rejected() -> None:
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-a\n\\ Not a patch marker\n+A\n"
-    with pytest.raises(PatchError, match="patch marker"):
-        apply_patch_text(patch, "a")
+    with pytest.raises(patch_apply.PatchError, match="patch marker"):
+        patch_apply.apply_patch_text(patch, "a")
 
 
 @pytest.mark.parametrize(
@@ -216,55 +214,53 @@ def test_nonstandard_no_newline_marker_is_rejected() -> None:
     ],
 )
 def test_no_newline_marker_must_follow_the_sides_final_line(patch: str, original: str) -> None:
-    with pytest.raises(PatchError, match=r"final (old|new) line"):
-        apply_patch_text(patch, original)
+    with pytest.raises(patch_apply.PatchError, match=r"final (old|new) line"):
+        patch_apply.apply_patch_text(patch, original)
 
 
 def test_omitted_count_means_one() -> None:
     # `@@ -1 +1 @@` is shorthand for `@@ -1,1 +1,1 @@`.
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-a\n+A\n"
-    _, new, _healed = apply_patch_text(patch, "a\n")
+    _, new, _healed = patch_apply.apply_patch_text(patch, "a\n")
     assert new == "A\n"
 
 
 def test_empty_patch_rejected() -> None:
-    with pytest.raises(PatchError, match="Empty"):
-        apply_patch_text("", None)
+    with pytest.raises(patch_apply.PatchError, match="Empty"):
+        patch_apply.apply_patch_text("", None)
 
 
 def test_bare_path_header_no_a_b_prefix() -> None:
     # Accept patches without the conventional `a/`/`b/` prefix.
     patch = "--- f.py\n+++ f.py\n@@ -1 +1 @@\n-a\n+A\n"
-    path, new, _healed = apply_patch_text(patch, "a\n")
+    path, new, _healed = patch_apply.apply_patch_text(patch, "a\n")
     assert path == "f.py"
     assert new == "A\n"
 
 
 # --- OpenAI V4A "*** Begin Patch" parser/applier ----------------------------
 
-from agent6.tools.patch_apply import (  # noqa: E402
-    apply_v4a_text,
-    is_v4a_patch,
-    patch_op,
-    patch_target_path,
-)
-
 
 def test_patch_op_reads_the_headers_of_either_format() -> None:
-    assert patch_op("--- /dev/null\n+++ b/new.md\n@@ -0,0 +1 @@\n+x\n") == "create"
-    assert patch_op("--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-a\n+b\n") == "edit"
-    assert patch_op("--- a/foo.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n") == "delete"
-    assert patch_op("*** Begin Patch\n*** Add File: new.md\n+x\n*** End Patch") == "create"
-    assert patch_op("*** Begin Patch\n*** Update File: m.py\n@@\n-a\n+b\n*** End Patch") == "edit"
-    assert patch_op("*** Begin Patch\n*** Delete File: m.py\n*** End Patch") == "delete"
-    with pytest.raises(PatchError):
-        patch_op("no header\n")
+    assert patch_apply.patch_op("--- /dev/null\n+++ b/new.md\n@@ -0,0 +1 @@\n+x\n") == "create"
+    assert patch_apply.patch_op("--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-a\n+b\n") == "edit"
+    assert patch_apply.patch_op("--- a/foo.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n") == "delete"
+    assert (
+        patch_apply.patch_op("*** Begin Patch\n*** Add File: new.md\n+x\n*** End Patch") == "create"
+    )
+    assert (
+        patch_apply.patch_op("*** Begin Patch\n*** Update File: m.py\n@@\n-a\n+b\n*** End Patch")
+        == "edit"
+    )
+    assert patch_apply.patch_op("*** Begin Patch\n*** Delete File: m.py\n*** End Patch") == "delete"
+    with pytest.raises(patch_apply.PatchError):
+        patch_apply.patch_op("no header\n")
 
 
 def test_v4a_detect_and_target_path() -> None:
     patch = "*** Begin Patch\n*** Update File: pkg/m.py\n@@\n-a\n+b\n*** End Patch"
-    assert is_v4a_patch(patch)
-    assert patch_target_path(patch) == "pkg/m.py"
+    assert patch_apply.is_v4a_patch(patch)
+    assert patch_apply.patch_target_path(patch) == "pkg/m.py"
 
 
 def test_v4a_update_context_hunk() -> None:
@@ -273,7 +269,7 @@ def test_v4a_update_context_hunk() -> None:
         "*** Begin Patch\n*** Update File: m.py\n@@ def f():\n"
         "     x = 1\n-    return x\n+    return x + 1\n*** End Patch"
     )
-    path, new, _healed = apply_v4a_text(patch, orig)
+    path, new, _healed = patch_apply.apply_v4a_text(patch, orig)
     assert path == "m.py"
     assert new == "def f():\n    x = 1\n    return x + 1\n"
 
@@ -283,8 +279,8 @@ def test_v4a_move_is_rejected_instead_of_ignored() -> None:
         "*** Begin Patch\n*** Update File: old.py\n*** Move to: new.py\n"
         "@@\n-old\n+new\n*** End Patch"
     )
-    with pytest.raises(PatchError, match=r"Move to.*not supported"):
-        apply_v4a_text(patch, "old\n")
+    with pytest.raises(patch_apply.PatchError, match=r"Move to.*not supported"):
+        patch_apply.apply_v4a_text(patch, "old\n")
 
 
 def test_v4a_multi_hunk() -> None:
@@ -293,20 +289,20 @@ def test_v4a_multi_hunk() -> None:
         "*** Begin Patch\n*** Update File: x.py\n"
         "@@\n a = 1\n-b = 2\n+b = 20\n@@\n d = 4\n-e = 5\n+e = 50\n*** End Patch"
     )
-    _, new, _healed = apply_v4a_text(patch, orig)
+    _, new, _healed = patch_apply.apply_v4a_text(patch, orig)
     assert new == "a = 1\nb = 20\nc = 3\nd = 4\ne = 50\n"
 
 
 def test_v4a_add_file() -> None:
     patch = "*** Begin Patch\n*** Add File: n.py\n+print(1)\n+print(2)\n*** End Patch"
-    path, new, _healed = apply_v4a_text(patch, None)
+    path, new, _healed = patch_apply.apply_v4a_text(patch, None)
     assert path == "n.py" and new == "print(1)\nprint(2)\n"
 
 
 def test_v4a_ambiguous_context_rejected() -> None:
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-x = 1\n+x = 2\n*** End Patch"
-    with pytest.raises(PatchError, match="ambiguous"):
-        apply_v4a_text(patch, "x = 1\nx = 1\n")
+    with pytest.raises(patch_apply.PatchError, match="ambiguous"):
+        patch_apply.apply_v4a_text(patch, "x = 1\nx = 1\n")
 
 
 def test_v4a_section_hint_disambiguates_repeated_block() -> None:
@@ -317,7 +313,7 @@ def test_v4a_section_hint_disambiguates_repeated_block() -> None:
         "*** Begin Patch\n*** Update File: m.py\n"
         "@@ def b():\n-    return 1\n+    return 2\n*** End Patch"
     )
-    _, new, _healed = apply_v4a_text(patch, orig)
+    _, new, _healed = patch_apply.apply_v4a_text(patch, orig)
     assert new == "def a():\n    return 1\n\ndef b():\n    return 2\n"
 
 
@@ -328,14 +324,14 @@ def test_v4a_section_hint_that_does_not_resolve_stays_ambiguous() -> None:
     patch = (
         "*** Begin Patch\n*** Update File: m.py\n@@ class C:\n-    x = 1\n+    x = 2\n*** End Patch"
     )
-    with pytest.raises(PatchError, match="ambiguous"):
-        apply_v4a_text(patch, orig)
+    with pytest.raises(patch_apply.PatchError, match="ambiguous"):
+        patch_apply.apply_v4a_text(patch, orig)
 
 
 def test_v4a_context_not_found_rejected() -> None:
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-missing\n+x\n*** End Patch"
-    with pytest.raises(PatchError, match="not found"):
-        apply_v4a_text(patch, "different\n")
+    with pytest.raises(patch_apply.PatchError, match="not found"):
+        patch_apply.apply_v4a_text(patch, "different\n")
 
 
 def test_v4a_multi_file_rejected() -> None:
@@ -343,8 +339,8 @@ def test_v4a_multi_file_rejected() -> None:
         "*** Begin Patch\n*** Update File: a.py\n@@\n-x\n+y\n"
         "*** Update File: b.py\n@@\n-p\n+q\n*** End Patch"
     )
-    with pytest.raises(PatchError, match="one file at a time"):
-        apply_v4a_text(patch, "x\n")
+    with pytest.raises(patch_apply.PatchError, match="one file at a time"):
+        patch_apply.apply_v4a_text(patch, "x\n")
 
 
 def test_v4a_delete() -> None:
@@ -352,15 +348,19 @@ def test_v4a_delete() -> None:
 
     That format asserts no content.
     """
-    assert apply_v4a_text("*** Begin Patch\n*** Delete File: a.py\n*** End Patch", "x\n") == (
+    assert patch_apply.apply_v4a_text(
+        "*** Begin Patch\n*** Delete File: a.py\n*** End Patch", "x\n"
+    ) == (
         "a.py",
         None,
         (),
     )
-    with pytest.raises(PatchError, match="no such file"):
-        apply_v4a_text("*** Begin Patch\n*** Delete File: a.py\n*** End Patch", None)
-    with pytest.raises(PatchError, match="bare directive"):
-        apply_v4a_text("*** Begin Patch\n*** Delete File: a.py\n@@\n-x\n*** End Patch", "x\n")
+    with pytest.raises(patch_apply.PatchError, match="no such file"):
+        patch_apply.apply_v4a_text("*** Begin Patch\n*** Delete File: a.py\n*** End Patch", None)
+    with pytest.raises(patch_apply.PatchError, match="bare directive"):
+        patch_apply.apply_v4a_text(
+            "*** Begin Patch\n*** Delete File: a.py\n@@\n-x\n*** End Patch", "x\n"
+        )
 
 
 def test_v4a_partial_line_match_rejected_not_spliced() -> None:
@@ -370,8 +370,8 @@ def test_v4a_partial_line_match_rejected_not_spliced() -> None:
     produced `0`). Matching is line-anchored.
     """
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-x = 1\n*** End Patch"
-    with pytest.raises(PatchError, match="context not found"):
-        apply_v4a_text(patch, "x = 10\n")
+    with pytest.raises(patch_apply.PatchError, match="context not found"):
+        patch_apply.apply_v4a_text(patch, "x = 10\n")
 
 
 def test_v4a_straddling_block_rejected() -> None:
@@ -380,14 +380,14 @@ def test_v4a_straddling_block_rejected() -> None:
     `-value = 1` inside `myvalue = 1`.
     """
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-value = 1\n-b\n+c\n*** End Patch"
-    with pytest.raises(PatchError, match="context not found"):
-        apply_v4a_text(patch, "myvalue = 1\nb\n")
+    with pytest.raises(patch_apply.PatchError, match="context not found"):
+        patch_apply.apply_v4a_text(patch, "myvalue = 1\nb\n")
 
 
 def test_v4a_full_line_delete_still_applies() -> None:
     """Line-anchoring must not break a legitimate whole-line match."""
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-x = 1\n+x = 2\n*** End Patch"
-    assert apply_v4a_text(patch, "x = 1\n") == ("a.py", "x = 2\n", ())
+    assert patch_apply.apply_v4a_text(patch, "x = 1\n") == ("a.py", "x = 2\n", ())
 
 
 def test_v4a_end_of_file_marker_accepted() -> None:
@@ -398,7 +398,7 @@ def test_v4a_end_of_file_marker_accepted() -> None:
     patch = (
         "*** Begin Patch\n*** Update File: m.py\n@@\n last\n+added\n*** End of File\n*** End Patch"
     )
-    assert apply_v4a_text(patch, "last\n") == ("m.py", "last\nadded\n", ())
+    assert patch_apply.apply_v4a_text(patch, "last\n") == ("m.py", "last\nadded\n", ())
 
 
 def test_v4a_pure_deletion_removes_the_lines_whole() -> None:
@@ -410,14 +410,14 @@ def test_v4a_pure_deletion_removes_the_lines_whole() -> None:
     """
     orig = "line1\nline2\nline3\nline4\n"
     patch = "*** Begin Patch\n*** Update File: m.py\n@@\n-line2\n-line3\n*** End Patch"
-    _, new, _healed = apply_v4a_text(patch, orig)
+    _, new, _healed = patch_apply.apply_v4a_text(patch, orig)
     assert new == "line1\nline4\n"
 
 
 def test_v4a_pure_deletion_of_the_whole_file_empties_it() -> None:
     orig = "only\n"
     patch = "*** Begin Patch\n*** Update File: m.py\n@@\n-only\n*** End Patch"
-    _, new, _healed = apply_v4a_text(patch, orig)
+    _, new, _healed = patch_apply.apply_v4a_text(patch, orig)
     assert new == ""
 
 
@@ -427,7 +427,7 @@ def test_v4a_deletion_with_context_is_unaffected() -> None:
     patch = (
         "*** Begin Patch\n*** Update File: m.py\n@@\n line1\n-line2\n-line3\n line4\n*** End Patch"
     )
-    _, new, _healed = apply_v4a_text(patch, orig)
+    _, new, _healed = patch_apply.apply_v4a_text(patch, orig)
     assert new == "line1\nline4\n"
 
 
@@ -443,7 +443,7 @@ def test_unified_hunk_heals_a_uniform_indent_shift() -> None:
         "--- a/f.py\n+++ b/f.py\n@@ -3,2 +3,2 @@\n"
         "-    a = 1\n-    b = 2\n+    a = 10\n+    b = 20\n"
     )
-    _, new, healed = apply_patch_text(patch, original)
+    _, new, healed = patch_apply.apply_patch_text(patch, original)
     assert new == "def f():\n    if x:\n        a = 10\n        b = 20\n"
     assert healed == ("f.py @@ -3,2 ~indent",)
 
@@ -451,7 +451,7 @@ def test_unified_hunk_heals_a_uniform_indent_shift() -> None:
 def test_unified_hunk_heals_trailing_whitespace() -> None:
     original = "a  \nb\n"
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1,1 +1,1 @@\n-a\n+A\n"
-    _, new, healed = apply_patch_text(patch, original)
+    _, new, healed = patch_apply.apply_patch_text(patch, original)
     assert new == "A\nb\n"
     assert healed == ("f.py @@ -1,1 ~rstrip",)
 
@@ -459,7 +459,7 @@ def test_unified_hunk_heals_trailing_whitespace() -> None:
 def test_unified_rstrip_heal_preserves_context_whitespace() -> None:
     original = "keep  \nold\n"
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1,2 +1,2 @@\n keep\n-old\n+new\n"
-    _, new, healed = apply_patch_text(patch, original)
+    _, new, healed = patch_apply.apply_patch_text(patch, original)
     assert new == "keep  \nnew\n"
     assert healed == ("f.py @@ -1,2 ~rstrip",)
 
@@ -468,7 +468,7 @@ def test_unified_hunk_heals_stale_line_numbers_when_unique() -> None:
     """Stale anchors with exact content heal only at EXACTLY ONE match."""
     original = "x\ny\nz\ntarget\nw\n"
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1,1 +1,1 @@\n-target\n+TARGET\n"
-    _, new, healed = apply_patch_text(patch, original)
+    _, new, healed = patch_apply.apply_patch_text(patch, original)
     assert new == "x\ny\nz\nTARGET\nw\n"
     assert healed == ("f.py @@ -1,1 ~moved",)
 
@@ -476,13 +476,13 @@ def test_unified_hunk_heals_stale_line_numbers_when_unique() -> None:
 def test_unified_heal_refuses_ambiguity() -> None:
     original = "dup\nmid\ndup\n"
     patch = "--- a/f.py\n+++ b/f.py\n@@ -2,1 +2,1 @@\n-dup\n+DUP\n"
-    with pytest.raises(PatchError, match="Context mismatch"):
-        apply_patch_text(patch, original)
+    with pytest.raises(patch_apply.PatchError, match="Context mismatch"):
+        patch_apply.apply_patch_text(patch, original)
 
 
 def test_v4a_hunk_heals_a_uniform_indent_shift() -> None:
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-a = 1\n+a = 10\n*** End Patch"
-    _, new, healed = apply_v4a_text(patch, "def f():\n    a = 1\n")
+    _, new, healed = patch_apply.apply_v4a_text(patch, "def f():\n    a = 1\n")
     assert new == "def f():\n    a = 10\n"
     assert healed == ("a.py ~indent",)
 
@@ -496,24 +496,24 @@ def test_v4a_one_blank_new_line_replaces_rather_than_deletes_on_every_path() -> 
     """
     patch = "*** Begin Patch\n*** Update File: f.py\n@@\n-foo\n+\n*** End Patch"
     for original, healed_as in (("foo\nbar\n", ()), ("foo \nbar\n", ("f.py ~rstrip",))):
-        _, new, healed = apply_v4a_text(patch, original)
+        _, new, healed = patch_apply.apply_v4a_text(patch, original)
         assert (new, healed) == ("\nbar\n", healed_as), original
     indented = "*** Begin Patch\n*** Update File: f.py\n@@\n-    foo\n+\n*** End Patch"
-    _, new, healed = apply_v4a_text(indented, "        foo\nbar\n")
+    _, new, healed = patch_apply.apply_v4a_text(indented, "        foo\nbar\n")
     assert (new, healed) == ("\nbar\n", ("f.py ~indent",))
 
 
 def test_v4a_rstrip_heal_preserves_context_whitespace() -> None:
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n keep\n-old\n+new\n*** End Patch"
-    _, new, healed = apply_v4a_text(patch, "keep  \nold\n")
+    _, new, healed = patch_apply.apply_v4a_text(patch, "keep  \nold\n")
     assert new == "keep  \nnew\n"
     assert healed == ("a.py ~rstrip",)
 
 
 def test_v4a_heal_refuses_a_second_indent_candidate() -> None:
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-a = 1\n+a = 10\n*** End Patch"
-    with pytest.raises(PatchError, match="context not found"):
-        apply_v4a_text(patch, "def f():\n    a = 1\ndef g():\n        a = 1\n")
+    with pytest.raises(patch_apply.PatchError, match="context not found"):
+        patch_apply.apply_v4a_text(patch, "def f():\n    a = 1\ndef g():\n        a = 1\n")
 
 
 def test_moved_heal_tail_state_follows_the_healed_position() -> None:
@@ -525,7 +525,7 @@ def test_moved_heal_tail_state_follows_the_healed_position() -> None:
     # Stale header says lines 2-3; the exact block lives at EOF (lines 4-5).
     original = "x\ny\na\nb"  # no trailing newline
     patch = "--- a/f.py\n+++ b/f.py\n@@ -2,2 +2,2 @@\n a\n-b\n+B\n"
-    _, new, healed = apply_patch_text(patch, original)
+    _, new, healed = patch_apply.apply_patch_text(patch, original)
     assert healed == ("f.py @@ -2,2 ~moved",)
     # The replaced range IS the tail: the no-trailing-newline state of the
     # original tail must survive (stale coordinates said "not tail" and
@@ -535,7 +535,7 @@ def test_moved_heal_tail_state_follows_the_healed_position() -> None:
     # The inverse: stale header claims the tail, the block lives mid-file.
     original2 = "a\nb\nx\ny\n"
     patch2 = "--- a/f.py\n+++ b/f.py\n@@ -3,2 +3,2 @@\n a\n-b\n+B\n\\ No newline at end of file\n"
-    _, new2, healed2 = apply_patch_text(patch2, original2)
+    _, new2, healed2 = patch_apply.apply_patch_text(patch2, original2)
     assert healed2 == ("f.py @@ -3,2 ~moved",)
     # The tail (y + trailing newline) was untouched by the healed mid-file
     # edit; the patch's no-newline marker must not strip the file's tail.
@@ -549,7 +549,7 @@ def test_patch_indent_heal_preserves_nested_relative_indent() -> None:
         "-def f():\n-    if ready:\n-        value = 1\n"
         "+def f():\n+    if ready:\n+        value = 2\n"
     )
-    _, unified_new, unified_healed = apply_patch_text(unified, original)
+    _, unified_new, unified_healed = patch_apply.apply_patch_text(unified, original)
     assert unified_new == "class C:\n    def f():\n        if ready:\n            value = 2\n"
     assert unified_healed == ("f.py @@ -2,3 ~indent",)
 
@@ -558,7 +558,7 @@ def test_patch_indent_heal_preserves_nested_relative_indent() -> None:
         "-def f():\n-    if ready:\n-        value = 1\n"
         "+def f():\n+    if ready:\n+        value = 2\n*** End Patch"
     )
-    _, v4a_new, v4a_healed = apply_v4a_text(v4a, original)
+    _, v4a_new, v4a_healed = patch_apply.apply_v4a_text(v4a, original)
     assert v4a_new == unified_new
     assert v4a_healed == ("f.py ~indent",)
 
@@ -570,7 +570,7 @@ def test_whitespace_heal_stays_at_its_anchor_beside_an_exact_copy() -> None:
     the heal through to the moved rule and edits the copy.
     """
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-a\n+A\n"
-    _, new, healed = apply_patch_text(patch, "a \nother\na\n")
+    _, new, healed = patch_apply.apply_patch_text(patch, "a \nother\na\n")
     assert new == "A\nother\na\n"
     assert healed == ("f.py @@ -1,1 ~rstrip",)
 
@@ -589,22 +589,22 @@ def test_whitespace_heal_stays_at_its_anchor_beside_an_exact_copy() -> None:
     ],
 )
 def test_unified_heal_refuses_multiple_matching_regions(original: str, patch: str) -> None:
-    with pytest.raises(PatchError, match="Context mismatch"):
-        apply_patch_text(patch, original)
+    with pytest.raises(patch_apply.PatchError, match="Context mismatch"):
+        patch_apply.apply_patch_text(patch, original)
 
 
 def test_moved_heal_accepts_stale_coordinates_past_eof() -> None:
     original = "before\ntarget\nafter\n"
     patch = "--- a/f.py\n+++ b/f.py\n@@ -99 +99 @@\n-target\n+TARGET\n"
-    _, new, healed = apply_patch_text(patch, original)
+    _, new, healed = patch_apply.apply_patch_text(patch, original)
     assert new == "before\nTARGET\nafter\n"
     assert healed == ("f.py @@ -99,1 ~moved",)
 
 
 def test_unified_file_headers_must_name_the_same_file() -> None:
     patch = "--- a/old.py\n+++ b/new.py\n@@ -1 +1 @@\n-a\n+A\n"
-    with pytest.raises(PatchError) as exc:
-        apply_patch_text(patch, "a\n")
+    with pytest.raises(patch_apply.PatchError) as exc:
+        patch_apply.apply_patch_text(patch, "a\n")
     message = str(exc.value)
     assert "old.py" in message
     assert "new.py" in message
@@ -612,15 +612,15 @@ def test_unified_file_headers_must_name_the_same_file() -> None:
 
 def test_deletion_refusal_counts_surviving_utf8_bytes() -> None:
     patch = "--- a/f.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n"
-    with pytest.raises(PatchError, match="3 bytes of content survive"):
-        apply_patch_text(patch, "a\né\n")
+    with pytest.raises(patch_apply.PatchError, match="3 bytes of content survive"):
+        patch_apply.apply_patch_text(patch, "a\né\n")
 
 
 def test_unified_mismatch_names_match_count_and_nearest_lines() -> None:
     original = "first\nneedlf\nlast\n"
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-needle\n+replacement\n"
-    with pytest.raises(PatchError) as exc:
-        apply_patch_text(patch, original)
+    with pytest.raises(patch_apply.PatchError) as exc:
+        patch_apply.apply_patch_text(patch, original)
     message = str(exc.value)
     assert "0 exact matches" in message
     assert "Expected lines:\n  1| needle" in message
@@ -630,8 +630,8 @@ def test_unified_mismatch_names_match_count_and_nearest_lines() -> None:
 def test_v4a_mismatch_names_match_count_and_nearest_lines() -> None:
     original = "first\nneedlf\nlast\n"
     patch = "*** Begin Patch\n*** Update File: f.py\n@@\n-needle\n+replacement\n*** End Patch"
-    with pytest.raises(PatchError) as exc:
-        apply_v4a_text(patch, original)
+    with pytest.raises(patch_apply.PatchError) as exc:
+        patch_apply.apply_v4a_text(patch, original)
     message = str(exc.value)
     assert "0 exact matches" in message
     assert "Expected lines:\n  1| needle" in message

@@ -7,20 +7,20 @@ The recorded rulings (the `<decisions>` block) included, not only the memory ind
 
 from __future__ import annotations
 
+import pathlib
 import subprocess as sp
-from pathlib import Path
 
+from agent6 import memory
 from agent6.config import Config
 from agent6.harness import system_prompt_for
-from agent6.memory import record_decision
 
 
-def test_prompt_show_carries_the_recorded_decisions(tmp_path: Path) -> None:
+def test_prompt_show_carries_the_recorded_decisions(tmp_path: pathlib.Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     sp.run(["git", "init", "-q"], cwd=root, check=True)
     state_dir = tmp_path / "state"
-    record_decision(state_dir, question="Which greeting?", answer="Hi NAME", session="s1")
+    memory.record_decision(state_dir, question="Which greeting?", answer="Hi NAME", session="s1")
     cfg = Config()
     prompt = system_prompt_for(cfg, root, "run", state_dir=state_dir)
     assert "<decisions>" in prompt

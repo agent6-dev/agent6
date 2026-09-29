@@ -10,16 +10,15 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pathlib
 import time
-from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest import mock
 
-from textual.screen import ModalScreen
-from textual.widgets import Static
+from textual import screen, widgets
 
-from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.composer import ApprovalRow, SteerInput
+from agent6.ui.tui import app as tui_app
+from agent6.ui.tui import composer
 from tests.tui._waits import (
     TIMEOUT_S,
     answer_written,
@@ -30,7 +29,7 @@ from tests.tui._waits import (
 )
 
 
-def _live_run(d: Path) -> None:
+def _live_run(d: pathlib.Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     (d / "approvals").mkdir(exist_ok=True)
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -41,17 +40,17 @@ def _live_run(d: Path) -> None:
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
 
-def _append(d: Path, ev: dict[str, object]) -> None:
+def _append(d: pathlib.Path, ev: dict[str, object]) -> None:
     with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(ev) + "\n")
 
 
-def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: Path) -> None:
+def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: pathlib.Path) -> None:
     run = tmp_path / "live-run-AAAAAA"
     _live_run(run)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.pause()
@@ -67,14 +66,14 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: Path) -> None:
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             await pilot.pause()
-            assert not isinstance(app.screen, ModalScreen)
+            assert not isinstance(app.screen, screen.ModalScreen)
             assert await _row_shown(app, pilot)
-            item = app._conv.query_one("#conv-approval", Static)  # pyright: ignore[reportPrivateUsage]
+            item = app._conv.query_one("#conv-approval", widgets.Static)  # pyright: ignore[reportPrivateUsage]
             assert item.display
             text = str(item.render())
             assert "approval needed" in text and "pytest -q tests/unit/test_x.py" in text
             # The composer keeps focus: an empty one lets the row's keys answer.
-            assert app.focused is app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            assert app.focused is app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             await focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("y")
             assert await answer_written(run, pilot) == "yes"
@@ -90,7 +89,7 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-async def _row_shown(app: Agent6TUI, pilot: Any) -> bool:
+async def _row_shown(app: tui_app.Agent6TUI, pilot: Any) -> bool:
     """Whether the approval row is up and answerable.
 
     The host folds the journal in its own thread, so the row follows within a few ticks rather than
@@ -105,7 +104,7 @@ async def _row_shown(app: Agent6TUI, pilot: Any) -> bool:
     return True
 
 
-async def _open_approval(app: Agent6TUI, pilot: Any, run: Path) -> None:
+async def _open_approval(app: tui_app.Agent6TUI, pilot: Any, run: pathlib.Path) -> None:
     await pilot.pause()
     await pilot.pause()
     prompt = {"type": "approval.prompt", "id": "ap1", "prompt": "Allow run_command: ls"}
@@ -116,7 +115,7 @@ async def _open_approval(app: Agent6TUI, pilot: Any, run: Path) -> None:
     assert await _row_shown(app, pilot)
 
 
-def test_a_typed_message_never_answers_the_approval(tmp_path: Path) -> None:
+def test_a_typed_message_never_answers_the_approval(tmp_path: pathlib.Path) -> None:
     """The composer keeps focus, and the answer keys fire only while it is empty.
 
     With the row focused, a sentence typed at the composer answered on its first letter.
@@ -125,26 +124,26 @@ def test_a_typed_message_never_answers_the_approval(tmp_path: Path) -> None:
     _live_run(run)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
             await pilot.press("slash", "b", "t", "w", "space", "y", "e", "s", "space", "a", "n")
             await pilot.pause()
             assert not (run / "approvals" / "ap1.answer").exists()
-            bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert bar.text == "/btw yes an"
             assert await _row_shown(app, pilot)
 
     asyncio.run(scenario())
 
 
-def test_a_resumed_execution_drops_the_previous_executions_approval(tmp_path: Path) -> None:
+def test_a_resumed_execution_drops_the_previous_executions_approval(tmp_path: pathlib.Path) -> None:
     """An execution boundary must withdraw an unanswered approval from the dead execution."""
     run = tmp_path / "live-run-HHHHHH"
     _live_run(run)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             prompt: dict[str, object] = {
@@ -166,13 +165,13 @@ def test_a_resumed_execution_drops_the_previous_executions_approval(tmp_path: Pa
     asyncio.run(scenario())
 
 
-def test_an_answered_approval_stays_closed_on_reload(tmp_path: Path) -> None:
+def test_an_answered_approval_stays_closed_on_reload(tmp_path: pathlib.Path) -> None:
     """Reload before the worker journals its answer must not reopen the row."""
     run = tmp_path / "live-run-GGGGGG"
     _live_run(run)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
             await focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
@@ -180,20 +179,20 @@ def test_an_answered_approval_stays_closed_on_reload(tmp_path: Path) -> None:
             assert await row_gone(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             app._conv.action_reload()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
-            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            assert not app._conv.query(composer.ApprovalRow)  # pyright: ignore[reportPrivateUsage]
 
     asyncio.run(scenario())
 
 
-def test_a_click_on_a_row_label_answers(tmp_path: Path) -> None:
+def test_a_click_on_a_row_label_answers(tmp_path: pathlib.Path) -> None:
     run = tmp_path / "live-run-DDDDDD"
     _live_run(run)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
-            label = app._conv.query_one(".answer-yes", Static)  # pyright: ignore[reportPrivateUsage]
+            label = app._conv.query_one(".answer-yes", widgets.Static)  # pyright: ignore[reportPrivateUsage]
             # A click needs the label laid out, which is past mounted.
             await wait_for(pilot, lambda: label.region.width > 0, "the answer label laid out")
             await pilot.click(label)
@@ -202,20 +201,20 @@ def test_a_click_on_a_row_label_answers(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_a_click_after_another_surface_answered_is_refused(tmp_path: Path) -> None:
+def test_a_click_after_another_surface_answered_is_refused(tmp_path: pathlib.Path) -> None:
     """An answer that landed elsewhere stands: the click writes nothing and the screen says so."""
     run = tmp_path / "live-run-EEEEEE"
     _live_run(run)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
             (run / "approvals").mkdir(exist_ok=True)
             (run / "approvals" / "ap1.answer").write_text("no", encoding="utf-8")
-            with patch.object(app._conv, "notify") as notify:  # pyright: ignore[reportPrivateUsage]
+            with mock.patch.object(app._conv, "notify") as notify:  # pyright: ignore[reportPrivateUsage]
                 app._conv.on_approval_row_answered(  # pyright: ignore[reportPrivateUsage]
-                    ApprovalRow.Answered("yes")
+                    composer.ApprovalRow.Answered("yes")
                 )
             assert (run / "approvals" / "ap1.answer").read_text(encoding="utf-8") == "no"
             assert "already answered" in str(notify.call_args)
@@ -227,7 +226,7 @@ def test_a_click_after_another_surface_answered_is_refused(tmp_path: Path) -> No
     asyncio.run(scenario())
 
 
-def test_a_dead_runs_approval_is_shown_but_notanswerable(tmp_path: Path) -> None:
+def test_a_dead_runs_approval_is_shown_but_notanswerable(tmp_path: pathlib.Path) -> None:
     """A run killed with its prompt open keeps the fact on the surface and offers no key row."""
     run = tmp_path / "dead-run-AAAAAA"
     _live_run(run)
@@ -238,33 +237,33 @@ def test_a_dead_runs_approval_is_shown_but_notanswerable(tmp_path: Path) -> None
     )
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.pause()
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             assert not app.session_controllable()
-            item = app._conv.query_one("#conv-approval", Static)  # pyright: ignore[reportPrivateUsage]
+            item = app._conv.query_one("#conv-approval", widgets.Static)  # pyright: ignore[reportPrivateUsage]
             assert item.display
             text = str(item.render())
             assert "approval pending when the run ended" in text and "rm -rf build" in text
-            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            assert not app._conv.query(composer.ApprovalRow)  # pyright: ignore[reportPrivateUsage]
 
     asyncio.run(scenario())
 
 
-def test_escape_with_a_menu_open_closes_the_menu_not_the_view(tmp_path: Path) -> None:
+def test_escape_with_a_menu_open_closes_the_menu_not_the_view(tmp_path: pathlib.Path) -> None:
     run = tmp_path / "live-run-BBBBBB"
     _live_run(run)
 
     async def scenario() -> None:
-        from agent6.ui.tui.menubar import MenuBar
+        from agent6.ui.tui import menubar
 
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            bar = app._conv.query_one(MenuBar)  # pyright: ignore[reportPrivateUsage]
+            bar = app._conv.query_one(menubar.MenuBar)  # pyright: ignore[reportPrivateUsage]
             bar.open("r")
             await pilot.pause()
             assert bar.opened
@@ -276,13 +275,13 @@ def test_escape_with_a_menu_open_closes_the_menu_not_the_view(tmp_path: Path) ->
     asyncio.run(scenario())
 
 
-def test_a_non_standing_approvals_session_keys_type_the_letter(tmp_path: Path) -> None:
+def test_a_non_standing_approvals_session_keys_type_the_letter(tmp_path: pathlib.Path) -> None:
     """An approval nobody may answer for the session offers no `a`/`d`; the letter is typed."""
     run = tmp_path / "live-run-EEEEEE"
     _live_run(run)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.pause()
@@ -295,64 +294,64 @@ def test_a_non_standing_approvals_session_keys_type_the_letter(tmp_path: Path) -
             await pilot.press("a", "d")
             await pilot.pause()
             assert not (run / "approvals" / "ap1.answer").exists()
-            bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert bar.text == "ad"
 
     asyncio.run(scenario())
 
 
-def test_a_key_answers_from_the_transcript(tmp_path: Path) -> None:
+def test_a_key_answers_from_the_transcript(tmp_path: pathlib.Path) -> None:
     """With focus tabbed out of the composer, the letters answer from the transcript too."""
     run = tmp_path / "live-run-FFFFFF"
     _live_run(run)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
             app._conv.query_one("#conv-scroll").focus()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             await pilot.press("y")
             assert await answer_written(run, pilot) == "yes"
-            bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert bar.text == ""  # the transcript types nothing
 
     asyncio.run(scenario())
 
 
-def test_a_letter_typed_as_the_approval_appears_types(tmp_path: Path) -> None:
+def test_a_letter_typed_as_the_approval_appears_types(tmp_path: pathlib.Path) -> None:
     """An approval takes neither the focus nor the keys: `yes…` into the composer is a message."""
     run = tmp_path / "live-run-JJJJJJ"
     _live_run(run)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
             await pilot.press("y", "e", "s")
             await pilot.pause()
             assert not (run / "approvals" / "ap1.answer").exists()
-            bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert bar.text == "yes"
 
     asyncio.run(scenario())
 
 
-def test_tab_reaches_the_answers_and_enter_answers(tmp_path: Path) -> None:
+def test_tab_reaches_the_answers_and_enter_answers(tmp_path: pathlib.Path) -> None:
     """The answers are tab stops: Tab walks to one and Enter answers it."""
     run = tmp_path / "live-run-LLLLLL"
     _live_run(run)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
-            bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert app.focused is bar
             for _ in range(8):  # Tab walks the screen; stop on the first answer
                 await pilot.press("tab")
                 await pilot.pause()
-                if isinstance(app.focused, Static) and "answer-yes" in app.focused.classes:
+                if isinstance(app.focused, widgets.Static) and "answer-yes" in app.focused.classes:
                     break
             assert app.focused is not None and "answer-yes" in app.focused.classes
             await pilot.press("enter")
@@ -361,7 +360,9 @@ def test_tab_reaches_the_answers_and_enter_answers(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_the_dashboard_answers_inline_and_keeps_the_focus_on_the_answers(tmp_path: Path) -> None:
+def test_the_dashboard_answers_inline_and_keeps_the_focus_on_the_answers(
+    tmp_path: pathlib.Path,
+) -> None:
     """The dashboard popped a modal, which took the focus mid-sentence.
 
     It shows the same row, with the command (it has no transcript), and answering from the row
@@ -371,12 +372,12 @@ def test_the_dashboard_answers_inline_and_keeps_the_focus_on_the_answers(tmp_pat
     _live_run(run)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.press("ctrl+d")
             await pilot.pause()
-            bar = app._dash.query_one("#dash-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            bar = app._dash.query_one("#dash-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             bar.focus()
             _append(
                 run, {"type": "approval.prompt", "id": "ap1", "prompt": "Allow run_command: ls"}
@@ -387,10 +388,10 @@ def test_the_dashboard_answers_inline_and_keeps_the_focus_on_the_answers(tmp_pat
                 "the dashboard row",
                 pump=app._tick,  # pyright: ignore[reportPrivateUsage]
             )
-            row = app._dash.query(ApprovalRow).first()  # pyright: ignore[reportPrivateUsage]
-            assert not isinstance(app.screen, ModalScreen)
+            row = app._dash.query(composer.ApprovalRow).first()  # pyright: ignore[reportPrivateUsage]
+            assert not isinstance(app.screen, screen.ModalScreen)
             assert app.focused is bar  # the row took nothing
-            shown = str(row.query_one(Static).render())
+            shown = str(row.query_one(widgets.Static).render())
             assert "Allow run_command" in shown and "ls" in shown
             await focus_answers(app._dash, pilot)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("y")

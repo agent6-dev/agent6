@@ -9,21 +9,20 @@ profile unshare succeeds while AppArmor denies the jail's mount.
 
 from __future__ import annotations
 
+import pathlib
 import re
-from pathlib import Path
 
 import pytest
 
 from agent6.app import _setup
 from agent6.sandbox import detect
-from agent6.sandbox.detect import Environment, KernelInfo
 
 
-def _env(userns: bool, *, sandbox: bool = True) -> Environment:
-    return Environment(
+def _env(userns: bool, *, sandbox: bool = True) -> detect.Environment:
+    return detect.Environment(
         in_container=False,
         container_signals=(),
-        kernel=KernelInfo(raw="7.0.0", major=7, minor=0),
+        kernel=detect.KernelInfo(raw="7.0.0", major=7, minor=0),
         userns_supported=userns,
         landlock_abi=4 if sandbox else 0,
         seccomp_arch_supported=True,
@@ -73,30 +72,29 @@ def test_detect_env_upgrades_to_strict_via_jail_probe(monkeypatch: pytest.Monkey
 
 
 def test_detect_env_refuses_over_a_binary_it_cannot_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The probe answers only the namespace question; an unusable binary's own refusal propagates.
 
     A 0644 or wrong-architecture AGENT6_JAIL_BIN is not "userns supported: False".
     """
-    from agent6.app._session import select_isolation
-    from agent6.app.preflight import SessionRefusedError
-    from agent6.app.reporter import Reporter
+    from agent6.app import _session, preflight
+    from agent6.app import reporter as app_reporter
     from agent6.config import Config
-    from agent6.sandbox.jail import JailUnavailableError, strict_namespaces_work
+    from agent6.sandbox import jail
 
     fake = tmp_path / "agent6-jail"
     fake.write_text("#!/bin/sh\n", encoding="utf-8")
     fake.chmod(0o644)
     monkeypatch.setenv("AGENT6_JAIL_BIN", str(fake))
-    strict_namespaces_work.cache_clear()
+    jail.strict_namespaces_work.cache_clear()
     try:
-        with pytest.raises(JailUnavailableError, match=re.escape(str(fake))):
+        with pytest.raises(jail.JailUnavailableError, match=re.escape(str(fake))):
             _setup.detect_env()
         said: list[str] = []
-        reporter = Reporter(out=said.append, err=said.append)
-        with pytest.raises(SessionRefusedError):
-            select_isolation(
+        reporter = app_reporter.Reporter(out=said.append, err=said.append)
+        with pytest.raises(preflight.SessionRefusedError):
+            _session.select_isolation(
                 Config(),
                 cwd=tmp_path,
                 confirm_unconfined=lambda _level, _cfg: True,
@@ -104,7 +102,7 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
             )
         assert any(str(fake) in line and "uv sync --reinstall-package" in line for line in said)
     finally:
-        strict_namespaces_work.cache_clear()
+        jail.strict_namespaces_work.cache_clear()
 
 
 def test_detect_env_stays_hardened_when_jail_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -139,18 +137,18 @@ def test_degrade_reason_names_the_blocking_mechanism(monkeypatch: pytest.MonkeyP
     assert "user.max_user_namespaces = 0" in (detect.degrade_reason(e) or "")
 
     monkeypatch.setattr(detect, "_read_max_userns", lambda: "58135")
-    from dataclasses import replace
+    import dataclasses
 
-    assert "container" in (detect.degrade_reason(replace(e, in_container=True)) or "")
+    assert "container" in (detect.degrade_reason(dataclasses.replace(e, in_container=True)) or "")
     assert "unshare -U -r true" in (detect.degrade_reason(e) or "")
 
 
 def test_degrade_reason_covers_the_landlock_less_floor(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(detect, "apparmor_userns_restricted", lambda: False)
     monkeypatch.setattr(detect, "_read_max_userns", lambda: None)
-    from dataclasses import replace
+    import dataclasses
 
-    no_landlock = replace(_env(False), landlock_abi=0)
+    no_landlock = dataclasses.replace(_env(False), landlock_abi=0)
     reason = detect.degrade_reason(no_landlock) or ""
     assert "no Landlock" in reason
     assert detect.degrade_reason(_env(False, sandbox=False)) is not None
@@ -158,9 +156,9 @@ def test_degrade_reason_covers_the_landlock_less_floor(monkeypatch: pytest.Monke
 
 def test_unsupported_seccomp_arch_degrades_auto_and_refuses_explicit() -> None:
     """With no seccomp filter (off x86_64 and aarch64) `auto` degrades to none, strict refuses."""
-    from dataclasses import replace
+    import dataclasses
 
-    e = replace(_env(True), seccomp_arch_supported=False)
+    e = dataclasses.replace(_env(True), seccomp_arch_supported=False)
     assert e.detected_isolation == "none"
     assert "seccomp filter" in (detect.degrade_reason(e) or "")
     for requested in ("strict", "hardened"):

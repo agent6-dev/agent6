@@ -6,19 +6,19 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.events import EventSink, EventWriteError
+from agent6 import events
 
 
-def _read_lines(path: Path) -> list[dict[str, object]]:
+def _read_lines(path: pathlib.Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
-def test_emit_appends_json_lines(tmp_path: Path) -> None:
-    sink = EventSink(tmp_path / "logs.jsonl")
+def test_emit_appends_json_lines(tmp_path: pathlib.Path) -> None:
+    sink = events.EventSink(tmp_path / "logs.jsonl")
     sink.emit("session.start", task="do a thing")
     sink.emit("step.start", index=1, title="hello")
     lines = _read_lines(tmp_path / "logs.jsonl")
@@ -30,16 +30,16 @@ def test_emit_appends_json_lines(tmp_path: Path) -> None:
     assert lines[1]["index"] == 1
 
 
-def test_emit_creates_parent_dir(tmp_path: Path) -> None:
+def test_emit_creates_parent_dir(tmp_path: pathlib.Path) -> None:
     target = tmp_path / "nested" / "deeper" / "logs.jsonl"
-    sink = EventSink(target)
+    sink = events.EventSink(target)
     sink.emit("hello")
     assert target.is_file()
 
 
-def test_emit_reprs_non_serializable_fields(tmp_path: Path) -> None:
+def test_emit_reprs_non_serializable_fields(tmp_path: pathlib.Path) -> None:
     """The sink never drops a field: an unknown object, circular refs included, lands as a repr."""
-    sink = EventSink(tmp_path / "logs.jsonl")
+    sink = events.EventSink(tmp_path / "logs.jsonl")
 
     class Bad:
         pass
@@ -57,7 +57,7 @@ def test_emit_reprs_non_serializable_fields(tmp_path: Path) -> None:
     assert isinstance(weird, str) and "Bad" in weird  # repr'd, not dropped
 
 
-def test_durable_emit_raises_on_unwritable_journal(tmp_path: Path) -> None:
+def test_durable_emit_raises_on_unwritable_journal(tmp_path: pathlib.Path) -> None:
     """A durable event that cannot land raises, and the in-process listener is not notified.
 
     The journal is the read model every surface trusts; a lost session.end renders "running"
@@ -67,10 +67,10 @@ def test_durable_emit_raises_on_unwritable_journal(tmp_path: Path) -> None:
     # Point at a path under a regular file -> mkdir will fail.
     blocker = tmp_path / "blocker"
     blocker.write_text("", encoding="utf-8")
-    sink = EventSink(blocker / "subdir" / "logs.jsonl")
+    sink = events.EventSink(blocker / "subdir" / "logs.jsonl")
     seen: list[dict[str, object]] = []
     sink.subscribe(seen.append)
-    with pytest.raises(EventWriteError, match="unwritable"):
+    with pytest.raises(events.EventWriteError, match="unwritable"):
         sink.emit("session.end", reason="finish_session", all_passed=True)
     assert seen == []
     sink.emit("role.text_delta", text="still live")  # ephemeral: must not raise
@@ -78,7 +78,7 @@ def test_durable_emit_raises_on_unwritable_journal(tmp_path: Path) -> None:
 
 
 def test_delta_events_flush_but_do_not_fsync(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Streaming deltas are flushed but not fsynced; durable events still fsync.
 
@@ -91,7 +91,7 @@ def test_delta_events_flush_but_do_not_fsync(
         synced.append(fd)
 
     monkeypatch.setattr(os, "fsync", _fake_fsync)
-    sink = EventSink(tmp_path / "logs.jsonl")
+    sink = events.EventSink(tmp_path / "logs.jsonl")
 
     sink.emit("role.thinking_delta", text="reasoning")
     sink.emit("role.text_delta", text="answer")
@@ -107,7 +107,7 @@ def test_delta_events_flush_but_do_not_fsync(
     assert types == ["role.thinking_delta", "role.text_delta", "tool.call"]
 
 
-def test_emit_survives_lone_surrogate(tmp_path: Path) -> None:
+def test_emit_survives_lone_surrogate(tmp_path: pathlib.Path) -> None:
     """A lone surrogate is recorded lossily and the file stays strictly valid UTF-8.
 
     `json.dumps(ensure_ascii=False)` passes it through, and a text-mode write raises
@@ -115,7 +115,7 @@ def test_emit_survives_lone_surrogate(tmp_path: Path) -> None:
     """
     import json
 
-    sink = EventSink(tmp_path / "logs.jsonl")
+    sink = events.EventSink(tmp_path / "logs.jsonl")
     sink.emit("session.start", user_task="caf\udce9")
     sink.emit("tool.call", args={"summary": "done \ud83d"})
     lines = [
@@ -127,39 +127,40 @@ def test_emit_survives_lone_surrogate(tmp_path: Path) -> None:
     assert "?" in lines[0]["user_task"]  # the surrogate was replaced, not dropped
 
 
-def test_a_value_that_merely_answers_isoformat_encodes_as_its_repr(tmp_path: Path) -> None:
+def test_a_value_that_merely_answers_isoformat_encodes_as_its_repr(tmp_path: pathlib.Path) -> None:
     """The encoder's date branch keys on the datetime types, not on an `isoformat` attribute.
 
     A mock, whose every attribute is another mock, recursed without end and hung the journal write.
     """
-    from datetime import UTC, datetime
-    from unittest.mock import MagicMock
+    import datetime
+    from unittest import mock as unittest_mock
 
-    from agent6.events import _json_default  # pyright: ignore[reportPrivateUsage]
-
-    assert _json_default(datetime(2026, 1, 2, tzinfo=UTC)) == "2026-01-02T00:00:00+00:00"
-    mock = MagicMock()
-    assert _json_default(mock) == repr(mock)
+    assert (
+        events._json_default(datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC))
+        == "2026-01-02T00:00:00+00:00"
+    )
+    mock = unittest_mock.MagicMock()
+    assert events._json_default(mock) == repr(mock)
 
 
 def test_the_log_dir_is_created_once_not_per_event(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The sink creates its directory through the state tree's one creator, once, not per emit.
 
     The creator's handback walks the whole dir under sudo.
     """
     from agent6 import events as events_mod
-    from agent6.paths import mkdir_for_real_user
+    from agent6 import paths
 
-    calls: list[Path] = []
+    calls: list[pathlib.Path] = []
 
-    def counting(path: Path) -> None:
+    def counting(path: pathlib.Path) -> None:
         calls.append(path)
-        mkdir_for_real_user(path)
+        paths.mkdir_for_real_user(path)
 
     monkeypatch.setattr(events_mod, "mkdir_for_real_user", counting)
-    sink = EventSink(tmp_path / "run" / "logs.jsonl")
+    sink = events.EventSink(tmp_path / "run" / "logs.jsonl")
     sink.emit("session.start")
     sink.emit("loop.tool.call", name="read_file")
     assert calls == [tmp_path / "run"]

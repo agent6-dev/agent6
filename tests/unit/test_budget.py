@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from agent6.budget import BudgetExceededError, BudgetTracker, PlanUsage, format_plan_usage
+from agent6 import budget
 
 
 @pytest.fixture(autouse=True)
@@ -32,14 +32,14 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPa
     monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
 
 
-def _t(*, fallback: int = 100) -> BudgetTracker:
+def _t(*, fallback: int = 100) -> budget.BudgetTracker:
     # Model "m" is unpriced in the fixture cache, so its tokens land in the fallback ledger.
-    return BudgetTracker(max_usd=-1, max_tokens_fallback=fallback, max_percent=-1)
+    return budget.BudgetTracker(max_usd=-1, max_tokens_fallback=fallback, max_percent=-1)
 
 
 def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
     # Token caps huge and fresh input ~0, but cache_creation alone costs over $1.
-    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_percent=-1)
+    t = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_percent=-1)
     # sonnet-4 input $3/M, cache_creation 1.25x = $3.75/M; 300k * 3.75/1e6 = $1.125 > $1.
     t.record(
         model="claude-sonnet-4-20250514",
@@ -48,14 +48,14 @@ def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
         cache_read_tokens=0,
         cache_creation_tokens=300_000,
     )
-    with pytest.raises(BudgetExceededError) as exc:
+    with pytest.raises(budget.BudgetExceededError) as exc:
         t.check()
     assert "USD budget" in str(exc.value)
 
 
 def test_usd_ceiling_off_when_unlimited() -> None:
     # max_usd = -1 (unlimited): the same heavy-cache call trips nothing.
-    t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     t.record(
         model="claude-sonnet-4-20250514",
         input_tokens=10,
@@ -117,7 +117,7 @@ def test_fallback_ceiling_hard_stop() -> None:
         model="m", input_tokens=7, output_tokens=3, cache_read_tokens=0, cache_creation_tokens=0
     )
     assert t.is_exhausted()
-    with pytest.raises(BudgetExceededError, match="fallback token budget"):
+    with pytest.raises(budget.BudgetExceededError, match="fallback token budget"):
         t.check()
 
 
@@ -175,17 +175,16 @@ def test_format_summary_marks_exhausted() -> None:
 def test_the_caps_have_one_home() -> None:
     """The caps are required arguments; BudgetConfig is the one place the defaults live."""
     import inspect
-    from pathlib import Path
+    import pathlib
 
-    from agent6.budget import BudgetTracker
     from agent6.config import BudgetConfig
 
-    params = inspect.signature(BudgetTracker).parameters
+    params = inspect.signature(budget.BudgetTracker).parameters
     for name in ("max_usd", "max_tokens_fallback", "max_percent"):
         assert params[name].default is inspect.Parameter.empty, name
 
     cfg = BudgetConfig()
-    docs = Path(__file__).resolve().parents[2] / "docs" / "config.md"
+    docs = pathlib.Path(__file__).resolve().parents[2] / "docs" / "config.md"
     row_usd, row_tokens = "", ""
     for line in docs.read_text(encoding="utf-8").splitlines():
         if line.startswith("| `max_usd`"):
@@ -202,9 +201,7 @@ def test_percent_meter_sawtooth_and_cap() -> None:
     The first reading is the baseline, rises are the run's consumption and a drop counts from zero;
     plan calls never drain the fallback ledger and report an authoritative $0.
     """
-    from agent6.budget import PlanUsage
-
-    t = BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=10.0)
+    t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=10.0)
 
     def rec(pct: float) -> None:
         t.record(
@@ -213,7 +210,9 @@ def test_percent_meter_sawtooth_and_cap() -> None:
             output_tokens=50,
             cache_read_tokens=0,
             cache_creation_tokens=0,
-            plan_usage=PlanUsage.single(used_percent=pct, window_minutes=10080, resets_at=2e9),
+            plan_usage=budget.PlanUsage.single(
+                used_percent=pct, window_minutes=10080, resets_at=2e9
+            ),
         )
 
     rec(37.0)  # baseline
@@ -228,30 +227,28 @@ def test_percent_meter_sawtooth_and_cap() -> None:
     usd, partial = t.estimate_usd()
     assert usd == 0.0 and partial is False  # authoritative $0, not unpriced
     rec(8.0)  # +3 -> consumed 11 >= 10
-    with pytest.raises(BudgetExceededError, match="plan budget exhausted"):
+    with pytest.raises(budget.BudgetExceededError, match="plan budget exhausted"):
         t.check()
     assert "plan usage (gpt-5.6-sol): 8% of the 7-day window" in t.format_summary()
     assert "(subscription)" in t.format_summary()
 
 
 def test_percent_zero_refuses_plan_metered_calls() -> None:
-    from agent6.budget import PlanUsage
-
-    t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=0)
+    t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=0)
     t.record(
         model="gpt-5.6-sol",
         input_tokens=10,
         output_tokens=1,
         cache_read_tokens=0,
         cache_creation_tokens=0,
-        plan_usage=PlanUsage.single(used_percent=1.0, window_minutes=300, resets_at=2e9),
+        plan_usage=budget.PlanUsage.single(used_percent=1.0, window_minutes=300, resets_at=2e9),
     )
-    with pytest.raises(BudgetExceededError, match="percent budget is 0"):
+    with pytest.raises(budget.BudgetExceededError, match="percent budget is 0"):
         t.check()
 
 
-def _plan_with_credits(used: float, *, unlimited: bool = False) -> PlanUsage:
-    return PlanUsage.single(
+def _plan_with_credits(used: float, *, unlimited: bool = False) -> budget.PlanUsage:
+    return budget.PlanUsage.single(
         used_percent=used,
         window_minutes=10080,
         resets_at=2e9,
@@ -261,7 +258,7 @@ def _plan_with_credits(used: float, *, unlimited: bool = False) -> PlanUsage:
     )
 
 
-def _record_plan(t: BudgetTracker, plan: PlanUsage) -> None:
+def _record_plan(t: budget.BudgetTracker, plan: budget.PlanUsage) -> None:
     t.record(
         model="gpt-5.6-sol",
         input_tokens=10,
@@ -278,35 +275,37 @@ def test_exhausted_window_with_credits_refuses_by_default() -> None:
     Past the included window, chatgpt calls draw real money the $0-authoritative stance would hide;
     the refusal names [budget].allow_paid_credits.
     """
-    t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     _record_plan(t, _plan_with_credits(100.0))
-    with pytest.raises(BudgetExceededError, match="allow_paid_credits"):
+    with pytest.raises(budget.BudgetExceededError, match="allow_paid_credits"):
         t.check()
 
 
 def test_credits_spend_allowed_when_opted_in() -> None:
-    t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1, allow_paid_credits=True)
+    t = budget.BudgetTracker(
+        max_usd=-1, max_tokens_fallback=-1, max_percent=-1, allow_paid_credits=True
+    )
     _record_plan(t, _plan_with_credits(100.0))
     t.check()
 
 
 def test_zero_usd_refuses_paid_credits_even_when_opted_in() -> None:
-    tracker = BudgetTracker(
+    tracker = budget.BudgetTracker(
         max_usd=0, max_tokens_fallback=-1, max_percent=-1, allow_paid_credits=True
     )
     tracker.record_plan_preflight("chatgpt", _plan_with_credits(100.0))
-    with pytest.raises(BudgetExceededError, match="USD budget is 0"):
+    with pytest.raises(budget.BudgetExceededError, match="USD budget is 0"):
         tracker.check()
 
 
 def test_credits_inside_the_included_window_do_not_refuse() -> None:
-    t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     _record_plan(t, _plan_with_credits(41.0))
     t.check()
 
 
 def test_unlimited_credits_do_not_refuse() -> None:
-    t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     _record_plan(t, _plan_with_credits(100.0, unlimited=True))
     t.check()
 
@@ -317,16 +316,14 @@ def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
     Without it a plan-metered run reads ~1.0 remaining until the hard stop and no near-budget
     behaviour engages.
     """
-    from agent6.budget import BudgetTracker, PlanUsage
-
-    t = BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=5.0)
+    t = budget.BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=5.0)
     t.record(
         model="gpt-5.6-sol",
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
         cache_creation_tokens=0,
-        plan_usage=PlanUsage.single(used_percent=40.0, window_minutes=300, resets_at=0.0),
+        plan_usage=budget.PlanUsage.single(used_percent=40.0, window_minutes=300, resets_at=0.0),
     )
     t.record(
         model="gpt-5.6-sol",
@@ -334,7 +331,7 @@ def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
         output_tokens=10,
         cache_read_tokens=0,
         cache_creation_tokens=0,
-        plan_usage=PlanUsage.single(used_percent=42.5, window_minutes=300, resets_at=0.0),
+        plan_usage=budget.PlanUsage.single(used_percent=42.5, window_minutes=300, resets_at=0.0),
     )
     # The run consumed ~2.5 points of its 5-point cap.
     assert 0.4 <= t.fraction_remaining() <= 0.6
@@ -345,9 +342,9 @@ def test_preflight_reading_seeds_the_baseline_and_guards_credits() -> None:
 
     A secondary window at 100 counts as exhausted.
     """
-    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
+    t = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
     t.record_plan_preflight(
-        "m", PlanUsage.single(used_percent=40.0, window_minutes=10080, resets_at=0)
+        "m", budget.PlanUsage.single(used_percent=40.0, window_minutes=10080, resets_at=0)
     )
     t.record(
         model="m",
@@ -355,13 +352,13 @@ def test_preflight_reading_seeds_the_baseline_and_guards_credits() -> None:
         output_tokens=1,
         cache_read_tokens=0,
         cache_creation_tokens=0,
-        plan_usage=PlanUsage.single(used_percent=42.0, window_minutes=10080, resets_at=0),
+        plan_usage=budget.PlanUsage.single(used_percent=42.0, window_minutes=10080, resets_at=0),
     )
     assert t.snapshot().plan_consumed == 2.0
-    guarded = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
+    guarded = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
     guarded.record_plan_preflight(
         "m",
-        PlanUsage.single(
+        budget.PlanUsage.single(
             used_percent=10.0,
             window_minutes=10080,
             resets_at=0,
@@ -369,7 +366,7 @@ def test_preflight_reading_seeds_the_baseline_and_guards_credits() -> None:
             secondary_used_percent=100.0,
         ),
     )
-    with pytest.raises(BudgetExceededError, match="purchased"):
+    with pytest.raises(budget.BudgetExceededError, match="purchased"):
         guarded.check()
 
 
@@ -378,25 +375,24 @@ def test_the_binding_window_meters_the_run_whatever_its_name() -> None:
 
     A per-model family the run burns counts while the primary window barely moves.
     """
-    from agent6.budget import PlanWindow
 
-    def reading(primary: float, spark: float) -> PlanUsage:
-        return PlanUsage(
+    def reading(primary: float, spark: float) -> budget.PlanUsage:
+        return budget.PlanUsage(
             windows=(
-                PlanWindow("primary", primary, 10080, 2e9),
-                PlanWindow("gpt-5-6-spark", spark, 300, 2e9),
+                budget.PlanWindow("primary", primary, 10080, 2e9),
+                budget.PlanWindow("gpt-5-6-spark", spark, 300, 2e9),
             )
         )
 
-    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=5.0)
+    t = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=5.0)
     _record_plan(t, reading(10.0, 40.0))  # baselines
     _record_plan(t, reading(10.5, 43.0))
     assert t.snapshot().plan_consumed == 3.0  # spark moved 3, primary 0.5
     _record_plan(t, reading(11.0, 46.0))
-    with pytest.raises(BudgetExceededError, match="gpt-5-6-spark window"):
+    with pytest.raises(budget.BudgetExceededError, match="gpt-5-6-spark window"):
         t.check()
     # A reset on one window restarts that window's count from zero only.
-    t2 = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=50.0)
+    t2 = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=50.0)
     _record_plan(t2, reading(10.0, 90.0))
     _record_plan(t2, reading(12.0, 1.0))
     assert t2.snapshot().plan_consumed == 2.0
@@ -404,25 +400,24 @@ def test_the_binding_window_meters_the_run_whatever_its_name() -> None:
 
 def test_percent_cap_names_the_window_whose_consumption_bound_it() -> None:
     """The max-percent error names the window that consumed the capped points."""
-    from agent6.budget import PlanWindow
 
-    def reading(primary: float, spark: float) -> PlanUsage:
-        return PlanUsage(
+    def reading(primary: float, spark: float) -> budget.PlanUsage:
+        return budget.PlanUsage(
             windows=(
-                PlanWindow("primary", primary, 10080, 2e9),
-                PlanWindow("gpt-5-6-spark", spark, 300, 2e9),
+                budget.PlanWindow("primary", primary, 10080, 2e9),
+                budget.PlanWindow("gpt-5-6-spark", spark, 300, 2e9),
             )
         )
 
-    tracker = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=5)
+    tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=5)
     _record_plan(tracker, reading(90, 10))
     _record_plan(tracker, reading(91, 16))
 
-    with pytest.raises(BudgetExceededError, match="gpt-5-6-spark window"):
+    with pytest.raises(budget.BudgetExceededError, match="gpt-5-6-spark window"):
         tracker.check()
     # The latest reading need not carry the window that bound; the backend adds and drops windows.
-    _record_plan(tracker, PlanUsage(windows=(PlanWindow("primary", 92, 10080, 2e9),)))
-    with pytest.raises(BudgetExceededError, match="gpt-5-6-spark window"):
+    _record_plan(tracker, budget.PlanUsage(windows=(budget.PlanWindow("primary", 92, 10080, 2e9),)))
+    with pytest.raises(budget.BudgetExceededError, match="gpt-5-6-spark window"):
         tracker.check()
 
 
@@ -431,10 +426,12 @@ def test_purchased_credit_spend_meters_against_max_usd() -> None:
 
     A balance that is not a number meters nothing.
     """
-    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1, allow_paid_credits=True)
+    t = budget.BudgetTracker(
+        max_usd=1.0, max_tokens_fallback=100, max_percent=-1, allow_paid_credits=True
+    )
 
-    def reading(balance: str) -> PlanUsage:
-        return PlanUsage.single(
+    def reading(balance: str) -> budget.PlanUsage:
+        return budget.PlanUsage.single(
             used_percent=100.0,
             window_minutes=10080,
             resets_at=2e9,
@@ -449,9 +446,9 @@ def test_purchased_credit_spend_meters_against_max_usd() -> None:
     assert "cost=$0.60" in t.format_summary()
     t.check()
     _record_plan(t, reading("$11.40"))
-    with pytest.raises(BudgetExceededError, match="purchased credits spent"):
+    with pytest.raises(budget.BudgetExceededError, match="purchased credits spent"):
         t.check()
-    opaque = BudgetTracker(
+    opaque = budget.BudgetTracker(
         max_usd=1.0, max_tokens_fallback=100, max_percent=-1, allow_paid_credits=True
     )
     _record_plan(opaque, reading("lots"))
@@ -461,7 +458,7 @@ def test_purchased_credit_spend_meters_against_max_usd() -> None:
 
 def test_credit_balances_are_tracked_per_provider_entry() -> None:
     """Balances from separate subscription accounts must never be compared."""
-    tracker = BudgetTracker(
+    tracker = budget.BudgetTracker(
         max_usd=-1, max_tokens_fallback=-1, max_percent=-1, allow_paid_credits=True
     )
     tracker.note_route("model-a", "provider-a")
@@ -474,7 +471,7 @@ def test_credit_balances_are_tracked_per_provider_entry() -> None:
             output_tokens=1,
             cache_read_tokens=0,
             cache_creation_tokens=0,
-            plan_usage=PlanUsage.single(
+            plan_usage=budget.PlanUsage.single(
                 100.0,
                 10080,
                 0.0,
@@ -493,7 +490,7 @@ def test_credits_balance_units_convert_to_usd() -> None:
     """A bare credits balance converts at 25 credits per dollar; a "$"-prefixed one is dollars."""
 
     def usd(balance: str) -> float | None:
-        return PlanUsage.single(
+        return budget.PlanUsage.single(
             0.0, 10080, 0.0, has_credits=True, credits_balance=balance
         ).credits_usd
 
@@ -508,17 +505,18 @@ def test_credits_balance_units_convert_to_usd() -> None:
 
 def test_plan_usage_line_names_a_window_with_no_reported_length() -> None:
     """A binding window with `window_minutes` 0 is named without an invented length."""
-    from agent6.budget import PlanWindow
-
-    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
+    t = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
     _record_plan(
         t,
-        PlanUsage(
-            windows=(PlanWindow("primary", 1.0, 10080, 2e9), PlanWindow("secondary", 3.0, 0, 2e9))
+        budget.PlanUsage(
+            windows=(
+                budget.PlanWindow("primary", 1.0, 10080, 2e9),
+                budget.PlanWindow("secondary", 3.0, 0, 2e9),
+            )
         ),
     )
     route, spend = next(iter(t.snapshot().plans.items()))
-    line = format_plan_usage(route, spend, -1)
+    line = budget.format_plan_usage(route, spend, -1)
     assert "3% of the window (secondary)" in line
     assert "0-minute" not in line
 
@@ -528,7 +526,7 @@ def test_an_all_unpriced_run_does_not_claim_a_usd_ceiling() -> None:
 
     The cap reads as the preflight spells it, with the lower-bound `+` before the parenthetical.
     """
-    t = BudgetTracker(max_usd=10.0, max_tokens_fallback=2_000_000, max_percent=-1)
+    t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=2_000_000, max_percent=-1)
     t.record(
         model="unpriced-xyz",
         input_tokens=10,
@@ -550,7 +548,7 @@ def test_each_subscription_plan_prints_its_own_named_line() -> None:
 
     Two `primary` windows at different percents are two plans, not one plan that reset.
     """
-    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
+    t = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
     t.note_route("gpt-5.6-sol", "chatgpt")
     t.note_route("claude-opus-5", "claude")
 
@@ -561,7 +559,9 @@ def test_each_subscription_plan_prints_its_own_named_line() -> None:
             output_tokens=1,
             cache_read_tokens=0,
             cache_creation_tokens=0,
-            plan_usage=PlanUsage.single(used_percent=pct, window_minutes=10080, resets_at=2e9),
+            plan_usage=budget.PlanUsage.single(
+                used_percent=pct, window_minutes=10080, resets_at=2e9
+            ),
         )
 
     rec("gpt-5.6-sol", 28.0)

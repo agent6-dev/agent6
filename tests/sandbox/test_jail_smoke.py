@@ -10,25 +10,25 @@ AGENT6_BUILD_JAIL env var so CI can choose when to pay the cost.
 from __future__ import annotations
 
 import os
+import pathlib
 import shutil
 import stat
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 import pytest
 
-from agent6.kinds import IsolationLevel, JailPolicy
-from agent6.sandbox.jail import JailUnavailableError, run_in_jail
+from agent6 import kinds
+from agent6.sandbox import jail
 from tests.jail_env import require_userns_jail
 
 
-def _jail_binary() -> Path | None:
+def _jail_binary() -> pathlib.Path | None:
     env = os.environ.get("AGENT6_JAIL_BIN")
-    if env and Path(env).is_file():
-        return Path(env)
-    p = Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail" / "target"
+    if env and pathlib.Path(env).is_file():
+        return pathlib.Path(env)
+    p = pathlib.Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail" / "target"
     release = p / "release" / "agent6-jail"
     if release.is_file():
         return release
@@ -38,14 +38,14 @@ def _jail_binary() -> Path | None:
     return None
 
 
-def _require_fresh(bin_path: Path) -> None:
+def _require_fresh(bin_path: pathlib.Path) -> None:
     """Fail loudly when the built binary predates the Rust sources.
 
     Every jail security test below runs against this binary, so a stale one
     means the whole Landlock/seccomp/protect-path suite greens against code
     that is no longer in the tree.
     """
-    src = Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail"
+    src = pathlib.Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail"
     newest = max(
         (p.stat().st_mtime for p in [*src.glob("src/*.rs"), src / "Cargo.toml"] if p.is_file()),
         default=0.0,
@@ -62,7 +62,7 @@ pytestmark = pytest.mark.needs_namespaces
 
 
 @pytest.fixture(scope="module")
-def jail_bin() -> Path:
+def jail_bin() -> pathlib.Path:
     require_userns_jail()
     bin_path = _jail_binary()
     if bin_path is None:
@@ -71,7 +71,7 @@ def jail_bin() -> Path:
         cargo = shutil.which("cargo")
         if cargo is None:
             pytest.skip("cargo not available")
-        repo_root = Path(__file__).resolve().parents[2]
+        repo_root = pathlib.Path(__file__).resolve().parents[2]
         manifest = str(repo_root / "src" / "agent6" / "jail" / "Cargo.toml")
         subprocess.run(
             [cargo, "build", "--release", "--manifest-path", manifest],
@@ -84,12 +84,14 @@ def jail_bin() -> Path:
     return bin_path
 
 
-def test_jail_runs_true(jail_bin: Path, tmp_path: Path) -> None:
-    res = run_in_jail(JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",), timeout_s=10.0))
+def test_jail_runs_true(jail_bin: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    res = jail.run_in_jail(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",), timeout_s=10.0))
     assert res.returncode == 0
 
 
-def test_jail_blocks_network_when_disallowed(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_blocks_network_when_disallowed(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """A connect() to a real host listener is denied without network and succeeds with it.
 
     The positive control is the point: a DNS probe fails in the jail (no /etc/resolv.conf)
@@ -109,8 +111,8 @@ def test_jail_blocks_network_when_disallowed(jail_bin: Path, tmp_path: Path) -> 
     )
 
     def _rc(*, allow: bool) -> int:
-        return run_in_jail(
-            JailPolicy(
+        return jail.run_in_jail(
+            kinds.JailPolicy(
                 cwd=tmp_path,
                 argv=("/usr/bin/python3", "-c", probe),
                 network="host" if allow else "none",
@@ -125,55 +127,59 @@ def test_jail_blocks_network_when_disallowed(jail_bin: Path, tmp_path: Path) -> 
         srv.close()
 
 
-def test_jail_denies_write_outside_the_workspace(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_denies_write_outside_the_workspace(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """A write outside the workspace is denied (nonzero rc), not merely redirected.
 
     /tmp and /dev/shm are fresh tmpfs in the jail, so a write there succeeds and only fails
     to reach the host; the denial target is $HOME, neither remapped nor granted.
     """
-    for target in (str(Path.home() / "agent6-jail-escape"),):
+    for target in (str(pathlib.Path.home() / "agent6-jail-escape"),):
         try:
-            res = run_in_jail(
-                JailPolicy(
+            res = jail.run_in_jail(
+                kinds.JailPolicy(
                     cwd=tmp_path,
                     argv=("/bin/sh", "-c", f"echo escape > {target}"),
                     timeout_s=10.0,
                 )
             )
-        except JailUnavailableError:
+        except jail.JailUnavailableError:
             pytest.skip("jail unavailable")
         assert res.returncode != 0, f"jailed child wrote {target}"
-        assert not Path(target).exists()
+        assert not pathlib.Path(target).exists()
 
 
-def test_jail_tmp_is_a_private_tmpfs(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_tmp_is_a_private_tmpfs(jail_bin: pathlib.Path, tmp_path: pathlib.Path) -> None:
     # /tmp is remapped, so a write there lands in the jail's own tmpfs and
     # never on the host (distinct from the denial the sibling test pins).
-    marker = Path("/tmp/agent6-jail-host-escape-marker")
+    marker = pathlib.Path("/tmp/agent6-jail-host-escape-marker")
     if marker.exists():
         marker.unlink()
     try:
-        res = run_in_jail(
-            JailPolicy(
+        res = jail.run_in_jail(
+            kinds.JailPolicy(
                 cwd=tmp_path,
                 argv=("/bin/sh", "-c", f"echo escape > {marker}"),
                 timeout_s=10.0,
             )
         )
-    except JailUnavailableError:
+    except jail.JailUnavailableError:
         pytest.skip("jail unavailable")
     assert res.returncode == 0  # it writes -- into the private tmpfs
     assert not marker.exists()  # ...and the host copy never appears
 
 
-def test_jail_hardened_truncate_denied_outside_grants(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_hardened_truncate_denied_outside_grants(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """truncate(2) is refused outside every grant and works inside the workspace.
 
     TRUNCATE is an ABI-v3 Landlock right; a ruleset through ABI v2 leaves truncate
     unrestricted, so a hardened child could zero any file the operator can write (the state
     dir, ~/.ssh) with no write grant. Every '>' redirect onto an existing file relies on it.
     """
-    shm = Path("/dev/shm")
+    shm = pathlib.Path("/dev/shm")
     if not (shm.is_dir() and os.access(shm, os.W_OK)):
         pytest.skip("/dev/shm not usable as an out-of-grant target")
     victim = shm / "agent6-jail-truncate-victim"
@@ -187,23 +193,23 @@ def test_jail_hardened_truncate_denied_outside_grants(jail_bin: Path, tmp_path: 
     # coreutils `truncate` opens O_WRONLY first and would be stopped by the write
     # rule, masking whether truncate itself is handled.
     try:
-        run_in_jail(
-            JailPolicy(
+        jail.run_in_jail(
+            kinds.JailPolicy(
                 cwd=ws,
                 argv=("/usr/bin/python3", "-c", f"import os; os.truncate({str(inside)!r}, 0)"),
                 isolation="hardened",
                 timeout_s=10.0,
             )
         )
-        run_in_jail(
-            JailPolicy(
+        jail.run_in_jail(
+            kinds.JailPolicy(
                 cwd=ws,
                 argv=("/usr/bin/python3", "-c", f"import os; os.truncate({str(victim)!r}, 0)"),
                 isolation="hardened",
                 timeout_s=10.0,
             )
         )
-    except JailUnavailableError:
+    except jail.JailUnavailableError:
         pytest.skip("jail unavailable")
     # Inside the workspace: truncate must still succeed.
     assert inside.read_text(encoding="utf-8") == "", (
@@ -216,7 +222,7 @@ def test_jail_hardened_truncate_denied_outside_grants(jail_bin: Path, tmp_path: 
     victim.unlink(missing_ok=True)
 
 
-def test_jail_dev_null_is_writable(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_dev_null_is_writable(jail_bin: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """Writes to /dev/null and friends succeed under both isolation levels.
 
     pytest's logging plugin opens /dev/null O_WRONLY|O_APPEND when a `log_file` is configured
@@ -224,8 +230,8 @@ def test_jail_dev_null_is_writable(jail_bin: Path, tmp_path: Path) -> None:
     PermissionError before any test can run.
     """
     for isolation in ("strict", "hardened"):
-        res = run_in_jail(
-            JailPolicy(
+        res = jail.run_in_jail(
+            kinds.JailPolicy(
                 cwd=tmp_path,
                 argv=("/bin/sh", "-c", "echo x > /dev/null && echo OK"),
                 isolation=isolation,
@@ -236,7 +242,9 @@ def test_jail_dev_null_is_writable(jail_bin: Path, tmp_path: Path) -> None:
         assert "OK" in res.stdout, f"{isolation} stdout: {res.stdout!r}"
 
 
-def test_jail_memory_limit_caps_child_allocation(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_memory_limit_caps_child_allocation(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """memory_limit_mb turns a runaway allocation into a plain failed command.
 
     A child allocating 200 MiB under a 64 MiB cap must die with MemoryError
@@ -252,8 +260,8 @@ def test_jail_memory_limit_caps_child_allocation(jail_bin: Path, tmp_path: Path)
         "    sys.exit(9)\n"
         "print('ALLOC-OK')\n"
     )
-    capped = run_in_jail(
-        JailPolicy(
+    capped = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/usr/bin/python3", "-c", alloc),
             memory_limit_mb=64,
@@ -261,8 +269,8 @@ def test_jail_memory_limit_caps_child_allocation(jail_bin: Path, tmp_path: Path)
         )
     )
     assert capped.returncode == 9, f"stderr: {capped.stderr!r}"
-    uncapped = run_in_jail(
-        JailPolicy(
+    uncapped = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/usr/bin/python3", "-c", alloc),
             memory_limit_mb=0,
@@ -273,14 +281,16 @@ def test_jail_memory_limit_caps_child_allocation(jail_bin: Path, tmp_path: Path)
     assert "ALLOC-OK" in uncapped.stdout
 
 
-def test_jail_protect_paths_block_writes_to_subdir(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_protect_paths_block_writes_to_subdir(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """extra_protect_paths must make a sub-directory of cwd read-only."""
     git_dir = tmp_path / ".git"
     git_dir.mkdir()
     (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
     # First confirm without protection the write succeeds inside the jail.
-    res_unprotected = run_in_jail(
-        JailPolicy(
+    res_unprotected = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/bin/sh", "-c", "echo pwned > .git/HEAD && cat .git/HEAD"),
             timeout_s=10.0,
@@ -290,8 +300,8 @@ def test_jail_protect_paths_block_writes_to_subdir(jail_bin: Path, tmp_path: Pat
     assert "pwned" in res_unprotected.stdout
     # Reset and protect.
     (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
-    res_protected = run_in_jail(
-        JailPolicy(
+    res_protected = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/bin/sh", "-c", "echo pwned > .git/HEAD; cat .git/HEAD"),
             extra_protect_paths=(git_dir,),
@@ -303,12 +313,14 @@ def test_jail_protect_paths_block_writes_to_subdir(jail_bin: Path, tmp_path: Pat
     assert (git_dir / "HEAD").read_text(encoding="utf-8") == "ref: refs/heads/main\n"
 
 
-def test_jail_protect_paths_block_writes_to_file(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_protect_paths_block_writes_to_file(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """extra_protect_paths must also protect individual files (not just dirs)."""
     cfg = tmp_path / "protected.txt"
     cfg.write_text("original\n", encoding="utf-8")
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/bin/sh", "-c", "echo pwned > protected.txt; cat protected.txt"),
             extra_protect_paths=(cfg,),
@@ -319,7 +331,9 @@ def test_jail_protect_paths_block_writes_to_file(jail_bin: Path, tmp_path: Path)
     assert cfg.read_text(encoding="utf-8") == "original\n"
 
 
-def test_jail_hardened_symlink_escaping_cwd_gets_no_rw(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_hardened_symlink_escaping_cwd_gets_no_rw(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """A top-level symlink whose target escapes cwd receives no RW.
 
     Under hardened the per-top-level-entry RW carve-out must not follow symlinks, or
@@ -331,7 +345,7 @@ def test_jail_hardened_symlink_escaping_cwd_gets_no_rw(jail_bin: Path, tmp_path:
     import shutil as _shutil
     import uuid as _uuid
 
-    shm = Path("/dev/shm")
+    shm = pathlib.Path("/dev/shm")
     if not shm.is_dir() or not os.access(shm, os.W_OK):
         pytest.skip("/dev/shm not usable for the out-of-cwd target")
     outside = shm / f"agent6-jail-escape-{_uuid.uuid4().hex}"
@@ -340,8 +354,8 @@ def test_jail_hardened_symlink_escaping_cwd_gets_no_rw(jail_bin: Path, tmp_path:
         (tmp_path / ".git").mkdir()  # a protect path so the carve-out loop runs
         (tmp_path / "src").mkdir()
         (tmp_path / "escape").symlink_to(outside, target_is_directory=True)
-        res = run_in_jail(
-            JailPolicy(
+        res = jail.run_in_jail(
+            kinds.JailPolicy(
                 cwd=tmp_path,
                 argv=("/bin/sh", "-c", "echo ok > src/x.txt; echo pwned > escape/sentinel; true"),
                 isolation="hardened",
@@ -358,7 +372,7 @@ def test_jail_hardened_symlink_escaping_cwd_gets_no_rw(jail_bin: Path, tmp_path:
 
 
 def test_jail_hardened_symlinked_rw_path_cannot_shadow_a_protect_path(
-    jail_bin: Path, tmp_path: Path
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
     """A symlinked extra_rw_path resolving to a protect-path ancestor gets no RW.
 
@@ -370,8 +384,8 @@ def test_jail_hardened_symlinked_rw_path_cannot_shadow_a_protect_path(
     protected = secret / "key.txt"
     protected.write_text("SECRET\n", encoding="utf-8")
     (tmp_path / "rwlink").symlink_to(secret, target_is_directory=True)
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/bin/sh", "-c", "echo pwned > secret/key.txt; true"),
             isolation="hardened",
@@ -385,7 +399,9 @@ def test_jail_hardened_symlinked_rw_path_cannot_shadow_a_protect_path(
     )
 
 
-def test_jail_hardened_protect_paths_block_writes(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_hardened_protect_paths_block_writes(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """Hardened isolation blocks writes to protect_paths via Landlock carve-out.
 
     Hardened has no mount namespace so it cannot bind-remount RO; instead the
@@ -399,8 +415,8 @@ def test_jail_hardened_protect_paths_block_writes(jail_bin: Path, tmp_path: Path
     # Make a sibling that the worker IS allowed to write to, to prove we
     # didn't accidentally lock down the whole cwd.
     (tmp_path / "src").mkdir()
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=(
                 "/bin/sh",
@@ -418,7 +434,7 @@ def test_jail_hardened_protect_paths_block_writes(jail_bin: Path, tmp_path: Path
 
 
 def test_jail_tool_paths_make_a_nonworkspace_binary_reachable(
-    jail_bin: Path, tmp_path: Path
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
     # A tool dir OUTSIDE the workspace (like ~/.local/bin or a pipx /opt target) is
     # unreachable by default; passing it as tool_paths bind-mounts it RO+exec at its
@@ -432,8 +448,8 @@ def test_jail_tool_paths_make_a_nonworkspace_binary_reachable(
     script.chmod(0o755)
     env = (("PATH", f"/usr/bin:/bin:{tools}"),)
 
-    with_mount = run_in_jail(
-        JailPolicy(
+    with_mount = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=work,
             argv=("/bin/sh", "-c", "mytool"),
             env=env,
@@ -446,13 +462,15 @@ def test_jail_tool_paths_make_a_nonworkspace_binary_reachable(
 
     # Same PATH but no tool_paths: the dir is not mounted, so exec fails (guards
     # against the mount silently becoming a no-op).
-    without_mount = run_in_jail(
-        JailPolicy(cwd=work, argv=("/bin/sh", "-c", "mytool"), env=env, timeout_s=10.0)
+    without_mount = jail.run_in_jail(
+        kinds.JailPolicy(cwd=work, argv=("/bin/sh", "-c", "mytool"), env=env, timeout_s=10.0)
     )
     assert without_mount.returncode != 0
 
 
-def test_jail_extra_ro_paths_mount_at_their_real_location(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_extra_ro_paths_mount_at_their_real_location(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     # The documented contract: a granted toolchain (a conda env, a shared data
     # dir) is usable via its own absolute paths and shebangs. The grant used to
     # remap under an undocumented /ro<src>, where nothing could find it.
@@ -464,15 +482,15 @@ def test_jail_extra_ro_paths_mount_at_their_real_location(jail_bin: Path, tmp_pa
     script.write_text("#!/bin/sh\necho reached-real-path\n")
     script.chmod(0o755)
 
-    granted = run_in_jail(
-        JailPolicy(cwd=work, argv=(str(script),), extra_ro_paths=(toolchain,), timeout_s=10.0)
+    granted = jail.run_in_jail(
+        kinds.JailPolicy(cwd=work, argv=(str(script),), extra_ro_paths=(toolchain,), timeout_s=10.0)
     )
     assert granted.returncode == 0, granted.stderr
     assert "reached-real-path" in granted.stdout
 
     # Read-only: a write inside the grant is refused.
-    ro = run_in_jail(
-        JailPolicy(
+    ro = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=work,
             argv=("/bin/sh", "-c", f"echo x > {toolchain}/marker"),
             extra_ro_paths=(toolchain,),
@@ -483,19 +501,19 @@ def test_jail_extra_ro_paths_mount_at_their_real_location(jail_bin: Path, tmp_pa
     assert not (toolchain / "marker").exists()
 
     # Without the grant the path does not exist inside the jail at all.
-    ungranted = run_in_jail(JailPolicy(cwd=work, argv=(str(script),), timeout_s=10.0))
+    ungranted = jail.run_in_jail(kinds.JailPolicy(cwd=work, argv=(str(script),), timeout_s=10.0))
     assert ungranted.returncode != 0
 
 
-def test_jail_preserves_non_utf8_output(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_preserves_non_utf8_output(jail_bin: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """A command emitting non-UTF-8 bytes returns a lossy-decoded result, not an empty stdout.
 
     grep over a binary or cat of a latin-1 file must not drop the whole stream on the first
     invalid byte.
     """
     for isolation in ("strict", "hardened"):
-        res = run_in_jail(
-            JailPolicy(
+        res = jail.run_in_jail(
+            kinds.JailPolicy(
                 cwd=tmp_path,
                 argv=("/bin/sh", "-c", "printf 'caf'; printf '\\351'; printf 'x'"),
                 isolation=isolation,
@@ -509,7 +527,9 @@ def test_jail_preserves_non_utf8_output(jail_bin: Path, tmp_path: Path) -> None:
         assert "�" in res.stdout, f"{isolation} stdout: {res.stdout!r}"
 
 
-def test_jail_backgrounded_pipe_holder_does_not_hang(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_backgrounded_pipe_holder_does_not_hang(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """A command that backgrounds a stdout-inheriting process and exits 0 returns rc=0 promptly.
 
     The process-group teardown runs on the normal-exit path, not only on timeout, so the
@@ -519,8 +539,8 @@ def test_jail_backgrounded_pipe_holder_does_not_hang(jail_bin: Path, tmp_path: P
     import time
 
     start = time.monotonic()
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/bin/sh", "-c", "sleep 30 & echo done; exit 0"),
             isolation="hardened",
@@ -533,7 +553,9 @@ def test_jail_backgrounded_pipe_holder_does_not_hang(jail_bin: Path, tmp_path: P
     assert elapsed < 8.0, f"launcher blocked on the backgrounded fd-holder ({elapsed:.1f}s)"
 
 
-def test_jail_strict_seccomp_blocks_modern_mount_api(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_strict_seccomp_blocks_modern_mount_api(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """mount_setattr(2) returns EPERM in a strict jail.
 
     A strict child is userns-root over its own mount namespace; without the modern mount API
@@ -553,8 +575,8 @@ def test_jail_strict_seccomp_blocks_modern_mount_api(jail_bin: Path, tmp_path: P
         "e = ctypes.get_errno()\n"
         "print('EPERM' if (r == -1 and e == 1) else f'REACHED:{e}')\n"
     )
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/usr/bin/python3", "-c", prog),
             isolation="strict",
@@ -566,15 +588,17 @@ def test_jail_strict_seccomp_blocks_modern_mount_api(jail_bin: Path, tmp_path: P
     assert "EPERM" in res.stdout, f"mount_setattr not blocked: {res.stdout!r}"
 
 
-def test_jail_extra_rw_paths_mount_at_their_real_location(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_extra_rw_paths_mount_at_their_real_location(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     # extra_rw (the machine data dir) is writable AT the host abspath, so
     # $AGENT6_MACHINE_DATA_DIR is the same string in every isolation.
     work = tmp_path / "work"
     work.mkdir()
     data = tmp_path / "data"  # outside the workspace mount
     data.mkdir()
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=work,
             argv=("/bin/sh", "-c", f"echo persisted > {data}/out"),
             extra_rw_paths=(data,),
@@ -586,7 +610,7 @@ def test_jail_extra_rw_paths_mount_at_their_real_location(jail_bin: Path, tmp_pa
 
 
 def test_jail_hardened_protect_paths_nested_below_a_top_level_entry(
-    jail_bin: Path, tmp_path: Path
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
     """A protect path nested under a top-level entry is carved out of that entry's RW grant.
 
@@ -615,8 +639,8 @@ def test_jail_hardened_protect_paths_nested_below_a_top_level_entry(
     )
 
     try:
-        res = run_in_jail(
-            JailPolicy(
+        res = jail.run_in_jail(
+            kinds.JailPolicy(
                 cwd=ws,
                 argv=("/usr/bin/python3", "-c", script),
                 isolation="hardened",
@@ -624,7 +648,7 @@ def test_jail_hardened_protect_paths_nested_below_a_top_level_entry(
                 timeout_s=20.0,
             )
         )
-    except JailUnavailableError:
+    except jail.JailUnavailableError:
         pytest.skip("jail unavailable")
 
     assert "DENIED ASM" in res.stdout, f"the machine spec was writable: {res.stdout!r}"
@@ -637,7 +661,7 @@ def test_jail_hardened_protect_paths_nested_below_a_top_level_entry(
 
 
 def test_jail_hardened_protect_path_symlink_cannot_be_written_through(
-    jail_bin: Path, tmp_path: Path
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
     """A symlink resolving at or below a protect path opens no write channel to the inode.
 
@@ -667,8 +691,8 @@ def test_jail_hardened_protect_path_symlink_cannot_be_written_through(
         "        print('DENIED', tag)\n"
     )
     try:
-        res = run_in_jail(
-            JailPolicy(
+        res = jail.run_in_jail(
+            kinds.JailPolicy(
                 cwd=ws,
                 argv=("/usr/bin/python3", "-c", script),
                 isolation="hardened",
@@ -676,7 +700,7 @@ def test_jail_hardened_protect_path_symlink_cannot_be_written_through(
                 timeout_s=20.0,
             )
         )
-    except JailUnavailableError:
+    except jail.JailUnavailableError:
         pytest.skip("jail unavailable")
 
     assert "DENIED STEP" in res.stdout, f"protected file writable directly: {res.stdout!r}"
@@ -685,7 +709,9 @@ def test_jail_hardened_protect_path_symlink_cannot_be_written_through(
     assert step.read_text(encoding="utf-8").startswith("print('original')")
 
 
-def test_hardened_protects_git_from_the_filter_escape(jail_bin: Path, tmp_path: Path) -> None:
+def test_hardened_protects_git_from_the_filter_escape(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """`.git` is unwritable under hardened too, not just strict.
 
     Writable, a jailed command could plant a `filter.<n>.clean` in .git/config plus a
@@ -696,8 +722,8 @@ def test_hardened_protects_git_from_the_filter_escape(jail_bin: Path, tmp_path: 
     git_dir = tmp_path / ".git"
     git_dir.mkdir()
     (git_dir / "config").write_text("[core]\n\trepositoryformatversion = 0\n", encoding="utf-8")
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=(
                 "/bin/sh",
@@ -715,7 +741,7 @@ def test_hardened_protects_git_from_the_filter_escape(jail_bin: Path, tmp_path: 
 
 @pytest.mark.parametrize("isolation", ["strict", "hardened"])
 def test_no_command_leaves_a_process_running(
-    jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
     """A command must not outlive its own call ("no persistence after the run").
 
@@ -732,8 +758,8 @@ def test_no_command_leaves_a_process_running(
     up = tmp_path / "up"
     # Workspace-relative: strict's private /tmp tmpfs has none of the host's dirs.
     daemon = "echo up > up; for i in 1 2 3 4 5 6; do echo x >> beat; sleep 1; done"
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=(
                 "/bin/sh",
@@ -753,7 +779,9 @@ def test_no_command_leaves_a_process_running(
     assert later == at_return, f"{isolation}: a process survived the command ({later!r})"
 
 
-def test_a_hostile_process_name_cannot_break_the_sweep(jail_bin: Path, tmp_path: Path) -> None:
+def test_a_hostile_process_name_cannot_break_the_sweep(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """A process whose comm is not valid UTF-8 does not break the escapee sweep.
 
     `/proc/<pid>/stat` carries comm verbatim, and the scan reads every pid on the host, so
@@ -763,12 +791,14 @@ def test_a_hostile_process_name_cannot_break_the_sweep(jail_bin: Path, tmp_path:
     proc = subprocess.Popen([sys.executable, "-c", code])
     try:
         deadline = time.monotonic() + 5.0
-        while b"\xff" not in Path(f"/proc/{proc.pid}/comm").read_bytes():
+        while b"\xff" not in pathlib.Path(f"/proc/{proc.pid}/comm").read_bytes():
             if time.monotonic() > deadline:
                 pytest.skip("child never renamed itself")
             time.sleep(0.05)
-        res = run_in_jail(
-            JailPolicy(cwd=tmp_path, argv=("/bin/true",), isolation="hardened", timeout_s=10.0)
+        res = jail.run_in_jail(
+            kinds.JailPolicy(
+                cwd=tmp_path, argv=("/bin/true",), isolation="hardened", timeout_s=10.0
+            )
         )
         assert res.returncode == 0
     finally:
@@ -778,7 +808,7 @@ def test_a_hostile_process_name_cannot_break_the_sweep(jail_bin: Path, tmp_path:
 
 @pytest.mark.parametrize("isolation", ["strict", "hardened"])
 def test_a_jailed_command_cannot_set_the_setuid_bit(
-    jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
     """A chmod of a setuid or setgid bit is refused in the jail.
 
@@ -788,8 +818,8 @@ def test_a_jailed_command_cannot_set_the_setuid_bit(
     host.
     """
     target = tmp_path / "x"
-    run_in_jail(
-        JailPolicy(
+    jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/bin/sh", "-c", "cp /bin/sh x && chmod 4755 x"),
             isolation=isolation,
@@ -801,14 +831,16 @@ def test_a_jailed_command_cannot_set_the_setuid_bit(
     assert not target.stat().st_mode & stat.S_ISGID
 
 
-def test_the_strict_jail_names_its_own_uts_namespace(jail_bin: Path, tmp_path: Path) -> None:
+def test_the_strict_jail_names_its_own_uts_namespace(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """The jail has its own hostname.
 
     Unsharing CLONE_NEWUTS inherits the host's name, which would put the operator's machine
     (on a cloud box, its project too) into every jailed command and the transcript.
     """
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("python3", "-c", "import os; print(os.uname().nodename)"),
             isolation="strict",
@@ -820,7 +852,7 @@ def test_the_strict_jail_names_its_own_uts_namespace(jail_bin: Path, tmp_path: P
 
 @pytest.mark.parametrize("isolation", ["strict", "hardened"])
 def test_the_setuid_block_covers_the_create_family(
-    jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
     """creat(2), mknod(2) and open with O_CREAT or O_TMPFILE refuse a setid mode too.
 
@@ -845,8 +877,10 @@ def test_the_setuid_block_covers_the_create_family(
         "print('plain_mknod', t(lambda: os.mknod('m', stat.S_IFREG | 0o644, 0)))\n"
         "print('fifo', t(lambda: os.mkfifo('f')))\n"
     )
-    res = run_in_jail(
-        JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation=isolation, timeout_s=20.0)
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
+            cwd=tmp_path, argv=("python3", "-c", probe), isolation=isolation, timeout_s=20.0
+        )
     )
     got = dict(line.split() for line in res.stdout.split("\n") if line.strip())
     assert got == {
@@ -867,7 +901,7 @@ def test_the_setuid_block_covers_the_create_family(
 
 @pytest.mark.parametrize("isolation", ["strict", "hardened"])
 def test_the_setuid_block_covers_fchmodat2(
-    jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
     """The same threat via fchmodat2, the syscall that superseded fchmodat.
 
@@ -883,8 +917,8 @@ def test_the_setuid_block_covers_fchmodat2(
         "libc.syscall(ctypes.c_long(452), ctypes.c_int(-100), b'x',"
         " ctypes.c_uint(0o4755), ctypes.c_int(0))\n"
     )
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("python3", "-c", probe),
             isolation=isolation,
@@ -900,11 +934,11 @@ def test_the_setuid_block_covers_fchmodat2(
 
 @pytest.mark.parametrize("isolation", ["strict", "hardened"])
 def test_ordinary_chmod_still_works(
-    jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
     """Only the setid bits are refused; denying chmod outright would break builds and installers."""
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/bin/sh", "-c", "touch a && chmod 640 a && stat -c %a a"),
             isolation=isolation,
@@ -916,7 +950,7 @@ def test_ordinary_chmod_still_works(
 
 
 def test_jail_hidden_paths_mask_secrets_under_a_broad_grant(
-    jail_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The agent6-private dirs never enter the jail, even under a read grant of the home dir.
 
@@ -943,8 +977,8 @@ def test_jail_hidden_paths_mask_secrets_under_a_broad_grant(
         f"cat {cfg_dir}/secrets.toml 2>&1; "
         f"cat {data}/journal.txt && echo j2 > {data}/journal.txt && echo WROTE"
     )
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=ws,
             argv=("/bin/sh", "-c", script),
             extra_ro_paths=(home,),
@@ -959,7 +993,7 @@ def test_jail_hidden_paths_mask_secrets_under_a_broad_grant(
 
 
 def test_jail_hidden_paths_cover_the_workspace_alias(
-    jail_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With cwd = $HOME, the mask covers the /workspace alias too: no second door."""
     cfg_dir = tmp_path / ".config" / "agent6"
@@ -968,8 +1002,8 @@ def test_jail_hidden_paths_cover_the_workspace_alias(
     (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
 
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/bin/sh", "-c", "cat readme.txt; cat .config/agent6/secrets.toml 2>&1"),
             timeout_s=10.0,
@@ -979,7 +1013,9 @@ def test_jail_hidden_paths_cover_the_workspace_alias(
     assert "SECRET" not in res.stdout
 
 
-def test_jail_operator_hide_paths_mask_a_file(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_operator_hide_paths_mask_a_file(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """A [sandbox].hide_paths file inside the workspace reads empty in the jail.
 
     Its siblings stay readable and the host copy is intact.
@@ -987,8 +1023,8 @@ def test_jail_operator_hide_paths_mask_a_file(jail_bin: Path, tmp_path: Path) ->
     private = tmp_path / "cred.txt"
     private.write_text("token\n", encoding="utf-8")
     (tmp_path / "ok.txt").write_text("fine\n", encoding="utf-8")
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/bin/sh", "-c", "cat ok.txt; cat cred.txt; echo rc=$?"),
             hide_paths=(private,),
@@ -1000,33 +1036,37 @@ def test_jail_operator_hide_paths_mask_a_file(jail_bin: Path, tmp_path: Path) ->
     assert private.read_text(encoding="utf-8") == "token\n"
 
 
-def test_jail_home_exists_in_the_private_tmpfs(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_home_exists_in_the_private_tmpfs(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     # strict's default HOME is /tmp/agent6-home; the launcher creates it in the
     # fresh tmpfs, so `cd ~` and a toolchain's first write under it work.
     try:
-        res = run_in_jail(
-            JailPolicy(
+        res = jail.run_in_jail(
+            kinds.JailPolicy(
                 cwd=tmp_path,
                 argv=("/bin/sh", "-c", 'test -d "$HOME" && cd ~ && touch .probe'),
                 env=(("HOME", "/tmp/agent6-home"),),
                 timeout_s=10.0,
             )
         )
-    except JailUnavailableError:
+    except jail.JailUnavailableError:
         pytest.skip("jail unavailable")
     assert res.returncode == 0, (res.stdout, res.stderr)
 
 
-def test_jail_fork_worktree_reads_the_repository_git(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_fork_worktree_reads_the_repository_git(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """A fork's execution can run git in its linked worktree under strict, read-only on the git dir.
 
     The worktree's `.git` is a pointer into the repository's; the policy grants the git dir
     agent6 recorded for the worktree read-only, and a policy without the grant cannot find
     the repository.
     """
+    from agent6 import git_ops
     from agent6.config import Config
-    from agent6.git_ops import add_worktree
-    from agent6.tools.policy import jail_policy
+    from agent6.tools import policy as tools_policy
 
     repo = tmp_path / "repo"
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
@@ -1034,14 +1074,14 @@ def test_jail_fork_worktree_reads_the_repository_git(jail_bin: Path, tmp_path: P
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "init"], check=True)
     wt = tmp_path / "wt"
-    add_worktree(repo, wt, "HEAD")
+    git_ops.add_worktree(repo, wt, "HEAD")
 
     def jailed(*argv: str, granted: bool) -> tuple[int, str, str]:
         # A git command needs no network; the run's own policy would attach
         # the session network, which this test has no run to take it from.
         # `granted=False` is a raw policy the builder never shaped.
         policy = (
-            jail_policy(
+            tools_policy.jail_policy(
                 wt,
                 Config(),
                 "strict",
@@ -1051,11 +1091,11 @@ def test_jail_fork_worktree_reads_the_repository_git(jail_bin: Path, tmp_path: P
                 worktree_git_dir=(repo / ".git").resolve(),
             )
             if granted
-            else JailPolicy(cwd=wt, argv=argv, timeout_s=30.0)
+            else kinds.JailPolicy(cwd=wt, argv=argv, timeout_s=30.0)
         )
         try:
-            res = run_in_jail(policy)
-        except JailUnavailableError:
+            res = jail.run_in_jail(policy)
+        except jail.JailUnavailableError:
             pytest.skip("jail unavailable")
         return res.returncode, res.stdout.strip(), res.stderr.strip()
 
@@ -1069,7 +1109,9 @@ def test_jail_fork_worktree_reads_the_repository_git(jail_bin: Path, tmp_path: P
     assert rc != 0 and "not a git repository" in err
 
 
-def test_strict_runs_the_command_as_the_operators_own_uid(jail_bin: Path, tmp_path: Path) -> None:
+def test_strict_runs_the_command_as_the_operators_own_uid(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """The user namespace maps the operator's uid to itself, so `id -u` reads the same in the jail.
 
     Mapped to 0, a command reads as root: `tar` restores archive owners, the single-uid map
@@ -1078,8 +1120,8 @@ def test_strict_runs_the_command_as_the_operators_own_uid(jail_bin: Path, tmp_pa
     (tmp_path / "f.txt").write_text("hi", encoding="utf-8")
     subprocess.run(["tar", "-cf", "a.tar", "f.txt"], cwd=tmp_path, check=True)
     (tmp_path / "out").mkdir()
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/bin/sh", "-c", "id -u && tar -xf a.tar -C out"),
             isolation="strict",

@@ -4,30 +4,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
+from agent6 import errors
 from agent6 import paths as paths_mod
 from agent6.config import (
     AnthropicProviderEntry,
     ConfigError,
     OpenAIProviderEntry,
+    layer,
     load_config,
+    write,
 )
-from agent6.config.layer import (
-    load_effective,
-    materialize,
-)
-from agent6.config.write import set_config_value, unset_config_value
-from agent6.errors import OperatorError
-from agent6.paths import repo_config_path
-from agent6.viewmodel.config_view import (
-    ConfigSetting,
-    ConfigView,
-    build_config_view,
-    render_show,
-)
+from agent6.viewmodel import config_view
 
 _GLOBAL = """\
 [providers.anthropic]
@@ -51,21 +42,21 @@ run_commands = "yes"
 
 
 @pytest.fixture
-def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(_GLOBAL, encoding="utf-8")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True)
-    rcfg = repo_config_path(repo_root)  # out of the workspace, under the state base
+    rcfg = paths_mod.repo_config_path(repo_root)  # out of the workspace, under the state base
     rcfg.parent.mkdir(parents=True, exist_ok=True)
     rcfg.write_text(_REPO, encoding="utf-8")
     return repo_root
 
 
-def test_layering_merges_global_and_repo(repo: Path) -> None:
-    eff = load_effective(repo)
+def test_layering_merges_global_and_repo(repo: pathlib.Path) -> None:
+    eff = layer.load_effective(repo)
     cfg = eff.config
     # From global:
     assert cfg.models.worker is not None
@@ -76,22 +67,22 @@ def test_layering_merges_global_and_repo(repo: Path) -> None:
     assert cfg.sandbox.run_commands == "yes"
 
 
-def test_an_unknown_key_points_at_config_fix(repo: Path) -> None:
+def test_an_unknown_key_points_at_config_fix(repo: pathlib.Path) -> None:
     """An unknown key points at `config fix`, which drops it.
 
     A bad value still points at `config set`.
     """
-    gcfg = Path(repo).parent / "g" / "agent6" / "config.toml"
+    gcfg = pathlib.Path(repo).parent / "g" / "agent6" / "config.toml"
     gcfg.write_text('[sandbox]\nnonexistent_key = 1\nisolation = "srtict"\n', encoding="utf-8")
     with pytest.raises(ConfigError) as exc:
-        load_effective(repo)
+        layer.load_effective(repo)
     text = str(exc.value)
     assert "sandbox.nonexistent_key" in text and "fix: agent6 config fix" in text
     assert "fix: agent6 config set sandbox.isolation <value>" in text
 
 
-def test_source_map_attribution(repo: Path) -> None:
-    eff = load_effective(repo)
+def test_source_map_attribution(repo: pathlib.Path) -> None:
+    eff = layer.load_effective(repo)
     assert eff.sources["models.worker.model"] == "global"
     assert eff.sources["harness.verify_command"] == "repo"
     assert eff.sources["sandbox.run_commands"] == "repo"  # repo wins
@@ -99,32 +90,32 @@ def test_source_map_attribution(repo: Path) -> None:
     assert eff.sources["git.run_repo_hooks"] == "default"
 
 
-def test_render_show_marks_overrides(repo: Path) -> None:
-    eff = load_effective(repo)
-    text = render_show(eff)
+def test_render_show_marks_overrides(repo: pathlib.Path) -> None:
+    eff = layer.load_effective(repo)
+    text = config_view.render_show(eff)
     assert "global" in text and "repo" in text
     assert "* = set by a config layer (see the source column)" in text
     # A defaulted field is unmarked; an overridden one is marked.
     assert "* models.worker.model" in text
 
 
-def test_render_show_json(repo: Path) -> None:
-    eff = load_effective(repo)
+def test_render_show_json(repo: pathlib.Path) -> None:
+    eff = layer.load_effective(repo)
     import json
 
-    data = json.loads(render_show(eff, as_json=True))
+    data = json.loads(config_view.render_show(eff, as_json=True))
     assert data["harness.verify_command"]["source"] == "repo"
 
 
 # --- the UI-agnostic config view-model (shared by config show / TUI / web) ---
 
 
-def _by_key(view: ConfigView) -> dict[str, ConfigSetting]:
+def _by_key(view: config_view.ConfigView) -> dict[str, config_view.ConfigSetting]:
     return {s.key: s for s in view.settings}
 
 
-def test_build_config_view_provenance_type_choices(repo: Path) -> None:
-    settings = _by_key(build_config_view(load_effective(repo)))
+def test_build_config_view_provenance_type_choices(repo: pathlib.Path) -> None:
+    settings = _by_key(config_view.build_config_view(layer.load_effective(repo)))
     rc = settings["sandbox.run_commands"]
     assert rc.source == "repo" and rc.modified is True
     # enum field -> a dropdown's worth of choices, typed "choice"
@@ -134,15 +125,17 @@ def test_build_config_view_provenance_type_choices(repo: Path) -> None:
     assert ap.py_type == "bool" and ap.default is False
 
 
-def test_build_config_view_unset_nested_section_is_typed_table(repo: Path) -> None:
+def test_build_config_view_unset_nested_section_is_typed_table(repo: pathlib.Path) -> None:
     """An unset optional nested section reads as py_type "table", never the pydantic class name."""
-    s = _by_key(build_config_view(load_effective(repo)))["models.reviewer"]
+    s = _by_key(config_view.build_config_view(layer.load_effective(repo)))["models.reviewer"]
     assert s.value is None and s.source == "default"
     assert s.py_type == "table"
 
 
-def test_build_config_view_adaptive_resolution(repo: Path) -> None:
-    view = build_config_view(load_effective(repo), resolved={"context.drop_at_chars": 999_999})
+def test_build_config_view_adaptive_resolution(repo: pathlib.Path) -> None:
+    view = config_view.build_config_view(
+        layer.load_effective(repo), resolved={"context.drop_at_chars": 999_999}
+    )
     s = _by_key(view)["context.drop_at_chars"]
     assert s.value is None  # raw: unset -> adaptive
     assert s.effective_value == 999_999
@@ -150,10 +143,10 @@ def test_build_config_view_adaptive_resolution(repo: Path) -> None:
     assert s.modified is False  # an adaptive default is not a user modification
 
 
-def test_render_show_json_is_full_view(repo: Path) -> None:
+def test_render_show_json_is_full_view(repo: pathlib.Path) -> None:
     import json
 
-    data = json.loads(render_show(load_effective(repo), as_json=True))
+    data = json.loads(config_view.render_show(layer.load_effective(repo), as_json=True))
     entry = data["sandbox.run_commands"]
     assert set(entry) >= {
         "value",
@@ -168,8 +161,10 @@ def test_render_show_json_is_full_view(repo: Path) -> None:
     assert entry["type"] == "choice" and "yes" in entry["choices"]
 
 
-def test_render_show_text_marks_adaptive(repo: Path) -> None:
-    text = render_show(load_effective(repo), resolved={"context.drop_at_chars": 471859})
+def test_render_show_text_marks_adaptive(repo: pathlib.Path) -> None:
+    text = config_view.render_show(
+        layer.load_effective(repo), resolved={"context.drop_at_chars": 471859}
+    )
     assert "(adaptive)" in text and "471859" in text
 
 
@@ -177,7 +172,7 @@ def test_render_show_text_marks_adaptive(repo: Path) -> None:
 
 
 def test_config_write_keeps_the_edit_when_another_layer_was_already_invalid(
-    repo: Path, tmp_path: Path
+    repo: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
     """An edit is rolled back only when it broke a valid config.
 
@@ -187,15 +182,13 @@ def test_config_write_keeps_the_edit_when_another_layer_was_already_invalid(
     # A pre-existing, unrelated error in the GLOBAL layer.
     (tmp_path / "g" / "agent6" / "config.toml").write_text('[cli]\ninput = "x"\n', encoding="utf-8")
 
-    err = set_config_value(repo, "sandbox.run_commands", "no", to_repo=True)
+    err = write.set_config_value(repo, "sandbox.run_commands", "no", to_repo=True)
 
     assert err is None, "a pre-existing error elsewhere must not refuse this edit"
-    assert "run_commands" in repo_config_path(repo).read_text(encoding="utf-8")
+    assert "run_commands" in paths_mod.repo_config_path(repo).read_text(encoding="utf-8")
 
 
-def test_a_dynamic_leaf_in_an_unselected_preset_is_readable(repo: Path) -> None:
-    from agent6.config.layer import effective_leaf
-
+def test_a_dynamic_leaf_in_an_unselected_preset_is_readable(repo: pathlib.Path) -> None:
     global_path = repo.parent / "g" / "agent6" / "config.toml"
     global_path.write_text(
         global_path.read_text(encoding="utf-8")
@@ -205,51 +198,53 @@ def test_a_dynamic_leaf_in_an_unselected_preset_is_readable(repo: Path) -> None:
         encoding="utf-8",
     )
 
-    assert effective_leaf(load_effective(repo), "presets.demo.models.reviewer.model") == (
+    assert layer.effective_leaf(
+        layer.load_effective(repo), "presets.demo.models.reviewer.model"
+    ) == (
         "claude-haiku",
         "preset demo (global)",
     )
 
 
-def test_set_then_unset_config_value(repo: Path) -> None:
+def test_set_then_unset_config_value(repo: pathlib.Path) -> None:
     # repo config starts with run_commands="yes"; global has "ask".
-    err = set_config_value(repo, "sandbox.run_commands", "no", to_repo=True)
+    err = write.set_config_value(repo, "sandbox.run_commands", "no", to_repo=True)
     assert err is None
-    eff = load_effective(repo)
+    eff = layer.load_effective(repo)
     assert eff.config.sandbox.run_commands == "no"
     assert eff.sources["sandbox.run_commands"] == "repo"
     # unset removes the repo override -> falls through to the global "ask".
-    res = unset_config_value(repo, "sandbox.run_commands", to_repo=True)
+    res = write.unset_config_value(repo, "sandbox.run_commands", to_repo=True)
     assert res.removed and res.error is None
-    assert load_effective(repo).config.sandbox.run_commands == "ask"
+    assert layer.load_effective(repo).config.sandbox.run_commands == "ask"
 
 
-def test_unset_reports_whether_anything_was_removed(repo: Path) -> None:
+def test_unset_reports_whether_anything_was_removed(repo: pathlib.Path) -> None:
     """`config unset` says "nothing to unset" only when nothing was removed."""
-    res = unset_config_value(repo, "sandbox.run_commands", to_repo=True)
+    res = write.unset_config_value(repo, "sandbox.run_commands", to_repo=True)
     assert res.removed and res.error is None
-    again = unset_config_value(repo, "sandbox.run_commands", to_repo=True)
+    again = write.unset_config_value(repo, "sandbox.run_commands", to_repo=True)
     assert not again.removed and again.error is None
 
 
-def test_unset_refuses_a_shape_the_surgery_cannot_carve(repo: Path) -> None:
+def test_unset_refuses_a_shape_the_surgery_cannot_carve(repo: pathlib.Path) -> None:
     """Unset refuses a dotted top-level key as an OperatorError, never a returned string."""
-    rcfg = repo_config_path(repo)
+    rcfg = paths_mod.repo_config_path(repo)
     before = 'sandbox.run_commands = "yes"\n'
     rcfg.write_text(before, encoding="utf-8")
-    with pytest.raises(OperatorError):
-        unset_config_value(repo, "sandbox.run_commands", to_repo=True)
+    with pytest.raises(errors.OperatorError):
+        write.unset_config_value(repo, "sandbox.run_commands", to_repo=True)
     assert rcfg.read_text(encoding="utf-8") == before
 
 
-def test_set_config_value_invalid_rolls_back(repo: Path) -> None:
-    err = set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True)
+def test_set_config_value_invalid_rolls_back(repo: pathlib.Path) -> None:
+    err = write.set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True)
     assert err is not None  # invalid enum -> rejected
     # the repo file was rolled back to its prior contents (run_commands="yes").
-    assert load_effective(repo).config.sandbox.run_commands == "yes"
+    assert layer.load_effective(repo).config.sandbox.run_commands == "yes"
 
 
-def test_set_config_value_rejects_a_value_masked_by_a_higher_layer(repo: Path) -> None:
+def test_set_config_value_rejects_a_value_masked_by_a_higher_layer(repo: pathlib.Path) -> None:
     """An engine writer rejects a value invalid on its own even when a higher layer masks it.
 
     The repo layer sets sandbox.run_commands="yes", so a bad global enum merges valid; only the
@@ -258,58 +253,63 @@ def test_set_config_value_rejects_a_value_masked_by_a_higher_layer(repo: Path) -
     gpath = repo.parent / "g" / "agent6" / "config.toml"
     before = gpath.read_text(encoding="utf-8")
 
-    err = set_config_value(repo, "sandbox.run_commands", "garbage_not_an_enum", to_repo=False)
+    err = write.set_config_value(repo, "sandbox.run_commands", "garbage_not_an_enum", to_repo=False)
 
     assert err is not None and "sandbox.run_commands" in err
     assert gpath.read_text(encoding="utf-8") == before  # the masked bad value rolled back
-    assert load_effective(repo).config.sandbox.run_commands == "yes"  # repo layer intact
+    assert layer.load_effective(repo).config.sandbox.run_commands == "yes"  # repo layer intact
 
 
-def test_set_config_value_rejects_a_masked_invalid_provider_base_url(repo: Path) -> None:
+def test_set_config_value_rejects_a_masked_invalid_provider_base_url(repo: pathlib.Path) -> None:
     """A provider leaf a @field_validator rejects is caught on a masked write.
 
     The check validates the leaf against the provider model; a bare TypeAdapter of the annotation
     drops the validator.
     """
-    repo_config_path(repo).write_text(
+    paths_mod.repo_config_path(repo).write_text(
         '[providers.x]\napi_format = "openai"\nbase_url = "https://good.example/v1"\n',
         encoding="utf-8",
     )
     gpath = repo.parent / "g" / "agent6" / "config.toml"
     before = gpath.read_text(encoding="utf-8")
 
-    err = set_config_value(repo, "providers.x.base_url", "not a url", to_repo=False)
+    err = write.set_config_value(repo, "providers.x.base_url", "not a url", to_repo=False)
 
     assert err is not None and "base_url" in err
     assert gpath.read_text(encoding="utf-8") == before  # the masked bad base_url rolled back
 
 
-def test_written_value_error_catches_an_invalid_container_element(tmp_path: Path) -> None:
+def test_written_value_error_catches_an_invalid_container_element(tmp_path: pathlib.Path) -> None:
     """An error under the written key (`sandbox.fetch_hosts.0`) is the written value's own."""
-    from agent6.config.write import written_value_error
+    assert write.written_value_error("sandbox.fetch_hosts", [5], repo_root=tmp_path) is not None
+    assert (
+        write.written_value_error("providers.x.token_command", [1], repo_root=tmp_path) is not None
+    )
+    assert (
+        write.written_value_error("sandbox.fetch_hosts", ["ok.example"], repo_root=tmp_path) is None
+    )
+    assert (
+        write.written_value_error("providers.x.token_command", ["gcloud"], repo_root=tmp_path)
+        is None
+    )
 
-    assert written_value_error("sandbox.fetch_hosts", [5], repo_root=tmp_path) is not None
-    assert written_value_error("providers.x.token_command", [1], repo_root=tmp_path) is not None
-    assert written_value_error("sandbox.fetch_hosts", ["ok.example"], repo_root=tmp_path) is None
-    assert written_value_error("providers.x.token_command", ["gcloud"], repo_root=tmp_path) is None
 
-
-def test_a_scalar_written_to_a_list_leaf_names_both_ways_to_write_one(tmp_path: Path) -> None:
+def test_a_scalar_written_to_a_list_leaf_names_both_ways_to_write_one(
+    tmp_path: pathlib.Path,
+) -> None:
     """A scalar written to a list leaf names the array form and `config add`."""
-    from agent6.config.write import written_value_error
-
-    err = written_value_error("harness.verify_command", "python -m pytest", repo_root=tmp_path)
+    err = write.written_value_error(
+        "harness.verify_command", "python -m pytest", repo_root=tmp_path
+    )
     assert err is not None
     assert "expected a list" in err
     assert "config add harness.verify_command" in err
 
 
 def test_setting_a_section_keeps_its_other_leaves_and_comments(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """`config set context '{ ... }'` keeps the table's other leaves and comments."""
-    from agent6.config.write import set_config_value
-
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
@@ -320,7 +320,7 @@ def test_setting_a_section_keeps_its_other_leaves_and_comments(
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
 
-    err = set_config_value(
+    err = write.set_config_value(
         repo_root, "context", "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"
     )
 
@@ -334,11 +334,9 @@ def test_setting_a_section_keeps_its_other_leaves_and_comments(
 
 
 def test_a_dict_typed_leaf_is_replaced_whole(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """`providers.<name>.extra_body` is one value, replaced whole."""
-    from agent6.config.write import set_config_value
-
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
@@ -352,7 +350,7 @@ def test_a_dict_typed_leaf_is_replaced_whole(
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
 
-    err = set_config_value(repo_root, "providers.openrouter.extra_body", '{ order = ["x"] }')
+    err = write.set_config_value(repo_root, "providers.openrouter.extra_body", '{ order = ["x"] }')
 
     assert err is None, err
     text = (gdir / "agent6" / "config.toml").read_text(encoding="utf-8")
@@ -362,11 +360,9 @@ def test_a_dict_typed_leaf_is_replaced_whole(
 
 
 def test_a_write_that_breaks_the_toml_is_rolled_back(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A write that breaks the TOML is rolled back even though the revalidation read raises."""
-    from agent6.config.write import set_config_value
-
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     before = '[sandbox]\nnetwork = "none"\n'
@@ -375,48 +371,44 @@ def test_a_write_that_breaks_the_toml_is_rolled_back(
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
 
-    err = set_config_value(repo_root, "providers.openai.extra_headers.X Title", "b")
+    err = write.set_config_value(repo_root, "providers.openai.extra_headers.X Title", "b")
 
     assert err is not None and "invalid TOML" in err
     assert (gdir / "agent6" / "config.toml").read_text(encoding="utf-8") == before
 
 
-def test_written_value_error_catches_a_section_wide_rule(tmp_path: Path) -> None:
+def test_written_value_error_catches_a_section_wide_rule(tmp_path: pathlib.Path) -> None:
     """A section-wide rule reported at the parent of the written key is the write's own error.
 
     The standalone dict holds only the written key, so a complaint about its section can only be
     about this write.
     """
-    from agent6.config.write import written_value_error
-
     for key, value in (
         ("context.drop_at_chars", 200_000),  # pair: both or neither
         ("git.auto_stash_pop", True),  # needs auto_stash
         ("web.host", "0.0.0.0"),  # non-loopback needs the opt-in
     ):
-        assert written_value_error(key, value, repo_root=tmp_path) is not None, (
+        assert write.written_value_error(key, value, repo_root=tmp_path) is not None, (
             f"{key} slipped through"
         )
     # A provider filled in over several sets still validates field by field.
     assert (
-        written_value_error("providers.x.base_url", "https://api.example", repo_root=tmp_path)
+        write.written_value_error("providers.x.base_url", "https://api.example", repo_root=tmp_path)
         is None
     )
 
 
-def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
+def test_set_config_table_rejects_a_masked_invalid_leaf(repo: pathlib.Path) -> None:
     """set_config_table validates each leaf, not the table dict as one."""
-    from agent6.config.write import set_config_table
-
     # The repo layer masks models.worker.effort, so only the per-leaf check catches the bad value.
-    repo_config_path(repo).write_text(
+    paths_mod.repo_config_path(repo).write_text(
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude"\nthinking = "off"\n',
         encoding="utf-8",
     )
     gpath = repo.parent / "g" / "agent6" / "config.toml"
     before = gpath.read_text(encoding="utf-8")
 
-    err = set_config_table(
+    err = write.set_config_table(
         repo,
         "models.worker",
         {"provider": "anthropic", "model": "claude", "effort": "garbage_level"},
@@ -427,19 +419,17 @@ def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
     assert gpath.read_text(encoding="utf-8") == before  # the masked bad leaf rolled back
 
 
-def test_flag_layer_wins(repo: Path, tmp_path: Path) -> None:
+def test_flag_layer_wins(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
     flag = tmp_path / "flag.toml"
     flag.write_text('[sandbox]\nrun_commands = "no"\n', encoding="utf-8")
-    eff = load_effective(repo, flag)
+    eff = layer.load_effective(repo, flag)
     assert eff.config.sandbox.run_commands == "no"
     assert eff.sources["sandbox.run_commands"] == "flag"
 
 
-def test_overlay_is_highest_layer(repo: Path) -> None:
-    from agent6.config.layer import load_effective_with_overlay
-
+def test_overlay_is_highest_layer(repo: pathlib.Path) -> None:
     overlay = {"sandbox": {"run_commands": "no"}, "review": {"trigger": "periodic"}}
-    eff = load_effective_with_overlay(repo, overlay)
+    eff = layer.load_effective_with_overlay(repo, overlay)
     # Overlay beats the repo value.
     assert eff.config.sandbox.run_commands == "no"
     assert eff.sources["sandbox.run_commands"] == "machine"
@@ -450,22 +440,18 @@ def test_overlay_is_highest_layer(repo: Path) -> None:
     assert eff.config.harness.verify_command == ("pytest", "-q")
 
 
-def test_empty_overlay_matches_load_effective(repo: Path) -> None:
-    from agent6.config.layer import load_effective_with_overlay
-
-    eff = load_effective_with_overlay(repo, {})
+def test_empty_overlay_matches_load_effective(repo: pathlib.Path) -> None:
+    eff = layer.load_effective_with_overlay(repo, {})
     assert eff.config.sandbox.run_commands == "yes"
 
 
-def test_a_bad_leaf_from_a_machine_overlay_names_its_layer(repo: Path) -> None:
+def test_a_bad_leaf_from_a_machine_overlay_names_its_layer(repo: pathlib.Path) -> None:
     """A validator error names the layer holding the bad value.
 
     A machine overlay with no file path is named too.
     """
-    from agent6.config.layer import load_effective_with_overlay
-
     with pytest.raises(ConfigError) as exc:
-        load_effective_with_overlay(repo, {"sandbox": {"isolation": "bogus"}})
+        layer.load_effective_with_overlay(repo, {"sandbox": {"isolation": "bogus"}})
     text = str(exc.value)
     assert "sandbox.isolation" in text
     assert "machine" in text.split("sandbox.isolation", 1)[1]
@@ -473,43 +459,36 @@ def test_a_bad_leaf_from_a_machine_overlay_names_its_layer(repo: Path) -> None:
 
 def test_deep_merge_replaces_provider_when_kind_changes() -> None:
     # A lower layer's kind-specific keys do not survive a kind change.
-    from agent6.config.layer import _deep_merge  # pyright: ignore[reportPrivateUsage]
 
     base = {"providers": {"p": {"api_format": "anthropic", "api_key_env": "X"}}}
     override = {"providers": {"p": {"api_format": "openai", "base_url": "Y"}}}
-    merged = _deep_merge(base, override)
+    merged = layer._deep_merge(base, override)
     assert merged["providers"]["p"] == {"api_format": "openai", "base_url": "Y"}
 
 
 def test_deep_merge_still_merges_when_kind_unchanged() -> None:
-    from agent6.config.layer import _deep_merge  # pyright: ignore[reportPrivateUsage]
-
     base = {"providers": {"p": {"api_format": "openai", "base_url": "Y", "api_key_env": "X"}}}
     override = {"providers": {"p": {"base_url": "Z"}}}
-    merged = _deep_merge(base, override)
+    merged = layer._deep_merge(base, override)
     assert merged["providers"]["p"] == {"api_format": "openai", "base_url": "Z", "api_key_env": "X"}
 
 
-def test_fix_finds_a_preset_definition_that_is_not_a_table(repo: Path) -> None:
-    from agent6.config.layer import find_invalid_entries
-
+def test_fix_finds_a_preset_definition_that_is_not_a_table(repo: pathlib.Path) -> None:
     global_path = repo.parent / "g" / "agent6" / "config.toml"
     global_path.write_text('[presets]\ndemo = "quick"\n', encoding="utf-8")
 
-    diagnosis = find_invalid_entries(repo)
+    diagnosis = layer.find_invalid_entries(repo)
 
     assert [(entry.leaf, entry.value, entry.path) for entry in diagnosis.removable] == [
         ("presets.demo", "quick", global_path)
     ]
 
 
-def test_fix_finds_an_unknown_table_in_an_unselected_preset(repo: Path) -> None:
-    from agent6.config.layer import find_invalid_entries
-
+def test_fix_finds_an_unknown_table_in_an_unselected_preset(repo: pathlib.Path) -> None:
     global_path = repo.parent / "g" / "agent6" / "config.toml"
     global_path.write_text('[presets.demo.cli]\ninput = "task"\n', encoding="utf-8")
 
-    diagnosis = find_invalid_entries(repo)
+    diagnosis = layer.find_invalid_entries(repo)
 
     assert [
         (entry.leaf, entry.layer, entry.path, entry.is_table) for entry in diagnosis.removable
@@ -517,23 +496,21 @@ def test_fix_finds_an_unknown_table_in_an_unselected_preset(repo: Path) -> None:
 
 
 def test_fix_finds_a_stale_value_masked_by_the_selected_preset(
-    repo: Path,
+    repo: pathlib.Path,
 ) -> None:
-    from agent6.config.layer import find_invalid_entries
-
     global_path = repo.parent / "g" / "agent6" / "config.toml"
     global_path.write_text('preset = "quick"\n\n[review]\ntrigger = "banana"\n', encoding="utf-8")
 
-    diagnosis = find_invalid_entries(repo)
+    diagnosis = layer.find_invalid_entries(repo)
 
     assert [(entry.leaf, entry.layer, entry.path) for entry in diagnosis.removable] == [
         ("review.trigger", "global", global_path)
     ]
 
 
-def test_materialize_roundtrips(repo: Path, tmp_path: Path) -> None:
-    eff = load_effective(repo)
-    text = materialize(eff.config)
+def test_materialize_roundtrips(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    eff = layer.load_effective(repo)
+    text = layer.materialize(eff.config)
     out = tmp_path / "full.toml"
     out.write_text(text, encoding="utf-8")
     # The materialized file must be a complete, valid config on its own.
@@ -543,7 +520,9 @@ def test_materialize_roundtrips(repo: Path, tmp_path: Path) -> None:
     assert reloaded.providers["anthropic"].api_format == "anthropic"
 
 
-def test_materialize_roundtrips_nested_objects_in_arrays(repo: Path, tmp_path: Path) -> None:
+def test_materialize_roundtrips_nested_objects_in_arrays(
+    repo: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """Every JSON-shaped extra_body value survives materialize then parse.
 
     Dicts inside arrays included.
@@ -559,9 +538,9 @@ def test_materialize_roundtrips_nested_objects_in_arrays(repo: Path, tmp_path: P
         + "mixed = [1, {flag = true}]\n",
         encoding="utf-8",
     )
-    eff = load_effective(repo)
+    eff = layer.load_effective(repo)
     out = tmp_path / "full.toml"
-    out.write_text(materialize(eff.config), encoding="utf-8")
+    out.write_text(layer.materialize(eff.config), encoding="utf-8")
     reloaded = load_config(out)
     gw = reloaded.providers["gw"]
     assert isinstance(gw, OpenAIProviderEntry)
@@ -573,12 +552,12 @@ def test_materialize_roundtrips_nested_objects_in_arrays(repo: Path, tmp_path: P
     assert body["mixed"] == [1, {"flag": True}]
 
 
-def test_missing_flag_file_errors(repo: Path, tmp_path: Path) -> None:
+def test_missing_flag_file_errors(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
-        load_effective(repo, tmp_path / "does-not-exist.toml")
+        layer.load_effective(repo, tmp_path / "does-not-exist.toml")
 
 
-def test_provenance_survives_a_format_changing_provider_replace(repo: Path) -> None:
+def test_provenance_survives_a_format_changing_provider_replace(repo: pathlib.Path) -> None:
     """Provenance is stamped in the same walk as the merge.
 
     _deep_merge replaces a provider entry whole when api_format flips between layers, so a separate
@@ -593,12 +572,12 @@ def test_provenance_survives_a_format_changing_provider_replace(repo: Path) -> N
         + "http_timeout_s = 30.0\n",
         encoding="utf-8",
     )
-    rpath = repo_config_path(repo)
+    rpath = paths_mod.repo_config_path(repo)
     rpath.write_text(
         rpath.read_text(encoding="utf-8") + '\n[providers.foo]\napi_format = "anthropic"\n',
         encoding="utf-8",
     )
-    eff = load_effective(repo)
+    eff = layer.load_effective(repo)
     foo = eff.config.providers["foo"]
     assert foo.api_format == "anthropic"
     assert foo.base_url == "https://api.anthropic.com/v1"  # refilled default
@@ -608,25 +587,24 @@ def test_provenance_survives_a_format_changing_provider_replace(repo: Path) -> N
     assert eff.sources["providers.foo.http_timeout_s"] == "default"
 
 
-def test_profile_key_is_rejected_in_flag_and_machine_layers(repo: Path, tmp_path: Path) -> None:
+def test_profile_key_is_rejected_in_flag_and_machine_layers(
+    repo: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """The `preset` key is rejected in a --config file and a machine overlay.
 
     Neither layer can select a preset.
     """
-    from agent6.config.layer import load_effective_with_overlay
-
     explicit = tmp_path / "ci.toml"
     explicit.write_text('preset = "ultra"\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="preset"):
-        load_effective(repo, explicit)
+        layer.load_effective(repo, explicit)
     with pytest.raises(ConfigError, match="preset"):
-        load_effective_with_overlay(repo, {"preset": "ultra"})
+        layer.load_effective_with_overlay(repo, {"preset": "ultra"})
 
 
-def test_materialize_quotes_non_bare_keys(repo: Path, tmp_path: Path) -> None:
+def test_materialize_quotes_non_bare_keys(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """Materialize quotes a provider name with a space or dot, so the header parses."""
     from agent6.config import Config, load_config
-    from agent6.config.layer import materialize
 
     cfg = Config.model_validate(
         {
@@ -638,27 +616,28 @@ def test_materialize_quotes_non_bare_keys(repo: Path, tmp_path: Path) -> None:
         }
     )
     out = tmp_path / "materialized.toml"
-    out.write_text(materialize(cfg), encoding="utf-8")
+    out.write_text(layer.materialize(cfg), encoding="utf-8")
     reloaded = load_config(out)
     assert "my provider" in reloaded.providers
     assert "openrouter.free" in reloaded.providers  # not silently re-nested
     assert reloaded.skills.state == {"org.some.skill": "enabled"}
 
 
-def test_materialize_escapes_control_chars_in_values(repo: Path, tmp_path: Path) -> None:
+def test_materialize_escapes_control_chars_in_values(
+    repo: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """A control char in a config string value serializes to valid TOML."""
     from agent6.config import Config, load_config
-    from agent6.config.layer import materialize
 
     cfg = Config.model_validate({"harness": {"verify_command": ["echo", "a\x01b\nc"]}})
     out = tmp_path / "materialized.toml"
-    out.write_text(materialize(cfg), encoding="utf-8")
+    out.write_text(layer.materialize(cfg), encoding="utf-8")
     reloaded = load_config(out)
     assert list(reloaded.harness.verify_command) == ["echo", "a\x01b\nc"]
 
 
 def test_concurrent_rollback_does_not_erase_a_valid_write(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The whole write, revalidate and rollback cycle holds locked_file.
 
@@ -674,7 +653,7 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     real_load = write_mod.load_effective
     calls = {"n": 0}
 
-    def gated_load(root: Path, flag: Path | None) -> object:
+    def gated_load(root: pathlib.Path, flag: pathlib.Path | None) -> object:
         calls["n"] += 1
         if calls["n"] == 1:  # A's revalidate: hold the transaction open
             a_in_revalidate.set()
@@ -686,12 +665,12 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     results: dict[str, str | None] = {}
 
     def writer_a() -> None:
-        results["a"] = set_config_value(repo, "sandbox.run_commands", "bogus", to_repo=True)
+        results["a"] = write.set_config_value(repo, "sandbox.run_commands", "bogus", to_repo=True)
 
     def writer_b() -> None:
         a_in_revalidate.wait(timeout=5)
         b_attempted.set()
-        results["b"] = set_config_value(repo, "git.dirty_tree", "stash", to_repo=True)
+        results["b"] = write.set_config_value(repo, "git.dirty_tree", "stash", to_repo=True)
 
     ta = threading.Thread(target=writer_a, daemon=True)
     tb = threading.Thread(target=writer_b, daemon=True)
@@ -701,13 +680,13 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     tb.join(timeout=10)
     assert results["a"] is not None  # the invalid write was rejected
     assert results["b"] is None  # ...without taking B's valid write down with it
-    eff = load_effective(repo)
+    eff = layer.load_effective(repo)
     assert eff.config.git.dirty_tree == "stash"  # B's update survived A's rollback
     assert eff.config.sandbox.run_commands == "yes"  # A rolled back to the prior value
 
 
 def test_prepare_write_target_hands_back_the_created_state_base(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A sudo config write on a fresh machine hands back the whole created state base.
 
@@ -731,13 +710,13 @@ def test_prepare_write_target_hands_back_the_created_state_base(
     monkeypatch.setattr(os, "geteuid", lambda: 0)
     monkeypatch.setenv("SUDO_UID", "1234")
     monkeypatch.setenv("SUDO_GID", "1234")
-    chowned: list[Path] = []
+    chowned: list[pathlib.Path] = []
 
     def _record(*a: object) -> None:
-        chowned.append(Path(str(a[0])))
+        chowned.append(pathlib.Path(str(a[0])))
 
     def _record_at(target: object, _uid: int, _gid: int, **kw: object) -> None:
-        chowned.append(Path(f"/proc/self/fd/{kw['dir_fd']}").readlink() / str(target))
+        chowned.append(pathlib.Path(f"/proc/self/fd/{kw['dir_fd']}").readlink() / str(target))
 
     monkeypatch.setattr(os, "lchown", _record)
     monkeypatch.setattr(os, "chown", _record_at)
@@ -748,7 +727,7 @@ def test_prepare_write_target_hands_back_the_created_state_base(
 
 
 def test_config_write_hands_the_dir_over_before_writing(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Under sudo the config dir is handed over before the write.
 
@@ -756,7 +735,7 @@ def test_config_write_hands_the_dir_over_before_writing(
     """
     from agent6.config import write as write_mod
 
-    handed: list[Path] = []
+    handed: list[pathlib.Path] = []
     monkeypatch.setattr(write_mod, "mkdir_for_real_user", handed.append)
 
     def killed(*_args: object, **_kwargs: object) -> None:
@@ -764,24 +743,27 @@ def test_config_write_hands_the_dir_over_before_writing(
 
     monkeypatch.setattr(write_mod, "upsert_toml_leaf", killed)
     with pytest.raises(KeyboardInterrupt):
-        set_config_value(repo, "git.dirty_tree", "stash", to_repo=True)
-    assert handed[0] == repo_config_path(repo).parent  # before the write, not after it
+        write.set_config_value(repo, "git.dirty_tree", "stash", to_repo=True)
+    assert handed[0] == paths_mod.repo_config_path(repo).parent  # before the write, not after it
 
 
 def test_config_write_hands_the_file_over_after_a_rejected_edit(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The file is handed over after a rejected edit too: its rollback republishes a new inode."""
     from agent6.config import write as write_mod
 
-    handed: list[Path] = []
+    handed: list[pathlib.Path] = []
     monkeypatch.setattr(write_mod, "chown_to_real_user", handed.append)
-    assert set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True) is not None
-    assert repo_config_path(repo) in handed
+    assert (
+        write.set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True)
+        is not None
+    )
+    assert paths_mod.repo_config_path(repo) in handed
 
 
 def test_engine_writers_refuse_a_write_into_an_unparseable_target(
-    repo: Path, tmp_path: Path
+    repo: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
     """Engine writers refuse a write into an unparseable target with the parse error.
 
@@ -792,13 +774,13 @@ def test_engine_writers_refuse_a_write_into_an_unparseable_target(
     before = gcfg.read_text(encoding="utf-8")
 
     with pytest.raises(ConfigError):
-        set_config_value(repo, "sandbox.run_commands", "no")
+        write.set_config_value(repo, "sandbox.run_commands", "no")
 
     assert gcfg.read_text(encoding="utf-8") == before
 
 
 def test_no_lock_rollback_keeps_the_write_and_says_so(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Without the lock, a failed revalidation keeps the write and says so.
 
@@ -806,26 +788,28 @@ def test_no_lock_rollback_keeps_the_write_and_says_so(
     """
     import agent6.portable as portable_mod
 
-    def _no_lock(_p: Path) -> int | None:
+    def _no_lock(_p: pathlib.Path) -> int | None:
         return None
 
     monkeypatch.setattr(portable_mod, "_acquire_lock", _no_lock)
-    err = set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True)
+    err = write.set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True)
     assert err is not None
     assert "kept as written" in err and "lock" in err
     # NOT restored: the invalid value is still in the file for the operator.
-    text = repo_config_path(repo).read_text(encoding="utf-8")
+    text = paths_mod.repo_config_path(repo).read_text(encoding="utf-8")
     assert 'run_commands = "bogus_value"' in text
 
 
-def test_an_optional_section_is_written_leaf_by_leaf(repo: Path) -> None:
+def test_an_optional_section_is_written_leaf_by_leaf(repo: pathlib.Path) -> None:
     """An optional `[table]` section (`models.worker`, `harness.metric`) is written leaf by leaf."""
-    rcfg = repo_config_path(repo)
+    rcfg = paths_mod.repo_config_path(repo)
     rcfg.write_text(
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-5"\n', encoding="utf-8"
     )
 
-    assert set_config_value(repo, "models.worker", '{ model = "gpt-y" }', to_repo=True) is None
+    assert (
+        write.set_config_value(repo, "models.worker", '{ model = "gpt-y" }', to_repo=True) is None
+    )
 
     text = rcfg.read_text(encoding="utf-8")
     assert "[models.worker]" in text
@@ -833,14 +817,14 @@ def test_an_optional_section_is_written_leaf_by_leaf(repo: Path) -> None:
     assert 'provider = "anthropic"' in text, "a section's other leaves survive"
 
 
-def test_a_name_keyed_table_is_written_entry_by_entry(repo: Path) -> None:
+def test_a_name_keyed_table_is_written_entry_by_entry(repo: pathlib.Path) -> None:
     """`providers` and `mcp.servers` are written entry by entry, never replaced whole."""
-    rcfg = repo_config_path(repo)
+    rcfg = paths_mod.repo_config_path(repo)
     rcfg.write_text(
         '[providers.anthropic]\napi_format = "anthropic"\napi_key_env = "A"\n', encoding="utf-8"
     )
 
-    err = set_config_value(
+    err = write.set_config_value(
         repo,
         "providers",
         '{ ollama = { api_format = "openai", base_url = "http://localhost:11434/v1" } }',
@@ -848,74 +832,75 @@ def test_a_name_keyed_table_is_written_entry_by_entry(repo: Path) -> None:
     )
 
     assert err is None
-    providers = load_effective(repo).config.providers
+    providers = layer.load_effective(repo).config.providers
     assert set(providers) >= {"anthropic", "ollama"}
     kept = providers["anthropic"]
     assert isinstance(kept, AnthropicProviderEntry)
     assert kept.api_key_env == "A"
 
 
-def test_a_table_valued_leaf_replaces_the_block_it_already_has(repo: Path) -> None:
+def test_a_table_valued_leaf_replaces_the_block_it_already_has(repo: pathlib.Path) -> None:
     """A dict-typed leaf written inline replaces its own `[table.leaf]` block."""
-    rcfg = repo_config_path(repo)
+    rcfg = paths_mod.repo_config_path(repo)
     rcfg.write_text('[skills.state]\nalpha = "enabled"\n', encoding="utf-8")
 
-    assert set_config_value(repo, "skills.state", '{ gamma = "always" }', to_repo=True) is None
+    assert (
+        write.set_config_value(repo, "skills.state", '{ gamma = "always" }', to_repo=True) is None
+    )
 
     text = rcfg.read_text(encoding="utf-8")
     assert "gamma" in text and "alpha" not in text, text
-    assert load_effective(repo).config.skills.state == {"gamma": "always"}
+    assert layer.load_effective(repo).config.skills.state == {"gamma": "always"}
 
 
-def test_an_invalid_value_is_refused_even_where_its_section_was_broken(repo: Path) -> None:
+def test_an_invalid_value_is_refused_even_where_its_section_was_broken(repo: pathlib.Path) -> None:
     """An invalid value is refused even where a sibling had already broken its section."""
-    rcfg = repo_config_path(repo)
+    rcfg = paths_mod.repo_config_path(repo)
     before = '[web]\nhost = "0.0.0.0"\n'  # already invalid: non-loopback, not opted in
     rcfg.write_text(before, encoding="utf-8")
 
-    err = set_config_value(repo, "web.port", "abc", to_repo=True)
+    err = write.set_config_value(repo, "web.port", "abc", to_repo=True)
 
     assert err is not None and "valid integer" in err
     assert rcfg.read_text(encoding="utf-8") == before
 
 
 def test_set_config_leaves_refuses_a_headerless_ancestor(
-    repo: Path,
+    repo: pathlib.Path,
 ) -> None:
     """set_config_leaves refuses a leaf under a header-less ancestor as an OperatorError.
 
     The file is untouched.
     """
-    from agent6.config.write import set_config_leaves
-
-    rcfg = repo_config_path(repo)
+    rcfg = paths_mod.repo_config_path(repo)
     before = '[providers]\nanthropic = { api_format = "anthropic" }\n'
     rcfg.write_text(before, encoding="utf-8")
 
-    with pytest.raises(OperatorError, match="not a plain"):
-        set_config_leaves(repo, "providers.anthropic", {"base_url": "https://x/v1"}, to_repo=True)
+    with pytest.raises(errors.OperatorError, match="not a plain"):
+        write.set_config_leaves(
+            repo, "providers.anthropic", {"base_url": "https://x/v1"}, to_repo=True
+        )
 
     assert rcfg.read_text(encoding="utf-8") == before  # nothing partially written
 
 
 def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """One revalidate and rollback wraps all the leaf writes.
 
     A later leaf's error rolls back the earlier ones.
     """
     from agent6.config import write as write_mod
-    from agent6.config.write import set_config_leaves
 
-    rcfg = repo_config_path(repo)
+    rcfg = paths_mod.repo_config_path(repo)
     before = '[providers.anthropic]\napi_format = "anthropic"\n'
     rcfg.write_text(before, encoding="utf-8")
 
     real = write_mod.upsert_toml_leaf
     calls = {"n": 0}
 
-    def _fail_second(path: Path, key: str, value: object) -> None:
+    def _fail_second(path: pathlib.Path, key: str, value: object) -> None:
         calls["n"] += 1
         if calls["n"] == 2:
             raise ConfigError("second leaf refused")
@@ -923,8 +908,8 @@ def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
 
     monkeypatch.setattr(write_mod, "upsert_toml_leaf", _fail_second)
 
-    with pytest.raises(OperatorError, match="second leaf refused"):
-        set_config_leaves(
+    with pytest.raises(errors.OperatorError, match="second leaf refused"):
+        write.set_config_leaves(
             repo,
             "providers.anthropic",
             {"base_url": "https://x/v1", "api_key_env": "KEY"},
@@ -935,24 +920,23 @@ def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
 
 
 def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A partial multi-leaf write without the lock is kept, and the refusal says so."""
     import agent6.portable as portable_mod
     from agent6.config import write as write_mod
-    from agent6.config.write import set_config_leaves
 
-    def _no_lock(_p: Path) -> int | None:
+    def _no_lock(_p: pathlib.Path) -> int | None:
         return None
 
     monkeypatch.setattr(portable_mod, "_acquire_lock", _no_lock)
-    rcfg = repo_config_path(repo)
+    rcfg = paths_mod.repo_config_path(repo)
     before = '[providers.anthropic]\napi_format = "anthropic"\n'
     rcfg.write_text(before, encoding="utf-8")
     real = write_mod.upsert_toml_leaf
     calls = {"n": 0}
 
-    def _fail_second(path: Path, key: str, value: object) -> None:
+    def _fail_second(path: pathlib.Path, key: str, value: object) -> None:
         calls["n"] += 1
         if calls["n"] == 2:
             raise ConfigError("second leaf refused")
@@ -960,8 +944,8 @@ def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
 
     monkeypatch.setattr(write_mod, "upsert_toml_leaf", _fail_second)
 
-    with pytest.raises(OperatorError, match="kept as written"):
-        set_config_leaves(
+    with pytest.raises(errors.OperatorError, match="kept as written"):
+        write.set_config_leaves(
             repo,
             "providers.anthropic",
             {"base_url": "https://x/v1", "api_key_env": "KEY"},
@@ -971,7 +955,7 @@ def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
     assert "base_url" in rcfg.read_text(encoding="utf-8")  # the landed leaf was kept
 
 
-def test_load_config_wraps_an_unreadable_file(tmp_path: Path) -> None:
+def test_load_config_wraps_an_unreadable_file(tmp_path: pathlib.Path) -> None:
     """The single-file loader wraps an unreadable file's OSError as its layered sibling does."""
     p = tmp_path / "c.toml"
     p.write_text("[review]\nperiod = 7\n", encoding="utf-8")
@@ -988,24 +972,23 @@ def test_provider_members_are_derived_from_the_union() -> None:
     from typing import get_args
 
     from agent6.config import ProviderEntry
-    from agent6.config.write import PROVIDER_MEMBERS
 
     declared = get_args(get_args(ProviderEntry)[0])
-    assert set(PROVIDER_MEMBERS) == set(declared)
-    assert len(PROVIDER_MEMBERS) == len(declared) >= 2
+    assert set(write.PROVIDER_MEMBERS) == set(declared)
+    assert len(write.PROVIDER_MEMBERS) == len(declared) >= 2
 
 
 def test_the_unknown_key_hint_reads_the_repo_root_not_the_cwd(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The unknown-key hint reads the repo root the write chain holds, not the process cwd."""
-    from agent6.config.write import unknown_key_error
-
     repo, elsewhere = tmp_path / "repo", tmp_path / "elsewhere"
     repo.mkdir()
     elsewhere.mkdir()
-    rcfg = repo_config_path(repo)
+    rcfg = paths_mod.repo_config_path(repo)
     rcfg.parent.mkdir(parents=True, exist_ok=True)
     rcfg.write_text('[mcp.servers.notes]\ncommand = ["notes-mcp"]\n', encoding="utf-8")
     monkeypatch.chdir(elsewhere)
-    assert "'mcp.servers.notes.command'" in unknown_key_error("mcp.servers.notes.comand", repo)
+    assert "'mcp.servers.notes.command'" in write.unknown_key_error(
+        "mcp.servers.notes.comand", repo
+    )

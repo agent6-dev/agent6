@@ -11,32 +11,30 @@ shows an empty page.
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 import threading
 from collections.abc import Iterator
-from http.client import HTTPConnection
-from pathlib import Path
+from http import client
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.ui.web import model
-from agent6.ui.web.page import CLIENT_JS
-from agent6.ui.web.server import WebServer
+from agent6 import paths
+from agent6.ui.web import model, page, server
 
 # `<id>` stands in for whatever the page interpolates; the fixture creates it.
 _ID = "brave-oak-AAAAAA"
 
 
 @pytest.fixture
-def served(tmp_path: Path) -> Iterator[int]:
-    session = state_dir(tmp_path) / "sessions" / "runs" / _ID
+def served(tmp_path: pathlib.Path) -> Iterator[int]:
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / _ID
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    srv = WebServer(("127.0.0.1", 0), tmp_path, "")
+    srv = server.WebServer(("127.0.0.1", 0), tmp_path, "")
     port = int(srv.server_address[1])
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
@@ -49,7 +47,7 @@ def served(tmp_path: Path) -> Iterator[int]:
 
 def _client_api_paths() -> set[str]:
     """The `/api/...` paths client.js builds, with interpolation collapsed."""
-    source = CLIENT_JS
+    source = page.CLIENT_JS
     found: set[str] = set()
     for raw in re.findall(r"'(/api/[^']*)'", source):
         # A concatenated route arrives as fragments; a trailing slash means an id follows.
@@ -64,7 +62,7 @@ def _unrouted(port: int, path: str, method: str) -> bool:
     miss is the only one that says `not found: <path>`, and it is the one a
     renamed route produces.
     """
-    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         body = b"{}" if method == "POST" else None
         headers = {"Content-Type": "application/json"} if body else {}
@@ -86,12 +84,12 @@ def test_every_api_path_the_page_calls_is_routed(served: int) -> None:
     assert not missing, f"the page calls paths the server does not route: {missing}"
 
 
-def test_the_page_reads_the_keys_the_hub_actually_sends(tmp_path: Path) -> None:
+def test_the_page_reads_the_keys_the_hub_actually_sends(tmp_path: pathlib.Path) -> None:
     """The hub's `build(d)` reads no key the server does not send.
 
     `d.runs` survived a rename as a silently undefined lookup: 200 and an empty list.
     """
-    source = CLIENT_JS
+    source = page.CLIENT_JS
     start = source.index("const build = (d) => {")
     body = source[start : source.index("\n  };", start)]
     read = set(re.findall(r"\bd\.([a-z_]+)\b", body))

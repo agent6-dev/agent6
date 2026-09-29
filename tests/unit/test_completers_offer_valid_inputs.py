@@ -8,12 +8,12 @@ Offering less hides a valid input; offering more suggests one refused on Enter.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.layout import bucket_dir
+from agent6 import paths
+from agent6.sessions import layout
 from agent6.ui.cli import completers
 
 _TINY_MACHINE = """
@@ -41,15 +41,15 @@ reason = "routed"
 """
 
 
-def _seed(tmp_path: Path) -> None:
-    state = state_dir(tmp_path)
+def _seed(tmp_path: pathlib.Path) -> None:
+    state = paths.state_dir(tmp_path)
     for bucket, mode, sid in (
         ("runs", "run", "runny-one-AAAAAA"),
         ("plans", "plan", "planny-two-BBBBB"),
         ("asks", "ask", "asky-three-CCCCC"),
         ("machines", "machine", "drafty-four-DDDD"),
     ):
-        session = bucket_dir(state, bucket) / sid
+        session = layout.bucket_dir(state, bucket) / sid
         session.mkdir(parents=True)
         (session / "logs.jsonl").write_text(
             json.dumps({"type": "session.start", "mode": mode}) + "\n", encoding="utf-8"
@@ -58,7 +58,7 @@ def _seed(tmp_path: Path) -> None:
 
 
 def test_every_session_id_is_offered_where_any_is_accepted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`sessions show|diff|transcript|...` resolve across every bucket."""
     monkeypatch.chdir(tmp_path)
@@ -73,7 +73,7 @@ def test_every_session_id_is_offered_where_any_is_accepted(
 
 
 def test_resume_offers_only_what_it_can_resume(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Resume does not offer a machine draft, which it refuses."""
     monkeypatch.chdir(tmp_path)
@@ -83,7 +83,7 @@ def test_resume_offers_only_what_it_can_resume(
 
 
 def test_attach_offers_every_session_and_every_machine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed(tmp_path)
@@ -93,19 +93,18 @@ def test_attach_offers_every_session_and_every_machine(
 
 
 def test_enum_value_completion_is_derived_from_the_schema(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Enum value completion comes from the schema, so a new Literal leaf completes for free."""
     import argparse
 
-    from agent6.config import Config
-    from agent6.config.layer import load_effective
-    from agent6.viewmodel.config_view import build_config_view
+    from agent6.config import Config, layer
+    from agent6.viewmodel import config_view
 
     monkeypatch.chdir(tmp_path)
     schema_enums = {
         s.key
-        for s in build_config_view(load_effective(tmp_path)).settings
+        for s in config_view.build_config_view(layer.load_effective(tmp_path)).settings
         if s.choices and s.py_type == "choice"
     }
     assert len(schema_enums) > 10, "expected many enum leaves in the schema"
@@ -117,7 +116,9 @@ def test_enum_value_completion_is_derived_from_the_schema(
 
     # A bool is as closed a set as any enum; `config set` takes exactly `true` or `false`.
     bools = {
-        s.key for s in build_config_view(load_effective(tmp_path)).settings if s.py_type == "bool"
+        s.key
+        for s in config_view.build_config_view(layer.load_effective(tmp_path)).settings
+        if s.py_type == "bool"
     }
     assert len(bools) > 10, "expected many bool leaves in the schema"
     for key in sorted(bools):
@@ -135,23 +136,23 @@ def test_enum_value_completion_is_derived_from_the_schema(
 
 
 def test_live_only_verbs_offer_only_live_sessions(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """steer, stop, answer, exec and forward offer only live sessions."""
     import argparse
     import os
 
-    from agent6.sessions.ipc import write_worker_pid
-    from agent6.ui.cli.parser import build_parser
+    from agent6.sessions import ipc
+    from agent6.ui.cli import parser as cli_parser
 
     monkeypatch.chdir(tmp_path)
     _seed(tmp_path)
-    live = bucket_dir(state_dir(tmp_path), "runs") / "runny-one-AAAAAA"
-    write_worker_pid(live, os.getpid())
+    live = layout.bucket_dir(paths.state_dir(tmp_path), "runs") / "runny-one-AAAAAA"
+    ipc.write_worker_pid(live, os.getpid())
     offered = completers._complete_live_session_ids("")  # pyright: ignore[reportPrivateUsage]
     assert offered == ["runny-one-AAAAAA"]
 
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     subs = next(
         a
         for a in parser._actions  # pyright: ignore[reportPrivateUsage]
@@ -168,7 +169,7 @@ def test_live_only_verbs_offer_only_live_sessions(
 
 
 def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The live-only completers gate on `session_is_live`, as the verbs do.
 
@@ -177,10 +178,10 @@ def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
     import json
     import os
 
-    from agent6.sessions.ipc import write_worker_pid
+    from agent6.sessions import ipc
 
     monkeypatch.chdir(tmp_path)
-    ended = bucket_dir(state_dir(tmp_path), "runs") / "ended-one-EEEEEE"
+    ended = layout.bucket_dir(paths.state_dir(tmp_path), "runs") / "ended-one-EEEEEE"
     ended.mkdir(parents=True)
     (ended / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run"})
@@ -189,12 +190,12 @@ def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
         + "\n",
         encoding="utf-8",
     )
-    write_worker_pid(ended, os.getpid())
+    ipc.write_worker_pid(ended, os.getpid())
     assert completers._complete_live_session_ids("") == []  # pyright: ignore[reportPrivateUsage]
 
 
 def test_config_list_edit_completion_offers_only_list_leaves(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`config add` and `remove` complete only the list leaves they edit."""
     import argparse
@@ -211,7 +212,7 @@ def test_config_list_edit_completion_offers_only_list_leaves(
 
 
 def test_config_list_edit_value_completion_omits_scalar_choices(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A scalar key typed on `config add` or `remove` gets no enum suggestions."""
     import argparse
@@ -229,7 +230,7 @@ def test_config_list_edit_value_completion_omits_scalar_choices(
 
 
 def test_config_show_completion_offers_accepted_section_prefixes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`config show` completion offers a whole section, so `sand` completes to `sandbox`."""
     import argparse
@@ -247,7 +248,7 @@ def test_config_show_completion_offers_accepted_section_prefixes(
 
 
 def test_machine_overlay_key_completion_omits_operator_only_leaves(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`config set --machine-file` completes no sandbox leaf.
 
@@ -274,7 +275,7 @@ def test_machine_overlay_key_completion_omits_operator_only_leaves(
 
 
 def test_machine_overlay_value_completion_omits_operator_only_leaves(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A protected machine-overlay key typed by hand gets no suggested value the write rejects."""
     import argparse
@@ -292,7 +293,7 @@ def test_machine_overlay_value_completion_omits_operator_only_leaves(
 
 
 def test_config_key_completion_reads_user_presets_from_the_typed_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A preset declared only by `--config FILE` completes as a writable key namespace."""
     import argparse
@@ -313,7 +314,7 @@ def test_config_key_completion_reads_user_presets_from_the_typed_config(
 
 
 def test_config_value_completion_under_a_preset_uses_the_leafs_choices(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A `presets.<name>.<leaf>` key completes the leaf's own closed values."""
     import argparse
@@ -329,20 +330,18 @@ def test_config_value_completion_under_a_preset_uses_the_leafs_choices(
 
 
 def test_mcp_remove_offers_only_servers_in_the_selected_layer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`mcp remove` completes only servers in the layer it edits."""
     import argparse
 
-    from agent6.paths import global_config_path, repo_config_path
-
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
-    global_path = global_config_path()
+    global_path = paths.global_config_path()
     global_path.parent.mkdir(parents=True)
     global_path.write_text('[mcp.servers.global_only]\ncommand = ["true"]\n', encoding="utf-8")
-    repo_path = repo_config_path(tmp_path)
+    repo_path = paths.repo_config_path(tmp_path)
     repo_path.parent.mkdir(parents=True)
     repo_path.write_text('[mcp.servers.repo_only]\ncommand = ["true"]\n', encoding="utf-8")
 
@@ -358,7 +357,7 @@ def test_mcp_remove_offers_only_servers_in_the_selected_layer(
 
 
 def test_model_provider_completion_reads_the_typed_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Model completion offers the typed config's provider.
 
@@ -366,7 +365,7 @@ def test_model_provider_completion_reads_the_typed_config(
     """
     import argparse
 
-    from agent6.ui.cli.model import _connected_providers  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import model  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
     custom = tmp_path / "custom.toml"
@@ -374,7 +373,7 @@ def test_model_provider_completion_reads_the_typed_config(
         '[providers.myprovider]\napi_format = "openai"\nbase_url = "https://example.invalid/v1"\n',
         encoding="utf-8",
     )
-    assert "myprovider" in _connected_providers(custom)
+    assert "myprovider" in model._connected_providers(custom)
     offered = completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
         "my", argparse.Namespace(role="worker", config=custom)
     )
@@ -389,7 +388,7 @@ def test_model_provider_completion_reads_the_typed_config(
 
 
 def test_model_verb_completion_offers_the_typed_configs_routes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`agent6 --config F model worker <TAB>` offers F's provider/model routes."""
     import argparse
@@ -413,7 +412,7 @@ def test_model_verb_completion_offers_the_typed_configs_routes(
 
 
 def test_forward_offers_the_newest_sessions_ports_in_its_first_slot(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`forward`'s first slot completes the newest session's ports.
 
@@ -422,11 +421,11 @@ def test_forward_offers_the_newest_sessions_ports_in_its_first_slot(
     import argparse
 
     monkeypatch.chdir(tmp_path)
-    session = bucket_dir(state_dir(tmp_path), "runs") / "runny-one-AAAAAA"
+    session = layout.bucket_dir(paths.state_dir(tmp_path), "runs") / "runny-one-AAAAAA"
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text("{}\n", encoding="utf-8")
 
-    def _ports(_path: Path) -> list[int]:
+    def _ports(_path: pathlib.Path) -> list[int]:
         return [8000, 9000]
 
     monkeypatch.setattr("agent6.sessions.ipc.listening_ports", _ports)
@@ -441,29 +440,30 @@ def test_forward_offers_the_newest_sessions_ports_in_its_first_slot(
 
 
 def test_state_restricted_machine_verbs_offer_only_machines_they_accept(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`machine poke` offers only open waits and `machine stop` only running instances."""
     import argparse
     from collections.abc import Callable
     from typing import cast
 
-    from agent6.machine.journal import MachineEnd, MachineJournal, PendingWait
-    from agent6.sessions.layout import machines_root
-    from agent6.ui.cli.parser import build_parser
+    from agent6.machine import journal as machine_journal
+    from agent6.ui.cli import parser as cli_parser
 
     monkeypatch.chdir(tmp_path)
     _seed(tmp_path)
-    waiting = machines_root(state_dir(tmp_path)) / "live-machine"
+    waiting = layout.machines_root(paths.state_dir(tmp_path)) / "live-machine"
     (waiting / "machine.asm.toml").write_text(_TINY_MACHINE, encoding="utf-8")
-    MachineJournal(waiting).begin(machine="tiny", version=1)
-    MachineJournal(waiting).write_pending_wait(PendingWait(state="route", wake_epoch=None))
-    ended = machines_root(state_dir(tmp_path)) / "ended-machine-FFFFF"
+    machine_journal.MachineJournal(waiting).begin(machine="tiny", version=1)
+    machine_journal.MachineJournal(waiting).write_pending_wait(
+        machine_journal.PendingWait(state="route", wake_epoch=None)
+    )
+    ended = layout.machines_root(paths.state_dir(tmp_path)) / "ended-machine-FFFFF"
     ended.mkdir(parents=True)
-    journal = MachineJournal(ended)
+    journal = machine_journal.MachineJournal(ended)
     journal.begin(machine="demo", version=1)
     journal.append(
-        MachineEnd(
+        machine_journal.MachineEnd(
             ts="2026-01-01T00:00:00Z",
             status="ok",
             reason="finish_machine",
@@ -473,7 +473,7 @@ def test_state_restricted_machine_verbs_offer_only_machines_they_accept(
     )
 
     def offered(verb: str) -> list[str]:
-        parser = build_parser()
+        parser = cli_parser.build_parser()
         subs = next(
             a
             for a in parser._actions  # pyright: ignore[reportPrivateUsage]
@@ -502,14 +502,14 @@ def test_state_restricted_machine_verbs_offer_only_machines_they_accept(
 
 
 def test_machine_files_complete_relative_to_the_working_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`--machine-file` completes paths relative to cwd, matching the prefix the operator types."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "demo.asm.toml").write_text("", encoding="utf-8")
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "inner.asm.toml").write_text("", encoding="utf-8")
-    instance = state_dir(tmp_path) / "machines" / "demo-ok"
+    instance = paths.state_dir(tmp_path) / "machines" / "demo-ok"
     instance.mkdir(parents=True)
     (instance / "machine.asm.toml").write_text("", encoding="utf-8")
 

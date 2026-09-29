@@ -9,30 +9,27 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.ipc import (
-    read_question_answers,
-    set_away_mode,
-    write_question_answers,
-    write_worker_pid,
-)
-from agent6.sessions.layout import SessionLayout
-from agent6.ui.cli.answer_cmd import _cmd_answer  # pyright: ignore[reportPrivateUsage]
+from agent6 import paths
+from agent6.sessions import ipc
+from agent6.sessions import layout as sessions_layout
+from agent6.ui.cli import answer_cmd as cli_answer_cmd  # pyright: ignore[reportPrivateUsage]
 
 
 def _run_with_question(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, questions: list[dict[str, object]]
-) -> SessionLayout:
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, questions: list[dict[str, object]]
+) -> sessions_layout.SessionLayout:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
 
-    layout = SessionLayout(state_dir=state_dir(repo), session_id="curious-fox-AAAA11")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo), session_id="curious-fox-AAAA11"
+    )
     layout.ensure()
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
@@ -42,14 +39,14 @@ def _run_with_question(
         "".join(json.dumps(e) + "\n" for e in events),
         encoding="utf-8",
     )
-    write_worker_pid(layout.session_dir, os.getpid())  # this process = a live worker
+    ipc.write_worker_pid(layout.session_dir, os.getpid())  # this process = a live worker
     # A detached run left on "wait" is the seat this verb exists for.
-    set_away_mode(layout.session_dir, "wait")
+    ipc.set_away_mode(layout.session_dir, "wait")
     return layout
 
 
 def test_answer_writes_the_file_the_run_is_waiting_on(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     layout = _run_with_question(
         tmp_path,
@@ -57,14 +54,14 @@ def test_answer_writes_the_file_the_run_is_waiting_on(
         questions=[{"question": "Which port?", "options": ["8080", "9090"]}],
     )
 
-    assert _cmd_answer("curious-fox", ("9090",)) == 0
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("9090",)) == 0
 
-    assert read_question_answers(layout.session_dir, "question-1", timeout_s=1.0) == ("9090",)
+    assert ipc.read_question_answers(layout.session_dir, "question-1", timeout_s=1.0) == ("9090",)
     assert "answered curious-fox-AAAA11" in capsys.readouterr().out
 
 
 def test_answer_with_no_text_prints_the_question_and_its_options(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A bare call prints the question and its options."""
     _run_with_question(
@@ -73,7 +70,7 @@ def test_answer_with_no_text_prints_the_question_and_its_options(
         questions=[{"question": "Which port?", "options": ["8080", "9090"]}],
     )
 
-    assert _cmd_answer("curious-fox", ()) == 0
+    assert cli_answer_cmd._cmd_answer("curious-fox", ()) == 0
 
     out = capsys.readouterr().out
     assert "Which port?" in out
@@ -81,7 +78,7 @@ def test_answer_with_no_text_prints_the_question_and_its_options(
 
 
 def test_a_short_answer_list_is_refused_rather_than_misaligned(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A short answer list is refused rather than misaligned.
 
@@ -93,7 +90,7 @@ def test_a_short_answer_list_is_refused_rather_than_misaligned(
         questions=[{"question": "Which port?"}, {"question": "Which host?"}],
     )
 
-    assert _cmd_answer("curious-fox", ("9090",)) == 2
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("9090",)) == 2
 
     err = capsys.readouterr().err
     assert "2 question(s); 1 answer(s) given" in err
@@ -101,54 +98,56 @@ def test_a_short_answer_list_is_refused_rather_than_misaligned(
 
 
 def test_answer_refuses_a_run_that_is_not_waiting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
 
-    layout = SessionLayout(state_dir=state_dir(repo), session_id="curious-fox-AAAA11")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo), session_id="curious-fox-AAAA11"
+    )
     layout.ensure()
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    write_worker_pid(layout.session_dir, os.getpid())
-    set_away_mode(layout.session_dir, "wait")
+    ipc.write_worker_pid(layout.session_dir, os.getpid())
+    ipc.set_away_mode(layout.session_dir, "wait")
 
-    assert _cmd_answer("curious-fox", ("yes",)) == 2
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("yes",)) == 2
 
     assert "not waiting on a question" in capsys.readouterr().err
 
 
 def test_answer_refuses_a_dead_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Only a live run holds a question open; a dead one's answer file would sit unread forever."""
     layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
-    write_worker_pid(layout.session_dir, 999_999_999)
+    ipc.write_worker_pid(layout.session_dir, 999_999_999)
 
-    assert _cmd_answer("curious-fox", ("9090",)) == 2
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("9090",)) == 2
 
     assert "not running" in capsys.readouterr().err
 
 
 def test_answer_refuses_a_question_another_surface_answered(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The first answer stands: a second, from this verb, is refused and named."""
     layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
-    assert write_question_answers(layout.session_dir, "question-1", ["8080"])
+    assert ipc.write_question_answers(layout.session_dir, "question-1", ["8080"])
 
-    assert _cmd_answer("curious-fox", ("9090",)) == 2
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("9090",)) == 2
 
     assert "already answered from another surface" in capsys.readouterr().err
-    assert read_question_answers(layout.session_dir, "question-1", timeout_s=1.0) == ("8080",)
+    assert ipc.read_question_answers(layout.session_dir, "question-1", timeout_s=1.0) == ("8080",)
 
 
 def test_answer_reaches_a_run_waiting_at_its_own_terminal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Answer reaches a run waiting at its own terminal.
 
@@ -158,14 +157,14 @@ def test_answer_reaches_a_run_waiting_at_its_own_terminal(
     layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
     (layout.session_dir / "approvals" / "away.mode").unlink()  # no away-mode, no front-end
 
-    assert _cmd_answer("curious-fox", ("9090",)) == 0
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("9090",)) == 0
 
-    assert read_question_answers(layout.session_dir, "question-1", timeout_s=1.0) == ("9090",)
+    assert ipc.read_question_answers(layout.session_dir, "question-1", timeout_s=1.0) == ("9090",)
     assert "answered curious-fox-AAAA11" in capsys.readouterr().out
 
 
 def test_a_bare_call_prints_the_question_even_on_a_terminal_bound_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Reading the question needs no delivery channel."""
     layout = _run_with_question(
@@ -173,13 +172,13 @@ def test_a_bare_call_prints_the_question_even_on_a_terminal_bound_run(
     )
     (layout.session_dir / "approvals" / "away.mode").unlink()  # terminal-bound
 
-    assert _cmd_answer("curious-fox", ()) == 0
+    assert cli_answer_cmd._cmd_answer("curious-fox", ()) == 0
 
     assert "Which port?" in capsys.readouterr().out
 
 
 def test_a_live_run_with_no_question_says_so(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A live run with no question says so.
 
@@ -190,21 +189,23 @@ def test_a_live_run_with_no_question_says_so(
     repo.mkdir()
     monkeypatch.chdir(repo)
 
-    layout = SessionLayout(state_dir=state_dir(repo), session_id="curious-fox-AAAA11")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo), session_id="curious-fox-AAAA11"
+    )
     layout.ensure()
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    write_worker_pid(layout.session_dir, os.getpid())  # live, no away-mode, no front-end
+    ipc.write_worker_pid(layout.session_dir, os.getpid())  # live, no away-mode, no front-end
 
-    assert _cmd_answer("curious-fox", ("yes",)) == 2
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("yes",)) == 2
 
     assert "is not waiting on a question" in capsys.readouterr().err
 
 
 def test_answer_asks_the_affordance_question_the_other_verbs_ask(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Whether anything will read an answer has one predicate.
 
@@ -220,10 +221,10 @@ def test_answer_asks_the_affordance_question_the_other_verbs_ask(
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
-    d = state_dir(tmp_path) / "sessions" / "runs" / "gone-run-AAAA11"
+    d = paths.state_dir(tmp_path) / "sessions" / "runs" / "gone-run-AAAA11"
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text("", encoding="utf-8")
 
-    assert _cmd_answer("gone-run", ("yes",)) == 2
+    assert cli_answer_cmd._cmd_answer("gone-run", ("yes",)) == 2
 
     assert "is not running" in capsys.readouterr().err

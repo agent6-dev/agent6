@@ -8,14 +8,13 @@ call, and the index is shared across the explore-review seats.
 
 from __future__ import annotations
 
+import pathlib
 import threading
-from pathlib import Path
 
-from agent6.tools._path_safety import Workspace
-from agent6.tools.index import SymbolIndex
+from agent6.tools import _path_safety, index
 
 
-def _bump_mtime(p: Path) -> None:
+def _bump_mtime(p: pathlib.Path) -> None:
     """Force a distinct (mtime_ns, size) so the stat check fires on a coarse clock."""
     st = p.stat()
     import os
@@ -23,10 +22,10 @@ def _bump_mtime(p: Path) -> None:
     os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
 
 
-def test_index_self_heals_on_out_of_band_edit(tmp_path: Path) -> None:
+def test_index_self_heals_on_out_of_band_edit(tmp_path: pathlib.Path) -> None:
     src = tmp_path / "m.py"
     src.write_text("def alpha():\n    pass\n", encoding="utf-8")
-    idx = SymbolIndex(Workspace(root=tmp_path))
+    idx = index.SymbolIndex(_path_safety.Workspace(root=tmp_path))
 
     defs = idx.find_definition("alpha")
     assert len(defs) == 1
@@ -43,10 +42,10 @@ def test_index_self_heals_on_out_of_band_edit(tmp_path: Path) -> None:
     assert beta[0].name == "beta"
 
 
-def test_index_evicts_deleted_file(tmp_path: Path) -> None:
+def test_index_evicts_deleted_file(tmp_path: pathlib.Path) -> None:
     src = tmp_path / "gone.py"
     src.write_text("def doomed():\n    pass\n", encoding="utf-8")
-    idx = SymbolIndex(Workspace(root=tmp_path))
+    idx = index.SymbolIndex(_path_safety.Workspace(root=tmp_path))
     assert len(idx.find_definition("doomed")) == 1
 
     # Delete out of band (e.g. run_command rm / git mv) with no mark_deleted.
@@ -57,11 +56,11 @@ def test_index_evicts_deleted_file(tmp_path: Path) -> None:
     assert idx.find_references("doomed") == []
 
 
-def test_index_concurrent_readers_do_not_raise(tmp_path: Path) -> None:
+def test_index_concurrent_readers_do_not_raise(tmp_path: pathlib.Path) -> None:
     # Many files, so the outline path keeps adding keys while other threads iterate.
     for i in range(40):
         (tmp_path / f"f{i}.py").write_text(f"def fn_{i}():\n    helper()\n", encoding="utf-8")
-    idx = SymbolIndex(Workspace(root=tmp_path))
+    idx = index.SymbolIndex(_path_safety.Workspace(root=tmp_path))
 
     errors: list[BaseException] = []
     stop = threading.Event()

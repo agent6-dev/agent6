@@ -5,22 +5,21 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.config import Config
-from agent6.config.layer import EffectiveConfig, load_effective
-from agent6.models.registry import resolved_adaptive_values
-from agent6.viewmodel.config_view import render_key_detail, render_show
+from agent6.config import Config, layer
+from agent6.models import registry
+from agent6.viewmodel import config_view
 
 
-def test_a_top_level_scalar_is_not_dressed_as_a_table(tmp_path: Path) -> None:
+def test_a_top_level_scalar_is_not_dressed_as_a_table(tmp_path: pathlib.Path) -> None:
     """`preset` is a bare top-level key, not a `[preset]` table.
 
     `config fill` emits top-level scalars the same way.
     """
-    out = render_show(load_effective(tmp_path, preset="quick"))
+    out = config_view.render_show(layer.load_effective(tmp_path, preset="quick"))
 
     assert "[preset]" not in out, "a scalar rendered as a TOML table header"
     assert "preset" in out, "the setting itself must still be shown"
@@ -29,7 +28,7 @@ def test_a_top_level_scalar_is_not_dressed_as_a_table(tmp_path: Path) -> None:
 
 
 def test_config_presets_reads_the_explicit_config_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config presets` honours `--config FILE` like every other config subcommand."""
     from agent6.ui.cli import main
@@ -43,25 +42,23 @@ def test_config_presets_reads_the_explicit_config_file(
 
 
 def test_a_filled_config_can_be_used_as_an_explicit_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`config fill` emits no `preset` selector, so its file loads as an explicit `--config`.
 
     A preset selects other leaves; once they are materialized the selector would apply twice.
     """
-    from agent6.config.layer import materialize
-
     filled = tmp_path / "filled.toml"
-    filled.write_text(materialize(load_effective(tmp_path).config), encoding="utf-8")
+    filled.write_text(layer.materialize(layer.load_effective(tmp_path).config), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     # The point: this must not raise.
-    reloaded = load_effective(tmp_path, filled).config
+    reloaded = layer.load_effective(tmp_path, filled).config
     assert reloaded.agent6.config_version == 1
 
 
 def test_config_fill_keeps_the_presets_the_file_defines(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`config fill` keeps the `[presets.*]` tables the file defines.
 
@@ -81,7 +78,7 @@ def test_config_fill_keeps_the_presets_the_file_defines(
 
     assert main(["config", "fill", "--force"]) == 0
 
-    after = load_effective(tmp_path)
+    after = layer.load_effective(tmp_path)
     assert after.config.sandbox.run_commands == "yes", "the preset stopped applying"
     text = (cfg_home / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[presets.myfast" in text, f"config fill deleted the operator's preset:\n{text}"
@@ -92,15 +89,15 @@ def test_config_fill_keeps_the_presets_the_file_defines(
 
 def test_descriptions_mode_prints_the_meaning_under_each_row() -> None:
     """`--descriptions` adds each leaf's meaning; the default stays values-only."""
-    eff = EffectiveConfig(config=Config(), sources={}, layers=())
-    assert "Cap on the metered spend" not in render_show(eff)
-    assert "Cap on the metered spend" in render_show(eff, descriptions=True)
+    eff = layer.EffectiveConfig(config=Config(), sources={}, layers=())
+    assert "Cap on the metered spend" not in config_view.render_show(eff)
+    assert "Cap on the metered spend" in config_view.render_show(eff, descriptions=True)
 
 
 def test_key_detail_always_carries_the_meaning() -> None:
     """`config show <key>` carries the meaning with no flag."""
-    eff = EffectiveConfig(config=Config(), sources={}, layers=())
-    detail = render_key_detail(eff, ["budget.max_usd"])
+    eff = layer.EffectiveConfig(config=Config(), sources={}, layers=())
+    detail = config_view.render_key_detail(eff, ["budget.max_usd"])
     assert "meaning: Cap on the metered spend" in detail
 
 
@@ -111,27 +108,27 @@ def test_key_detail_takes_several_keys_in_the_order_asked() -> None:
 
     A section prefix expands to its leaves; a leaf named twice prints once.
     """
-    eff = EffectiveConfig(config=Config(), sources={}, layers=())
-    detail = render_key_detail(eff, ["sandbox.network", "budget", "sandbox.network"])
+    eff = layer.EffectiveConfig(config=Config(), sources={}, layers=())
+    detail = config_view.render_key_detail(eff, ["sandbox.network", "budget", "sandbox.network"])
     heads = [line.strip() for line in detail.splitlines() if not line.startswith("    ")]
     assert heads[0] == "sandbox.network"
     assert "budget.max_usd" in heads
     assert heads.index("budget.max_usd") > 0
     assert heads.count("sandbox.network") == 1
     with pytest.raises(KeyError, match="nope"):
-        render_key_detail(eff, ["budget.max_usd", "nope"])
-    as_json = json.loads(render_key_detail(eff, ["sandbox.network"], as_json=True))
+        config_view.render_key_detail(eff, ["budget.max_usd", "nope"])
+    as_json = json.loads(config_view.render_key_detail(eff, ["sandbox.network"], as_json=True))
     assert list(as_json) == ["sandbox.network"]
 
 
-def _effort_config(tmp_path: Path, body: str) -> EffectiveConfig:
+def _effort_config(tmp_path: pathlib.Path, body: str) -> layer.EffectiveConfig:
     cfg = tmp_path / "config.toml"
     cfg.write_text(body, encoding="utf-8")
-    return load_effective(tmp_path, cfg)
+    return layer.load_effective(tmp_path, cfg)
 
 
 def test_an_unset_effort_shows_what_the_openai_wire_actually_sends(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An unset effort shows the `low` the OpenAI wire sends to a reasoning model, not `(unset)`."""
     monkeypatch.delenv("AGENT6_REASONING_EFFORT", raising=False)
@@ -142,13 +139,13 @@ def test_an_unset_effort_shows_what_the_openai_wire_actually_sends(
         '[models.worker]\nprovider = "openrouter"\nmodel = "moonshotai/kimi-k2.6"\n',
     )
 
-    resolved = resolved_adaptive_values(eff.config)
+    resolved = registry.resolved_adaptive_values(eff.config)
 
     assert resolved["models.worker.effort"] == "low"
-    assert "low" in render_show(eff, resolved=resolved)
+    assert "low" in config_view.render_show(eff, resolved=resolved)
 
 
-def test_a_model_that_takes_no_reasoning_knob_keeps_the_unset_row(tmp_path: Path) -> None:
+def test_a_model_that_takes_no_reasoning_knob_keeps_the_unset_row(tmp_path: pathlib.Path) -> None:
     """Only a resolution the wire really applies replaces `(unset)`."""
     eff = _effort_config(
         tmp_path,
@@ -157,10 +154,10 @@ def test_a_model_that_takes_no_reasoning_knob_keeps_the_unset_row(tmp_path: Path
         '[models.worker]\nprovider = "openrouter"\nmodel = "qwen/qwen3-coder"\n',
     )
 
-    assert "models.worker.effort" not in resolved_adaptive_values(eff.config)
+    assert "models.worker.effort" not in registry.resolved_adaptive_values(eff.config)
 
 
-def test_an_unset_anthropic_effort_resolves_to_off(tmp_path: Path) -> None:
+def test_an_unset_anthropic_effort_resolves_to_off(tmp_path: pathlib.Path) -> None:
     """Anthropic sends no thinking at all when the role leaves effort unset."""
     eff = _effort_config(
         tmp_path,
@@ -168,10 +165,10 @@ def test_an_unset_anthropic_effort_resolves_to_off(tmp_path: Path) -> None:
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-opus-5"\n',
     )
 
-    assert resolved_adaptive_values(eff.config)["models.worker.effort"] == "off"
+    assert registry.resolved_adaptive_values(eff.config)["models.worker.effort"] == "off"
 
 
-def test_a_configured_effort_is_not_marked_resolved(tmp_path: Path) -> None:
+def test_a_configured_effort_is_not_marked_resolved(tmp_path: pathlib.Path) -> None:
     """The row shows the operator's own value, with its layer, not a default."""
     eff = _effort_config(
         tmp_path,
@@ -181,11 +178,11 @@ def test_a_configured_effort_is_not_marked_resolved(tmp_path: Path) -> None:
         'effort = "high"\n',
     )
 
-    assert "models.worker.effort" not in resolved_adaptive_values(eff.config)
+    assert "models.worker.effort" not in registry.resolved_adaptive_values(eff.config)
 
 
 def test_the_env_override_is_the_value_shown(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """AGENT6_REASONING_EFFORT is the value shown.
 
@@ -199,32 +196,41 @@ def test_the_env_override_is_the_value_shown(
         '[models.worker]\nprovider = "openrouter"\nmodel = "moonshotai/kimi-k2.6"\n',
     )
 
-    assert resolved_adaptive_values(eff.config)["models.worker.effort"] == "medium"
+    assert registry.resolved_adaptive_values(eff.config)["models.worker.effort"] == "medium"
 
 
-def test_an_empty_string_default_renders_a_visible_token(tmp_path: Path) -> None:
+def test_an_empty_string_default_renders_a_visible_token(tmp_path: pathlib.Path) -> None:
     """An empty string default renders a visible token, not a blank cell."""
     eff = _effort_config(tmp_path, "")
-    rows = render_show(eff, resolved=resolved_adaptive_values(eff.config)).splitlines()
+    rows = config_view.render_show(
+        eff, resolved=registry.resolved_adaptive_values(eff.config)
+    ).splitlines()
     preset = next(line for line in rows if line.split()[:1] == ["preset"])
     assert "(empty)" in preset, preset
 
 
-def test_the_auto_sandbox_leaves_show_what_this_host_resolves_them_to(tmp_path: Path) -> None:
+def test_the_auto_sandbox_leaves_show_what_this_host_resolves_them_to(
+    tmp_path: pathlib.Path,
+) -> None:
     """The `auto` sandbox leaves show what this host resolves them to on every surface."""
-    from agent6.app.confine import resolved_config_values
-    from agent6.viewmodel.config_view import build_config_view
+    from agent6.app import confine as app_confine
 
     eff = _effort_config(tmp_path, "")
-    view = build_config_view(eff, resolved=resolved_config_values(eff.config))
+    view = config_view.build_config_view(
+        eff, resolved=app_confine.resolved_config_values(eff.config)
+    )
     rows = {s.key: s for s in view.settings}
     assert rows["sandbox.isolation"].is_adaptive
     assert rows["sandbox.isolation"].effective_value in ("strict", "hardened", "none")
     assert rows["sandbox.network"].is_adaptive
-    assert "(adaptive)" in render_show(eff, resolved=resolved_config_values(eff.config))
+    assert "(adaptive)" in config_view.render_show(
+        eff, resolved=app_confine.resolved_config_values(eff.config)
+    )
 
     explicit = _effort_config(tmp_path, '[sandbox]\nisolation = "none"\n')
-    view = build_config_view(explicit, resolved=resolved_config_values(explicit.config))
+    view = config_view.build_config_view(
+        explicit, resolved=app_confine.resolved_config_values(explicit.config)
+    )
     assert not {s.key: s for s in view.settings}["sandbox.isolation"].is_adaptive
 
 
@@ -238,14 +244,14 @@ def test_the_resolved_values_leave_the_sandbox_leaves_auto_without_a_jail_binary
     from typing import NoReturn
 
     from agent6.app import confine
-    from agent6.sandbox.jail import JailBinaryError
+    from agent6.sandbox import jail
 
     def no_binary() -> NoReturn:
-        raise JailBinaryError("agent6-jail binary not found")
+        raise jail.JailBinaryError("agent6-jail binary not found")
 
     monkeypatch.setattr(confine, "detect_env", no_binary)
     cfg = Config()
     assert (cfg.sandbox.isolation, cfg.sandbox.network) == ("auto", "auto")
     resolved = confine.resolved_config_values(cfg)
     assert "sandbox.isolation" not in resolved and "sandbox.network" not in resolved
-    assert resolved == resolved_adaptive_values(cfg)
+    assert resolved == registry.resolved_adaptive_values(cfg)

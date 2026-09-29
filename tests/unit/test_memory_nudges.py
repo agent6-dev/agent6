@@ -9,64 +9,72 @@ and only while nothing has been recorded (bench/longhorizon FINDINGS #2).
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
 from agent6.config import Config
-from agent6.harness._chain import RunChain
-from agent6.harness._conversation import AssistantTurn, Notice
-from agent6.harness._finish_gates import FinishCall, memory_finish
-from agent6.harness._guards import MemoryState, memory_flip
-from agent6.harness._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
-from agent6.harness._verify_verdict import VerifyVerdict
-from agent6.harness.loop import (
-    Harness,
-    LoopState,
-    TurnState,
+from agent6.harness import (
+    _chain,
+    _conversation,
+    _finish_gates,
+    _guards,
+    _loop_state,
+    _nudges,
+    _verify_verdict,
+    loop,
 )
-from agent6.tools.results import EditResult, ExecResult
+from agent6.tools import results
 from tests.unit.turn_context import turn_context
 
 
-def _wf(**kw: Any) -> Harness:
-    kw.setdefault("state_dir", Path("/tmp/state"))
-    return Harness(
-        chain=RunChain(Path("/tmp")),
+def _wf(**kw: Any) -> loop.Harness:
+    kw.setdefault("state_dir", pathlib.Path("/tmp/state"))
+    return loop.Harness(
+        chain=_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate({}),
-        provider=MagicMock(),
-        dispatcher=MagicMock(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
         logger=lambda _m: None,
         **kw,
     )
 
 
-def _state(**kw: Any) -> LoopState:
-    return LoopState(original_task="t", tool_calls=0, **kw)
+def _state(**kw: Any) -> _loop_state.LoopState:
+    return _loop_state.LoopState(original_task="t", tool_calls=0, **kw)
 
 
-def _turn(iteration: int = 1, **kw: Any) -> TurnState:
-    return TurnState(iteration=iteration, resp=MagicMock(), assistant=AssistantTurn((), ()), **kw)
+def _turn(iteration: int = 1, **kw: Any) -> _loop_state.TurnState:
+    return _loop_state.TurnState(
+        iteration=iteration,
+        resp=mock.MagicMock(),
+        assistant=_conversation.AssistantTurn((), ()),
+        **kw,
+    )
 
 
-def _verify(wf: Harness, state: LoopState, turn: TurnState, rc: int) -> None:
+def _verify(
+    wf: loop.Harness, state: _loop_state.LoopState, turn: _loop_state.TurnState, rc: int
+) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state,
         turn,
         "run_verify_command",
-        ExecResult(returncode=rc, stdout="", stderr="", duration_s=0.0, exec_failed=False),
+        results.ExecResult(returncode=rc, stdout="", stderr="", duration_s=0.0, exec_failed=False),
         {},
     )
 
 
-def _notice_texts(turn: TurnState) -> list[str]:
-    return [item.text for item in turn.tool_results if isinstance(item, Notice)]
+def _notice_texts(turn: _loop_state.TurnState) -> list[str]:
+    return [item.text for item in turn.tool_results if isinstance(item, _conversation.Notice)]
 
 
-def _flip(wf: Harness, state: LoopState, turn: TurnState) -> str | None:
+def _flip(
+    wf: loop.Harness, state: _loop_state.LoopState, turn: _loop_state.TurnState
+) -> str | None:
     """The flip advisory's text for this turn, as the advisor answers it."""
     ctx = turn_context(mode=wf.mode, memory_wired=wf.state_dir is not None)
-    nudge = memory_flip(turn, state, ctx)
+    nudge = _guards.memory_flip(turn, state, ctx)
     return None if nudge is None else nudge.text
 
 
@@ -81,7 +89,7 @@ def test_flip_advisory_fires_once_at_first_red_green_flip() -> None:
     flip = _turn(2)
     _verify(wf, state, flip, rc=0)
     assert flip.verify_flipped_green is True
-    assert _flip(wf, state, flip) == MEMORY_FLIP_NUDGE
+    assert _flip(wf, state, flip) == _nudges.MEMORY_FLIP_NUDGE
     assert state.memory.flip_nudged is True
 
     # A second recovery does not re-nudge.
@@ -104,10 +112,12 @@ def test_flip_advisory_needs_a_prior_red_verify() -> None:
 def test_flip_advisory_suppressed_without_store_write_or_run_mode() -> None:
     for wf, state_kw in (
         (_wf(state_dir=None), {}),
-        (_wf(), {"memory": MemoryState(written=True)}),
+        (_wf(), {"memory": _guards.MemoryState(written=True)}),
         (_wf(mode="ask"), {}),
     ):
-        state = _state(**state_kw, verify=VerifyVerdict(last_ok=False, ever_failed=True))
+        state = _state(
+            **state_kw, verify=_verify_verdict.VerifyVerdict(last_ok=False, ever_failed=True)
+        )
         flip = _turn(2)
         _verify(wf, state, flip, rc=0)
         assert _flip(wf, state, flip) is None
@@ -128,7 +138,7 @@ def test_memory_dir_edit_marks_memory_written() -> None:
         "apply_edit",
         # EditResult spells memory paths store-relative; the INPUT path is
         # what identifies a memory write.
-        EditResult(applied=("create",), path="new-fact.md"),
+        results.EditResult(applied=("create",), path="new-fact.md"),
         {"path": "/tmp/state/memory/new-fact.md", "edits": []},
     )
     assert state.memory.written is True
@@ -144,9 +154,8 @@ def test_memory_dir_patch_without_a_path_marks_memory_written() -> None:
     nudges then fire at a model that just wrote memory) and sets `ever_edited`. The targets come
     from the patch; a patch over the store and the workspace together is workspace work.
     """
-    from agent6.tools.results import PatchResult
 
-    def note(patch: str) -> tuple[LoopState, TurnState]:
+    def note(patch: str) -> tuple[_loop_state.LoopState, _loop_state.TurnState]:
         wf = _wf()
         state = _state()
         turn = _turn(1)
@@ -154,7 +163,7 @@ def test_memory_dir_patch_without_a_path_marks_memory_written() -> None:
             state,
             turn,
             "apply_patch",
-            PatchResult(path="new-fact.md", bytes_written=2),
+            results.PatchResult(path="new-fact.md", bytes_written=2),
             {"patch": patch},
         )
         return state, turn
@@ -180,10 +189,9 @@ def test_a_preview_edit_is_no_edit() -> None:
     over a dry run of the store) nor a tree edit (a green verify would be withdrawn over a tree
     nothing touched).
     """
-    from agent6.tools.results import PreviewResult
 
-    def preview(path: str) -> PreviewResult:
-        return PreviewResult(
+    def preview(path: str) -> results.PreviewResult:
+        return results.PreviewResult(
             path=path, diff="", hunks=1, bytes_before=1, bytes_after=2, truncated=False
         )
 
@@ -209,7 +217,7 @@ def test_workspace_edit_does_not_mark_memory_written() -> None:
         state,
         turn,
         "apply_edit",
-        EditResult(applied=("replace",), path="src/code.py"),
+        results.EditResult(applied=("replace",), path="src/code.py"),
         {"path": "src/code.py", "edits": []},
     )
     assert state.memory.written is False
@@ -218,46 +226,52 @@ def test_workspace_edit_does_not_mark_memory_written() -> None:
 
 def test_finish_gate_defers_once_then_honours() -> None:
     wf = _wf()
-    state = _state(verify=VerifyVerdict(ever_failed=True, last_ok=True))
+    state = _state(verify=_verify_verdict.VerifyVerdict(ever_failed=True, last_ok=True))
 
     # Five idle turns behind it: the settle guard would have ended the run one
     # turn later, before the memory note and the re-finish the nudge asks for.
     state.settled.idle = 5
     state.settled.nudged = True
-    first = _turn(5, finish=FinishCall("finish_session", "done", {"k": "v"}))
+    first = _turn(5, finish=_finish_gates.FinishCall("finish_session", "done", {"k": "v"}))
     ctx = wf._turn_context(state, iteration=5, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     wf._turn_finish_gates(state, first, ctx)  # pyright: ignore[reportPrivateUsage]
     assert first.finish is None
-    assert MEMORY_FINISH_NUDGE in _notice_texts(first)
+    assert _nudges.MEMORY_FINISH_NUDGE in _notice_texts(first)
     assert state.memory.finish_nudged is True
     assert state.settled.idle == 0 and state.settled.nudged is False
 
-    second = _turn(6, finish=FinishCall("finish_session", "done"))
-    assert memory_finish(second, state, ctx) is None
+    second = _turn(6, finish=_finish_gates.FinishCall("finish_session", "done"))
+    assert _finish_gates.memory_finish(second, state, ctx) is None
 
 
 def test_finish_gate_quiet_without_a_recovery_or_after_a_write() -> None:
     wf = _wf()
     cases = [
         # Verify never failed: a smooth run is never interrogated.
-        (wf, _state(verify=VerifyVerdict(last_ok=True))),
+        (wf, _state(verify=_verify_verdict.VerifyVerdict(last_ok=True))),
         # Still red at finish: nothing proven to record.
-        (wf, _state(verify=VerifyVerdict(ever_failed=True, last_ok=False))),
+        (wf, _state(verify=_verify_verdict.VerifyVerdict(ever_failed=True, last_ok=False))),
         # The worker already recorded something.
         (
             wf,
             _state(
-                memory=MemoryState(written=True),
-                verify=VerifyVerdict(ever_failed=True, last_ok=True),
+                memory=_guards.MemoryState(written=True),
+                verify=_verify_verdict.VerifyVerdict(ever_failed=True, last_ok=True),
             ),
         ),
         # No memory store wired.
-        (_wf(state_dir=None), _state(verify=VerifyVerdict(ever_failed=True, last_ok=True))),
+        (
+            _wf(state_dir=None),
+            _state(verify=_verify_verdict.VerifyVerdict(ever_failed=True, last_ok=True)),
+        ),
         # Not a run-mode harness.
-        (_wf(mode="ask"), _state(verify=VerifyVerdict(ever_failed=True, last_ok=True))),
+        (
+            _wf(mode="ask"),
+            _state(verify=_verify_verdict.VerifyVerdict(ever_failed=True, last_ok=True)),
+        ),
     ]
     for gated_wf, state in cases:
-        turn = _turn(5, finish=FinishCall("finish_session", "done"))
+        turn = _turn(5, finish=_finish_gates.FinishCall("finish_session", "done"))
         ctx = turn_context(mode=gated_wf.mode, memory_wired=gated_wf.state_dir is not None)
-        assert memory_finish(turn, state, ctx) is None
+        assert _finish_gates.memory_finish(turn, state, ctx) is None
         assert state.memory.finish_nudged is False

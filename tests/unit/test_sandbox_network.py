@@ -8,23 +8,18 @@ The supervisor subprocess runs a machine `agent` state self-confined.
 from __future__ import annotations
 
 import os
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import pytest
 
-from agent6.app import machine_agent
-from agent6.app.confine import (
-    check_network_support,
-)
+from agent6 import git_ops, kinds
+from agent6.app import confine, machine_agent
 from agent6.app.machine import (
     machine_network_refusal,
 )
 from agent6.config import Config, validate_config
-from agent6.git_ops import CommitIdentity
-from agent6.kinds import IsolationLevel
-from agent6.machine import AgentRequest
-from agent6.machine.spec import ToolState
+from agent6.machine import AgentRequest, spec
 
 
 def _cfg(network: str = "session") -> Config:
@@ -38,23 +33,27 @@ def _cfg(network: str = "session") -> Config:
 
 
 @pytest.mark.parametrize("isolation", ["strict", "none"])
-def test_check_network_support_allows_off_hardened(isolation: IsolationLevel) -> None:
+def test_check_network_support_allows_off_hardened(isolation: kinds.IsolationLevel) -> None:
     # local/only_explicit_states only refused on hardened; strict supports them,
     # none is unsandboxed (warned elsewhere), so neither refuses here.
-    assert check_network_support(_cfg("session"), isolation) is None
-    assert check_network_support(_cfg("only_explicit_states"), isolation) is None
+    assert confine.check_network_support(_cfg("session"), isolation) is None
+    assert confine.check_network_support(_cfg("only_explicit_states"), isolation) is None
 
 
 def test_check_network_support_refuses_only_explicit_states_on_hardened() -> None:
-    msg = check_network_support(_cfg("only_explicit_states"), "hardened")
+    msg = confine.check_network_support(_cfg("only_explicit_states"), "hardened")
     assert msg is not None and "only_explicit_states" in msg
 
 
 # --- _machine_network_refusal ----------------------------------------------
 
-_TOOL = ToolState(kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"})
-_NET_TOOL = ToolState(kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, network="host")
-_BLOCK_TOOL = ToolState(kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, network="none")
+_TOOL = spec.ToolState(kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"})
+_NET_TOOL = spec.ToolState(
+    kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, network="host"
+)
+_BLOCK_TOOL = spec.ToolState(
+    kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, network="none"
+)
 
 
 def test_refusal_networked_tool_under_block() -> None:
@@ -101,7 +100,7 @@ def test_refusal_allow_auto_tools_on_hardened_ok() -> None:
 
 
 @pytest.fixture
-def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
@@ -114,16 +113,16 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 def test_run_one_returns_finish_payload(
-    iso: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    iso: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.harness.loop import SessionResult
+    from agent6.harness import _snapshot
 
     class _FakeWf:
         def __init__(self, **_kw: object) -> None:
             pass
 
-        def run(self, _prompt: str) -> SessionResult:
-            return SessionResult(
+        def run(self, _prompt: str) -> _snapshot.SessionResult:
+            return _snapshot.SessionResult(
                 reason="finish_session",
                 completed=True,
                 summary="done",
@@ -155,14 +154,14 @@ def test_run_one_returns_finish_payload(
 
 def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Stub the agent loop in machine_agent; return a dict capturing dispatcher kwargs."""
-    from agent6.harness.loop import SessionResult
+    from agent6.harness import _snapshot
 
     class _FakeWf:
         def __init__(self, **_kw: object) -> None:
             pass
 
-        def run(self, _prompt: str) -> SessionResult:
-            return SessionResult(
+        def run(self, _prompt: str) -> _snapshot.SessionResult:
+            return _snapshot.SessionResult(
                 reason="finish_session",
                 completed=True,
                 summary="d",
@@ -188,7 +187,7 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 def test_run_one_drops_out_of_cwd_protect_paths(
-    iso: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    iso: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured = _stub_loop(monkeypatch)
     inside = iso / "m.asm.toml"
@@ -210,7 +209,7 @@ def test_run_one_drops_out_of_cwd_protect_paths(
 
 
 def test_run_one_exports_commit_identity(
-    iso: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    iso: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _stub_loop(monkeypatch)
     for key in (
@@ -226,7 +225,7 @@ def test_run_one_exports_commit_identity(
         overlay={},
         isolation="none",
         transcript_dir=tmp_path / "t",
-        commit_identity=CommitIdentity(name="Machine Bot", email="bot@example.com"),
+        commit_identity=git_ops.CommitIdentity(name="Machine Bot", email="bot@example.com"),
         request=AgentRequest(
             model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic", mode="run"
         ),

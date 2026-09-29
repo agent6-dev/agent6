@@ -7,11 +7,11 @@ A prefix pair completes ambiguously in an id.
 
 from __future__ import annotations
 
-from agent6._data.words import ADJECTIVES, NOUNS
+from agent6._data import words
 
 
 def test_curation_rules_hold() -> None:
-    for ws in (ADJECTIVES, NOUNS):
+    for ws in (words.ADJECTIVES, words.NOUNS):
         assert list(ws) == sorted(ws)
         assert all(w.isascii() and w.isalpha() and w.islower() for w in ws)
         prefix_pairs = [(a, b) for a in ws for b in ws if a != b and b.startswith(a)]

@@ -24,32 +24,6 @@ from typing import Any
 import pytest
 
 from agent6.tools import results as results_mod
-from agent6.tools.results import (
-    AddTaskResult,
-    AnswersResult,
-    BackgroundResult,
-    DefinitionsResult,
-    DocsContentResult,
-    DocsIndexResult,
-    EditResult,
-    ExecResult,
-    FetchResult,
-    FinishPlanningResult,
-    FinishSessionResult,
-    ListDirResult,
-    ListTasksResult,
-    MetricResult,
-    OutlineResult,
-    PatchResult,
-    PreviewResult,
-    RawResult,
-    ReadFileResult,
-    ReferencesResult,
-    SessionsResult,
-    SkillResult,
-    ToolResult,
-    UpdateTaskResult,
-)
 
 _HIT: dict[str, Any] = {"path": "a.py", "line": 1, "text": "x"}
 _SYM: dict[str, Any] = {"name": "f", "kind": "function", "line": 1, "col": 0}
@@ -60,61 +34,81 @@ _LONG_TITLE = "audit the provider transport layer for retry storms and dedupe th
 # (case id, result, exact expected summary). One row per concrete type, plus a
 # second row wherever summary() has a conditional branch (truncated suffix,
 # blank-answer counting, title clipping).
-CASES: list[tuple[str, ToolResult, str]] = [
+CASES: list[tuple[str, results_mod.ToolResult, str]] = [
     # content access
-    ("docs_index", DocsIndexResult(available=("architecture", "security")), "ok"),
+    ("docs_index", results_mod.DocsIndexResult(available=("architecture", "security")), "ok"),
     (
         "docs_content",
-        DocsContentResult(name="security", content="body", size=4, truncated=False),
+        results_mod.DocsContentResult(name="security", content="body", size=4, truncated=False),
         "ok",
     ),
-    ("read_file", ReadFileResult(content="hi", size=2, lines_total=1), "2 bytes"),
+    ("read_file", results_mod.ReadFileResult(content="hi", size=2, lines_total=1), "2 bytes"),
     (
         "read_file_slice",
-        ReadFileResult(content="b\n", size=2, lines_total=3, start_line=2, lines_returned=1),
+        results_mod.ReadFileResult(
+            content="b\n", size=2, lines_total=3, start_line=2, lines_returned=1
+        ),
         "2 bytes",
     ),
-    ("list_dir", ListDirResult(entries=("a.txt", "b/")), "2 entries"),
+    ("list_dir", results_mod.ListDirResult(entries=("a.txt", "b/")), "2 entries"),
     # search / navigation
-    ("outline", OutlineResult(symbols=(_SYM, _SYM, _SYM), truncated=False), "3 symbols"),
-    ("outline_truncated", OutlineResult(symbols=(_SYM,), truncated=True), "1 symbols (truncated)"),
-    ("definitions", DefinitionsResult(definitions=(_LOC,), truncated=False), "1 definitions"),
+    (
+        "outline",
+        results_mod.OutlineResult(symbols=(_SYM, _SYM, _SYM), truncated=False),
+        "3 symbols",
+    ),
+    (
+        "outline_truncated",
+        results_mod.OutlineResult(symbols=(_SYM,), truncated=True),
+        "1 symbols (truncated)",
+    ),
+    (
+        "definitions",
+        results_mod.DefinitionsResult(definitions=(_LOC,), truncated=False),
+        "1 definitions",
+    ),
     (
         "definitions_truncated",
-        DefinitionsResult(definitions=(_LOC,), truncated=True),
+        results_mod.DefinitionsResult(definitions=(_LOC,), truncated=True),
         "1 definitions (truncated)",
     ),
-    ("references", ReferencesResult(references=(), truncated=False), "0 references"),
+    ("references", results_mod.ReferencesResult(references=(), truncated=False), "0 references"),
     (
         "references_truncated",
-        ReferencesResult(references=(_LOC,), truncated=True),
+        results_mod.ReferencesResult(references=(_LOC,), truncated=True),
         "1 references (truncated)",
     ),
     # filesystem writes
     (
         "apply_edit",
-        EditResult(applied=("create",), path="new.txt"),
+        results_mod.EditResult(applied=("create",), path="new.txt"),
         "applied=['create'] path=new.txt",
     ),
     (
         "apply_edit_multi",
-        EditResult(applied=("replace", "replace~indent"), path="src/m.py"),
+        results_mod.EditResult(applied=("replace", "replace~indent"), path="src/m.py"),
         "applied=['replace', 'replace~indent'] path=src/m.py",
     ),
-    ("apply_patch", PatchResult(path="f.py", bytes_written=5), "patched path=f.py bytes=5"),
+    (
+        "apply_patch",
+        results_mod.PatchResult(path="f.py", bytes_written=5),
+        "patched path=f.py bytes=5",
+    ),
     (
         "apply_patch_delete",
-        PatchResult(path="f.py", bytes_written=0, deleted=("f.py",)),
+        results_mod.PatchResult(path="f.py", bytes_written=0, deleted=("f.py",)),
         "deleted path=f.py",
     ),
     (
         "apply_patch_multi_mixed",
-        PatchResult(path="a.py", bytes_written=2, files=(("a.py", 2),), deleted=("old.py",)),
+        results_mod.PatchResult(
+            path="a.py", bytes_written=2, files=(("a.py", 2),), deleted=("old.py",)
+        ),
         "patched 1 files, deleted 1 bytes=2",
     ),
     (
         "preview",
-        PreviewResult(
+        results_mod.PreviewResult(
             path="f.py",
             diff="-x\n+y\n",
             hunks=1,
@@ -128,52 +122,60 @@ CASES: list[tuple[str, ToolResult, str]] = [
     # the web
     (
         "fetch",
-        FetchResult(url="https://x/y", status=200, content_type="text/plain", body="hello"),
+        results_mod.FetchResult(
+            url="https://x/y", status=200, content_type="text/plain", body="hello"
+        ),
         "200 · 5 bytes",
     ),
     # other sessions
     (
         "sessions_roster",
-        SessionsResult(sessions=("[a-b-AAAAAA] ask · 2026-07-31T01:00: q",)),
+        results_mod.SessionsResult(sessions=("[a-b-AAAAAA] ask · 2026-07-31T01:00: q",)),
         "1 session",
     ),
     (
         "sessions_read",
-        SessionsResult(sessions=("[a] run: x", "[b] ask: y"), conversation="user: hi"),
+        results_mod.SessionsResult(sessions=("[a] run: x", "[b] ask: y"), conversation="user: hi"),
         "2 sessions",
     ),
     # background commands
     (
         "background_one",
-        BackgroundResult(shells=("[bg1] running: sleep 300",)),
+        results_mod.BackgroundResult(shells=("[bg1] running: sleep 300",)),
         "[bg1] running: sleep 300",
     ),
     (
         "background_many",
-        BackgroundResult(shells=("[bg1] running: a", "[bg2] exited (exit 1): b"), output="x"),
+        results_mod.BackgroundResult(
+            shells=("[bg1] running: a", "[bg2] exited (exit 1): b"), output="x"
+        ),
         "2 background",
     ),
     # execution
     (
         "exec",
-        ExecResult(returncode=1, stdout="", stderr="boom", duration_s=0.5, exec_failed=False),
+        results_mod.ExecResult(
+            returncode=1, stdout="", stderr="boom", duration_s=0.5, exec_failed=False
+        ),
         "exit=1 in 0.5s",
     ),
     (
         "exec_duration_fmt",
-        ExecResult(returncode=0, stdout="", stderr="", duration_s=12.34, exec_failed=False),
+        results_mod.ExecResult(
+            returncode=0, stdout="", stderr="", duration_s=12.34, exec_failed=False
+        ),
         "exit=0 in 12.3s",
     ),
     (
         "exec_timed_out",
-        ExecResult(
+        results_mod.ExecResult(
             returncode=124, stdout="", stderr="", duration_s=240.1, exec_failed=False, timeout_s=240
         ),
         "exit=124 (timed out at 240s) in 240.1s",
     ),
     (
         "metric",
-        MetricResult(
+        results_mod.MetricResult(
             returncode=0,
             stdout="CYCLES: 42",
             stderr="",
@@ -185,7 +187,7 @@ CASES: list[tuple[str, ToolResult, str]] = [
     ),
     (
         "metric_timed_out",
-        MetricResult(
+        results_mod.MetricResult(
             returncode=124,
             stdout="",
             stderr="",
@@ -197,46 +199,46 @@ CASES: list[tuple[str, ToolResult, str]] = [
         "exit=124 (timed out at 240s) in 240.1s",
     ),
     # run control
-    ("finish_session", FinishSessionResult(summary_text="done", result=None), "ok"),
-    ("finish_planning", FinishPlanningResult(summary_text="s", plan_bytes=7), "ok"),
-    ("ask_user", AnswersResult(answers=("yes", "", " ", "no")), "2/4 answered"),
+    ("finish_session", results_mod.FinishSessionResult(summary_text="done", result=None), "ok"),
+    ("finish_planning", results_mod.FinishPlanningResult(summary_text="s", plan_bytes=7), "ok"),
+    ("ask_user", results_mod.AnswersResult(answers=("yes", "", " ", "no")), "2/4 answered"),
     # DAG
     (
         "add_task",
-        AddTaskResult(id="01A", parent_id=None, title="t", status="pending"),
+        results_mod.AddTaskResult(id="01A", parent_id=None, title="t", status="pending"),
         "pending: t",
     ),
     (
         "add_task_title_clipped",
-        AddTaskResult(id="01A", parent_id=None, title=_LONG_TITLE, status="pending"),
+        results_mod.AddTaskResult(id="01A", parent_id=None, title=_LONG_TITLE, status="pending"),
         f"pending: {_LONG_TITLE[:60]}",
     ),
-    ("update_task", UpdateTaskResult(id="01A", status="done", title="t"), "done: t"),
-    ("list_tasks", ListTasksResult(tasks=(_TASK, _TASK), count=2), "2 tasks"),
+    ("update_task", results_mod.UpdateTaskResult(id="01A", status="done", title="t"), "done: t"),
+    ("list_tasks", results_mod.ListTasksResult(tasks=(_TASK, _TASK), count=2), "2 tasks"),
     # operator knowledge
     (
         "use_skill",
-        SkillResult(skill="deploy", file="SKILL.md", content="12345"),
+        results_mod.SkillResult(skill="deploy", file="SKILL.md", content="12345"),
         "skill deploy/SKILL.md (5 chars)",
     ),
     # MCP passthrough: DELIBERATE change from the base-tree sniffer, which would
     # have guessed "0 matches" from this payload's keys; the opaque server dict
     # now summarizes as the generic "ok" (reshape report, security-adjacent §).
-    ("mcp_raw", RawResult({"hits": [], "truncated": False}), "ok"),
+    ("mcp_raw", results_mod.RawResult({"hits": [], "truncated": False}), "ok"),
 ]
 
 
 @pytest.mark.parametrize(
     ("result", "expected"), [(r, e) for _, r, e in CASES], ids=[i for i, _, _ in CASES]
 )
-def test_summary_string_is_pinned(result: ToolResult, expected: str) -> None:
+def test_summary_string_is_pinned(result: results_mod.ToolResult, expected: str) -> None:
     assert result.summary() == expected
 
 
 def test_base_summary_fallback_is_ok() -> None:
     """A result type without its own summary() reports "ok", not the tool name doubled."""
 
-    class _Minimal(ToolResult):
+    class _Minimal(results_mod.ToolResult):
         def to_wire(self) -> dict[str, Any]:
             return {}
 

@@ -10,14 +10,14 @@ leave `max_usd` without a ceiling.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 from typing import Any
 from unittest import mock
 
 import httpx2
 import pytest
 
-from agent6.budget import BudgetTracker
+from agent6 import budget as agent6_budget
 from agent6.providers import AnthropicProvider, OpenAIProvider, ProviderError
 from tests.unit.test_anthropic_streaming import FakeStreamResponse
 
@@ -45,7 +45,7 @@ def _sse(event: str, data: dict[str, Any]) -> list[str]:
 
 
 def test_anthropic_records_what_a_cut_stream_already_cost(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     # The USD assertion needs a table price; the suite isolates the model-price cache, so seed one.
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
@@ -74,7 +74,7 @@ def test_anthropic_records_what_a_cut_stream_already_cost(
         "content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "partial"}}
     )
 
-    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with (
         mock.patch("agent6.providers._stream.http_stream", return_value=_cut(lines, at=9)),
@@ -102,7 +102,7 @@ def test_anthropic_cut_stream_keeps_message_start_output_usage() -> None:
     lines += _sse(
         "content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}
     )
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with (
         mock.patch("agent6.providers._stream.http_stream", return_value=_cut(lines, at=6)),
@@ -139,7 +139,7 @@ def test_openai_records_a_cut_stream_and_keeps_the_cached_split() -> None:
     )
     lines += chunk({"choices": [{"index": 0, "delta": {"content": " more"}}]})
 
-    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
     provider = OpenAIProvider(api_key="k", model="gpt-4o", budget=budget)
     with (
         mock.patch("agent6.providers._stream.http_stream", return_value=_cut(lines, at=6)),
@@ -163,7 +163,7 @@ def test_a_stream_that_reported_nothing_records_nothing() -> None:
     """A stream that reported nothing records nothing: an unknown amount is not invented."""
     lines = _sse("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}})
 
-    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with (
         mock.patch("agent6.providers._stream.http_stream", return_value=_cut(lines, at=1)),
@@ -184,7 +184,7 @@ def test_a_stream_that_reported_nothing_records_nothing() -> None:
     assert snap.per_model == {}
 
 
-def _pricing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _pricing(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
     pricing = {"claude-sonnet-4-5": [3.0, 15.0], "gpt-4o": [3.0, 15.0]}
@@ -194,14 +194,14 @@ def _pricing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_anthropic_records_a_completed_stream_its_meter_guard_refuses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Anthropic records a completed stream its meter guard refuses.
 
     A gateway with usage tracking off completes with zero input tokens; the billed output tokens are
     recorded before the retryable refusal.
     """
-    from agent6.providers.types import ProviderError
+    from agent6.providers import types
 
     _pricing(tmp_path, monkeypatch)
     lines = _sse(
@@ -227,14 +227,14 @@ def test_anthropic_records_a_completed_stream_its_meter_guard_refuses(
         "message_delta", {"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 800}}
     )
     lines += _sse("message_stop", {})
-    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with (
         mock.patch(
             "agent6.providers._stream.http_stream",
             return_value=FakeStreamResponse(status_code=200, lines=lines),
         ),
-        pytest.raises(ProviderError, match="no usage input tokens"),
+        pytest.raises(types.ProviderError, match="no usage input tokens"),
     ):
         provider.call(
             system="s",
@@ -246,13 +246,13 @@ def test_anthropic_records_a_completed_stream_its_meter_guard_refuses(
 
 
 def test_openai_records_a_completed_stream_its_meter_guard_refuses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """OpenAI records a completed stream its meter guard refuses.
 
     A [DONE] stream whose usage trailer says prompt_tokens 0 still books its completion tokens.
     """
-    from agent6.providers.types import ProviderError
+    from agent6.providers import types
 
     _pricing(tmp_path, monkeypatch)
     lines = [
@@ -266,14 +266,14 @@ def test_openai_records_a_completed_stream_its_meter_guard_refuses(
         "data: [DONE]",
         "",
     ]
-    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
     provider = OpenAIProvider(api_key="k", model="gpt-4o", budget=budget)
     with (
         mock.patch(
             "agent6.providers._stream.http_stream",
             return_value=FakeStreamResponse(status_code=200, lines=lines),
         ),
-        pytest.raises(ProviderError, match="no usage input tokens"),
+        pytest.raises(types.ProviderError, match="no usage input tokens"),
     ):
         provider.call(
             system="s",
@@ -284,7 +284,7 @@ def test_openai_records_a_completed_stream_its_meter_guard_refuses(
 
 
 def test_anthropic_meters_a_completed_stream_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Anthropic meters a completed stream once.
 
@@ -314,7 +314,7 @@ def test_anthropic_meters_a_completed_stream_once(
         "message_delta", {"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 20}}
     )
     lines += _sse("message_stop", {})
-    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with mock.patch(
         "agent6.providers._stream.http_stream",
@@ -345,7 +345,7 @@ def test_anthropic_records_a_completed_malformed_stream() -> None:
         "message_delta", {"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 20}}
     )
     lines += _sse("message_stop", {})
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with (
         mock.patch(
@@ -364,7 +364,7 @@ def test_anthropic_records_a_completed_malformed_stream() -> None:
 
 
 def test_openai_meters_a_completed_stream_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The OpenAI twin of the double booking."""
     _pricing(tmp_path, monkeypatch)
@@ -379,7 +379,7 @@ def test_openai_meters_a_completed_stream_once(
         "data: [DONE]",
         "",
     ]
-    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
     provider = OpenAIProvider(api_key="k", model="gpt-4o", budget=budget)
     with mock.patch(
         "agent6.providers._stream.http_stream",

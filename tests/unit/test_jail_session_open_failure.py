@@ -8,17 +8,17 @@ pipe is closed at the failure site; an abandoned Popen leaves BrokenPipeError no
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
+from agent6 import kinds
 from agent6.sandbox import jail
-from agent6.sandbox.jail import JailPolicy, JailSession, JailUnavailableError
 
 
-def _fake_binary(tmp_path: Path, script: str) -> Path:
+def _fake_binary(tmp_path: pathlib.Path, script: str) -> pathlib.Path:
     fake = tmp_path / "agent6-jail"
     fake.write_text(f"#!/bin/sh\n{script}\n")
     fake.chmod(0o755)
@@ -39,12 +39,12 @@ def _recording_popen(monkeypatch: pytest.MonkeyPatch) -> list[subprocess.Popen[b
 
 
 def test_a_launcher_dead_at_setup_is_reaped_with_its_pipes_closed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(jail, "_require_jail_binary", lambda: _fake_binary(tmp_path, "exit 7"))
     seen = _recording_popen(monkeypatch)
-    with pytest.raises(JailUnavailableError, match="died during setup"):
-        JailSession.open(JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
+    with pytest.raises(jail.JailUnavailableError, match="died during setup"):
+        jail.JailSession.open(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
     (proc,) = seen
     assert proc.returncode is not None  # reaped: no zombie outlives the failure
     assert proc.stdin is not None and proc.stdin.closed
@@ -53,7 +53,7 @@ def test_a_launcher_dead_at_setup_is_reaped_with_its_pipes_closed(
 
 
 def test_a_spec_write_failure_is_the_same_setup_death(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """EPIPE at the spec write is JailUnavailableError like the EOF case; the child is reaped."""
     monkeypatch.setattr(jail, "_require_jail_binary", lambda: _fake_binary(tmp_path, "exit 7"))
@@ -81,7 +81,7 @@ def test_a_spec_write_failure_is_the_same_setup_death(
         return p
 
     monkeypatch.setattr(jail.subprocess, "Popen", boom)
-    with pytest.raises(JailUnavailableError, match="died during setup"):
-        JailSession.open(JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
+    with pytest.raises(jail.JailUnavailableError, match="died during setup"):
+        jail.JailSession.open(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
     (proc,) = seen
     assert proc.returncode is not None

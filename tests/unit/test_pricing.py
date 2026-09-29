@@ -5,41 +5,41 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.models.cache import _parse_pricing  # pyright: ignore[reportPrivateUsage]
-from agent6.models.pricing import Price, lookup_price
+from agent6.models import cache as models_cache  # pyright: ignore[reportPrivateUsage]
+from agent6.models import pricing as models_pricing
 
 
-def _write_pricing(cache: Path, name: str, pricing: dict[str, list[float]]) -> None:
+def _write_pricing(cache: pathlib.Path, name: str, pricing: dict[str, list[float]]) -> None:
     (cache / "agent6" / "models").mkdir(parents=True, exist_ok=True)
     (cache / "agent6" / "models" / f"{name}.json").write_text(
         json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
     )
 
 
-def test_lookup_price_reads_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_lookup_price_reads_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     _write_pricing(tmp_path, "openrouter", {"a/model": [0.5, 2.5]})
-    assert lookup_price("a/model") == Price(0.5, 2.5)
-    assert lookup_price("nobody/else") is None
+    assert models_pricing.lookup_price("a/model") == models_pricing.Price(0.5, 2.5)
+    assert models_pricing.lookup_price("nobody/else") is None
 
 
 def test_lookup_price_sees_cache_written_after_first_miss(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     # The CLI preflight refreshes the cache AFTER config construction already
     # did a lookup; the memo must not pin the early empty result.
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    assert lookup_price("a/model") is None
+    assert models_pricing.lookup_price("a/model") is None
     _write_pricing(tmp_path, "openrouter", {"a/model": [0.5, 2.5]})
-    assert lookup_price("a/model") == Price(0.5, 2.5)
+    assert models_pricing.lookup_price("a/model") == models_pricing.Price(0.5, 2.5)
 
 
 def test_lookup_price_ignores_malformed_entries(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
@@ -56,9 +56,9 @@ def test_lookup_price_ignores_malformed_entries(
         ),
         encoding="utf-8",
     )
-    assert lookup_price("ok/model") == Price(1.0, 2.0)
+    assert models_pricing.lookup_price("ok/model") == models_pricing.Price(1.0, 2.0)
     for bad in ("neg/model", "str/model", "short/model"):
-        assert lookup_price(bad) is None
+        assert models_pricing.lookup_price(bad) is None
 
 
 def test_parse_pricing_openrouter_shape() -> None:
@@ -73,7 +73,7 @@ def test_parse_pricing_openrouter_shape() -> None:
             {"id": "bad-pricing", "pricing": {"prompt": "free", "completion": "0"}},
         ]
     }
-    got = _parse_pricing(payload)
+    got = models_cache._parse_pricing(payload)
     assert (got["moonshotai/kimi-k2.6"].input, got["moonshotai/kimi-k2.6"].output) == (
         pytest.approx(0.68),
         pytest.approx(3.41),
@@ -84,7 +84,7 @@ def test_parse_pricing_openrouter_shape() -> None:
 
 
 def test_lookup_price_direct_anthropic_alias(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     # A direct-Anthropic id resolves through its OpenRouter listing: date
     # suffix stripped, trailing version dotted, `anthropic/` prefixed.
@@ -98,13 +98,15 @@ def test_lookup_price_direct_anthropic_alias(
             "anthropic/claude-sonnet-5": [2.0, 10.0],
         },
     )
-    assert lookup_price("claude-haiku-4-5-20251001") == Price(1.0, 5.0)
-    assert lookup_price("claude-opus-4-8") == Price(5.0, 25.0)
-    assert lookup_price("claude-sonnet-5") == Price(2.0, 10.0)
+    assert models_pricing.lookup_price("claude-haiku-4-5-20251001") == models_pricing.Price(
+        1.0, 5.0
+    )
+    assert models_pricing.lookup_price("claude-opus-4-8") == models_pricing.Price(5.0, 25.0)
+    assert models_pricing.lookup_price("claude-sonnet-5") == models_pricing.Price(2.0, 10.0)
 
 
 def test_lookup_price_alias_never_shadows_exact(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     _write_pricing(
@@ -112,22 +114,22 @@ def test_lookup_price_alias_never_shadows_exact(
         "openrouter",
         {"claude-opus-4-8": [9.0, 9.0], "anthropic/claude-opus-4.8": [5.0, 25.0]},
     )
-    assert lookup_price("claude-opus-4-8") == Price(9.0, 9.0)
+    assert models_pricing.lookup_price("claude-opus-4-8") == models_pricing.Price(9.0, 9.0)
 
 
 def test_lookup_price_alias_misses_stay_unpriced(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     _write_pricing(tmp_path, "openrouter", {"anthropic/claude-3.5-sonnet": [3.0, 15.0]})
     # Legacy version-first naming is deliberately not mapped.
-    assert lookup_price("claude-3-5-sonnet-20241022") is None
+    assert models_pricing.lookup_price("claude-3-5-sonnet-20241022") is None
     # Namespaced ids are never rewritten.
-    assert lookup_price("someorg/claude-haiku-4-5") is None
+    assert models_pricing.lookup_price("someorg/claude-haiku-4-5") is None
 
 
 def test_a_model_two_providers_list_is_priced_by_its_route(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A model two providers list is priced by its route.
 
@@ -136,8 +138,7 @@ def test_a_model_two_providers_list_is_priced_by_its_route(
     """
     import json
 
-    from agent6.budget import BudgetTracker
-    from agent6.models.pricing import lookup_price
+    from agent6 import budget as agent6_budget
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
@@ -149,9 +150,13 @@ def test_a_model_two_providers_list_is_priced_by_its_route(
         json.dumps({"models": ["openai/gpt-4o"], "pricing": {"openai/gpt-4o": [2.50, 10.00]}}),
         encoding="utf-8",
     )
-    assert lookup_price("openai/gpt-4o", "openrouter") == Price(2.5, 10.0)
-    assert lookup_price("openai/gpt-4o", "aaa_cheap") == Price(0.1, 0.2)
-    budget = BudgetTracker(max_usd=100.0, max_tokens_fallback=-1, max_percent=-1)
+    assert models_pricing.lookup_price("openai/gpt-4o", "openrouter") == models_pricing.Price(
+        2.5, 10.0
+    )
+    assert models_pricing.lookup_price("openai/gpt-4o", "aaa_cheap") == models_pricing.Price(
+        0.1, 0.2
+    )
+    budget = agent6_budget.BudgetTracker(max_usd=100.0, max_tokens_fallback=-1, max_percent=-1)
     budget.note_route("openai/gpt-4o", "openrouter")
     budget.record(
         model="openai/gpt-4o",
@@ -164,7 +169,7 @@ def test_a_model_two_providers_list_is_priced_by_its_route(
 
 
 def test_a_listing_that_publishes_cache_rates_prices_them(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A listing that publishes cache rates prices them.
 
@@ -174,10 +179,9 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
     """
     import json
 
-    from agent6.budget import BudgetTracker
-    from agent6.models.cache import _parse_pricing  # pyright: ignore[reportPrivateUsage]
+    from agent6 import budget as agent6_budget
 
-    got = _parse_pricing(
+    got = models_cache._parse_pricing(
         {
             "data": [
                 {
@@ -207,7 +211,7 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
         ),
         encoding="utf-8",
     )
-    listed = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    listed = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
     listed.record(
         model="openai/gpt-x",
         input_tokens=0,
@@ -216,7 +220,7 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
         cache_creation_tokens=0,
     )
     assert listed.estimate_usd()[0] == pytest.approx(1.0)  # the listed 0.5x, not 0.1x
-    assumed = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    assumed = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
     assumed.record(
         model="listed-only/plain",
         input_tokens=0,
@@ -230,7 +234,7 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
 
 
 def test_a_route_with_its_own_card_never_prices_from_another(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A route with its own card never prices from another.
 
@@ -242,7 +246,7 @@ def test_a_route_with_its_own_card_never_prices_from_another(
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     _write_pricing(tmp_path, "aaa-gateway", {"other/model": [0.1, 0.2]})
     _write_pricing(tmp_path, "openrouter", {"x/model": [0.3, 0.6]})
-    assert lookup_price("x/model", "aaa-gateway") is None
-    assert lookup_price("x/model", "openrouter") == Price(0.3, 0.6)
-    assert lookup_price("x/model", "no-card") == Price(0.3, 0.6)
-    assert lookup_price("x/model") == Price(0.3, 0.6)
+    assert models_pricing.lookup_price("x/model", "aaa-gateway") is None
+    assert models_pricing.lookup_price("x/model", "openrouter") == models_pricing.Price(0.3, 0.6)
+    assert models_pricing.lookup_price("x/model", "no-card") == models_pricing.Price(0.3, 0.6)
+    assert models_pricing.lookup_price("x/model") == models_pricing.Price(0.3, 0.6)

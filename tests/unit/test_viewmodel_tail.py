@@ -5,53 +5,53 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import threading
 import time
-from pathlib import Path
 
-from agent6.viewmodel.tail import LogTail, journal_size, tail_events
+from agent6.viewmodel import tail as viewmodel_tail
 
 
-def test_tail_yields_existing_lines_in_non_follow_mode(tmp_path: Path) -> None:
+def test_tail_yields_existing_lines_in_non_follow_mode(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(
         json.dumps({"type": "session.start"}) + "\n" + json.dumps({"type": "session.end"}) + "\n",
         encoding="utf-8",
     )
-    out = list(tail_events(p, follow=False))
+    out = list(viewmodel_tail.tail_events(p, follow=False))
     assert [e["type"] for e in out] == ["session.start", "session.end"]
 
 
-def test_tail_yields_final_line_without_trailing_newline(tmp_path: Path) -> None:
+def test_tail_yields_final_line_without_trailing_newline(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(json.dumps({"type": "session.start"}) + "\n" + json.dumps({"type": "session.end"}))
-    out = list(tail_events(p, follow=False))
+    out = list(viewmodel_tail.tail_events(p, follow=False))
     assert [e["type"] for e in out] == ["session.start", "session.end"]
 
 
-def test_tail_skips_malformed_lines(tmp_path: Path) -> None:
+def test_tail_skips_malformed_lines(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(
         json.dumps({"type": "a"}) + "\n" + "{not json\n" + json.dumps({"type": "b"}) + "\n",
         encoding="utf-8",
     )
-    out = list(tail_events(p, follow=False))
+    out = list(viewmodel_tail.tail_events(p, follow=False))
     assert [e["type"] for e in out] == ["a", "b"]
 
 
-def test_tail_skips_non_dict_json(tmp_path: Path) -> None:
+def test_tail_skips_non_dict_json(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text("[]\n" + json.dumps({"type": "x"}) + "\n", encoding="utf-8")
-    out = list(tail_events(p, follow=False))
+    out = list(viewmodel_tail.tail_events(p, follow=False))
     assert [e["type"] for e in out] == ["x"]
 
 
-def test_tail_returns_when_file_missing_and_not_follow(tmp_path: Path) -> None:
-    out = list(tail_events(tmp_path / "missing", follow=False))
+def test_tail_returns_when_file_missing_and_not_follow(tmp_path: pathlib.Path) -> None:
+    out = list(viewmodel_tail.tail_events(tmp_path / "missing", follow=False))
     assert out == []
 
 
-def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: Path) -> None:
+def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: pathlib.Path) -> None:
     # A resume appends events AFTER session.end (no second end yet while it runs).
     # A watcher opening the log mid-resume must stream past the stale end, not
     # close on it and show the run as finished while it is live again.
@@ -67,7 +67,7 @@ def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: Path) -> 
         + "\n",
         encoding="utf-8",
     )
-    out = list(tail_events(p, follow=False, stop_when_finished=True))
+    out = list(viewmodel_tail.tail_events(p, follow=False, stop_when_finished=True))
     assert [e["type"] for e in out] == [
         "session.start",
         "session.end",
@@ -83,18 +83,18 @@ def _torn_utf8_line() -> tuple[bytes, bytes]:
     return full[:cut], full[cut:]
 
 
-def test_tail_survives_torn_utf8_tail(tmp_path: Path) -> None:
+def test_tail_survives_torn_utf8_tail(tmp_path: pathlib.Path) -> None:
     # Writers flush >8KB lines in multiple syscalls, so a poll can hit EOF in
     # the middle of a multibyte UTF-8 sequence. The complete lines must come
     # through and the torn tail must not raise UnicodeDecodeError.
     p = tmp_path / "logs.jsonl"
     head, _rest = _torn_utf8_line()
     p.write_bytes(json.dumps({"type": "session.start"}).encode() + b"\n" + head)
-    out = list(tail_events(p, follow=False))
+    out = list(viewmodel_tail.tail_events(p, follow=False))
     assert [e["type"] for e in out] == ["session.start"]
 
 
-def test_tail_completes_torn_utf8_line_across_polls(tmp_path: Path) -> None:
+def test_tail_completes_torn_utf8_line_across_polls(tmp_path: pathlib.Path) -> None:
     # Follow mode: the torn byte tail stays pending and yields once the rest of
     # the line (including the newline) arrives.
     p = tmp_path / "logs.jsonl"
@@ -110,13 +110,13 @@ def test_tail_completes_torn_utf8_line_across_polls(tmp_path: Path) -> None:
 
     t = threading.Thread(target=writer, daemon=True)
     t.start()
-    out = list(tail_events(p, follow=True, poll_s=0.05, stop_when_finished=True))
+    out = list(viewmodel_tail.tail_events(p, follow=True, poll_s=0.05, stop_when_finished=True))
     t.join(timeout=2)
     assert [e["type"] for e in out] == ["first", "role.text_delta", "session.end"]
     assert out[1]["text"] == "café"
 
 
-def test_follow_cancels_via_should_stop(tmp_path: Path) -> None:
+def test_follow_cancels_via_should_stop(tmp_path: pathlib.Path) -> None:
     """The consumer thread joins promptly once should_stop flips, on a run that never ends."""
     p = tmp_path / "logs.jsonl"
     p.write_text(json.dumps({"type": "first"}) + "\n", encoding="utf-8")
@@ -124,7 +124,7 @@ def test_follow_cancels_via_should_stop(tmp_path: Path) -> None:
     seen: list[str] = []
 
     def consume() -> None:
-        for e in tail_events(p, follow=True, poll_s=0.05, should_stop=flag.is_set):
+        for e in viewmodel_tail.tail_events(p, follow=True, poll_s=0.05, should_stop=flag.is_set):
             seen.append(str(e["type"]))
 
     t = threading.Thread(target=consume, daemon=True)
@@ -137,7 +137,7 @@ def test_follow_cancels_via_should_stop(tmp_path: Path) -> None:
     assert seen == ["first"]
 
 
-def test_should_stop_still_hands_over_what_was_appended(tmp_path: Path) -> None:
+def test_should_stop_still_hands_over_what_was_appended(tmp_path: pathlib.Path) -> None:
     """The follow drains the last events of a worker that exited within one poll, then returns."""
     p = tmp_path / "logs.jsonl"
     p.write_text(json.dumps({"type": "first"}) + "\n", encoding="utf-8")
@@ -154,12 +154,14 @@ def test_should_stop_still_hands_over_what_was_appended(tmp_path: Path) -> None:
 
     got = [
         e["type"]
-        for e in tail_events(p, follow=True, poll_s=0.01, should_stop=_dead_after_writing_the_end)
+        for e in viewmodel_tail.tail_events(
+            p, follow=True, poll_s=0.01, should_stop=_dead_after_writing_the_end
+        )
     ]
     assert got == ["first", "done", "session.end"]
 
 
-def test_tail_follows_appended_lines(tmp_path: Path) -> None:
+def test_tail_follows_appended_lines(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(json.dumps({"type": "first"}) + "\n", encoding="utf-8")
 
@@ -175,15 +177,15 @@ def test_tail_follows_appended_lines(tmp_path: Path) -> None:
 
     t = threading.Thread(target=writer, daemon=True)
     t.start()
-    out = list(tail_events(p, follow=True, poll_s=0.05, stop_when_finished=True))
+    out = list(viewmodel_tail.tail_events(p, follow=True, poll_s=0.05, stop_when_finished=True))
     t.join(timeout=2)
     assert [e["type"] for e in out] == ["first", "second", "session.end"]
 
 
-def test_logtail_reads_only_new_events_incrementally(tmp_path: Path) -> None:
+def test_logtail_reads_only_new_events_incrementally(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(json.dumps({"type": "a"}) + "\n", encoding="utf-8")
-    tail = LogTail(p)
+    tail = viewmodel_tail.LogTail(p)
     assert [e["type"] for e in tail.read()] == ["a"]
     assert tail.read() == []  # nothing new
     with p.open("a", encoding="utf-8") as fh:
@@ -191,21 +193,21 @@ def test_logtail_reads_only_new_events_incrementally(tmp_path: Path) -> None:
     assert [e["type"] for e in tail.read()] == ["b"]  # only the appended event
 
 
-def test_logtail_holds_a_partial_line_until_its_newline(tmp_path: Path) -> None:
+def test_logtail_holds_a_partial_line_until_its_newline(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_bytes(b'{"type": "a"}\n{"type": "b"')  # second line has no newline yet
-    tail = LogTail(p)
+    tail = viewmodel_tail.LogTail(p)
     assert [e["type"] for e in tail.read()] == ["a"]  # the torn line is withheld
     with p.open("a", encoding="utf-8") as fh:
         fh.write("}\n")
     assert [e["type"] for e in tail.read()] == ["b"]  # completed on the next read
 
 
-def test_logtail_missing_file_is_empty(tmp_path: Path) -> None:
-    assert LogTail(tmp_path / "nope.jsonl").read() == []
+def test_logtail_missing_file_is_empty(tmp_path: pathlib.Path) -> None:
+    assert viewmodel_tail.LogTail(tmp_path / "nope.jsonl").read() == []
 
 
-def test_stop_when_finished_stops_at_a_lone_run_end(tmp_path: Path) -> None:
+def test_stop_when_finished_stops_at_a_lone_run_end(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(
         '{"type": "session.start"}\n'
@@ -213,11 +215,11 @@ def test_stop_when_finished_stops_at_a_lone_run_end(tmp_path: Path) -> None:
         '{"type": "session.end", "reason": "finish_session"}\n',
         encoding="utf-8",
     )
-    out = list(tail_events(p, follow=True, stop_when_finished=True))
+    out = list(viewmodel_tail.tail_events(p, follow=True, stop_when_finished=True))
     assert [e["type"] for e in out] == ["session.start", "tool.call", "session.end"]
 
 
-def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: Path) -> None:
+def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: pathlib.Path) -> None:
     # A stop then resume shares one log: two session.end events. stop_when_finished must
     # follow past the intermediate one (steer_abort) to the final one, not halt at
     # the stop -- else a watcher of a resumed run wrongly shows "stopped".
@@ -229,7 +231,7 @@ def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: Path) -> Non
         '{"type": "session.end", "reason": "finish_session"}\n',
         encoding="utf-8",
     )
-    out = list(tail_events(p, follow=True, stop_when_finished=True))
+    out = list(viewmodel_tail.tail_events(p, follow=True, stop_when_finished=True))
     assert [e.get("reason") for e in out if e["type"] == "session.end"] == [
         "steer_abort",
         "finish_session",
@@ -237,7 +239,7 @@ def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: Path) -> Non
     assert out[-1]["reason"] == "finish_session"  # stopped at the final end, not the stop
 
 
-def test_start_at_yields_a_line_appended_before_the_tail_attached(tmp_path: Path) -> None:
+def test_start_at_yields_a_line_appended_before_the_tail_attached(tmp_path: pathlib.Path) -> None:
     """A line appended between the caller's offset measure and the tail's open is yielded.
 
     Measured at attach time, a resumed ACP turn's first tool call never reached the editor.
@@ -246,17 +248,17 @@ def test_start_at_yields_a_line_appended_before_the_tail_attached(tmp_path: Path
     path.write_text(
         '{"type": "session.start"}\n{"type": "tool.call", "call_id": 1}\n', encoding="utf-8"
     )
-    offset = journal_size(path)
+    offset = viewmodel_tail.journal_size(path)
     with path.open("a", encoding="utf-8") as fh:
         fh.write('{"type": "loop.resume.start"}\n{"type": "tool.call", "call_id": 2}\n')
 
-    events = list(tail_events(path, follow=False, start_at=offset))
+    events = list(viewmodel_tail.tail_events(path, follow=False, start_at=offset))
 
     assert [e["type"] for e in events] == ["loop.resume.start", "tool.call"]
     assert events[1]["call_id"] == 2
 
 
-def test_start_at_skips_the_lines_before_the_offset(tmp_path: Path) -> None:
+def test_start_at_skips_the_lines_before_the_offset(tmp_path: pathlib.Path) -> None:
     """start_at yields only what follows the offset, past a prior execution's session.end."""
     path = tmp_path / "logs.jsonl"
     path.write_text(
@@ -273,18 +275,18 @@ def test_start_at_skips_the_lines_before_the_offset(tmp_path: Path) -> None:
         return stop["n"] > 10
 
     got = list(
-        tail_events(
+        viewmodel_tail.tail_events(
             path,
             poll_s=0.01,
             stop_when_finished=True,
             should_stop=_should_stop,
-            start_at=journal_size(path),
+            start_at=viewmodel_tail.journal_size(path),
         )
     )
     assert [e["type"] for e in got] == ["fresh", "session.end"]
 
 
-def test_tail_reports_an_events_offset_before_yielding_it(tmp_path: Path) -> None:
+def test_tail_reports_an_events_offset_before_yielding_it(tmp_path: pathlib.Path) -> None:
     """The position is reported while handling the event, not after the yield.
 
     Reported after, it lagged one event behind; a non-follow drain's trailing fragment is
@@ -296,18 +298,16 @@ def test_tail_reports_an_events_offset_before_yielding_it(tmp_path: Path) -> Non
     path.write_text(first + last, encoding="utf-8")
     positions: list[int] = []
     seen: list[tuple[str, int | None]] = []
-    for evt in tail_events(path, follow=False, on_position=positions.append):
+    for evt in viewmodel_tail.tail_events(path, follow=False, on_position=positions.append):
         seen.append((evt["type"], positions[-1] if positions else None))
     assert seen == [("a", len(first)), ("b", len(first) + len(last))]
 
 
-def test_log_tail_starts_over_when_the_file_shrinks(tmp_path: Path) -> None:
+def test_log_tail_starts_over_when_the_file_shrinks(tmp_path: pathlib.Path) -> None:
     """A rewritten log shorter than the last read position starts over from the head and says so."""
-    from agent6.viewmodel.tail import LogTail
-
     log = tmp_path / "logs.jsonl"
     log.write_text('{"type":"a"}\n{"type":"b"}\n', encoding="utf-8")
-    tail = LogTail(log)
+    tail = viewmodel_tail.LogTail(log)
     assert [e["type"] for e in tail.read()] == ["a", "b"]
     log.write_text('{"type":"c"}\n', encoding="utf-8")
     assert [e["type"] for e in tail.read()] == ["c"]

@@ -9,17 +9,16 @@ test_harness.py.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
 from agent6.config import Config, load_config
-from agent6.graph.curator import GraphCurator
-from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
+from agent6.graph import curator as graph_curator
+from agent6.graph import models
 from agent6.harness import loop as loopmod
-from agent6.sessions.layout import SessionLayout
-from agent6.tools.dispatch import ToolDispatcher, ToolError
-from agent6.tools.schema import DagAddTaskInput, DagUpdateTaskInput
+from agent6.sessions import layout
+from agent6.tools import dispatch, errors, schema
 
 _VALID_TOML = """
 [agent6]
@@ -40,46 +39,52 @@ verify_command = ["true"]
 _B = "01" + "B" * 24
 
 
-def _config(tmp_path: Path) -> Config:
+def _config(tmp_path: pathlib.Path) -> Config:
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML, encoding="utf-8")
     return load_config(p)
 
 
-def _curator(tmp_path: Path) -> GraphCurator:
-    return GraphCurator(SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1"))
+def _curator(tmp_path: pathlib.Path) -> graph_curator.GraphCurator:
+    return graph_curator.GraphCurator(
+        layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
+    )
 
 
 def test_no_separate_dependency_tool_and_both_carriers_expose_depends_on(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """No mode lists an `add_dependency` tool; both carriers' schemas expose `depends_on`."""
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     for mode in ("run", "plan", "ask", "machine", "agent"):
         names = {t.name for t in loopmod.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert "add_dependency" not in names, mode
-    assert "depends_on" in DagAddTaskInput.model_json_schema()["properties"]
-    assert "depends_on" in DagUpdateTaskInput.model_json_schema()["properties"]
+    assert "depends_on" in schema.DagAddTaskInput.model_json_schema()["properties"]
+    assert "depends_on" in schema.DagUpdateTaskInput.model_json_schema()["properties"]
 
 
-def test_add_task_carries_depends_on_to_the_node(tmp_path: Path) -> None:
+def test_add_task_carries_depends_on_to_the_node(tmp_path: pathlib.Path) -> None:
     cur = _curator(tmp_path)
     root = cur.add_subtask(
-        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root", created_by="planner"))
+        models.AddSubtaskIntent(
+            parent_id=None, draft=models.TaskNodeDraft(title="root", created_by="planner")
+        )
     )
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
     d.set_run_root_node_id(root.id)
     a = d.dispatch("add_task", {"title": "first"}).to_wire()
     b = d.dispatch("add_task", {"title": "second", "depends_on": [a["id"]]}).to_wire()
     assert list(cur.nodes()[b["id"]].depends_on) == [a["id"]]
 
 
-def test_update_task_appends_edges_without_a_status(tmp_path: Path) -> None:
+def test_update_task_appends_edges_without_a_status(tmp_path: pathlib.Path) -> None:
     cur = _curator(tmp_path)
     root = cur.add_subtask(
-        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root", created_by="planner"))
+        models.AddSubtaskIntent(
+            parent_id=None, draft=models.TaskNodeDraft(title="root", created_by="planner")
+        )
     )
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
     d.set_run_root_node_id(root.id)
     a = d.dispatch("add_task", {"title": "first"}).to_wire()
     b = d.dispatch("add_task", {"title": "second"}).to_wire()
@@ -94,45 +99,51 @@ def test_update_task_appends_edges_without_a_status(tmp_path: Path) -> None:
     json.dumps(out)  # the loop JSONs the result for the model; must not raise
 
 
-def test_update_task_with_neither_status_nor_edges_refuses(tmp_path: Path) -> None:
+def test_update_task_with_neither_status_nor_edges_refuses(tmp_path: pathlib.Path) -> None:
     cur = _curator(tmp_path)
     root = cur.add_subtask(
-        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root", created_by="planner"))
+        models.AddSubtaskIntent(
+            parent_id=None, draft=models.TaskNodeDraft(title="root", created_by="planner")
+        )
     )
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
     d.set_run_root_node_id(root.id)
     a = d.dispatch("add_task", {"title": "first"}).to_wire()
-    with pytest.raises(ToolError, match="status and/or depends_on"):
+    with pytest.raises(errors.ToolError, match="status and/or depends_on"):
         d.dispatch("update_task", {"id": a["id"]})
 
 
-def test_update_task_surfaces_cycle_rejection(tmp_path: Path) -> None:
+def test_update_task_surfaces_cycle_rejection(tmp_path: pathlib.Path) -> None:
     cur = _curator(tmp_path)
     root = cur.add_subtask(
-        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root", created_by="planner"))
+        models.AddSubtaskIntent(
+            parent_id=None, draft=models.TaskNodeDraft(title="root", created_by="planner")
+        )
     )
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
     d.set_run_root_node_id(root.id)
     a = d.dispatch("add_task", {"title": "first"}).to_wire()
     b = d.dispatch("add_task", {"title": "second", "depends_on": [a["id"]]}).to_wire()
-    with pytest.raises(ToolError, match="cycle"):
+    with pytest.raises(errors.ToolError, match="cycle"):
         d.dispatch("update_task", {"id": a["id"], "depends_on": [b["id"]]})
 
 
-def test_depends_on_ids_validate_at_the_schema(tmp_path: Path) -> None:
+def test_depends_on_ids_validate_at_the_schema(tmp_path: pathlib.Path) -> None:
     cur = _curator(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
-    with pytest.raises(ToolError):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
+    with pytest.raises(errors.ToolError):
         d.dispatch("update_task", {"id": _B, "depends_on": ["short"]})
     assert not cur.nodes()  # rejected at the schema, never reached the curator
 
 
-def test_status_and_edges_apply_together(tmp_path: Path) -> None:
+def test_status_and_edges_apply_together(tmp_path: pathlib.Path) -> None:
     cur = _curator(tmp_path)
     root = cur.add_subtask(
-        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root", created_by="planner"))
+        models.AddSubtaskIntent(
+            parent_id=None, draft=models.TaskNodeDraft(title="root", created_by="planner")
+        )
     )
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
     d.set_run_root_node_id(root.id)
     a = d.dispatch("add_task", {"title": "first"}).to_wire()
     b = d.dispatch("add_task", {"title": "second"}).to_wire()
@@ -142,7 +153,7 @@ def test_status_and_edges_apply_together(tmp_path: Path) -> None:
     assert out["status"] == "in_progress" and out["depends_on"] == [a["id"]]
 
 
-def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
+def test_list_tasks_wire_shape_is_stable(tmp_path: pathlib.Path) -> None:
     """The list_tasks result dict is a frozen wire surface, JSON'd verbatim to the model.
 
     Each task projects to exactly {id, parent_id, title, status, acceptance, relevant_paths,
@@ -151,12 +162,14 @@ def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
     """
     cur = _curator(tmp_path)
     root = cur.add_subtask(
-        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root", created_by="planner"))
+        models.AddSubtaskIntent(
+            parent_id=None, draft=models.TaskNodeDraft(title="root", created_by="planner")
+        )
     )
     a = cur.add_subtask(
-        AddSubtaskIntent(
+        models.AddSubtaskIntent(
             parent_id=root.id,
-            draft=TaskNodeDraft(
+            draft=models.TaskNodeDraft(
                 title="review providers",
                 acceptance="no bugs left",
                 relevant_paths=("a.py",),
@@ -165,14 +178,16 @@ def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
         )
     )
     b = cur.add_subtask(
-        AddSubtaskIntent(
+        models.AddSubtaskIntent(
             parent_id=root.id,
-            draft=TaskNodeDraft(title="review sandbox", depends_on=(a.id,), created_by="worker"),
+            draft=models.TaskNodeDraft(
+                title="review sandbox", depends_on=(a.id,), created_by="worker"
+            ),
         )
     )
-    cur.update_status(UpdateStatusIntent(id=a.id, new_status="in_progress"))
+    cur.update_status(models.UpdateStatusIntent(id=a.id, new_status="in_progress"))
 
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
     out = d.dispatch("list_tasks", {}).to_wire()
     # Exact equality pins list-vs-tuple; `standing` rides along since the finish gate excludes it.
     assert out == {
@@ -219,25 +234,28 @@ def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
 
 
 def test_dag_prompt_blocks_teach_depends_on_not_a_tool() -> None:
-    from agent6.prompts.loop import DAG_RULES_DECOMPOSE, DAG_RULES_OPTIONAL
+    from agent6.prompts import loop
 
-    for block in (DAG_RULES_OPTIONAL, DAG_RULES_DECOMPOSE):
+    for block in (loop.DAG_RULES_OPTIONAL, loop.DAG_RULES_DECOMPOSE):
         assert "depends_on" in block
         assert "add_dependency" not in block
 
 
-def test_update_task_refuses_a_note_without_a_status(tmp_path: Path) -> None:
+def test_update_task_refuses_a_note_without_a_status(tmp_path: pathlib.Path) -> None:
     """update_task refuses a note without a status.
 
     The graph records a note on a status change only.
     """
-    from agent6.tools._dag_tools import update_task
+    from agent6.tools import _dag_tools
 
-    curator = GraphCurator(SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1"))
+    curator = graph_curator.GraphCurator(
+        layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
+    )
     root = curator.add_subtask(
-        AddSubtaskIntent(
-            parent_id=None, draft=TaskNodeDraft(title="root", depends_on=(), created_by="planner")
+        models.AddSubtaskIntent(
+            parent_id=None,
+            draft=models.TaskNodeDraft(title="root", depends_on=(), created_by="planner"),
         )
     )
-    with pytest.raises(ToolError, match="a note rides along with a status"):
-        update_task(curator, {"id": root.id, "note": "worth remembering"})
+    with pytest.raises(errors.ToolError, match="a note rides along with a status"):
+        _dag_tools.update_task(curator, {"id": root.id, "note": "worth remembering"})

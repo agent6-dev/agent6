@@ -6,21 +6,17 @@ from __future__ import annotations
 
 import io
 import json
+import pathlib
 import time
-from pathlib import Path
 
 import pytest
 
-from agent6.events import EventSink
-from agent6.ui.btw import make_btw_runner
-from agent6.ui.cli._console_view import ConsoleView
-from agent6.ui.cli._steer_menu import (
-    MENU_COMMANDS,
-    _run_info_command,  # pyright: ignore[reportPrivateUsage]
-)
+from agent6 import events as agent6_events
+from agent6.ui import btw
+from agent6.ui.cli import _console_view, _steer_menu
 
 
-def _answered_ask(root: Path, name: str, answer: str) -> Path:
+def _answered_ask(root: pathlib.Path, name: str, answer: str) -> pathlib.Path:
     d = root / name
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "ask"}), encoding="utf-8")
@@ -38,20 +34,20 @@ def _answered_ask(root: Path, name: str, answer: str) -> Path:
     return d
 
 
-def test_the_run_is_never_blocked_and_the_answer_arrives_later(tmp_path: Path) -> None:
+def test_the_run_is_never_blocked_and_the_answer_arrives_later(tmp_path: pathlib.Path) -> None:
     """`/btw` returns at once and the answer lands at the next turn boundary."""
     asks = tmp_path / "sessions" / "asks"
     asks.mkdir(parents=True)
     out = io.StringIO()
-    view = ConsoleView(out, color=False)
-    events = EventSink(tmp_path / "logs.jsonl")
+    view = _console_view.ConsoleView(out, color=False)
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
     events.subscribe(view.feed)
 
-    def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
+    def launch(cwd: pathlib.Path, argv: list[str], env: dict[str, str]) -> str:
         _answered_ask(asks, "quiet-fox-AAAAAA", "use ffmpeg -c:v libx265")
         return ""
 
-    runner = make_btw_runner(
+    runner = btw.make_btw_runner(
         "parent-BBBBBB",
         launch=launch,
         list_asks=lambda: [d for d in asks.iterdir() if d.is_dir()],
@@ -72,7 +68,7 @@ def test_the_run_is_never_blocked_and_the_answer_arrives_later(tmp_path: Path) -
     assert "agent6 resume quiet-fox-AAAAAA" in text
 
 
-def test_an_answer_survives_a_surface_that_cannot_print_it(tmp_path: Path) -> None:
+def test_an_answer_survives_a_surface_that_cannot_print_it(tmp_path: pathlib.Path) -> None:
     """An answer survives a surface that cannot print it.
 
     The journal is where every surface reads, and it outlives the process; the console view alone
@@ -82,13 +78,13 @@ def test_an_answer_survives_a_surface_that_cannot_print_it(tmp_path: Path) -> No
 
     asks = tmp_path / "sessions" / "asks"
     asks.mkdir(parents=True)
-    events = EventSink(tmp_path / "logs.jsonl")
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
 
-    def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
+    def launch(cwd: pathlib.Path, argv: list[str], env: dict[str, str]) -> str:
         _answered_ask(asks, "quiet-fox-AAAAAA", "use ffmpeg")
         return ""
 
-    runner = make_btw_runner(
+    runner = btw.make_btw_runner(
         "parent-BBBBBB",
         launch=launch,
         list_asks=lambda: [d for d in asks.iterdir() if d.is_dir()],
@@ -108,51 +104,51 @@ def test_an_answer_survives_a_surface_that_cannot_print_it(tmp_path: Path) -> No
 
 
 def test_btw_is_offered_in_the_menu() -> None:
-    assert "/btw" in MENU_COMMANDS
+    assert "/btw" in _steer_menu.MENU_COMMANDS
 
 
 def test_an_unwired_btw_says_so_rather_than_failing_obscurely(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A detached run has no console view to print an answer into."""
-    _run_info_command("/btw why", tmp_path, None)
+    _steer_menu._run_info_command("/btw why", tmp_path, None)
     assert "needs a live run" in capsys.readouterr().out
 
 
-def test_a_bare_btw_asks_for_a_question(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_bare_btw_asks_for_a_question(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Opening an empty session would be worse than saying nothing was asked."""
-    _run_info_command("/btw", tmp_path, None)
+    _steer_menu._run_info_command("/btw", tmp_path, None)
     assert "ask something" in capsys.readouterr().out
 
 
-def test_a_btw_with_a_question_reaches_the_runner_and_never_the_loop(tmp_path: Path) -> None:
+def test_a_btw_with_a_question_reaches_the_runner_and_never_the_loop(
+    tmp_path: pathlib.Path,
+) -> None:
     """A /btw with a question reaches the runner and never the loop as steer text."""
-    from agent6.ui.cli._steer_menu import pause_menu
-
     asked: list[str] = []
 
-    def runner(question: str, session_dir: Path) -> tuple[bool, str]:
+    def runner(question: str, session_dir: pathlib.Path) -> tuple[bool, str]:
         asked.append(question)
         return True, "[agent6] btw opened"
 
     lines = iter(["/btw why is the broker slow?", "/continue"])
-    action = pause_menu(tmp_path, input_fn=lambda _p: next(lines), btw_runner=runner)
+    action = _steer_menu.pause_menu(tmp_path, input_fn=lambda _p: next(lines), btw_runner=runner)
     assert asked == ["why is the broker slow?"]
     assert action == "", "a btw must not become a steer instruction"
 
 
-def test_ordinary_text_is_still_a_steer(tmp_path: Path) -> None:
-    from agent6.ui.cli._steer_menu import pause_menu
-
+def test_ordinary_text_is_still_a_steer(tmp_path: pathlib.Path) -> None:
     lines = iter(["make it faster"])
-    assert pause_menu(tmp_path, input_fn=lambda _p: next(lines)) == "make it faster"
+    assert _steer_menu.pause_menu(tmp_path, input_fn=lambda _p: next(lines)) == "make it faster"
 
 
-def test_a_btw_answer_renders_in_the_shared_fold(tmp_path: Path) -> None:
+def test_a_btw_answer_renders_in_the_shared_fold(tmp_path: pathlib.Path) -> None:
     """A /btw answer renders in the shared fold the TUI and the web render from."""
-    from agent6.viewmodel.transcript import TranscriptFold
+    from agent6.viewmodel import transcript
 
-    fold = TranscriptFold()
+    fold = transcript.TranscriptFold()
     fold.feed({"type": "role.text_delta", "text": "working"})
     items = fold.feed({"type": "btw.answered", "btw_id": "x", "block": "--- btw: why\nbecause"})
     kinds = [i.kind for i in items]
@@ -161,19 +157,19 @@ def test_a_btw_answer_renders_in_the_shared_fold(tmp_path: Path) -> None:
 
 
 def test_btw_is_not_offered_where_nothing_can_spawn_it(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """/btw is not offered where nothing can spawn it."""
-    from agent6.ui.cli._steer_menu import _run_info_command  # pyright: ignore[reportPrivateUsage]
-
-    _run_info_command("/help", tmp_path, None)
+    _steer_menu._run_info_command("/help", tmp_path, None)
     assert "/btw" not in capsys.readouterr().out
 
-    _run_info_command("/help", tmp_path, lambda _q, _d: (True, ""))
+    _steer_menu._run_info_command("/help", tmp_path, lambda _q, _d: (True, ""))
     assert "/btw" in capsys.readouterr().out
 
 
-def test_open_btw_serves_every_composer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_open_btw_serves_every_composer(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """`/btw` from the TUI or web composer opens the same side ask the CLI menu does.
 
     The run's own journal is the answer channel; a bare `/btw` is told what to type.
@@ -184,7 +180,7 @@ def test_open_btw_serves_every_composer(tmp_path: Path, monkeypatch: pytest.Monk
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
 
-    def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
+    def launch(cwd: pathlib.Path, argv: list[str], env: dict[str, str]) -> str:
         _answered_ask(tmp_path / "sessions" / "asks", "quiet-fox-CCCCCC", "yes")
         return ""
 

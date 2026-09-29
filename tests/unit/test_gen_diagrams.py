@@ -10,12 +10,12 @@ inside a quoted label.
 from __future__ import annotations
 
 import importlib.util
+import pathlib
 import re
 import sys
-from pathlib import Path
-from types import ModuleType
+import types
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 # Words mermaid's flowchart lexer claims anywhere; a node id equal to one kills the diagram.
 _MERMAID_KEYWORDS = {
@@ -33,7 +33,7 @@ _MERMAID_KEYWORDS = {
 }
 
 
-def _load_generator() -> ModuleType:
+def _load_generator() -> types.ModuleType:
     spec = importlib.util.spec_from_file_location(
         "gen_diagrams", _ROOT / "docs" / "gen_diagrams.py"
     )
@@ -71,7 +71,7 @@ def test_no_emitted_node_id_is_a_mermaid_keyword() -> None:
         assert not clashes, f"bare mermaid keyword(s) emitted as node ids: {sorted(clashes)}"
 
 
-def test_a_tier_member_named_like_a_keyword_is_safe(tmp_path: Path) -> None:
+def test_a_tier_member_named_like_a_keyword_is_safe(tmp_path: pathlib.Path) -> None:
     """The callgraph extractor survives a source function named `end` or `call`."""
     gen = _load_generator()
     src = tmp_path / "mod.py"

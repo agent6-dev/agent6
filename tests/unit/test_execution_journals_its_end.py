@@ -8,31 +8,29 @@ That scope's exit is `proc.wait()` on a dashboard that leaves only on a session.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
+import pathlib
+import types
 from collections.abc import Callable
-from dataclasses import replace
-from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
 import agent6.app._execution as execution_mod
-from agent6.app._execution import ExecutionInputs, run_execution
-from agent6.app.frontend import FrontendCapabilities
-from agent6.app.reporter import Reporter
+from agent6 import events as agent6_events
+from agent6.app import frontend as app_frontend
+from agent6.app import reporter
 from agent6.config import Config
-from agent6.events import EventSink
-from agent6.harness._snapshot import SNAPSHOT_VERSION
-from agent6.harness.loop import SessionResult
-from agent6.sessions.layout import SessionLayout
-from agent6.ui.acp.frontend import acp_frontend
-from agent6.ui.steer import SteerState
+from agent6.harness import _snapshot
+from agent6.sessions import layout as sessions_layout
+from agent6.ui import steer
+from agent6.ui.acp import frontend as acp_frontend
 
 # The preflight accepts this snapshot and Conversation.from_wire rejects it: a result with no call.
 TORN = {
-    "version": SNAPSHOT_VERSION,
+    "version": _snapshot.SNAPSHOT_VERSION,
     "system": "s",
     "messages": [
         {"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]},
@@ -57,24 +55,24 @@ def _returning(value: object) -> Callable[..., object]:
 
 
 def test_provider_setup_failure_journals_session_end(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A provider setup failure happens before the harness can journal its own end.
 
     The run already has a manifest and worker pid for every surface to read.
     """
     state = tmp_path / "state"
-    layout = SessionLayout(state_dir=state, session_id="sess-SETUP1")
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-SETUP1")
     layout.ensure()
-    events = EventSink(layout.logs_path)
+    events = agent6_events.EventSink(layout.logs_path)
 
     def _fail(*_args: object, **_kwargs: object) -> object:
         raise RuntimeError("provider setup failed")
 
     monkeypatch.setattr(execution_mod, "build_session_providers", _fail)
-    frontend = MagicMock()
+    frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
-    inputs = ExecutionInputs(
+    inputs = execution_mod.ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -88,20 +86,20 @@ def test_provider_setup_failure_journals_session_end(
         untracked_at_start=frozenset(),
         resume_state_path=layout.session_dir / "loop_state.json",
         undo_forker=lambda: None,
-        prompts=MagicMock(),
+        prompts=mock.MagicMock(),
         ask_transcript_task=None,
     )
 
     said: list[str] = []
     with pytest.raises(RuntimeError, match="provider setup failed"):
-        run_execution(
+        execution_mod.run_execution(
             Config(),
             layout,
             inputs,
             frontend=frontend,
-            reporter=Reporter(out=said.append, err=said.append),
+            reporter=reporter.Reporter(out=said.append, err=said.append),
             events=events,
-            transcript_sink=MagicMock(),
+            transcript_sink=mock.MagicMock(),
             cwd=tmp_path,
             state_dir=state,
         )
@@ -114,32 +112,32 @@ def test_provider_setup_failure_journals_session_end(
 
 
 def test_gate_setup_failure_closes_the_providers_it_already_built(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A gate failure happens after provider construction but before the main teardown scope."""
     state = tmp_path / "state"
-    layout = SessionLayout(state_dir=state, session_id="sess-GATE01")
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-GATE01")
     layout.ensure()
-    events = EventSink(layout.logs_path)
+    events = agent6_events.EventSink(layout.logs_path)
     closed: list[str] = []
-    session = SimpleNamespace(
-        budget=MagicMock(),
-        rm_role=SimpleNamespace(model="m", provider="p"),
-        provider=MagicMock(),
+    session = types.SimpleNamespace(
+        budget=mock.MagicMock(),
+        rm_role=types.SimpleNamespace(model="m", provider="p"),
+        provider=mock.MagicMock(),
         summariser_provider=None,
         review_seats=[],
         close=lambda: closed.append("session"),
     )
-    reviser = SimpleNamespace(close=lambda: closed.append("reviser"))
+    reviser = types.SimpleNamespace(close=lambda: closed.append("reviser"))
 
     def _fail_gate(_cfg: Config, _budget: object) -> Config:
         raise RuntimeError("gate setup failed")
 
     monkeypatch.setattr(execution_mod, "build_session_providers", _returning(session))
     monkeypatch.setattr(execution_mod, "build_prompt_reviser_provider", _returning(reviser))
-    frontend = MagicMock()
+    frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
-    inputs = ExecutionInputs(
+    inputs = execution_mod.ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -153,19 +151,19 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
         untracked_at_start=frozenset(),
         resume_state_path=layout.session_dir / "loop_state.json",
         undo_forker=lambda: None,
-        prompts=MagicMock(),
+        prompts=mock.MagicMock(),
         ask_transcript_task=None,
     )
 
     with pytest.raises(RuntimeError, match="gate setup failed"):
-        run_execution(
+        execution_mod.run_execution(
             Config(),
             layout,
             inputs,
             frontend=frontend,
-            reporter=Reporter(out=lambda _s: None, err=lambda _s: None),
+            reporter=reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
             events=events,
-            transcript_sink=MagicMock(),
+            transcript_sink=mock.MagicMock(),
             cwd=tmp_path,
             state_dir=state,
         )
@@ -174,17 +172,17 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
 
 
 def test_mcp_setup_failure_journals_session_end(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """MCP startup is part of a live execution even though the harness does not exist yet."""
     state = tmp_path / "state"
-    layout = SessionLayout(state_dir=state, session_id="sess-MCPSET")
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-MCPSET")
     layout.ensure()
-    events = EventSink(layout.logs_path)
-    session = SimpleNamespace(
-        budget=MagicMock(),
-        rm_role=SimpleNamespace(model="m", provider="p"),
-        provider=MagicMock(),
+    events = agent6_events.EventSink(layout.logs_path)
+    session = types.SimpleNamespace(
+        budget=mock.MagicMock(),
+        rm_role=types.SimpleNamespace(model="m", provider="p"),
+        provider=mock.MagicMock(),
         summariser_provider=None,
         review_seats=[],
         close=lambda: None,
@@ -193,8 +191,8 @@ def test_mcp_setup_failure_journals_session_end(
     def _fail(*_args: object, **_kwargs: object) -> object:
         raise RuntimeError("MCP startup failed")
 
-    def _steer_state(*_args: object) -> SteerState:
-        return SteerState(
+    def _steer_state(*_args: object) -> steer.SteerState:
+        return steer.SteerState(
             requested=lambda: False,
             clear=lambda: None,
             prompt=lambda: None,
@@ -209,10 +207,10 @@ def test_mcp_setup_failure_journals_session_end(
     monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
     monkeypatch.setattr(execution_mod, "start_mcp_manager_if_enabled", _fail)
     monkeypatch.setattr(execution_mod, "chown_to_real_user", _returning(None))
-    frontend = MagicMock()
+    frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
     frontend.make_steer_state.side_effect = _steer_state
-    inputs = ExecutionInputs(
+    inputs = execution_mod.ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -226,19 +224,19 @@ def test_mcp_setup_failure_journals_session_end(
         untracked_at_start=frozenset(),
         resume_state_path=layout.session_dir / "loop_state.json",
         undo_forker=lambda: None,
-        prompts=MagicMock(),
+        prompts=mock.MagicMock(),
         ask_transcript_task=None,
     )
 
     with pytest.raises(RuntimeError, match="MCP startup failed"):
-        run_execution(
+        execution_mod.run_execution(
             Config(),
             layout,
             inputs,
             frontend=frontend,
-            reporter=Reporter(out=lambda _s: None, err=lambda _s: None),
+            reporter=reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
             events=events,
-            transcript_sink=MagicMock(),
+            transcript_sink=mock.MagicMock(),
             cwd=tmp_path,
             state_dir=state,
         )
@@ -250,33 +248,33 @@ def test_mcp_setup_failure_journals_session_end(
 
 
 def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A failed provider close must not strand commands, MCP servers, or ownership work."""
     state = tmp_path / "state"
-    layout = SessionLayout(state_dir=state, session_id="sess-CLOSE1")
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-CLOSE1")
     layout.ensure()
-    events = EventSink(layout.logs_path)
+    events = agent6_events.EventSink(layout.logs_path)
     closed: list[str] = []
 
     def _session_close() -> None:
         closed.append("session")
         raise RuntimeError("provider close failed")
 
-    session = SimpleNamespace(
-        budget=MagicMock(),
-        rm_role=SimpleNamespace(model="m", provider="p"),
-        provider=MagicMock(),
+    session = types.SimpleNamespace(
+        budget=mock.MagicMock(),
+        rm_role=types.SimpleNamespace(model="m", provider="p"),
+        provider=mock.MagicMock(),
         summariser_provider=None,
         review_seats=[],
         close=_session_close,
     )
-    reviser = SimpleNamespace(close=lambda: closed.append("reviser"))
-    dispatcher = SimpleNamespace(
+    reviser = types.SimpleNamespace(close=lambda: closed.append("reviser"))
+    dispatcher = types.SimpleNamespace(
         settle_background=lambda: None,
         close=lambda: closed.append("dispatcher"),
     )
-    tools = SimpleNamespace(
+    tools = types.SimpleNamespace(
         curator=None,
         dispatcher=dispatcher,
         compact_drop_at_chars=1,
@@ -284,7 +282,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         keep_recent_chars=1,
         cfg=Config(),
     )
-    mcp = SimpleNamespace(close=lambda: closed.append("mcp") or ())
+    mcp = types.SimpleNamespace(close=lambda: closed.append("mcp") or ())
 
     class _Workflow:
         iterations_reached = 1
@@ -292,9 +290,9 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> SessionResult:
+        def run(self, _task: str) -> _snapshot.SessionResult:
             events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
-            return SessionResult(
+            return _snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="done",
@@ -302,8 +300,8 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
                 tool_calls=0,
             )
 
-    def _steer_state(*_args: object) -> SteerState:
-        return SteerState(
+    def _steer_state(*_args: object) -> steer.SteerState:
+        return steer.SteerState(
             requested=lambda: False,
             clear=lambda: None,
             prompt=lambda: None,
@@ -320,20 +318,20 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
     monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
     monkeypatch.setattr(execution_mod, "Harness", _Workflow)
 
-    def _chown(_path: Path) -> None:
+    def _chown(_path: pathlib.Path) -> None:
         closed.append("chown")
 
     monkeypatch.setattr(execution_mod, "chown_to_real_user", _chown)
-    frontend = replace(
-        acp_frontend(
+    frontend = dataclasses.replace(
+        acp_frontend.acp_frontend(
             ask=lambda _p, _o, _s, _c, _u=None: None,
-            capabilities=FrontendCapabilities(can_ask=False),
+            capabilities=app_frontend.FrontendCapabilities(can_ask=False),
             agent6_exe=lambda: "agent6",
             spawn_detached_resume=lambda _cwd, _sid, _flags: "",
         ),
         make_steer_state=_steer_state,
     )
-    inputs = ExecutionInputs(
+    inputs = execution_mod.ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -347,19 +345,19 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         untracked_at_start=frozenset(),
         resume_state_path=layout.session_dir / "loop_state.json",
         undo_forker=lambda: None,
-        prompts=MagicMock(),
+        prompts=mock.MagicMock(),
         ask_transcript_task=None,
     )
 
     with pytest.raises(RuntimeError, match="provider close failed"):
-        run_execution(
+        execution_mod.run_execution(
             Config(),
             layout,
             inputs,
             frontend=frontend,
-            reporter=Reporter(out=lambda _s: None, err=lambda _s: None),
+            reporter=reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
             events=events,
-            transcript_sink=MagicMock(),
+            transcript_sink=mock.MagicMock(),
             cwd=tmp_path,
             state_dir=state,
         )
@@ -368,18 +366,18 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
 
 
 def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A ResumeError journals a session.end before the TUI scope waits on the dashboard.
 
     `resume --tui` on a torn snapshot otherwise hangs on its own TUI.
     """
     state = tmp_path / "state"
-    layout = SessionLayout(state_dir=state, session_id="sess-AAAA11")
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-AAAA11")
     layout.session_dir.mkdir(parents=True)
     snap = layout.session_dir / "loop_state.json"
     snap.write_text(json.dumps(TORN), encoding="utf-8")
-    events = EventSink(layout.logs_path)
+    events = agent6_events.EventSink(layout.logs_path)
 
     # What the co-process TUI could see when `_live.tui_session`'s finally calls proc.wait().
     seen_at_exit: list[list[str]] = []
@@ -397,11 +395,11 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
             seen_at_exit.append([json.loads(x)["type"] for x in lines if x.strip()])
             return False
 
-    def _tui_session(_dir: Path, _enabled: bool) -> _Recorder:
+    def _tui_session(_dir: pathlib.Path, _enabled: bool) -> _Recorder:
         return _Recorder()
 
-    def _steer_state(*_a: object) -> SteerState:
-        return SteerState(
+    def _steer_state(*_a: object) -> steer.SteerState:
+        return steer.SteerState(
             requested=lambda: False,
             clear=lambda: None,
             prompt=lambda: None,
@@ -411,10 +409,10 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
             reset_stage=lambda: None,
         )
 
-    frontend = replace(
-        acp_frontend(
+    frontend = dataclasses.replace(
+        acp_frontend.acp_frontend(
             ask=lambda _p, _o, _s, _c, _u=None: None,
-            capabilities=FrontendCapabilities(can_ask=False),
+            capabilities=app_frontend.FrontendCapabilities(can_ask=False),
             agent6_exe=lambda: "agent6",
             spawn_detached_resume=lambda _cwd, _sid, _flags: "",
         ),
@@ -422,17 +420,17 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         make_steer_state=_steer_state,
     )
 
-    session = SimpleNamespace(
-        budget=MagicMock(),
-        rm_role=SimpleNamespace(model="m", provider="p"),
-        provider=MagicMock(),
+    session = types.SimpleNamespace(
+        budget=mock.MagicMock(),
+        rm_role=types.SimpleNamespace(model="m", provider="p"),
+        provider=mock.MagicMock(),
         summariser_provider=None,
         review_seats=[],
         close=lambda: None,
     )
-    tools = SimpleNamespace(
+    tools = types.SimpleNamespace(
         curator=None,
-        dispatcher=MagicMock(),
+        dispatcher=mock.MagicMock(),
         compact_drop_at_chars=1,
         compact_summarise_at_chars=1,
         keep_recent_chars=1,
@@ -445,7 +443,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
     monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
     monkeypatch.setattr(execution_mod, "chown_to_real_user", _returning(None))
 
-    inputs = ExecutionInputs(
+    inputs = execution_mod.ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -459,19 +457,19 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         untracked_at_start=frozenset(),
         resume_state_path=snap,
         undo_forker=lambda: None,
-        prompts=MagicMock(),
+        prompts=mock.MagicMock(),
         ask_transcript_task=None,
         resuming=True,
     )
     said: list[str] = []
-    end = run_execution(
+    end = execution_mod.run_execution(
         Config(),
         layout,
         inputs,
         frontend=frontend,
-        reporter=Reporter(out=said.append, err=said.append),
+        reporter=reporter.Reporter(out=said.append, err=said.append),
         events=events,
-        transcript_sink=MagicMock(),
+        transcript_sink=mock.MagicMock(),
         cwd=tmp_path,
         state_dir=state,
     )
@@ -487,21 +485,22 @@ def _wired_frontend(
     *,
     harness: type,
     cfg: Config,
-    tui_session: Callable[[Path, bool], contextlib.AbstractContextManager[None]] | None = None,
+    tui_session: Callable[[pathlib.Path, bool], contextlib.AbstractContextManager[None]]
+    | None = None,
 ) -> Any:
     """An execution whose providers, tools and merge are recorders; `order` names the teardown."""
-    session = SimpleNamespace(
-        budget=MagicMock(),
-        rm_role=SimpleNamespace(model="m", provider="p"),
-        provider=MagicMock(),
+    session = types.SimpleNamespace(
+        budget=mock.MagicMock(),
+        rm_role=types.SimpleNamespace(model="m", provider="p"),
+        provider=mock.MagicMock(),
         summariser_provider=None,
         review_seats=[],
         close=lambda: order.append("session"),
     )
-    dispatcher = SimpleNamespace(
+    dispatcher = types.SimpleNamespace(
         settle_background=lambda: None, close=lambda: order.append("dispatcher")
     )
-    tools = SimpleNamespace(
+    tools = types.SimpleNamespace(
         curator=None,
         dispatcher=dispatcher,
         compact_drop_at_chars=1,
@@ -515,7 +514,7 @@ def _wired_frontend(
     monkeypatch.setattr(execution_mod, "start_mcp_manager_if_enabled", _returning(None))
     monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
 
-    def _chown(_path: Path) -> None:
+    def _chown(_path: pathlib.Path) -> None:
         order.append("chown")
 
     def _merge(*_args: object, **_kwargs: object) -> None:
@@ -525,8 +524,8 @@ def _wired_frontend(
     monkeypatch.setattr(execution_mod, "finalize_auto_merge", _merge)
     monkeypatch.setattr(execution_mod, "Harness", harness)
 
-    def _steer_state(*_args: object) -> SteerState:
-        return SteerState(
+    def _steer_state(*_args: object) -> steer.SteerState:
+        return steer.SteerState(
             requested=lambda: False,
             clear=lambda: None,
             prompt=lambda: None,
@@ -536,15 +535,15 @@ def _wired_frontend(
             reset_stage=lambda: None,
         )
 
-    frontend = acp_frontend(
+    frontend = acp_frontend.acp_frontend(
         ask=lambda _p, _o, _s, _c, _u=None: None,
-        capabilities=FrontendCapabilities(can_ask=False),
+        capabilities=app_frontend.FrontendCapabilities(can_ask=False),
         agent6_exe=lambda: "agent6",
         spawn_detached_resume=lambda _cwd, _sid, _flags: "",
     )
     if tui_session is None:
-        return replace(frontend, make_steer_state=_steer_state)
-    return replace(frontend, make_steer_state=_steer_state, tui_session=tui_session)
+        return dataclasses.replace(frontend, make_steer_state=_steer_state)
+    return dataclasses.replace(frontend, make_steer_state=_steer_state, tui_session=tui_session)
 
 
 def _finishing_workflow(iterations: int) -> type:
@@ -554,8 +553,8 @@ def _finishing_workflow(iterations: int) -> type:
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> SessionResult:
-            return SessionResult(
+        def run(self, _task: str) -> _snapshot.SessionResult:
+            return _snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="done",
@@ -568,19 +567,19 @@ def _finishing_workflow(iterations: int) -> type:
 
 
 def test_the_chown_runs_after_the_auto_merge_writes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Under sudo the chown is the last teardown step, after the merge's root writes."""
     state = tmp_path / "state"
-    layout = SessionLayout(state_dir=state, session_id="sess-ORDER1")
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-ORDER1")
     layout.ensure()
     order: list[str] = []
     cfg = Config.model_validate({"git": {"auto_merge": True}})
     frontend = _wired_frontend(monkeypatch, order, harness=_finishing_workflow(1), cfg=cfg)
-    run_execution(
+    execution_mod.run_execution(
         cfg,
         layout,
-        ExecutionInputs(
+        execution_mod.ExecutionInputs(
             session_id=layout.session_id,
             mode="run",
             role="worker",
@@ -594,13 +593,13 @@ def test_the_chown_runs_after_the_auto_merge_writes(
             untracked_at_start=frozenset(),
             resume_state_path=layout.session_dir / "loop_state.json",
             undo_forker=lambda: None,
-            prompts=MagicMock(),
+            prompts=mock.MagicMock(),
             ask_transcript_task=None,
         ),
         frontend=frontend,
-        reporter=Reporter(out=lambda _s: None, err=lambda _s: None),
-        events=EventSink(layout.logs_path),
-        transcript_sink=MagicMock(),
+        reporter=reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
+        events=agent6_events.EventSink(layout.logs_path),
+        transcript_sink=mock.MagicMock(),
         cwd=tmp_path,
         state_dir=state,
     )
@@ -608,7 +607,7 @@ def test_the_chown_runs_after_the_auto_merge_writes(
 
 
 def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_end(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A dashboard scope raising after a finished run is the execution's failure, not the run's.
 
@@ -617,9 +616,9 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
     One crash line, and the run's own end stays its last.
     """
     state = tmp_path / "state"
-    layout = SessionLayout(state_dir=state, session_id="sess-TUIRAI")
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-TUIRAI")
     layout.ensure()
-    events = EventSink(layout.logs_path)
+    events = agent6_events.EventSink(layout.logs_path)
     order: list[str] = []
 
     class _Boom(contextlib.AbstractContextManager[None]):
@@ -635,9 +634,9 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> SessionResult:
+        def run(self, _task: str) -> _snapshot.SessionResult:
             events.emit("session.end", reason="finish_session", iterations=3, all_passed=True)
-            return SessionResult(
+            return _snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="done",
@@ -651,10 +650,10 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
     )
     said: list[str] = []
     with pytest.raises(RuntimeError, match="dashboard teardown failed"):
-        run_execution(
+        execution_mod.run_execution(
             Config(),
             layout,
-            ExecutionInputs(
+            execution_mod.ExecutionInputs(
                 session_id=layout.session_id,
                 mode="run",
                 role="worker",
@@ -668,13 +667,13 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
                 untracked_at_start=frozenset(),
                 resume_state_path=layout.session_dir / "loop_state.json",
                 undo_forker=lambda: None,
-                prompts=MagicMock(),
+                prompts=mock.MagicMock(),
                 ask_transcript_task=None,
             ),
             frontend=frontend,
-            reporter=Reporter(out=said.append, err=said.append),
+            reporter=reporter.Reporter(out=said.append, err=said.append),
             events=events,
-            transcript_sink=MagicMock(),
+            transcript_sink=mock.MagicMock(),
             cwd=tmp_path,
             state_dir=state,
         )
@@ -688,7 +687,7 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
 
 
 def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A Ctrl-C during the background settle journals no second `session.end`.
 
@@ -696,9 +695,9 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
     run that had finished.
     """
     state = tmp_path / "state"
-    layout = SessionLayout(state_dir=state, session_id="sess-SETTLE")
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-SETTLE")
     layout.ensure()
-    events = EventSink(layout.logs_path)
+    events = agent6_events.EventSink(layout.logs_path)
     order: list[str] = []
 
     class _Workflow:
@@ -707,9 +706,9 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> SessionResult:
+        def run(self, _task: str) -> _snapshot.SessionResult:
             events.emit("session.end", reason="finish_session", iterations=3, all_passed=True)
-            return SessionResult(
+            return _snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="done",
@@ -731,10 +730,10 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
 
     monkeypatch.setattr(execution_mod, "build_session_tools", _tools)
     said: list[str] = []
-    end = run_execution(
+    end = execution_mod.run_execution(
         Config(),
         layout,
-        ExecutionInputs(
+        execution_mod.ExecutionInputs(
             session_id=layout.session_id,
             mode="run",
             role="worker",
@@ -748,13 +747,13 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
             untracked_at_start=frozenset(),
             resume_state_path=layout.session_dir / "loop_state.json",
             undo_forker=lambda: None,
-            prompts=MagicMock(),
+            prompts=mock.MagicMock(),
             ask_transcript_task=None,
         ),
         frontend=frontend,
-        reporter=Reporter(out=said.append, err=said.append),
+        reporter=reporter.Reporter(out=said.append, err=said.append),
         events=events,
-        transcript_sink=MagicMock(),
+        transcript_sink=mock.MagicMock(),
         cwd=tmp_path,
         state_dir=state,
     )

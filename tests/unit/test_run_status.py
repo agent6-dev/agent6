@@ -7,16 +7,18 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import pathlib
 import subprocess
 import time
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-from agent6.sessions.ipc import worker_is_alive, write_worker_pid
-from agent6.ui.cli._common import _runs_dir  # pyright: ignore[reportPrivateUsage]
-from agent6.ui.cli.sessions_show import _cmd_status  # pyright: ignore[reportPrivateUsage]
+from agent6.sessions import ipc as sessions_ipc
+from agent6.ui.cli import (
+    _common,  # pyright: ignore[reportPrivateUsage]
+    sessions_show,  # pyright: ignore[reportPrivateUsage]
+)
 
 
 def _ts(off_s: float) -> str:
@@ -24,13 +26,13 @@ def _ts(off_s: float) -> str:
 
 
 def _make_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, events: list[dict[str, object]]
-) -> Path:
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, events: list[dict[str, object]]
+) -> pathlib.Path:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = _runs_dir(repo)
+    runs = _common._runs_dir(repo)
     runs.mkdir(parents=True, exist_ok=True)
     d = runs / "winsome-dawn-YWH5ZS"
     d.mkdir()
@@ -42,7 +44,7 @@ def _make_run(
 
 
 def test_status_running_with_live_pid(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     d = _make_run(
         tmp_path,
@@ -52,9 +54,9 @@ def test_status_running_with_live_pid(
             {"ts": _ts(3), "type": "loop.tool.call", "iteration": 3},
         ],
     )
-    write_worker_pid(d, os.getpid())  # this test process is genuinely alive
-    assert worker_is_alive(d)
-    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    sessions_ipc.write_worker_pid(d, os.getpid())  # this test process is genuinely alive
+    assert sessions_ipc.worker_is_alive(d)
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out
     assert "running" in out
     assert "claude-opus-4-8" in out
@@ -62,11 +64,11 @@ def test_status_running_with_live_pid(
 
 
 def test_status_json_is_machine_readable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
-    write_worker_pid(d, os.getpid())
-    assert _cmd_status("", as_json=True) == 0  # "" -> most recent run
+    sessions_ipc.write_worker_pid(d, os.getpid())
+    assert sessions_show._cmd_status("", as_json=True) == 0  # "" -> most recent run
     obj = json.loads(capsys.readouterr().out)
     assert obj["session_id"] == "winsome-dawn-YWH5ZS"
     assert obj["alive"] is True
@@ -77,7 +79,7 @@ def test_status_json_is_machine_readable(
 
 
 def test_status_elapsed_of_a_fork_execution_runs_from_its_first_event(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A fork execution's elapsed time runs from its first event.
 
@@ -98,14 +100,14 @@ def test_status_elapsed_of_a_fork_execution_runs_from_its_first_event(
             },
         ],
     )
-    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     assert json.loads(capsys.readouterr().out)["elapsed_s"] == 30.0
-    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     assert "elapsed:    30s" in capsys.readouterr().out
 
 
 def test_a_finished_runs_elapsed_time_stops_at_its_receipt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A worker can remain alive during teardown after `session.end` is written.
 
@@ -126,14 +128,14 @@ def test_a_finished_runs_elapsed_time_stops_at_its_receipt(
             },
         ],
     )
-    write_worker_pid(d, os.getpid())
+    sessions_ipc.write_worker_pid(d, os.getpid())
 
-    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     assert json.loads(capsys.readouterr().out)["elapsed_s"] == 10.0
 
 
 def test_status_waiting_when_blocked_on_an_operator_answer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A live run blocked on an unanswered prompt reads "waiting (needs answer)".
 
@@ -148,18 +150,18 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
             {"ts": _ts(300), "type": "approval.prompt", "id": "approval-1", "prompt": "rm -rf?"},
         ],
     )
-    write_worker_pid(d, os.getpid())
-    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    sessions_ipc.write_worker_pid(d, os.getpid())
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out
     assert "waiting" in out and "needs answer" in out
     assert "provider call" not in out
-    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
     assert (obj["status"], obj["detail"]) == ("waiting", "needs answer; attach to respond")
 
 
 def test_status_crashed_when_pid_dead_and_no_run_end(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A dead worker without a session.end leads with the hub's word "stale".
 
@@ -175,32 +177,32 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
         ],
     )
     (d / "worker.pid").write_text("999999")  # almost certainly not a live pid
-    assert not worker_is_alive(d)
-    _cmd_status("winsome-dawn-YWH5ZS")
+    assert not sessions_ipc.worker_is_alive(d)
+    sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
     assert "state:      stale (worker exited without finishing (crashed or killed))" in out
     assert "stopped" not in out
 
 
 def test_status_words_lead_with_the_listing_word_in_every_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The `sessions show --json` status is exactly the hub row's word for the same dir.
 
     For every state without a session.end: "created", "starting", "waiting", "stale". One decision,
     `status_for_session_dir`, so the two cannot drift.
     """
-    from agent6.viewmodel.listing import summarize_session_dir
+    from agent6.viewmodel import listing
 
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
 
     def state_word() -> str:
-        assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+        assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
         word = json.loads(capsys.readouterr().out)["status"]
-        assert word == summarize_session_dir(d).status
+        assert word == listing.summarize_session_dir(d).status
         return word
 
-    write_worker_pid(d, os.getpid())
+    sessions_ipc.write_worker_pid(d, os.getpid())
     assert state_word() == "running"
     (d / "logs.jsonl").unlink()
     assert state_word() == "starting"
@@ -217,14 +219,14 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
         + "\n",
         encoding="utf-8",
     )
-    write_worker_pid(d, os.getpid())
+    sessions_ipc.write_worker_pid(d, os.getpid())
     assert state_word() == "waiting"
     (d / "worker.pid").write_text("999999999", encoding="utf-8")
     assert state_word() == "stale"
 
 
 def test_status_prints_the_final_iteration_count_from_the_receipt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The terminal receipt's `session.end.iterations` is the final count.
 
@@ -246,14 +248,14 @@ def test_status_prints_the_final_iteration_count_from_the_receipt(
         ],
     )
 
-    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     assert "iteration:  7\n" in capsys.readouterr().out
-    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     assert json.loads(capsys.readouterr().out)["iteration"] == 7
 
 
 def test_status_leads_with_the_listing_word_then_the_raw_reason(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `sessions show` must agree with `sessions list`: a finish_session+all_passed run reads
     # "passed", not the opposite "finished" the raw reason alone used to print.
@@ -266,12 +268,12 @@ def test_status_leads_with_the_listing_word_then_the_raw_reason(
             {"ts": _ts(1), "type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    _cmd_status("winsome-dawn-YWH5ZS")
+    sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     assert "passed (finish_session)" in capsys.readouterr().out
 
 
 def test_status_of_a_scoped_green_names_the_scoped_gate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A pass certified by a scoped gate reads `passed · scoped gate`, as on every listing.
 
@@ -291,19 +293,19 @@ def test_status_of_a_scoped_green_names_the_scoped_gate(
             },
         ],
     )
-    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
     assert (obj["status"], obj["label"], obj["detail"]) == (
         "passed",
         "passed · scoped gate",
         "finish_session",
     )
-    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     assert "state:      passed · scoped gate (finish_session)\n" in capsys.readouterr().out
 
 
 def test_status_finish_without_all_passed_reads_finished(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _make_run(
         tmp_path,
@@ -314,12 +316,12 @@ def test_status_finish_without_all_passed_reads_finished(
             {"ts": _ts(1), "type": "session.end", "reason": "finish_session", "all_passed": False},
         ],
     )
-    _cmd_status("winsome-dawn-YWH5ZS")
+    sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     assert "finished · gate red (finish_session)" in capsys.readouterr().out
 
 
 def test_status_error_reason_reads_failed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _make_run(
         tmp_path,
@@ -330,12 +332,12 @@ def test_status_error_reason_reads_failed(
         ],
     )
     # The label already carries the reason; the parenthetical is not repeated.
-    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     assert "state:      failed · provider error\n" in capsys.readouterr().out
 
 
 def test_status_shows_fan_out_compare_outcome(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`sessions show` prints where a lane placed in its fan-out, with the judge's rationale.
 
@@ -349,28 +351,26 @@ def test_status_shows_fan_out_compare_outcome(
     }  # fmt: skip
     (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
-    _cmd_status("winsome-dawn-YWH5ZS")
+    sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
     assert "compare:    rank 1/2 · winner · judge" in out
     assert "judge: cleanest diff, all tests pass" in out
 
-    _cmd_status("winsome-dawn-YWH5ZS", as_json=True)
+    sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     obj = json.loads(capsys.readouterr().out)
     assert obj["compare"]["winner"] is True and obj["compare"]["rank"] == 1
 
 
-def test_worker_pid_clear(tmp_path: Path) -> None:
-    from agent6.sessions.ipc import clear_worker_pid, read_worker_pid
-
-    write_worker_pid(tmp_path, os.getpid())
-    assert read_worker_pid(tmp_path) == os.getpid()
-    clear_worker_pid(tmp_path)
-    assert read_worker_pid(tmp_path) is None
-    assert not worker_is_alive(tmp_path)
+def test_worker_pid_clear(tmp_path: pathlib.Path) -> None:
+    sessions_ipc.write_worker_pid(tmp_path, os.getpid())
+    assert sessions_ipc.read_worker_pid(tmp_path) == os.getpid()
+    sessions_ipc.clear_worker_pid(tmp_path)
+    assert sessions_ipc.read_worker_pid(tmp_path) is None
+    assert not sessions_ipc.worker_is_alive(tmp_path)
 
 
 def test_status_shows_usage_from_budget_update_event(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `sessions show` must read budget.update (the authoritative post-call totals),
     # not loop.budget (emitted BEFORE each call: lags one call, 0 on iter 1).
@@ -408,20 +408,20 @@ def test_status_shows_usage_from_budget_update_event(
             },
         ],
     )
-    write_worker_pid(d, os.getpid())
-    _cmd_status("winsome-dawn-YWH5ZS")
+    sessions_ipc.write_worker_pid(d, os.getpid())
+    sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
     assert "in=4200 out=800 cache_r=42486 cache_c=22617" in out  # the latest update wins
     assert "$0.05" in out
     # json carries the same
-    _cmd_status("winsome-dawn-YWH5ZS", as_json=True)
+    sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     obj = json.loads(capsys.readouterr().out)
     assert obj["input_tokens"] == 4200 and obj["cost_usd"] == 0.0456
     assert (obj["cache_read_tokens"], obj["cache_creation_tokens"]) == (42486, 22617)
 
 
 def test_status_names_the_pins_in_force(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The show page names a run's pinned instructions, one per line; the JSON carries the list.
 
@@ -436,10 +436,10 @@ def test_status_names_the_pins_in_force(
             {"ts": _ts(20), "type": "loop.pin.added", "text": "keep the API stable"},
         ],
     )
-    _cmd_status("winsome-dawn-YWH5ZS")
+    sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
     assert "pins:       never touch tests\n            keep the API stable\n" in out
-    _cmd_status("winsome-dawn-YWH5ZS", as_json=True)
+    sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     assert json.loads(capsys.readouterr().out)["pins"] == [
         "never touch tests",
         "keep the API stable",
@@ -447,7 +447,7 @@ def test_status_names_the_pins_in_force(
 
 
 def test_status_cost_cumulative_and_unfinished_across_resume(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A resume execution restarts the budget from 0 and un-finishes the run; `runs
     # show` banks executions (same rule as `sessions list` and the run view) and must
@@ -482,8 +482,8 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
     )
     logs = d / "logs.jsonl"
     logs.write_text(logs.read_text(encoding="utf-8") + "42\n", encoding="utf-8")
-    write_worker_pid(d, os.getpid())
-    _cmd_status("winsome-dawn-YWH5ZS", as_json=True)
+    sessions_ipc.write_worker_pid(d, os.getpid())
+    sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     obj = json.loads(capsys.readouterr().out)
     assert obj["cost_usd"] == pytest.approx(0.025)
     assert obj["usd_partial"] is True  # sticky: execution 1's unpriced spend
@@ -493,7 +493,7 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
 
 
 def test_status_missing_id_and_empty_state_speak_human(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A bad id names itself and where it looked, without leaking the
     # bucket alternation under sessions/; an empty state dir gets
@@ -502,15 +502,15 @@ def test_status_missing_id_and_empty_state_speak_human(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    assert _cmd_status("zzz", as_json=False) == 2
+    assert sessions_show._cmd_status("zzz", as_json=False) == 2
     err = capsys.readouterr().err
     assert "no session matches 'zzz'" in err and "machines" not in err
-    assert _cmd_status("", as_json=False) == 2
+    assert sessions_show._cmd_status("", as_json=False) == 2
     assert 'no sessions yet. Start one with `agent6 run "<task>"`.' in capsys.readouterr().err
 
 
 def test_status_text_labels_execution_scoped_figures_on_a_resumed_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Cost is banked across executions, token counters are the latest execution's; the
     # usage line must say which scope each figure describes once they differ.
@@ -538,15 +538,15 @@ def test_status_text_labels_execution_scoped_figures_on_a_resumed_run(
             {"ts": _ts(5), "type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    write_worker_pid(d, 999999999)
-    _cmd_status("winsome-dawn-YWH5ZS")
+    sessions_ipc.write_worker_pid(d, 999999999)
+    sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
     assert "in=300 out=50 (latest execution)" in out
     assert "cost $0.03 (all 2 executions)" in out
 
 
 def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A recorded pid owned by another user reads as dead.
 
@@ -559,21 +559,19 @@ def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     d = tmp_path / "run"
     d.mkdir()
-    write_worker_pid(d, 1)  # init: exists, foreign-owned -> PermissionError
-    assert not worker_is_alive(d)
-    write_worker_pid(d, os.getpid())
-    assert worker_is_alive(d)
+    sessions_ipc.write_worker_pid(d, 1)  # init: exists, foreign-owned -> PermissionError
+    assert not sessions_ipc.worker_is_alive(d)
+    sessions_ipc.write_worker_pid(d, os.getpid())
+    assert sessions_ipc.worker_is_alive(d)
 
 
-def test_concurrent_answer_writers_do_not_race_on_the_temp(tmp_path: Path) -> None:
+def test_concurrent_answer_writers_do_not_race_on_the_temp(tmp_path: pathlib.Path) -> None:
     """Two front-ends answering the same prompt at once do not race on one temp file.
 
     A shared sibling `.tmp` made the loser hit FileNotFoundError after the winner's rename, a 500 on
     an answer that landed; the durable write uses a unique mkstemp temp per call.
     """
     import threading
-
-    from agent6.sessions.ipc import write_answer
 
     d = tmp_path / "run"
     d.mkdir()
@@ -584,7 +582,7 @@ def test_concurrent_answer_writers_do_not_race_on_the_temp(tmp_path: Path) -> No
         try:
             barrier.wait(timeout=5)
             for _ in range(50):
-                write_answer(d, "approval-1", "yes")
+                sessions_ipc.write_answer(d, "approval-1", "yes")
         except Exception as exc:
             errors.append(exc)
 
@@ -598,7 +596,7 @@ def test_concurrent_answer_writers_do_not_race_on_the_temp(tmp_path: Path) -> No
 
 
 def test_status_ambiguous_prefix_names_the_candidates(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An ambiguous id prefix must say so and name the matches, as `attach` and `stop` do.
 
@@ -612,14 +610,14 @@ def test_status_ambiguous_prefix_names_the_candidates(
         json.dumps({"ts": _ts(9), "type": "session.start", "mode": "run"}) + "\n", encoding="utf-8"
     )
 
-    assert _cmd_status("winsome-d") == 2
+    assert sessions_show._cmd_status("winsome-d") == 2
     err = capsys.readouterr().err
     assert "ambiguous" in err
     assert "winsome-dawn-YWH5ZS" in err and "winsome-dusk-AAAAAA" in err
     assert "no session matches" not in err
 
 
-def test_a_nonpositive_recorded_pid_never_reads_alive(tmp_path: Path) -> None:
+def test_a_nonpositive_recorded_pid_never_reads_alive(tmp_path: pathlib.Path) -> None:
     """A worker.pid holding 0 or -1 never reads alive.
 
     `os.kill(0, 0)` signals the process group and `os.kill(-1, 0)` every process, so both succeed;
@@ -628,7 +626,7 @@ def test_a_nonpositive_recorded_pid_never_reads_alive(tmp_path: Path) -> None:
     """
     for junk in ("0", "-1"):
         (tmp_path / "worker.pid").write_text(junk, encoding="utf-8")
-        assert worker_is_alive(tmp_path) is False, junk
+        assert sessions_ipc.worker_is_alive(tmp_path) is False, junk
 
 
 def test_pid_alive_rejects_nonpositive_values_without_proc(
@@ -642,28 +640,28 @@ def test_pid_alive_rejects_nonpositive_values_without_proc(
     assert ipc.pid_alive(-1) is False
 
 
-@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc (Linux)")
-def test_a_zombie_worker_is_not_alive(tmp_path: Path) -> None:
+@pytest.mark.skipif(not pathlib.Path("/proc/self/stat").exists(), reason="needs /proc (Linux)")
+def test_a_zombie_worker_is_not_alive(tmp_path: pathlib.Path) -> None:
     """A worker that exited but has not been reaped is dead, despite kill-0."""
     proc = subprocess.Popen(["/bin/true"])
     try:
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline:
-            stat = Path(f"/proc/{proc.pid}/stat").read_text(encoding="ascii")
+            stat = pathlib.Path(f"/proc/{proc.pid}/stat").read_text(encoding="ascii")
             if stat.rpartition(")")[2].split()[0] == "Z":
                 break
             time.sleep(0.01)
         else:
             pytest.fail("child did not become a zombie")
-        write_worker_pid(tmp_path, proc.pid)
-        assert worker_is_alive(tmp_path) is False
+        sessions_ipc.write_worker_pid(tmp_path, proc.pid)
+        assert sessions_ipc.worker_is_alive(tmp_path) is False
     finally:
         proc.wait()
 
 
-@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc (Linux)")
+@pytest.mark.skipif(not pathlib.Path("/proc/self/stat").exists(), reason="needs /proc (Linux)")
 def test_a_zombie_is_not_alive_without_proc_either(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Without `/proc`, the `ps` fallback catches a zombie too.
 
@@ -677,7 +675,7 @@ def test_a_zombie_is_not_alive_without_proc_either(
     try:
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline:
-            stat = Path(f"/proc/{proc.pid}/stat").read_text(encoding="ascii")
+            stat = pathlib.Path(f"/proc/{proc.pid}/stat").read_text(encoding="ascii")
             if stat.rpartition(")")[2].split()[0] == "Z":
                 break
             time.sleep(0.01)
@@ -688,7 +686,7 @@ def test_a_zombie_is_not_alive_without_proc_either(
         proc.wait()
 
 
-def test_worker_pid_is_published_atomically(tmp_path: Path) -> None:
+def test_worker_pid_is_published_atomically(tmp_path: pathlib.Path) -> None:
     """The last polled state file written with plain write_text.
 
     It truncates, then writes, so a reader in that window sees a PREFIX of the pid with the start-
@@ -700,22 +698,22 @@ def test_worker_pid_is_published_atomically(tmp_path: Path) -> None:
     seen: list[str] = []
     real = ipc.atomic_write
 
-    def spy(path: Path, text: str) -> None:
+    def spy(path: pathlib.Path, text: str) -> None:
         seen.append(path.name)
         real(path, text)
 
     monkey = pytest.MonkeyPatch()
     monkey.setattr(ipc, "atomic_write", spy)
     try:
-        write_worker_pid(tmp_path, os.getpid())
+        sessions_ipc.write_worker_pid(tmp_path, os.getpid())
     finally:
         monkey.undo()
     assert seen == ["worker.pid"]
-    assert worker_is_alive(tmp_path) is True  # still a valid record
+    assert sessions_ipc.worker_is_alive(tmp_path) is True  # still a valid record
 
 
 def test_a_started_session_with_no_pid_file_is_not_running(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A started session with no pid file is not running.
 
@@ -735,14 +733,14 @@ def test_a_started_session_with_no_pid_file_is_not_running(
     )
     assert not (d / "worker.pid").exists()
 
-    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out
     assert "running" not in out, "a session with no live worker must never render as running"
     assert "stale" in out
 
 
 def test_a_start_event_is_never_readable_before_the_pid_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The invariant `_running_is_stale` rests on.
 
@@ -751,31 +749,32 @@ def test_a_start_event_is_never_readable_before_the_pid_file(
     surface. The start emitter owns the order, so no entry point (the loop's two starts, machine
     create's header) can invert it.
     """
-    from agent6.events import EventSink
-    from agent6.sessions.ipc import emit_session_start
+    from agent6 import events as agent6_events
 
     sdir = tmp_path / "sess"
     sdir.mkdir()
     pid_present_at_emit: list[bool] = []
-    real_emit = EventSink.emit
+    real_emit = agent6_events.EventSink.emit
 
-    def spy(self: EventSink, event_type: str, /, **fields: Any) -> None:
+    def spy(self: agent6_events.EventSink, event_type: str, /, **fields: Any) -> None:
         pid_present_at_emit.append((sdir / "worker.pid").exists())
         real_emit(self, event_type, **fields)
 
-    monkeypatch.setattr(EventSink, "emit", spy)
-    emit_session_start(EventSink(sdir / "logs.jsonl"), sdir, "session.start", mode="run")
+    monkeypatch.setattr(agent6_events.EventSink, "emit", spy)
+    sessions_ipc.emit_session_start(
+        agent6_events.EventSink(sdir / "logs.jsonl"), sdir, "session.start", mode="run"
+    )
     assert pid_present_at_emit == [True]
 
 
-def _stamp_manifest(d: Path, **fields: Any) -> None:
+def _stamp_manifest(d: pathlib.Path, **fields: Any) -> None:
     (d / "manifest.json").write_text(
         json.dumps({"mode": "run", "models": {"driver": {"model": "m"}}, **fields})
     )
 
 
 def test_status_says_where_the_changes_are(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`sessions show` says where the run's changes are.
 
@@ -784,10 +783,10 @@ def test_status_says_where_the_changes_are(
     carries run_branch, base_branch and merged_into.
     """
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
-    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=Path.cwd(), check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=pathlib.Path.cwd(), check=True)
     subprocess.run(
         ["git", "commit", "-q", "--allow-empty", "-m", "base"],
-        cwd=Path.cwd(),
+        cwd=pathlib.Path.cwd(),
         check=True,
         env={
             **os.environ,
@@ -800,18 +799,22 @@ def test_status_says_where_the_changes_are(
     branch = "agent6/winsome-dawn-YWH5ZS"
 
     def show() -> str:
-        assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+        assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
         return capsys.readouterr().out
 
     _stamp_manifest(d, run_branch=branch, base_branch="main")
     assert f"changes:    {branch} (no commits)" in show()
-    subprocess.run(["git", "branch", branch], cwd=Path.cwd(), check=True)
+    subprocess.run(["git", "branch", branch], cwd=pathlib.Path.cwd(), check=True)
     assert (
         f"changes:    {branch} → merges into main; merge with: agent6 sessions merge"
         " winsome-dawn-YWH5ZS"
     ) in show()
     tip = subprocess.run(
-        ["git", "rev-parse", branch], cwd=Path.cwd(), check=True, capture_output=True, text=True
+        ["git", "rev-parse", branch],
+        cwd=pathlib.Path.cwd(),
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     _stamp_manifest(
         d, run_branch=branch, base_branch="main", merged={"into": "main", "sha": tip, "tip": tip}
@@ -826,7 +829,7 @@ def test_status_says_where_the_changes_are(
     _stamp_manifest(
         d, run_branch=branch, base_branch="main", merged={"into": "main", "sha": tip, "tip": tip}
     )
-    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
     assert (obj["run_branch"], obj["base_branch"], obj["merged_into"]) == (branch, "main", "main")
     _stamp_manifest(d, mode="ask")
@@ -835,15 +838,17 @@ def test_status_says_where_the_changes_are(
     # commits: the ref is named, and the merge still offered.
     _stamp_manifest(d, run_branch=branch, base_branch="main")
     chain = "refs/agent6/winsome-dawn-YWH5ZS/head"
-    subprocess.run(["git", "update-ref", chain, tip], cwd=Path.cwd(), check=True)
-    subprocess.run(["git", "branch", "-D", branch], cwd=Path.cwd(), check=True, capture_output=True)
+    subprocess.run(["git", "update-ref", chain, tip], cwd=pathlib.Path.cwd(), check=True)
+    subprocess.run(
+        ["git", "branch", "-D", branch], cwd=pathlib.Path.cwd(), check=True, capture_output=True
+    )
     out = show()
     assert "changes:    refs/agent6/winsome-dawn-YWH5ZS/head (" in out
     assert "is gone; the commits are kept); merge with: agent6 sessions merge" in out
 
 
 def test_status_of_an_undone_run_does_not_offer_a_merge(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The changes line of an undone run agrees with the listing.
 
@@ -858,7 +863,7 @@ def test_status_of_an_undone_run_does_not_offer_a_merge(
             {"ts": _ts(1), "type": "session.end", "reason": "undone", "all_passed": False},
         ],
     )
-    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=Path.cwd(), check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=pathlib.Path.cwd(), check=True)
     subprocess.run(
         [
             "git",
@@ -872,14 +877,14 @@ def test_status_of_an_undone_run_does_not_offer_a_merge(
             "-m",
             "b",
         ],
-        cwd=Path.cwd(),
+        cwd=pathlib.Path.cwd(),
         check=True,
     )
     branch = "agent6/winsome-dawn-YWH5ZS"
-    subprocess.run(["git", "branch", branch], cwd=Path.cwd(), check=True)
+    subprocess.run(["git", "branch", branch], cwd=pathlib.Path.cwd(), check=True)
     _stamp_manifest(d, run_branch=branch, base_branch="main")
 
-    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out
     assert "state:      undone" in out
     assert f"changes:    {branch} (taken back by /undo)" in out
@@ -887,7 +892,7 @@ def test_status_of_an_undone_run_does_not_offer_a_merge(
 
 
 def test_status_of_an_ask_does_not_repeat_its_word(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An ask ends with reason "answered", the listing word too: never "answered (answered)"."""
     _make_run(
@@ -898,35 +903,36 @@ def test_status_of_an_ask_does_not_repeat_its_word(
             {"ts": _ts(5), "type": "session.end", "reason": "answered", "all_passed": False},
         ],
     )
-    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     assert "state:      answered\n" in capsys.readouterr().out
 
 
 def test_show_json_label_matches_the_listing_cell(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """One vocabulary across the two surfaces.
 
     `show --json`'s label was the bare word while the listing folds the mode in, so a script could
     not match a run's row to its detail view.
     """
-    from agent6.viewmodel.format import listing_status_label
-    from agent6.viewmodel.listing import summarize_session_dir
+    from agent6.viewmodel import format, listing
 
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "plan"}])
     (d / "manifest.json").write_text(json.dumps({"mode": "plan"}), encoding="utf-8")
-    write_worker_pid(d, os.getpid())
+    sessions_ipc.write_worker_pid(d, os.getpid())
 
-    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
 
     obj = json.loads(capsys.readouterr().out)
-    s = summarize_session_dir(d)
-    assert obj["label"] == listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged)
+    s = listing.summarize_session_dir(d)
+    assert obj["label"] == format.listing_status_label(
+        s.mode, s.status, s.reason, unmerged=s.unmerged
+    )
     assert obj["label"] == "plan · running", "the mode is folded in, as the listing folds it"
 
 
 def test_status_prints_the_task_and_names_a_plans_page(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The show page prints the task, and a plan's show names its plans page.
 
@@ -938,13 +944,13 @@ def test_status_prints_the_task_and_names_a_plans_page(
         monkeypatch,
         [{"ts": _ts(5), "type": "session.start", "mode": "run", "user_task": "# add a flag\nmore"}],
     )
-    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out
     assert "task:       add a flag\n" in out and "more" not in out
     assert "plan:" not in out
-    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     assert json.loads(capsys.readouterr().out)["task"] == "# add a flag\nmore"
 
     (d / "manifest.json").write_text(json.dumps({"mode": "plan"}))
-    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     assert "plan:       agent6 plan show winsome-dawn-YWH5ZS" in capsys.readouterr().out

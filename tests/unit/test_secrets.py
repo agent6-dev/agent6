@@ -4,30 +4,22 @@
 
 from __future__ import annotations
 
+import pathlib
 import stat
 import threading
-from pathlib import Path
 
 import pytest
 
 from agent6 import secrets
-from agent6.secrets import (
-    OAuthTokens,
-    SecretsError,
-    load_oauth_tokens,
-    resolve_api_key,
-    save_oauth_tokens,
-    save_secret,
-)
 
 
 @pytest.fixture
-def gcfg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def gcfg(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     return tmp_path / "g"
 
 
-def test_save_secret_is_0600(gcfg: Path) -> None:
+def test_save_secret_is_0600(gcfg: pathlib.Path) -> None:
     p = secrets.save_secret("anthropic", "sk-ant-xyz")
     assert p.is_file()
     mode = stat.S_IMODE(p.stat().st_mode)
@@ -35,7 +27,7 @@ def test_save_secret_is_0600(gcfg: Path) -> None:
     assert secrets.resolve_api_key("anthropic", None) == "sk-ant-xyz"
 
 
-def test_an_unreadable_secrets_file_is_a_named_refusal(gcfg: Path) -> None:
+def test_an_unreadable_secrets_file_is_a_named_refusal(gcfg: pathlib.Path) -> None:
     """Root-owned after a `sudo connect`, or a plain chmod 000.
 
     The operator's environment, not a bug in agent6. It escaped as an unexpected PermissionError
@@ -44,20 +36,20 @@ def test_an_unreadable_secrets_file_is_a_named_refusal(gcfg: Path) -> None:
     path = secrets.save_secret("anthropic", "sk-ant-xyz")
     path.chmod(0o000)
     try:
-        with pytest.raises(SecretsError, match="could not read"):
+        with pytest.raises(secrets.SecretsError, match="could not read"):
             secrets.load_secrets()
     finally:
         path.chmod(0o600)
 
 
-def test_save_secret_preserves_other_providers(gcfg: Path) -> None:
+def test_save_secret_preserves_other_providers(gcfg: pathlib.Path) -> None:
     secrets.save_secret("anthropic", "sk-ant-1")
     secrets.save_secret("openrouter", "sk-or-2")
     assert secrets.resolve_api_key("anthropic", None) == "sk-ant-1"
     assert secrets.resolve_api_key("openrouter", None) == "sk-or-2"
 
 
-def test_save_secret_escapes_control_chars(gcfg: Path) -> None:
+def test_save_secret_escapes_control_chars(gcfg: pathlib.Path) -> None:
     # A control char in a pasted key must not write unparseable secrets.toml.
     # A raw newline/\x01 in a basic string is illegal TOML, so the whole file
     # fails to parse and EVERY provider's key reads back missing -- while the
@@ -68,7 +60,9 @@ def test_save_secret_escapes_control_chars(gcfg: Path) -> None:
     assert secrets.resolve_api_key("openrouter", None) == "sk-or-clean"
 
 
-def test_env_takes_precedence_over_secrets(gcfg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_env_takes_precedence_over_secrets(
+    gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     secrets.save_secret("anthropic", "from-secrets")
     monkeypatch.setenv("MY_KEY", "from-env")
     assert secrets.resolve_api_key("anthropic", "MY_KEY") == "from-env"
@@ -77,22 +71,24 @@ def test_env_takes_precedence_over_secrets(gcfg: Path, monkeypatch: pytest.Monke
     assert secrets.resolve_api_key("anthropic", "MY_KEY") == "from-secrets"
 
 
-def test_resolve_missing_returns_none(gcfg: Path) -> None:
+def test_resolve_missing_returns_none(gcfg: pathlib.Path) -> None:
     assert secrets.resolve_api_key("nope", None) is None
 
 
-def test_load_secrets_refuses_group_readable(gcfg: Path) -> None:
+def test_load_secrets_refuses_group_readable(gcfg: pathlib.Path) -> None:
     p = secrets.save_secret("anthropic", "sk-ant-xyz")
     p.chmod(0o644)
-    with pytest.raises(SecretsError, match="unsafe permissions"):
+    with pytest.raises(secrets.SecretsError, match="unsafe permissions"):
         secrets.load_secrets()
 
 
-def test_load_secrets_absent_is_empty(gcfg: Path) -> None:
+def test_load_secrets_absent_is_empty(gcfg: pathlib.Path) -> None:
     assert secrets.load_secrets() == {}
 
 
-def test_save_secret_does_not_follow_a_planted_tmp_symlink(gcfg: Path, tmp_path: Path) -> None:
+def test_save_secret_does_not_follow_a_planted_tmp_symlink(
+    gcfg: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
     """save_secret does not follow a planted tmp symlink.
 
     A pre-planted `secrets.toml.tmp` symlink must not redirect the write to its target (the sudo-
@@ -109,7 +105,7 @@ def test_save_secret_does_not_follow_a_planted_tmp_symlink(gcfg: Path, tmp_path:
     assert not (gcfg / "secrets.toml").is_symlink()
 
 
-def test_concurrent_save_secret_loses_no_provider(gcfg: Path) -> None:
+def test_concurrent_save_secret_loses_no_provider(gcfg: pathlib.Path) -> None:
     """Concurrent save_secret calls lose no provider.
 
     Two concurrent connects reading the same base file would let the later publish drop the earlier
@@ -135,33 +131,33 @@ def test_concurrent_save_secret_loses_no_provider(gcfg: Path) -> None:
     assert not p.with_name(p.name + ".lock").exists()
 
 
-def test_oauth_tokens_round_trip_beside_api_keys(gcfg: Path) -> None:
+def test_oauth_tokens_round_trip_beside_api_keys(gcfg: pathlib.Path) -> None:
     """OAuth tokens replace their provider's entry, preserve siblings, stay 0600."""
-    save_secret("anthropic", "sk-ant-123")
-    tokens = OAuthTokens(
+    secrets.save_secret("anthropic", "sk-ant-123")
+    tokens = secrets.OAuthTokens(
         access_token="eyJ.access", refresh_token="rt-1", expires_at=1755.5, account_id="acct-9"
     )
-    path = save_oauth_tokens("chatgpt", tokens)
+    path = secrets.save_oauth_tokens("chatgpt", tokens)
     assert (path.stat().st_mode & 0o777) == 0o600
-    assert load_oauth_tokens("chatgpt") == tokens
-    assert resolve_api_key("anthropic", None) == "sk-ant-123"
+    assert secrets.load_oauth_tokens("chatgpt") == tokens
+    assert secrets.resolve_api_key("anthropic", None) == "sk-ant-123"
     # Re-connect rotates the whole entry; no stale fields survive.
-    save_oauth_tokens("chatgpt", OAuthTokens("a2", "r2", 2000.0, "acct-9"))
-    loaded = load_oauth_tokens("chatgpt")
+    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("a2", "r2", 2000.0, "acct-9"))
+    loaded = secrets.load_oauth_tokens("chatgpt")
     assert loaded is not None and loaded.access_token == "a2" and loaded.refresh_token == "r2"
 
 
-def test_load_oauth_tokens_absent_or_mangled_is_none(gcfg: Path) -> None:
+def test_load_oauth_tokens_absent_or_mangled_is_none(gcfg: pathlib.Path) -> None:
     """load_oauth_tokens reads an absent or mangled entry as None.
 
     No entry, an api-key-only entry and an unparseable expiry all read as absent; the caller's
     repair path is `agent6 connect` either way.
     """
-    assert load_oauth_tokens("chatgpt") is None
-    save_secret("chatgpt", "sk-not-oauth")
-    assert load_oauth_tokens("chatgpt") is None
+    assert secrets.load_oauth_tokens("chatgpt") is None
+    secrets.save_secret("chatgpt", "sk-not-oauth")
+    assert secrets.load_oauth_tokens("chatgpt") is None
     assert (
-        load_oauth_tokens(
+        secrets.load_oauth_tokens(
             "chatgpt",
             secrets={
                 "providers": {
@@ -177,16 +173,16 @@ def test_load_oauth_tokens_absent_or_mangled_is_none(gcfg: Path) -> None:
     )
 
 
-def test_delete_provider_secrets_preserves_siblings(gcfg: Path) -> None:
-    save_secret("anthropic", "sk-1")
-    save_oauth_tokens("chatgpt", OAuthTokens("a", "r", 100.0, "id"))
+def test_delete_provider_secrets_preserves_siblings(gcfg: pathlib.Path) -> None:
+    secrets.save_secret("anthropic", "sk-1")
+    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("a", "r", 100.0, "id"))
     assert secrets.delete_provider_secrets("chatgpt") is True
     assert secrets.delete_provider_secrets("chatgpt") is False
     assert secrets.load_oauth_tokens("chatgpt") is None
     assert secrets.resolve_api_key("anthropic", None) == "sk-1"
 
 
-def test_a_logout_on_a_fresh_machine_creates_no_open_config_dir(gcfg: Path) -> None:
+def test_a_logout_on_a_fresh_machine_creates_no_open_config_dir(gcfg: pathlib.Path) -> None:
     """A logout on a fresh machine creates no open config dir.
 
     `delete_provider_secrets` takes its lock before anything has created the config dir, and the

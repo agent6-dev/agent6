@@ -13,14 +13,14 @@ from __future__ import annotations
 import hashlib
 from importlib import resources
 
-from agent6.ui.web.page import CLIENT_JS, PAGE_HTML
+from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
 PAGE_SHA256 = "bb6a1d4132dc47fdc46e42a84e9ddccafd86899c75cf6f4b6904bf9398ee8058"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
-    got = hashlib.sha256(PAGE_HTML.encode("utf-8")).hexdigest()
+    got = hashlib.sha256(page.PAGE_HTML.encode("utf-8")).hexdigest()
     assert got == PAGE_SHA256, (
         f"page bytes changed (sha256 {got}); if intended, update PAGE_SHA256 in this test"
     )
@@ -28,10 +28,9 @@ def test_rendered_page_bytes_are_pinned() -> None:
 
 def test_page_assets_load_non_empty() -> None:
     # An asset missing from the wheel would otherwise surface only at the release build.
-    from agent6.ui.web.page import _CLIENT_FILES  # pyright: ignore[reportPrivateUsage]
 
     web = resources.files("agent6.ui.web")
-    for name in (*_CLIENT_FILES, "styles.css"):
+    for name in (*page._CLIENT_FILES, "styles.css"):
         assert web.joinpath(name).read_text(encoding="utf-8").strip(), f"{name} is empty"
 
 
@@ -167,15 +166,15 @@ def test_the_config_editor_sends_a_string_leaf_as_a_toml_string() -> None:
 
 def test_the_empty_machines_card_says_what_the_tui_says() -> None:
     """The web card says "no machines yet", as the TUI's machines screen does."""
-    assert "'no machines yet'" in CLIENT_JS and "no machine instances" not in CLIENT_JS
+    assert "'no machines yet'" in page.CLIENT_JS and "no machine instances" not in page.CLIENT_JS
 
 
 def test_the_hub_keeps_its_maintenance_actions_behind_one_control() -> None:
     """The danger actions open from one "more…" disclosure, as the TUI's File menu holds them."""
-    assert "el('details', 'more')" in CLIENT_JS
+    assert "el('details', 'more')" in page.CLIENT_JS
     for label in ("Prune merged runs", "Prune merged runs, squash-merged too", "Clear saved asks"):
-        assert f"action('{label}'" in CLIENT_JS
-    assert "also squash-merged branches" not in CLIENT_JS
+        assert f"action('{label}'" in page.CLIENT_JS
+    assert "also squash-merged branches" not in page.CLIENT_JS
 
 
 def test_the_phone_widget_menu_can_show_the_run_review() -> None:

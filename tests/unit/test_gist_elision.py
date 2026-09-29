@@ -11,69 +11,64 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agent6.harness._compaction import (
-    ELISION_GIST_PREFIX,
-    ELISION_PREFIX,
-    GistRequest,
-    compact_old_tool_results,
-    elision_gist_placeholder,
-    parse_gist_lines,
-    read_file_text_from_result,
-)
-from agent6.harness._conversation import Conversation, ToolResultItem, UserTurn
+from agent6.harness import _compaction, _conversation
 
 
-def _add_call(conv: Conversation, name: str, tool_input: dict[str, Any], content: str) -> None:
+def _add_call(
+    conv: _conversation.Conversation, name: str, tool_input: dict[str, Any], content: str
+) -> None:
     """One (assistant tool_use, result) exchange."""
     turn = conv.assistant(
         [{"type": "tool_use", "id": f"t{len(conv)}", "name": name, "input": tool_input}]
     )
     conv.results(
         [
-            ToolResultItem(
+            _conversation.ToolResultItem(
                 tool_use_id=turn.tool_uses[0].id, content=content, for_call=turn.tool_uses[0]
             )
         ]
     )
 
 
-def _add_read(conv: Conversation, path: str, text: str) -> None:
+def _add_read(conv: _conversation.Conversation, path: str, text: str) -> None:
     """A read_file exchange whose result carries the real JSON envelope."""
     _add_call(conv, "read_file", {"path": path}, json.dumps({"content": text, "size": len(text)}))
 
 
-def _contents(conv: Conversation) -> list[str]:
+def _contents(conv: _conversation.Conversation) -> list[str]:
     return [
         item.content
         for turn in conv.turns
-        if isinstance(turn, UserTurn)
+        if isinstance(turn, _conversation.UserTurn)
         for item in turn.items
-        if isinstance(item, ToolResultItem)
+        if isinstance(item, _conversation.ToolResultItem)
     ]
 
 
 class _SpyGister:
     def __init__(self, replies: dict[str, str]) -> None:
         self.replies = replies
-        self.calls: list[tuple[GistRequest, ...]] = []
+        self.calls: list[tuple[_compaction.GistRequest, ...]] = []
 
-    def __call__(self, requests: tuple[GistRequest, ...]) -> dict[str, str]:
+    def __call__(self, requests: tuple[_compaction.GistRequest, ...]) -> dict[str, str]:
         self.calls.append(requests)
         return {r.path: self.replies[r.path] for r in requests if r.path in self.replies}
 
 
 def test_large_read_decays_to_gist_placeholder() -> None:
     doc = "R01 requires headers under 80 chars. END: lines are exempt (R10). " * 60
-    conv = Conversation()
+    conv = _conversation.Conversation()
     _add_read(conv, "rules/r01.md", doc)
     _add_read(conv, "b.py", "x" * 500)
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"rules/r01.md": "R01: headers <80 chars; END: lines exempt (R10)"})
-    stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2, gister=gister)
+    stats = _compaction.compact_old_tool_results(
+        conv, max_total_bytes=1500, keep_recent=2, gister=gister
+    )
     assert len(stats.elided_calls) == 1
     assert len(stats.gist_paths) == 1
     got = _contents(conv)[0]
-    assert got.startswith(ELISION_GIST_PREFIX)
+    assert got.startswith(_compaction.ELISION_GIST_PREFIX)
     assert "rules/r01.md" in got
     assert "gist: R01: headers <80 chars; END: lines exempt (R10)" in got
     # The distiller saw the unwrapped file text, not the JSON envelope.
@@ -83,27 +78,29 @@ def test_large_read_decays_to_gist_placeholder() -> None:
 def test_no_gister_and_failed_gister_fall_back_to_bare() -> None:
     doc = "spec " * 1000
     for gister in (None, _SpyGister({})):
-        conv = Conversation()
+        conv = _conversation.Conversation()
         _add_read(conv, "docs/spec.md", doc)
         _add_read(conv, "b.py", "x" * 500)
         _add_read(conv, "c.py", "y" * 500)
-        stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2, gister=gister)
+        stats = _compaction.compact_old_tool_results(
+            conv, max_total_bytes=1500, keep_recent=2, gister=gister
+        )
         assert len(stats.elided_calls) == 1
         assert len(stats.gist_paths) == 0
         got = _contents(conv)[0]
-        assert got.startswith(ELISION_PREFIX)
-        assert not got.startswith(ELISION_GIST_PREFIX)
+        assert got.startswith(_compaction.ELISION_PREFIX)
+        assert not got.startswith(_compaction.ELISION_GIST_PREFIX)
 
 
 def test_small_protected_and_non_read_results_are_never_gisted() -> None:
-    conv = Conversation()
+    conv = _conversation.Conversation()
     _add_read(conv, "hot.py", "h" * 5000)  # protected: actively edited
     _add_read(conv, "tiny.md", "t" * 300)  # below GIST_MIN_SOURCE_CHARS
     _add_call(conv, "grep", {"pattern": "q"}, "g" * 5000)  # not a read_file
     _add_read(conv, "b.py", "x" * 500)
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"hot.py": "nope", "tiny.md": "nope", "grep": "nope"})
-    stats = compact_old_tool_results(
+    stats = _compaction.compact_old_tool_results(
         conv,
         max_total_bytes=1000,
         keep_recent=2,
@@ -118,95 +115,107 @@ def test_small_protected_and_non_read_results_are_never_gisted() -> None:
 def test_newest_read_per_path_wins_the_gist() -> None:
     doc_v1 = "OLD spec text. " * 300
     doc_v2 = "NEW spec text. " * 300
-    conv = Conversation()
+    conv = _conversation.Conversation()
     _add_read(conv, "docs/spec.md", doc_v1)
     _add_read(conv, "docs/spec.md", doc_v2)
     _add_read(conv, "b.py", "x" * 500)
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"docs/spec.md": "the spec facts"})
-    stats = compact_old_tool_results(conv, max_total_bytes=1200, keep_recent=2, gister=gister)
+    stats = _compaction.compact_old_tool_results(
+        conv, max_total_bytes=1200, keep_recent=2, gister=gister
+    )
     assert len(stats.elided_calls) == 2
     assert len(stats.gist_paths) == 1
     assert len(gister.calls) == 1 and len(gister.calls[0]) == 1
     assert gister.calls[0][0].content.startswith("NEW spec text")
     # The newer read keeps the gist; the older one gets the bare marker.
     contents = _contents(conv)
-    assert contents[0].startswith(ELISION_PREFIX)
-    assert not contents[0].startswith(ELISION_GIST_PREFIX)
-    assert contents[1].startswith(ELISION_GIST_PREFIX)
+    assert contents[0].startswith(_compaction.ELISION_PREFIX)
+    assert not contents[0].startswith(_compaction.ELISION_GIST_PREFIX)
+    assert contents[1].startswith(_compaction.ELISION_GIST_PREFIX)
 
 
 def test_continued_pressure_demotes_gists_oldest_first() -> None:
     doc = "authoritative spec. " * 300
-    conv = Conversation()
+    conv = _conversation.Conversation()
     _add_read(conv, "docs/spec.md", doc)
     _add_read(conv, "b.py", "x" * 500)
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"docs/spec.md": "spec facts " * 30})
-    first = compact_old_tool_results(conv, max_total_bytes=1800, keep_recent=2, gister=gister)
+    first = _compaction.compact_old_tool_results(
+        conv, max_total_bytes=1800, keep_recent=2, gister=gister
+    )
     assert (len(first.gist_paths), len(first.demoted_paths)) == (1, 0)
     gist_ph = _contents(conv)[0]
-    assert gist_ph.startswith(ELISION_GIST_PREFIX)
+    assert gist_ph.startswith(_compaction.ELISION_GIST_PREFIX)
     # Re-running under the same budget is a no-op (idempotent).
-    again = compact_old_tool_results(conv, max_total_bytes=1800, keep_recent=2, gister=gister)
+    again = _compaction.compact_old_tool_results(
+        conv, max_total_bytes=1800, keep_recent=2, gister=gister
+    )
     assert (len(again.elided_calls), len(again.gist_paths), len(again.demoted_paths)) == (0, 0, 0)
     assert _contents(conv)[0] == gist_ph
     # A tighter budget demotes the gist to the bare marker; the bound holds.
-    tighter = compact_old_tool_results(conv, max_total_bytes=1100, keep_recent=2, gister=gister)
+    tighter = _compaction.compact_old_tool_results(
+        conv, max_total_bytes=1100, keep_recent=2, gister=gister
+    )
     assert len(tighter.demoted_paths) == 1
     got = _contents(conv)[0]
-    assert got.startswith(ELISION_PREFIX)
-    assert not got.startswith(ELISION_GIST_PREFIX)
+    assert got.startswith(_compaction.ELISION_PREFIX)
+    assert not got.startswith(_compaction.ELISION_GIST_PREFIX)
     assert "docs/spec.md" in got
 
 
 def test_gist_longer_than_content_stays_bare() -> None:
     # A gist placeholder that would not shrink the block is pointless.
     text = "z" * 2100  # just over GIST_MIN_SOURCE_CHARS
-    conv = Conversation()
+    conv = _conversation.Conversation()
     # raw (non-JSON) read result: read_file_text_from_result falls back verbatim
     _add_call(conv, "read_file", {"path": "a.md"}, text)
     _add_read(conv, "b.py", "x" * 500)
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"a.md": "g" * 3000})  # clipped to GIST_MAX_CHARS, still fits
-    stats = compact_old_tool_results(conv, max_total_bytes=2000, keep_recent=2, gister=gister)
+    stats = _compaction.compact_old_tool_results(
+        conv, max_total_bytes=2000, keep_recent=2, gister=gister
+    )
     assert len(stats.gist_paths) == 1
     assert len(_contents(conv)[0]) < 2100
 
 
 def test_the_headroom_goes_to_the_newest_read() -> None:
     """`demote` drops gists oldest-first, so headroom for one gist goes to the newest read."""
-    conv = Conversation()
+    conv = _conversation.Conversation()
     _add_read(conv, "old.py", "o" * 4000)
     _add_read(conv, "new.py", "n" * 4000)
     _add_read(conv, "tail1.py", "a" * 300)
     _add_read(conv, "tail2.py", "b" * 300)
     gister = _SpyGister({"old.py": "OLD " + "g" * 380, "new.py": "NEW " + "g" * 380})
 
-    stats = compact_old_tool_results(conv, max_total_bytes=1600, keep_recent=2, gister=gister)
+    stats = _compaction.compact_old_tool_results(
+        conv, max_total_bytes=1600, keep_recent=2, gister=gister
+    )
 
     assert stats.gist_paths == ("new.py",)
     assert stats.demoted_paths == ()
 
 
 def test_a_short_gist_frees_headroom_for_an_older_gist() -> None:
-    from agent6.harness._compaction import elision_placeholder
-
-    conv = Conversation()
+    conv = _conversation.Conversation()
     _add_read(conv, "old.py", "o" * 4_000)
     _add_read(conv, "new.py", "n" * 4_000)
     _add_read(conv, "tail1.py", "a" * 300)
     _add_read(conv, "tail2.py", "b" * 300)
     before = _contents(conv)
     budget = (
-        len(elision_placeholder("read_file", {"path": "old.py"}))
-        + len(elision_placeholder("read_file", {"path": "new.py"}))
+        len(_compaction.elision_placeholder("read_file", {"path": "old.py"}))
+        + len(_compaction.elision_placeholder("read_file", {"path": "new.py"}))
         + len(before[2])
         + len(before[3])
     )
     gister = _SpyGister({"old.py": "o" * 100, "new.py": "n"})
 
-    stats = compact_old_tool_results(conv, max_total_bytes=budget, keep_recent=2, gister=gister)
+    stats = _compaction.compact_old_tool_results(
+        conv, max_total_bytes=budget, keep_recent=2, gister=gister
+    )
 
     assert stats.gist_paths == ("old.py", "new.py")
     assert sum(map(len, _contents(conv))) <= budget
@@ -214,22 +223,24 @@ def test_a_short_gist_frees_headroom_for_an_older_gist() -> None:
 
 def test_a_gist_the_budget_cannot_hold_is_never_reported_as_kept() -> None:
     """A gist demoted in the same pass it was applied is not counted as kept."""
-    conv = Conversation()
+    conv = _conversation.Conversation()
     _add_call(conv, "read_file", {"path": "a.md"}, "z" * 2100)
     _add_read(conv, "b.py", "x" * 500)
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"a.md": "g" * 3000})
 
-    stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2, gister=gister)
+    stats = _compaction.compact_old_tool_results(
+        conv, max_total_bytes=1500, keep_recent=2, gister=gister
+    )
 
     assert (len(stats.gist_paths), len(stats.demoted_paths)) == (0, 0)
-    assert not _contents(conv)[0].startswith(ELISION_GIST_PREFIX)
+    assert not _contents(conv)[0].startswith(_compaction.ELISION_GIST_PREFIX)
 
 
 def test_elision_gist_placeholder_shares_the_elision_prefix() -> None:
-    ph = elision_gist_placeholder("docs/a.md", "facts")
-    assert ph.startswith(ELISION_PREFIX)
-    assert ph.startswith(ELISION_GIST_PREFIX)
+    ph = _compaction.elision_gist_placeholder("docs/a.md", "facts")
+    assert ph.startswith(_compaction.ELISION_PREFIX)
+    assert ph.startswith(_compaction.ELISION_GIST_PREFIX)
     assert "docs/a.md" in ph and "gist: facts" in ph
 
 
@@ -241,32 +252,40 @@ def test_parse_gist_lines_is_tolerant() -> None:
         "no separator line\n"
         "docs/c.md:\n"  # empty gist: skipped
     )
-    got = parse_gist_lines(text, paths=["docs/a.md", "docs/b.md", "docs/c.md"])
+    got = _compaction.parse_gist_lines(text, paths=["docs/a.md", "docs/b.md", "docs/c.md"])
     assert got == {"docs/a.md": "A requires X; threshold 80", "docs/b.md": "B forbids Y"}
 
 
 def test_read_file_text_from_result_unwraps_shapes() -> None:
-    assert read_file_text_from_result(json.dumps({"content": "text", "size": 4})) == "text"
+    assert (
+        _compaction.read_file_text_from_result(json.dumps({"content": "text", "size": 4})) == "text"
+    )
     truncated = json.dumps(
         {"_tool_result_truncated": True, "head": "the head", "tool": "read_file"}
     )
-    assert read_file_text_from_result(truncated) == "the head"
-    assert read_file_text_from_result(json.dumps({"error": "Not a file: x"})) == ""
-    assert read_file_text_from_result("plain non-json payload") == "plain non-json payload"
+    assert _compaction.read_file_text_from_result(truncated) == "the head"
+    assert _compaction.read_file_text_from_result(json.dumps({"error": "Not a file: x"})) == ""
+    assert (
+        _compaction.read_file_text_from_result("plain non-json payload") == "plain non-json payload"
+    )
 
 
 def test_stats_carry_gist_and_demotion_identities() -> None:
     doc = "authoritative spec. " * 300
-    conv = Conversation()
+    conv = _conversation.Conversation()
     _add_read(conv, "docs/spec.md", doc)
     _add_read(conv, "b.py", "x" * 500)
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"docs/spec.md": "spec facts " * 30})
-    first = compact_old_tool_results(conv, max_total_bytes=1800, keep_recent=2, gister=gister)
+    first = _compaction.compact_old_tool_results(
+        conv, max_total_bytes=1800, keep_recent=2, gister=gister
+    )
     assert first.elided_calls == ("read_file docs/spec.md",)
     assert first.gist_paths == ("docs/spec.md",)
     assert first.demoted_paths == ()
-    tighter = compact_old_tool_results(conv, max_total_bytes=1100, keep_recent=2, gister=gister)
+    tighter = _compaction.compact_old_tool_results(
+        conv, max_total_bytes=1100, keep_recent=2, gister=gister
+    )
     assert tighter.demoted_paths == ("docs/spec.md",)
     assert tighter.elided_calls == ()
     assert tighter.gist_paths == ()
@@ -276,38 +295,38 @@ def test_gist_placeholder_identity_matches_bare_for_long_paths() -> None:
     """The gist placeholder names the call by the same truncated identity as the bare marker."""
     import re
 
-    from agent6.harness._compaction import call_label, elision_placeholder
-
     long_path = "docs/" + "d" * 130 + ".md"
     ident = re.compile(r": the result of (.+?) was replaced")
-    label = call_label("read_file", {"path": long_path})
-    gist_m = ident.search(elision_gist_placeholder(label, "the gist"))
-    bare_m = ident.search(elision_placeholder("read_file", {"path": long_path}))
+    label = _compaction.call_label("read_file", {"path": long_path})
+    gist_m = ident.search(_compaction.elision_gist_placeholder(label, "the gist"))
+    bare_m = ident.search(_compaction.elision_placeholder("read_file", {"path": long_path}))
     assert gist_m is not None and bare_m is not None
-    assert gist_m.group(1) == bare_m.group(1) == call_label("read_file", {"path": long_path})
+    assert (
+        gist_m.group(1)
+        == bare_m.group(1)
+        == _compaction.call_label("read_file", {"path": long_path})
+    )
 
 
 def test_gist_placeholder_identity_matches_bare_for_a_ranged_read() -> None:
     """A gisted read with offset and limit carries the same identity as its bare marker."""
     import re
 
-    from agent6.harness._compaction import call_label, elision_placeholder
-
-    conv = Conversation()
+    conv = _conversation.Conversation()
     _add_call(conv, "read_file", {"path": "a.py", "start_line": 100, "limit": 500}, "z" * 4000)
     _add_read(conv, "b.py", "y" * 500)
     _add_read(conv, "c.py", "y" * 500)
-    compact_old_tool_results(
+    _compaction.compact_old_tool_results(
         conv, max_total_bytes=1800, keep_recent=2, gister=_SpyGister({"a.py": "the gist " * 10})
     )
 
     text = str(conv.turns[1].items[0].content)  # pyright: ignore[reportAttributeAccessIssue]
-    assert text.startswith(ELISION_GIST_PREFIX)
+    assert text.startswith(_compaction.ELISION_GIST_PREFIX)
     ident = re.compile(r": the result of (.+?) was replaced")
     got = ident.search(text)
     full_input = {"path": "a.py", "start_line": 100, "limit": 500}
-    bare = ident.search(elision_placeholder("read_file", full_input))
+    bare = ident.search(_compaction.elision_placeholder("read_file", full_input))
     assert got is not None and bare is not None
     assert got.group(1) == bare.group(1)  # gist and bare marker share ONE identity
-    assert got.group(1) == call_label("read_file", full_input)
+    assert got.group(1) == _compaction.call_label("read_file", full_input)
     assert "start_line=100" in got.group(1)  # the range is part of the identity

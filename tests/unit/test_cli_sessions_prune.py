@@ -5,28 +5,27 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
-from agent6.git_ops import CommitIdentity, chain_commit, chain_ref_for
-from agent6.paths import state_dir
-from agent6.sessions.layout import SessionLayout
+from agent6 import git_ops, paths
+from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
 
 
-def _git(repo: Path, *args: str, check: bool = True) -> str:
+def _git(repo: pathlib.Path, *args: str, check: bool = True) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], check=check, capture_output=True, text=True
     ).stdout.strip()
 
 
-def _branch_exists(repo: Path, name: str) -> bool:
+def _branch_exists(repo: pathlib.Path, name: str) -> bool:
     return bool(_git(repo, "branch", "--list", name))
 
 
-def _make_branch(repo: Path, session_id: str, fname: str) -> None:
+def _make_branch(repo: pathlib.Path, session_id: str, fname: str) -> None:
     _git(repo, "checkout", "-q", "-b", f"agent6/{session_id}", "main")
     (repo / fname).write_text("x\n", encoding="utf-8")
     _git(repo, "add", "-A")
@@ -35,7 +34,7 @@ def _make_branch(repo: Path, session_id: str, fname: str) -> None:
 
 
 def _manifest(
-    repo: Path,
+    repo: pathlib.Path,
     session_id: str,
     base: str,
     *,
@@ -48,7 +47,7 @@ def _manifest(
     `merged_sha` defaults to main's tip at stamp time; a merge that added nothing names the all-zero
     sentinel and the base tip it saw (`into_tip`).
     """
-    layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
     layout.ensure()
     data: dict[str, object] = {
         "version": 2,
@@ -66,7 +65,7 @@ def _manifest(
 
 
 def test_runs_prune_classifies_branches(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
@@ -104,7 +103,7 @@ def test_runs_prune_classifies_branches(
 
 
 def test_runs_commits_and_diff_after_prune_say_where_the_work_went(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A pruned run branch: diff and commits report the recorded squash merge, not a raw git fatal.
     monkeypatch.chdir(tmp_path)
@@ -128,7 +127,7 @@ def test_runs_commits_and_diff_after_prune_say_where_the_work_went(
 
 
 def test_a_run_that_committed_nothing_is_not_reported_as_deleted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A run that committed nothing never cut a branch, so prune does not report one deleted."""
     monkeypatch.chdir(tmp_path)
@@ -152,7 +151,7 @@ def test_a_run_that_committed_nothing_is_not_reported_as_deleted(
 
 
 def test_a_deleted_branch_names_the_chain_ref_that_still_holds_the_work(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With the run branch deleted by hand, the verb lists the commits from the chain ref.
 
@@ -168,19 +167,19 @@ def test_a_deleted_branch_names_the_chain_ref_that_still_holds_the_work(
     base = _git(tmp_path, "rev-parse", "HEAD")
     _make_branch(tmp_path, "gonebr1", "a.txt")
     tip = _git(tmp_path, "rev-parse", "agent6/gonebr1")
-    _git(tmp_path, "update-ref", chain_ref_for("gonebr1"), tip)
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("gonebr1"), tip)
     _git(tmp_path, "branch", "-D", "agent6/gonebr1")
     _manifest(tmp_path, "gonebr1", base, merged=False)
 
     assert main(["sessions", "commits", "gonebr1"]) == 0
     out, err = capsys.readouterr()
     assert tip[:12] in out and "work gonebr1" in out
-    assert chain_ref_for("gonebr1") in err
+    assert git_ops.chain_ref_for("gonebr1") in err
     assert "committed nothing" not in out
 
 
 def test_a_deleted_branch_with_a_stale_stamp_names_the_chain_ref(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With the branch deleted and the stamp stale, `sessions commits` lists the chain ref.
 
@@ -201,19 +200,19 @@ def test_a_deleted_branch_with_a_stale_stamp_names_the_chain_ref(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "a later execution")
     _git(tmp_path, "checkout", "-q", "main")
-    _git(tmp_path, "update-ref", chain_ref_for("stale11"), "agent6/stale11")
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("stale11"), "agent6/stale11")
     _git(tmp_path, "branch", "-D", "agent6/stale11")
     _manifest(tmp_path, "stale11", base, merged=True, merged_tip=merged_tip)
 
     assert main(["sessions", "commits", "stale11"]) == 0
     out, err = capsys.readouterr()
     assert "work stale11" in out and "a later execution" in out
-    assert chain_ref_for("stale11") in err
+    assert git_ops.chain_ref_for("stale11") in err
     assert "was pruned" not in out
 
 
 def test_runs_prune_delete_squashed_removes_only_confirmed_squash_merged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # --delete-squashed force-deletes a confirmed squash-merged branch and prints an undelete hint.
     monkeypatch.chdir(tmp_path)
@@ -245,7 +244,7 @@ def test_runs_prune_delete_squashed_removes_only_confirmed_squash_merged(
 
 
 def test_runs_prune_from_non_base_does_not_mislabel_merge_as_squash(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
@@ -272,7 +271,7 @@ def test_runs_prune_from_non_base_does_not_mislabel_merge_as_squash(
 
 
 def test_runs_prune_no_branches(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
@@ -287,7 +286,7 @@ def test_runs_prune_no_branches(
 
 
 def test_runs_prune_delete_squashed_keeps_a_branch_that_advanced_after_the_merge(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--delete-squashed proves the current tip is what was merged.
 
@@ -325,7 +324,7 @@ def test_runs_prune_delete_squashed_keeps_a_branch_that_advanced_after_the_merge
 
 
 def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A pre-tip manifest is kept, and the message says why and names the manual command."""
     monkeypatch.chdir(tmp_path)
@@ -341,7 +340,9 @@ def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
     _git(tmp_path, "merge", "--squash", "agent6/pretip1")
     _git(tmp_path, "commit", "-q", "-m", "squash pretip1")
     # A manifest written before MergeStamp.tip existed: merged, but no tip.
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="pretip1")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="pretip1"
+    )
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -369,7 +370,7 @@ def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
 
 
 def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Plain prune never advertises --delete-squashed for a branch that flag refuses.
 
@@ -388,7 +389,9 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
     _make_branch(tmp_path, "pretip2", "s.txt")
     _git(tmp_path, "merge", "--squash", "agent6/pretip2")
     _git(tmp_path, "commit", "-q", "-m", "squash pretip2")
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="pretip2")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="pretip2"
+    )
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -423,7 +426,7 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
 
 
 def test_runs_dir_prints_the_state_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """One bare line so it composes: `ls "$(agent6 sessions dir)"`."""
     repo = tmp_path / "repo"
@@ -431,29 +434,29 @@ def test_runs_dir_prints_the_state_dir(
     monkeypatch.chdir(repo)
     assert main(["sessions", "dir"]) == 0
     printed = capsys.readouterr().out.strip()
-    assert printed == str(state_dir(repo))
+    assert printed == str(paths.state_dir(repo))
     assert "\n" not in printed
 
 
 def test_runs_rm_deletes_history_but_refuses_a_live_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`rm` deletes history but refuses a live run, whose worker would keep writing."""
     import os
 
-    from agent6.sessions.ipc import write_worker_pid
+    from agent6.sessions import ipc
 
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = state_dir(repo) / "sessions" / "runs"
+    runs = paths.state_dir(repo) / "sessions" / "runs"
     live, dead = runs / "live-run-AAAA11", runs / "dead-run-BBBB22"
     for d in (live, dead):
         d.mkdir(parents=True)
         (d / "logs.jsonl").write_text(
             '{"type": "session.start", "mode": "run"}\n', encoding="utf-8"
         )
-    write_worker_pid(live, os.getpid())  # this test process is genuinely alive
+    ipc.write_worker_pid(live, os.getpid())  # this test process is genuinely alive
     with (dead / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "session.end", "reason": "finish_session", "all_passed": true}\n')
 
@@ -476,7 +479,7 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
 
 
 def test_runs_rm_names_the_kept_branch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`rm` never deletes the visible branch, and says so.
 
@@ -508,7 +511,7 @@ def test_runs_rm_names_the_kept_branch(
         ["git", "update-ref", "refs/agent6/gone-run-CCCC33/head", "HEAD"], cwd=repo, check=True
     )
     subprocess.run(["git", "branch", "agent6/gone-run-CCCC33"], cwd=repo, check=True)
-    d = state_dir(repo) / "sessions" / "runs" / "gone-run-CCCC33"
+    d = paths.state_dir(repo) / "sessions" / "runs" / "gone-run-CCCC33"
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text(
         '{"type": "session.start", "mode": "run"}\n'
@@ -537,7 +540,7 @@ def test_runs_rm_names_the_kept_branch(
 
 
 def test_rm_names_the_sha_when_the_chain_was_the_only_anchor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With no visible branch, `rm` names the chain ref's sha: a chain ref has no reflog."""
     monkeypatch.chdir(tmp_path)
@@ -546,8 +549,10 @@ def test_rm_names_the_sha_when_the_chain_was_the_only_anchor(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
     head = _git(tmp_path, "rev-parse", "HEAD")
-    _git(tmp_path, "update-ref", chain_ref_for("loose-run111"), head)
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="loose-run111")
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("loose-run111"), head)
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="loose-run111"
+    )
     layout.ensure()
     layout.logs_path.write_text(
         '{"type": "session.start", "mode": "run"}\n'
@@ -562,13 +567,13 @@ def test_rm_names_the_sha_when_the_chain_was_the_only_anchor(
 
 
 def test_runs_rm_asks_clears_the_bucket(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`rm asks` clears the bucket; mixing it with a run id is refused."""
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    asks = state_dir(repo) / "sessions" / "asks"
+    asks = paths.state_dir(repo) / "sessions" / "asks"
     for name in ("ask-one", "ask-two"):
         (asks / name).mkdir(parents=True)
     assert main(["sessions", "rm", "some-id", "--asks"]) == 2
@@ -577,12 +582,12 @@ def test_runs_rm_asks_clears_the_bucket(
     assert not asks.exists()
 
 
-def _chain_ref_exists(repo: Path, session_id: str) -> bool:
-    return bool(_git(repo, "for-each-ref", chain_ref_for(session_id), check=False))
+def _chain_ref_exists(repo: pathlib.Path, session_id: str) -> bool:
+    return bool(_git(repo, "for-each-ref", git_ops.chain_ref_for(session_id), check=False))
 
 
 def test_prune_drops_chain_refs_of_confirmed_merged_runs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A merged run's chain ref falls under the same rules as its branch.
 
@@ -601,28 +606,28 @@ def test_prune_drops_chain_refs_of_confirmed_merged_runs(
     # merged-reachable: work committed on main itself (a merge landed it).
     _make_branch(tmp_path, "run-RCH111", "a.txt")
     _git(tmp_path, "merge", "-q", "--no-ff", "-m", "land", "agent6/run-RCH111")
-    _git(tmp_path, "update-ref", chain_ref_for("run-RCH111"), "agent6/run-RCH111")
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("run-RCH111"), "agent6/run-RCH111")
     _manifest(tmp_path, "run-RCH111", base, merged=True)
     # squash-merged: content in main via squash; the ref is unreachable.
     _make_branch(tmp_path, "run-SQH111", "b.txt")
     _git(tmp_path, "merge", "--squash", "agent6/run-SQH111")
     _git(tmp_path, "commit", "-q", "-m", "squash SQH111")
-    _git(tmp_path, "update-ref", chain_ref_for("run-SQH111"), "agent6/run-SQH111")
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("run-SQH111"), "agent6/run-SQH111")
     _git(tmp_path, "branch", "-D", "agent6/run-SQH111")
     _manifest(
         tmp_path,
         "run-SQH111",
         base,
         merged=True,
-        merged_tip=_git(tmp_path, "rev-parse", chain_ref_for("run-SQH111")),
+        merged_tip=_git(tmp_path, "rev-parse", git_ops.chain_ref_for("run-SQH111")),
     )
     # unmerged: the ref is the work's only anchor; must survive both passes.
     _make_branch(tmp_path, "run-UNM111", "c.txt")
-    _git(tmp_path, "update-ref", chain_ref_for("run-UNM111"), "agent6/run-UNM111")
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("run-UNM111"), "agent6/run-UNM111")
     _git(tmp_path, "branch", "-D", "agent6/run-UNM111")
     _manifest(tmp_path, "run-UNM111", base, merged=False)
     # machine chain: no run manifest; never touched, never mentioned.
-    _git(tmp_path, "update-ref", chain_ref_for("machine-box1"), base)
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("machine-box1"), base)
 
     assert main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
@@ -630,7 +635,7 @@ def test_prune_drops_chain_refs_of_confirmed_merged_runs(
     assert _chain_ref_exists(tmp_path, "run-SQH111")  # squash needs the flag
     assert _chain_ref_exists(tmp_path, "run-UNM111")
     assert _chain_ref_exists(tmp_path, "machine-box1")
-    assert f"deleted {chain_ref_for('run-RCH111')}" in out
+    assert f"deleted {git_ops.chain_ref_for('run-RCH111')}" in out
     assert "machine-box1" not in out
     assert "chain refs: deleted 1, kept 3 (1 machine, 1 squash-merged, 1 unmerged)" in out
 
@@ -643,7 +648,7 @@ def test_prune_drops_chain_refs_of_confirmed_merged_runs(
 
 
 def test_prune_reaches_chain_refs_with_no_run_branches(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Chain refs are prunable whether or not a run branch survives."""
     monkeypatch.chdir(tmp_path)
@@ -657,7 +662,7 @@ def test_prune_reaches_chain_refs_with_no_run_branches(
     # A merged run whose branch is already gone: the chain ref is all that is left.
     _make_branch(tmp_path, "run-NOBR11", "a.txt")
     _git(tmp_path, "merge", "-q", "--no-ff", "-m", "land", "agent6/run-NOBR11")
-    _git(tmp_path, "update-ref", chain_ref_for("run-NOBR11"), "agent6/run-NOBR11")
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("run-NOBR11"), "agent6/run-NOBR11")
     _git(tmp_path, "branch", "-D", "agent6/run-NOBR11")
     _manifest(tmp_path, "run-NOBR11", base, merged=True)
     assert not _git(tmp_path, "branch", "--list", "agent6/*")
@@ -665,11 +670,11 @@ def test_prune_reaches_chain_refs_with_no_run_branches(
     assert main(["sessions", "prune"]) == 0
 
     assert not _chain_ref_exists(tmp_path, "run-NOBR11")
-    assert f"deleted {chain_ref_for('run-NOBR11')}" in capsys.readouterr().out
+    assert f"deleted {git_ops.chain_ref_for('run-NOBR11')}" in capsys.readouterr().out
 
 
 def test_a_squash_deleted_chain_ref_prints_its_undelete(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A chain ref --delete-squashed deletes prints its undelete sha.
 
@@ -687,7 +692,7 @@ def test_a_squash_deleted_chain_ref_prints_its_undelete(
     tip = _git(tmp_path, "rev-parse", "agent6/run-SQCH11")
     _git(tmp_path, "merge", "--squash", "agent6/run-SQCH11")
     _git(tmp_path, "commit", "-q", "-m", "squash")
-    _git(tmp_path, "update-ref", chain_ref_for("run-SQCH11"), tip)
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("run-SQCH11"), tip)
     _git(tmp_path, "branch", "-D", "agent6/run-SQCH11")
     _manifest(tmp_path, "run-SQCH11", base, merged=True, merged_tip=tip)
 
@@ -695,12 +700,12 @@ def test_a_squash_deleted_chain_ref_prints_its_undelete(
 
     out = capsys.readouterr().out
     assert not _chain_ref_exists(tmp_path, "run-SQCH11")
-    assert f"deleted {chain_ref_for('run-SQCH11')} (squash-merged into main)" in out
-    assert f"undelete: git update-ref {chain_ref_for('run-SQCH11')} {tip[:12]}" in out, out
+    assert f"deleted {git_ops.chain_ref_for('run-SQCH11')} (squash-merged into main)" in out
+    assert f"undelete: git update-ref {git_ops.chain_ref_for('run-SQCH11')} {tip[:12]}" in out, out
 
 
 def test_a_noop_merge_stamp_is_checked_by_the_base_tip_it_recorded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A no-op merge stamp is checked by the base tip it recorded, as a merge commit is.
 
@@ -723,7 +728,9 @@ def test_a_noop_merge_stamp_is_checked_by_the_base_tip_it_recorded(
     _manifest(tmp_path, "run-NOOP11", base, merged=False)
     assert main(["sessions", "merge", "run-NOOP11"]) == 0
     capsys.readouterr()
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="run-NOOP11")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="run-NOOP11"
+    )
     stamp = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]
     assert (stamp["sha"], stamp["into_tip"]) == ("0" * 40, held_by)
 
@@ -752,7 +759,7 @@ def test_a_noop_merge_stamp_is_checked_by_the_base_tip_it_recorded(
 
 
 def test_prune_with_nothing_at_all_says_so(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A repo with neither run branches nor chain refs still answers plainly."""
     monkeypatch.chdir(tmp_path)
@@ -768,13 +775,13 @@ def test_prune_with_nothing_at_all_says_so(
 
 
 def test_rm_reports_a_deletion_failure_instead_of_success(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A deletion failure is rc 1 naming the error; the session dir and its ref stay untouched."""
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = state_dir(repo) / "sessions" / "runs"
+    runs = paths.state_dir(repo) / "sessions" / "runs"
     target = runs / "stuck-run-CCCC33"
     target.mkdir(parents=True)
     (target / "logs.jsonl").write_text(
@@ -793,22 +800,25 @@ def test_rm_reports_a_deletion_failure_instead_of_success(
     assert target.is_dir()  # nothing pretended otherwise
 
 
-def _fork_with_worktree(repo: Path, session_id: str, *, merged: bool, record: bool = True) -> Path:
+def _fork_with_worktree(
+    repo: pathlib.Path, session_id: str, *, merged: bool, record: bool = True
+) -> pathlib.Path:
     """A fork session as `create_fork` leaves it.
 
     A linked worktree of the repo under `[parallel].workdir` and a manifest naming it
     (`record=False`: the worktree of a session whose record `sessions rm` deleted).
     """
-    from agent6.app.parallel import subordinate_workdir_root
+    from agent6.app import parallel
     from agent6.config import Config
-    from agent6.git_ops import add_worktree
 
     base = _git(repo, "rev-parse", "HEAD")
-    worktree = subordinate_workdir_root(Config(), repo, session_id)
-    add_worktree(repo, worktree, base)
+    worktree = parallel.subordinate_workdir_root(Config(), repo, session_id)
+    git_ops.add_worktree(repo, worktree, base)
     _git(repo, "branch", f"agent6/{session_id}", base)
     if record:
-        layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
+        layout = sessions_layout.SessionLayout(
+            state_dir=paths.state_dir(repo), session_id=session_id
+        )
         layout.ensure()
         data: dict[str, object] = {
             "version": 3,
@@ -827,7 +837,7 @@ def _fork_with_worktree(repo: Path, session_id: str, *, merged: bool, record: bo
 
 
 def test_prune_removes_the_worktree_of_a_merged_fork_and_keeps_an_unmerged_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Prune removes a merged fork's worktree and git's record of it.
 
@@ -854,20 +864,19 @@ def test_prune_removes_the_worktree_of_a_merged_fork_and_keeps_an_unmerged_one(
 
 
 def test_prune_leaves_a_worktree_no_manifest_records_alone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Only a worktree a session manifest records is agent6's to remove."""
-    from agent6.app.parallel import subordinate_workdir_root
+    from agent6.app import parallel
     from agent6.config import Config
-    from agent6.git_ops import add_worktree
 
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
     (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
-    foreign = subordinate_workdir_root(Config(), tmp_path, "my-experiment")
-    add_worktree(tmp_path, foreign, _git(tmp_path, "rev-parse", "HEAD"))
+    foreign = parallel.subordinate_workdir_root(Config(), tmp_path, "my-experiment")
+    git_ops.add_worktree(tmp_path, foreign, _git(tmp_path, "rev-parse", "HEAD"))
     (foreign / "draft.txt").write_text("uncommitted\n", encoding="utf-8")
     forgotten = _fork_with_worktree(tmp_path, "fork-forgot11", merged=False, record=False)
     (forgotten / "wip.txt").write_text("in flight\n", encoding="utf-8")
@@ -882,7 +891,7 @@ def test_prune_leaves_a_worktree_no_manifest_records_alone(
 
 
 def test_rm_removes_the_worktree_its_manifest_records(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`sessions rm <fork>` removes the worktree with the record, and says so.
 
@@ -894,7 +903,7 @@ def test_rm_removes_the_worktree_its_manifest_records(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
     worktree = _fork_with_worktree(tmp_path, "fork-gone11", merged=False)
-    _git(tmp_path, "update-ref", chain_ref_for("fork-gone11"), "HEAD")
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("fork-gone11"), "HEAD")
 
     assert main(["sessions", "rm", "fork-gone11"]) == 0
     out = capsys.readouterr().out
@@ -904,10 +913,12 @@ def test_rm_removes_the_worktree_its_manifest_records(
     assert "branch agent6/fork-gone11 kept" in out
 
 
-def _record(repo: Path, session_id: str, worktree: Path, *, merged: bool) -> Path:
+def _record(
+    repo: pathlib.Path, session_id: str, worktree: pathlib.Path, *, merged: bool
+) -> pathlib.Path:
     """A session manifest naming *worktree* (an `/undo` fork's shares its source's)."""
     base = _git(repo, "rev-parse", "HEAD")
-    layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
     layout.ensure()
     data: dict[str, object] = {
         "version": 3,
@@ -926,7 +937,7 @@ def _record(repo: Path, session_id: str, worktree: Path, *, merged: bool) -> Pat
 
 
 def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A worktree stays while any manifest naming it still needs it.
 
@@ -935,7 +946,7 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
     """
     import os
 
-    from agent6.sessions.ipc import write_worker_pid
+    from agent6.sessions import ipc
 
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
@@ -951,8 +962,10 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
     after = _git(tmp_path, "commit-tree", f"{base}^{{tree}}", "-p", base, "-m", "a later execution")
     _git(tmp_path, "update-ref", "refs/heads/agent6/fork-moved011", after)
     live = _fork_with_worktree(tmp_path, "fork-live0011", merged=True)
-    write_worker_pid(
-        SessionLayout(state_dir=state_dir(tmp_path), session_id="fork-live0011").session_dir,
+    ipc.write_worker_pid(
+        sessions_layout.SessionLayout(
+            state_dir=paths.state_dir(tmp_path), session_id="fork-live0011"
+        ).session_dir,
         os.getpid(),
     )
 
@@ -964,7 +977,7 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
     assert "kept fork-moved011's worktree (unmerged)" in out
     assert "kept fork-live0011's worktree (live)" in out
 
-    _git(tmp_path, "update-ref", chain_ref_for("fork-parent11"), "HEAD")
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("fork-parent11"), "HEAD")
     assert main(["sessions", "rm", "fork-parent11"]) == 0
     out = capsys.readouterr().out
     assert (shared / "wip.txt").exists()
@@ -973,11 +986,10 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
 
 
 def test_removing_a_worktree_deletes_only_its_checkout_lock(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Removing a worktree deletes only its checkout lock in the repository's state dir."""
-    from agent6.paths import state_dir
-    from agent6.sessions.lock import checkout_lock_path
+    from agent6.sessions import lock as sessions_lock
 
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
@@ -985,9 +997,9 @@ def test_removing_a_worktree_deletes_only_its_checkout_lock(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
     merged = _fork_with_worktree(tmp_path, "fork-merged11", merged=True)
-    state = state_dir(tmp_path)
-    assert state_dir(merged) == state
-    lock = checkout_lock_path(state, merged)
+    state = paths.state_dir(tmp_path)
+    assert paths.state_dir(merged) == state
+    lock = sessions_lock.checkout_lock_path(state, merged)
     lock.parent.mkdir(parents=True, exist_ok=True)
     lock.write_text("fork-merged11\n", encoding="utf-8")
     planted = state / "sessions" / "runs" / "planted-run-AAAA11"
@@ -1003,7 +1015,7 @@ def test_removing_a_worktree_deletes_only_its_checkout_lock(
 
 
 def test_prune_keeps_a_merged_worktree_that_holds_uncommitted_work(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Prune keeps a merged worktree that holds uncommitted work, as `git worktree remove` would."""
     monkeypatch.chdir(tmp_path)
@@ -1024,7 +1036,7 @@ def test_prune_keeps_a_merged_worktree_that_holds_uncommitted_work(
 
 
 def test_rm_removes_a_record_whose_worktree_is_already_gone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`rm` removes a record whose worktree is already gone.
 
@@ -1042,11 +1054,11 @@ def test_rm_removes_a_record_whose_worktree_is_already_gone(
     assert main(["sessions", "rm", "fork-swept11"]) == 0
 
     assert "removed fork-swept11" in capsys.readouterr().out
-    assert not (state_dir(tmp_path) / "sessions" / "runs" / "fork-swept11").exists()
+    assert not (paths.state_dir(tmp_path) / "sessions" / "runs" / "fork-swept11").exists()
 
 
 def test_rm_refuses_a_fork_whose_worktree_holds_work_no_commit_has(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`rm` refuses a fork whose worktree holds work no commit has: the record is what names it."""
     monkeypatch.chdir(tmp_path)
@@ -1062,11 +1074,11 @@ def test_rm_refuses_a_fork_whose_worktree_holds_work_no_commit_has(
     err = capsys.readouterr().err
     assert "notes.md" in err and str(worktree) in err
     assert (worktree / "notes.md").exists()
-    assert (state_dir(tmp_path) / "sessions" / "runs" / "fork-hold111").is_dir()
+    assert (paths.state_dir(tmp_path) / "sessions" / "runs" / "fork-hold111").is_dir()
 
 
 def test_prune_removes_a_worktree_whose_content_the_run_committed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Prune removes a worktree whose uncommitted-looking content the run committed to the chain.
 
@@ -1083,14 +1095,16 @@ def test_prune_removes_a_worktree_whose_content_the_run_committed(
     (worktree / "README.md").write_text("the run's edit\n", encoding="utf-8")
     (worktree / "new.md").write_text("added by the run\n", encoding="utf-8")
     base = _git(tmp_path, "rev-parse", "HEAD")
-    tip = chain_commit(
+    tip = git_ops.chain_commit(
         worktree,
         "the run's commit",
-        ref=chain_ref_for("fork-landed11"),
+        ref=git_ops.chain_ref_for("fork-landed11"),
         fallback_parent=base,
-        identity=CommitIdentity(name="t", email="t@t"),
+        identity=git_ops.CommitIdentity(name="t", email="t@t"),
     )
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="fork-landed11")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="fork-landed11"
+    )
     data = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     data["merged"] = {"into": "main", "sha": "0" * 40, "tip": tip}
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
@@ -1103,7 +1117,7 @@ def test_prune_removes_a_worktree_whose_content_the_run_committed(
 
 
 def test_delete_squashed_keeps_a_chain_ref_whose_base_is_gone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--delete-squashed keeps a chain ref whose base is gone.
 
@@ -1120,10 +1134,12 @@ def test_delete_squashed_keeps_a_chain_ref_whose_base_is_gone(
     _git(tmp_path, "branch", "feature")
     _make_branch(tmp_path, "gonebase1", "a.txt")
     tip = _git(tmp_path, "rev-parse", "agent6/gonebase1")
-    _git(tmp_path, "update-ref", chain_ref_for("gonebase1"), tip)
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("gonebase1"), tip)
     _git(tmp_path, "branch", "-D", "agent6/gonebase1")  # the squash-merge shape
     _manifest(tmp_path, "gonebase1", base, merged=True, merged_tip=tip)
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="gonebase1")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="gonebase1"
+    )
     data = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     data["merged"]["into"] = "feature"
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
@@ -1132,7 +1148,7 @@ def test_delete_squashed_keeps_a_chain_ref_whose_base_is_gone(
     assert main(["sessions", "prune", "--delete-squashed"]) == 0
 
     out = capsys.readouterr().out
-    assert _git(tmp_path, "rev-parse", "--verify", "--quiet", chain_ref_for("gonebase1")), (
+    assert _git(tmp_path, "rev-parse", "--verify", "--quiet", git_ops.chain_ref_for("gonebase1")), (
         "the run's only anchor was deleted over a base that no longer exists"
     )
     assert "deleted refs/agent6" not in out
@@ -1141,7 +1157,7 @@ def test_delete_squashed_keeps_a_chain_ref_whose_base_is_gone(
 
 
 def test_delete_squashed_keeps_a_branch_whose_merge_commit_the_base_lost(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--delete-squashed keeps a branch whose squash commit the base reset away."""
     monkeypatch.chdir(tmp_path)
@@ -1170,7 +1186,7 @@ def test_delete_squashed_keeps_a_branch_whose_merge_commit_the_base_lost(
 
 
 def test_delete_squashed_counts_a_chain_ref_whose_merge_commit_the_base_lost_by_reason(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A chain ref kept because the base lost its merge commit is counted under that reason."""
     monkeypatch.chdir(tmp_path)
@@ -1183,7 +1199,7 @@ def test_delete_squashed_counts_a_chain_ref_whose_merge_commit_the_base_lost_by_
     base = _git(tmp_path, "rev-parse", "HEAD")
     _make_branch(tmp_path, "reflost1", "r.txt")
     tip = _git(tmp_path, "rev-parse", "agent6/reflost1")
-    _git(tmp_path, "update-ref", chain_ref_for("reflost1"), tip)
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("reflost1"), tip)
     _git(tmp_path, "branch", "-D", "agent6/reflost1")
     _git(tmp_path, "merge", "--squash", tip)
     _git(tmp_path, "commit", "-q", "-m", "squash reflost1")
@@ -1199,13 +1215,13 @@ def test_delete_squashed_counts_a_chain_ref_whose_merge_commit_the_base_lost_by_
 
     assert main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
-    assert _git(tmp_path, "rev-parse", "--verify", "--quiet", chain_ref_for("reflost1"))
+    assert _git(tmp_path, "rev-parse", "--verify", "--quiet", git_ops.chain_ref_for("reflost1"))
     assert "1 main no longer holds the merge commit" in out
     assert "1 squash-merged" not in out
 
 
 def test_rm_says_why_a_worktree_it_could_not_remove_stays(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`rm` says why a worktree it could not remove stays, in the same words prune uses."""
     monkeypatch.chdir(tmp_path)
@@ -1230,7 +1246,7 @@ def test_rm_says_why_a_worktree_it_could_not_remove_stays(
 
 
 def test_prune_names_a_chain_ref_that_advanced_since_its_squash_merge(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A chain ref that advanced since its squash merge is counted as such, not as squash-merged."""
     monkeypatch.chdir(tmp_path)
@@ -1244,7 +1260,7 @@ def test_prune_names_a_chain_ref_that_advanced_since_its_squash_merge(
     _make_branch(tmp_path, "moved1", "m.txt")
     tip = _git(tmp_path, "rev-parse", "agent6/moved1")
     later = _git(tmp_path, "commit-tree", f"{tip}^{{tree}}", "-p", tip, "-m", "a later execution")
-    _git(tmp_path, "update-ref", chain_ref_for("moved1"), later)
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("moved1"), later)
     _git(tmp_path, "branch", "-D", "agent6/moved1")
     _git(tmp_path, "merge", "--squash", tip)
     _git(tmp_path, "commit", "-q", "-m", "squash moved1")
@@ -1259,13 +1275,13 @@ def test_prune_names_a_chain_ref_that_advanced_since_its_squash_merge(
 
     assert main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
-    assert _git(tmp_path, "rev-parse", "--verify", "--quiet", chain_ref_for("moved1"))
+    assert _git(tmp_path, "rev-parse", "--verify", "--quiet", git_ops.chain_ref_for("moved1"))
     assert "1 advanced since the merge" in out
     assert "squash-merged" not in out
 
 
 def test_delete_squashed_names_a_chain_ref_whose_merge_tip_was_never_recorded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A chain ref whose merge tip was never recorded is named as such, with or without the flag."""
     monkeypatch.chdir(tmp_path)
@@ -1278,12 +1294,12 @@ def test_delete_squashed_names_a_chain_ref_whose_merge_tip_was_never_recorded(
     base = _git(tmp_path, "rev-parse", "HEAD")
     _make_branch(tmp_path, "notip1", "n.txt")
     tip = _git(tmp_path, "rev-parse", "agent6/notip1")
-    _git(tmp_path, "update-ref", chain_ref_for("notip1"), tip)
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("notip1"), tip)
     _git(tmp_path, "branch", "-D", "agent6/notip1")
     _git(tmp_path, "merge", "--squash", tip)
     _git(tmp_path, "commit", "-q", "-m", "squash notip1")
     _manifest(tmp_path, "notip1", base, merged=True, merged_sha=_git(tmp_path, "rev-parse", "HEAD"))
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="notip1")
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="notip1")
     data = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     data["merged"]["tip"] = ""
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
@@ -1291,13 +1307,13 @@ def test_delete_squashed_names_a_chain_ref_whose_merge_tip_was_never_recorded(
     for argv in (["sessions", "prune"], ["sessions", "prune", "--delete-squashed"]):
         assert main(argv) == 0
         out = capsys.readouterr().out
-        assert _git(tmp_path, "rev-parse", "--verify", "--quiet", chain_ref_for("notip1"))
+        assert _git(tmp_path, "rev-parse", "--verify", "--quiet", git_ops.chain_ref_for("notip1"))
         assert "1 no merge tip was recorded" in out, argv
         assert "advanced" not in out and "squash-merged" not in out, argv
 
 
 def test_prune_confirms_a_forked_plans_branch_across_buckets(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Prune confirms a forked plan's branch, which lives in plans/, across buckets."""
     monkeypatch.chdir(tmp_path)
@@ -1312,8 +1328,8 @@ def test_prune_confirms_a_forked_plans_branch_across_buckets(
     tip = _git(tmp_path, "rev-parse", "agent6/brave-oak-AAAAAA")
     _git(tmp_path, "merge", "--squash", "agent6/brave-oak-AAAAAA")
     _git(tmp_path, "commit", "-q", "-m", "squash the plan")
-    layout = SessionLayout(
-        state_dir=state_dir(tmp_path), session_id="brave-oak-AAAAAA", subdir="plans"
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="brave-oak-AAAAAA", subdir="plans"
     )
     layout.ensure()
     layout.manifest_path.write_text(
@@ -1338,7 +1354,7 @@ def test_prune_confirms_a_forked_plans_branch_across_buckets(
 
 
 def test_prune_keeps_a_live_runs_branch_whatever_its_stamp_says(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Prune keeps a live run's branch whatever its stamp says.
 
@@ -1346,7 +1362,7 @@ def test_prune_keeps_a_live_runs_branch_whatever_its_stamp_says(
     """
     import os
 
-    from agent6.sessions.ipc import write_worker_pid
+    from agent6.sessions import ipc
 
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
@@ -1368,14 +1384,14 @@ def test_prune_keeps_a_live_runs_branch_whatever_its_stamp_says(
         merged_tip=tip,
         merged_sha=_git(tmp_path, "rev-parse", "HEAD"),
     )
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="live1")
-    write_worker_pid(layout.session_dir, os.getpid())
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="live1")
+    ipc.write_worker_pid(layout.session_dir, os.getpid())
 
     _make_branch(tmp_path, "live2", "m.txt")
     _git(tmp_path, "merge", "--no-ff", "-q", "-m", "merge live2", "agent6/live2")
     _manifest(tmp_path, "live2", base, merged=True, merged_sha=_git(tmp_path, "rev-parse", "HEAD"))
-    live2 = SessionLayout(state_dir=state_dir(tmp_path), session_id="live2")
-    write_worker_pid(live2.session_dir, os.getpid())
+    live2 = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="live2")
+    ipc.write_worker_pid(live2.session_dir, os.getpid())
     live2.manifest_path.write_text("{", encoding="utf-8")  # torn: its liveness still counts
 
     assert main(["sessions", "prune", "--delete-squashed"]) == 0

@@ -13,17 +13,17 @@ either lifecycle module is the drift returning.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
-from types import ModuleType
+import pathlib
+import types
 
 import agent6.app._execution
 import agent6.app.resume
 import agent6.app.run
 
 
-def _calls(module: ModuleType, name: str) -> int:
+def _calls(module: types.ModuleType, name: str) -> int:
     assert module.__file__ is not None
-    src = Path(module.__file__).read_text(encoding="utf-8")
+    src = pathlib.Path(module.__file__).read_text(encoding="utf-8")
     return sum(
         1
         for node in ast.walk(ast.parse(src))
@@ -66,10 +66,10 @@ def test_every_budget_override_survives_a_detach() -> None:
     """
     import argparse
 
-    from agent6.app._setup import BudgetOverrides
+    from agent6.app import _setup
 
     args = argparse.Namespace(max_usd=2.0, max_tokens_fallback=1000, max_percent=5.0)
-    overrides = BudgetOverrides.from_args(args)
+    overrides = _setup.BudgetOverrides.from_args(args)
     argv = overrides.argv()
     for field in ("max_usd", "max_tokens_fallback", "max_percent"):
         assert getattr(overrides, field) is not None
@@ -82,8 +82,8 @@ def test_the_model_flag_survives_a_detach() -> None:
     A `--model` route rides the detached execution's argv like the budget and sandbox flags, or the
     detached execution re-reads the config's model.
     """
-    from agent6.app._setup import override_flags
-    from agent6.kinds import ModelRoute
+    from agent6 import kinds
+    from agent6.app import _setup
 
-    assert override_flags(None, None, ModelRoute("p", "m")) == ["--model", "p/m"]
-    assert override_flags(None, None, None) == []
+    assert _setup.override_flags(None, None, kinds.ModelRoute("p", "m")) == ["--model", "p/m"]
+    assert _setup.override_flags(None, None, None) == []

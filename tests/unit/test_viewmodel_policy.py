@@ -5,12 +5,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 from agent6.viewmodel import session_policy
 
 
-def _manifest(session_dir: Path, **over: object) -> None:
+def _manifest(session_dir: pathlib.Path, **over: object) -> None:
     data: dict[str, object] = {
         "version": 3,
         "mode": "run",
@@ -23,14 +23,14 @@ def _manifest(session_dir: Path, **over: object) -> None:
     (session_dir / "manifest.json").write_text(json.dumps(data), encoding="utf-8")
 
 
-def test_the_line_carries_what_an_operator_needs(tmp_path: Path) -> None:
+def test_the_line_carries_what_an_operator_needs(tmp_path: pathlib.Path) -> None:
     """Model, sandbox, command setting and the gate, without an interrupt or a config read."""
     _manifest(tmp_path)
     line = session_policy(tmp_path).line()
     assert line == "claude-x · strict · commands ask · uv run pytest (configured)"
 
 
-def test_the_gate_says_whose_it_is(tmp_path: Path) -> None:
+def test_the_gate_says_whose_it_is(tmp_path: pathlib.Path) -> None:
     """An inferred gate came from a file the model can edit; a configured one did not.
 
     A surface that hides the difference hides the only thing that makes "passed" mean something.
@@ -39,16 +39,16 @@ def test_the_gate_says_whose_it_is(tmp_path: Path) -> None:
     assert session_policy(tmp_path).gate() == "make test (inferred)"
 
 
-def test_a_gateless_run_says_so(tmp_path: Path) -> None:
+def test_a_gateless_run_says_so(tmp_path: pathlib.Path) -> None:
     _manifest(tmp_path, harness={})
     assert session_policy(tmp_path).gate() == "no verify gate"
 
 
-def test_an_unreadable_dir_reports_nothing_rather_than_guessing(tmp_path: Path) -> None:
+def test_an_unreadable_dir_reports_nothing_rather_than_guessing(tmp_path: pathlib.Path) -> None:
     assert session_policy(tmp_path).line() == ""
 
 
-def test_an_asks_line_names_no_gate(tmp_path: Path) -> None:
+def test_an_asks_line_names_no_gate(tmp_path: pathlib.Path) -> None:
     """An ask's policy line carries no gate; a configured gate still rides its manifest."""
     _manifest(tmp_path, mode="ask")
     assert session_policy(tmp_path).line() == "claude-x · strict · commands ask"

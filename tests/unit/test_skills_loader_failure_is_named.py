@@ -10,7 +10,7 @@ skill that is missing, when one is broken.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -26,14 +26,14 @@ def _break_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.parametrize("verb", ["enable", "disable"])
 def test_it_says_the_skills_could_not_be_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, verb: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, verb: str
 ) -> None:
-    from agent6.errors import OperatorError
+    from agent6 import errors
 
     monkeypatch.chdir(tmp_path)
     _break_discovery(monkeypatch)
 
-    with pytest.raises(OperatorError, match="could not read the installed skills") as exc:
+    with pytest.raises(errors.OperatorError, match="could not read the installed skills") as exc:
         if verb == "enable":
             skills_cmds._cmd_skills_enable(  # pyright: ignore[reportPrivateUsage]
                 "thinking-hard", always=False, repo=False
@@ -47,7 +47,7 @@ def test_it_says_the_skills_could_not_be_read(
 
 
 def test_completion_still_degrades_to_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Argcomplete gets an empty list on a loader failure; it must never raise into the shell."""
     _break_discovery(monkeypatch)

@@ -6,83 +6,72 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import threading
 import time
-from pathlib import Path
 
 import pytest
 
-from agent6.sessions.ipc import (
-    await_frontend_reply,
-    frontend_is_live,
-    read_answer,
-    read_question_answers,
-    register_frontend,
-    request_stop,
-    unregister_frontend,
-    write_answer,
-    write_question_answers,
-    write_steer_answer,
-)
+from agent6.sessions import ipc as sessions_ipc
 
 
-def test_no_tui_pid_means_not_live(tmp_path: Path) -> None:
-    assert frontend_is_live(tmp_path) is False
+def test_no_tui_pid_means_not_live(tmp_path: pathlib.Path) -> None:
+    assert sessions_ipc.frontend_is_live(tmp_path) is False
 
 
-def test_dead_pid_is_not_live(tmp_path: Path) -> None:
+def test_dead_pid_is_not_live(tmp_path: pathlib.Path) -> None:
     # PID 1 is init; signal-0 to it from a non-root process raises PermissionError
     # which we treat as "not us" -> dead. PID 0 is invalid -> ProcessLookupError.
-    register_frontend(tmp_path, 999999999)  # almost certainly not allocated
-    assert frontend_is_live(tmp_path) is False
+    sessions_ipc.register_frontend(tmp_path, 999999999)  # almost certainly not allocated
+    assert sessions_ipc.frontend_is_live(tmp_path) is False
 
 
-def test_own_pid_is_live(tmp_path: Path) -> None:
-    register_frontend(tmp_path, os.getpid())
-    assert frontend_is_live(tmp_path) is True
-    unregister_frontend(tmp_path, os.getpid())
-    assert frontend_is_live(tmp_path) is False
+def test_own_pid_is_live(tmp_path: pathlib.Path) -> None:
+    sessions_ipc.register_frontend(tmp_path, os.getpid())
+    assert sessions_ipc.frontend_is_live(tmp_path) is True
+    sessions_ipc.unregister_frontend(tmp_path, os.getpid())
+    assert sessions_ipc.frontend_is_live(tmp_path) is False
 
 
-def test_read_answer_returns_none_when_no_tui_and_no_answer(tmp_path: Path) -> None:
+def test_read_answer_returns_none_when_no_tui_and_no_answer(tmp_path: pathlib.Path) -> None:
     # tui not live -> short-circuit immediately
-    assert read_answer(tmp_path, "abc", timeout_s=2.0, poll_s=0.05) is None
+    assert sessions_ipc.read_answer(tmp_path, "abc", timeout_s=2.0, poll_s=0.05) is None
 
 
-def test_read_answer_picks_up_written_answer(tmp_path: Path) -> None:
-    register_frontend(tmp_path, os.getpid())
+def test_read_answer_picks_up_written_answer(tmp_path: pathlib.Path) -> None:
+    sessions_ipc.register_frontend(tmp_path, os.getpid())
 
     def writer() -> None:
         time.sleep(0.2)
-        write_answer(tmp_path, "abc", "yes")
+        sessions_ipc.write_answer(tmp_path, "abc", "yes")
 
     t = threading.Thread(target=writer, daemon=True)
     t.start()
-    result = read_answer(tmp_path, "abc", timeout_s=2.0, poll_s=0.05)
+    result = sessions_ipc.read_answer(tmp_path, "abc", timeout_s=2.0, poll_s=0.05)
     t.join(timeout=1)
     assert result == "yes"
 
 
-def test_write_answer_no_round_trips(tmp_path: Path) -> None:
-    register_frontend(tmp_path, os.getpid())
-    assert write_answer(tmp_path, "x", "no") is True
-    assert read_answer(tmp_path, "x", timeout_s=1.0) == "no"
+def test_write_answer_no_round_trips(tmp_path: pathlib.Path) -> None:
+    sessions_ipc.register_frontend(tmp_path, os.getpid())
+    assert sessions_ipc.write_answer(tmp_path, "x", "no") is True
+    assert sessions_ipc.read_answer(tmp_path, "x", timeout_s=1.0) == "no"
 
 
-def test_the_first_answer_stands(tmp_path: Path) -> None:
+def test_the_first_answer_stands(tmp_path: pathlib.Path) -> None:
     """The second of two surfaces answering one prompt is refused; the worker reads the first."""
-    register_frontend(tmp_path, os.getpid())
-    assert write_answer(tmp_path, "approval-1", "yes") is True
-    assert write_answer(tmp_path, "approval-1", "no") is False
-    assert read_answer(tmp_path, "approval-1", timeout_s=1.0) == "yes"
-    assert write_question_answers(tmp_path, "question-1", ["8080"]) is True
-    assert write_question_answers(tmp_path, "question-1", ["9090"]) is False
-    assert read_question_answers(tmp_path, "question-1", timeout_s=1.0) == ("8080",)
+    sessions_ipc.register_frontend(tmp_path, os.getpid())
+    assert sessions_ipc.write_answer(tmp_path, "approval-1", "yes") is True
+    assert sessions_ipc.write_answer(tmp_path, "approval-1", "no") is False
+    assert sessions_ipc.read_answer(tmp_path, "approval-1", timeout_s=1.0) == "yes"
+    assert sessions_ipc.write_question_answers(tmp_path, "question-1", ["8080"]) is True
+    assert sessions_ipc.write_question_answers(tmp_path, "question-1", ["9090"]) is False
+    assert sessions_ipc.read_question_answers(tmp_path, "question-1", timeout_s=1.0) == ("8080",)
     assert not [p for p in (tmp_path / "approvals").iterdir() if p.name.startswith(".")]
 
 
 def test_a_failed_answer_write_leaves_no_staging_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A write that fails before the link raises and takes its staging file with it."""
     import os
@@ -92,56 +81,56 @@ def test_a_failed_answer_write_leaves_no_staging_file(
 
     monkeypatch.setattr(os, "fsync", full)
     with pytest.raises(OSError):
-        write_answer(tmp_path, "approval-1", "yes")
+        sessions_ipc.write_answer(tmp_path, "approval-1", "yes")
     assert list((tmp_path / "approvals").iterdir()) == []
 
 
 # --- liveness grace: a transient front-end drop must not deny the prompt ------
 
 
-def test_read_answer_survives_transient_frontend_drop(tmp_path: Path) -> None:
+def test_read_answer_survives_transient_frontend_drop(tmp_path: pathlib.Path) -> None:
     # The front-end is dead at poll time (an SSE drop / page reload) but comes
     # back within the grace window and answers: the answer must be returned, not
     # an instant headless None.
-    register_frontend(tmp_path, 999999999)  # dead pid: the gate reads not-live
+    sessions_ipc.register_frontend(tmp_path, 999999999)  # dead pid: the gate reads not-live
 
     def revive_and_answer() -> None:
         time.sleep(0.2)
-        register_frontend(tmp_path, os.getpid())
-        write_answer(tmp_path, "g1", "yes")
+        sessions_ipc.register_frontend(tmp_path, os.getpid())
+        sessions_ipc.write_answer(tmp_path, "g1", "yes")
 
     t = threading.Thread(target=revive_and_answer, daemon=True)
     t.start()
-    result = read_answer(tmp_path, "g1", timeout_s=5.0, poll_s=0.05, dead_grace_s=2.0)
+    result = sessions_ipc.read_answer(tmp_path, "g1", timeout_s=5.0, poll_s=0.05, dead_grace_s=2.0)
     t.join(timeout=2)
     assert result == "yes"
 
 
-def test_read_answer_falls_back_after_grace_expires(tmp_path: Path) -> None:
+def test_read_answer_falls_back_after_grace_expires(tmp_path: pathlib.Path) -> None:
     # A front-end that stays dead past the grace window falls back headless
     # (None) well before the answer timeout.
-    register_frontend(tmp_path, 999999999)
+    sessions_ipc.register_frontend(tmp_path, 999999999)
     start = time.monotonic()
-    result = read_answer(tmp_path, "g2", timeout_s=30.0, poll_s=0.05, dead_grace_s=0.3)
+    result = sessions_ipc.read_answer(tmp_path, "g2", timeout_s=30.0, poll_s=0.05, dead_grace_s=0.3)
     elapsed = time.monotonic() - start
     assert result is None
     assert 0.3 <= elapsed < 5.0  # grace elapsed, timeout not
 
 
-def test_stop_interrupts_a_live_frontend_answer_poll(tmp_path: Path) -> None:
+def test_stop_interrupts_a_live_frontend_answer_poll(tmp_path: pathlib.Path) -> None:
     """A Stop must end a parked prompt without waiting for its answer timeout."""
-    register_frontend(tmp_path, os.getpid())
+    sessions_ipc.register_frontend(tmp_path, os.getpid())
 
     def stop() -> None:
         time.sleep(0.05)
-        request_stop(tmp_path)
+        sessions_ipc.request_stop(tmp_path)
 
     thread = threading.Thread(target=stop)
     thread.start()
     started = time.monotonic()
-    reply = await_frontend_reply(
+    reply = sessions_ipc.await_frontend_reply(
         tmp_path,
-        lambda: read_answer(tmp_path, "g3", timeout_s=1.0, poll_s=0.01),
+        lambda: sessions_ipc.read_answer(tmp_path, "g3", timeout_s=1.0, poll_s=0.01),
     )
     elapsed = time.monotonic() - started
     thread.join()
@@ -150,17 +139,19 @@ def test_stop_interrupts_a_live_frontend_answer_poll(tmp_path: Path) -> None:
     assert elapsed < 0.5
 
 
-def test_read_question_answer_survives_transient_frontend_drop(tmp_path: Path) -> None:
-    register_frontend(tmp_path, 999999999)
+def test_read_question_answer_survives_transient_frontend_drop(tmp_path: pathlib.Path) -> None:
+    sessions_ipc.register_frontend(tmp_path, 999999999)
 
     def revive_and_answer() -> None:
         time.sleep(0.2)
-        register_frontend(tmp_path, os.getpid())
-        write_question_answers(tmp_path, "q1", ["picked"])
+        sessions_ipc.register_frontend(tmp_path, os.getpid())
+        sessions_ipc.write_question_answers(tmp_path, "q1", ["picked"])
 
     t = threading.Thread(target=revive_and_answer, daemon=True)
     t.start()
-    result = read_question_answers(tmp_path, "q1", timeout_s=5.0, poll_s=0.05, dead_grace_s=2.0)
+    result = sessions_ipc.read_question_answers(
+        tmp_path, "q1", timeout_s=5.0, poll_s=0.05, dead_grace_s=2.0
+    )
     t.join(timeout=2)
     assert result == ("picked",)
 
@@ -168,7 +159,7 @@ def test_read_question_answer_survives_transient_frontend_drop(tmp_path: Path) -
 # --- atomic answer writes: the 0.2s poll must never consume a torn file -------
 
 
-def test_answer_writes_leave_no_tmp_and_are_never_torn(tmp_path: Path) -> None:
+def test_answer_writes_leave_no_tmp_and_are_never_torn(tmp_path: pathlib.Path) -> None:
     # write_* goes tmp+fsync+rename: a poller keyed on existence can only ever
     # read the complete text (a plain write_text exposes an empty file first,
     # which read_answer would consume as deny / "").
@@ -193,27 +184,27 @@ def test_answer_writes_leave_no_tmp_and_are_never_torn(tmp_path: Path) -> None:
     t = threading.Thread(target=poller, daemon=True)
     t.start()
     for _ in range(100):
-        write_question_answers(tmp_path, "q9", [payload])
+        sessions_ipc.write_question_answers(tmp_path, "q9", [payload])
         target.unlink(missing_ok=True)
     stop.set()
     t.join(timeout=5)
     assert torn == []
     assert not list((tmp_path / "questions").glob("*.tmp"))
-    write_answer(tmp_path, "a9", "yes")
+    sessions_ipc.write_answer(tmp_path, "a9", "yes")
     assert not list((tmp_path / "approvals").glob("*.tmp"))
-    write_steer_answer(tmp_path, "steer text")
+    sessions_ipc.write_steer_answer(tmp_path, "steer text")
     assert not list(tmp_path.glob("*.tmp"))
     assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "steer text"
 
 
 def test_answer_landing_during_dead_verdict_is_consumed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The final consume honors an answer written between the last read and the dead verdict."""
     from agent6.sessions import ipc
 
-    def write_then_dead(_live: Path) -> bool:
-        write_answer(tmp_path, "abc", "yes")
+    def write_then_dead(_live: pathlib.Path) -> bool:
+        sessions_ipc.write_answer(tmp_path, "abc", "yes")
         return False
 
     monkeypatch.setattr(ipc, "frontend_is_live", write_then_dead)
@@ -222,12 +213,12 @@ def test_answer_landing_during_dead_verdict_is_consumed(
 
 
 def test_answer_landing_at_deadline_is_consumed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An answer landing during the final sleep before the deadline is honored, not dropped."""
     from agent6.sessions import ipc
 
-    register_frontend(tmp_path, os.getpid())
+    sessions_ipc.register_frontend(tmp_path, os.getpid())
 
     class _Clock:
         def __init__(self) -> None:
@@ -238,15 +229,15 @@ def test_answer_landing_at_deadline_is_consumed(
 
         def sleep(self, s: float) -> None:
             self.now += s
-            write_answer(tmp_path, "abc", "yes")
+            sessions_ipc.write_answer(tmp_path, "abc", "yes")
 
     monkeypatch.setattr(ipc, "time", _Clock())
     assert ipc.read_answer(tmp_path, "abc", timeout_s=0.05, poll_s=0.1) == "yes"
     assert not (tmp_path / "approvals" / "abc.answer").exists()
 
 
-@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc (Linux)")
-def test_worker_pid_recycled_pid_reads_dead(tmp_path: Path) -> None:
+@pytest.mark.skipif(not pathlib.Path("/proc/self/stat").exists(), reason="needs /proc (Linux)")
+def test_worker_pid_recycled_pid_reads_dead(tmp_path: pathlib.Path) -> None:
     """worker.pid proves identity through the recorded kernel start time, not the number alone.
 
     A recycled pid made a SIGKILL'd run read running forever, blocking resume.
@@ -263,7 +254,7 @@ def test_worker_pid_recycled_pid_reads_dead(tmp_path: Path) -> None:
     assert ipc.worker_is_alive(tmp_path) is False
 
 
-def test_worker_pid_without_start_time_probes_pid_only(tmp_path: Path) -> None:
+def test_worker_pid_without_start_time_probes_pid_only(tmp_path: pathlib.Path) -> None:
     """A record with no start time degrades to the plain pid probe."""
     from agent6.sessions import ipc
 
@@ -281,7 +272,7 @@ def test_ps_start_time_reports_self_and_rejects_dead() -> None:
 
 
 def test_worker_pid_identity_via_ps_where_proc_is_absent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Without /proc, `ps -o lstart=` supplies the identity; its spaces split the record once."""
     from agent6.sessions import ipc

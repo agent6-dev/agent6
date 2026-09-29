@@ -13,18 +13,18 @@ from __future__ import annotations
 import io
 import json
 import os
+import pathlib
 import select
 import subprocess
 import sys
 import time
-from pathlib import Path
 from typing import IO, Any
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
-from agent6.app.providers import InstrumentedProvider, build_role_provider
-from agent6.budget import BudgetTracker
+from agent6 import budget as agent6_budget
+from agent6.app import providers
 from agent6.config import Config
 from agent6.providers import (
     ProviderAborted,
@@ -32,19 +32,13 @@ from agent6.providers import (
     ProviderInterrupted,
     ToolDefinition,
     TranscriptSink,
+    _claude_code_wire,
     call_for_text,
     claude_code,
 )
-from agent6.providers._claude_code_wire import (
-    CLAUDE_CODE_ENV,
-    claude_argv,
-    plan_usage_from_rate_limit,
-    render_history,
-)
-from agent6.providers.claude_code import ClaudeCodeProvider, login_status
-from agent6.viewmodel.transcript_render import fold_conversation
+from agent6.viewmodel import transcript_render
 
-FAKE = Path(__file__).with_name("fake_claude.py")
+FAKE = pathlib.Path(__file__).with_name("fake_claude.py")
 TOOLS = [
     ToolDefinition(
         name="read_file",
@@ -74,7 +68,7 @@ USER0: list[dict[str, Any]] = [
 ]
 
 
-def _install(tmp_path: Path, scenario: dict[str, Any]) -> tuple[str, Path]:
+def _install(tmp_path: pathlib.Path, scenario: dict[str, Any]) -> tuple[str, pathlib.Path]:
     """Install the fake as `<tmp>/bin/claude`.
 
     The stub carries the scenario and capture paths itself; the provider's curated env passes
@@ -95,25 +89,25 @@ def _install(tmp_path: Path, scenario: dict[str, Any]) -> tuple[str, Path]:
     return str(stub), cap
 
 
-def _rescenario(tmp_path: Path, scenario: dict[str, Any]) -> None:
+def _rescenario(tmp_path: pathlib.Path, scenario: dict[str, Any]) -> None:
     (tmp_path / "scenario.json").write_text(json.dumps(scenario), encoding="utf-8")
 
 
-def _captured(cap: Path) -> list[dict[str, Any]]:
+def _captured(cap: pathlib.Path) -> list[dict[str, Any]]:
     if not cap.exists():
         return []
     return [json.loads(line) for line in cap.read_text(encoding="utf-8").splitlines() if line]
 
 
-def _spawns(cap: Path) -> list[dict[str, Any]]:
+def _spawns(cap: pathlib.Path) -> list[dict[str, Any]]:
     return [c for c in _captured(cap) if "argv" in c]
 
 
-def _stdin(cap: Path) -> list[dict[str, Any]]:
+def _stdin(cap: pathlib.Path) -> list[dict[str, Any]]:
     return [c["stdin"] for c in _captured(cap) if "stdin" in c]
 
 
-def _user_texts(cap: Path) -> list[str]:
+def _user_texts(cap: pathlib.Path) -> list[str]:
     return [
         "".join(b.get("text", "") for b in line["message"]["content"])
         for line in _stdin(cap)
@@ -121,7 +115,7 @@ def _user_texts(cap: Path) -> list[str]:
     ]
 
 
-def _tool_answers(cap: Path) -> list[list[dict[str, Any]]]:
+def _tool_answers(cap: pathlib.Path) -> list[list[dict[str, Any]]]:
     out: list[list[dict[str, Any]]] = []
     for line in _stdin(cap):
         rpc = ((line.get("response") or {}).get("response") or {}).get("mcp_response") or {}
@@ -139,12 +133,14 @@ def _alive(pid: int) -> bool:
     return True
 
 
-def _budget() -> BudgetTracker:
-    return BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+def _budget() -> agent6_budget.BudgetTracker:
+    return agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
 
 
-def _provider(binary: str, **kw: Any) -> ClaudeCodeProvider:
-    return ClaudeCodeProvider(model="claude-haiku-4-5", binary=binary, budget=_budget(), **kw)
+def _provider(binary: str, **kw: Any) -> claude_code.ClaudeCodeProvider:
+    return claude_code.ClaudeCodeProvider(
+        model="claude-haiku-4-5", binary=binary, budget=_budget(), **kw
+    )
 
 
 def _round(**kw: Any) -> dict[str, Any]:
@@ -161,7 +157,7 @@ def _usage(inp: int, out: int, read: int = 0, create: int = 0) -> dict[str, int]
 
 
 def test_argv_is_operator_config_only_and_the_private_dir_is_removed_on_close(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     binary, cap = _install(tmp_path, {"turns": [[_round(text="hi")]]})
     provider = _provider(binary, effort="low")
@@ -173,21 +169,23 @@ def test_argv_is_operator_config_only_and_the_private_dir_is_removed_on_close(
     )
     spawn = _spawns(cap)[0]
     argv = spawn["argv"]
-    prompt_file = Path(argv[argv.index("--system-prompt-file") + 1])
-    assert (binary, *argv) == claude_argv(binary, "claude-haiku-4-5", "low", prompt_file)
+    prompt_file = pathlib.Path(argv[argv.index("--system-prompt-file") + 1])
+    assert (binary, *argv) == _claude_code_wire.claude_argv(
+        binary, "claude-haiku-4-5", "low", prompt_file
+    )
     assert all("SECRET_SYS" not in a and "SECRET_TASK" not in a for a in argv)
     assert spawn["system_prompt"] == system
     assert spawn["system_prompt_mode"] == 0o600
     assert spawn["cwd_entries"] == ["system_prompt.txt"]
-    assert Path(spawn["cwd"]).name.startswith("agent6-claude-")
+    assert pathlib.Path(spawn["cwd"]).name.startswith("agent6-claude-")
     assert _user_texts(cap) == ["TASK SECRET_TASK"]  # a one-message history is verbatim
     assert _alive(spawn["pid"])  # a tool-passing call keeps its session
     provider.close()
     assert not _alive(spawn["pid"])
-    assert not Path(spawn["cwd"]).exists()
+    assert not pathlib.Path(spawn["cwd"]).exists()
 
 
-def test_the_child_is_kept_out_of_the_escapee_sweep(tmp_path: Path) -> None:
+def test_the_child_is_kept_out_of_the_escapee_sweep(tmp_path: pathlib.Path) -> None:
     """The persistent child is kept out of the escapee sweep.
 
     Spawned in its own session, it matches the escapee shape unless registered.
@@ -206,7 +204,7 @@ def test_the_child_is_kept_out_of_the_escapee_sweep(tmp_path: Path) -> None:
     provider.close()
 
 
-def test_child_env_is_curated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_child_env_is_curated(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_BASE_URL",
@@ -225,12 +223,12 @@ def test_child_env_is_curated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert not any(v == "leak" for v in env.values())
     assert "HOME" in env and "PATH" in env
     assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path / "cc-config")
-    for name, value in CLAUDE_CODE_ENV.items():
+    for name, value in _claude_code_wire.CLAUDE_CODE_ENV.items():
         assert env[name] == value
 
 
 def test_handshake_answers_mcp_initialize_first_and_advertises_tools_verbatim(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     binary, cap = _install(tmp_path, {"turns": [[_round(text="hi")]]})
     provider = _provider(binary)
@@ -248,7 +246,7 @@ def test_handshake_answers_mcp_initialize_first_and_advertises_tools_verbatim(
 
 
 def test_malformed_inline_frame_is_reported_instead_of_stranding_the_reader(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(claude_code, "STREAM_FIRST_DATA_TIMEOUT_S", 0.3)
     binary, cap = _install(tmp_path, {"malformed_initialize": True})
@@ -259,7 +257,7 @@ def test_malformed_inline_frame_is_reported_instead_of_stranding_the_reader(
     assert not _alive(_spawns(cap)[0]["pid"])
 
 
-def test_account_email_is_scrubbed_and_never_recorded(tmp_path: Path) -> None:
+def test_account_email_is_scrubbed_and_never_recorded(tmp_path: pathlib.Path) -> None:
     email = "leak@example.test"
     binary, _ = _install(
         tmp_path,
@@ -278,7 +276,7 @@ def test_account_email_is_scrubbed_and_never_recorded(tmp_path: Path) -> None:
     assert "Leak Org" not in json.dumps(resp.raw)
 
 
-def test_system_init_audit_refuses_a_foreign_tool_or_an_api_key(tmp_path: Path) -> None:
+def test_system_init_audit_refuses_a_foreign_tool_or_an_api_key(tmp_path: pathlib.Path) -> None:
     binary, cap = _install(
         tmp_path,
         {"init": {"tools": ["mcp__agent6__read_file", "mcp__agent6__finish_session", "Bash"]}},
@@ -295,7 +293,7 @@ def test_system_init_audit_refuses_a_foreign_tool_or_an_api_key(tmp_path: Path) 
 
 
 def test_tool_round_returns_at_message_stop_with_bare_names_and_plan_metered_budget(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     binary, cap = _install(
         tmp_path,
@@ -335,7 +333,7 @@ def test_tool_round_returns_at_message_stop_with_bare_names_and_plan_metered_bud
     provider.close()
 
 
-def test_next_call_answers_pending_calls_in_order_and_folds_notices(tmp_path: Path) -> None:
+def test_next_call_answers_pending_calls_in_order_and_folds_notices(tmp_path: pathlib.Path) -> None:
     binary, cap = _install(
         tmp_path,
         {
@@ -383,7 +381,7 @@ def test_next_call_answers_pending_calls_in_order_and_folds_notices(tmp_path: Pa
 
 
 def test_prose_round_reads_result_then_a_notice_is_a_user_message_and_a_popped_turn_continues(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     binary, cap = _install(
         tmp_path,
@@ -406,7 +404,7 @@ def test_prose_round_reads_result_then_a_notice_is_a_user_message_and_a_popped_t
     provider.close()
 
 
-def test_non_continuation_restarts_with_the_rendered_history(tmp_path: Path) -> None:
+def test_non_continuation_restarts_with_the_rendered_history(tmp_path: pathlib.Path) -> None:
     binary, cap = _install(tmp_path, {"turns": [[_round(text="ok")]]})
     provider = _provider(binary)
     provider.call(system="s", messages=USER0, tools=TOOLS)
@@ -427,7 +425,7 @@ def test_non_continuation_restarts_with_the_rendered_history(tmp_path: Path) -> 
     pid_before = _spawns(cap)[0]["pid"]
     provider.call(system="s", messages=resumed, tools=TOOLS)
     assert len(_spawns(cap)) == 2 and not _alive(pid_before)
-    assert _user_texts(cap)[-1] == render_history(resumed)
+    assert _user_texts(cap)[-1] == _claude_code_wire.render_history(resumed)
     assert "hidden" not in _user_texts(cap)[-1]
     provider.call(
         system="s",
@@ -444,7 +442,7 @@ def test_non_continuation_restarts_with_the_rendered_history(tmp_path: Path) -> 
     provider.close()
 
 
-def test_changed_tool_definition_restarts_the_session(tmp_path: Path) -> None:
+def test_changed_tool_definition_restarts_the_session(tmp_path: pathlib.Path) -> None:
     binary, cap = _install(tmp_path, {"turns": [[_round(text="first")], [_round(text="second")]]})
     provider = _provider(binary)
     first = provider.call(system="s", messages=USER0, tools=TOOLS)
@@ -468,7 +466,7 @@ def test_changed_tool_definition_restarts_the_session(tmp_path: Path) -> None:
     provider.close()
 
 
-def test_live_context_past_the_window_reserve_restarts(tmp_path: Path) -> None:
+def test_live_context_past_the_window_reserve_restarts(tmp_path: pathlib.Path) -> None:
     binary, cap = _install(
         tmp_path,
         {"turns": [[_round(text="a", usage=_usage(5000, 10))], [_round(text="b")]]},
@@ -485,7 +483,9 @@ def test_live_context_past_the_window_reserve_restarts(tmp_path: Path) -> None:
     provider.close()
 
 
-def test_budget_sums_rounds_and_fails_closed_without_a_reading_or_usage(tmp_path: Path) -> None:
+def test_budget_sums_rounds_and_fails_closed_without_a_reading_or_usage(
+    tmp_path: pathlib.Path,
+) -> None:
     binary, _ = _install(
         tmp_path,
         {
@@ -534,7 +534,7 @@ def test_budget_sums_rounds_and_fails_closed_without_a_reading_or_usage(tmp_path
 
 
 def test_message_start_input_usage_is_combined_with_message_delta_output_usage(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """Anthropic streams input usage at message_start and output usage at message_delta."""
     binary, _ = _install(
@@ -555,7 +555,9 @@ def test_message_start_input_usage_is_combined_with_message_delta_output_usage(
     ) == (1200, 40, 300, 20)
 
 
-def test_abort_and_interrupt_kill_the_child_and_the_next_call_respawns(tmp_path: Path) -> None:
+def test_abort_and_interrupt_kill_the_child_and_the_next_call_respawns(
+    tmp_path: pathlib.Path,
+) -> None:
     """Abort and interrupt kill the child and the next call respawns.
 
     The flags flip once the child has recorded its spawn, so there is a pid to check.
@@ -584,7 +586,7 @@ def test_abort_and_interrupt_kill_the_child_and_the_next_call_respawns(tmp_path:
 
 
 def test_idle_child_is_killed_after_the_stream_timeout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(claude_code, "STREAM_FIRST_DATA_TIMEOUT_S", 0.6)
     binary, cap = _install(tmp_path, {"hang_s": 10, "turns": [[_round(text="x")]]})
@@ -596,7 +598,7 @@ def test_idle_child_is_killed_after_the_stream_timeout(
 
 
 def test_stream_ping_does_not_mask_an_idle_child(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(claude_code, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
     binary, _ = _install(
@@ -609,7 +611,7 @@ def test_stream_ping_does_not_mask_an_idle_child(
 
 
 def test_a_repeated_plan_reading_does_not_mask_an_idle_child(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A repeated `rate_limit_event` does not re-mark the idle clock.
 
@@ -626,7 +628,7 @@ def test_a_repeated_plan_reading_does_not_mask_an_idle_child(
 
 
 def test_a_call_the_cli_refused_before_any_answer_is_the_loops_to_record(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """A call the CLI refused before any answer reaches the loop as the call's result.
 
@@ -687,7 +689,7 @@ def test_a_call_the_cli_refused_before_any_answer_is_the_loops_to_record(
 
 
 def test_a_call_the_cli_refuses_after_an_answer_ends_the_call_with_its_reason(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """A call the CLI refuses after an answer ends the call with the CLI's reason.
 
@@ -740,19 +742,17 @@ def test_a_call_the_cli_refuses_after_an_answer_ends_the_call_with_its_reason(
 
 
 def test_an_echoed_reason_is_its_first_line_without_the_tag() -> None:
-    from agent6.providers.claude_code import _echo_reason  # pyright: ignore[reportPrivateUsage]
-
-    assert _echo_reason("\n<tool_use_error>InputValidationError: bad\nYou sent: x") == (
+    assert claude_code._echo_reason("\n<tool_use_error>InputValidationError: bad\nYou sent: x") == (
         "InputValidationError: bad"
     )
-    assert _echo_reason([{"type": "text", "text": "<tool_use_error>boom"}]) == "boom"
-    assert _echo_reason("<tool_use_error>Error: No such tool available: x</tool_use_error>") == (
-        "Error: No such tool available: x"
-    )
-    assert _echo_reason("") == "no reason given"
+    assert claude_code._echo_reason([{"type": "text", "text": "<tool_use_error>boom"}]) == "boom"
+    assert claude_code._echo_reason(
+        "<tool_use_error>Error: No such tool available: x</tool_use_error>"
+    ) == ("Error: No such tool available: x")
+    assert claude_code._echo_reason("") == "no reason given"
 
 
-def test_failures_map_to_provider_errors(tmp_path: Path) -> None:
+def test_failures_map_to_provider_errors(tmp_path: pathlib.Path) -> None:
     with pytest.raises(ProviderError, match="not found on PATH") as exc:
         _provider(str(tmp_path / "missing")).call(system="s", messages=USER0, tools=None)
     assert exc.value.fatal
@@ -764,7 +764,7 @@ def test_failures_map_to_provider_errors(tmp_path: Path) -> None:
 
 
 def test_a_dying_childs_stderr_reaches_the_error_when_the_drain_lags(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The exit path waits for the stderr drain thread to reach EOF before wording the error.
 
@@ -804,7 +804,7 @@ def test_a_dying_childs_stderr_reaches_the_error_when_the_drain_lags(
     assert exc.value.fatal and exc.value.status_code is None
 
 
-def test_a_stray_can_use_tool_is_allowed(tmp_path: Path) -> None:
+def test_a_stray_can_use_tool_is_allowed(tmp_path: pathlib.Path) -> None:
     binary, cap = _install(
         tmp_path,
         {
@@ -841,7 +841,9 @@ def test_a_stray_can_use_tool_is_allowed(tmp_path: Path) -> None:
     provider.close()
 
 
-def test_side_call_is_one_process_and_call_for_text_returns_the_text(tmp_path: Path) -> None:
+def test_side_call_is_one_process_and_call_for_text_returns_the_text(
+    tmp_path: pathlib.Path,
+) -> None:
     binary, cap = _install(tmp_path, {"turns": [[_round(text="LGTM")]]})
     provider = _provider(binary)
     resp = provider.call(
@@ -854,7 +856,7 @@ def test_side_call_is_one_process_and_call_for_text_returns_the_text(tmp_path: P
     assert _user_texts(cap) == ["DIFF", "u"]
 
 
-def test_transcript_round_is_anthropic_shaped(tmp_path: Path) -> None:
+def test_transcript_round_is_anthropic_shaped(tmp_path: pathlib.Path) -> None:
     binary, _ = _install(tmp_path, {"turns": [[_round(text="hello")]]})
     sink = TranscriptSink(tmp_path / "transcripts")
     _provider(binary, transcript_sink=sink).call(system="sys", messages=USER0, tools=None)
@@ -863,13 +865,13 @@ def test_transcript_round_is_anthropic_shaped(tmp_path: Path) -> None:
     payload = json.loads(files[0].read_text(encoding="utf-8"))
     assert payload["request"]["url"] == "claude-code://fake-session-1"
     assert payload["response"]["body"]["role"] == "assistant"
-    turns = fold_conversation([payload])
+    turns = transcript_render.fold_conversation([payload])
     assert any("hello" in getattr(t, "text", "") for t in turns)
 
 
-def test_transcript_failure_reaps_the_completed_child(tmp_path: Path) -> None:
+def test_transcript_failure_reaps_the_completed_child(tmp_path: pathlib.Path) -> None:
     binary, cap = _install(tmp_path, {"turns": [[_round(text="hello")]]})
-    sink = MagicMock()
+    sink = mock.MagicMock()
     sink.record.side_effect = OSError("disk full")
 
     with pytest.raises(OSError, match="disk full"):
@@ -877,24 +879,26 @@ def test_transcript_failure_reaps_the_completed_child(tmp_path: Path) -> None:
 
     spawn = _spawns(cap)[0]
     assert not _alive(spawn["pid"])
-    assert not Path(spawn["cwd"]).exists()
+    assert not pathlib.Path(spawn["cwd"]).exists()
 
 
-def test_login_status_reads_logged_in_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_login_status_reads_logged_in_only(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "leak")
     binary, cap = _install(tmp_path, {"auth": {"loggedIn": False, "rc": 1}})
-    remedy = login_status(binary)
+    remedy = claude_code.login_status(binary)
     assert remedy is not None and "claude auth login" in remedy
     assert "leak@example.test" not in remedy and "org_leak" not in remedy
     assert "ANTHROPIC_API_KEY" not in _captured(cap)[0]["env"]
     _rescenario(tmp_path, {"auth": {"loggedIn": True, "rc": 0}})
-    assert login_status(binary) is None
-    missing = login_status(str(tmp_path / "missing"))
+    assert claude_code.login_status(binary) is None
+    missing = claude_code.login_status(str(tmp_path / "missing"))
     assert missing is not None and "not found on PATH" in missing
 
 
 def test_render_history_is_verbatim_for_one_message_and_labelled_after() -> None:
-    assert render_history(USER0) == "TASK:\nwrite hello"
+    assert _claude_code_wire.render_history(USER0) == "TASK:\nwrite hello"
     history = [
         *USER0,
         {
@@ -913,7 +917,7 @@ def test_render_history_is_verbatim_for_one_message_and_labelled_after() -> None
             ],
         },
     ]
-    text = render_history(history)
+    text = _claude_code_wire.render_history(history)
     assert text.startswith("TASK:\nwrite hello\n\n[harness] This session continues")
     assert "### assistant\nok" in text
     assert '[tool_use read_file] {"path": "a"}' in text
@@ -931,17 +935,17 @@ def test_plan_usage_from_rate_limit_maps_the_windows() -> None:
             "seven_day_opus": {"utilization": 1.2, "resetsAt": 200},
         },
     }
-    plan = plan_usage_from_rate_limit(info)
+    plan = _claude_code_wire.plan_usage_from_rate_limit(info)
     assert plan is not None
     assert [(w.name, w.used_percent, w.window_minutes, w.resets_at) for w in plan.windows] == [
         ("five_hour", 10.0, 300, 100.0),
         ("seven_day_opus", 120.0, 10080, 200.0),
     ]
     assert plan.limit_reached and plan.has_credits and plan.window_exhausted
-    assert plan_usage_from_rate_limit({"status": "allowed"}) is None
+    assert _claude_code_wire.plan_usage_from_rate_limit({"status": "allowed"}) is None
 
 
-def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: Path) -> None:
+def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: pathlib.Path) -> None:
     def cfg(effort: str | None) -> Config:
         role: dict[str, Any] = {"provider": "claude", "model": "claude-haiku-4-5"}
         if effort:
@@ -954,8 +958,10 @@ def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: Path) -> N
         )
 
     sink = TranscriptSink(tmp_path / "t")
-    provider = build_role_provider(cfg("low"), "worker", transcript_sink=sink, budget=_budget())
-    assert isinstance(provider, ClaudeCodeProvider)
+    provider = providers.build_role_provider(
+        cfg("low"), "worker", transcript_sink=sink, budget=_budget()
+    )
+    assert isinstance(provider, claude_code.ClaudeCodeProvider)
     assert (provider.binary, provider.effort, provider.model) == (
         "/opt/claude",
         "low",
@@ -963,26 +969,26 @@ def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: Path) -> N
     )
     assert provider.context_tokens == 200_000
     with pytest.raises(ProviderError, match="effort = off") as exc:
-        build_role_provider(cfg("off"), "worker", transcript_sink=sink, budget=_budget())
+        providers.build_role_provider(cfg("off"), "worker", transcript_sink=sink, budget=_budget())
     assert exc.value.fatal
 
 
 def test_instrumented_provider_close_forwards_to_the_inner_close() -> None:
-    inner = MagicMock()
-    wrapper = InstrumentedProvider(
+    inner = mock.MagicMock()
+    wrapper = providers.InstrumentedProvider(
         inner=inner, role="worker", model="m", provider_name="claude", events=None, budget=_budget()
     )
     wrapper.close()
     inner.close.assert_called_once_with()
-    http_like = MagicMock(spec=["call"])
-    bare = InstrumentedProvider(
+    http_like = mock.MagicMock(spec=["call"])
+    bare = providers.InstrumentedProvider(
         inner=http_like, role="worker", model="m", provider_name="p", events=None, budget=_budget()
     )
     bare.close()  # an HTTP provider has no close
     assert not hasattr(http_like, "close")
 
 
-def test_close_terminates_a_child_blocked_on_a_tool_call(tmp_path: Path) -> None:
+def test_close_terminates_a_child_blocked_on_a_tool_call(tmp_path: pathlib.Path) -> None:
     """Close sends SIGTERM to a child blocked on a tools/call, where the CLI ignores stdin EOF.
 
     The CLI handles it (exit 143, socket removed) before any SIGKILL.
@@ -1003,7 +1009,7 @@ def test_close_terminates_a_child_blocked_on_a_tool_call(tmp_path: Path) -> None
     assert not _alive(_spawns(cap)[0]["pid"])
 
 
-def test_an_unclosed_session_is_reaped_at_interpreter_exit(tmp_path: Path) -> None:
+def test_an_unclosed_session_is_reaped_at_interpreter_exit(tmp_path: pathlib.Path) -> None:
     """An unclosed session's finalizer runs at interpreter exit.
 
     Leaving no child and no directory.
@@ -1025,10 +1031,10 @@ def test_an_unclosed_session_is_reaped_at_interpreter_exit(tmp_path: Path) -> No
     while _alive(spawn["pid"]) and time.monotonic() < deadline:
         time.sleep(0.05)
     assert not _alive(spawn["pid"])
-    assert not Path(spawn["cwd"]).exists()
+    assert not pathlib.Path(spawn["cwd"]).exists()
 
 
-def test_a_side_call_leaves_the_live_worker_session_untouched(tmp_path: Path) -> None:
+def test_a_side_call_leaves_the_live_worker_session_untouched(tmp_path: pathlib.Path) -> None:
     """A side call runs in its own throwaway process and leaves the worker's session untouched.
 
     The worker's pending tools/call survives, so its next call continues instead of replaying.
@@ -1067,7 +1073,7 @@ def test_a_side_call_leaves_the_live_worker_session_untouched(tmp_path: Path) ->
     provider.close()
 
 
-def test_a_rewritten_prefix_restarts_even_at_the_same_length(tmp_path: Path) -> None:
+def test_a_rewritten_prefix_restarts_even_at_the_same_length(tmp_path: pathlib.Path) -> None:
     """A rewritten prefix restarts the process even at the same length.
 
     A tier-2 restart replaces the consumed prefix with the first turn plus a summary; only the
@@ -1098,11 +1104,11 @@ def test_a_rewritten_prefix_restarts_even_at_the_same_length(tmp_path: Path) -> 
     ]
     provider.call(system="s", messages=compacted, tools=TOOLS)
     assert len(_spawns(cap)) == 2
-    assert _user_texts(cap)[-1] == render_history(compacted)
+    assert _user_texts(cap)[-1] == _claude_code_wire.render_history(compacted)
     provider.close()
 
 
-def test_tier1_rewrites_and_thinking_strips_keep_the_process(tmp_path: Path) -> None:
+def test_tier1_rewrites_and_thinking_strips_keep_the_process(tmp_path: pathlib.Path) -> None:
     """Tier-1 rewrites and thinking strips change nothing the process was sent, so it continues."""
     binary, cap = _install(
         tmp_path,
@@ -1150,7 +1156,7 @@ def test_tier1_rewrites_and_thinking_strips_keep_the_process(tmp_path: Path) -> 
     provider.close()
 
 
-def test_a_later_rounds_plan_reading_is_recorded_for_that_round(tmp_path: Path) -> None:
+def test_a_later_rounds_plan_reading_is_recorded_for_that_round(tmp_path: pathlib.Path) -> None:
     """A reading that follows a round's message_stop is recorded for that round."""
     binary, _ = _install(
         tmp_path,
@@ -1194,7 +1200,7 @@ def test_a_later_rounds_plan_reading_is_recorded_for_that_round(tmp_path: Path) 
     provider.close()
 
 
-def test_streamed_deltas_never_carry_the_account_email(tmp_path: Path) -> None:
+def test_streamed_deltas_never_carry_the_account_email(tmp_path: pathlib.Path) -> None:
     """Streamed deltas never carry the account email.
 
     The scrub holds back a tail that could start an email split across deltas and flushes it at
@@ -1223,7 +1229,7 @@ def test_streamed_deltas_never_carry_the_account_email(tmp_path: Path) -> None:
     assert all(email not in piece for piece in text + thinking)
 
 
-def test_streaming_callback_exception_does_not_break_the_round(tmp_path: Path) -> None:
+def test_streaming_callback_exception_does_not_break_the_round(tmp_path: pathlib.Path) -> None:
     binary, _ = _install(tmp_path, {"turns": [[_round(text="done")]]})
 
     def boom(_piece: str) -> None:
@@ -1234,7 +1240,7 @@ def test_streaming_callback_exception_does_not_break_the_round(tmp_path: Path) -
     assert resp.text == "done"
 
 
-def test_result_and_stderr_error_text_is_scrubbed(tmp_path: Path) -> None:
+def test_result_and_stderr_error_text_is_scrubbed(tmp_path: pathlib.Path) -> None:
     """The result text and stderr tail of a failed turn reach the error with the email scrubbed."""
     email = "leak@example.test"
     binary, _ = _install(
@@ -1262,7 +1268,7 @@ def test_result_and_stderr_error_text_is_scrubbed(tmp_path: Path) -> None:
     assert email not in str(exc.value) and "<operator-email>" in str(exc.value)
 
 
-def test_a_result_with_an_api_error_status_carries_it(tmp_path: Path) -> None:
+def test_a_result_with_an_api_error_status_carries_it(tmp_path: pathlib.Path) -> None:
     """A result's `api_error_status` rides the ProviderError.
 
     The retry ladder skips permanent ones.
@@ -1284,7 +1290,7 @@ def test_a_result_with_an_api_error_status_carries_it(tmp_path: Path) -> None:
     assert exc.value.status_code == 404 and not exc.value.fatal
 
 
-def test_an_mcp_ping_is_answered_with_an_empty_result(tmp_path: Path) -> None:
+def test_an_mcp_ping_is_answered_with_an_empty_result(tmp_path: pathlib.Path) -> None:
     binary, cap = _install(tmp_path, {"ping": True, "turns": [[_round(text="x")]]})
     _provider(binary).call(system="s", messages=USER0, tools=TOOLS)
     answers = [
@@ -1296,7 +1302,7 @@ def test_an_mcp_ping_is_answered_with_an_empty_result(tmp_path: Path) -> None:
     assert answers == [{"jsonrpc": "2.0", "id": 2, "result": {}}]
 
 
-def test_the_child_stdout_is_read_buffered(tmp_path: Path) -> None:
+def test_the_child_stdout_is_read_buffered(tmp_path: pathlib.Path) -> None:
     """The child's stdout is read through a BufferedReader.
 
     An unbuffered pipe makes readline one syscall per byte: 741 ms for a 1 MiB line, measured.
@@ -1311,7 +1317,7 @@ def test_the_child_stdout_is_read_buffered(tmp_path: Path) -> None:
 
 
 def test_an_oversize_tool_result_is_refused_before_claude_code_persists_it(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """An oversize tool result is refused, fatally, before Claude Code persists it.
 
@@ -1344,17 +1350,10 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     Room is left for the notices the same turn folds into the payload, whatever the characters
     weigh.
     """
-    from agent6.app._session import tool_result_cap_bytes
-    from agent6.harness._compaction import (
-        CLAUDE_CODE_RESULT_CAP_BYTES,
-        TOOL_RESULT_CAP_BYTES,
-        cap_tool_result,
-    )
-    from agent6.harness._nudges import RUN_BUDGET_NUDGE, STAGNATION_NUDGE
-    from agent6.harness._panel import review_notice
-    from agent6.harness._verify_gate import VERIFY_TAIL_CHARS, harness_verify_notice
+    from agent6.app import _session
+    from agent6.harness import _compaction, _nudges, _panel, _verify_gate
     from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
-    from agent6.tools.results import ExecResult
+    from agent6.tools import results
 
     cc = Config.model_validate(
         {
@@ -1362,24 +1361,24 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
             "models": {"worker": {"provider": "claude", "model": "claude-haiku-4-5"}},
         }
     )
-    cap = tool_result_cap_bytes(cc, "worker")
-    assert cap == CLAUDE_CODE_RESULT_CAP_BYTES < TOOL_RESULT_CAP_BYTES
-    assert tool_result_cap_bytes(Config(), "worker") == TOOL_RESULT_CAP_BYTES
-    assert CLAUDE_CODE_RESULT_CAP_BYTES < CLAUDE_CODE_PERSIST_BYTES
-    wide = cap_tool_result("\u6f22" * 45_000, tool_name="read_file", cap=cap)
-    gate = ExecResult(
+    cap = _session.tool_result_cap_bytes(cc, "worker")
+    assert cap == _compaction.CLAUDE_CODE_RESULT_CAP_BYTES < _compaction.TOOL_RESULT_CAP_BYTES
+    assert _session.tool_result_cap_bytes(Config(), "worker") == _compaction.TOOL_RESULT_CAP_BYTES
+    assert _compaction.CLAUDE_CODE_RESULT_CAP_BYTES < CLAUDE_CODE_PERSIST_BYTES
+    wide = _compaction.cap_tool_result("\u6f22" * 45_000, tool_name="read_file", cap=cap)
+    gate = results.ExecResult(
         returncode=1,
-        stdout="\U0001f600" * (2 * VERIFY_TAIL_CHARS),
+        stdout="\U0001f600" * (2 * _verify_gate.VERIFY_TAIL_CHARS),
         stderr="",
         duration_s=3.0,
         exec_failed=False,
     )
     turn = [
         wide,
-        harness_verify_notice(gate, "step"),
-        review_notice("\u6f22" * 10_000),
-        STAGNATION_NUDGE,
-        RUN_BUDGET_NUDGE,
+        _verify_gate.harness_verify_notice(gate, "step"),
+        _panel.review_notice("\u6f22" * 10_000),
+        _nudges.STAGNATION_NUDGE,
+        _nudges.RUN_BUDGET_NUDGE,
     ]
     assert sum(len(text.encode()) for text in turn) < CLAUDE_CODE_PERSIST_BYTES
 
@@ -1395,9 +1394,9 @@ def test_a_raising_operator_poll_leaves_the_watch_ticking() -> None:
 
 def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
     """The result cap follows the role that drives the session, the planner's on a plan."""
-    from agent6.app._session import tool_result_cap_bytes
+    from agent6.app import _session
     from agent6.config import Config
-    from agent6.harness._compaction import CLAUDE_CODE_RESULT_CAP_BYTES, TOOL_RESULT_CAP_BYTES
+    from agent6.harness import _compaction
 
     cfg = Config.model_validate(
         {
@@ -1411,11 +1410,13 @@ def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
             },
         }
     )
-    assert tool_result_cap_bytes(cfg, "planner") == CLAUDE_CODE_RESULT_CAP_BYTES
-    assert tool_result_cap_bytes(cfg, "worker") == TOOL_RESULT_CAP_BYTES
+    assert (
+        _session.tool_result_cap_bytes(cfg, "planner") == _compaction.CLAUDE_CODE_RESULT_CAP_BYTES
+    )
+    assert _session.tool_result_cap_bytes(cfg, "worker") == _compaction.TOOL_RESULT_CAP_BYTES
 
 
-def test_the_turns_notices_survive_a_turn_the_cli_refused_whole(tmp_path: Path) -> None:
+def test_the_turns_notices_survive_a_turn_the_cli_refused_whole(tmp_path: pathlib.Path) -> None:
     """The turn's notices ride the last answered call.
 
     With every call refused the CLI's next round already runs; the notices go in as the user line
@@ -1461,7 +1462,7 @@ def test_the_turns_notices_survive_a_turn_the_cli_refused_whole(tmp_path: Path) 
     assert steer in _user_texts(cap)
 
 
-def test_two_text_blocks_in_a_round_stay_separated(tmp_path: Path) -> None:
+def test_two_text_blocks_in_a_round_stay_separated(tmp_path: pathlib.Path) -> None:
     """Two text blocks in a round stay separated by a blank line in the settled text."""
     binary, _cap = _install(
         tmp_path,

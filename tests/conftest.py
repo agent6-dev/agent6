@@ -8,7 +8,6 @@ import os
 
 import pytest
 import tree_sitter_language_pack
-from tree_sitter_language_pack import PackConfig
 
 from tests.jail_env import require_userns_jail
 
@@ -61,4 +60,6 @@ def _isolate_state(  # pyright: ignore[reportUnusedFunction]
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path_factory.mktemp("agent6-cache")))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path_factory.mktemp("agent6-data")))
     # The tree-sitter language pack keeps its grammars under the same XDG cache; keep them.
-    tree_sitter_language_pack.configure(PackConfig(cache_dir=_GRAMMAR_CACHE))
+    tree_sitter_language_pack.configure(
+        tree_sitter_language_pack.PackConfig(cache_dir=_GRAMMAR_CACHE)
+    )

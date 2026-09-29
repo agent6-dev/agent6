@@ -6,15 +6,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
+import pathlib
 
-from textual.widgets import TextArea
+from textual import widgets
 
-from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.modals import TextModal
+from agent6.ui.tui import app as tui_app
+from agent6.ui.tui import modals
 
 
-def _mk(d: Path) -> None:
+def _mk(d: pathlib.Path) -> None:
     d.mkdir(parents=True)
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
@@ -27,18 +27,18 @@ def _mk(d: Path) -> None:
     (shell / "result.json").write_text(json.dumps({"returncode": 0}) + "\n", encoding="utf-8")
 
 
-def test_shells_opens_the_roster_as_a_text_view(tmp_path: Path) -> None:
+def test_shells_opens_the_roster_as_a_text_view(tmp_path: pathlib.Path) -> None:
     d = tmp_path / "s1"
     _mk(d)
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.submit_instruction("/shells")
             await pilot.pause()
-            assert isinstance(app.screen, TextModal)
-            shown = app.screen.query_one("#text-view", TextArea).text
+            assert isinstance(app.screen, modals.TextModal)
+            shown = app.screen.query_one("#text-view", widgets.TextArea).text
             assert "[bg-1] exited 0: sleep 5" in shown
 
     asyncio.run(scenario())

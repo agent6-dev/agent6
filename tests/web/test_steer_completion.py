@@ -10,21 +10,21 @@ from __future__ import annotations
 
 from importlib import resources
 
-from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS
+from agent6 import directive
 
 CLIENT_JS = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
 
 
 def test_client_mirrors_the_steer_commands_verbatim() -> None:
-    for cmd, help_ in STEER_COMMANDS.items():
+    for cmd, help_ in directive.STEER_COMMANDS.items():
         assert f"['{cmd}', '{help_}']" in CLIENT_JS, f"client.js drifted from {cmd}"
 
 
 def test_compact_is_gated_on_live() -> None:
     """The resume composer withholds exactly `LIVE_RUN_COMMANDS`, spelled by hand in the JS."""
     gate = next(line for line in CLIENT_JS.splitlines() if "liveNow() ||" in line)
-    assert gate.count("c !== '") == len(LIVE_RUN_COMMANDS)
-    for cmd in LIVE_RUN_COMMANDS:
+    assert gate.count("c !== '") == len(directive.LIVE_RUN_COMMANDS)
+    for cmd in directive.LIVE_RUN_COMMANDS:
         assert f"c !== '{cmd}'" in gate, cmd
     assert "() => finished === false" in CLIENT_JS  # the composer's live truth feeds the gate
 
@@ -40,8 +40,8 @@ def test_the_client_copies_only_the_spinner() -> None:
 
     Every other field is rendered by the server; a static client cannot import the frames.
     """
-    from agent6.viewmodel.format import SPINNER_FRAMES
+    from agent6.viewmodel import format
 
-    assert f"'{SPINNER_FRAMES}'" in CLIENT_JS
+    assert f"'{format.SPINNER_FRAMES}'" in CLIENT_JS
     # The timestamp is rendered by the server, in the timezone every other surface shows.
     assert "function when(" not in CLIENT_JS

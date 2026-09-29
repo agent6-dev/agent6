@@ -6,18 +6,18 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
+from agent6 import paths
 from agent6.machine import MachineJournal
-from agent6.paths import state_dir
-from agent6.sessions.ipc import clear_worker_pid, write_worker_pid
+from agent6.sessions import ipc
 from agent6.ui.cli import main
 
 
-def _git_init(path: Path) -> None:
+def _git_init(path: pathlib.Path) -> None:
     subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
     subprocess.run(["git", "-C", str(path), "config", "user.email", "t@t"], check=True)
     subprocess.run(["git", "-C", str(path), "config", "user.name", "t"], check=True)
@@ -52,14 +52,14 @@ reason = "signalled"
 """
 
 
-def _write_machine(tmp_path: Path) -> Path:
+def _write_machine(tmp_path: pathlib.Path) -> pathlib.Path:
     f = tmp_path / "waiter.asm.toml"
     f.write_text(WAITER_DELAYED, encoding="utf-8")
     return f
 
 
 def test_run_exit_on_wait_yields_waiting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
@@ -68,14 +68,14 @@ def test_run_exit_on_wait_yields_waiting(
     out = capsys.readouterr().out
     assert "WAITING" in out
     # The wait was armed and persisted.
-    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     pending = MachineJournal(root).read_pending_wait()
     assert pending is not None
     assert pending.state == "poll"
 
 
 def test_a_foreground_wait_says_where_it_parked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A foreground wait says so on the terminal, so a parked `machine run` never looks hung."""
     monkeypatch.chdir(tmp_path)
@@ -94,7 +94,7 @@ def test_a_foreground_wait_says_where_it_parked(
 
 
 def test_run_prints_a_notify_on_the_foreground_terminal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The foreground run is its own watcher, so a notify must land on the terminal too.
     monkeypatch.chdir(tmp_path)
@@ -113,15 +113,15 @@ def test_run_prints_a_notify_on_the_foreground_terminal(
 
 
 def test_status_reports_waiting_state_and_spend(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
     # `--exit-on-wait` exits the process; in-process the pid is this pytest, so clear it.
-    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
-    clear_worker_pid(root)
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
+    ipc.clear_worker_pid(root)
     code = main(["machine", "status", "waiter_delayed"])
     assert code == 0
     out = capsys.readouterr().out
@@ -135,17 +135,17 @@ def test_status_reports_waiting_state_and_spend(
 
 
 def test_status_hints_poke_for_a_live_foreground_wait(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A foreground `machine run` persists its wait record before sleeping; the poke line shows."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
-    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     assert MachineJournal(root).read_pending_wait() is not None
     # The run cleared its own pid on exit; re-stamp a live worker (this pytest).
-    write_worker_pid(root, os.getpid())
+    ipc.write_worker_pid(root, os.getpid())
     code = main(["machine", "status", "waiter_delayed"])
     assert code == 0
     out = capsys.readouterr().out
@@ -155,16 +155,16 @@ def test_status_hints_poke_for_a_live_foreground_wait(
 
 
 def test_status_names_a_poke_only_for_an_armed_wait(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The poke line comes from the wait record, never from the fold's guess."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     MachineJournal(root).clear_pending_wait()
-    write_worker_pid(root, os.getpid())
+    ipc.write_worker_pid(root, os.getpid())
 
     assert main(["machine", "status", "waiter_delayed"]) == 0
 
@@ -174,15 +174,15 @@ def test_status_names_a_poke_only_for_an_armed_wait(
 
 
 def test_status_shows_a_pending_poke_until_it_is_acked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A poke the machine has not acted on shows its payload until the wake's step is acked."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
-    clear_worker_pid(root)
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
+    ipc.clear_worker_pid(root)
     assert main(["machine", "poke", "waiter_delayed", "--message", "go"]) == 0
     capsys.readouterr()
     assert main(["machine", "status", "waiter_delayed"]) == 0
@@ -197,15 +197,15 @@ def test_status_shows_a_pending_poke_until_it_is_acked(
 
 
 def test_status_of_an_alive_but_parked_instance_reads_waiting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """machine_word_for_dir checks `parked` before `alive`: alive-but-parked reads "waiting"."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
-    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
-    write_worker_pid(root, os.getpid())  # a LIVE worker alongside the persisted wait
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
+    ipc.write_worker_pid(root, os.getpid())  # a LIVE worker alongside the persisted wait
 
     assert main(["machine", "status", "waiter_delayed"]) == 0
     out = capsys.readouterr().out
@@ -214,15 +214,15 @@ def test_status_of_an_alive_but_parked_instance_reads_waiting(
 
 
 def test_status_tolerates_a_corrupt_pending_wait(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A corrupt wait.json does not abort the readout: status reads parked and notes the file."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
-    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
-    clear_worker_pid(root)
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
+    ipc.clear_worker_pid(root)
     MachineJournal(root).wait_path.write_text("{ not valid json", encoding="utf-8")
 
     code = main(["machine", "status", "waiter_delayed"])
@@ -265,26 +265,26 @@ reason = "bad"
 
 
 def test_status_reports_stopped_for_a_crashed_instance(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A worker dead mid-state is "stopped" on every surface, through machine_status_word.
-    from agent6.machine.journal import StepEvent, ToolFact
+    from agent6.machine import journal as machine_journal
 
     monkeypatch.chdir(tmp_path)
-    root = state_dir(tmp_path) / "machines" / "crasher"
+    root = paths.state_dir(tmp_path) / "machines" / "crasher"
     root.mkdir(parents=True)
     (root / "machine.asm.toml").write_text(CRASHER, encoding="utf-8")
     journal = MachineJournal(root)
     journal.ensure_dirs()
     journal.begin(machine="crasher", version=1)
     journal.append(
-        StepEvent(
+        machine_journal.StepEvent(
             ts="t",
             seq=0,
             state="one",
             label="ok",
             goto="two",
-            fact=ToolFact(exit_code=0, stdout="", timed_out=False),
+            fact=machine_journal.ToolFact(exit_code=0, stdout="", timed_out=False),
         )
     )
     # No worker.pid file -> not alive; no pending wait -> not parked.
@@ -294,7 +294,7 @@ def test_status_reports_stopped_for_a_crashed_instance(
 
 
 def test_status_missing_instance_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     code = main(["machine", "status", "nope"])
@@ -303,18 +303,18 @@ def test_status_missing_instance_errors(
 
 
 def test_uncommitted_refusal_logs_a_git_error_instead_of_silently_failing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The dirty-file gate fails open on a GitError but never silently.
     import agent6.app.machine.run as machine_run
-    from agent6.git_ops import GitError
+    from agent6 import git_ops
 
     _git_init(tmp_path)
     f = tmp_path / "m.asm.toml"
     f.write_text('machine="m"\nversion=1\ninitial="s"\n[states.s]\nkind="terminal"\n')
 
     def _boom(*_a: object, **_k: object) -> bool:
-        raise GitError("git index is corrupt")
+        raise git_ops.GitError("git index is corrupt")
 
     monkeypatch.setattr(machine_run, "paths_dirty", _boom)
     assert machine_run.uncommitted_refusal(f, tmp_path) is None  # fail-open preserved
@@ -323,14 +323,14 @@ def test_uncommitted_refusal_logs_a_git_error_instead_of_silently_failing(
 
 
 def test_status_asm_file_path_hints_the_instance_id(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `machine run` takes a file; the other verbs take the instance id and suggest it for a file.
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)  # machine = "waiter_delayed"
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    clear_worker_pid(state_dir(tmp_path) / "machines" / "waiter_delayed")
+    ipc.clear_worker_pid(paths.state_dir(tmp_path) / "machines" / "waiter_delayed")
     code = main(["machine", "status", "waiter.asm.toml"])
     assert code == 2
     err = capsys.readouterr().err
@@ -339,7 +339,7 @@ def test_status_asm_file_path_hints_the_instance_id(
 
 
 def test_status_on_an_invalid_machine_file_names_it_as_a_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An unparsable .asm.toml where an id belongs is still a file, and the hint says so."""
     monkeypatch.chdir(tmp_path)
@@ -378,7 +378,7 @@ reason = "routed"
 
 
 def test_watch_finished_instance_shows_overview_and_end(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
@@ -395,14 +395,14 @@ def test_watch_finished_instance_shows_overview_and_end(
     assert "OK: ended in 'done'" in out
 
 
-def _stalled_instance(tmp_path: Path, *, parked: bool) -> None:
+def _stalled_instance(tmp_path: pathlib.Path, *, parked: bool) -> None:
     """Return an instance whose journal has begun but not ended, with a dead worker pid.
 
     An armed pending wait when *parked*.
     """
-    from agent6.machine.journal import MachineJournal, PendingWait
+    from agent6.machine import journal as machine_journal
 
-    inst = state_dir(tmp_path) / "machines" / "tiny"
+    inst = paths.state_dir(tmp_path) / "machines" / "tiny"
     inst.mkdir(parents=True)
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -412,7 +412,9 @@ def _stalled_instance(tmp_path: Path, *, parked: bool) -> None:
     )
     (inst / "worker.pid").write_text("999999", encoding="utf-8")
     if parked:
-        MachineJournal(inst).write_pending_wait(PendingWait(state="route", wake_epoch=None))
+        machine_journal.MachineJournal(inst).write_pending_wait(
+            machine_journal.PendingWait(state="route", wake_epoch=None)
+        )
 
 
 def _watch_in_thread(timeout_s: float) -> tuple[list[int], bool]:
@@ -426,7 +428,7 @@ def _watch_in_thread(timeout_s: float) -> tuple[list[int], bool]:
 
 
 def test_watch_exits_on_a_parked_machine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The watch exits on a parked (--exit-on-wait) machine, as its docstring promises."""
     monkeypatch.chdir(tmp_path)
@@ -439,28 +441,28 @@ def test_watch_exits_on_a_parked_machine(
 
 
 def test_watch_follows_a_live_machine_in_a_wait(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A live worker blocked in a foreground wait is followed; attach exits once it is gone."""
     import threading
 
     monkeypatch.chdir(tmp_path)
     _stalled_instance(tmp_path, parked=True)
-    inst = state_dir(tmp_path) / "machines" / "tiny"
-    write_worker_pid(inst, os.getpid())
+    inst = paths.state_dir(tmp_path) / "machines" / "tiny"
+    ipc.write_worker_pid(inst, os.getpid())
     result: list[int] = []
     t = threading.Thread(target=lambda: result.append(main(["attach", "tiny"])), daemon=True)
     t.start()
     t.join(timeout=2.0)
     assert t.is_alive(), f"attach left a live machine: exit {result}"
-    clear_worker_pid(inst)  # the worker goes: the parked instance has nothing to follow
+    ipc.clear_worker_pid(inst)  # the worker goes: the parked instance has nothing to follow
     t.join(timeout=5.0)
     assert result == [0]
     assert "WAITING" in capsys.readouterr().out
 
 
 def test_watch_exits_on_a_crashed_machine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A crashed worker reads crashed in watch, never "watching..." forever."""
     monkeypatch.chdir(tmp_path)
@@ -472,12 +474,12 @@ def test_watch_exits_on_a_crashed_machine(
 
 
 def test_watch_exits_on_a_stopped_machine_without_a_pid_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A worker that cleared its pid while unwinding has no possible writer."""
     monkeypatch.chdir(tmp_path)
     _stalled_instance(tmp_path, parked=False)
-    root = state_dir(tmp_path) / "machines" / "tiny"
+    root = paths.state_dir(tmp_path) / "machines" / "tiny"
     (root / "worker.pid").unlink()
 
     result, still_running = _watch_in_thread(5.0)
@@ -491,7 +493,7 @@ def test_watch_exits_on_a_stopped_machine_without_a_pid_file(
 
 
 def test_replay_pluralizes_the_transition_count(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`machine replay` counts "1 transition" (singular), matching `machine run`."""
     monkeypatch.chdir(tmp_path)
@@ -505,7 +507,7 @@ def test_replay_pluralizes_the_transition_count(
 
 
 def test_run_refuses_uncommitted_machine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `machine run` only accepts a committed machine; an untracked file is refused first.
     monkeypatch.chdir(tmp_path)
@@ -517,29 +519,31 @@ def test_run_refuses_uncommitted_machine(
     err = capsys.readouterr().err
     assert "uncommitted" in err and "committed machine" in err
     # Refused before touching the state dir: no instance journal was created.
-    root = state_dir(tmp_path) / "machines" / "tiny"
+    root = paths.state_dir(tmp_path) / "machines" / "tiny"
     assert not (root / "journal.jsonl").exists()
 
 
-def test_uncommitted_refusal_tracks_git_state(tmp_path: Path) -> None:
-    from agent6.app.machine.run import uncommitted_refusal
+def test_uncommitted_refusal_tracks_git_state(tmp_path: pathlib.Path) -> None:
+    from agent6.app.machine import run as machine_run
 
     # Outside a git repo the gate never fires (nothing to commit against).
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert uncommitted_refusal(f, tmp_path) is None
+    assert machine_run.uncommitted_refusal(f, tmp_path) is None
     _git_init(tmp_path)
-    assert uncommitted_refusal(f, tmp_path) is not None  # untracked
+    assert machine_run.uncommitted_refusal(f, tmp_path) is not None  # untracked
     subprocess.run(["git", "-C", str(tmp_path), "add", "tiny.asm.toml"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add"], check=True)
-    assert uncommitted_refusal(f, tmp_path) is None  # committed clean
+    assert machine_run.uncommitted_refusal(f, tmp_path) is None  # committed clean
     f.write_text(TINY + "\n", encoding="utf-8")
-    assert uncommitted_refusal(f, tmp_path) is not None  # modified again
+    assert machine_run.uncommitted_refusal(f, tmp_path) is not None  # modified again
 
 
-def test_uncommitted_refusal_checks_the_machine_symlink_not_its_target(tmp_path: Path) -> None:
+def test_uncommitted_refusal_checks_the_machine_symlink_not_its_target(
+    tmp_path: pathlib.Path,
+) -> None:
     """Retargeting a tracked machine symlink is an uncommitted bundle edit."""
-    from agent6.app.machine.run import uncommitted_refusal
+    from agent6.app.machine import run as machine_run
 
     _git_init(tmp_path)
     first = tmp_path / "first.asm.toml"
@@ -554,12 +558,12 @@ def test_uncommitted_refusal_checks_the_machine_symlink_not_its_target(tmp_path:
     machine.unlink()
     machine.symlink_to(second.name)
 
-    assert uncommitted_refusal(machine, tmp_path) is not None
+    assert machine_run.uncommitted_refusal(machine, tmp_path) is not None
 
 
-def test_uncommitted_refusal_follows_a_symlinked_repo_path(tmp_path: Path) -> None:
+def test_uncommitted_refusal_follows_a_symlinked_repo_path(tmp_path: pathlib.Path) -> None:
     """A repo reached through a symlinked prefix keeps its committed-bundle gate."""
-    from agent6.app.machine.run import uncommitted_refusal
+    from agent6.app.machine import run as machine_run
 
     real = tmp_path / "real"
     real.mkdir()
@@ -572,15 +576,15 @@ def test_uncommitted_refusal_follows_a_symlinked_repo_path(tmp_path: Path) -> No
     link = tmp_path / "link"
     link.symlink_to(real)
 
-    assert uncommitted_refusal(link / "machine.asm.toml", link) is not None
+    assert machine_run.uncommitted_refusal(link / "machine.asm.toml", link) is not None
 
 
-def test_uncommitted_refusal_covers_the_scripts_bundle(tmp_path: Path) -> None:
+def test_uncommitted_refusal_covers_the_scripts_bundle(tmp_path: pathlib.Path) -> None:
     """A dirty bundle refuses `machine run`; `machine test` stays the ungated iteration loop.
 
     A tool executes `scripts/` as trusted logic exactly like the .asm.toml.
     """
-    from agent6.app.machine.run import uncommitted_refusal
+    from agent6.app.machine import run as machine_run
 
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
@@ -588,19 +592,19 @@ def test_uncommitted_refusal_covers_the_scripts_bundle(tmp_path: Path) -> None:
     scripts.mkdir()
     (scripts / "do.py").write_text("print('hi')\n", encoding="utf-8")
     # No git repo: no gate (nothing to commit against).
-    assert uncommitted_refusal(f, tmp_path) is None
+    assert machine_run.uncommitted_refusal(f, tmp_path) is None
     _git_init(tmp_path)
-    assert uncommitted_refusal(f, tmp_path) is not None  # untracked bundle
+    assert machine_run.uncommitted_refusal(f, tmp_path) is not None  # untracked bundle
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add"], check=True)
-    assert uncommitted_refusal(f, tmp_path) is None  # committed clean
+    assert machine_run.uncommitted_refusal(f, tmp_path) is None  # committed clean
     (scripts / "do.py").write_text("print('changed')\n", encoding="utf-8")
-    refusal = uncommitted_refusal(f, tmp_path)
+    refusal = machine_run.uncommitted_refusal(f, tmp_path)
     assert refusal is not None and "scripts" in refusal  # modified script refuses
 
 
 def test_first_run_records_the_bundle_and_drift_refuses_continuation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A live instance runs the bundle it recorded; an edited script refuses continuation."""
     monkeypatch.chdir(tmp_path)
@@ -614,7 +618,7 @@ def test_first_run_records_the_bundle_and_drift_refuses_continuation(
 
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     assert "WAITING" in capsys.readouterr().out
-    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     recorded = root / "scripts" / "do.py"
     assert recorded.read_text(encoding="utf-8") == "print('hi')\n"
 
@@ -631,7 +635,7 @@ def test_first_run_records_the_bundle_and_drift_refuses_continuation(
 
 
 def test_continuation_refuses_an_edited_machine_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An edited machine file with the same name and version refuses continuation."""
     monkeypatch.chdir(tmp_path)
@@ -649,35 +653,34 @@ def test_continuation_refuses_an_edited_machine_file(
 
 
 def test_run_refuses_rerun_of_ended_instance(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # An ended instance can only be replayed; a rerun refuses before stamping worker.pid.
     from agent6.machine import drive, load_machine
-    from agent6.sessions.ipc import read_worker_pid, write_worker_pid
 
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0  # runs to a terminal
     capsys.readouterr()
-    root = state_dir(tmp_path) / "machines" / "tiny"
+    root = paths.state_dir(tmp_path) / "machines" / "tiny"
     # Stand in for the previous worker having exited: a pid that is never alive.
     sentinel = 10**9
-    write_worker_pid(root, sentinel)
+    ipc.write_worker_pid(root, sentinel)
     code = main(["machine", "run", str(f)])
     assert code == 2  # a refusal
     err = capsys.readouterr().err
     assert "already ended" in err
     assert str(root) in err  # the archive remedy names the instance dir
     # worker.pid was NOT re-stamped with the (live) rerun process pid.
-    assert read_worker_pid(root) == sentinel
+    assert ipc.read_worker_pid(root) == sentinel
     # The journal still reads terminal, unchanged.
     result = drive(load_machine(root / "machine.asm.toml"), MachineJournal(root), None, live=False)
     assert result.status == "ok"
 
 
 def test_poke_drops_signal_for_waiting_machine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
@@ -687,19 +690,19 @@ def test_poke_drops_signal_for_waiting_machine(
     assert code == 0
     assert "poked" in capsys.readouterr().out
     # The signal is now pending for the next take_signal().
-    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     assert MachineJournal(root).take_signal() == (True, None)
 
 
 def test_poke_carries_data_payload(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     assert main(["machine", "poke", "waiter_delayed", "--data", '{"cmd": "go"}']) == 0
-    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     j = MachineJournal(root)
     assert j.take_signal() == (True, {"cmd": "go"})
     j.ack_signal()
@@ -709,7 +712,7 @@ def test_poke_carries_data_payload(
 
 
 def test_poke_rejects_invalid_json_data(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
@@ -720,7 +723,7 @@ def test_poke_rejects_invalid_json_data(
 
 
 def test_poke_refuses_ended_machine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A terminal machine consumes no signals, so poking it is refused.
     monkeypatch.chdir(tmp_path)
@@ -732,13 +735,13 @@ def test_poke_refuses_ended_machine(
     assert code == 2
     err = capsys.readouterr().err
     assert err.startswith("REFUSING:") and "already ended" in err
-    root = state_dir(tmp_path) / "machines" / "tiny"
+    root = paths.state_dir(tmp_path) / "machines" / "tiny"
     assert not (root / "signal").exists()  # no signal was dropped
 
 
 @pytest.mark.parametrize("alive", [False, True])
 def test_poke_refuses_an_instance_without_an_open_wait(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     *,
@@ -746,12 +749,12 @@ def test_poke_refuses_an_instance_without_an_open_wait(
 ) -> None:
     """A poke only wakes the wait that is open now, never a future wait."""
     monkeypatch.chdir(tmp_path)
-    root = state_dir(tmp_path) / "machines" / "tiny"
+    root = paths.state_dir(tmp_path) / "machines" / "tiny"
     root.mkdir(parents=True)
     (root / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     MachineJournal(root).begin(machine="tiny", version=1)
     if alive:
-        write_worker_pid(root, os.getpid())
+        ipc.write_worker_pid(root, os.getpid())
 
     assert main(["machine", "poke", "tiny"]) == 2
 
@@ -760,7 +763,7 @@ def test_poke_refuses_an_instance_without_an_open_wait(
 
 
 def test_poke_missing_instance_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     code = main(["machine", "poke", "nope"])
@@ -769,7 +772,7 @@ def test_poke_missing_instance_errors(
 
 
 def test_poke_rejects_an_absolute_path_as_an_instance_id(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An ID cannot redirect the signal write outside the machine state root."""
     monkeypatch.chdir(tmp_path)
@@ -844,7 +847,7 @@ on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done"
 
 
 def test_run_says_where_a_machines_work_landed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A machine with run states commits to `agent6/machine-<id>` and never touches the checkout."""
     cfg_home = tmp_path.parent / (tmp_path.name + "-cfg")  # outside the workspace
@@ -892,7 +895,7 @@ def test_run_says_where_a_machines_work_landed(
 
 
 def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A state that pins both provider and model is runnable without a worker default."""
     from agent6.app.machine import run as run_mod
@@ -925,7 +928,7 @@ def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
 
 
 def test_run_warns_on_mode_run_states_under_ask_policy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # An unattended 'ask' machine auto-denies run_command; the note names both remedies up front.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -939,7 +942,7 @@ def test_run_warns_on_mode_run_states_under_ask_policy(
 
 
 def test_run_auto_approve_suppresses_the_warning_and_sets_the_env_grant(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     import os
 
@@ -957,7 +960,7 @@ def test_run_auto_approve_suppresses_the_warning_and_sets_the_env_grant(
 
 
 def test_a_fresh_instance_over_a_stale_chain_is_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A machine chain ref that outlives its instance dir refuses the run, naming both remedies."""
     import subprocess
@@ -1007,10 +1010,9 @@ model = "m"
     assert "chain branch 'agent6/machine-run-warn' exists" in err
     assert "git branch -D agent6/machine-run-warn" in err
     # A preflight refusal is not a running worker; the stamped pid must be cleared.
-    from agent6.sessions.ipc import read_worker_pid
 
-    root = state_dir(repo) / "machines" / "run-warn"
-    assert read_worker_pid(root) is None
+    root = paths.state_dir(repo) / "machines" / "run-warn"
+    assert ipc.read_worker_pid(root) is None
 
 
 PARKED_RUN_MACHINE = """
@@ -1053,7 +1055,7 @@ reason = "done"
 
 
 def test_a_fresh_instance_over_a_merged_chain_starts_from_head(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A chain whose tip HEAD already holds is spent: the instance drops it and starts from HEAD."""
     import subprocess
@@ -1105,14 +1107,12 @@ model = "m"
 
 
 def test_run_no_commands_withholds_them_from_the_machine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`--no-commands` reaches `machine run`'s dispatch, not only its parser."""
     import os
 
-    from agent6.app.machine_agent import (
-        _apply_operator_env_grants,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.app import machine_agent
     from agent6.config import Config
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -1124,24 +1124,26 @@ def test_run_no_commands_withholds_them_from_the_machine(
     main(["machine", "run", str(f), "--no-commands"])
     assert os.environ.get("AGENT6_NO_COMMANDS") == "1"
     yes = Config.model_validate({"sandbox": {"run_commands": "yes"}})
-    assert _apply_operator_env_grants(yes).sandbox.run_commands == "no"
+    assert machine_agent._apply_operator_env_grants(yes).sandbox.run_commands == "no"
 
 
 def test_apply_operator_env_grants_upgrades_ask_never_no(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from agent6.app.machine_agent import (
-        _apply_operator_env_grants,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.app import machine_agent
     from agent6.config import Config
 
     monkeypatch.setenv("AGENT6_AUTO_APPROVE", "1")
     ask = Config.model_validate({"sandbox": {"run_commands": "ask"}})
-    assert _apply_operator_env_grants(ask).sandbox.run_commands == "yes"
+    assert machine_agent._apply_operator_env_grants(ask).sandbox.run_commands == "yes"
     no = Config.model_validate({"sandbox": {"run_commands": "no"}})
-    assert _apply_operator_env_grants(no).sandbox.run_commands == "no"  # never resurrected
+    assert (
+        machine_agent._apply_operator_env_grants(no).sandbox.run_commands == "no"
+    )  # never resurrected
     monkeypatch.delenv("AGENT6_AUTO_APPROVE")
-    assert _apply_operator_env_grants(ask).sandbox.run_commands == "ask"  # no grant, no change
+    assert (
+        machine_agent._apply_operator_env_grants(ask).sandbox.run_commands == "ask"
+    )  # no grant, no change
 
 
 TOOL_PROBE_MACHINE = """
@@ -1173,7 +1175,7 @@ reason = "lint"
 
 @pytest.mark.parametrize("verb", ["check", "test"])
 def test_offline_validation_reads_the_explicit_config_layer(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     verb: str,
@@ -1191,7 +1193,7 @@ def test_offline_validation_reads_the_explicit_config_layer(
 
 
 def test_check_validates_the_config_overlay_run_will_merge(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`machine check` and `test` merge the file's [config] table as `machine run` does."""
     monkeypatch.chdir(tmp_path)
@@ -1207,7 +1209,7 @@ def test_check_validates_the_config_overlay_run_will_merge(
 
 
 def test_check_warns_on_binaries_unreachable_in_the_jail(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The probe covers tool-state command[0] and literal subprocess argv in bundle scripts.
     monkeypatch.chdir(tmp_path)
@@ -1234,7 +1236,7 @@ def test_check_warns_on_binaries_unreachable_in_the_jail(
 
 
 def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`machine stop` writes the durable marker only for a live worker.
 
@@ -1247,7 +1249,7 @@ def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
     f.write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
-    root = state_dir(tmp_path) / "machines" / "tiny"
+    root = paths.state_dir(tmp_path) / "machines" / "tiny"
     assert main(["machine", "stop", "tiny"]) == 0  # ended: nothing to stop
     err = capsys.readouterr().err
     assert err.startswith("[agent6] ") and "already ended" in err and "nothing to stop" in err
@@ -1256,13 +1258,13 @@ def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
     w = _write_machine(tmp_path)  # waiter: parks WAITING, journal not ended
     assert main(["machine", "run", str(w), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    wroot = state_dir(tmp_path) / "machines" / "waiter_delayed"
+    wroot = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     assert main(["machine", "stop", "waiter_delayed"]) == 0  # parked, worker dead
     err = capsys.readouterr().err
     assert err.startswith("[agent6] ") and "not running" in err
     assert not (wroot / "stop").exists()
 
-    def _alive(_root: Path) -> bool:
+    def _alive(_root: pathlib.Path) -> bool:
         return True
 
     monkeypatch.setattr(machine_state_mod, "worker_is_alive", _alive)  # the verb gate's owner
@@ -1272,13 +1274,13 @@ def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
 
 
 def test_run_start_clears_a_stale_stop_marker(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A leftover stop marker does not park the next invocation at its first boundary."""
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    root = state_dir(tmp_path) / "machines" / "tiny"
+    root = paths.state_dir(tmp_path) / "machines" / "tiny"
     root.mkdir(parents=True)
     (root / "stop").touch()
     assert main(["machine", "run", str(f)]) == 0
@@ -1288,25 +1290,23 @@ def test_run_start_clears_a_stale_stop_marker(
 
 
 def test_hub_spawn_away_mode_reaches_the_instance(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A hub-spawned machine records "wait" on its instance dir at run start.
 
     Every agent state's bridges then park prompts for the front-end, whenever its viewer registers.
     """
-    from agent6.sessions.ipc import away_mode
-
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0
-    root = state_dir(tmp_path) / "machines" / "tiny"
-    assert away_mode(root) == "wait"
+    root = paths.state_dir(tmp_path) / "machines" / "tiny"
+    assert ipc.away_mode(root) == "wait"
 
 
 def test_attach_degrades_a_corrupt_journal_like_status(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`machine status` and the watch print a clean ERROR for a corrupt journal, no traceback."""
     monkeypatch.chdir(tmp_path)
@@ -1314,7 +1314,7 @@ def test_attach_degrades_a_corrupt_journal_like_status(
     f.write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
-    root = state_dir(tmp_path) / "machines" / "tiny"
+    root = paths.state_dir(tmp_path) / "machines" / "tiny"
     (root / "journal.jsonl").write_text('{"type": "machine.begin"\n', encoding="utf-8")
     code = main(["attach", "tiny"])
     assert code == 1
@@ -1323,7 +1323,7 @@ def test_attach_degrades_a_corrupt_journal_like_status(
 
 
 def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`machine run` makes the same protect_git check `run` and `ask` make (`config_refusal`)."""
     from agent6.app import _session as session_mod
@@ -1357,7 +1357,7 @@ def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
 
 
 def test_run_refuses_a_state_dir_inside_the_workspace(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`machine run` refuses a state base inside the workspace, as `run` does."""
     from agent6.app import _session as session_mod
@@ -1384,7 +1384,7 @@ def test_run_refuses_a_state_dir_inside_the_workspace(
 
 
 def test_list_joins_instances_with_their_files_and_names_the_rest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`agent6 machine` (`machine list`) is the CLI's machines page.
 
@@ -1415,11 +1415,11 @@ def test_list_joins_instances_with_their_files_and_names_the_rest(
 
 
 def test_list_names_a_corrupt_machine_journal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The listing keeps the shared unreadable word and says what is corrupt."""
     monkeypatch.chdir(tmp_path)
-    root = state_dir(tmp_path) / "machines" / "tiny"
+    root = paths.state_dir(tmp_path) / "machines" / "tiny"
     root.mkdir(parents=True)
     (root / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (root / "journal.jsonl").write_text("{not json\n", encoding="utf-8")
@@ -1431,16 +1431,16 @@ def test_list_names_a_corrupt_machine_journal(
 
 
 def test_status_and_list_name_a_parked_approval(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A worker holding an unanswered approval reads "waiting" and status names the state."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     MachineJournal(root).clear_pending_wait()
-    write_worker_pid(root, os.getpid())
+    ipc.write_worker_pid(root, os.getpid())
     execution = root / "states" / "0001-attempt"
     execution.mkdir(parents=True)
     (execution / "logs.jsonl").write_text(
@@ -1458,24 +1458,22 @@ def test_status_and_list_name_a_parked_approval(
 
 
 def test_machine_stop_refuses_an_instance_whose_journal_it_cannot_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A corrupt journal is not "nothing to stop": the verb refuses with exit 2 and no marker."""
     import os
-
-    from agent6.sessions.ipc import write_worker_pid
 
     monkeypatch.chdir(tmp_path)
     w = _write_machine(tmp_path)
     assert main(["machine", "run", str(w), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     journal = root / "journal.jsonl"
     # Corrupt at the head with a valid tail: a tail-only guard let it through to the fold.
     journal.write_text("{not json\n" + journal.read_text(encoding="utf-8"), encoding="utf-8")
     for alive in (False, True):
         if alive:
-            write_worker_pid(root, os.getpid())
+            ipc.write_worker_pid(root, os.getpid())
         assert main(["machine", "stop", "waiter_delayed"]) == 2
         err = capsys.readouterr().err
         assert err.startswith("REFUSING: machine 'waiter_delayed':") and "journal" in err

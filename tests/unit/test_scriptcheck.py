@@ -4,18 +4,18 @@
 
 from __future__ import annotations
 
+import pathlib
 import shutil
-from pathlib import Path
 
 import pytest
 
+from agent6 import kinds
 from agent6.app.machine import _scriptcheck as scriptcheck
-from agent6.kinds import CommandResult, JailPolicy
 
 _CLEAN = "import json\n\n\ndef f(x: int) -> str:\n    return json.dumps({'v': x})\n"
 
 
-def _write(scripts_dir: Path, name: str, body: str) -> None:
+def _write(scripts_dir: pathlib.Path, name: str, body: str) -> None:
     scripts_dir.mkdir(parents=True, exist_ok=True)
     (scripts_dir / name).write_text(body, encoding="utf-8")
 
@@ -28,7 +28,7 @@ def _need(tool: str) -> None:
 # --- static: ruff + ty ------------------------------------------------------
 
 
-def test_lint_typecheck_clean(tmp_path: Path) -> None:
+def test_lint_typecheck_clean(tmp_path: pathlib.Path) -> None:
     _need("ruff")
     _need("ty")
     _write(tmp_path / "scripts", "ok.py", _CLEAN)
@@ -36,7 +36,7 @@ def test_lint_typecheck_clean(tmp_path: Path) -> None:
 
 
 def test_static_checks_disable_python_bytecode(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write(tmp_path / "scripts", "ok.py", _CLEAN)
     monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "0")
@@ -51,7 +51,7 @@ def test_static_checks_disable_python_bytecode(
         capture_output: bool,
         text: bool,
         timeout: float,
-        cwd: Path,
+        cwd: pathlib.Path,
         check: bool,
         env: dict[str, str],
     ) -> object:
@@ -66,21 +66,21 @@ def test_static_checks_disable_python_bytecode(
     assert seen_env["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
-def test_lint_catches_undefined_name(tmp_path: Path) -> None:
+def test_lint_catches_undefined_name(tmp_path: pathlib.Path) -> None:
     _need("ruff")
     _write(tmp_path / "scripts", "bad.py", "print(undefined_name)\n")
     problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
     assert any("ruff" in p for p in problems)
 
 
-def test_typecheck_catches_type_error(tmp_path: Path) -> None:
+def test_typecheck_catches_type_error(tmp_path: pathlib.Path) -> None:
     _need("ty")
     _write(tmp_path / "scripts", "bad.py", "def f(x: str) -> int:\n    return x + 1\n")
     problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
     assert any("ty" in p for p in problems)
 
 
-def test_typecheck_skips_test_files(tmp_path: Path) -> None:
+def test_typecheck_skips_test_files(tmp_path: pathlib.Path) -> None:
     """Ty is NOT run on *_test.py (mock internals trip it); ruff still is."""
     _need("ty")
     # A type error that only ty would catch, in a *_test.py file -> not flagged.
@@ -89,16 +89,16 @@ def test_typecheck_skips_test_files(tmp_path: Path) -> None:
     assert not any("ty" in p for p in problems)
 
 
-def test_no_python_scripts_is_clean(tmp_path: Path) -> None:
+def test_no_python_scripts_is_clean(tmp_path: pathlib.Path) -> None:
     _write(tmp_path / "scripts", "run.sh", "#!/bin/sh\necho hi\n")
     assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
 
 
-def test_missing_scripts_dir_is_clean(tmp_path: Path) -> None:
+def test_missing_scripts_dir_is_clean(tmp_path: pathlib.Path) -> None:
     assert scriptcheck.lint_and_typecheck(tmp_path / "nope") == []
 
 
-def test_lint_follows_the_bundles_ruff_config(tmp_path: Path) -> None:
+def test_lint_follows_the_bundles_ruff_config(tmp_path: pathlib.Path) -> None:
     """Lint follows the bundle's ruff config.
 
     Ruff runs on the real files, so its own discovery applies and the nearest config above the
@@ -112,7 +112,7 @@ def test_lint_follows_the_bundles_ruff_config(tmp_path: Path) -> None:
     assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
 
 
-def test_create_fix_mode_lints_under_the_destinations_config(tmp_path: Path) -> None:
+def test_create_fix_mode_lints_under_the_destinations_config(tmp_path: pathlib.Path) -> None:
     """`machine create` in fix mode lints under the destination's config.
 
     The draft lives in a scratch dir outside the repo, where ruff's discovery cannot see the config
@@ -137,12 +137,12 @@ def test_create_fix_mode_lints_under_the_destinations_config(tmp_path: Path) -> 
 
 
 def _fake_jail(returncode: int, stderr: str = "") -> object:
-    def run(policy: object) -> CommandResult:
+    def run(policy: object) -> kinds.CommandResult:
         # Real jailed stderr names the TEMP COPY the runner executes in (the
         # real bundle is under the masked state dir); the fake mirrors that by
         # substituting the policy's cwd for a {cwd} placeholder.
         cwd = str(getattr(policy, "cwd", ""))
-        return CommandResult(
+        return kinds.CommandResult(
             argv=("python3", "scripts/thing_test.py"),
             returncode=returncode,
             stdout="",
@@ -153,21 +153,21 @@ def _fake_jail(returncode: int, stderr: str = "") -> object:
     return run
 
 
-def test_offline_tests_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_offline_tests_pass(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")
     monkeypatch.setattr(scriptcheck, "run_in_jail", _fake_jail(0))
     assert scriptcheck.run_offline_tests(tmp_path, "strict").problems == ()
 
 
 def test_offline_tests_disable_python_bytecode(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")
-    seen: list[JailPolicy] = []
+    seen: list[kinds.JailPolicy] = []
 
-    def _run(policy: JailPolicy) -> CommandResult:
+    def _run(policy: kinds.JailPolicy) -> kinds.CommandResult:
         seen.append(policy)
-        return CommandResult(
+        return kinds.CommandResult(
             argv=policy.argv,
             returncode=0,
             stdout="",
@@ -182,7 +182,7 @@ def test_offline_tests_disable_python_bytecode(
 
 
 def test_offline_tests_fail_surfaces_stderr(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write(tmp_path / "scripts", "thing_test.py", "raise SystemExit(1)\n")
     monkeypatch.setattr(scriptcheck, "run_in_jail", _fake_jail(1, "AssertionError: boom"))
@@ -193,7 +193,7 @@ def test_offline_tests_fail_surfaces_stderr(
 
 
 def test_offline_tests_relativize_bundle_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Tracebacks from the jailed test name the absolute bundle dir; the
     # diagnostic is fed back into the authoring prompt, so host paths get
@@ -207,15 +207,15 @@ def test_offline_tests_relativize_bundle_paths(
 
 
 def test_offline_tests_skipped_on_none_profile(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")
     called = False
 
-    def _boom(_policy: object) -> CommandResult:  # pragma: no cover - must not run
+    def _boom(_policy: object) -> kinds.CommandResult:  # pragma: no cover - must not run
         nonlocal called
         called = True
-        return CommandResult(argv=(), returncode=0, stdout="", stderr="", duration_s=0.0)
+        return kinds.CommandResult(argv=(), returncode=0, stdout="", stderr="", duration_s=0.0)
 
     monkeypatch.setattr(scriptcheck, "run_in_jail", _boom)
     outcome = scriptcheck.run_offline_tests(tmp_path, "none")
@@ -225,7 +225,7 @@ def test_offline_tests_skipped_on_none_profile(
 
 
 def test_offline_tests_skipped_on_hardened_profile(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # hardened has a jail but no network namespace, so network="none" cannot
     # be honored: model-authored scripts would reach the host network. They must
@@ -234,10 +234,10 @@ def test_offline_tests_skipped_on_hardened_profile(
     _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")
     called = False
 
-    def _boom(_policy: object) -> CommandResult:  # pragma: no cover - must not run
+    def _boom(_policy: object) -> kinds.CommandResult:  # pragma: no cover - must not run
         nonlocal called
         called = True
-        return CommandResult(argv=(), returncode=0, stdout="", stderr="", duration_s=0.0)
+        return kinds.CommandResult(argv=(), returncode=0, stdout="", stderr="", duration_s=0.0)
 
     monkeypatch.setattr(scriptcheck, "run_in_jail", _boom)
     outcome = scriptcheck.run_offline_tests(tmp_path, "hardened")
@@ -246,20 +246,20 @@ def test_offline_tests_skipped_on_hardened_profile(
     assert capsys.readouterr().err == ""  # the caller owns the rendering
 
 
-def test_offline_tests_no_test_files(tmp_path: Path) -> None:
+def test_offline_tests_no_test_files(tmp_path: pathlib.Path) -> None:
     _write(tmp_path / "scripts", "real.py", "print('hi')\n")
     assert scriptcheck.run_offline_tests(tmp_path, "strict").problems == ()
 
 
 def test_offline_tests_jail_unavailable_surfaces_diagnostic(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.sandbox.jail import JailUnavailableError
+    from agent6.sandbox import jail
 
     _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")
 
-    def _raise(_policy: object) -> CommandResult:
-        raise JailUnavailableError("no namespaces")
+    def _raise(_policy: object) -> kinds.CommandResult:
+        raise jail.JailUnavailableError("no namespaces")
 
     monkeypatch.setattr(scriptcheck, "run_in_jail", _raise)
     problems = scriptcheck.run_offline_tests(tmp_path, "strict").problems
@@ -267,7 +267,7 @@ def test_offline_tests_jail_unavailable_surfaces_diagnostic(
     assert "could not run offline tests" in problems[0]
 
 
-def test_static_diagnostics_relativize_temp_paths(tmp_path: Path) -> None:
+def test_static_diagnostics_relativize_temp_paths(tmp_path: pathlib.Path) -> None:
     # ruff diagnostics used to name the private temp copy; they now read as
     # bundle-relative paths, like the offline-test diagnostics.
     _need("ruff")
@@ -279,19 +279,19 @@ def test_static_diagnostics_relativize_temp_paths(tmp_path: Path) -> None:
 
 
 def test_offline_tests_get_a_fresh_data_dir_per_test(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The docstring promise: state one test's script leaves in
     # $AGENT6_MACHINE_DATA_DIR must not leak into the next test.
     _write(tmp_path / "scripts", "a_test.py", "pass\n")
     _write(tmp_path / "scripts", "b_test.py", "pass\n")
 
-    def _run(policy: JailPolicy) -> CommandResult:
-        data = Path(policy.extra_rw_paths[0])
+    def _run(policy: kinds.JailPolicy) -> kinds.CommandResult:
+        data = pathlib.Path(policy.extra_rw_paths[0])
         marker = data / "marker"
         rc = 1 if marker.exists() else 0  # a leaked marker fails the later test
         marker.write_text("x", encoding="utf-8")
-        return CommandResult(
+        return kinds.CommandResult(
             argv=policy.argv, returncode=rc, stdout="", stderr="leaked marker", duration_s=0.0
         )
 
@@ -301,7 +301,7 @@ def test_offline_tests_get_a_fresh_data_dir_per_test(
 
 
 def test_offline_tests_run_from_a_copy_outside_the_state_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The real bundle lives under the per-repo state dir, which the jail MASKS.
 
@@ -314,9 +314,9 @@ def test_offline_tests_run_from_a_copy_outside_the_state_dir(
     _write(bundle / "scripts", "thing_test.py", "print('ok')\n")
     seen_cwds: list[str] = []
 
-    def run(policy: object) -> CommandResult:
+    def run(policy: object) -> kinds.CommandResult:
         seen_cwds.append(str(getattr(policy, "cwd", "")))
-        return CommandResult(
+        return kinds.CommandResult(
             argv=("python3", "scripts/thing_test.py"),
             returncode=0,
             stdout="",
@@ -329,7 +329,7 @@ def test_offline_tests_run_from_a_copy_outside_the_state_dir(
     assert seen_cwds and all("statehome" not in c for c in seen_cwds)
 
 
-def test_fix_mode_applies_safe_fixes_and_writes_back(tmp_path: Path) -> None:
+def test_fix_mode_applies_safe_fixes_and_writes_back(tmp_path: pathlib.Path) -> None:
     """Machine create validates its OWN generated bundle.
 
     A fixable-only problem (an unused import) is fixed in place and does not fail the attempt,
@@ -350,7 +350,7 @@ def test_fix_mode_applies_safe_fixes_and_writes_back(tmp_path: Path) -> None:
 
 
 def test_the_create_lint_anchors_relative_patterns_where_machine_check_does(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """The create lint anchors relative patterns where `machine check` does.
 
@@ -358,12 +358,7 @@ def test_the_create_lint_anchors_relative_patterns_where_machine_check_does(
     repo's pyproject would silence the draft (linted from its workspace) and fire on the published
     bundle under `machine check`.
     """
-    from agent6.app.machine._scriptcheck import (
-        _resolve_tool,  # pyright: ignore[reportPrivateUsage]
-        lint_and_typecheck,
-    )
-
-    if _resolve_tool("ruff") is None:
+    if scriptcheck._resolve_tool("ruff") is None:
         pytest.skip("ruff is not installed")
     repo = tmp_path / "repo"
     (repo / "machines").mkdir(parents=True)
@@ -377,10 +372,12 @@ def test_the_create_lint_anchors_relative_patterns_where_machine_check_does(
     (workspace / "scripts" / "helper.py").write_text(
         "VALUE = 'a line that is longer than twenty characters'\n", encoding="utf-8"
     )
-    drafted = lint_and_typecheck(workspace / "scripts", ruff_config_from=repo / "machines")
+    drafted = scriptcheck.lint_and_typecheck(
+        workspace / "scripts", ruff_config_from=repo / "machines"
+    )
     published = repo / "machines" / "m"
     shutil.copytree(workspace, published)
-    checked = lint_and_typecheck(published / "scripts")
+    checked = scriptcheck.lint_and_typecheck(published / "scripts")
     assert any("E501" in p for p in checked), checked
     assert any("E501" in p for p in drafted), drafted
     assert not any(str(workspace) in p for p in drafted), drafted  # bundle-relative paths

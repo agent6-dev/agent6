@@ -11,10 +11,13 @@ from __future__ import annotations
 import argparse
 from collections.abc import Iterator
 
-from agent6.ui.cli._common import MACHINE_ID_HELP, REPO_FLAG_HELP, SESSION_ID
-from agent6.ui.cli.parser import build_parser
+from agent6.ui.cli import _common
+from agent6.ui.cli import parser as cli_parser
 
-_REPO_HELPS = {REPO_FLAG_HELP, "Remove from the per-repo config instead of the global config."}
+_REPO_HELPS = {
+    _common.REPO_FLAG_HELP,
+    "Remove from the per-repo config instead of the global config.",
+}
 
 
 def _walk(parser: argparse.ArgumentParser, path: str) -> Iterator[tuple[str, argparse.Action]]:
@@ -28,12 +31,12 @@ def _walk(parser: argparse.ArgumentParser, path: str) -> Iterator[tuple[str, arg
 
 def test_every_id_and_repo_argument_shares_one_sentence() -> None:
     seen = {"session_id": 0, "machine_id": 0, "--repo": 0}
-    for path, action in _walk(build_parser(), "agent6"):
+    for path, action in _walk(cli_parser.build_parser(), "agent6"):
         help_text = action.help or ""
         if action.dest in ("session_id", "target") and not action.option_strings:
             # fork names its source run and plan show its plan; the rule is the same.
             assert "or unambiguous prefix" in help_text, (path, help_text)
-            assert help_text.startswith(SESSION_ID) or path.startswith(
+            assert help_text.startswith(_common.SESSION_ID) or path.startswith(
                 ("agent6 fork", "agent6 plan")
             ), (
                 path,
@@ -41,7 +44,7 @@ def test_every_id_and_repo_argument_shares_one_sentence() -> None:
             )
             seen["session_id"] += 1
         elif action.dest == "machine_id" and not action.option_strings:
-            assert help_text == MACHINE_ID_HELP, (path, help_text)
+            assert help_text == _common.MACHINE_ID_HELP, (path, help_text)
             seen["machine_id"] += 1
         elif "--repo" in action.option_strings:
             assert help_text in _REPO_HELPS, (path, help_text)

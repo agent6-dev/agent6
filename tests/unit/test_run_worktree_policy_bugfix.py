@@ -14,8 +14,8 @@ without asking.
 from __future__ import annotations
 
 import dataclasses
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -24,6 +24,7 @@ import agent6.app._setup as setup_mod
 import agent6.app.preflight as preflight_mod
 import agent6.app.run as app_run_mod
 import agent6.ui.cli.run as run_mod
+from agent6 import git_ops
 from agent6.config import (
     Config,
     GitConfig,
@@ -31,22 +32,20 @@ from agent6.config import (
     OpenAIProviderEntry,
     RoleModel,
     SandboxConfig,
+    layer,
 )
-from agent6.config.layer import EffectiveConfig
-from agent6.git_ops import status as git_status
-from agent6.sessions.layout import read_untracked_at_start
-from agent6.sessions.manifest import read_manifest
-from agent6.tools.operator_prompts import QuestionAnswer, QuestionRequest
-from agent6.tools.schema import UserQuestion
+from agent6.sessions import layout
+from agent6.sessions import manifest as sessions_manifest
+from agent6.tools import operator_prompts, schema
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: pathlib.Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
     ).stdout
 
 
-def _init_repo(repo: Path) -> None:
+def _init_repo(repo: pathlib.Path) -> None:
     _git(repo, "init", "-q")
     _git(repo, "config", "user.name", "Test")
     _git(repo, "config", "user.email", "test@example.com")
@@ -80,8 +79,8 @@ _seen_at_stop: list[bool] = []
 
 
 def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_policy: bool) -> None:
-    def _load_effective(*a: object, **k: object) -> EffectiveConfig:
-        return EffectiveConfig(config=cfg, sources={}, layers=())
+    def _load_effective(*a: object, **k: object) -> layer.EffectiveConfig:
+        return layer.EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _noop(*a: object, **k: object) -> None:
         return None
@@ -90,12 +89,12 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_po
     # the lifecycle's route preflight would refuse it before the tree policy
     # under test. Bypass it here (its own validation is covered separately).
     def _model_ok(*a: object, **k: object) -> object:
-        from agent6.models.validate import ModelValidation
+        from agent6.models import validate
 
-        return ModelValidation(unknown=(), suggestions={}, can_validate=False)
+        return validate.ModelValidation(unknown=(), suggestions={}, can_validate=False)
 
     def _stop(*_a: object, **_k: object) -> object:
-        _seen_at_stop.append(git_status(Path.cwd()).modified_count == 0)
+        _seen_at_stop.append(git_ops.status(pathlib.Path.cwd()).modified_count == 0)
         raise _Stop
 
     monkeypatch.setattr(setup_mod, "load_effective", _load_effective)
@@ -108,21 +107,25 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_po
         monkeypatch.setattr(execution_mod, "build_session_providers", _stop)
 
 
-def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[UserQuestion]:
+def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[schema.UserQuestion]:
     """Return a front-end that can ask and answers every question with the answer.
 
     The list the asked questions land in comes with it.
     """
-    asked: list[UserQuestion] = []
+    asked: list[schema.UserQuestion] = []
     real = run_mod.session_frontend
 
-    def _frontend(config_path: Path | None = None) -> object:
+    def _frontend(config_path: pathlib.Path | None = None) -> object:
         fe = real(config_path)
 
-        def _questioner(_sd: Path) -> object:
-            def _ask(request: QuestionRequest, /) -> QuestionAnswer:
+        def _questioner(_sd: pathlib.Path) -> object:
+            def _ask(
+                request: operator_prompts.QuestionRequest, /
+            ) -> operator_prompts.QuestionAnswer:
                 asked.extend(request.questions)
-                return QuestionAnswer(tuple(answer for _ in request.questions), "stdin")
+                return operator_prompts.QuestionAnswer(
+                    tuple(answer for _ in request.questions), "stdin"
+                )
 
             return _ask
 
@@ -136,12 +139,12 @@ def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[Us
     return asked
 
 
-def _session_dirs(state: Path) -> list[Path]:
+def _session_dirs(state: pathlib.Path) -> list[pathlib.Path]:
     return sorted(p for p in (state / "sessions" / "runs").glob("*") if p.is_dir())
 
 
 def test_untracked_files_are_not_dirt_and_are_recorded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -157,12 +160,12 @@ def test_untracked_files_are_not_dirt_and_are_recorded(
     assert "REFUSING" not in err and "PARKED" not in err
     assert (repo / "notes.txt").read_text(encoding="utf-8") == "mine\n"
     (session_dir,) = _session_dirs(app_run_mod.state_dir(repo))
-    assert read_untracked_at_start(session_dir) == {"notes.txt"}
-    assert not read_manifest(session_dir).parked_task
+    assert layout.read_untracked_at_start(session_dir) == {"notes.txt"}
+    assert not sessions_manifest.read_manifest(session_dir).parked_task
 
 
 def test_modified_tracked_files_refuse_when_nobody_can_answer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -186,7 +189,7 @@ def test_modified_tracked_files_refuse_when_nobody_can_answer(
 
 @pytest.mark.parametrize("answer", ["stash", "stash: set them aside", "STASH"])
 def test_answer_stash_stashes_tracked_changes_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, answer: str
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -210,11 +213,11 @@ def test_answer_stash_stashes_tracked_changes_only(
     assert (repo / "notes.txt").read_text(encoding="utf-8") == "mine\n"
     assert _git(repo, "stash", "list") == ""
     (session_dir,) = _session_dirs(app_run_mod.state_dir(repo))
-    assert read_untracked_at_start(session_dir) == {"notes.txt"}
+    assert layout.read_untracked_at_start(session_dir) == {"notes.txt"}
 
 
 def test_answer_include_starts_with_the_changes_in_place(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -233,7 +236,10 @@ def test_answer_include_starts_with_the_changes_in_place(
 
 @pytest.mark.parametrize("answer", ["cancel", "", "no idea"])
 def test_answer_cancel_parks_the_run_with_its_task(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], answer: str
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    answer: str,
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -250,13 +256,15 @@ def test_answer_cancel_parks_the_run_with_its_task(
     assert "PARKED: the working tree has uncommitted changes to tracked files" in err
     (session_dir,) = _session_dirs(app_run_mod.state_dir(repo))
     assert f"agent6 resume {session_dir.name}" in err
-    manifest = read_manifest(session_dir)
+    manifest = sessions_manifest.read_manifest(session_dir)
     assert manifest.parked_task == "do a thing"
     assert manifest.parked_reason == "uncommitted changes"
     assert (repo / "seed.txt").read_text(encoding="utf-8") == "edited\n"
 
 
-def test_auto_stash_stashes_without_asking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_auto_stash_stashes_without_asking(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
@@ -271,12 +279,12 @@ def test_auto_stash_stashes_without_asking(tmp_path: Path, monkeypatch: pytest.M
     assert asked == []
     # auto_stash without auto_stash_pop: stashed for the run, left stashed after.
     assert _seen_at_stop[-1] is True
-    assert git_status(repo).is_clean
+    assert git_ops.status(repo).is_clean
     assert "agent6 auto-stash before run" in _git(repo, "stash", "list")
 
 
 def test_dirty_tree_include_includes_without_asking(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -295,7 +303,7 @@ def test_dirty_tree_include_includes_without_asking(
 
 
 def test_the_last_runs_unmerged_work_is_named_as_such(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The last run's unmerged work is named as such.
 
@@ -303,20 +311,19 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
     text names that run and its merge, instead of calling agent6's own work the operator's
     uncommitted changes.
     """
-    from agent6.git_ops import chain_commit, chain_ref_for
-    from agent6.sessions.layout import bucket_dir
-
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
     monkeypatch.chdir(repo)
     state = app_run_mod.state_dir(repo)
-    prior = bucket_dir(state, "runs") / "prior-run-AAAAAA"
+    prior = layout.bucket_dir(state, "runs") / "prior-run-AAAAAA"
     prior.mkdir(parents=True)
     (prior / "logs.jsonl").write_text('{"type": "session.start", "user_task": "t"}\n')
     (repo / "seed.txt").write_text("edited by the prior run\n", encoding="utf-8")
     head = _git(repo, "rev-parse", "HEAD").strip()
-    assert chain_commit(repo, "agent6 iter 1", ref=chain_ref_for(prior.name), fallback_parent=head)
+    assert git_ops.chain_commit(
+        repo, "agent6 iter 1", ref=git_ops.chain_ref_for(prior.name), fallback_parent=head
+    )
     _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
 
     assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]

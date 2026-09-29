@@ -8,11 +8,11 @@ missing directory is the difference between an empty state and a broken install.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.paths import state_dir
+from agent6 import paths
 from agent6.ui.cli import main
 
 # Commands that can only answer "you have nothing yet" on a fresh state dir.
@@ -34,7 +34,7 @@ _EMPTY_STATE = [
 @pytest.mark.parametrize("argv", _EMPTY_STATE, ids=[" ".join(a) for a in _EMPTY_STATE])
 def test_it_does_not_read_as_a_broken_install(
     argv: list[str],
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -53,7 +53,7 @@ def test_it_does_not_read_as_a_broken_install(
 @pytest.mark.parametrize("argv", _EMPTY_STATE, ids=[" ".join(a) for a in _EMPTY_STATE])
 def test_it_says_how_to_make_one(
     argv: list[str],
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -65,13 +65,13 @@ def test_it_says_how_to_make_one(
 
 
 def test_a_run_verb_over_a_plan_alone_says_no_runs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`sessions commits`, diff and merge act on a run's branch; a lone plan is a real session."""
-    from agent6.sessions.layout import bucket_dir
+    from agent6.sessions import layout
 
     monkeypatch.chdir(tmp_path)
-    session = bucket_dir(state_dir(tmp_path), "plans") / "brave-oak-AAAAAA"
+    session = layout.bucket_dir(paths.state_dir(tmp_path), "plans") / "brave-oak-AAAAAA"
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text(
         '{"type": "session.start", "mode": "plan", "user_task": "t"}\n', encoding="utf-8"

@@ -16,16 +16,15 @@ Validate that when a ``text_delta_callback`` is supplied, the provider:
 from __future__ import annotations
 
 import json
+import pathlib
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 import httpx2
 import pytest
 
-from agent6.budget import BudgetTracker
-from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink
-from agent6.providers.token_command import CommandToken
+from agent6 import budget as agent6_budget
+from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink, token_command
 
 
 class FakeStreamResponse:
@@ -191,7 +190,7 @@ def _tool_use_stream() -> list[str]:
 
 
 def test_streaming_calls_back_on_each_text_delta(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     sink = TranscriptSink(tmp_path / "transcripts")
     provider = AnthropicProvider(
@@ -235,7 +234,7 @@ def test_streaming_calls_back_on_each_text_delta(
 
 
 def test_streaming_reassembles_tool_use_input_across_deltas(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     sink = TranscriptSink(tmp_path / "transcripts")
     provider = AnthropicProvider(
@@ -265,7 +264,7 @@ def test_streaming_reassembles_tool_use_input_across_deltas(
 
 
 def test_streaming_callback_exception_does_not_break_stream(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A callback that raises does not take the run down."""
     sink = TranscriptSink(tmp_path / "transcripts")
@@ -323,7 +322,7 @@ def _truncated_text_stream() -> list[str]:
 
 
 def test_streaming_premature_end_without_message_stop_raises(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A clean EOF before `message_stop` raises a retryable ProviderError.
 
@@ -352,7 +351,7 @@ def test_streaming_premature_end_without_message_stop_raises(
 
 
 def test_streaming_error_event_raises_and_records_transcript(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A mid-stream `error` event raises a retryable ProviderError and is kept in the transcript."""
     sink = TranscriptSink(tmp_path / "transcripts")
@@ -387,7 +386,9 @@ def test_streaming_error_event_raises_and_records_transcript(
     assert "overloaded_error" in doc["response"]["body"]
 
 
-def test_streaming_propagates_http_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_streaming_propagates_http_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
     sink = TranscriptSink(tmp_path / "transcripts")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
@@ -427,7 +428,7 @@ def test_streaming_redirect_status_is_preserved(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_streaming_429_captures_retry_after(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     sink = TranscriptSink(tmp_path / "transcripts")
     provider = AnthropicProvider(
@@ -455,7 +456,7 @@ def test_streaming_429_captures_retry_after(
 
 
 def test_non_streaming_path_unchanged_when_callback_is_none(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """With no callback the provider never calls httpx2.stream; bench runs rely on that path."""
     sink = TranscriptSink(tmp_path / "transcripts")
@@ -493,7 +494,7 @@ def test_non_streaming_path_unchanged_when_callback_is_none(
 
 
 def test_streaming_refreshes_token_command_on_401(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     # A token_command stream whose bearer expired refreshes and retries once on a 401.
     counter = tmp_path / "n"
@@ -512,7 +513,7 @@ def test_streaming_refreshes_token_command_on_401(
         deployment="vertex",
         auth_style="bearer",
         prompt_caching=False,
-        credential=CommandToken(["sh", "-c", script], ttl_s=1000.0),
+        credential=token_command.CommandToken(["sh", "-c", script], ttl_s=1000.0),
     )
     seen_auth: list[str | None] = []
     responses = [
@@ -537,7 +538,7 @@ def test_streaming_refreshes_token_command_on_401(
 def test_streaming_with_budget_requires_usage_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
     provider = AnthropicProvider(api_key="sk-test", model="claude-test", budget=budget)
     lines = _sse(
         [
@@ -595,7 +596,7 @@ def test_foreign_opaque_blocks_never_reach_the_wire() -> None:
     A cross-provider resume can carry another wire's opaque replay state; sent verbatim it
     would 400.
     """
-    from agent6.providers.anthropic import shape_anthropic_messages
+    from agent6.providers import anthropic
 
     messages = [
         {
@@ -611,7 +612,7 @@ def test_foreign_opaque_blocks_never_reach_the_wire() -> None:
         },
         {"role": "user", "content": "next"},
     ]
-    out = shape_anthropic_messages(messages)
+    out = anthropic.shape_anthropic_messages(messages)
     assert out[0]["content"] == [{"type": "text", "text": "hi"}]
     assert out[1] is messages[1]
     original = messages[0]["content"]

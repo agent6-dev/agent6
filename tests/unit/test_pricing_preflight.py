@@ -9,7 +9,7 @@ prices, so the $ cap ran unpriced on a cold cache.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -140,7 +140,7 @@ def test_budget_preflight_prices_a_seat_pinned_model() -> None:
 
     With unmetered calls refused, an unpriced seat model refuses up front instead of mid-review.
     """
-    from agent6.app.preflight import budget_preflight
+    from agent6.app import preflight
 
     cfg = Config.model_validate(
         {
@@ -150,7 +150,7 @@ def test_budget_preflight_prices_a_seat_pinned_model() -> None:
             "budget": {"max_tokens_fallback": 0},
         }
     )
-    err = budget_preflight(cfg)
+    err = preflight.budget_preflight(cfg)
     assert err is not None and "very-unpriced-model" in err
 
 
@@ -191,10 +191,10 @@ def test_plan_metered_routes_skip_the_fallback_note(
     The unpriced-fallback note must not claim the token ledger bounds it, and max_percent = 0
     refuses it up front like the sibling zeros.
     """
-    from agent6.app.preflight import budget_preflight
+    from agent6.app import preflight
 
     cfg = _cfg("gpt-5.6-sol", {"chatgpt": {"api_format": "chatgpt"}})
-    assert budget_preflight(cfg) is None
+    assert preflight.budget_preflight(cfg) is None
     out = capsys.readouterr().err
     assert "fallback tokens" not in out
     assert "draws on a subscription plan" in out
@@ -206,7 +206,7 @@ def test_plan_metered_routes_skip_the_fallback_note(
             "budget": {"max_percent": 0},
         }
     )
-    err = budget_preflight(refused)
+    err = preflight.budget_preflight(refused)
     assert err is not None and "max_percent is 0" in err
 
 
@@ -218,7 +218,7 @@ def test_a_plan_cap_under_three_points_is_flagged_at_run_start(
     The plan meter reports whole percents, so a cap of 1 or 2 points can end the run on its first
     tick; the run-start note says so, and only then.
     """
-    from agent6.app.preflight import budget_preflight
+    from agent6.app import preflight
 
     def _with_cap(cap: float) -> str:
         cfg = Config.model_validate(
@@ -228,7 +228,7 @@ def test_a_plan_cap_under_three_points_is_flagged_at_run_start(
                 "budget": {"max_percent": cap},
             }
         )
-        assert budget_preflight(cfg) is None
+        assert preflight.budget_preflight(cfg) is None
         return capsys.readouterr().err
 
     assert "whole percents" in _with_cap(1)
@@ -249,10 +249,10 @@ def test_claude_code_routes_are_plan_metered(
     The plan note, the max_percent = 0 refusal, and no OpenRouter catalog refresh for its bare
     claude-* id (an authoritative $0 needs no price).
     """
-    from agent6.app.preflight import budget_preflight
+    from agent6.app import preflight
 
     cfg = _cfg("claude-haiku-4-5", {"claude": {"api_format": "claude_code"}})
-    assert budget_preflight(cfg) is None
+    assert preflight.budget_preflight(cfg) is None
     out = capsys.readouterr().err
     assert "fallback tokens" not in out
     assert "'claude-haiku-4-5' draws on a subscription plan" in out
@@ -264,7 +264,7 @@ def test_claude_code_routes_are_plan_metered(
             "budget": {"max_percent": 0},
         }
     )
-    err = budget_preflight(refused)
+    err = preflight.budget_preflight(refused)
     assert err is not None and "max_percent is 0" in err and "claude-haiku-4-5" in err
 
     called: list[bool] = []
@@ -306,20 +306,20 @@ def test_machine_pins_carry_their_provider_into_the_notes(
     A chatgpt-pinned model is plan-metered, never 'bounded by fallback tokens' (the pin's provider
     was dropped and the note lied).
     """
-    from agent6.app.preflight import budget_preflight
+    from agent6.app import preflight
 
     cfg = _cfg(
         "anthropic-model",
         {"anthropic": {"api_format": "anthropic"}, "chatgpt": {"api_format": "chatgpt"}},
     )
-    assert budget_preflight(cfg, extra_routes=[("chatgpt", "gpt-5.6-sol")]) is None
+    assert preflight.budget_preflight(cfg, extra_routes=[("chatgpt", "gpt-5.6-sol")]) is None
     err = capsys.readouterr().err
     assert "'gpt-5.6-sol' draws on a subscription plan" in err
     assert "gpt-5.6-sol' ha" not in err.replace("draws on", "")  # not in the fallback note
 
 
 def test_budget_preflight_prices_a_route_from_its_own_card(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """The preflight priced with no provider while the budget priced with the route's.
 
@@ -327,7 +327,7 @@ def test_budget_preflight_prices_a_route_from_its_own_card(
     """
     import json
 
-    from agent6.app.preflight import budget_preflight
+    from agent6.app import preflight
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     cards = tmp_path / "agent6" / "models"
@@ -352,5 +352,5 @@ def test_budget_preflight_prices_a_route_from_its_own_card(
             "budget": {"max_tokens_fallback": 0},
         }
     )
-    err = budget_preflight(cfg)
+    err = preflight.budget_preflight(cfg)
     assert err is not None and "x/model" in err

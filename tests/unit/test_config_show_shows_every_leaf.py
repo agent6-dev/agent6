@@ -10,12 +10,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pydantic
 import pytest
-from pydantic import BaseModel
 
-from agent6.config import Config
-from agent6.config.layer import EffectiveConfig
-from agent6.viewmodel.config_view import build_config_view, render_show
+from agent6.config import Config, layer
+from agent6.viewmodel import config_view
 
 # Sections keyed by an operator-chosen name; a leaf under them exists only once an entry does.
 _POPULATED: dict[str, Any] = {
@@ -32,17 +31,17 @@ _POPULATED: dict[str, Any] = {
 }
 
 
-def _leaf_paths(model: BaseModel, prefix: str = "") -> set[str]:
+def _leaf_paths(model: pydantic.BaseModel, prefix: str = "") -> set[str]:
     """Every dotted leaf path of a populated model instance."""
     leaves: set[str] = set()
     for name in type(model).model_fields:
         value = getattr(model, name)
         path = f"{prefix}{name}"
-        if isinstance(value, BaseModel):
+        if isinstance(value, pydantic.BaseModel):
             leaves |= _leaf_paths(value, f"{path}.")
         elif isinstance(value, dict) and value:
             for key, entry in value.items():  # pyright: ignore[reportUnknownVariableType]
-                if isinstance(entry, BaseModel):
+                if isinstance(entry, pydantic.BaseModel):
                     leaves |= _leaf_paths(entry, f"{path}.{key}.")
                 else:
                     leaves.add(path)
@@ -57,7 +56,9 @@ def _rendered_keys(config: Config) -> set[str]:
     A substring scan would let a dropped `sandbox.network` row hide behind
     `mcp.servers.notes.sandbox.network`.
     """
-    view = build_config_view(EffectiveConfig(config=config, sources={}, layers=()))
+    view = config_view.build_config_view(
+        layer.EffectiveConfig(config=config, sources={}, layers=())
+    )
     return {s.key for s in view.settings}
 
 
@@ -94,7 +95,7 @@ def test_security_sensitive_defaults_are_the_safe_value(path: str, safe: object)
 def test_every_rendered_leaf_carries_its_meaning() -> None:
     """The JSON view describes every leaf it renders, unset section holders included."""
     for config in (Config(), Config.model_validate(_POPULATED)):
-        eff = EffectiveConfig(config=config, sources={}, layers=())
-        view = json.loads(render_show(eff, as_json=True))
+        eff = layer.EffectiveConfig(config=config, sources={}, layers=())
+        view = json.loads(config_view.render_show(eff, as_json=True))
         undescribed = sorted(k for k, leaf in view.items() if not leaf["description"])
         assert not undescribed, f"leaves with no description: {undescribed}"

@@ -9,41 +9,36 @@ from before checkpoints existed forks with a warning.
 
 from __future__ import annotations
 
+import contextlib
+import datetime
 import json
+import pathlib
 import subprocess as sp
 import time
+import types
 from collections.abc import Generator
-from contextlib import contextmanager
-from datetime import UTC, datetime
-from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
 import agent6.app.preflight as preflight_mod
-from agent6.app._setup import SandboxOverrides
-from agent6.git_ops import chain_ref_for
-from agent6.graph.storage import list_checkpoint_turns, load_graph
-from agent6.harness._chain import RunChain
-from agent6.harness._snapshot import SNAPSHOT_VERSION, load_session_snapshot
-from agent6.harness.loop import (
-    Harness,
-    LoopState,
+from agent6 import git_ops, kinds, paths
+from agent6.app import _setup
+from agent6.graph import storage
+from agent6.harness import _chain, _loop_state, _snapshot, loop
+from agent6.sessions import layout as sessions_layout
+from agent6.ui.cli import (
+    fork,  # pyright: ignore[reportPrivateUsage]
+    resume,  # pyright: ignore[reportPrivateUsage]
 )
-from agent6.kinds import session_bucket
-from agent6.paths import global_config_dir, state_dir
-from agent6.sessions.layout import SessionLayout
-from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
-from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
 
 
 def _silent(_: str) -> None:
     return None
 
 
-def _git_repo(path: Path) -> str:
+def _git_repo(path: pathlib.Path) -> str:
     path.mkdir(parents=True, exist_ok=True)
     sp.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
     sp.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
@@ -57,7 +52,7 @@ def _git_repo(path: Path) -> str:
 
 
 def _wf(
-    root: Path | None = None,
+    root: pathlib.Path | None = None,
     *,
     ref: str | None = None,
     fallback_parent: str | None = None,
@@ -65,19 +60,19 @@ def _wf(
     per_step: bool = True,
     base_sha: str = "",
     **kw: Any,
-) -> Harness:
+) -> loop.Harness:
     defaults: dict[str, Any] = {
-        "chain": RunChain(
-            root or Path("/tmp"),
+        "chain": _chain.RunChain(
+            root or pathlib.Path("/tmp"),
             ref=ref,
             branch=branch,
             fallback_parent=fallback_parent,
             per_step=per_step,
             base_sha=base_sha,
         ),
-        "config": MagicMock(
-            prompt=MagicMock(system_prompt_file=""),
-            harness=MagicMock(
+        "config": mock.MagicMock(
+            prompt=mock.MagicMock(system_prompt_file=""),
+            harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -87,18 +82,18 @@ def _wf(
                 verify_retries=2,
             ),
         ),
-        "provider": MagicMock(),
-        "dispatcher": MagicMock(),
+        "provider": mock.MagicMock(),
+        "dispatcher": mock.MagicMock(),
         "logger": _silent,
     }
     defaults.update(kw)
-    return Harness(**defaults)
+    return loop.Harness(**defaults)
 
 
 # --- checkpoint store -------------------------------------------------------
 
 
-def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
+def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path) -> None:
     """`_save_resume_snapshot` writes loop_state.json and a per-turn checkpoint with the sha."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
@@ -106,10 +101,10 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     session_dir.mkdir()
     snap = session_dir / "loop_state.json"
 
-    curator = MagicMock()
+    curator = mock.MagicMock()
     curator.graph_version = 7
-    config = SimpleNamespace(
-        harness=SimpleNamespace(
+    config = types.SimpleNamespace(
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -117,13 +112,13 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
             verify_when="never",
             verify_retries=2,
             verify_command=(),
-            metric=SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         )
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap, curator=curator)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
 
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
     wf._save_resume_snapshot(state, [], next_iteration=3, write_checkpoint=True)  # pyright: ignore[reportPrivateUsage]
@@ -133,7 +128,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     assert snap.is_file()
     assert cp.is_file(), "per-turn checkpoint must be written"
 
-    loaded = load_session_snapshot(cp)
+    loaded = _snapshot.load_session_snapshot(cp)
     assert loaded.next_iteration == 3
     assert loaded.head_sha == head
     assert loaded.graph_version == 7
@@ -141,15 +136,15 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     assert json.loads(snap.read_text())["head_sha"] == head
 
 
-def test_checkpoints_are_append_only(tmp_path: Path) -> None:
+def test_checkpoints_are_append_only(tmp_path: pathlib.Path) -> None:
     """Each turn writes a distinct checkpoint; older ones are never overwritten."""
     repo = tmp_path / "repo"
     _git_repo(repo)
     session_dir = tmp_path / "run"
     session_dir.mkdir()
     snap = session_dir / "loop_state.json"
-    config = SimpleNamespace(
-        harness=SimpleNamespace(
+    config = types.SimpleNamespace(
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -157,13 +152,13 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
             verify_when="never",
             verify_retries=2,
             verify_command=(),
-            metric=SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         )
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     for turn in (1, 2, 3):
         state.system, state.tool_calls, state.root_task_id = "s", 0, None
         wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
@@ -175,10 +170,10 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
     cp_dir = session_dir / "checkpoints"
     assert sorted(p.name for p in cp_dir.glob("*.json")) == ["0001.json", "0002.json", "0003.json"]
     # Turn 1's payload was not clobbered by later turns.
-    assert load_session_snapshot(cp_dir / "0001.json").messages[0]["content"] == "turn 1"
+    assert _snapshot.load_session_snapshot(cp_dir / "0001.json").messages[0]["content"] == "turn 1"
 
 
-def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: Path) -> None:
+def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: pathlib.Path) -> None:
     """Only the pre-call save names a checkpoint, so `fork --at-turn N` means one state.
 
     Every save still advances loop_state.json, which resume and the default fork follow.
@@ -188,8 +183,8 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: Path) -
     session_dir = tmp_path / "run"
     session_dir.mkdir()
     snap = session_dir / "loop_state.json"
-    config = SimpleNamespace(
-        harness=SimpleNamespace(
+    config = types.SimpleNamespace(
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -197,13 +192,13 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: Path) -
             verify_when="never",
             verify_retries=2,
             verify_command=(),
-            metric=SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         )
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
 
     def save(content: str, turn: int, *, checkpoint: bool) -> None:
         state.system, state.tool_calls, state.root_task_id = "s", 0, None
@@ -223,63 +218,66 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: Path) -
     assert sorted(p.name for p in cp_dir.glob("*.json")) == ["0002.json", "0003.json"]
     # The checkpoint holds what turn 3's call consumed, not a later overwrite.
     assert (
-        load_session_snapshot(cp_dir / "0003.json").messages[0]["content"] == "pre-call of turn 3"
+        _snapshot.load_session_snapshot(cp_dir / "0003.json").messages[0]["content"]
+        == "pre-call of turn 3"
     )
     # Every save advanced the pointer.
-    assert load_session_snapshot(snap).messages[0]["content"] == "after turn 3's tools"
+    assert _snapshot.load_session_snapshot(snap).messages[0]["content"] == "after turn 3's tools"
 
 
-def test_list_checkpoint_turns_empty_for_old_run(tmp_path: Path) -> None:
+def test_list_checkpoint_turns_empty_for_old_run(tmp_path: pathlib.Path) -> None:
     """A run dir with no checkpoints/ dir lists no turns (old-run detection)."""
-    layout = SessionLayout(state_dir=tmp_path, session_id="old")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="old")
     (tmp_path / "sessions" / "runs" / "old").mkdir(parents=True)
-    assert list_checkpoint_turns(layout) == []
+    assert storage.list_checkpoint_turns(layout) == []
 
 
-def test_load_run_snapshot_rejects_malformed_shapes(tmp_path: Path) -> None:
+def test_load_run_snapshot_rejects_malformed_shapes(tmp_path: pathlib.Path) -> None:
     """A wrong-shape checkpoint (null, list, missing key) fails with a ValueError fork catches."""
     cp = tmp_path / "0001.json"
     for bad in ("null", "[]", '"x"'):
         cp.write_text(bad, encoding="utf-8")
         with pytest.raises(ValueError, match="expected a JSON object"):
-            load_session_snapshot(cp)
+            _snapshot.load_session_snapshot(cp)
     cp.write_text(
-        json.dumps({"version": SNAPSHOT_VERSION}), encoding="utf-8"
+        json.dumps({"version": _snapshot.SNAPSHOT_VERSION}), encoding="utf-8"
     )  # missing required keys
     with pytest.raises(ValueError, match="malformed run-state snapshot"):
-        load_session_snapshot(cp)
+        _snapshot.load_session_snapshot(cp)
     # A torn file is the likeliest corruption, and its refusal named neither the run nor the file.
     cp.write_text('{"messages": [{"role":', encoding="utf-8")
     with pytest.raises(ValueError, match=r"unreadable run-state snapshot at .*0001\.json"):
-        load_session_snapshot(cp)
+        _snapshot.load_session_snapshot(cp)
 
 
 # --- fork command -----------------------------------------------------------
 
 
-def _seed_graph(layout: SessionLayout) -> tuple[str, str]:
+def _seed_graph(layout: sessions_layout.SessionLayout) -> tuple[str, str]:
     """A two-node DAG through the real curator: root (version 1), child (2), child passed (3).
 
     Returns (root_id, child_id).
     """
-    from agent6.graph.curator import GraphCurator
-    from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
+    from agent6.graph import curator as graph_curator
+    from agent6.graph import models
 
-    curator = GraphCurator(layout)
+    curator = graph_curator.GraphCurator(layout)
     root = curator.add_subtask(
-        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root task", created_by="user"))
-    )
-    child = curator.add_subtask(
-        AddSubtaskIntent(
-            parent_id=root.id, draft=TaskNodeDraft(title="late subtask", created_by="worker")
+        models.AddSubtaskIntent(
+            parent_id=None, draft=models.TaskNodeDraft(title="root task", created_by="user")
         )
     )
-    curator.update_status(UpdateStatusIntent(id=child.id, new_status="passed"))
+    child = curator.add_subtask(
+        models.AddSubtaskIntent(
+            parent_id=root.id, draft=models.TaskNodeDraft(title="late subtask", created_by="worker")
+        )
+    )
+    curator.update_status(models.UpdateStatusIntent(id=child.id, new_status="passed"))
     return root.id, child.id
 
 
 def _seed_source_run(
-    state_dir: Path,
+    state_dir: pathlib.Path,
     session_id: str,
     *,
     head_sha: str,
@@ -287,9 +285,11 @@ def _seed_source_run(
     mode: str = "run",
     workflow_profile: str = "",
     preset_from_flag: bool | None = None,
-) -> SessionLayout:
+) -> sessions_layout.SessionLayout:
     """Lay down a source session dir with a manifest, graph DAG, and checkpoints."""
-    layout = SessionLayout(state_dir=state_dir, session_id=session_id, subdir=session_bucket(mode))
+    layout = sessions_layout.SessionLayout(
+        state_dir=state_dir, session_id=session_id, subdir=kinds.session_bucket(mode)
+    )
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -318,7 +318,7 @@ def _seed_source_run(
     _seed_graph(layout)
     for turn in turns:
         payload = {
-            "version": SNAPSHOT_VERSION,
+            "version": _snapshot.SNAPSHOT_VERSION,
             "system": "sys",
             "messages": [{"role": "user", "content": f"turn {turn}"}],
             "tool_calls": 0,
@@ -337,35 +337,41 @@ def _seed_source_run(
     return layout
 
 
-def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fork_preserves_source_run_mode(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # A plan fork resumes in plan mode; mode="run" would pair the planning prompt with edits.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "plan-src-AAAA11", head_sha=head, turns=(1, 2), mode="plan")
 
-    rc = _cmd_fork(None, "plan-src", new_session_id="plan-fork-BBBB22", no_run=True)
+    rc = fork._cmd_fork(None, "plan-src", new_session_id="plan-fork-BBBB22", no_run=True)
     assert rc == 0
 
     # The fork inherits mode="plan", so its dir belongs in plans/, not runs/.
-    dst = SessionLayout(state_dir=state, session_id="plan-fork-BBBB22", subdir="plans")
+    dst = sessions_layout.SessionLayout(
+        state_dir=state, session_id="plan-fork-BBBB22", subdir="plans"
+    )
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["mode"] == "plan"
     assert not (state / "sessions" / "runs" / "plan-fork-BBBB22").exists()
 
 
-def test_a_plan_fork_creates_no_git_refs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_plan_fork_creates_no_git_refs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A plan's fork creates neither the run branch nor the chain ref that only run mode owns."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "plan-src-AAAA11", head_sha=head, turns=(1,), mode="plan")
 
-    assert _cmd_fork(None, "plan-src", new_session_id="plan-fork-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork(None, "plan-src", new_session_id="plan-fork-BBBB22", no_run=True) == 0
 
-    dst = SessionLayout(
-        state_dir=state, session_id="plan-fork-BBBB22", subdir=session_bucket("plan")
+    dst = sessions_layout.SessionLayout(
+        state_dir=state, session_id="plan-fork-BBBB22", subdir=kinds.session_bucket("plan")
     )
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["run_branch"] is None
@@ -375,7 +381,7 @@ def test_a_plan_fork_creates_no_git_refs(tmp_path: Path, monkeypatch: pytest.Mon
             "for-each-ref",
             "--format=%(refname)",
             "refs/heads/agent6/plan-fork-BBBB22",
-            chain_ref_for("plan-fork-BBBB22"),
+            git_ops.chain_ref_for("plan-fork-BBBB22"),
         ],
         cwd=repo,
         capture_output=True,
@@ -386,17 +392,17 @@ def test_a_plan_fork_creates_no_git_refs(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 def test_fork_refuses_an_explicit_id_held_by_any_bucket(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A fork --session-id any bucket already holds is refused up front, naming the holder."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
     (state / "sessions" / "asks" / "taken-CCCC33").mkdir(parents=True)
 
-    rc = _cmd_fork(None, "src", new_session_id="taken-CCCC33", no_run=True)
+    rc = fork._cmd_fork(None, "src", new_session_id="taken-CCCC33", no_run=True)
 
     assert rc == 2
     err = capsys.readouterr().err
@@ -404,27 +410,29 @@ def test_fork_refuses_an_explicit_id_held_by_any_bucket(
     assert not (state / "sessions" / "runs" / "taken-CCCC33").exists()
 
 
-def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fork_preserves_source_run_profile(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # A fork carries the source's effective preset so `resume` re-applies the same strategy.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1, 2), workflow_profile="paranoid")
 
-    rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
+    rc = fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
     assert rc == 0
 
-    dst = SessionLayout(state_dir=state, session_id="child-BBBB22")
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["harness"]["preset"] == "paranoid"
 
 
 def test_fork_stamps_the_child_manifest_from_the_profiled_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The fork's child manifest stamps the models of the source's preset, which resume replays."""
-    gdir = global_config_dir()
+    gdir = paths.global_config_dir()
     gdir.mkdir(parents=True, exist_ok=True)
     (gdir / "config.toml").write_text(
         "[providers.anthropic]\n"
@@ -440,27 +448,27 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "src-PROF11", head_sha=head, turns=(1,), workflow_profile="fast")
 
-    rc = _cmd_fork(None, "src-PROF11", new_session_id="child-PROF22", no_run=True)
+    rc = fork._cmd_fork(None, "src-PROF11", new_session_id="child-PROF22", no_run=True)
     assert rc == 0
-    dst = SessionLayout(state_dir=state, session_id="child-PROF22")
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-PROF22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["harness"]["preset"] == "fast"
     assert manifest["models"]["driver"]["model"] == "claude-fast"  # not claude-base
 
 
 def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A config-selected preset re-resolves on fork; only a flag-selected one is pinned by name."""
-    global_config_dir().mkdir(parents=True, exist_ok=True)
-    (global_config_dir() / "config.toml").write_text('preset = "quick"\n', encoding="utf-8")
+    paths.global_config_dir().mkdir(parents=True, exist_ok=True)
+    (paths.global_config_dir() / "config.toml").write_text('preset = "quick"\n', encoding="utf-8")
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     # A config-selected source whose stamped name is now STALE (config says quick).
     _seed_source_run(
         state,
@@ -471,18 +479,18 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
         preset_from_flag=False,
     )
 
-    assert _cmd_fork(None, "src-CFG11", new_session_id="child-CFG22", no_run=True) == 0
+    assert fork._cmd_fork(None, "src-CFG11", new_session_id="child-CFG22", no_run=True) == 0
     manifest = json.loads(
-        SessionLayout(state_dir=state, session_id="child-CFG22").manifest_path.read_text(
-            encoding="utf-8"
-        )
+        sessions_layout.SessionLayout(
+            state_dir=state, session_id="child-CFG22"
+        ).manifest_path.read_text(encoding="utf-8")
     )
     assert manifest["harness"]["preset"] == "quick"  # re-derived, not "stale-old-name"
     assert manifest["harness"]["preset_from_flag"] is False
 
 
 def test_fork_snapshots_the_dag_under_the_source_curator_lock(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The DAG copy runs under the source curator's per-mutation flock.
 
@@ -494,32 +502,32 @@ def test_fork_snapshots_the_dag_under_the_source_curator_lock(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     src = _seed_source_run(state, "src-LOCK11", head_sha=head, turns=(1,))
 
-    locked: list[Path] = []
+    locked: list[pathlib.Path] = []
     real_flock = fork_mod.flock
 
-    @contextmanager
-    def recording_flock(path: Path) -> Generator[None]:
+    @contextlib.contextmanager
+    def recording_flock(path: pathlib.Path) -> Generator[None]:
         locked.append(path)
         with real_flock(path):
             yield
 
     monkeypatch.setattr(fork_mod, "flock", recording_flock)
-    rc = _cmd_fork(None, "src-LOCK11", new_session_id="child-LOCK22", no_run=True)
+    rc = fork._cmd_fork(None, "src-LOCK11", new_session_id="child-LOCK22", no_run=True)
     assert rc == 0
     assert locked == [src.lock_path]  # the copy held the source curator lock
 
 
 def test_fork_fails_loud_on_a_bad_source_manifest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A missing, corrupt or non-object manifest refuses the fork, never falls open to mode="run".
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     src = _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,), mode="plan")
 
     for bad in (None, "{not json", "[]"):  # missing / corrupt JSON / non-object
@@ -527,9 +535,11 @@ def test_fork_fails_loud_on_a_bad_source_manifest(
             src.manifest_path.unlink()
         else:
             src.manifest_path.write_text(bad, encoding="utf-8")
-        rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
+        rc = fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
         assert rc == 2, f"manifest shape {bad!r} must refuse the fork"
-        assert not SessionLayout(state_dir=state, session_id="child-BBBB22").session_dir.exists()
+        assert not sessions_layout.SessionLayout(
+            state_dir=state, session_id="child-BBBB22"
+        ).session_dir.exists()
         branches = sp.run(
             ["git", "branch", "--list", "agent6/child-BBBB22"],
             cwd=repo,
@@ -541,13 +551,13 @@ def test_fork_fails_loud_on_a_bad_source_manifest(
 
 
 def test_fork_cleans_up_run_dir_when_branch_cut_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A fork branch at a different sha refuses (a branch never moves) and the run dir is cleaned up.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
     # A second commit, and pre-create the fork branch pointing at it (≠ head).
     (repo / "b.txt").write_text("y\n")
@@ -558,13 +568,15 @@ def test_fork_cleans_up_run_dir_when_branch_cut_fails(
     ).stdout.strip()
     sp.run(["git", "branch", "agent6/child-BBBB22", other], cwd=repo, check=True)
 
-    rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
+    rc = fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
     assert rc == 1
-    assert not SessionLayout(state_dir=state, session_id="child-BBBB22").session_dir.exists()
+    assert not sessions_layout.SessionLayout(
+        state_dir=state, session_id="child-BBBB22"
+    ).session_dir.exists()
 
 
 def test_fork_clones_state_writes_lineage_and_branch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`agent6 fork --no-run` clones the checkpoint and DAG into a new run with its lineage.
 
@@ -573,22 +585,21 @@ def test_fork_clones_state_writes_lineage_and_branch(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
-    rc = _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True)
+    rc = fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True)
     assert rc == 0
 
-    dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
     assert dst.session_dir.is_dir()
     # loop_state.json + seed checkpoint 0000.json carry the latest (turn 3) state.
-    seed = load_session_snapshot(dst.checkpoint_path(0))
+    seed = _snapshot.load_session_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "turn 3"
     assert (dst.session_dir / "loop_state.json").is_file()
     # DAG rebuilt at graph_version 3: both nodes, the child passed, the journal prefix behind it.
-    from agent6.graph.storage import load_graph
 
-    forked_nodes = load_graph(dst)
+    forked_nodes = storage.load_graph(dst)
     assert {n.title for n in forked_nodes.values()} == {"root task", "late subtask"}
     assert [n.status for n in forked_nodes.values() if n.title == "late subtask"] == ["passed"]
     assert len(dst.journal_path.read_text(encoding="utf-8").splitlines()) == 3
@@ -628,23 +639,23 @@ def test_fork_clones_state_writes_lineage_and_branch(
     assert ev["parent"] == "sunny-otter-AAAA11"
     assert ev["turn"] == 3
     assert ev["sha"] == head
-    assert datetime.fromisoformat(ev["ts"]).tzinfo == UTC, ev["ts"]
+    assert datetime.datetime.fromisoformat(ev["ts"]).tzinfo == datetime.UTC, ev["ts"]
 
     # Source run is untouched: no new checkpoints, manifest unchanged.
-    assert sorted(list_checkpoint_turns(src)) == [1, 2, 3]
+    assert sorted(storage.list_checkpoint_turns(src)) == [1, 2, 3]
 
 
 def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A default fork mirrors resume's latest pointer even without a matching checkpoint."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     src = _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1, 2))
     latest_payload = {
-        "version": SNAPSHOT_VERSION,
+        "version": _snapshot.SNAPSHOT_VERSION,
         "system": "sys",
         "messages": [{"role": "user", "content": "turn 3 from loop_state"}],
         "tool_calls": 0,
@@ -659,17 +670,17 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
         json.dumps(latest_payload), encoding="utf-8"
     )
 
-    rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
+    rc = fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
 
     assert rc == 0
-    dst = SessionLayout(state_dir=state, session_id="child-BBBB22")
-    assert load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == (
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
+    assert _snapshot.load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == (
         "turn 3 from loop_state"
     )
 
 
 def test_latest_fork_does_not_run_ahead_of_loop_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A crash between the checkpoint write and the loop_state write leaves a newer checkpoint.
 
@@ -678,51 +689,55 @@ def test_latest_fork_does_not_run_ahead_of_loop_state(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     src = _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1, 2, 3))
     src.session_dir.joinpath("loop_state.json").write_text(
         src.checkpoint_path(2).read_text(encoding="utf-8"), encoding="utf-8"
     )
 
-    rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
+    rc = fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
 
     assert rc == 0
-    dst = SessionLayout(state_dir=state, session_id="child-BBBB22")
-    assert load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
+    assert (
+        _snapshot.load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
+    )
 
 
 def test_fork_at_turn_selects_that_checkpoint(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`--at-turn N` forks from checkpoint N, not the latest."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
-    rc = _cmd_fork(None, "sunny-otter", at_turn=2, new_session_id="kid-CCCC33", no_run=True)
+    rc = fork._cmd_fork(None, "sunny-otter", at_turn=2, new_session_id="kid-CCCC33", no_run=True)
     assert rc == 0
-    dst = SessionLayout(state_dir=state, session_id="kid-CCCC33")
-    assert load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="kid-CCCC33")
+    assert (
+        _snapshot.load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
+    )
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["forked_from_turn"] == 2
 
 
-def test_fork_unknown_turn_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fork_unknown_turn_errors(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`--at-turn` with no matching checkpoint is a clean error, no fork dir."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
-    rc = _cmd_fork(None, "sunny-otter", at_turn=99, new_session_id="kid-DDDD44", no_run=True)
+    rc = fork._cmd_fork(None, "sunny-otter", at_turn=99, new_session_id="kid-DDDD44", no_run=True)
     assert rc == 2
     assert not (state / "sessions" / "runs" / "kid-DDDD44").exists()
 
 
 def test_fork_at_turn_refuses_without_checkpoint_store(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`--at-turn` selects only from `checkpoints/`; an empty store refuses (rc 2, no fork dir).
 
@@ -731,8 +746,8 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
-    layout = SessionLayout(state_dir=state, session_id="bare-run-EEEE55")
+    state = paths.state_dir(repo)
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="bare-run-EEEE55")
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -748,7 +763,7 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
     layout.session_dir.joinpath("loop_state.json").write_text(
         json.dumps(
             {
-                "version": SNAPSHOT_VERSION,
+                "version": _snapshot.SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": [{"role": "user", "content": "rolling"}],
                 "tool_calls": 0,
@@ -762,14 +777,14 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
         encoding="utf-8",
     )
 
-    rc = _cmd_fork(None, "bare-run", at_turn=4, new_session_id="kid-EEEE55", no_run=True)
+    rc = fork._cmd_fork(None, "bare-run", at_turn=4, new_session_id="kid-EEEE55", no_run=True)
     assert rc == 2
     assert not (state / "sessions" / "runs" / "kid-EEEE55").exists()
 
-    rc = _cmd_fork(None, "bare-run", new_session_id="fresh-FFFF66", no_run=True)
+    rc = fork._cmd_fork(None, "bare-run", new_session_id="fresh-FFFF66", no_run=True)
     assert rc == 0
-    dst = SessionLayout(state_dir=state, session_id="fresh-FFFF66")
-    seed = load_session_snapshot(dst.checkpoint_path(0))
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="fresh-FFFF66")
+    seed = _snapshot.load_session_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "rolling"
     assert seed.next_iteration == 4
 
@@ -777,7 +792,7 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
 # --- resume gets onto the run branch ---------------------------------------
 
 
-def _current_branch(repo: Path) -> str:
+def _current_branch(repo: pathlib.Path) -> str:
     return sp.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         cwd=repo,
@@ -788,28 +803,28 @@ def _current_branch(repo: Path) -> str:
 
 
 def test_fork_without_id_forks_most_recent_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "only-run-AAAA11", head_sha=head, turns=(1,))
-    rc = _cmd_fork(None, "", new_session_id="child-BBBB22", no_run=True)
+    rc = fork._cmd_fork(None, "", new_session_id="child-BBBB22", no_run=True)
     assert rc == 0
-    dst = SessionLayout(state_dir=state, session_id="child-BBBB22")
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["parent_session_id"] == "only-run-AAAA11"  # the only/most-recent run
 
 
 def test_fork_continue_resumes_without_force(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The clone cut the branch at head_sha, so the head guard passes; force stays off.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
     captured: dict[str, Any] = {}
 
@@ -819,11 +834,11 @@ def test_fork_continue_resumes_without_force(
         return 0
 
     monkeypatch.setattr("agent6.ui.cli.fork.resume_task", _fake_resume)
-    rc = _cmd_fork(  # default: continue; approvable headless, so the continuation is reached
+    rc = fork._cmd_fork(  # default: continue; approvable headless, so the continuation is reached
         None,
         "src",
         new_session_id="child-BBBB22",
-        sandbox_overrides=SandboxOverrides(auto_approve=True),
+        sandbox_overrides=_setup.SandboxOverrides(auto_approve=True),
     )
     assert rc == 0
     assert captured["force"] is False
@@ -831,7 +846,7 @@ def test_fork_continue_resumes_without_force(
 
 
 def test_fork_refuses_an_unanswerable_continuation_before_creating_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A continuing fork that cannot ask for approvals is refused before the fork exists.
 
@@ -842,12 +857,12 @@ def test_fork_refuses_an_unanswerable_continuation_before_creating_it(
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
-    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
-    state = state_dir(repo)
+    monkeypatch.setattr("sys.stdin", types.SimpleNamespace(isatty=lambda: False))
+    state = paths.state_dir(repo)
     _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
-    child = SessionLayout(state_dir=state, session_id="child-BBBB22", subdir="runs")
+    child = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22", subdir="runs")
 
-    rc = _cmd_fork(None, "src", new_session_id="child-BBBB22")
+    rc = fork._cmd_fork(None, "src", new_session_id="child-BBBB22")
     assert rc == 2
     assert "needs someone to answer" in capsys.readouterr().err
     assert not child.session_dir.exists()
@@ -861,23 +876,23 @@ def test_fork_refuses_an_unanswerable_continuation_before_creating_it(
     ).stdout
     assert "child-BBBB22" not in refs
 
-    assert _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True) == 0
     assert child.session_dir.is_dir()
 
 
 def test_fork_without_id_and_no_runs_errors_cleanly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = tmp_path / "repo"
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    rc = _cmd_fork(None, "")  # no id, no runs -> clean error, not a crash
+    rc = fork._cmd_fork(None, "")  # no id, no runs -> clean error, not a crash
     assert rc == 2
     assert "nothing to fork" in capsys.readouterr().err
 
 
 def test_resume_without_id_and_no_runs_errors_cleanly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from agent6.ui import cli
 
@@ -889,15 +904,15 @@ def test_resume_without_id_and_no_runs_errors_cleanly(
 
 
 def test_resume_config_refusal_leaves_checkout_untouched(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # No providers: resume refuses before any workspace mutation, the operator's checkout untouched.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "cfgfail-AAAA11", head_sha=head, turns=(1,))
-    rc = _cmd_resume(None, "cfgfail-AAAA11", force=False)
+    rc = resume._cmd_resume(None, "cfgfail-AAAA11", force=False)
     assert rc == 2
     assert "No providers configured" in capsys.readouterr().err
     assert _current_branch(repo) == "main"
@@ -911,21 +926,21 @@ def test_resume_config_refusal_leaves_checkout_untouched(
 
 
 def test_resume_diverged_branch_refuses_without_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The head guard reads the chain ref tip: a rewritten chain refuses, the checkout untouched.
     repo = tmp_path / "repo"
     base = _git_repo(repo)
-    sp.run(["git", "update-ref", chain_ref_for("divg-AAAA11"), base], cwd=repo, check=True)
+    sp.run(["git", "update-ref", git_ops.chain_ref_for("divg-AAAA11"), base], cwd=repo, check=True)
     (repo / "seed.txt").write_text("moved on\n")
     sp.run(["git", "commit", "-aqm", "advance main"], cwd=repo, check=True)
     new_head = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "divg-AAAA11", head_sha=new_head, turns=(1,))
-    rc = _cmd_resume(None, "divg-AAAA11", force=False)
+    rc = resume._cmd_resume(None, "divg-AAAA11", force=False)
     assert rc == 2  # a refusal
     assert "diverged" in capsys.readouterr().err
     assert _current_branch(repo) == "main"
@@ -954,7 +969,7 @@ def test_fork_steer_passes_through_to_the_continuation(monkeypatch: pytest.Monke
 
 
 def test_forking_a_finished_run_with_no_new_work_is_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A fork of a session whose conversation already ended is refused, as `resume` refuses it.
 
@@ -963,7 +978,9 @@ def test_forking_a_finished_run_with_no_new_work_is_refused(
     import agent6.ui.cli.fork as fork_cli
 
     monkeypatch.chdir(tmp_path)
-    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="done-run-AAAA11")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="done-run-AAAA11"
+    )
     layout.ensure()
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
@@ -1002,50 +1019,54 @@ def test_fork_steer_with_no_run_is_refused(
 
 
 def test_a_past_turn_fork_starts_on_the_task_that_turn_was_on(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A fork replays the cursor like every other fact, never the source's current one."""
-    from agent6.graph.curator import GraphCurator
-    from agent6.graph.models import SetCursorIntent
+    from agent6.graph import curator as graph_curator
+    from agent6.graph import models
 
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
     # The focus lands AFTER turn 1's graph_version: turn 1 had no cursor.
-    late = next(n for n in load_graph(src).values() if n.title == "late subtask")
-    GraphCurator(src).set_cursor(SetCursorIntent(id=late.id))
+    late = next(n for n in storage.load_graph(src).values() if n.title == "late subtask")
+    graph_curator.GraphCurator(src).set_cursor(models.SetCursorIntent(id=late.id))
     assert json.loads(src.cursor_path.read_text(encoding="utf-8"))["node_id"] == late.id
 
-    assert _cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-DDDD44", no_run=True) == 0
+    assert (
+        fork._cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-DDDD44", no_run=True)
+        == 0
+    )
 
-    dst = SessionLayout(state_dir=state, session_id="kid-DDDD44")
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="kid-DDDD44")
     assert json.loads(dst.cursor_path.read_text(encoding="utf-8"))["node_id"] is None
 
 
 def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A past-turn fork gets the DAG as it stood at that turn, not the run's latest.
 
     DAG statuses drive the focus frontier and the finish gate, so the newest graph hands a turn-1
     fork an already-satisfied gate.
     """
-    from agent6.graph.storage import load_graph
-
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     # graph_version 1 = root only; 2 = root + child; 3 = child passed.
     src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
-    assert {n.title for n in load_graph(src).values()} == {"root task", "late subtask"}
+    assert {n.title for n in storage.load_graph(src).values()} == {"root task", "late subtask"}
 
-    assert _cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-CCCC33", no_run=True) == 0
+    assert (
+        fork._cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-CCCC33", no_run=True)
+        == 0
+    )
 
-    dst = SessionLayout(state_dir=state, session_id="kid-CCCC33")
-    nodes = load_graph(dst)
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="kid-CCCC33")
+    nodes = storage.load_graph(dst)
     # The turn-3 subtask did not exist at turn 1, and the root had not passed.
     assert [n.title for n in nodes.values()] == ["root task"]
     assert [n.status for n in nodes.values()] == ["pending"]
@@ -1060,56 +1081,56 @@ def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
 
 
 def test_a_past_turn_fork_reopens_without_a_lost_tail_warning(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The rebuild clamps every stamp to the forked version.
 
     A newer stamp makes the fork's curator read its shorter journal as one that lost its tail.
     """
-    from agent6.graph.curator import GraphCurator
-    from agent6.graph.storage import load_graph
+    from agent6.graph import curator as graph_curator
 
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
-    assert _cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-CCCC33", no_run=True) == 0
+    assert (
+        fork._cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-CCCC33", no_run=True)
+        == 0
+    )
 
-    dst = SessionLayout(state_dir=state, session_id="kid-CCCC33")
-    assert [n.graph_version for n in load_graph(dst).values()] == [1]
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="kid-CCCC33")
+    assert [n.graph_version for n in storage.load_graph(dst).values()] == [1]
     capsys.readouterr()
-    curator = GraphCurator(dst)
+    curator = graph_curator.GraphCurator(dst)
     assert "lost its tail" not in capsys.readouterr().err
     assert curator.graph_version == 1
 
 
 def test_fork_copies_the_dag_when_the_checkpoint_has_no_graph_version(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A checkpoint with graph_version 0 copies the DAG verbatim, not an empty graph.
 
     0 means the checkpoint predates the stamp or the curator was unreadable when it was written.
     """
-    from agent6.graph.storage import load_graph
-
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     src = _seed_source_run(state, "old-run-AAAA11", head_sha=head, turns=(1,))
     payload = json.loads(src.checkpoint_path(1).read_text(encoding="utf-8"))
     payload["graph_version"] = 0
     src.checkpoint_path(1).write_text(json.dumps(payload), encoding="utf-8")
 
-    assert _cmd_fork(None, "old-run", at_turn=1, new_session_id="kid-DDDD44", no_run=True) == 0
+    assert fork._cmd_fork(None, "old-run", at_turn=1, new_session_id="kid-DDDD44", no_run=True) == 0
 
-    dst = SessionLayout(state_dir=state, session_id="kid-DDDD44")
-    assert {n.title for n in load_graph(dst).values()} == {"root task", "late subtask"}
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="kid-DDDD44")
+    assert {n.title for n in storage.load_graph(dst).values()} == {"root task", "late subtask"}
 
 
 def test_an_auto_minted_fork_id_skips_a_taken_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A fork's auto-minted id goes through the owner that checks the bucket, never a raw token."""
     from agent6.sessions import id as id_mod
@@ -1117,7 +1138,7 @@ def test_an_auto_minted_fork_id_skips_a_taken_directory(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "forky-src-AAAA11", head_sha=head, turns=(1, 2))
     taken = state / "sessions" / "runs" / "taken-one-AAAAAA"
     taken.mkdir(parents=True)
@@ -1125,28 +1146,30 @@ def test_an_auto_minted_fork_id_skips_a_taken_directory(
     minted = iter(["taken-one-AAAAAA", "freed-two-BBBBBB"])
     monkeypatch.setattr(id_mod, "friendly_token", lambda: next(minted))
 
-    assert _cmd_fork(None, "forky-src", no_run=True) == 0
+    assert fork._cmd_fork(None, "forky-src", no_run=True) == 0
 
     assert (taken / "marker.txt").read_text(encoding="utf-8") == "do not clobber\n"
     assert (state / "sessions" / "runs" / "freed-two-BBBBBB" / "manifest.json").is_file()
 
 
 def test_fork_manifest_stamps_the_resolved_isolation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A fork's policy stamp is the resolved level, never the `auto` knob."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "iso-src-AAAA11", head_sha=head, turns=(1, 2))
 
     def _hardened(_knob: str, _env: object) -> str:
         return "hardened"
 
     monkeypatch.setattr("agent6.app.fork.resolve_isolation", _hardened)
-    assert _cmd_fork(None, "iso-src", new_session_id="iso-fork-BBBB22", no_run=True) == 0
-    dst = SessionLayout(state_dir=state, session_id="iso-fork-BBBB22", subdir="runs")
+    assert fork._cmd_fork(None, "iso-src", new_session_id="iso-fork-BBBB22", no_run=True) == 0
+    dst = sessions_layout.SessionLayout(
+        state_dir=state, session_id="iso-fork-BBBB22", subdir="runs"
+    )
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["policy"]["isolation"] == "hardened"
 
@@ -1154,7 +1177,7 @@ def test_fork_manifest_stamps_the_resolved_isolation(
 # --- a fork's own worktree ------------------------------------------------------
 
 
-def _commit_all(repo: Path, message: str) -> str:
+def _commit_all(repo: pathlib.Path, message: str) -> str:
     sp.run(["git", "add", "-A"], cwd=repo, check=True)
     sp.run(["git", "commit", "-q", "-m", message], cwd=repo, check=True)
     return sp.run(
@@ -1162,7 +1185,9 @@ def _commit_all(repo: Path, message: str) -> str:
     ).stdout.strip()
 
 
-def _fork_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, str, str]:
+def _fork_fixture(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[pathlib.Path, str, str]:
     """Return a repo whose checkout moved past the source run's turn-1 sha, with that source run.
 
     A later commit, an uncommitted edit and an operator file. Returns (repo, turn-1 sha, HEAD sha).
@@ -1174,28 +1199,26 @@ def _fork_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     (repo / "seed.txt").write_text("dirty\n", encoding="utf-8")
     (repo / "notes.md").write_text("mine\n", encoding="utf-8")
     monkeypatch.chdir(repo)
-    _seed_source_run(state_dir(repo), "src-AAAA11", head_sha=turn1, turns=(1,))
+    _seed_source_run(paths.state_dir(repo), "src-AAAA11", head_sha=turn1, turns=(1,))
     return repo, turn1, head
 
 
 def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`fork --at-turn N` gives the fork its own linked worktree at the checkpoint sha.
 
     Recorded in its manifest; a chain commit made there records the fork's own edit and nothing of
     the source checkout.
     """
-    from agent6.git_ops import chain_commit, tree_diff_paths
-
     repo, turn1, head = _fork_fixture(tmp_path, monkeypatch)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
 
-    assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
 
-    dst = SessionLayout(state_dir=state, session_id="child-BBBB22")
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
-    worktree = Path(manifest["worktree"])
+    worktree = pathlib.Path(manifest["worktree"])
     assert (worktree / ".git").is_file(), "a linked worktree of the repository"
     assert manifest["worktree_git_dir"] == str((repo / ".git").resolve())
     assert (worktree / "seed.txt").read_text(encoding="utf-8") == "seed\n"
@@ -1206,11 +1229,11 @@ def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
     )
 
     (worktree / "fork.txt").write_text("fork\n", encoding="utf-8")
-    sha = chain_commit(
-        worktree, "fork step", ref=chain_ref_for("child-BBBB22"), fallback_parent=turn1
+    sha = git_ops.chain_commit(
+        worktree, "fork step", ref=git_ops.chain_ref_for("child-BBBB22"), fallback_parent=turn1
     )
     assert sha is not None
-    assert tree_diff_paths(repo, turn1, sha) == ["fork.txt"]
+    assert git_ops.tree_diff_paths(repo, turn1, sha) == ["fork.txt"]
 
     # The source checkout: HEAD, its uncommitted edit, and the operator's file.
     assert sp.run(rev, cwd=repo, capture_output=True, text=True, check=True).stdout.strip() == head
@@ -1220,37 +1243,39 @@ def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
 
 
 def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`agent6 resume <fork>` drives the execution with the fork's worktree as its checkout.
 
     The process cwd stays the repo: its state dir and config are the repo's.
     """
+    from agent6.app import _execution
     from agent6.app import resume as resume_mod
-    from agent6.app._execution import ExecutionEnd, ExecutionInputs
 
-    global_config_dir().mkdir(parents=True, exist_ok=True)
-    (global_config_dir() / "config.toml").write_text(
+    paths.global_config_dir().mkdir(parents=True, exist_ok=True)
+    (paths.global_config_dir() / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n'
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
         encoding="utf-8",
     )
     repo, _turn1, _head = _fork_fixture(tmp_path, monkeypatch)
-    state = state_dir(repo)
-    assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    state = paths.state_dir(repo)
+    assert fork._cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
     manifest = json.loads(
-        SessionLayout(state_dir=state, session_id="child-BBBB22").manifest_path.read_text(
-            encoding="utf-8"
-        )
+        sessions_layout.SessionLayout(
+            state_dir=state, session_id="child-BBBB22"
+        ).manifest_path.read_text(encoding="utf-8")
     )
-    worktree = Path(manifest["worktree"])
+    worktree = pathlib.Path(manifest["worktree"])
     seen: dict[str, Any] = {}
 
-    def _fake_execution(cfg: Any, layout: Any, inputs: ExecutionInputs, **kw: Any) -> ExecutionEnd:
+    def _fake_execution(
+        cfg: Any, layout: Any, inputs: _execution.ExecutionInputs, **kw: Any
+    ) -> _execution.ExecutionEnd:
         seen["cwd"] = kw["cwd"]
         seen["state_dir"] = kw["state_dir"]
-        seen["process_cwd"] = Path.cwd()
-        return ExecutionEnd(0)
+        seen["process_cwd"] = pathlib.Path.cwd()
+        return _execution.ExecutionEnd(0)
 
     def _no_missing(_cfg: object) -> None:
         return None
@@ -1262,16 +1287,16 @@ def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_missing)
     monkeypatch.setattr(resume_mod, "select_isolation", _strict)
     rc = resume_mod.resume_task(
-        None, "child-BBBB22", started_at=time.time(), frontend=MagicMock(), force=False
+        None, "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
     assert rc == 0
     assert seen["cwd"] == worktree and seen["process_cwd"] == repo
     assert seen["state_dir"] == state
-    assert Path.cwd() == repo
+    assert pathlib.Path.cwd() == repo
 
 
 def test_resume_of_a_fork_whose_worktree_is_gone_refuses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A pruned or deleted worktree is named, not silently replaced by the operator's checkout."""
     import shutil
@@ -1279,26 +1304,26 @@ def test_resume_of_a_fork_whose_worktree_is_gone_refuses(
     from agent6.app import resume as resume_mod
 
     repo, _turn1, _head = _fork_fixture(tmp_path, monkeypatch)
-    state = state_dir(repo)
-    assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    state = paths.state_dir(repo)
+    assert fork._cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
     manifest = json.loads(
-        SessionLayout(state_dir=state, session_id="child-BBBB22").manifest_path.read_text(
-            encoding="utf-8"
-        )
+        sessions_layout.SessionLayout(
+            state_dir=state, session_id="child-BBBB22"
+        ).manifest_path.read_text(encoding="utf-8")
     )
     shutil.rmtree(manifest["worktree"])
 
     rc = resume_mod.resume_task(
-        None, "child-BBBB22", started_at=time.time(), frontend=MagicMock(), force=False
+        None, "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
     assert rc == 2
     err = capsys.readouterr().err
     assert manifest["worktree"] in err and "agent6 fork child-BBBB22" in err
-    assert Path.cwd() == repo
+    assert pathlib.Path.cwd() == repo
 
 
 def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A merged fork whose branch and worktree are gone is refused, pointing at the merge stamp."""
     import shutil
@@ -1306,9 +1331,9 @@ def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
     from agent6.app import resume as resume_mod
 
     repo, _turn1, head = _fork_fixture(tmp_path, monkeypatch)
-    state = state_dir(repo)
-    assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
-    layout = SessionLayout(state_dir=state, session_id="child-BBBB22")
+    state = paths.state_dir(repo)
+    assert fork._cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest["merged"] = {"into": "main", "sha": head, "tip": manifest["forked_from_sha"]}
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -1318,7 +1343,7 @@ def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
 
     assert (
         resume_mod.resume_task(
-            None, "child-BBBB22", started_at=time.time(), frontend=MagicMock(), force=False
+            None, "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
         == 2
     )
@@ -1328,7 +1353,7 @@ def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
 
 
 def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A fork resumed after its merge is refused with the chain ref that holds the later commit.
 
@@ -1339,9 +1364,9 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
     from agent6.app import resume as resume_mod
 
     repo, turn1, head = _fork_fixture(tmp_path, monkeypatch)
-    state = state_dir(repo)
-    assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
-    layout = SessionLayout(state_dir=state, session_id="child-BBBB22")
+    state = paths.state_dir(repo)
+    assert fork._cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest["merged"] = {"into": "main", "sha": head, "tip": turn1}
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -1352,19 +1377,21 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
         text=True,
         check=True,
     ).stdout.strip()
-    sp.run(["git", "update-ref", chain_ref_for("child-BBBB22"), later], cwd=repo, check=True)
+    sp.run(
+        ["git", "update-ref", git_ops.chain_ref_for("child-BBBB22"), later], cwd=repo, check=True
+    )
     sp.run(["git", "branch", "-D", "agent6/child-BBBB22"], cwd=repo, check=True)
     shutil.rmtree(manifest["worktree"])
     capsys.readouterr()
 
     assert (
         resume_mod.resume_task(
-            None, "child-BBBB22", started_at=time.time(), frontend=MagicMock(), force=False
+            None, "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
         == 2
     )
     err = capsys.readouterr().err
-    assert f"its commits are on {chain_ref_for('child-BBBB22')}" in err
+    assert f"its commits are on {git_ops.chain_ref_for('child-BBBB22')}" in err
     assert "merged into main" not in err
 
 
@@ -1374,9 +1401,9 @@ def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     A resume runs past every refusal without a provider call.
     """
     import agent6.app.resume as resume_mod
-    from agent6.app._execution import ExecutionEnd
+    from agent6.app import _execution
 
-    gdir = global_config_dir()
+    gdir = paths.global_config_dir()
     gdir.mkdir(parents=True, exist_ok=True)
     (gdir / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n'
@@ -1391,8 +1418,8 @@ def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     def _nothing(*_a: object, **_k: object) -> None:
         return None
 
-    def _finished_execution(*_a: object, **_k: object) -> ExecutionEnd:
-        return ExecutionEnd(0)
+    def _finished_execution(*_a: object, **_k: object) -> _execution.ExecutionEnd:
+        return _execution.ExecutionEnd(0)
 
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
@@ -1400,20 +1427,23 @@ def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_a_steered_fork_takes_the_steer_as_its_own_task(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A fork carries its source's task until a steer sends it elsewhere."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
-    assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
-    dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
+    assert fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"
 
     _resumable_worker(monkeypatch)
-    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only") == 0
+    assert (
+        resume._cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only")
+        == 0
+    )
 
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["user_task"] == "create README.md only"
@@ -1421,24 +1451,29 @@ def test_a_steered_fork_takes_the_steer_as_its_own_task(
 
 
 def test_a_refused_resume_leaves_the_forks_task_alone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The steer becomes the fork's task after the resume's refusals, not before."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
-    assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
-    dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
+    assert fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
 
     # No providers configured: refused before any execution.
-    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only") == 2
+    assert (
+        resume._cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only")
+        == 2
+    )
 
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"
 
 
-def test_only_the_first_steer_names_a_fork(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_only_the_first_steer_names_a_fork(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The steer that sends a fork elsewhere is its task; a later one is a follow-up within it.
 
     ACP passes every editor prompt as a steer.
@@ -1446,70 +1481,69 @@ def test_only_the_first_steer_names_a_fork(tmp_path: Path, monkeypatch: pytest.M
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
-    assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
-    dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
+    assert fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
 
     _resumable_worker(monkeypatch)
-    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only") == 0
-    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="also fix the typo") == 0
+    assert (
+        resume._cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only")
+        == 0
+    )
+    assert resume._cmd_resume(None, "brave-yak-BBBB22", force=False, steer="also fix the typo") == 0
 
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["user_task"] == "create README.md only"
 
 
 def test_a_steered_ordinary_run_keeps_its_task(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`resume --steer` on a run of its own is a follow-up within that task; the headline stays."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
 
-    assert _cmd_resume(None, "sunny-otter-AAAA11", force=False, steer="and add tests") == 2
+    assert resume._cmd_resume(None, "sunny-otter-AAAA11", force=False, steer="and add tests") == 2
 
     assert json.loads(src.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"
 
 
 def test_a_fork_records_the_untracked_files_of_its_own_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A fork's worktree is a fresh checkout, so the source's untracked paths are not inherited.
 
     Inherited, a file dropped into the fork's worktree stays unexcluded and its first commit sweeps
     it in.
     """
-    from agent6.sessions.layout import read_untracked_at_start
-
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
     (repo / "notes.txt").write_text("the operator's own file\n", encoding="utf-8")
     (src.session_dir / "untracked-at-start").write_bytes(b"notes.txt")
 
-    assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
 
-    dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
-    worktree = Path(json.loads(dst.manifest_path.read_text(encoding="utf-8"))["worktree"])
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
+    worktree = pathlib.Path(json.loads(dst.manifest_path.read_text(encoding="utf-8"))["worktree"])
     assert not (worktree / "notes.txt").exists(), "a fresh checkout has none of it"
-    assert read_untracked_at_start(dst.session_dir) == frozenset()
+    assert sessions_layout.read_untracked_at_start(dst.session_dir) == frozenset()
 
 
 def test_a_refused_fork_leaves_no_chain_ref_behind(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`sessions rm` keeps a run's branch, so forking onto a reused id hits the branch refusal."""
-    from agent6.git_ops import chain_ref_for, chain_tip, set_ref
-
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
     # The branch a removed run left behind, pointing at a different commit.
     (repo / "other.txt").write_text("other\n")
@@ -1517,39 +1551,43 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
     sp.run(["git", "commit", "-q", "-m", "other"], cwd=repo, check=True)
     sp.run(["git", "branch", "agent6/brave-yak-BBBB22", "HEAD"], cwd=repo, check=True)
 
-    assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
+    assert fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
 
     assert "could not cut fork refs" in capsys.readouterr().err
-    assert chain_tip(repo, chain_ref_for("brave-yak-BBBB22")) is None
-    assert not SessionLayout(state_dir=state, session_id="brave-yak-BBBB22").session_dir.exists()
+    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("brave-yak-BBBB22")) is None
+    assert not sessions_layout.SessionLayout(
+        state_dir=state, session_id="brave-yak-BBBB22"
+    ).session_dir.exists()
 
     # The same refusal over an id whose chain ref holds commits: the earlier run's anchor survives.
     anchor = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
-    set_ref(repo, chain_ref_for("brave-yak-BBBB22"), anchor)
+    git_ops.set_ref(repo, git_ops.chain_ref_for("brave-yak-BBBB22"), anchor)
 
-    assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
+    assert fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
 
-    assert chain_tip(repo, chain_ref_for("brave-yak-BBBB22")) == anchor
+    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("brave-yak-BBBB22")) == anchor
 
 
 def test_fork_refuses_a_run_the_model_controls_git_in(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A fork under `[git].control = "model"` refuses up front: its `.git` is read-only jailed."""
-    global_config_dir().mkdir(parents=True, exist_ok=True)
-    (global_config_dir() / "config.toml").write_text(
+    paths.global_config_dir().mkdir(parents=True, exist_ok=True)
+    (paths.global_config_dir() / "config.toml").write_text(
         '[git]\ncontrol = "model"\n[sandbox]\nprotect_git = false\n', encoding="utf-8"
     )
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     _seed_source_run(state, "src-MOD11", head_sha=head, turns=(1,))
 
-    rc = _cmd_fork(None, "src-MOD11", new_session_id="child-MOD22", no_run=True)
+    rc = fork._cmd_fork(None, "src-MOD11", new_session_id="child-MOD22", no_run=True)
 
     assert rc == 2
     assert 'control = "model"' in capsys.readouterr().err
-    assert not SessionLayout(state_dir=state, session_id="child-MOD22").manifest_path.exists()
+    assert not sessions_layout.SessionLayout(
+        state_dir=state, session_id="child-MOD22"
+    ).manifest_path.exists()

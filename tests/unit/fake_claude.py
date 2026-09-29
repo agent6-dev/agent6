@@ -54,11 +54,11 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import signal
 import stat
 import sys
 import time
-from pathlib import Path
 from typing import Any
 
 SESSION_ID = "fake-session-1"
@@ -67,7 +67,7 @@ SESSION_ID = "fake-session-1"
 def _capture(obj: dict[str, Any]) -> None:
     path = os.environ.get("FAKE_CLAUDE_CAPTURE")
     if path:
-        with Path(path).open("a", encoding="utf-8") as fh:
+        with pathlib.Path(path).open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(obj) + "\n")
 
 
@@ -204,7 +204,7 @@ class _Fake:
             {
                 "type": "system",
                 "subtype": "init",
-                "cwd": str(Path.cwd()),
+                "cwd": str(pathlib.Path.cwd()),
                 "session_id": SESSION_ID,
                 "tools": tools,
                 "mcp_servers": [{"name": "agent6", "status": "connected"}],
@@ -547,8 +547,8 @@ def main() -> None:
     argv = sys.argv[1:]
     scenario: dict[str, Any] = {}
     path = os.environ.get("FAKE_CLAUDE_SCENARIO")
-    if path and Path(path).exists():
-        scenario = json.loads(Path(path).read_text(encoding="utf-8"))
+    if path and pathlib.Path(path).exists():
+        scenario = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
     if argv[:2] == ["auth", "status"]:
         auth = scenario.get("auth", {"loggedIn": True, "rc": 0})
         body = {
@@ -569,15 +569,15 @@ def main() -> None:
     )
     prompt_text = None
     prompt_mode = None
-    if prompt_file and Path(prompt_file).exists():
-        prompt_text = Path(prompt_file).read_text(encoding="utf-8")
-        prompt_mode = stat.S_IMODE(Path(prompt_file).stat().st_mode)
+    if prompt_file and pathlib.Path(prompt_file).exists():
+        prompt_text = pathlib.Path(prompt_file).read_text(encoding="utf-8")
+        prompt_mode = stat.S_IMODE(pathlib.Path(prompt_file).stat().st_mode)
     _capture(
         {
             "argv": argv,
             "env": dict(os.environ),
-            "cwd": str(Path.cwd()),
-            "cwd_entries": sorted(p.name for p in Path.cwd().iterdir()),
+            "cwd": str(pathlib.Path.cwd()),
+            "cwd_entries": sorted(p.name for p in pathlib.Path.cwd().iterdir()),
             "system_prompt": prompt_text,
             "system_prompt_mode": prompt_mode,
             "pid": os.getpid(),
@@ -585,10 +585,10 @@ def main() -> None:
     )
     marker = scenario.get("term_marker")
     if marker:
-        Path(marker).write_text("up", encoding="utf-8")
+        pathlib.Path(marker).write_text("up", encoding="utf-8")
 
         def _term(_signum: int, _frame: object) -> None:
-            Path(marker).unlink(missing_ok=True)
+            pathlib.Path(marker).unlink(missing_ok=True)
             os._exit(143)
 
         signal.signal(signal.SIGTERM, _term)

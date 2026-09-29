@@ -4,27 +4,23 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+import dataclasses
+import pathlib
 from typing import Any
 
 import pytest
 
+from agent6 import kinds, paths
 from agent6.app.machine import (
     NetworkRefusal,
     machine_network_refusal,
     machine_protect_paths,
+    run,
     validate_bundle,
 )
-from agent6.app.machine.run import machine_tool_policy_factory
 from agent6.config import Config
-from agent6.kinds import NetworkMode
-from agent6.machine import MachineJournal, ToolState, drive, load_machine
-from agent6.machine.engine import LiveWorld, ToolExecResult
-from agent6.paths import jail_cache_home
-from agent6.ui.cli.machine_cmds import (
-    _resolve_network_refusal,  # pyright: ignore[reportPrivateUsage]
-)
+from agent6.machine import MachineJournal, ToolState, drive, engine, load_machine
+from agent6.ui.cli import machine_cmds
 
 # A two-tool machine: the first tool opts into the network, the second does not.
 NET_MACHINE = """
@@ -86,7 +82,7 @@ reason = "failed"
 """
 
 
-def _write(tmp_path: Path, text: str, name: str = "m.asm.toml") -> Path:
+def _write(tmp_path: pathlib.Path, text: str, name: str = "m.asm.toml") -> pathlib.Path:
     f = tmp_path / name
     f.write_text(text, encoding="utf-8")
     return f
@@ -95,7 +91,7 @@ def _write(tmp_path: Path, text: str, name: str = "m.asm.toml") -> Path:
 # --- ToolState.network field -----------------------------------------
 
 
-def test_tool_network_defaults_auto(tmp_path: Path) -> None:
+def test_tool_network_defaults_auto(tmp_path: pathlib.Path) -> None:
     text = NET_MACHINE.replace('network = "host"\n', "")
     spec = load_machine(_write(tmp_path, text))
     fetch = spec.states["fetch"]
@@ -103,7 +99,7 @@ def test_tool_network_defaults_auto(tmp_path: Path) -> None:
     assert fetch.network == "auto"
 
 
-def test_tool_network_roundtrips(tmp_path: Path) -> None:
+def test_tool_network_roundtrips(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path, NET_MACHINE))
     fetch = spec.states["fetch"]
     store = spec.states["store"]
@@ -114,20 +110,20 @@ def test_tool_network_roundtrips(tmp_path: Path) -> None:
 # --- engine threads network through to the World ----------------------
 
 
-@dataclass
+@dataclasses.dataclass
 class _RecordingWorld:
-    net_calls: list[tuple[tuple[str, ...], NetworkMode]]
+    net_calls: list[tuple[tuple[str, ...], kinds.NetworkMode]]
 
     def run_tool(
         self,
         argv: tuple[str, ...],
         timeout_s: float,
         *,
-        network: NetworkMode = "none",
+        network: kinds.NetworkMode = "none",
         pass_env: tuple[str, ...] = (),
-    ) -> ToolExecResult:
+    ) -> engine.ToolExecResult:
         self.net_calls.append((argv, network))
-        return ToolExecResult(exit_code=0, stdout="", timed_out=False)
+        return engine.ToolExecResult(exit_code=0, stdout="", timed_out=False)
 
     def run_agent(self, request: Any) -> Any:  # pragma: no cover - no agent states here
         raise AssertionError("no agent states")
@@ -136,9 +132,8 @@ class _RecordingWorld:
         return 1000.0
 
     def sleep_until(self, wake_epoch: float | None) -> Any:  # pragma: no cover
-        from agent6.machine.engine import WaitWake
 
-        return WaitWake("tick")
+        return engine.WaitWake("tick")
 
     def materialize_poke(self, payload: Any) -> None:  # pragma: no cover
         pass
@@ -147,7 +142,7 @@ class _RecordingWorld:
         pass
 
 
-def test_engine_passes_per_state_network(tmp_path: Path) -> None:
+def test_engine_passes_per_state_network(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path, NET_MACHINE))
     journal = MachineJournal(tmp_path / "inst")
     world = _RecordingWorld(net_calls=[])
@@ -160,7 +155,7 @@ def test_engine_passes_per_state_network(tmp_path: Path) -> None:
 # LiveWorld passes the per-state network flag straight through; the opt-in is gated at startup.
 
 
-@dataclass
+@dataclasses.dataclass
 class _FakeJailResult:
     returncode: int = 0
     stdout: str = ""
@@ -180,22 +175,22 @@ def _patch_jail(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
 
 
 def _world(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     isolation: str,
     *,
     cfg: Config | None = None,
-    protect_paths: tuple[Path, ...] = (),
-    data_dir: Path | None = None,
-) -> LiveWorld:
+    protect_paths: tuple[pathlib.Path, ...] = (),
+    data_dir: pathlib.Path | None = None,
+) -> engine.LiveWorld:
     """A LiveWorld wired exactly as run_machine wires it, through the shared policy builder."""
-    factory = machine_tool_policy_factory(
+    factory = run.machine_tool_policy_factory(
         cfg or Config(),
         tmp_path,
         isolation,  # type: ignore[arg-type]
         protect_paths=protect_paths,
         data_dir=data_dir,
     )
-    return LiveWorld(
+    return engine.LiveWorld(
         cwd=tmp_path,
         journal=MachineJournal(tmp_path / "i"),
         tool_policy=factory,
@@ -204,7 +199,7 @@ def _world(
 
 
 def test_machine_tool_jail_carries_operator_grants_and_protect_git(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The machine tool jail is built by the same policy builder as run commands.
 
@@ -225,14 +220,14 @@ def test_machine_tool_jail_carries_operator_grants_and_protect_git(
     world = _world(tmp_path, "strict", cfg=cfg)
     world.run_tool(("true",), 5.0, network="none")
     policy = seen[-1]
-    assert Path("/srv/ro") in policy.extra_ro_paths
-    assert Path("/srv/rw") in policy.extra_rw_paths
-    assert Path("/srv/secret") in policy.hide_paths
+    assert pathlib.Path("/srv/ro") in policy.extra_ro_paths
+    assert pathlib.Path("/srv/rw") in policy.extra_rw_paths
+    assert pathlib.Path("/srv/secret") in policy.hide_paths
     assert (tmp_path / ".git").resolve() in policy.extra_protect_paths
 
 
 def test_liveworld_non_network_tool_is_isolated(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
     world = _world(tmp_path, "strict")
@@ -241,7 +236,7 @@ def test_liveworld_non_network_tool_is_isolated(
 
 
 def test_liveworld_grants_data_dir_rw_and_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The data dir is RW in every tool jail and exported as $AGENT6_MACHINE_DATA_DIR.
     seen = _patch_jail(monkeypatch)
@@ -255,18 +250,18 @@ def test_liveworld_grants_data_dir_rw_and_env(
 
 
 def test_liveworld_no_data_dir_grants_only_the_home(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
     world = _world(tmp_path, "hardened")
     world.run_tool(("true",), 5.0, network="none")
     # hardened's persistent HOME is the only extra grant: no data dir, no data grant.
-    assert seen[-1].extra_rw_paths == (jail_cache_home(),)
+    assert seen[-1].extra_rw_paths == (paths.jail_cache_home(),)
     assert all(k != "AGENT6_MACHINE_DATA_DIR" for k, _ in seen[-1].env)
 
 
 def test_liveworld_disables_python_bytecode(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
     world = _world(tmp_path, "hardened")
@@ -275,7 +270,7 @@ def test_liveworld_disables_python_bytecode(
 
 
 def test_liveworld_passes_protect_paths_to_jail(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
     guarded = (tmp_path / "m.asm.toml", tmp_path / "scripts")
@@ -288,7 +283,7 @@ def test_liveworld_passes_protect_paths_to_jail(
 # --- machine-file immutability (_machine_protect_paths) --------------------
 
 
-def test_protect_paths_include_machine_file_and_scripts(tmp_path: Path) -> None:
+def test_protect_paths_include_machine_file_and_scripts(tmp_path: pathlib.Path) -> None:
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
     got = machine_protect_paths(f, tmp_path)
@@ -296,13 +291,13 @@ def test_protect_paths_include_machine_file_and_scripts(tmp_path: Path) -> None:
     assert (tmp_path / "scripts").resolve() in got
 
 
-def test_protect_paths_skip_missing_scripts(tmp_path: Path) -> None:
+def test_protect_paths_skip_missing_scripts(tmp_path: pathlib.Path) -> None:
     f = _write(tmp_path, NET_MACHINE)  # no scripts/ dir
     got = machine_protect_paths(f, tmp_path)
     assert got == (f.resolve(),)
 
 
-def test_protect_paths_exclude_machine_outside_cwd(tmp_path: Path) -> None:
+def test_protect_paths_exclude_machine_outside_cwd(tmp_path: pathlib.Path) -> None:
     # A machine file outside the mounted cwd is not in the child's view, so cannot be protected.
     outside = tmp_path.parent / "outside.asm.toml"
     outside.write_text(NET_MACHINE, encoding="utf-8")
@@ -314,7 +309,7 @@ def test_protect_paths_exclude_machine_outside_cwd(tmp_path: Path) -> None:
 # --- bundle / script-path validation ---------------------------------------
 
 
-def test_bundle_ok_when_script_exists(tmp_path: Path) -> None:
+def test_bundle_ok_when_script_exists(tmp_path: pathlib.Path) -> None:
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "fetch.sh").write_text("#!/bin/sh\n", encoding="utf-8")
@@ -322,14 +317,14 @@ def test_bundle_ok_when_script_exists(tmp_path: Path) -> None:
     assert validate_bundle(spec, f) == []
 
 
-def test_bundle_flags_missing_script(tmp_path: Path) -> None:
+def test_bundle_flags_missing_script(tmp_path: pathlib.Path) -> None:
     f = _write(tmp_path, NET_MACHINE)  # references scripts/fetch.sh, never created
     spec = load_machine(f)
     problems = validate_bundle(spec, f)
     assert any("not found in bundle" in p for p in problems)
 
 
-def test_bundle_flags_escaping_command_ref(tmp_path: Path) -> None:
+def test_bundle_flags_escaping_command_ref(tmp_path: pathlib.Path) -> None:
     text = NET_MACHINE.replace(
         'command = ["scripts/fetch.sh"]', 'command = ["scripts/../../etc/x"]'
     )
@@ -339,7 +334,7 @@ def test_bundle_flags_escaping_command_ref(tmp_path: Path) -> None:
     assert any("escapes the bundle" in p for p in problems)
 
 
-def test_bundle_flags_symlink_escape(tmp_path: Path) -> None:
+def test_bundle_flags_symlink_escape(tmp_path: pathlib.Path) -> None:
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
     outside = tmp_path.parent / "outside_secret"
@@ -350,7 +345,7 @@ def test_bundle_flags_symlink_escape(tmp_path: Path) -> None:
     assert any("outside the bundle" in p for p in problems)
 
 
-def test_bundle_reports_circular_symlink_in_scripts(tmp_path: Path) -> None:
+def test_bundle_reports_circular_symlink_in_scripts(tmp_path: pathlib.Path) -> None:
     # A circular symlink makes Path.resolve() raise; the validator reports it as a problem.
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
@@ -360,7 +355,7 @@ def test_bundle_reports_circular_symlink_in_scripts(tmp_path: Path) -> None:
     assert any("loop" in p for p in problems)
 
 
-def test_bundle_reports_circular_symlink_command_ref(tmp_path: Path) -> None:
+def test_bundle_reports_circular_symlink_command_ref(tmp_path: pathlib.Path) -> None:
     text = NET_MACHINE.replace('command = ["scripts/fetch.sh"]', 'command = ["scripts/loop"]')
     f = _write(tmp_path, text)
     (tmp_path / "scripts").mkdir()
@@ -370,7 +365,9 @@ def test_bundle_reports_circular_symlink_command_ref(tmp_path: Path) -> None:
     assert any("fetch" not in p and "loop" in p for p in problems)
 
 
-def test_machine_check_fails_on_bad_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_machine_check_fails_on_bad_bundle(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from agent6.ui.cli import main
 
     text = NET_MACHINE.replace('command = ["scripts/fetch.sh"]', 'command = ["scripts/../escape"]')
@@ -380,7 +377,7 @@ def test_machine_check_fails_on_bad_bundle(tmp_path: Path, monkeypatch: pytest.M
 
 
 def test_machine_check_passes_with_valid_bundle(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from agent6.ui.cli import main
 
@@ -392,7 +389,7 @@ def test_machine_check_passes_with_valid_bundle(
 
 
 def test_machine_run_refuses_escaping_bundle(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `machine run` re-validates the bundle: a `scripts/` symlink escaping it must refuse first.
     from agent6.ui.cli import main
@@ -408,7 +405,7 @@ def test_machine_run_refuses_escaping_bundle(
 
 
 def test_machine_run_validates_config_overlay_for_pure_machine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A pure wait/terminal machine still validates its [config] overlay.
     from agent6.ui.cli import main
@@ -427,7 +424,7 @@ def test_machine_run_validates_config_overlay_for_pure_machine(
     assert main(["machine", "run", str(f)]) == 2
 
 
-def test_suggested_network_fix_block_is_unfixable(tmp_path: Path) -> None:
+def test_suggested_network_fix_block_is_unfixable(tmp_path: pathlib.Path) -> None:
     # network="none" REQUIRES isolation only strict provides -> no config fix.
     text = NET_MACHINE.replace('network = "host"', 'network = "none"')
     spec = load_machine(_write(tmp_path, text))
@@ -440,13 +437,13 @@ def test_suggested_network_fix_block_is_unfixable(tmp_path: Path) -> None:
 
 
 def test_resolve_network_refusal_unfixable_points_to_simulate(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     text = NET_MACHINE.replace('network = "host"', 'network = "none"')
     spec = load_machine(_write(tmp_path, text))
     fetch = spec.states["fetch"]
     assert isinstance(fetch, ToolState)
-    code = _resolve_network_refusal(
+    code = machine_cmds._resolve_network_refusal(
         tmp_path / "m.asm.toml",
         NetworkRefusal("needs strict"),
         Config.model_validate({}),
@@ -494,12 +491,12 @@ reason = "failed"
 """
 
 
-def _mixed_tools(tmp_path: Path) -> list[ToolState]:
+def _mixed_tools(tmp_path: pathlib.Path) -> list[ToolState]:
     spec = load_machine(_write(tmp_path, MIXED_MACHINE, name="netmix.asm.toml"))
     return [s for s in spec.states.values() if isinstance(s, ToolState)]
 
 
-def test_suggested_network_fix_strict_mixes_block_with_allow(tmp_path: Path) -> None:
+def test_suggested_network_fix_strict_mixes_block_with_allow(tmp_path: pathlib.Path) -> None:
     """A `network = "none"` tool does not swallow the fix its networked sibling needs."""
     tools = _mixed_tools(tmp_path)
     r = machine_network_refusal(Config.model_validate({}), "strict", tools)

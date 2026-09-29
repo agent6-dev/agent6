@@ -11,27 +11,27 @@ that started fine.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
+from agent6 import kinds
 from agent6.app.machine import create as create_mod
-from agent6.kinds import session_bucket
-from agent6.sessions.layout import bucket_dir
-from agent6.ui.tui.machines import _list_drafts  # pyright: ignore[reportPrivateUsage]
+from agent6.sessions import layout
+from agent6.ui.tui import machines  # pyright: ignore[reportPrivateUsage]
 
 
-def test_the_locator_reads_the_directory_the_writer_writes(tmp_path: Path) -> None:
-    written = bucket_dir(tmp_path, session_bucket("machine")) / "eager-forge-AAAAAA"
+def test_the_locator_reads_the_directory_the_writer_writes(tmp_path: pathlib.Path) -> None:
+    written = layout.bucket_dir(tmp_path, kinds.session_bucket("machine")) / "eager-forge-AAAAAA"
     written.mkdir(parents=True)
 
-    assert _list_drafts(tmp_path) == [written]
+    assert machines._list_drafts(tmp_path) == [written]
 
 
-def test_the_locator_lists_the_directory_new_draft_dir_derives(tmp_path: Path) -> None:
+def test_the_locator_lists_the_directory_new_draft_dir_derives(tmp_path: pathlib.Path) -> None:
     drafted = create_mod.new_draft_dir(tmp_path)
     drafted.mkdir(parents=True)
 
-    assert _list_drafts(tmp_path) == [drafted]
+    assert machines._list_drafts(tmp_path) == [drafted]
 
 
-def test_an_empty_state_dir_lists_nothing(tmp_path: Path) -> None:
-    assert _list_drafts(tmp_path) == []
+def test_an_empty_state_dir_lists_nothing(tmp_path: pathlib.Path) -> None:
+    assert machines._list_drafts(tmp_path) == []

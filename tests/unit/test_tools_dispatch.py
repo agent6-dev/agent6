@@ -4,24 +4,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from unittest import mock
 
+import pydantic
 import pytest
-from pydantic import ValidationError
 
+from agent6 import kinds
 from agent6.config import Config
-from agent6.kinds import IsolationLevel
-from agent6.tools.dispatch import ToolDispatcher, ToolError
-from agent6.tools.operator_prompts import (
-    ApprovalAnswer,
-    ApprovalRequest,
-    OperatorPrompts,
-    QuestionAnswer,
-    QuestionRequest,
-)
-from agent6.tools.results import EditResult
-from agent6.tools.schema import UserQuestion
+from agent6.tools import dispatch, errors, operator_prompts, schema
+from agent6.tools import results as tools_results
 
 _VALID_TOML = """
 [agent6]
@@ -50,7 +42,7 @@ max_tokens_fallback = 2000000
 """
 
 
-def _config(tmp_path: Path) -> Config:
+def _config(tmp_path: pathlib.Path) -> Config:
     from agent6.config import load_config
 
     p = tmp_path / "agent6.toml"
@@ -58,7 +50,7 @@ def _config(tmp_path: Path) -> Config:
     return load_config(p)
 
 
-def _config_with_run_commands(tmp_path: Path, mode: str) -> Config:
+def _config_with_run_commands(tmp_path: pathlib.Path, mode: str) -> Config:
     from agent6.config import load_config
 
     p = tmp_path / f"agent6-{mode}.toml"
@@ -69,28 +61,25 @@ def _config_with_run_commands(tmp_path: Path, mode: str) -> Config:
     return load_config(p)
 
 
-def test_read_file_ok(tmp_path: Path) -> None:
+def test_read_file_ok(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "hello.txt").write_text("hi", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("read_file", {"path": "hello.txt"}).to_wire()
     assert out["content"] == "hi"
 
 
-def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
+def test_verify_command_unexecutable_raises_loud(tmp_path: pathlib.Path) -> None:
     """A verify_command the jail cannot execute raises OperatorCommandUnexecutableError.
 
     On a no-userns host the jail PATH is /usr/bin:/bin; a uv-based verify exited 127, read as
     an ordinary verify failure, and the run committed unverified work. The model cannot fix
     operator config, so this fails loudly.
     """
-    from agent6.kinds import CommandResult
-    from agent6.tools.dispatch import OperatorCommandUnexecutableError
-
     # run_commands = "yes": this exercises verify EXECUTION, not the gate.
     cfg = _config_with_run_commands(tmp_path, "yes")  # verify_command = ["true"]
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    unexecutable = CommandResult(
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    unexecutable = kinds.CommandResult(
         argv=("true",),
         returncode=127,
         stdout="",
@@ -100,13 +89,13 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
     )
     with (
         mock.patch("agent6.tools.dispatch.run_in_jail", return_value=unexecutable),
-        pytest.raises(OperatorCommandUnexecutableError),
+        pytest.raises(errors.OperatorCommandUnexecutableError),
     ):
         d.dispatch("run_verify_command", {})
 
     # An ordinary non-zero exit (ran but failed) must NOT raise -- it is a real
     # verify failure the model can act on.
-    ran_and_failed = CommandResult(
+    ran_and_failed = kinds.CommandResult(
         argv=("true",), returncode=1, stdout="", stderr="assert", duration_s=0.1, exec_failed=False
     )
     with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=ran_and_failed):
@@ -114,7 +103,7 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
     assert out["returncode"] == 1
 
 
-def test_apply_edit_tolerates_a_uniform_indent_mismatch(tmp_path: Path) -> None:
+def test_apply_edit_tolerates_a_uniform_indent_mismatch(tmp_path: pathlib.Path) -> None:
     # The dominant weak-model miss: right lines, wrong indent depth. old_string
     # is written at base indent 4; the file uses 8. The edit applies, and the
     # result keeps the FILE's indentation (not the model's).
@@ -122,7 +111,7 @@ def test_apply_edit_tolerates_a_uniform_indent_mismatch(tmp_path: Path) -> None:
     (tmp_path / "m.py").write_text(
         "class C:\n    def m(self):\n        x = 1\n        return x\n", encoding="utf-8"
     )
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
         "apply_edit",
         {
@@ -141,15 +130,15 @@ def test_apply_edit_tolerates_a_uniform_indent_mismatch(tmp_path: Path) -> None:
     )
 
 
-def test_apply_edit_refuses_an_ambiguous_indent_match(tmp_path: Path) -> None:
+def test_apply_edit_refuses_an_ambiguous_indent_match(tmp_path: pathlib.Path) -> None:
     # A multi-line block that matches TWO regions up to indent (0 exact matches):
     # never guess; surface the mismatch error, don't fuzzy-apply.
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text(
         "if x:\n    a = 1\n    b = 2\nif y:\n        a = 1\n        b = 2\n", encoding="utf-8"
     )
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="not found"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="not found"):
         d.dispatch(
             "apply_edit",
             {
@@ -161,71 +150,74 @@ def test_apply_edit_refuses_an_ambiguous_indent_match(tmp_path: Path) -> None:
     assert "a = 9" not in (tmp_path / "a.py").read_text(encoding="utf-8")
 
 
-def test_raw_arguments_sentinel_gives_a_clear_json_error(tmp_path: Path) -> None:
+def test_raw_arguments_sentinel_gives_a_clear_json_error(tmp_path: pathlib.Path) -> None:
     # When the provider couldn't parse the tool-call arguments as JSON it leaves
     # the {"_raw_arguments": ...} sentinel; dispatch must tell the model plainly
     # the JSON was malformed (not a confusing "extra fields" schema error) so it
     # resends in one shot.
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    with pytest.raises(ToolError, match="not a JSON object"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    with pytest.raises(errors.ToolError, match="not a JSON object"):
         d.dispatch("read_file", {"_raw_arguments": '{"path": "a.py"'})
 
 
-def test_runaway_raw_arguments_name_the_truncation(tmp_path: Path) -> None:
+def test_runaway_raw_arguments_name_the_truncation(tmp_path: pathlib.Path) -> None:
     # A huge unterminated argument string is a runaway generation cut off by
     # the output-token ceiling (observed: a model emitting a 117KB argument of
     # one alternation repeated). "Resend" feedback makes such a model
     # regenerate the same runaway; the error must name the truncation and
     # direct a much smaller call instead.
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     runaway = '{"path": "' + "setup_show|" * 3000
-    with pytest.raises(ToolError, match="cut off mid-generation"):
+    with pytest.raises(errors.ToolError, match="cut off mid-generation"):
         d.dispatch("read_file", {"_raw_arguments": runaway})
 
 
-def test_ask_user_routes_to_questioner(tmp_path: Path) -> None:
+def test_ask_user_routes_to_questioner(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     seen: dict[str, object] = {}
 
-    def questioner(request: QuestionRequest, /) -> QuestionAnswer:
+    def questioner(request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         seen["questions"] = request.questions
         answers = tuple(q.options[1] if q.options else "typed" for q in request.questions)
-        return QuestionAnswer(answers, "stdin")
+        return operator_prompts.QuestionAnswer(answers, "stdin")
 
-    d = ToolDispatcher(root=tmp_path, config=cfg, prompts=OperatorPrompts(questioner=questioner))
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=cfg, prompts=operator_prompts.OperatorPrompts(questioner=questioner)
+    )
     out = d.dispatch(
         "ask_user", {"questions": [{"question": "which?", "options": ["a", "b"]}]}
     ).to_wire()
     assert out == {"answers": ["b"]}
-    assert seen["questions"] == (UserQuestion(question="which?", options=("a", "b")),)
+    assert seen["questions"] == (schema.UserQuestion(question="which?", options=("a", "b")),)
 
 
-def test_default_questioner_headless_returns_empty(tmp_path: Path) -> None:
+def test_default_questioner_headless_returns_empty(tmp_path: pathlib.Path) -> None:
     # No injected questioner + EOF on stdin (headless) -> empty answers, no hang.
-    from agent6.tools.operator_prompts import (
-        _default_questioner,  # pyright: ignore[reportPrivateUsage]
-    )
 
-    request = QuestionRequest(
-        id="question-1", questions=(UserQuestion(question="q?", options=("a", "b")),), call_id=1
+    request = operator_prompts.QuestionRequest(
+        id="question-1",
+        questions=(schema.UserQuestion(question="q?", options=("a", "b")),),
+        call_id=1,
     )
     with mock.patch("builtins.input", side_effect=EOFError):
-        assert _default_questioner(request).answers == ("",)
+        assert operator_prompts._default_questioner(request).answers == ("",)
 
 
-def test_ask_user_refused_outside_run_mode(tmp_path: Path) -> None:
+def test_ask_user_refused_outside_run_mode(tmp_path: pathlib.Path) -> None:
     # ask_user is a run-mode tool; the dispatcher backstops it in other modes
     # so a tool-list regression can't pause a plan/ask/machine loop.
     cfg = _config(tmp_path)
-    prompts = OperatorPrompts(questioner=lambda request: QuestionAnswer(("x",), "stdin"))
-    d = ToolDispatcher(root=tmp_path, config=cfg, mode="plan", prompts=prompts)
-    with pytest.raises(ToolError, match="not available in plan mode"):
+    prompts = operator_prompts.OperatorPrompts(
+        questioner=lambda request: operator_prompts.QuestionAnswer(("x",), "stdin")
+    )
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="plan", prompts=prompts)
+    with pytest.raises(errors.ToolError, match="not available in plan mode"):
         d.dispatch("ask_user", {"questions": [{"question": "q?"}]})
 
 
 @pytest.mark.parametrize("mode", ["plan", "ask", "machine"])
 def test_run_metric_refused_outside_run_mode(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
     """run_metric_command is run-only, and the dispatcher backstops it in every other mode.
 
@@ -248,13 +240,13 @@ def test_run_metric_refused_outside_run_mode(
         fired.append(policy)
 
     monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
-    d = ToolDispatcher(root=tmp_path, config=cfg, mode=mode)  # type: ignore[arg-type]
-    with pytest.raises(ToolError, match=f"not available in {mode} mode"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode=mode)  # type: ignore[arg-type]
+    with pytest.raises(errors.ToolError, match=f"not available in {mode} mode"):
         d.dispatch("run_metric_command", {})
     assert fired == []
 
 
-def test_mode_backstop_is_the_mode_tool_surface(tmp_path: Path) -> None:
+def test_mode_backstop_is_the_mode_tool_surface(tmp_path: pathlib.Path) -> None:
     """The backstop derives from the per-mode surface tool_definitions exposes.
 
     finish_planning in run and run_metric outside run were the gaps a hand-list missed.
@@ -262,33 +254,33 @@ def test_mode_backstop_is_the_mode_tool_surface(tmp_path: Path) -> None:
     fetch dispatches it in every mode.
     """
     cfg = _config(tmp_path)
-    run = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="not available in run mode"):
+    run = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="not available in run mode"):
         run.dispatch("finish_planning", {})
     assert run.dispatch("agent6_docs", {}).to_wire()["available"]
-    machine = ToolDispatcher(root=tmp_path, config=cfg, mode="machine")
+    machine = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="machine")
     assert machine.dispatch("agent6_docs", {}).to_wire()["available"]
 
 
-def test_absolute_path_rejected(tmp_path: Path) -> None:
+def test_absolute_path_rejected(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="Absolute"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="Absolute"):
         d.dispatch("read_file", {"path": "/etc/passwd"})
 
 
-def test_parent_traversal_rejected(tmp_path: Path) -> None:
+def test_parent_traversal_rejected(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match=r"\.\."):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match=r"\.\."):
         d.dispatch("read_file", {"path": "../outside.txt"})
 
 
-def test_read_file_allows_nested_dotdir(tmp_path: Path) -> None:
+def test_read_file_allows_nested_dotdir(tmp_path: pathlib.Path) -> None:
     # A leading-dot path component does not block reads; .agent6/ is no longer
     # special (run state lives out of the repo).
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     target = tmp_path / ".cache" / "foo"
     target.mkdir(parents=True)
     (target / "x.jsonl").write_text("{}\n", encoding="utf-8")
@@ -296,13 +288,13 @@ def test_read_file_allows_nested_dotdir(tmp_path: Path) -> None:
     assert out["content"] == "{}\n"
 
 
-def test_apply_edit_refuses_git_dir(tmp_path: Path) -> None:
+def test_apply_edit_refuses_git_dir(tmp_path: pathlib.Path) -> None:
     # apply_edit writes in-process (outside the jail), so without a guard the
     # LLM could plant a .git/hooks/pre-commit or rewrite .git/config and get
     # code run outside the sandbox on the next commit -- bypassing protect_git.
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match=r"\.git"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match=r"\.git"):
         d.dispatch(
             "apply_edit",
             {
@@ -312,10 +304,10 @@ def test_apply_edit_refuses_git_dir(tmp_path: Path) -> None:
         )
 
 
-def test_apply_patch_refuses_git_config(tmp_path: Path) -> None:
+def test_apply_patch_refuses_git_config(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match=r"\.git"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match=r"\.git"):
         d.dispatch(
             "apply_patch",
             {
@@ -325,12 +317,12 @@ def test_apply_patch_refuses_git_config(tmp_path: Path) -> None:
         )
 
 
-def test_apply_edit_refuses_git_via_symlink(tmp_path: Path) -> None:
+def test_apply_edit_refuses_git_via_symlink(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     (tmp_path / ".git").mkdir()
     (tmp_path / "decoy").symlink_to(".git", target_is_directory=True)
-    with pytest.raises(ToolError, match=r"\.git.*symlink"):
+    with pytest.raises(errors.ToolError, match=r"\.git.*symlink"):
         d.dispatch(
             "apply_edit",
             {
@@ -340,14 +332,14 @@ def test_apply_edit_refuses_git_via_symlink(tmp_path: Path) -> None:
         )
 
 
-def test_apply_edit_allows_nested_git_dir(tmp_path: Path) -> None:
+def test_apply_edit_allows_nested_git_dir(tmp_path: pathlib.Path) -> None:
     """`protect_git` covers the project's own repository; a nested `.git` is content like any file.
 
     Tracked by the root repo or untracked, no guarantee is offered over it. Holds raw and
     symlink-resolved.
     """
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
         "apply_edit",
         {
@@ -365,7 +357,7 @@ def test_apply_edit_allows_nested_git_dir(tmp_path: Path) -> None:
         },
     )
     assert (tmp_path / "sub" / ".git").read_text(encoding="utf-8") == "gitdir: x\n"
-    (tmp_path / "innocent").symlink_to(Path("vendor/dep/.git"), target_is_directory=True)
+    (tmp_path / "innocent").symlink_to(pathlib.Path("vendor/dep/.git"), target_is_directory=True)
     d.dispatch(
         "apply_edit",
         {
@@ -376,11 +368,11 @@ def test_apply_edit_allows_nested_git_dir(tmp_path: Path) -> None:
     assert (tmp_path / "vendor/dep/.git/hooks/pre-commit").exists()
 
 
-def test_apply_edit_allows_git_lookalike_components(tmp_path: Path) -> None:
+def test_apply_edit_allows_git_lookalike_components(tmp_path: pathlib.Path) -> None:
     # Only the exact top-level component `.git` is protected: `git`,
     # `.gitignore`, `.github`, and any other `.git*` name stay writable.
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     for path in (
         "src/git/main.py",
         "a/.gitignore",
@@ -397,7 +389,7 @@ def test_apply_edit_allows_git_lookalike_components(tmp_path: Path) -> None:
         assert (tmp_path / path).read_text(encoding="utf-8") == "ok\n"
 
 
-def test_apply_edit_allows_git_write_when_protect_git_false(tmp_path: Path) -> None:
+def test_apply_edit_allows_git_write_when_protect_git_false(tmp_path: pathlib.Path) -> None:
     # Opting out of protect_git lifts the guard (consistent with the jail,
     # which also stops RO-binding .git when protect_git is false).
     from agent6.config import load_config
@@ -405,7 +397,7 @@ def test_apply_edit_allows_git_write_when_protect_git_false(tmp_path: Path) -> N
     p = tmp_path / "agent6-nogit.toml"
     p.write_text(_VALID_TOML.replace("protect_git = true", "protect_git = false"), encoding="utf-8")
     cfg = load_config(p)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
         "apply_edit",
         {
@@ -416,7 +408,7 @@ def test_apply_edit_allows_git_write_when_protect_git_false(tmp_path: Path) -> N
     assert (tmp_path / ".git" / "description").read_text(encoding="utf-8") == "ok\n"
 
 
-def test_apply_edit_refuses_writes_inside_a_virtualenv(tmp_path: Path) -> None:
+def test_apply_edit_refuses_writes_inside_a_virtualenv(tmp_path: pathlib.Path) -> None:
     # A run rewriting an editable-install .pth inside .venv to make an in-jail
     # verify pass silently corrupts the operator's environment (venvs are
     # gitignored, so it never shows in the run's diff). pyvenv.cfg marks the
@@ -428,8 +420,8 @@ def test_apply_edit_refuses_writes_inside_a_virtualenv(tmp_path: Path) -> None:
     (venv / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
     pth = site / "_editable_impl_pkg.pth"
     pth.write_text("/home/user/proj/src\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match=r"virtualenv|site-packages"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match=r"virtualenv|site-packages"):
         d.dispatch(
             "apply_edit",
             {
@@ -446,15 +438,15 @@ def test_apply_edit_refuses_writes_inside_a_virtualenv(tmp_path: Path) -> None:
     assert pth.read_text(encoding="utf-8") == "/home/user/proj/src\n"  # untouched
 
 
-def test_apply_edit_refuses_site_packages_outside_a_pyvenv(tmp_path: Path) -> None:
+def test_apply_edit_refuses_site_packages_outside_a_pyvenv(tmp_path: pathlib.Path) -> None:
     # A site-packages tree without a pyvenv.cfg above it (a bare install layout)
     # is still installed environment, not source.
     cfg = _config(tmp_path)
     site = tmp_path / "env" / "site-packages" / "pkg"
     site.mkdir(parents=True)
     (site / "mod.py").write_text("x = 1\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="site-packages"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="site-packages"):
         d.dispatch(
             "apply_edit",
             {
@@ -464,14 +456,14 @@ def test_apply_edit_refuses_site_packages_outside_a_pyvenv(tmp_path: Path) -> No
         )
 
 
-def test_apply_edit_allows_a_normal_source_file_named_like_env(tmp_path: Path) -> None:
+def test_apply_edit_allows_a_normal_source_file_named_like_env(tmp_path: pathlib.Path) -> None:
     # The guard keys on pyvenv.cfg / a site-packages ancestor, not on a name:
     # a source file under a dir merely called "env" (no pyvenv.cfg) is fine.
     cfg = _config(tmp_path)
     src = tmp_path / "env" / "settings.py"
     src.parent.mkdir()
     src.write_text("DEBUG = False\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
         "apply_edit",
         {
@@ -482,7 +474,7 @@ def test_apply_edit_allows_a_normal_source_file_named_like_env(tmp_path: Path) -
     assert "DEBUG = True" in src.read_text(encoding="utf-8")
 
 
-def test_apply_edit_refuses_extra_protect_paths(tmp_path: Path) -> None:
+def test_apply_edit_refuses_extra_protect_paths(tmp_path: pathlib.Path) -> None:
     # A machine bundle's .asm.toml + scripts/ are passed as extra_protect_paths.
     # The jail marks them read-only for run_command, but the in-process edit tools
     # ran outside that -- a mode="run" state could rewrite its own logic/scripts
@@ -494,12 +486,12 @@ def test_apply_edit_refuses_extra_protect_paths(tmp_path: Path) -> None:
     scripts = tmp_path / "bundle" / "scripts"
     scripts.mkdir()
     (scripts / "deploy.sh").write_text("#!/bin/sh\ntrue\n", encoding="utf-8")
-    d = ToolDispatcher(
+    d = dispatch.ToolDispatcher(
         root=tmp_path,
         config=cfg,
         extra_protect_paths=(asm.resolve(), scripts.resolve()),
     )
-    with pytest.raises(ToolError, match="protected path"):
+    with pytest.raises(errors.ToolError, match="protected path"):
         d.dispatch(
             "apply_edit",
             {
@@ -507,7 +499,7 @@ def test_apply_edit_refuses_extra_protect_paths(tmp_path: Path) -> None:
                 "edits": [{"kind": "replace", "old_string": "[machine]", "new_string": "[m]"}],
             },
         )
-    with pytest.raises(ToolError, match="protected path"):
+    with pytest.raises(errors.ToolError, match="protected path"):
         d.dispatch(
             "apply_edit",
             {
@@ -526,14 +518,14 @@ def test_apply_edit_refuses_extra_protect_paths(tmp_path: Path) -> None:
     )
 
 
-def test_apply_edit_rejects_create_combined_with_other_edits(tmp_path: Path) -> None:
+def test_apply_edit_rejects_create_combined_with_other_edits(tmp_path: pathlib.Path) -> None:
     # A `create` after a `replace` used to skip the file-exists guard (which
     # only fired for the first edit) and silently overwrite the whole file.
     # The schema now requires create to be the sole edit.
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("keep me\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="create"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="create"):
         d.dispatch(
             "apply_edit",
             {
@@ -548,9 +540,9 @@ def test_apply_edit_rejects_create_combined_with_other_edits(tmp_path: Path) -> 
     assert (tmp_path / "f.py").read_text(encoding="utf-8") == "keep me\n"
 
 
-def test_apply_edit_create_and_replace(tmp_path: Path) -> None:
+def test_apply_edit_create_and_replace(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
         "apply_edit",
         {
@@ -569,10 +561,10 @@ def test_apply_edit_create_and_replace(tmp_path: Path) -> None:
     assert (tmp_path / "f.py").read_text(encoding="utf-8") == "x = 2\n"
 
 
-def test_apply_edit_creates_missing_parent_dirs(tmp_path: Path) -> None:
+def test_apply_edit_creates_missing_parent_dirs(tmp_path: pathlib.Path) -> None:
     """Both edit tools create the missing directories of a new file's path."""
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
         "apply_edit",
         {
@@ -591,11 +583,11 @@ def test_apply_edit_creates_missing_parent_dirs(tmp_path: Path) -> None:
     assert (tmp_path / "pkg" / "other" / "new.py").read_text(encoding="utf-8") == "y = 2\n"
 
 
-def test_apply_edit_non_unique_rejected(tmp_path: Path) -> None:
+def test_apply_edit_non_unique_rejected(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("a\na\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="not unique"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="not unique"):
         d.dispatch(
             "apply_edit",
             {
@@ -605,12 +597,12 @@ def test_apply_edit_non_unique_rejected(tmp_path: Path) -> None:
         )
 
 
-def test_apply_edit_overlapping_matches_are_not_unique(tmp_path: Path) -> None:
+def test_apply_edit_overlapping_matches_are_not_unique(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     target = tmp_path / "f.txt"
     target.write_text("aaa", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="overlapping matches"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="overlapping matches"):
         d.dispatch(
             "apply_edit",
             {
@@ -621,11 +613,11 @@ def test_apply_edit_overlapping_matches_are_not_unique(tmp_path: Path) -> None:
     assert target.read_text(encoding="utf-8") == "aaa"
 
 
-def test_apply_edit_missing_old_string(tmp_path: Path) -> None:
+def test_apply_edit_missing_old_string(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("hello\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="not found"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="not found"):
         d.dispatch(
             "apply_edit",
             {
@@ -635,7 +627,7 @@ def test_apply_edit_missing_old_string(tmp_path: Path) -> None:
         )
 
 
-def test_apply_edit_not_found_error_format(tmp_path: Path) -> None:
+def test_apply_edit_not_found_error_format(tmp_path: pathlib.Path) -> None:
     # Finding C: the "old_string not found" error must NOT wrap the
     # file body in `---BEGIN <path>---` / `---END <path>---` markers, and
     # must NOT dump the entire body. Models that degenerate on repetition
@@ -645,8 +637,8 @@ def test_apply_edit_not_found_error_format(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     body = "\n".join(f"line {i}" for i in range(1, 21)) + "\n"  # 20 lines
     (tmp_path / "f.py").write_text(body, encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError) as exc_info:
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError) as exc_info:
         d.dispatch(
             "apply_edit",
             {
@@ -673,12 +665,12 @@ def test_apply_edit_not_found_error_format(tmp_path: Path) -> None:
     assert "read_file" in msg
 
 
-def test_apply_edit_not_found_short_file_omits_tail(tmp_path: Path) -> None:
+def test_apply_edit_not_found_short_file_omits_tail(tmp_path: pathlib.Path) -> None:
     # Files of <=10 lines don't need the "...last 5 lines" duplication.
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("a\nb\nc\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError) as exc_info:
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError) as exc_info:
         d.dispatch(
             "apply_edit",
             {
@@ -692,11 +684,11 @@ def test_apply_edit_not_found_short_file_omits_tail(tmp_path: Path) -> None:
     assert "3 lines" in msg
 
 
-def test_apply_edit_not_found_file_size_is_utf8_bytes(tmp_path: Path) -> None:
+def test_apply_edit_not_found_file_size_is_utf8_bytes(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("ééé\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="file size: 7 bytes"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="file size: 7 bytes"):
         d.dispatch(
             "apply_edit",
             {
@@ -706,7 +698,7 @@ def test_apply_edit_not_found_file_size_is_utf8_bytes(tmp_path: Path) -> None:
         )
 
 
-def test_apply_edit_replace_requires_new_string(tmp_path: Path) -> None:
+def test_apply_edit_replace_requires_new_string(tmp_path: pathlib.Path) -> None:
     # Kimi was emitting {kind:"replace", old_string:"..."}
     # WITHOUT a new_string. The old default `new_string: str = ""` silently
     # turned a malformed replace into a deletion, which corrupted the file
@@ -714,8 +706,8 @@ def test_apply_edit_replace_requires_new_string(tmp_path: Path) -> None:
     # boundary now rejects the malformed input loud per AGENTS.md.
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("x = 1\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="new_string"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="new_string"):
         d.dispatch(
             "apply_edit",
             {
@@ -727,11 +719,11 @@ def test_apply_edit_replace_requires_new_string(tmp_path: Path) -> None:
     assert (tmp_path / "f.py").read_text(encoding="utf-8") == "x = 1\n"
 
 
-def test_apply_edit_replace_rejects_empty_old_string(tmp_path: Path) -> None:
+def test_apply_edit_replace_rejects_empty_old_string(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("hello\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="old_string"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="old_string"):
         d.dispatch(
             "apply_edit",
             {
@@ -741,12 +733,12 @@ def test_apply_edit_replace_rejects_empty_old_string(tmp_path: Path) -> None:
         )
 
 
-def test_invalid_arguments_read_as_one_line(tmp_path: Path) -> None:
+def test_invalid_arguments_read_as_one_line(tmp_path: pathlib.Path) -> None:
     """A schema miss gets one line naming the field and the rule, not pydantic's dump."""
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("x = 1\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError) as caught:
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError) as caught:
         d.dispatch(
             "apply_edit",
             {"path": "f.py", "edits": [{"kind": "replace", "old_string": "", "new_string": "y\n"}]},
@@ -760,14 +752,16 @@ def test_invalid_arguments_read_as_one_line(tmp_path: Path) -> None:
     # until the tool-error streak stops the run (seen live in `machine create`).
     assert "kind='create'" in message
     assert "\n" not in str(caught.value)
-    with pytest.raises(ToolError, match=r"^invalid arguments: arguments: give old_string and new"):
+    with pytest.raises(
+        errors.ToolError, match=r"^invalid arguments: arguments: give old_string and new"
+    ):
         d.dispatch("apply_edit", {"path": "f.py"})
 
 
-def test_apply_edit_create_rejects_nonempty_old_string(tmp_path: Path) -> None:
+def test_apply_edit_create_rejects_nonempty_old_string(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="old_string"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="old_string"):
         d.dispatch(
             "apply_edit",
             {
@@ -777,12 +771,12 @@ def test_apply_edit_create_rejects_nonempty_old_string(tmp_path: Path) -> None:
         )
 
 
-def test_apply_edit_overwrite_replaces_an_existing_file_whole(tmp_path: Path) -> None:
+def test_apply_edit_overwrite_replaces_an_existing_file_whole(tmp_path: pathlib.Path) -> None:
     """`create` refuses an existing file, naming the kind that fits; `overwrite` writes it."""
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("def f():\n    raise NotImplementedError\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match=r"already exists.*overwrite"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match=r"already exists.*overwrite"):
         d.dispatch(
             "apply_edit",
             {"path": "f.py", "edits": [{"kind": "create", "old_string": "", "new_string": "x"}]},
@@ -806,22 +800,24 @@ def test_apply_edit_overwrite_replaces_an_existing_file_whole(tmp_path: Path) ->
         "apply_edit",
         {"path": "g.py", "edits": [{"kind": "overwrite", "old_string": "", "new_string": "y\n"}]},
     )
-    assert isinstance(res, EditResult) and res.created is True
+    assert isinstance(res, tools_results.EditResult) and res.created is True
     assert (tmp_path / "g.py").read_text(encoding="utf-8") == "y\n"
 
 
 @pytest.mark.parametrize("kind", ["create", "overwrite"])
-def test_apply_edit_whole_file_kinds_share_the_create_contracts(tmp_path: Path, kind: str) -> None:
+def test_apply_edit_whole_file_kinds_share_the_create_contracts(
+    tmp_path: pathlib.Path, kind: str
+) -> None:
     """Both whole-file kinds refuse a non-empty old_string and refuse to combine with edits."""
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("keep me\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="old_string"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="old_string"):
         d.dispatch(
             "apply_edit",
             {"path": "f.py", "edits": [{"kind": kind, "old_string": "junk", "new_string": "x"}]},
         )
-    with pytest.raises(ToolError, match=kind):
+    with pytest.raises(errors.ToolError, match=kind):
         d.dispatch(
             "apply_edit",
             {
@@ -835,10 +831,10 @@ def test_apply_edit_whole_file_kinds_share_the_create_contracts(tmp_path: Path, 
     assert (tmp_path / "f.py").read_text(encoding="utf-8") == "keep me\n"
 
 
-def test_apply_patch_ok(tmp_path: Path) -> None:
+def test_apply_patch_ok(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("a\nb\nc\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch(
         "apply_patch",
         {
@@ -850,9 +846,9 @@ def test_apply_patch_ok(tmp_path: Path) -> None:
     assert (tmp_path / "f.py").read_text(encoding="utf-8") == "a\nB\nc\n"
 
 
-def test_apply_patch_create_new_file(tmp_path: Path) -> None:
+def test_apply_patch_create_new_file(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
         "apply_patch",
         {
@@ -863,11 +859,11 @@ def test_apply_patch_create_new_file(tmp_path: Path) -> None:
     assert (tmp_path / "new.py").read_text(encoding="utf-8") == "x = 1\n"
 
 
-def test_apply_patch_context_mismatch_raises_tool_error(tmp_path: Path) -> None:
+def test_apply_patch_context_mismatch_raises_tool_error(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("a\nWRONG\nc\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="Context mismatch"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="Context mismatch"):
         d.dispatch(
             "apply_patch",
             {
@@ -877,11 +873,11 @@ def test_apply_patch_context_mismatch_raises_tool_error(tmp_path: Path) -> None:
         )
 
 
-def test_apply_patch_path_header_must_match_arg(tmp_path: Path) -> None:
+def test_apply_patch_path_header_must_match_arg(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("a\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="disagrees"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="disagrees"):
         d.dispatch(
             "apply_patch",
             {
@@ -891,10 +887,10 @@ def test_apply_patch_path_header_must_match_arg(tmp_path: Path) -> None:
         )
 
 
-def test_apply_patch_absolute_path_rejected(tmp_path: Path) -> None:
+def test_apply_patch_absolute_path_rejected(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="Absolute"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="Absolute"):
         d.dispatch(
             "apply_patch",
             {
@@ -904,10 +900,10 @@ def test_apply_patch_absolute_path_rejected(tmp_path: Path) -> None:
         )
 
 
-def test_apply_edit_preview_does_not_write(tmp_path: Path) -> None:
+def test_apply_edit_preview_does_not_write(tmp_path: pathlib.Path) -> None:
     """preview=true returns a diff but leaves disk untouched."""
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     (tmp_path / "f.py").write_text("x = 1\n", encoding="utf-8")
     res = d.dispatch(
         "apply_edit",
@@ -931,9 +927,9 @@ def test_apply_edit_preview_does_not_write(tmp_path: Path) -> None:
     assert res["truncated"] is False
 
 
-def test_apply_edit_preview_for_new_file_shows_dev_null(tmp_path: Path) -> None:
+def test_apply_edit_preview_for_new_file_shows_dev_null(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     res = d.dispatch(
         "apply_edit",
         {
@@ -947,9 +943,9 @@ def test_apply_edit_preview_for_new_file_shows_dev_null(tmp_path: Path) -> None:
     assert res["hunks"] == 1
 
 
-def test_apply_patch_preview_does_not_write(tmp_path: Path) -> None:
+def test_apply_patch_preview_does_not_write(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     (tmp_path / "f.py").write_text("a\n", encoding="utf-8")
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-a\n+A\n"
     res = d.dispatch(
@@ -962,20 +958,20 @@ def test_apply_patch_preview_does_not_write(tmp_path: Path) -> None:
     assert "+A" in res["diff"]
 
 
-def test_apply_patch_delete_preview_names_dev_null(tmp_path: Path) -> None:
+def test_apply_patch_delete_preview_names_dev_null(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     target = tmp_path / "gone.py"
     target.write_text("x\n", encoding="utf-8")
     patch = "--- a/gone.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n"
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     res = d.dispatch("apply_patch", {"patch": patch, "preview": True}).to_wire()
     assert "+++ /dev/null\n" in res["diff"]
     assert target.exists()
 
 
-def test_empty_file_preview_still_names_the_operation(tmp_path: Path) -> None:
+def test_empty_file_preview_still_names_the_operation(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     created = d.dispatch(
         "apply_edit",
         {
@@ -999,9 +995,9 @@ def test_empty_file_preview_still_names_the_operation(tmp_path: Path) -> None:
     assert (tmp_path / "old.txt").exists()
 
 
-def test_apply_edit_preview_truncates_giant_diff(tmp_path: Path) -> None:
+def test_apply_edit_preview_truncates_giant_diff(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     big_old = "line\n" * 5000
     big_new = "LINE\n" * 5000
     (tmp_path / "big.txt").write_text(big_old, encoding="utf-8")
@@ -1019,38 +1015,41 @@ def test_apply_edit_preview_truncates_giant_diff(tmp_path: Path) -> None:
     assert (tmp_path / "big.txt").read_text(encoding="utf-8") == big_old
 
 
-def test_run_command_disabled_when_no(tmp_path: Path) -> None:
+def test_run_command_disabled_when_no(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="not available"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="not available"):
         d.dispatch("run_command", {"argv": ["echo", "hi"]})
     assert "run_command" not in d.available_tool_names()
 
 
-def test_run_command_denial_is_typed_and_names_the_knob(tmp_path: Path) -> None:
+def test_run_command_denial_is_typed_and_names_the_knob(tmp_path: pathlib.Path) -> None:
     # The gate can't tell a human "no" from the ask-policy auto-deny of an
     # unattended run: the message blames neither ("denied by user" was a lie in
     # a machine subprocess) and names the config knob. ToolDeniedError (not a bare
     # ToolError) so the loop's sandbox-reachability heuristic can skip it: the
     # command never executed, it did not "fail in the jail".
-    from agent6.tools.errors import ToolDeniedError
 
     cfg = _config_with_run_commands(tmp_path, "ask")
 
-    def _no(_request: ApprovalRequest, /) -> ApprovalAnswer:
-        return ApprovalAnswer(False, "stdin")
+    def _no(_request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
+        return operator_prompts.ApprovalAnswer(False, "stdin")
 
-    d = ToolDispatcher(root=tmp_path, config=cfg, prompts=OperatorPrompts(approver=_no))
-    with pytest.raises(ToolDeniedError, match=r"not approved \(sandbox.run_commands='ask'\)"):
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=cfg, prompts=operator_prompts.OperatorPrompts(approver=_no)
+    )
+    with pytest.raises(
+        errors.ToolDeniedError, match=r"not approved \(sandbox.run_commands='ask'\)"
+    ):
         d.dispatch("run_command", {"argv": ["echo", "hi"]})
 
 
-def test_list_dir(tmp_path: Path) -> None:
+def test_list_dir(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "x").mkdir()
     (tmp_path / "y.txt").write_text("y", encoding="utf-8")
     (tmp_path / ".hidden").write_text("h", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("list_dir", {"path": "."}).to_wire()
     assert "x/" in out["entries"]
     assert "y.txt" in out["entries"]
@@ -1062,13 +1061,19 @@ def test_parse_metric_score_optional_group_is_no_score() -> None:
 
     group(1) is None and float(None) raises TypeError.
     """
-    from agent6.tools._result_format import parse_metric_score
+    from agent6.tools import _result_format as tools__result_format
 
     # Group 1 is in the first alternative; the matched text hits the second, so
     # group(1) is None. Pre-fix this raised TypeError instead of returning None.
-    assert parse_metric_score("build done", "", pattern=r"score: (\d+)|done") is None
+    assert (
+        tools__result_format.parse_metric_score("build done", "", pattern=r"score: (\d+)|done")
+        is None
+    )
     # A genuinely matched numeric group still parses.
-    assert parse_metric_score("score: 42", "", pattern=r"score: (\d+)|done") == 42.0
+    assert (
+        tools__result_format.parse_metric_score("score: 42", "", pattern=r"score: (\d+)|done")
+        == 42.0
+    )
 
 
 def test_passthrough_env_is_fixed_allowlist() -> None:
@@ -1108,16 +1113,14 @@ def test_passthrough_env_is_fixed_allowlist() -> None:
                 os.environ[k] = v
 
 
-def test_jail_env_disables_python_bytecode(tmp_path: Path) -> None:
-    from agent6.kinds import CommandResult, JailPolicy
-
+def test_jail_env_disables_python_bytecode(tmp_path: pathlib.Path) -> None:
     cfg = _config_with_run_commands(tmp_path, "yes")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     captured: dict[str, str] = {}
 
-    def fake_run(policy: JailPolicy, **_kw: object) -> CommandResult:
+    def fake_run(policy: kinds.JailPolicy, **_kw: object) -> kinds.CommandResult:
         captured.update(dict(policy.env))
-        return CommandResult(
+        return kinds.CommandResult(
             argv=("true",),
             returncode=0,
             stdout="",
@@ -1131,10 +1134,10 @@ def test_jail_env_disables_python_bytecode(tmp_path: Path) -> None:
     assert captured["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
-def test_outline_returns_symbols(tmp_path: Path) -> None:
+def test_outline_returns_symbols(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def foo():\n    pass\nclass Bar:\n    pass\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("outline", {"path": "a.py"}).to_wire()
     names = {(s["name"], s["kind"]) for s in out["symbols"]}
     assert ("foo", "function") in names
@@ -1142,12 +1145,12 @@ def test_outline_returns_symbols(tmp_path: Path) -> None:
     assert out["truncated"] is False
 
 
-def test_nav_tools_report_one_based_lines(tmp_path: Path) -> None:
+def test_nav_tools_report_one_based_lines(tmp_path: pathlib.Path) -> None:
     """outline, find_definition and find_references share the LSP twins' 1-based line and col."""
     cfg = _config(tmp_path)
     src = "def foo():\n    pass\nclass Bar:\n    pass\nfoo()\n"
     (tmp_path / "a.py").write_text(src, encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     outline = {s["name"]: s for s in d.dispatch("outline", {"path": "a.py"}).to_wire()["symbols"]}
     assert outline["Bar"]["line"] == 3
     assert outline["foo"]["line"] == 1
@@ -1158,45 +1161,45 @@ def test_nav_tools_report_one_based_lines(tmp_path: Path) -> None:
     assert sorted(r["line"] for r in refs) == [1, 5]  # definition + call
 
 
-def test_outline_rejects_directory(tmp_path: Path) -> None:
+def test_outline_rejects_directory(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "sub").mkdir()
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="Not a file"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="Not a file"):
         d.dispatch("outline", {"path": "sub"})
 
 
-def test_outline_rejects_escape(tmp_path: Path) -> None:
+def test_outline_rejects_escape(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="Absolute"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="Absolute"):
         d.dispatch("outline", {"path": "/etc/hosts"})
 
 
-def test_find_definition_returns_relative_paths(tmp_path: Path) -> None:
+def test_find_definition_returns_relative_paths(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def target():\n    pass\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("find_definition", {"symbol": "target"}).to_wire()
     assert len(out["definitions"]) == 1
     assert out["definitions"][0]["path"] == "a.py"
     assert out["definitions"][0]["kind"] == "function"
 
 
-def test_find_references_returns_relative_paths(tmp_path: Path) -> None:
+def test_find_references_returns_relative_paths(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def foo():\n    pass\nfoo()\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("find_references", {"symbol": "foo"}).to_wire()
     # Definition + call
     assert len(out["references"]) == 2
     assert all(r["path"] == "a.py" for r in out["references"])
 
 
-def test_apply_edit_invalidates_index(tmp_path: Path) -> None:
+def test_apply_edit_invalidates_index(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def foo():\n    pass\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     # Prime the index
     assert d.dispatch("find_definition", {"symbol": "foo"}).to_wire()["definitions"]
     assert d.dispatch("find_definition", {"symbol": "bar"}).to_wire()["definitions"] == []
@@ -1218,20 +1221,19 @@ def test_apply_edit_invalidates_index(tmp_path: Path) -> None:
     assert d.dispatch("find_definition", {"symbol": "foo"}).to_wire()["definitions"] == []
 
 
-def test_new_index_tools_listed_in_available(tmp_path: Path) -> None:
+def test_new_index_tools_listed_in_available(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     names = set(d.available_tool_names())
     assert {"outline", "find_definition", "find_references"} <= names
 
 
 @pytest.mark.parametrize("name", ["run_verify_command", "run_metric_command"])
 def test_empty_input_command_tools_reject_arguments(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, name: str
 ) -> None:
     """A no-argument tool's empty schema is a contract, not a suggestion."""
     from agent6.config import load_config
-    from agent6.sandbox.jail import CommandResult
 
     body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"\nnetwork = "host"') + (
         '\n[harness.metric]\ncommand = ["true"]\npattern = "(true)"\ngoal = "minimize"\n'
@@ -1239,25 +1241,27 @@ def test_empty_input_command_tools_reject_arguments(
     path = tmp_path / "agent6.toml"
     path.write_text(body, encoding="utf-8")
 
-    def fake_run_in_jail(policy: object, **_kw: object) -> CommandResult:
-        return CommandResult(argv=("true",), returncode=0, stdout="", stderr="", duration_s=0.01)
+    def fake_run_in_jail(policy: object, **_kw: object) -> kinds.CommandResult:
+        return kinds.CommandResult(
+            argv=("true",), returncode=0, stdout="", stderr="", duration_s=0.01
+        )
 
     monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
-    d = ToolDispatcher(root=tmp_path, config=load_config(path))
-    with pytest.raises(ToolError, match="invalid arguments: unexpected: Extra inputs"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(path))
+    with pytest.raises(errors.ToolError, match="invalid arguments: unexpected: Extra inputs"):
         d.dispatch(name, {"unexpected": True})
 
 
-def test_run_metric_command_no_config(tmp_path: Path) -> None:
+def test_run_metric_command_no_config(tmp_path: pathlib.Path) -> None:
     cfg = _config_with_run_commands(tmp_path, "yes")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match=r"no \[harness.metric\]"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match=r"no \[harness.metric\]"):
         d.dispatch("run_metric_command", {})
     # Not in the LLM-visible tool surface either.
     assert "run_metric_command" not in d.available_tool_names()
 
 
-def test_run_metric_command_is_withheld_when_commands_are(tmp_path: Path) -> None:
+def test_run_metric_command_is_withheld_when_commands_are(tmp_path: pathlib.Path) -> None:
     """`run_commands = "no"` withholds the verify tool with the other command tools.
 
     It runs the operator's argv in the same jail as often as the model asks; it was exposed
@@ -1273,14 +1277,16 @@ def test_run_metric_command_is_withheld_when_commands_are(tmp_path: Path) -> Non
     p.write_text(body, encoding="utf-8")
     from agent6.config import load_config
 
-    d = ToolDispatcher(root=tmp_path, config=load_config(p))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(p))
 
     assert "run_metric_command" not in d.available_tool_names()
-    with pytest.raises(ToolError, match="run_commands = 'no'"):
+    with pytest.raises(errors.ToolError, match="run_commands = 'no'"):
         d.dispatch("run_metric_command", {})
 
 
-def test_run_metric_command_invokes_jail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_metric_command_invokes_jail(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
         "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
@@ -1290,7 +1296,6 @@ def test_run_metric_command_invokes_jail(tmp_path: Path, monkeypatch: pytest.Mon
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
     from agent6.config import load_config
-    from agent6.sandbox.jail import CommandResult
 
     cfg = load_config(p)
 
@@ -1298,7 +1303,7 @@ def test_run_metric_command_invokes_jail(tmp_path: Path, monkeypatch: pytest.Mon
 
     def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
         captured["argv"] = tuple(policy.argv)
-        return CommandResult(
+        return kinds.CommandResult(
             argv=tuple(policy.argv),
             returncode=0,
             stdout="CYCLES: 42\n",
@@ -1307,7 +1312,7 @@ def test_run_metric_command_invokes_jail(tmp_path: Path, monkeypatch: pytest.Mon
         )
 
     monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("run_metric_command", {}).to_wire()
     assert out["returncode"] == 0
     assert "CYCLES: 42" in out["stdout"]
@@ -1318,7 +1323,7 @@ def test_run_metric_command_invokes_jail(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 def test_run_metric_command_honors_verify_timeout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """verify_timeout_s bounds the metric command like the verify command.
 
@@ -1331,7 +1336,6 @@ def test_run_metric_command_honors_verify_timeout(
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
     from agent6.config import load_config
-    from agent6.sandbox.jail import CommandResult
 
     cfg = load_config(p)
     assert cfg.harness.verify_timeout_s == 7.0  # the override reached the config
@@ -1340,18 +1344,18 @@ def test_run_metric_command_honors_verify_timeout(
 
     def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
         captured["timeout_s"] = policy.timeout_s
-        return CommandResult(
+        return kinds.CommandResult(
             argv=tuple(policy.argv), returncode=0, stdout="1", stderr="", duration_s=0.01
         )
 
     monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch("run_metric_command", {})
     assert captured["timeout_s"] == 7.0
 
 
 def test_run_metric_command_score_null_on_no_match(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A pattern that compiles but does not match yields a null score and an unchanged result."""
     body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
@@ -1363,12 +1367,11 @@ def test_run_metric_command_score_null_on_no_match(
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
     from agent6.config import load_config
-    from agent6.sandbox.jail import CommandResult
 
     cfg = load_config(p)
 
     def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
-        return CommandResult(
+        return kinds.CommandResult(
             argv=tuple(policy.argv),
             returncode=0,
             stdout="no number here\n",
@@ -1377,33 +1380,35 @@ def test_run_metric_command_score_null_on_no_match(
         )
 
     monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("run_metric_command", {}).to_wire()
     assert out["score"] is None
     assert out["returncode"] == 0
     assert "no number here" in out["stdout"]
 
 
-def test_disable_apply_edit_env_hides_tool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_disable_apply_edit_env_hides_tool(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # AGENT6_DISABLE_APPLY_EDIT=1 removes apply_edit
     # from the surface advertised to the LLM and refuses to dispatch
     # any straggler calls. apply_patch stays available — it's the
     # whole point of the experiment.
     monkeypatch.setenv("AGENT6_DISABLE_APPLY_EDIT", "1")
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     names = d.available_tool_names()
     assert "apply_edit" not in names
     assert "apply_patch" in names
 
 
 def test_disable_apply_edit_env_blocks_dispatch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("AGENT6_DISABLE_APPLY_EDIT", "1")
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="AGENT6_DISABLE_APPLY_EDIT"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="AGENT6_DISABLE_APPLY_EDIT"):
         d.dispatch(
             "apply_edit",
             {
@@ -1413,61 +1418,61 @@ def test_disable_apply_edit_env_blocks_dispatch(
         )
 
 
-def test_disable_apply_edit_unset_leaves_tool_available(tmp_path: Path) -> None:
+def test_disable_apply_edit_unset_leaves_tool_available(tmp_path: pathlib.Path) -> None:
     # Default behaviour: env var unset, both tools available.
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     names = d.available_tool_names()
     assert "apply_edit" in names
     assert "apply_patch" in names
 
 
-def test_dispatcher_refuses_mutations_in_plan_mode(tmp_path: Path) -> None:
+def test_dispatcher_refuses_mutations_in_plan_mode(tmp_path: pathlib.Path) -> None:
     # Defense-in-depth: even if a mutation tool reaches dispatch() in plan mode
     # (the LLM's tool list already omits them), the dispatcher must refuse.
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
-    with pytest.raises(ToolError, match="plan mode"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
+    with pytest.raises(errors.ToolError, match="plan mode"):
         d.dispatch(
             "apply_edit",
             {"path": "f.py", "edits": [{"kind": "create", "old_string": "", "new_string": "x\n"}]},
         )
-    with pytest.raises(ToolError, match="plan mode"):
+    with pytest.raises(errors.ToolError, match="plan mode"):
         d.dispatch("apply_patch", {"patch": "--- a\n+++ b\n"})
 
 
-def test_machine_mode_blocks_edits_and_commands(tmp_path: Path) -> None:
+def test_machine_mode_blocks_edits_and_commands(tmp_path: pathlib.Path) -> None:
     # a read-only machine agent state: the dispatcher refuses edits AND
     # run_command/run_verify (unlike ask, which allows run_command).
     cfg = _config_with_run_commands(tmp_path, "yes")
-    d = ToolDispatcher(root=tmp_path, config=cfg, mode="machine")
-    with pytest.raises(ToolError, match="machine mode"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="machine")
+    with pytest.raises(errors.ToolError, match="machine mode"):
         d.dispatch("run_command", {"argv": ["ls"]})
-    with pytest.raises(ToolError, match="machine mode"):
+    with pytest.raises(errors.ToolError, match="machine mode"):
         d.dispatch("run_verify_command", {})
-    with pytest.raises(ToolError, match="machine mode"):
+    with pytest.raises(errors.ToolError, match="machine mode"):
         d.dispatch("apply_patch", {"patch": "--- a\n+++ b\n"})
 
 
-def test_agent6_docs_tool_lists_and_reads(tmp_path: Path) -> None:
+def test_agent6_docs_tool_lists_and_reads(tmp_path: pathlib.Path) -> None:
     # agent6_docs reads agent6's own bundled docs (for "how do I use agent6").
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     listing = d.dispatch("agent6_docs", {}).to_wire()
     assert "CONFIG" in listing["available"]
     assert "README" in listing["available"]
     doc = d.dispatch("agent6_docs", {"name": "CONFIG"}).to_wire()
     assert "content" in doc and len(doc["content"]) > 100
-    with pytest.raises(ToolError, match="unknown agent6 doc"):
+    with pytest.raises(errors.ToolError, match="unknown agent6 doc"):
         d.dispatch("agent6_docs", {"name": "NOPE"})
 
 
 def test_agent6_docs_over_the_cap_names_the_size_it_was_cut_from(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A doc over the 60k cap comes back with a signal of how much was cut."""
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     long_doc = "x" * 70_000
 
     def _stub_doc(name: str) -> str:
@@ -1483,14 +1488,14 @@ def test_agent6_docs_over_the_cap_names_the_size_it_was_cut_from(
 # --- small-model edit ergonomics: kind default + closest-match diagnostics ---
 
 
-def test_apply_edit_kind_defaults_to_replace(tmp_path: Path) -> None:
+def test_apply_edit_kind_defaults_to_replace(tmp_path: pathlib.Path) -> None:
     """Small models routinely omit the `kind` discriminator.
 
     A bare {old_string, new_string} edit must apply as a replace, not 400.
     """
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("x = 1\ny = 2\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch(
         "apply_edit",
         {"path": "f.py", "edits": [{"old_string": "x = 1", "new_string": "x = 9"}]},
@@ -1499,10 +1504,10 @@ def test_apply_edit_kind_defaults_to_replace(tmp_path: Path) -> None:
     assert (tmp_path / "f.py").read_text(encoding="utf-8") == "x = 9\ny = 2\n"
 
 
-def test_apply_edit_create_still_explicit(tmp_path: Path) -> None:
+def test_apply_edit_create_still_explicit(tmp_path: pathlib.Path) -> None:
     """`create` is unaffected by the replace default and still needs an empty old_string."""
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
         "apply_edit",
         {"path": "new.py", "edits": [{"kind": "create", "new_string": "print(1)\n"}]},
@@ -1510,7 +1515,7 @@ def test_apply_edit_create_still_explicit(tmp_path: Path) -> None:
     assert (tmp_path / "new.py").read_text(encoding="utf-8") == "print(1)\n"
 
 
-def test_apply_edit_mismatch_hands_back_exact_region(tmp_path: Path) -> None:
+def test_apply_edit_mismatch_hands_back_exact_region(tmp_path: pathlib.Path) -> None:
     """A whitespace-only mismatch returns the on-disk text and says to retry without re-reading."""
     cfg = _config(tmp_path)
     body = (
@@ -1522,10 +1527,10 @@ def test_apply_edit_mismatch_hands_back_exact_region(tmp_path: Path) -> None:
         "                self.push(x)\n"
     )
     (tmp_path / "interp.py").write_text(body, encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     # old_string with wrong (too-shallow) indentation
     bad = "        x = self.pop()\n        self.push(x)"
-    with pytest.raises(ToolError) as exc:
+    with pytest.raises(errors.ToolError) as exc:
         d.dispatch(
             "apply_edit", {"path": "interp.py", "edits": [{"old_string": bad, "new_string": "y"}]}
         )
@@ -1536,12 +1541,12 @@ def test_apply_edit_mismatch_hands_back_exact_region(tmp_path: Path) -> None:
     assert "                x = self.pop()\n                self.push(x)" in msg
 
 
-def test_apply_edit_mismatch_unrelated_falls_back_to_shape(tmp_path: Path) -> None:
+def test_apply_edit_mismatch_unrelated_falls_back_to_shape(tmp_path: pathlib.Path) -> None:
     """An old_string with no similar region gets the file's shape and is told to re-read."""
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("alpha\nbeta\ngamma\ndelta\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError) as exc:
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError) as exc:
         d.dispatch(
             "apply_edit",
             {"path": "f.py", "edits": [{"old_string": "zzz\nqqq\nwww\nvvv", "new_string": "y"}]},
@@ -1554,11 +1559,11 @@ def test_apply_edit_mismatch_unrelated_falls_back_to_shape(tmp_path: Path) -> No
 # --- OpenAI V4A "*** Begin Patch" format (GPT / gpt-oss family) ---------------
 
 
-def test_apply_patch_v4a_update_without_path_arg(tmp_path: Path) -> None:
+def test_apply_patch_v4a_update_without_path_arg(tmp_path: pathlib.Path) -> None:
     """A V4A patch with `path` omitted is parsed, its path derived, and its hunk applied."""
     cfg = _config(tmp_path)
     (tmp_path / "m.py").write_text("def f():\n    x = 1\n    return x\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     patch = (
         "*** Begin Patch\n"
         "*** Update File: m.py\n"
@@ -1575,28 +1580,28 @@ def test_apply_patch_v4a_update_without_path_arg(tmp_path: Path) -> None:
     ) == "def f():\n    x = 1\n    return x + 1\n"
 
 
-def test_apply_patch_v4a_add_file(tmp_path: Path) -> None:
+def test_apply_patch_v4a_add_file(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     patch = "*** Begin Patch\n*** Add File: new.py\n+print(1)\n+print(2)\n*** End Patch"
     d.dispatch("apply_patch", {"patch": patch})
     assert (tmp_path / "new.py").read_text(encoding="utf-8") == "print(1)\nprint(2)\n"
 
 
-def test_apply_patch_v4a_path_into_git_still_refused(tmp_path: Path) -> None:
+def test_apply_patch_v4a_path_into_git_still_refused(tmp_path: pathlib.Path) -> None:
     """A derived path never bypasses the protected-path guard."""
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     patch = "*** Begin Patch\n*** Add File: .git/hooks/pre-commit\n+#!/bin/sh\n+id\n*** End Patch"
-    with pytest.raises(ToolError, match=r"\.git"):
+    with pytest.raises(errors.ToolError, match=r"\.git"):
         d.dispatch("apply_patch", {"patch": patch})
 
 
-def test_apply_patch_unified_still_works_and_path_optional(tmp_path: Path) -> None:
+def test_apply_patch_unified_still_works_and_path_optional(tmp_path: pathlib.Path) -> None:
     """The unified-diff path also accepts an omitted `path`, derived from the `+++` header."""
     cfg = _config(tmp_path)
     (tmp_path / "x.py").write_text("a\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch(
         "apply_patch", {"patch": "--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+A\n"}
     ).to_wire()
@@ -1604,22 +1609,22 @@ def test_apply_patch_unified_still_works_and_path_optional(tmp_path: Path) -> No
     assert (tmp_path / "x.py").read_text(encoding="utf-8") == "A\n"
 
 
-def test_rejected_tool_emits_call_and_result_pair(tmp_path: Path) -> None:
+def test_rejected_tool_emits_call_and_result_pair(tmp_path: pathlib.Path) -> None:
     """A guard-rejected tool still emits a tool.call and tool.result(ok=false) pair.
 
     The reason is dispatcher-owned, so a prompt injection cannot fake success.
     """
     import json
 
-    from agent6.events import EventSink
+    from agent6 import events as agent6_events
 
     cfg = _config(tmp_path)  # run_commands = "no"
     logs = tmp_path / "logs.jsonl"
-    d = ToolDispatcher(root=tmp_path, config=cfg, events=EventSink(logs))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=agent6_events.EventSink(logs))
 
-    with pytest.raises(ToolError):  # run_command disabled by config -> guard reject
+    with pytest.raises(errors.ToolError):  # run_command disabled by config -> guard reject
         d.dispatch("run_command", {"argv": ["echo", "hi"]})
-    with pytest.raises(ToolError):  # unknown tool name -> guard reject
+    with pytest.raises(errors.ToolError):  # unknown tool name -> guard reject
         d.dispatch("totally_unknown_tool", {})
 
     events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
@@ -1636,21 +1641,20 @@ def test_rejected_tool_emits_call_and_result_pair(tmp_path: Path) -> None:
 
 
 def test_run_command_result_carries_output_tails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Execution tools' tool.result events carry capped output tails; others stay summary-only."""
     import json
 
-    from agent6.events import EventSink
+    from agent6 import events as agent6_events
 
     cfg = _config_with_run_commands(tmp_path, "yes")  # skip the approval prompt
     logs = tmp_path / "logs.jsonl"
-    d = ToolDispatcher(root=tmp_path, config=cfg, events=EventSink(logs))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=agent6_events.EventSink(logs))
 
     def _fake_run_argv(self: object, argv: object, **kw: object) -> object:
-        from agent6.tools.results import ExecResult
 
-        return ExecResult(
+        return tools_results.ExecResult(
             returncode=1,
             stdout="OUT-X" * 500,
             stderr="ERR-Y" * 500,
@@ -1658,7 +1662,7 @@ def test_run_command_result_carries_output_tails(
             exec_failed=False,
         )
 
-    monkeypatch.setattr(ToolDispatcher, "_run_argv_in_jail", _fake_run_argv)
+    monkeypatch.setattr(dispatch.ToolDispatcher, "_run_argv_in_jail", _fake_run_argv)
     d.dispatch("run_command", {"argv": ["echo", "hi"]})
     (tmp_path / "f.txt").write_text("hi", encoding="utf-8")
     d.dispatch("read_file", {"path": "f.txt"})
@@ -1681,13 +1685,12 @@ def test_run_command_result_carries_output_tails(
 
 
 def test_run_command_passes_extra_read_paths_to_policy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # sandbox.extra_read_paths must reach the JailPolicy as extra_ro_paths, so a
     # project whose toolchain/interpreter lives outside the repo (e.g. a conda
     # env at /opt) is usable under hardened/strict.
     from agent6.config import load_config
-    from agent6.sandbox.jail import CommandResult
 
     body = _VALID_TOML.replace(
         'run_commands = "no"',
@@ -1700,23 +1703,22 @@ def test_run_command_passes_extra_read_paths_to_policy(
 
     def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
         captured["ro"] = tuple(str(x) for x in policy.extra_ro_paths)
-        return CommandResult(
+        return kinds.CommandResult(
             argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.0
         )
 
     monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch("run_command", {"argv": ["echo", "hi"]})
     assert "/opt/miniconda3" in captured["ro"]
 
 
 def test_run_command_passes_extra_write_paths_to_policy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # sandbox.extra_write_paths must reach the JailPolicy as extra_rw_paths (a
     # writable bind mount at the real location, so write implies read).
     from agent6.config import load_config
-    from agent6.sandbox.jail import CommandResult
 
     body = _VALID_TOML.replace(
         'run_commands = "no"',
@@ -1729,12 +1731,12 @@ def test_run_command_passes_extra_write_paths_to_policy(
 
     def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
         captured["rw"] = tuple(str(x) for x in policy.extra_rw_paths)
-        return CommandResult(
+        return kinds.CommandResult(
             argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.0
         )
 
     monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch("run_command", {"argv": ["echo", "hi"]})
     assert "/var/cache/shared" in captured["rw"]
 
@@ -1745,23 +1747,23 @@ def test_run_command_passes_extra_write_paths_to_policy(
 # burning a round-trip on a validation error.
 
 
-def test_stringified_edits_array_is_coerced(tmp_path: Path) -> None:
+def test_stringified_edits_array_is_coerced(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.txt").write_text("old text\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     edits_str = '[{"old_string": "old text", "new_string": "new text"}]\n</invoke>'
     d.dispatch("apply_edit", {"path": "a.txt", "edits": edits_str})
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "new text\n"
 
 
-def test_a_stringified_argument_with_a_regex_backslash_is_coerced(tmp_path: Path) -> None:
+def test_a_stringified_argument_with_a_regex_backslash_is_coerced(tmp_path: pathlib.Path) -> None:
     r"""A `\|` inside a JSON-string argument, an escape JSON does not define, is repaired.
 
     The call was refused ten times running in one session.
     """
     cfg = _config(tmp_path)
     (tmp_path / "a.txt").write_text("a\\|b\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
         "apply_edit",
         {"path": "a.txt", "edits": '[{"old_string": "a\\|b", "new_string": "c"}]'},
@@ -1769,80 +1771,81 @@ def test_a_stringified_argument_with_a_regex_backslash_is_coerced(tmp_path: Path
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "c\n"
 
 
-def test_stringified_coercion_surfaces_original_error_when_wrong(tmp_path: Path) -> None:
+def test_stringified_coercion_surfaces_original_error_when_wrong(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     # Parses as JSON but has the wrong inner shape: re-validation fails and the
     # original tuple_type error (not the retry's) reaches the caller.
-    with pytest.raises(ToolError, match="edits: expected an array"):
+    with pytest.raises(errors.ToolError, match="edits: expected an array"):
         d.dispatch("apply_edit", {"path": "a.txt", "edits": '[{"nope": 1}]'})
 
 
-def test_non_json_string_still_fails_validation(tmp_path: Path) -> None:
+def test_non_json_string_still_fails_validation(tmp_path: pathlib.Path) -> None:
     """The tuple error names a JSON form; a model that read pydantic's resent the same string."""
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="edits: expected an array"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="edits: expected an array"):
         d.dispatch("apply_edit", {"path": "a.txt", "edits": "not json at all"})
-    with pytest.raises(ToolError, match="one edit, or `edits`"):
+    with pytest.raises(errors.ToolError, match="one edit, or `edits`"):
         d.dispatch("apply_edit", {"path": "a.txt", "edits": []})
 
 
 def test_under_system_root_classifies_bin_dirs() -> None:
-    from agent6.sandbox.tool_paths import _under_system_root  # pyright: ignore[reportPrivateUsage]
+    from agent6.sandbox import tool_paths  # pyright: ignore[reportPrivateUsage]
 
-    assert _under_system_root(Path("/usr/local/bin"))  # under a mounted system root
-    assert _under_system_root(Path("/usr/bin"))
-    assert not _under_system_root(Path("/opt/pipx/venvs/uv/bin"))  # pipx target
-    assert not _under_system_root(Path("/home/x/.local/bin"))
+    assert tool_paths._under_system_root(
+        pathlib.Path("/usr/local/bin")
+    )  # under a mounted system root
+    assert tool_paths._under_system_root(pathlib.Path("/usr/bin"))
+    assert not tool_paths._under_system_root(pathlib.Path("/opt/pipx/venvs/uv/bin"))  # pipx target
+    assert not tool_paths._under_system_root(pathlib.Path("/home/x/.local/bin"))
 
 
 def test_operator_tool_paths_extends_path_and_mounts_are_nonsystem() -> None:
-    from agent6.sandbox.tool_paths import (
-        _under_system_root,  # pyright: ignore[reportPrivateUsage]
-        operator_tool_paths,
-    )
+    from agent6.sandbox import tool_paths
 
-    path, mounts = operator_tool_paths()
+    path, mounts = tool_paths.operator_tool_paths()
     # PATH always starts with the jail baseline, then any standard bin dirs.
     assert path.startswith("/usr/bin:/bin")
     # Mounts are only dirs OUTSIDE the system roots (those are already mounted via
     # /usr); a system dir here would be a redundant/failing re-bind.
     for m in mounts:
-        assert not _under_system_root(m), m
+        assert not tool_paths._under_system_root(m), m
         assert m.is_dir()
 
 
 def test_operator_tool_paths_mounts_uv_managed_pythons(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A repo venv made by uv can symlink python to a uv-managed CPython under
     # XDG data; without the RO mount an in-jail `uv run` sees a "non-existent
     # interpreter" and deletes + recreates the operator's .venv.
-    from agent6.sandbox.tool_paths import operator_tool_paths
+    from agent6.sandbox import tool_paths
 
     pythons = tmp_path / "uv" / "python"
     pythons.mkdir(parents=True)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    path, mounts = operator_tool_paths()
+    path, mounts = tool_paths.operator_tool_paths()
     assert pythons in mounts
     assert str(pythons) not in path  # mount-only: interpreters are not PATH dirs
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "elsewhere"))
-    _, mounts = operator_tool_paths()
+    _, mounts = tool_paths.operator_tool_paths()
     assert pythons not in mounts  # absent dir -> no mount
 
 
-def test_ask_user_accepts_flat_single_question(tmp_path: Path) -> None:
+def test_ask_user_accepts_flat_single_question(tmp_path: pathlib.Path) -> None:
     # A model that sends a lone question flat (not wrapped in `questions`) still works.
     cfg = _config(tmp_path)
 
-    def questioner(request: QuestionRequest, /) -> QuestionAnswer:
+    def questioner(request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         answers = tuple(q.options[0] if q.options else "typed" for q in request.questions)
-        return QuestionAnswer(answers, "stdin")
+        return operator_prompts.QuestionAnswer(answers, "stdin")
 
-    d = ToolDispatcher(root=tmp_path, config=cfg, prompts=OperatorPrompts(questioner=questioner))
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=cfg, prompts=operator_prompts.OperatorPrompts(questioner=questioner)
+    )
     out = d.dispatch(
         "ask_user", {"question": "Which theme?", "options": ["dark", "light"]}
     ).to_wire()
@@ -1851,7 +1854,10 @@ def test_ask_user_accepts_flat_single_question(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(("isolation", "protected"), [("strict", True), ("hardened", False)])
 def test_git_reaches_the_jail_as_a_protect_path_only_under_strict(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolation: IsolationLevel, protected: bool
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolation: kinds.IsolationLevel,
+    protected: bool,
 ) -> None:
     """`protect_git` is a read-only bind, so it needs a mount namespace.
 
@@ -1867,58 +1873,60 @@ def test_git_reaches_the_jail_as_a_protect_path_only_under_strict(
     (tmp_path / ".git").mkdir()
     captured: list[object] = []
 
-    from agent6.kinds import CommandResult
-
-    def _capture(policy: object, **_kw: object) -> CommandResult:
+    def _capture(policy: object, **_kw: object) -> kinds.CommandResult:
         captured.append(policy)
-        return CommandResult(argv=("true",), returncode=0, stdout="", stderr="", duration_s=0.0)
+        return kinds.CommandResult(
+            argv=("true",), returncode=0, stdout="", stderr="", duration_s=0.0
+        )
 
     monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", _capture)
     cfg = _config_with_run_commands(tmp_path, "yes")
-    d = ToolDispatcher(root=tmp_path, config=cfg, isolation=isolation)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, isolation=isolation)
     d.dispatch("run_command", {"argv": ["true"]})
 
     paths = captured[0].extra_protect_paths  # pyright: ignore[reportAttributeAccessIssue]
     assert ((tmp_path / ".git").resolve() in paths) is protected
 
 
-def test_every_jail_tool_answers_to_run_commands(tmp_path: Path) -> None:
+def test_every_jail_tool_answers_to_run_commands(tmp_path: pathlib.Path) -> None:
     """run_verify_command answers to the same knob as run_command.
 
     Its argv is inferred from a file the model can edit whenever it is not configured.
     """
     gated = {"run_command", "run_verify_command", "stop_background"}
-    denied = ToolDispatcher(root=tmp_path, config=_config_with_run_commands(tmp_path, "no"))
+    denied = dispatch.ToolDispatcher(
+        root=tmp_path, config=_config_with_run_commands(tmp_path, "no")
+    )
     assert gated.isdisjoint(denied.available_tool_names())
     for name in sorted(gated):
-        with pytest.raises(ToolError, match="run_commands"):
+        with pytest.raises(errors.ToolError, match="run_commands"):
             denied.dispatch(name, {"argv": ["true"], "id": "bg1"})
-    allowed = ToolDispatcher(root=tmp_path, config=_config_with_run_commands(tmp_path, "yes"))
+    allowed = dispatch.ToolDispatcher(
+        root=tmp_path, config=_config_with_run_commands(tmp_path, "yes")
+    )
     assert gated <= set(allowed.available_tool_names())
 
 
-def test_ask_prompts_before_the_verify_gate_runs(tmp_path: Path) -> None:
+def test_ask_prompts_before_the_verify_gate_runs(tmp_path: pathlib.Path) -> None:
     """Under `ask` the operator approves the verify command like any other; a refusal denies it."""
-    from agent6.tools.errors import ToolDeniedError
-
     asked: list[str] = []
 
-    def refuse(request: ApprovalRequest, /) -> ApprovalAnswer:
+    def refuse(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
         asked.append(request.prompt)
-        return ApprovalAnswer(False, "stdin")
+        return operator_prompts.ApprovalAnswer(False, "stdin")
 
-    d = ToolDispatcher(
+    d = dispatch.ToolDispatcher(
         root=tmp_path,
         config=_config_with_run_commands(tmp_path, "ask"),
-        prompts=OperatorPrompts(approver=refuse),
+        prompts=operator_prompts.OperatorPrompts(approver=refuse),
     )
-    with pytest.raises(ToolDeniedError):
+    with pytest.raises(errors.ToolDeniedError):
         d.dispatch("run_verify_command", {})
     assert asked and asked[0].startswith("Allow run_verify_command: true")
 
 
 def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A tool symlink must not drag agent6's private dirs into the jail.
 
@@ -1929,7 +1937,7 @@ def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
     Not model-reachable (a jailed `ln -s` into a bin dir is refused), but the
     invariant should hold by construction, not by luck of directory layout.
     """
-    from agent6.sandbox.tool_paths import operator_tool_paths
+    from agent6.sandbox import tool_paths
 
     home = tmp_path / "home"
     bin_dir = home / ".local" / "bin"
@@ -1950,7 +1958,7 @@ def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
         exe.chmod(0o755)
         (bin_dir / f"link-{name}").symlink_to(exe)
 
-    _, mounts = operator_tool_paths()
+    _, mounts = tool_paths.operator_tool_paths()
 
     assert private["cfg"] not in mounts, "a symlink mounted the dir holding secrets.toml"
     assert private["state"] not in mounts, "a symlink mounted the per-repo state dir"
@@ -1960,14 +1968,14 @@ def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
 
 
 def test_a_tool_mount_never_contains_a_private_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The test above pins mounts INSIDE a private dir; containment fails the other way round too.
 
     A symlink out to `<dir>/x.sh` mounts `<dir>` whole, and a `<dir>` holding the config dir
     grants secrets.toml from above.
     """
-    from agent6.sandbox.tool_paths import operator_tool_paths
+    from agent6.sandbox import tool_paths
 
     home = tmp_path / "home"
     bin_dir = home / ".local" / "bin"
@@ -1985,18 +1993,18 @@ def test_a_tool_mount_never_contains_a_private_dir(
     target.chmod(0o755)
     (bin_dir / "x").symlink_to(target)
 
-    _, mounts = operator_tool_paths()
+    _, mounts = tool_paths.operator_tool_paths()
     assert holder not in mounts, "a mount containing the config dir grants secrets.toml"
 
 
 def test_home_and_its_ancestors_are_never_tool_mounts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A symlink whose parent is $HOME or an ancestor of it is refused.
 
     $HOME holds ~/.ssh and every credential the operator owns.
     """
-    from agent6.sandbox.tool_paths import operator_tool_paths
+    from agent6.sandbox import tool_paths
 
     home = tmp_path / "home"
     bin_dir = home / ".local" / "bin"
@@ -2014,37 +2022,39 @@ def test_home_and_its_ancestors_are_never_tool_mounts(
         target.chmod(0o755)
         (bin_dir / name).symlink_to(target)
 
-    _, mounts = operator_tool_paths()
+    _, mounts = tool_paths.operator_tool_paths()
     assert home not in mounts, "a symlink to ~/x.sh mounted the whole home dir"
     assert tmp_path not in mounts, "a symlink target above home mounted homes ancestor"
 
 
-def test_edit_tools_name_a_directory_like_their_siblings_do(tmp_path: Path) -> None:
+def test_edit_tools_name_a_directory_like_their_siblings_do(tmp_path: pathlib.Path) -> None:
     """The edit tools on a directory say "Not a file", never an errno with a host path."""
     cfg = _config(tmp_path)
     (tmp_path / "adir").mkdir()
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
 
     for tool, args in (
         ("apply_edit", {"path": "adir", "edits": [{"old_string": "a", "new_string": "b"}]}),
         ("apply_patch", {"path": "adir", "patch": "--- a/adir\n+++ b/adir\n"}),
     ):
-        with pytest.raises(ToolError) as exc:
+        with pytest.raises(errors.ToolError) as exc:
             d.dispatch(tool, args)
         assert "Not a file: adir" in str(exc.value), f"{tool}: {exc.value}"
         assert "Errno" not in str(exc.value), f"{tool} leaked an errno: {exc.value}"
 
 
-def test_read_file_refuses_a_binary_file_as_its_description_promises(tmp_path: Path) -> None:
+def test_read_file_refuses_a_binary_file_as_its_description_promises(
+    tmp_path: pathlib.Path,
+) -> None:
     """read_file refuses a file with a NUL byte, keeping the description's binary promise.
 
     Only UnicodeDecodeError was caught, so a NUL-bearing file that decoded went into the transcript.
     """
     cfg = _config(tmp_path)
     (tmp_path / "b.bin").write_bytes(b"text\x00\x01more\n")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
 
-    with pytest.raises(ToolError, match="binary"):
+    with pytest.raises(errors.ToolError, match="binary"):
         d.dispatch("read_file", {"path": "b.bin"})
 
     # The converse: ordinary text still reads.
@@ -2052,7 +2062,7 @@ def test_read_file_refuses_a_binary_file_as_its_description_promises(tmp_path: P
     assert d.dispatch("read_file", {"path": "ok.txt"}).to_wire()["content"] == "hello\n"
 
 
-def test_apply_patch_multi_file_v4a(tmp_path: Path) -> None:
+def test_apply_patch_multi_file_v4a(tmp_path: pathlib.Path) -> None:
     """A multi-file V4A patch applies every file all-or-nothing.
 
     SWE-bench transcripts showed models looping on the one-file-per-call rejection.
@@ -2060,7 +2070,7 @@ def test_apply_patch_multi_file_v4a(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
     (tmp_path / "b.py").write_text("p\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch(
         "apply_patch",
         {
@@ -2079,11 +2089,11 @@ def test_apply_patch_multi_file_v4a(tmp_path: Path) -> None:
     assert (tmp_path / "b.py").read_text(encoding="utf-8") == "q\n"
 
 
-def test_apply_patch_multi_file_unified_diff_git(tmp_path: Path) -> None:
+def test_apply_patch_multi_file_unified_diff_git(tmp_path: pathlib.Path) -> None:
     """git-style multi-file unified diffs split at `diff --git` boundaries."""
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch(
         "apply_patch",
         {
@@ -2099,13 +2109,13 @@ def test_apply_patch_multi_file_unified_diff_git(tmp_path: Path) -> None:
     assert (tmp_path / "new.py").read_text(encoding="utf-8") == "fresh\n"
 
 
-def test_apply_patch_multi_file_is_all_or_nothing(tmp_path: Path) -> None:
+def test_apply_patch_multi_file_is_all_or_nothing(tmp_path: pathlib.Path) -> None:
     """A context miss in the SECOND file leaves the first unwritten."""
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
     (tmp_path / "b.py").write_text("DIFFERENT\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match=r"b\.py"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match=r"b\.py"):
         d.dispatch(
             "apply_patch",
             {
@@ -2118,13 +2128,15 @@ def test_apply_patch_multi_file_is_all_or_nothing(tmp_path: Path) -> None:
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "x\n"
 
 
-def test_apply_patch_multi_file_protected_second_file_writes_nothing(tmp_path: Path) -> None:
+def test_apply_patch_multi_file_protected_second_file_writes_nothing(
+    tmp_path: pathlib.Path,
+) -> None:
     """The protected-path guard runs per file before any write; a .git target refuses the call."""
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
     (tmp_path / ".git").mkdir()
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match=r"\.git"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match=r"\.git"):
         d.dispatch(
             "apply_patch",
             {
@@ -2137,11 +2149,11 @@ def test_apply_patch_multi_file_protected_second_file_writes_nothing(tmp_path: P
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "x\n"
 
 
-def test_apply_patch_multi_file_path_arg_rejected(tmp_path: Path) -> None:
+def test_apply_patch_multi_file_path_arg_rejected(tmp_path: pathlib.Path) -> None:
     """`path` cannot name the target of a multi-file patch."""
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="ambiguous"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="ambiguous"):
         d.dispatch(
             "apply_patch",
             {
@@ -2154,11 +2166,11 @@ def test_apply_patch_multi_file_path_arg_rejected(tmp_path: Path) -> None:
         )
 
 
-def test_apply_patch_deletes_a_file(tmp_path: Path) -> None:
+def test_apply_patch_deletes_a_file(tmp_path: pathlib.Path) -> None:
     """A patch deletes a file: unified `+++ /dev/null` asserts the content, V4A deletes by name."""
     cfg = _config(tmp_path)
     (tmp_path / "gone.py").write_text("a\nb\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch(
         "apply_patch",
         {"patch": "--- a/gone.py\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-a\n-b\n"},
@@ -2167,12 +2179,12 @@ def test_apply_patch_deletes_a_file(tmp_path: Path) -> None:
     assert not (tmp_path / "gone.py").exists()
 
 
-def test_apply_patch_v4a_delete_in_multi_file(tmp_path: Path) -> None:
+def test_apply_patch_v4a_delete_in_multi_file(tmp_path: pathlib.Path) -> None:
     """An update + a delete in one V4A patch apply all-or-nothing."""
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
     (tmp_path / "old.py").write_text("junk\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch(
         "apply_patch",
         {
@@ -2188,11 +2200,13 @@ def test_apply_patch_v4a_delete_in_multi_file(tmp_path: Path) -> None:
     assert not (tmp_path / "old.py").exists()
 
 
-def test_multi_file_patch_path_is_the_first_target_when_it_is_deleted(tmp_path: Path) -> None:
+def test_multi_file_patch_path_is_the_first_target_when_it_is_deleted(
+    tmp_path: pathlib.Path,
+) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "old.py").write_text("junk\n", encoding="utf-8")
     (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch(
         "apply_patch",
         {
@@ -2210,23 +2224,23 @@ def test_multi_file_patch_path_is_the_first_target_when_it_is_deleted(tmp_path: 
     }
 
 
-def test_apply_patch_delete_missing_file_refused(tmp_path: Path) -> None:
+def test_apply_patch_delete_missing_file_refused(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="no such file"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="no such file"):
         d.dispatch(
             "apply_patch",
             {"patch": "*** Begin Patch\n*** Delete File: ghost.py\n*** End Patch"},
         )
 
 
-def test_apply_patch_delete_protected_path_refused(tmp_path: Path) -> None:
+def test_apply_patch_delete_protected_path_refused(tmp_path: pathlib.Path) -> None:
     """Deletion runs the same protected-path guard as writes."""
     cfg = _config(tmp_path)
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "config").write_text("[core]\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match=r"\.git"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match=r"\.git"):
         d.dispatch(
             "apply_patch",
             {"patch": "*** Begin Patch\n*** Delete File: .git/config\n*** End Patch"},
@@ -2234,12 +2248,12 @@ def test_apply_patch_delete_protected_path_refused(tmp_path: Path) -> None:
     assert (tmp_path / ".git" / "config").exists()
 
 
-def test_apply_patch_multi_file_preview_concatenates(tmp_path: Path) -> None:
+def test_apply_patch_multi_file_preview_concatenates(tmp_path: pathlib.Path) -> None:
     """preview=true over a multi-file patch returns every file's diff and writes nothing."""
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
     (tmp_path / "b.py").write_text("p\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch(
         "apply_patch",
         {
@@ -2258,11 +2272,11 @@ def test_apply_patch_multi_file_preview_concatenates(tmp_path: Path) -> None:
     assert (tmp_path / "b.py").read_text(encoding="utf-8") == "p\n"
 
 
-def test_apply_patch_multi_file_preview_reports_every_heal(tmp_path: Path) -> None:
+def test_apply_patch_multi_file_preview_reports_every_heal(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("    x\n", encoding="utf-8")
     (tmp_path / "b.py").write_text("p  \n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch(
         "apply_patch",
         {
@@ -2278,11 +2292,11 @@ def test_apply_patch_multi_file_preview_reports_every_heal(tmp_path: Path) -> No
     assert (tmp_path / "b.py").read_text(encoding="utf-8") == "p  \n"
 
 
-def test_apply_patch_reports_heals_on_the_wire(tmp_path: Path) -> None:
+def test_apply_patch_reports_heals_on_the_wire(tmp_path: pathlib.Path) -> None:
     """A healed hunk says so on the wire, so the model knows its context was off."""
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def f():\n    a = 1\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch(
         "apply_patch",
         {"patch": ("*** Begin Patch\n*** Update File: a.py\n@@\n-a = 1\n+a = 10\n*** End Patch")},
@@ -2291,7 +2305,7 @@ def test_apply_patch_reports_heals_on_the_wire(tmp_path: Path) -> None:
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "def f():\n    a = 10\n"
 
 
-def test_an_omitted_edit_kind_follows_the_pair_it_was_sent_with(tmp_path: Path) -> None:
+def test_an_omitted_edit_kind_follows_the_pair_it_was_sent_with(tmp_path: pathlib.Path) -> None:
     """Small models send a bare {old_string, new_string}.
 
     An empty old_string can only mean "write this whole file", and defaulting it to `replace`
@@ -2302,13 +2316,13 @@ def test_an_omitted_edit_kind_follows_the_pair_it_was_sent_with(tmp_path: Path) 
     is new still cannot clobber one that exists.
     """
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
 
     d.dispatch("apply_edit", {"path": "new.py", "edits": [{"new_string": "x = 1\n"}]})
     assert (tmp_path / "new.py").read_text(encoding="utf-8") == "x = 1\n"
 
     # ... and the same call over an existing file refuses rather than clobbering
-    with pytest.raises(ToolError, match="already exists"):
+    with pytest.raises(errors.ToolError, match="already exists"):
         d.dispatch("apply_edit", {"path": "new.py", "edits": [{"new_string": "y = 2\n"}]})
     assert (tmp_path / "new.py").read_text(encoding="utf-8") == "x = 1\n"
 
@@ -2319,13 +2333,13 @@ def test_an_omitted_edit_kind_follows_the_pair_it_was_sent_with(tmp_path: Path) 
     assert (tmp_path / "new.py").read_text(encoding="utf-8") == "z = 3\n"
 
 
-def test_two_patch_sections_over_one_file_are_refused(tmp_path: Path) -> None:
+def test_two_patch_sections_over_one_file_are_refused(tmp_path: pathlib.Path) -> None:
     """Two sections over one file apply in sequence, each against the previous result.
 
     Staged against the on-disk file, the earlier edit vanished while the result reported it
     applied and double-counted its bytes.
     """
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     (tmp_path / "m.py").write_text("A = 1\nB = 2\nC = 3\nD = 4\nE = 5\n", encoding="utf-8")
     patch = (
         "diff --git a/m.py b/m.py\n--- a/m.py\n+++ b/m.py\n"
@@ -2334,19 +2348,19 @@ def test_two_patch_sections_over_one_file_are_refused(tmp_path: Path) -> None:
         "@@ -3,3 +3,3 @@\n C = 3\n-D = 4\n+D = 44\n E = 5\n"
     )
 
-    with pytest.raises(ToolError, match="appears in 2 sections"):
+    with pytest.raises(errors.ToolError, match="appears in 2 sections"):
         d.dispatch("apply_patch", {"patch": patch})
 
     assert (tmp_path / "m.py").read_text(encoding="utf-8") == "A = 1\nB = 2\nC = 3\nD = 4\nE = 5\n"
 
     # The preview shows what the apply would do, so it refuses the same patch
     # instead of previewing a diff whose second section reads the ORIGINAL.
-    with pytest.raises(ToolError, match="appears in 2 sections"):
+    with pytest.raises(errors.ToolError, match="appears in 2 sections"):
         d.dispatch("apply_patch", {"patch": patch, "preview": True})
 
     # And the count names the repeated file, not the patch's section total.
     three = patch + ("diff --git a/o.py b/o.py\n--- /dev/null\n+++ b/o.py\n@@ -0,0 +1 @@\n+O = 1\n")
-    with pytest.raises(ToolError, match=r"m\.py appears in 2 sections"):
+    with pytest.raises(errors.ToolError, match=r"m\.py appears in 2 sections"):
         d.dispatch("apply_patch", {"patch": three})
 
     # By its repo path: two `m.py` under different directories are two files,
@@ -2357,11 +2371,11 @@ def test_two_patch_sections_over_one_file_are_refused(tmp_path: Path) -> None:
         "diff --git a/pkg/m.py b/pkg/m.py\n--- a/pkg/m.py\n+++ b/pkg/m.py\n"
         "@@ -1,3 +1,3 @@\n A = 1\n-B = 2\n+B = 22\n C = 3\n"
     ) * 2
-    with pytest.raises(ToolError, match=r"pkg/m\.py appears in 2 sections"):
+    with pytest.raises(errors.ToolError, match=r"pkg/m\.py appears in 2 sections"):
         d.dispatch("apply_patch", {"patch": nested})
 
 
-def test_a_patch_write_that_fails_part_way_names_what_changed(tmp_path: Path) -> None:
+def test_a_patch_write_that_fails_part_way_names_what_changed(tmp_path: pathlib.Path) -> None:
     """The writes are all-or-nothing, like the staging.
 
     A second file the process could not write reported a failure over a first file already
@@ -2375,55 +2389,53 @@ def test_a_patch_write_that_fails_part_way_names_what_changed(tmp_path: Path) ->
     (tmp_path / "one.txt").write_text("original one\n", encoding="utf-8")
     (tmp_path / "locked.txt").write_text("locked original\n", encoding="utf-8")
     (tmp_path / "locked.txt").chmod(0o444)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     patch = (
         "diff --git a/one.txt b/one.txt\n--- a/one.txt\n+++ b/one.txt\n"
         "@@ -1,1 +1,1 @@\n-original one\n+PATCHED ONE\n"
         "diff --git a/locked.txt b/locked.txt\n--- a/locked.txt\n+++ b/locked.txt\n"
         "@@ -1,1 +1,1 @@\n-locked original\n+PATCHED LOCKED\n"
     )
-    with pytest.raises(ToolError, match=r"locked\.txt.*already changed: one\.txt"):
+    with pytest.raises(errors.ToolError, match=r"locked\.txt.*already changed: one\.txt"):
         d.dispatch("apply_patch", {"patch": patch})
     assert (tmp_path / "one.txt").read_text(encoding="utf-8") == "PATCHED ONE\n"
 
 
-def test_the_edit_tools_refuse_a_file_past_the_read_cap(tmp_path: Path) -> None:
+def test_the_edit_tools_refuse_a_file_past_the_read_cap(tmp_path: pathlib.Path) -> None:
     """The edit tools refuse a file over MAX_READ_CHARS, never truncate it.
 
     Read whole, one `apply_edit` over a file a jailed command had made OOM-crashed the agent; a
     partial read must not become a whole-file write.
     """
-    from agent6.tools._fs_tools import MAX_READ_CHARS
+    from agent6.tools import _fs_tools
 
     cfg = _config(tmp_path)
-    (tmp_path / "big.txt").write_text("x" * (MAX_READ_CHARS + 1), encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="larger than the edit tools take"):
+    (tmp_path / "big.txt").write_text("x" * (_fs_tools.MAX_READ_CHARS + 1), encoding="utf-8")
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(errors.ToolError, match="larger than the edit tools take"):
         d.dispatch(
             "apply_edit", {"path": "big.txt", "edits": [{"old_string": "x", "new_string": "y"}]}
         )
 
 
-def test_list_dir_caps_a_huge_listing_and_says_so(tmp_path: Path) -> None:
+def test_list_dir_caps_a_huge_listing_and_says_so(tmp_path: pathlib.Path) -> None:
     """A directory listing caps and marks like every sibling result."""
-    from agent6.tools._fs_tools import LIST_DIR_CAP
-
     cfg = _config(tmp_path)
     big = tmp_path / "vendored"
     big.mkdir()
-    for i in range(LIST_DIR_CAP + 1):
+    for i in range(schema.LIST_DIR_CAP + 1):
         (big / f"f{i:05d}").write_text("", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("list_dir", {"path": "vendored"}).to_wire()
-    assert len(out["entries"]) == LIST_DIR_CAP
+    assert len(out["entries"]) == schema.LIST_DIR_CAP
     assert out["truncated"] is True
 
 
-def test_sizes_on_the_wire_are_bytes(tmp_path: Path) -> None:
+def test_sizes_on_the_wire_are_bytes(tmp_path: pathlib.Path) -> None:
     """`size`, `bytes_written` and the "N bytes" summary count bytes, not characters."""
     cfg = _config(tmp_path)
     (tmp_path / "u.txt").write_text("é" * 10 + "\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     read = d.dispatch("read_file", {"path": "u.txt"})
     assert read.to_wire()["size"] == 21 and "21 bytes" in read.summary()
     patch = "--- a/u.txt\n+++ b/u.txt\n@@ -1,1 +1,1 @@\n-" + "é" * 10 + "\n+" + "é" * 10 + "!\n"
@@ -2438,20 +2450,22 @@ def test_the_argument_preview_clips_at_every_depth() -> None:
 
     An apply_edit's `new_string` wrote a whole file into the durable event log per call.
     """
-    from agent6.tools._result_format import truncate_args
+    from agent6.tools import _result_format as tools__result_format
 
-    out = truncate_args({"path": "a.py", "edits": [{"old_string": "x", "new_string": "y" * 5000}]})
+    out = tools__result_format.truncate_args(
+        {"path": "a.py", "edits": [{"old_string": "x", "new_string": "y" * 5000}]}
+    )
     clipped = out["edits"][0]["new_string"]
     assert len(clipped) < 300 and clipped.endswith("… (5000 chars)")
     assert out["path"] == "a.py"
 
 
-def test_a_patch_refused_by_path_safety_part_way_names_what_changed(tmp_path: Path) -> None:
+def test_a_patch_refused_by_path_safety_part_way_names_what_changed(tmp_path: pathlib.Path) -> None:
     """A path-safety refusal mid-write reports what was already changed, like an OSError."""
     cfg = _config(tmp_path)
     (tmp_path / "a.txt").write_text("original a\n", encoding="utf-8")
     (tmp_path / "blocker.txt").write_text("a file, not a dir\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     patch = (
         "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n"
         "@@ -1,1 +1,1 @@\n-original a\n+PATCHED A\n"
@@ -2459,16 +2473,16 @@ def test_a_patch_refused_by_path_safety_part_way_names_what_changed(tmp_path: Pa
         "--- /dev/null\n+++ b/blocker.txt/new.txt\n"
         "@@ -0,0 +1,1 @@\n+new under a file\n"
     )
-    with pytest.raises(ToolError, match=r"blocker\.txt/new\.txt.*already changed: a\.txt"):
+    with pytest.raises(errors.ToolError, match=r"blocker\.txt/new\.txt.*already changed: a\.txt"):
         d.dispatch("apply_patch", {"patch": patch})
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "PATCHED A\n"
 
 
-def test_a_patch_over_a_crlf_file_reports_the_bytes_on_disk(tmp_path: Path) -> None:
+def test_a_patch_over_a_crlf_file_reports_the_bytes_on_disk(tmp_path: pathlib.Path) -> None:
     """bytes_written measures the CRLF text the write put on disk."""
     cfg = _config(tmp_path)
     (tmp_path / "w.txt").write_bytes(b"one\r\ntwo\r\n")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     patch = (
         "diff --git a/w.txt b/w.txt\n--- a/w.txt\n+++ b/w.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n"
     )
@@ -2477,11 +2491,13 @@ def test_a_patch_over_a_crlf_file_reports_the_bytes_on_disk(tmp_path: Path) -> N
     assert out["bytes_written"] == len(b"one\r\nTWO\r\n")
 
 
-def test_a_preview_over_a_crlf_file_counts_the_bytes_the_apply_writes(tmp_path: Path) -> None:
+def test_a_preview_over_a_crlf_file_counts_the_bytes_the_apply_writes(
+    tmp_path: pathlib.Path,
+) -> None:
     """Preview's byte counts measure the CRLF text the write would put on disk."""
     cfg = _config(tmp_path)
     (tmp_path / "w.txt").write_bytes(b"one\r\ntwo\r\n")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     edit = {"kind": "replace", "old_string": "two", "new_string": "TWO"}
     seen = d.dispatch("apply_edit", {"path": "w.txt", "edits": [edit], "preview": True}).to_wire()
     d.dispatch("apply_edit", {"path": "w.txt", "edits": [edit]})
@@ -2489,7 +2505,7 @@ def test_a_preview_over_a_crlf_file_counts_the_bytes_the_apply_writes(tmp_path: 
     assert seen["bytes_after"] == len((tmp_path / "w.txt").read_bytes()) == len(b"one\r\nTWO\r\n")
 
 
-def test_an_edit_or_patch_result_names_the_paths_it_wrote(tmp_path: Path) -> None:
+def test_an_edit_or_patch_result_names_the_paths_it_wrote(tmp_path: pathlib.Path) -> None:
     """The journal's tool.call names the files a patch wrote.
 
     The clipped args preview named none; a resume needs them to tell the run's own untracked
@@ -2497,11 +2513,11 @@ def test_an_edit_or_patch_result_names_the_paths_it_wrote(tmp_path: Path) -> Non
     """
     import json
 
-    from agent6.events import EventSink
+    from agent6 import events as agent6_events
 
     cfg = _config(tmp_path)
     logs = tmp_path / "logs.jsonl"
-    d = ToolDispatcher(root=tmp_path, config=cfg, events=EventSink(logs))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=agent6_events.EventSink(logs))
     d.dispatch(
         "apply_edit",
         {"path": "a.txt", "edits": [{"kind": "create", "old_string": "", "new_string": "a\n"}]},
@@ -2519,34 +2535,29 @@ def test_an_edit_or_patch_result_names_the_paths_it_wrote(tmp_path: Path) -> Non
 
 def test_a_too_long_array_is_named_in_json_words() -> None:
     """The size error names a JSON array, not pydantic's tuple."""
-    from agent6.tools.dispatch import invalid_arguments
-    from agent6.tools.schema import AskUserInput
-
-    with pytest.raises(ValidationError) as info:
-        AskUserInput.model_validate({"questions": [{"question": f"q{i}"} for i in range(9)]})
-    assert invalid_arguments(info.value) == (
+    with pytest.raises(pydantic.ValidationError) as info:
+        schema.AskUserInput.model_validate({"questions": [{"question": f"q{i}"} for i in range(9)]})
+    assert dispatch.invalid_arguments(info.value) == (
         "invalid arguments: questions: expected at most 8 items in the array"
     )
 
 
 def test_apply_edit_takes_one_edit_flat_the_way_the_claude_code_edit_tool_does(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """The flat pair is one edit, `edits` carries several, and both or neither is refused.
 
     Sonnet on the Claude Code backend sent `edits` as a JSON string three times in one run, its
     own Edit tool being flat; an omitted old_string creates and only `path` stays required.
     """
-    from agent6.tools.schema import ApplyEditInput, wire_schema
-
     cfg = _config(tmp_path)
     (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch("apply_edit", {"path": "a.txt", "old_string": "x", "new_string": "y"})
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "y\n"
     d.dispatch("apply_edit", {"path": "b.txt", "new_string": "fresh\n"})
     assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "fresh\n"
-    with pytest.raises(ToolError, match="not both"):
+    with pytest.raises(errors.ToolError, match="not both"):
         d.dispatch(
             "apply_edit",
             {
@@ -2556,7 +2567,7 @@ def test_apply_edit_takes_one_edit_flat_the_way_the_claude_code_edit_tool_does(
                 "edits": [{"old_string": "y", "new_string": "q"}],
             },
         )
-    with pytest.raises(ToolError, match="one edit, or `edits`"):
+    with pytest.raises(errors.ToolError, match="one edit, or `edits`"):
         d.dispatch("apply_edit", {"path": "a.txt"})
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "y\n"
-    assert wire_schema(ApplyEditInput)["required"] == ["path"]
+    assert schema.wire_schema(schema.ApplyEditInput)["required"] == ["path"]

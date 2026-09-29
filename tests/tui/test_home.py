@@ -7,37 +7,29 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pathlib
 import time
-from pathlib import Path
 from typing import Any
 
 import pytest
 from textual.widgets._select import SelectCurrent
 
-from agent6.paths import state_dir
-from agent6.sessions.ipc import (
-    approvals_dir,
-    clear_pending_answers,
-    questions_dir,
-    read_question_answers,
-    register_frontend,
-    write_answer,
-    write_question_answers,
-)
+from agent6 import paths
+from agent6.sessions import ipc
 from agent6.viewmodel import session_dirs, session_mtime
 from tests.tui._waits import wait_for
 
 
 def _write_run(
-    agent6_dir: Path, sub: str, session_id: str, events: list[dict[str, object]]
-) -> Path:
+    agent6_dir: pathlib.Path, sub: str, session_id: str, events: list[dict[str, object]]
+) -> pathlib.Path:
     rd = agent6_dir / "sessions" / sub / session_id
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return rd
 
 
-def test_list_runs_spans_runs_and_asks(tmp_path: Path) -> None:
+def test_list_runs_spans_runs_and_asks(tmp_path: pathlib.Path) -> None:
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run"}])
     _write_run(a6, "asks", "a1", [{"type": "session.start", "mode": "ask"}])
@@ -45,7 +37,7 @@ def test_list_runs_spans_runs_and_asks(tmp_path: Path) -> None:
     assert names == {"r1", "a1"}
 
 
-def test_run_mtime_is_log_activity_not_dir_mtime(tmp_path: Path) -> None:
+def test_run_mtime_is_log_activity_not_dir_mtime(tmp_path: pathlib.Path) -> None:
     """A run's listed time is its logs.jsonl mtime, so a front-end claim never moves it.
 
     Opening a run writes the claim into the dir, bumping the dir mtime.
@@ -56,12 +48,12 @@ def test_run_mtime_is_log_activity_not_dir_mtime(tmp_path: Path) -> None:
     rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run"}])
     os.utime(rd / "logs.jsonl", (1000, 1000))  # last real activity
     # Opening the dashboard writes a front-end claim, bumping the dir mtime well past the log's.
-    register_frontend(rd, 123)
+    ipc.register_frontend(rd, 123)
     os.utime(rd, (5000, 5000))
     assert session_mtime(rd) == 1000.0  # pyright: ignore[reportPrivateUsage]
 
 
-def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: Path) -> None:
+def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: pathlib.Path) -> None:
     import os
 
     rd = tmp_path / "sessions" / "runs" / "fresh"
@@ -70,36 +62,38 @@ def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: Path) -> None:
     assert session_mtime(rd) == 2000.0  # pyright: ignore[reportPrivateUsage] - no log yet -> dir mtime
 
 
-def test_question_bridge_round_trip(tmp_path: Path) -> None:
+def test_question_bridge_round_trip(tmp_path: pathlib.Path) -> None:
     # No front-end claim: consumption is claim-free; liveness only paces the wait for an answer.
-    write_question_answers(tmp_path, "q1", ["use B"])
-    assert read_question_answers(tmp_path, "q1", timeout_s=1.0) == ("use B",)
+    ipc.write_question_answers(tmp_path, "q1", ["use B"])
+    assert ipc.read_question_answers(tmp_path, "q1", timeout_s=1.0) == ("use B",)
 
 
-def test_read_question_answer_returns_none_when_no_tui(tmp_path: Path) -> None:
+def test_read_question_answer_returns_none_when_no_tui(tmp_path: pathlib.Path) -> None:
     # With no front-end claim the read gives up after dead_grace_s, not the full timeout.
     start = time.monotonic()
-    assert read_question_answers(tmp_path, "q1", timeout_s=10.0, dead_grace_s=0.05) is None
+    assert ipc.read_question_answers(tmp_path, "q1", timeout_s=10.0, dead_grace_s=0.05) is None
     assert time.monotonic() - start < 5.0, "the dead-front-end grace never broke the wait"
 
 
-def test_read_question_answer_consumes_the_file(tmp_path: Path) -> None:
+def test_read_question_answer_consumes_the_file(tmp_path: pathlib.Path) -> None:
     # The answer file is unlinked after reading, so a later prompt with the same id cannot re-read.
-    write_question_answers(tmp_path, "q1", ["first"])
-    assert read_question_answers(tmp_path, "q1", timeout_s=1.0) == ("first",)
-    assert not (questions_dir(tmp_path) / "q1.answer").exists()
+    ipc.write_question_answers(tmp_path, "q1", ["first"])
+    assert ipc.read_question_answers(tmp_path, "q1", timeout_s=1.0) == ("first",)
+    assert not (ipc.questions_dir(tmp_path) / "q1.answer").exists()
 
 
-def test_clear_pending_answers_wipes_stale_state(tmp_path: Path) -> None:
-    write_answer(tmp_path, "approval-1", "yes")
-    write_question_answers(tmp_path, "question-1", ["stale"])
-    register_frontend(tmp_path, 12345)
-    clear_pending_answers(tmp_path, started_at=time.time() + 60)
-    assert not (approvals_dir(tmp_path) / "approval-1.answer").exists()
-    assert not (questions_dir(tmp_path) / "question-1.answer").exists()
+def test_clear_pending_answers_wipes_stale_state(tmp_path: pathlib.Path) -> None:
+    ipc.write_answer(tmp_path, "approval-1", "yes")
+    ipc.write_question_answers(tmp_path, "question-1", ["stale"])
+    ipc.register_frontend(tmp_path, 12345)
+    ipc.clear_pending_answers(tmp_path, started_at=time.time() + 60)
+    assert not (ipc.approvals_dir(tmp_path) / "approval-1.answer").exists()
+    assert not (ipc.questions_dir(tmp_path) / "question-1.answer").exists()
 
 
-def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(tmp_path: Path) -> None:
+def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(
+    tmp_path: pathlib.Path,
+) -> None:
     """A run dir that vanishes between the listing and its stat() leaves both the table and `_runs`.
 
     Desynced, every cursor_row-indexed action maps to the wrong run past the gap.
@@ -107,21 +101,21 @@ def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(tmp_path
     import asyncio
     import shutil
 
-    from textual.widgets import DataTable
+    from textual import widgets
 
-    from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
+    from agent6.ui.tui import home as tui_home
 
     a6 = tmp_path / ".agent6"
     for rid in ("r1", "r2", "r3"):
         _write_run(a6, "runs", rid, [{"type": "session.start", "mode": "run", "user_task": rid}])
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, HomeScreen)
-            table = screen.query_one("#sessions", DataTable)
+            assert isinstance(screen, tui_home.HomeScreen)
+            table = screen.query_one("#sessions", widgets.DataTable)
             assert table.row_count == 3
             # Delete the run currently shown in the MIDDLE row, then refresh.
             vanished = screen._runs[1]  # pyright: ignore[reportPrivateUsage]
@@ -137,61 +131,58 @@ def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(tmp_path
     asyncio.run(scenario())
 
 
-def test_home_app_lists_runs_and_opens_the_new_task_view(tmp_path: Path) -> None:
+def test_home_app_lists_runs_and_opens_the_new_task_view(tmp_path: pathlib.Path) -> None:
     import asyncio
 
-    from agent6.ui.tui.home import Agent6HomeApp
-    from agent6.ui.tui.new_work import NewWorkScreen
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "do [x]"}])
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
-            from textual.widgets import DataTable
-
-            from agent6.ui.tui.home import HomeScreen
+            from textual import widgets
 
             await pilot.pause()  # let on_mount push the HomeScreen
-            assert isinstance(app.screen, HomeScreen)  # hub lives on its own screen
-            table = app.screen.query_one("#sessions", DataTable)
+            assert isinstance(app.screen, tui_home.HomeScreen)  # hub lives on its own screen
+            table = app.screen.query_one("#sessions", widgets.DataTable)
             assert table.row_count == 1  # the one run is listed
             # 'n' opens the new-task view (an empty conversation); Esc backs out.
             await pilot.press("n")
             await pilot.pause()
-            assert isinstance(app.screen, NewWorkScreen)
+            assert isinstance(app.screen, tui_new_work.NewWorkScreen)
             await pilot.press("escape")
             await pilot.pause()
-            assert isinstance(app.screen, HomeScreen)
+            assert isinstance(app.screen, tui_home.HomeScreen)
 
     asyncio.run(scenario())
 
 
-def test_new_task_view_esc_closes_an_open_list_before_the_view(tmp_path: Path) -> None:
+def test_new_task_view_esc_closes_an_open_list_before_the_view(tmp_path: pathlib.Path) -> None:
     """Esc with a picker's list or a menu open closes just that, keeping the view and the task."""
     import asyncio
 
-    from textual.widgets import Select
+    from textual import widgets
 
-    from agent6.ui.tui.composer import SteerInput
-    from agent6.ui.tui.home import Agent6HomeApp
-    from agent6.ui.tui.menubar import MenuBar
-    from agent6.ui.tui.new_work import NewWorkScreen
+    from agent6.ui.tui import composer, menubar
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(NewWorkScreen(tmp_path, presets=["ultra"], routes=["o/a"]))
+            app.push_screen(tui_new_work.NewWorkScreen(tmp_path, presets=["ultra"], routes=["o/a"]))
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, NewWorkScreen)
+            assert isinstance(screen, tui_new_work.NewWorkScreen)
             await pilot.press("k", "e", "e", "p")
-            picker = screen.query_one("#draft-preset", Select)
+            picker = screen.query_one("#draft-preset", widgets.Select)
             picker.focus()
             await pilot.press("enter")
             await pilot.pause()
@@ -199,19 +190,19 @@ def test_new_task_view_esc_closes_an_open_list_before_the_view(tmp_path: Path) -
             await pilot.press("escape")
             await pilot.pause()
             assert not picker.expanded and picker.has_focus
-            screen.query_one(MenuBar).open("f")
+            screen.query_one(menubar.MenuBar).open("f")
             await pilot.pause()
             await pilot.press("escape")
             await pilot.pause()
-            assert not screen.query_one(MenuBar).opened
+            assert not screen.query_one(menubar.MenuBar).opened
             assert app.screen is screen
-            assert screen.query_one("#draft-input", SteerInput).text == "keep"
+            assert screen.query_one("#draft-input", composer.SteerInput).text == "keep"
 
     asyncio.run(scenario())
 
 
 def test_new_task_view_starts_the_chosen_mode_and_preset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Enter in the draft composer starts `<mode>` under the picked preset; Ctrl-J is a newline.
 
@@ -219,19 +210,18 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
     """
     import asyncio
 
-    from textual.widgets import Select
+    from textual import widgets
 
-    from agent6.ui.tui import new_work
-    from agent6.ui.tui.composer import SteerInput
-    from agent6.ui.tui.home import Agent6HomeApp
-    from agent6.ui.tui.new_work import NewWorkScreen
+    from agent6.ui.tui import composer, new_work
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
     started: list[tuple[str, str, str]] = []
 
     def _spawn(
-        cwd: Path,
+        cwd: pathlib.Path,
         mode: str,
         task: str,
         *,
@@ -245,16 +235,16 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
     monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(NewWorkScreen(tmp_path, presets=["ultra"]))
+            app.push_screen(tui_new_work.NewWorkScreen(tmp_path, presets=["ultra"]))
             await pilot.pause()
-            assert isinstance(app.screen, NewWorkScreen)
-            bar = app.screen.query_one("#draft-input", SteerInput)
+            assert isinstance(app.screen, tui_new_work.NewWorkScreen)
+            bar = app.screen.query_one("#draft-input", composer.SteerInput)
             assert bar.border_title == "new session"
-            app.screen.query_one("#draft-mode", Select).value = "plan"
-            app.screen.query_one("#draft-preset", Select).value = "ultra"
+            app.screen.query_one("#draft-mode", widgets.Select).value = "plan"
+            app.screen.query_one("#draft-preset", widgets.Select).value = "ultra"
             bar.focus()
             await pilot.pause()
             await pilot.press("a", "ctrl+j", "b", "enter")
@@ -268,7 +258,7 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
 
 
 def test_a_start_whose_screen_was_left_still_opens_the_session(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The start worker reaches the app it was handed on the UI thread.
 
@@ -277,17 +267,16 @@ def test_a_start_whose_screen_was_left_still_opens_the_session(
     import asyncio
     import threading
 
-    from agent6.ui.tui import new_work
-    from agent6.ui.tui.composer import SteerInput
-    from agent6.ui.tui.home import Agent6HomeApp
-    from agent6.ui.tui.new_work import NewWorkScreen
+    from agent6.ui.tui import composer, new_work
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
 
     a6 = tmp_path / ".agent6"
     entered = threading.Event()
     gate = threading.Event()
 
     def _spawn(
-        cwd: Path,
+        cwd: pathlib.Path,
         mode: str,
         task: str,
         *,
@@ -303,12 +292,12 @@ def test_a_start_whose_screen_was_left_still_opens_the_session(
     monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(NewWorkScreen(tmp_path))
+            app.push_screen(tui_new_work.NewWorkScreen(tmp_path))
             await pilot.pause()
-            bar = app.screen.query_one("#draft-input", SteerInput)
+            bar = app.screen.query_one("#draft-input", composer.SteerInput)
             bar.focus()
             await pilot.pause()
             await pilot.press("f", "i", "x", "enter")
@@ -326,23 +315,22 @@ def test_a_start_whose_screen_was_left_still_opens_the_session(
 
 
 def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A refusal reaching a popped screen toasts instead of writing into a widget it lost."""
     import asyncio
     import threading
 
-    from agent6.ui.tui import new_work
-    from agent6.ui.tui.composer import SteerInput
-    from agent6.ui.tui.home import Agent6HomeApp
-    from agent6.ui.tui.new_work import NewWorkScreen
+    from agent6.ui.tui import composer, new_work
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
 
     a6 = tmp_path / ".agent6"
     entered = threading.Event()
     gate = threading.Event()
 
     def _spawn(
-        cwd: Path,
+        cwd: pathlib.Path,
         mode: str,
         task: str,
         *,
@@ -357,12 +345,12 @@ def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
     monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(NewWorkScreen(tmp_path))
+            app.push_screen(tui_new_work.NewWorkScreen(tmp_path))
             await pilot.pause()
-            app.screen.query_one("#draft-input", SteerInput).focus()
+            app.screen.query_one("#draft-input", composer.SteerInput).focus()
             await pilot.pause()
             await pilot.press("f", "i", "x", "enter")
             await pilot.pause()
@@ -381,22 +369,21 @@ def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
 
 
 def test_new_task_view_keeps_the_text_on_a_refusal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A refused start renders its reason and hands the typed text back to the composer."""
     import asyncio
 
-    from textual.widgets import Static
+    from textual import widgets
 
-    from agent6.ui.tui import new_work
-    from agent6.ui.tui.composer import SteerInput
-    from agent6.ui.tui.home import Agent6HomeApp
-    from agent6.ui.tui.new_work import NewWorkScreen
+    from agent6.ui.tui import composer, new_work
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
 
     a6 = tmp_path / ".agent6"
 
     def _spawn(
-        cwd: Path,
+        cwd: pathlib.Path,
         mode: str,
         task: str,
         *,
@@ -409,28 +396,30 @@ def test_new_task_view_keeps_the_text_on_a_refusal(
     monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(NewWorkScreen(tmp_path))
+            app.push_screen(tui_new_work.NewWorkScreen(tmp_path))
             await pilot.pause()
-            bar = app.screen.query_one("#draft-input", SteerInput)
+            bar = app.screen.query_one("#draft-input", composer.SteerInput)
             bar.focus()
             await pilot.pause()
             await pilot.press("f", "i", "x", "enter")
             deadline = time.monotonic() + 10
-            notice = app.screen.query_one("#draft-notice", Static)
+            notice = app.screen.query_one("#draft-notice", widgets.Static)
             while "REFUSING" not in str(notice.render()) and time.monotonic() < deadline:
                 await pilot.pause(0.05)
             shown = str(notice.render())
             assert "REFUSING" in shown and "[git] seed.txt" in shown  # markup-safe
             assert bar.text == "fix"  # back in the composer, not lost
-            assert app.return_value is None and isinstance(app.screen, NewWorkScreen)
+            assert app.return_value is None and isinstance(app.screen, tui_new_work.NewWorkScreen)
 
     asyncio.run(scenario())
 
 
-def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch: object) -> None:
+def test_run_merge_cli_builds_argv_and_parses_result(
+    tmp_path: pathlib.Path, monkeypatch: object
+) -> None:
     """The hub's merge helper shells out to `agent6 sessions merge <id>` and reports its output."""
     import subprocess
 
@@ -456,16 +445,15 @@ def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch
     assert "merged agent6/r1" in msg
 
 
-def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: object) -> None:
+def test_merge_action_confirms_then_shells_out(tmp_path: pathlib.Path, monkeypatch: object) -> None:
     """`m` opens a confirm modal; confirming runs `agent6 sessions merge` for the selected run."""
     import asyncio
     import subprocess as sp
 
-    from textual.widgets import DataTable
+    from textual import widgets
 
-    from agent6.ui.tui import home
-    from agent6.ui.tui.home import Agent6HomeApp
-    from agent6.ui.tui.modals import ConfirmModal
+    from agent6.ui.tui import home, modals
+    from agent6.ui.tui import home as tui_home
 
     a6 = tmp_path / ".agent6"
     rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
@@ -502,22 +490,24 @@ def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: obje
 
     calls: list[str] = []
 
-    def _fake_merge(cwd: Path, session_id: str, config_path: object = None) -> tuple[bool, str]:
+    def _fake_merge(
+        cwd: pathlib.Path, session_id: str, config_path: object = None
+    ) -> tuple[bool, str]:
         calls.append(session_id)
         return True, "merged"
 
     monkeypatch.setattr(home, "_run_merge_cli", _fake_merge)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            tbl = app.screen.query_one("#sessions", DataTable)
+            tbl = app.screen.query_one("#sessions", widgets.DataTable)
             tbl.focus()
             tbl.move_cursor(row=0)
             await pilot.press("m")
             await pilot.pause()
-            assert isinstance(app.screen, ConfirmModal)
+            assert isinstance(app.screen, modals.ConfirmModal)
             await pilot.press("y")  # confirm
             await pilot.pause()
             assert calls == ["r1"]  # merged the selected run
@@ -525,22 +515,22 @@ def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: obje
     asyncio.run(scenario())
 
 
-def test_home_open_run_returns_its_dir(tmp_path: Path) -> None:
+def test_home_open_run_returns_its_dir(tmp_path: pathlib.Path) -> None:
     """Enter on a hub row opens the run: the app exits returning that run directory."""
     import asyncio
 
-    from textual.widgets import DataTable
+    from textual import widgets
 
-    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui import home as tui_home
 
     a6 = tmp_path / ".agent6"
     rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            tbl = app.screen.query_one("#sessions", DataTable)
+            tbl = app.screen.query_one("#sessions", widgets.DataTable)
             tbl.focus()
             tbl.move_cursor(row=0)
             await pilot.press("enter")
@@ -551,21 +541,20 @@ def test_home_open_run_returns_its_dir(tmp_path: Path) -> None:
 
 
 def test_hub_status_label_matches_the_cli_and_web_for_the_same_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import asyncio
 
-    from textual.widgets import DataTable
+    from textual import widgets
 
-    from agent6.paths import state_dir
-    from agent6.ui.tui.home import Agent6HomeApp
-    from agent6.ui.web.model import hub_payload
-    from agent6.viewmodel.listing import summarize_session_dir, summary_row
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.web import model as web_model
+    from agent6.viewmodel import listing
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
-    a6 = state_dir(repo)
+    a6 = paths.state_dir(repo)
     rd = _write_run(
         a6,
         "runs",
@@ -575,14 +564,14 @@ def test_hub_status_label_matches_the_cli_and_web_for_the_same_dir(
             {"type": "session.end", "all_passed": False, "reason": "provider_error"},
         ],
     )
-    cli_row = summary_row(summarize_session_dir(rd))
-    (web_row,) = hub_payload(repo)["sessions"]
+    cli_row = listing.summary_row(listing.summarize_session_dir(rd))
+    (web_row,) = web_model.hub_payload(repo)["sessions"]
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, repo)
+        app = tui_home.Agent6HomeApp(a6, repo)
         async with app.run_test(size=(140, 40)) as pilot:
             await pilot.pause()
-            table = app.screen.query_one("#sessions", DataTable)
+            table = app.screen.query_one("#sessions", widgets.DataTable)
             tui_label = str(table.get_row_at(0)[1])
             assert (web_row["status"], web_row["label"]) == (
                 cli_row["status"],
@@ -594,13 +583,13 @@ def test_hub_status_label_matches_the_cli_and_web_for_the_same_dir(
 
 
 def test_hub_repaints_a_dying_run_without_a_keypress(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The hub polls, so a run that dies while listed does not keep its last word."""
-    from textual.widgets import DataTable
+    from textual import widgets
 
     import agent6.ui.tui.home as home_mod
-    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui import home as tui_home
 
     monkeypatch.setattr(home_mod, "_HUB_POLL_S", 0.2)
     a6 = tmp_path / ".agent6"
@@ -608,11 +597,11 @@ def test_hub_repaints_a_dying_run_without_a_keypress(
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
 
             def status_cell() -> str:
-                table = app.screen.query_one("#sessions", DataTable)
+                table = app.screen.query_one("#sessions", widgets.DataTable)
                 if table.row_count == 0:
                     return ""
                 return str(table.get_row_at(0)[1])
@@ -626,13 +615,13 @@ def test_hub_repaints_a_dying_run_without_a_keypress(
 
 
 def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The poll rebuilds the table, and the selection follows the run it was on by id."""
-    from textual.widgets import DataTable
+    from textual import widgets
 
     import agent6.ui.tui.home as home_mod
-    from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
+    from agent6.ui.tui import home as tui_home
 
     monkeypatch.setattr(home_mod, "_HUB_POLL_S", 3600.0)  # manual refresh only
     a6 = tmp_path / ".agent6"
@@ -641,16 +630,16 @@ def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
         os.utime(rd / "logs.jsonl", (ts, ts))
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
 
-            def table() -> DataTable[Any]:  # newest first: r3, r2, r1
-                return app.screen.query_one("#sessions", DataTable)
+            def table() -> widgets.DataTable[Any]:  # newest first: r3, r2, r1
+                return app.screen.query_one("#sessions", widgets.DataTable)
 
             await wait_for(pilot, lambda: table().row_count == 3, "the three rows")
             await pilot.press("down")  # cursor onto r2
             scr = app.screen
-            assert isinstance(scr, HomeScreen)
+            assert isinstance(scr, tui_home.HomeScreen)
             runs = scr._runs  # pyright: ignore[reportPrivateUsage]
             assert runs[table().cursor_row].name == "r2"
             # r1 gets fresh activity and jumps to the top: order becomes r1, r3, r2.
@@ -663,12 +652,12 @@ def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
     asyncio.run(scenario())
 
 
-def test_hub_cost_cell_uses_plan_points_for_a_plan_metered_run(tmp_path: Path) -> None:
+def test_hub_cost_cell_uses_plan_points_for_a_plan_metered_run(tmp_path: pathlib.Path) -> None:
     import asyncio
 
-    from textual.widgets import DataTable
+    from textual import widgets
 
-    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui import home as tui_home
 
     a6 = tmp_path / ".agent6"
     _write_run(
@@ -688,10 +677,10 @@ def test_hub_cost_cell_uses_plan_points_for_a_plan_metered_run(tmp_path: Path) -
     )
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
             await pilot.pause()
-            table = app.screen.query_one("#sessions", DataTable)
+            table = app.screen.query_one("#sessions", widgets.DataTable)
             assert str(table.get_row_at(0)[2]) == "2.5pt"
 
     asyncio.run(scenario())
@@ -702,16 +691,16 @@ def test_cost_cell_marks_partial_and_keeps_zero_clean() -> None:
 
     An all-unpriced run's ~$0.0000 is information; a clean $0 stays blank.
     """
-    from agent6.viewmodel.format import format_cost_cell
+    from agent6.viewmodel import format
 
-    assert format_cost_cell(0.0123, partial=True) == "~$0.01"
-    assert format_cost_cell(0.0, partial=True) == "~$0.0000"
-    assert format_cost_cell(0.0, partial=False) == ""
-    assert format_cost_cell(0.0123, partial=False) == "$0.01"
+    assert format.format_cost_cell(0.0123, partial=True) == "~$0.01"
+    assert format.format_cost_cell(0.0, partial=True) == "~$0.0000"
+    assert format.format_cost_cell(0.0, partial=False) == ""
+    assert format.format_cost_cell(0.0123, partial=False) == "$0.01"
 
 
 def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """`agent6 tui` hands `run_home` the STATE dir, the base every bucket lookup is relative to.
 
@@ -725,17 +714,17 @@ def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
     from agent6.ui.tui import home
 
     monkeypatch.chdir(tmp_path)
-    seen: list[Path] = []
+    seen: list[pathlib.Path] = []
 
-    def _capture(base: Path, _cwd: Path, _cp: object = None) -> None:
+    def _capture(base: pathlib.Path, _cwd: pathlib.Path, _cp: object = None) -> None:
         seen.append(base)
 
     monkeypatch.setattr(home, "run_home", _capture)
     assert plan_watch._cmd_tui() == 0  # pyright: ignore[reportPrivateUsage]
-    assert seen == [state_dir(tmp_path)]
+    assert seen == [paths.state_dir(tmp_path)]
 
 
-def test_merge_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
+def test_merge_is_greyed_out_for_a_live_run(tmp_path: pathlib.Path) -> None:
     """The hub greys Merge on a live run, since `sessions merge` always refuses one.
 
     None greys it; False would hide it, and a missing key reads as a missing capability.
@@ -743,7 +732,7 @@ def test_merge_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
     import asyncio
     import os
 
-    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui import home as tui_home
 
     a6 = tmp_path / ".agent6"
     live = _write_run(
@@ -752,7 +741,7 @@ def test_merge_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
     (live / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
@@ -762,17 +751,17 @@ def test_merge_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: Path) -> None:
+def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: pathlib.Path) -> None:
     """A folded fan-out's row time is the group's latest activity, as `sessions list` shows it.
 
     The coordinator's own journal is quiet while its lanes run.
     """
     import asyncio
 
-    from textual.widgets import DataTable
+    from textual import widgets
 
-    from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
-    from agent6.viewmodel.format import format_when
+    from agent6.ui.tui import home as tui_home
+    from agent6.viewmodel import format
 
     a6 = tmp_path / ".agent6"
     coord = _write_run(
@@ -800,72 +789,75 @@ def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: Path) -> 
         os.utime(a6 / "sessions" / "runs" / f"fan-l{lane}" / "logs.jsonl", (new, new))
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test(size=(120, 30)) as pilot:  # wide: the full date and time
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, HomeScreen)
-            table = screen.query_one("#sessions", DataTable)
+            assert isinstance(screen, tui_home.HomeScreen)
+            table = screen.query_one("#sessions", widgets.DataTable)
             assert table.row_count == 1  # folded: one row for the fan-out
-            assert str(table.get_row_at(0)[0]) == format_when(new)
+            assert str(table.get_row_at(0)[0]) == format.format_when(new)
 
     asyncio.run(scenario())
 
 
-def test_the_hub_table_names_its_columns_like_the_cli(tmp_path: Path) -> None:
+def test_the_hub_table_names_its_columns_like_the_cli(tmp_path: pathlib.Path) -> None:
     """The time column has one name across the CLI, TUI and web hubs."""
     import asyncio
 
-    from textual.widgets import DataTable
+    from textual import widgets
 
-    from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
+    from agent6.ui.tui import home as tui_home
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "r1"}])
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, HomeScreen)
-            table = screen.query_one("#sessions", DataTable)
+            assert isinstance(screen, tui_home.HomeScreen)
+            table = screen.query_one("#sessions", widgets.DataTable)
             labels = [str(column.label) for column in table.columns.values()]
             assert labels == ["updated", "status", "cost", "id", "task"]
 
     asyncio.run(scenario())
 
 
-def test_delete_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: object) -> None:
+def test_delete_action_confirms_then_shells_out(
+    tmp_path: pathlib.Path, monkeypatch: object
+) -> None:
     """`d` opens a confirm modal; confirming runs `agent6 sessions rm` for the selected run."""
     import asyncio
 
-    from textual.widgets import DataTable
+    from textual import widgets
 
-    from agent6.ui.tui import home
-    from agent6.ui.tui.home import Agent6HomeApp
-    from agent6.ui.tui.modals import ConfirmModal
+    from agent6.ui.tui import home, modals
+    from agent6.ui.tui import home as tui_home
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
     calls: list[str] = []
 
-    def _fake_delete(cwd: Path, session_id: str, config_path: object = None) -> tuple[bool, str]:
+    def _fake_delete(
+        cwd: pathlib.Path, session_id: str, config_path: object = None
+    ) -> tuple[bool, str]:
         calls.append(session_id)
         return True, "removed"
 
     monkeypatch.setattr(home, "_run_delete_cli", _fake_delete)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            tbl = app.screen.query_one("#sessions", DataTable)
+            tbl = app.screen.query_one("#sessions", widgets.DataTable)
             tbl.focus()
             tbl.move_cursor(row=0)
             await pilot.press("d")
             await pilot.pause()
-            assert isinstance(app.screen, ConfirmModal)
+            assert isinstance(app.screen, modals.ConfirmModal)
             await pilot.press("y")
             await pilot.pause()
             assert calls == ["r1"]
@@ -873,11 +865,11 @@ def test_delete_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: obj
     asyncio.run(scenario())
 
 
-def test_delete_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
+def test_delete_is_greyed_out_for_a_live_run(tmp_path: pathlib.Path) -> None:
     import asyncio
     import os
 
-    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui import home as tui_home
 
     a6 = tmp_path / ".agent6"
     live = _write_run(
@@ -886,7 +878,7 @@ def test_delete_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
     (live / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
             assert app.screen.check_action("delete_selected", ()) is None
@@ -896,15 +888,15 @@ def test_delete_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
 
 def test_delete_is_on_the_hubs_file_menu_like_its_sibling_verbs() -> None:
     """The File menu offers Delete, so the one destructive verb is not footer-only."""
-    from agent6.ui.tui.home import HomeScreen
+    from agent6.ui.tui import home as tui_home
 
-    file_menu = HomeScreen.MENUS[0]
+    file_menu = tui_home.HomeScreen.MENUS[0]
     assert file_menu.title == "File"
     assert "delete_selected" in {item.action for item in file_menu.items}
 
 
 def test_prune_and_clear_asks_are_hub_actions_that_shell_the_cli(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The TUI hub prunes and clears saved asks from the File menu, as the web hub does.
 
@@ -912,39 +904,38 @@ def test_prune_and_clear_asks_are_hub_actions_that_shell_the_cli(
     """
     import asyncio
 
-    from agent6.ui.tui import home
-    from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
-    from agent6.ui.tui.modals import ConfirmModal
+    from agent6.ui.tui import home, modals
+    from agent6.ui.tui import home as tui_home
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
     calls: list[tuple[str, bool]] = []
 
     def _fake_prune(
-        cwd: Path, *, delete_squashed: bool, config_path: object = None
+        cwd: pathlib.Path, *, delete_squashed: bool, config_path: object = None
     ) -> tuple[bool, str]:
         calls.append(("prune", delete_squashed))
         return True, "pruned"
 
-    def _fake_clear(cwd: Path, config_path: object = None) -> tuple[bool, str]:
+    def _fake_clear(cwd: pathlib.Path, config_path: object = None) -> tuple[bool, str]:
         calls.append(("asks", False))
         return True, "cleared"
 
     monkeypatch.setattr(home, "_run_prune_cli", _fake_prune)  # type: ignore[attr-defined]
     monkeypatch.setattr(home, "_run_clear_asks_cli", _fake_clear)  # type: ignore[attr-defined]
-    actions = {item.action for item in HomeScreen.MENUS[0].items}
+    actions = {item.action for item in tui_home.HomeScreen.MENUS[0].items}
     assert {"prune", "prune_squashed", "clear_asks"} <= actions
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
             for action in ("prune", "prune_squashed", "clear_asks"):
                 screen = app.screen
-                assert isinstance(screen, HomeScreen)
+                assert isinstance(screen, tui_home.HomeScreen)
                 getattr(screen, f"action_{action}")()
                 await pilot.pause()
-                assert isinstance(app.screen, ConfirmModal)
+                assert isinstance(app.screen, modals.ConfirmModal)
                 await pilot.press("y")
                 await pilot.pause()
             assert calls == [("prune", False), ("prune", True), ("asks", False)]
@@ -952,13 +943,13 @@ def test_prune_and_clear_asks_are_hub_actions_that_shell_the_cli(
     asyncio.run(scenario())
 
 
-def test_the_hub_folds_a_fan_outs_lanes_and_space_expands_them(tmp_path: Path) -> None:
+def test_the_hub_folds_a_fan_outs_lanes_and_space_expands_them(tmp_path: pathlib.Path) -> None:
     """A fan-out is one row with its lane count; Space lists its lanes, Space again folds."""
     import asyncio
 
-    from textual.widgets import DataTable
+    from textual import widgets
 
-    from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
+    from agent6.ui.tui import home as tui_home
 
     a6 = tmp_path / ".agent6"
     start: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
@@ -976,12 +967,12 @@ def test_the_hub_folds_a_fan_outs_lanes_and_space_expands_them(tmp_path: Path) -
         )
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, HomeScreen)
-            table = screen.query_one("#sessions", DataTable)
+            assert isinstance(screen, tui_home.HomeScreen)
+            table = screen.query_one("#sessions", widgets.DataTable)
             runs = screen._runs  # pyright: ignore[reportPrivateUsage]
             assert table.row_count == 1 and [rd.name for rd in runs] == ["fan"]
             assert "(2 lanes)" in str(table.get_row_at(0)[3])
@@ -999,7 +990,7 @@ def test_the_hub_folds_a_fan_outs_lanes_and_space_expands_them(tmp_path: Path) -
 
 
 def test_new_task_view_model_box_follows_the_mode_and_preset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The preset and model pickers open on the config default, named for what it is.
 
@@ -1008,21 +999,20 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
     """
     import asyncio
 
-    from textual.widgets import Select
+    from textual import widgets
 
-    from agent6.ui.tui import new_work
-    from agent6.ui.tui.composer import SteerInput
-    from agent6.ui.tui.home import Agent6HomeApp
-    from agent6.ui.tui.new_work import NewWorkScreen
+    from agent6.ui.tui import composer, new_work
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
     resolved = {("run", ""): "o/a", ("plan", ""): "o/b", ("plan", "ultra"): "o/c"}
 
-    def _route(cwd: Path, config_path: object, mode: str, preset: str) -> str:
+    def _route(cwd: pathlib.Path, config_path: object, mode: str, preset: str) -> str:
         return resolved.get((mode, preset), "")
 
-    def _preset(cwd: Path, config_path: object) -> str:
+    def _preset(cwd: pathlib.Path, config_path: object) -> str:
         return "quick"
 
     monkeypatch.setattr(new_work, "default_route", _route)
@@ -1030,7 +1020,7 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
     started: list[tuple[str, str, str, str]] = []
 
     def _spawn(
-        cwd: Path,
+        cwd: pathlib.Path,
         mode: str,
         task: str,
         *,
@@ -1043,30 +1033,32 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
 
     monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
 
-    def label(picker: Select[str]) -> str:
+    def label(picker: widgets.Select[str]) -> str:
         return str(picker.query_one(SelectCurrent).label)
 
     async def scenario(pick: str) -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(NewWorkScreen(tmp_path, presets=["ultra"], routes=["o/a", "o/b"]))
+            app.push_screen(
+                tui_new_work.NewWorkScreen(tmp_path, presets=["ultra"], routes=["o/a", "o/b"])
+            )
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, NewWorkScreen)
-            preset = screen.query_one("#draft-preset", Select)
-            picker = screen.query_one("#draft-model", Select)
+            assert isinstance(screen, tui_new_work.NewWorkScreen)
+            preset = screen.query_one("#draft-preset", widgets.Select)
+            picker = screen.query_one("#draft-model", widgets.Select)
             assert (preset.value, label(preset)) == ("", "quick (config default)")
             assert (picker.value, label(picker)) == ("", "o/a (config default)")
             picker.value = "o/b"
-            screen.query_one("#draft-mode", Select).value = "plan"
+            screen.query_one("#draft-mode", widgets.Select).value = "plan"
             await pilot.pause()
             assert (picker.value, label(picker)) == ("", "o/b (config default)")
             preset.value = "ultra"
             await pilot.pause()
             assert (picker.value, label(picker)) == ("", "o/c (config default)")
             picker.value = pick
-            bar = screen.query_one("#draft-input", SteerInput)
+            bar = screen.query_one("#draft-input", composer.SteerInput)
             bar.focus()
             await pilot.pause()
             await pilot.press("t", "enter")
@@ -1080,7 +1072,7 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
 
 
 def test_new_task_view_model_box_says_none_when_no_route_resolves(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No route names the model default `none` and spawns without `--model`.
 
@@ -1088,25 +1080,24 @@ def test_new_task_view_model_box_says_none_when_no_route_resolves(
     """
     import asyncio
 
-    from textual.widgets import Select
+    from textual import widgets
 
-    from agent6.ui.tui import new_work
-    from agent6.ui.tui.composer import SteerInput
-    from agent6.ui.tui.home import Agent6HomeApp
-    from agent6.ui.tui.new_work import NewWorkScreen
+    from agent6.ui.tui import composer, new_work
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
     resolved = {("run", ""): "o/a"}
 
-    def _route(cwd: Path, config_path: object, mode: str, preset: str) -> str:
+    def _route(cwd: pathlib.Path, config_path: object, mode: str, preset: str) -> str:
         return resolved.get((mode, preset), "")
 
     monkeypatch.setattr(new_work, "default_route", _route)
     started: list[tuple[str, str, str, str]] = []
 
     def _spawn(
-        cwd: Path,
+        cwd: pathlib.Path,
         mode: str,
         task: str,
         *,
@@ -1119,39 +1110,41 @@ def test_new_task_view_model_box_says_none_when_no_route_resolves(
 
     monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
 
-    def label(picker: Select[str]) -> str:
+    def label(picker: widgets.Select[str]) -> str:
         return str(picker.query_one(SelectCurrent).label)
 
     async def empty_list() -> None:
         # No routes and no default (a config naming no provider) opens too.
-        def _no_route(cwd: Path, config_path: object, mode: str, preset: str) -> str:
+        def _no_route(cwd: pathlib.Path, config_path: object, mode: str, preset: str) -> str:
             return ""
 
         monkeypatch.setattr(new_work, "default_route", _no_route)
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(NewWorkScreen(tmp_path, presets=[], routes=[]))
+            app.push_screen(tui_new_work.NewWorkScreen(tmp_path, presets=[], routes=[]))
             await pilot.pause()
-            assert isinstance(app.screen, NewWorkScreen)
-            picker = app.screen.query_one("#draft-model", Select)
+            assert isinstance(app.screen, tui_new_work.NewWorkScreen)
+            picker = app.screen.query_one("#draft-model", widgets.Select)
             assert (picker.value, label(picker)) == ("", "none (config default)")
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(NewWorkScreen(tmp_path, presets=["bad"], routes=["o/a", "o/b"]))
+            app.push_screen(
+                tui_new_work.NewWorkScreen(tmp_path, presets=["bad"], routes=["o/a", "o/b"])
+            )
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, NewWorkScreen)
-            picker = screen.query_one("#draft-model", Select)
+            assert isinstance(screen, tui_new_work.NewWorkScreen)
+            picker = screen.query_one("#draft-model", widgets.Select)
             assert label(picker) == "o/a (config default)"
-            screen.query_one("#draft-preset", Select).value = "bad"
+            screen.query_one("#draft-preset", widgets.Select).value = "bad"
             await pilot.pause()
             await pilot.pause()
             assert (picker.value, label(picker)) == ("", "none (config default)")
-            bar = screen.query_one("#draft-input", SteerInput)
+            bar = screen.query_one("#draft-input", composer.SteerInput)
             bar.focus()
             await pilot.pause()
             await pilot.press("t", "enter")
@@ -1164,21 +1157,21 @@ def test_new_task_view_model_box_says_none_when_no_route_resolves(
     asyncio.run(empty_list())
 
 
-def test_new_task_view_tab_reaches_the_mode_picker_first(tmp_path: Path) -> None:
+def test_new_task_view_tab_reaches_the_mode_picker_first(tmp_path: pathlib.Path) -> None:
     """Tab from the composer walks the mode, preset and model pickers, never the pane."""
     import asyncio
 
-    from agent6.ui.tui.home import Agent6HomeApp
-    from agent6.ui.tui.new_work import NewWorkScreen
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(NewWorkScreen(tmp_path, presets=["ultra"], routes=["o/a"]))
+            app.push_screen(tui_new_work.NewWorkScreen(tmp_path, presets=["ultra"], routes=["o/a"]))
             await pilot.pause()
             first = app.focused
             assert first is not None and first.id == "draft-input"
@@ -1194,14 +1187,14 @@ def test_new_task_view_tab_reaches_the_mode_picker_first(tmp_path: Path) -> None
     asyncio.run(scenario())
 
 
-def test_the_task_column_fits_the_terminal_instead_of_scrolling(tmp_path: Path) -> None:
+def test_the_task_column_fits_the_terminal_instead_of_scrolling(tmp_path: pathlib.Path) -> None:
     """The task column takes what the width leaves, as `sessions list` sizes it.
 
     A fixed 60-character snippet overflowed the table at 100 columns.
     """
-    from textual.widgets import DataTable
+    from textual import widgets
 
-    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui import home as tui_home
 
     a6 = tmp_path / ".agent6"
     _write_run(
@@ -1209,9 +1202,9 @@ def test_the_task_column_fits_the_terminal_instead_of_scrolling(tmp_path: Path) 
     )
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
-            table = app.screen.query_one("#sessions", DataTable)
+            table = app.screen.query_one("#sessions", widgets.DataTable)
             await wait_for(pilot, lambda: table.row_count == 1, "the row")
             await pilot.pause()
             assert table.virtual_size.width <= table.scrollable_content_region.width
@@ -1224,15 +1217,15 @@ def test_the_task_column_fits_the_terminal_instead_of_scrolling(tmp_path: Path) 
     asyncio.run(scenario())
 
 
-def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: Path) -> None:
+def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: pathlib.Path) -> None:
     """At 80 columns the task column got 7 characters and a horizontal scrollbar.
 
     A narrow hub shortens `updated` to a time or date and drops a status's reason; below 80 columns,
     cost hides.
     """
-    from textual.widgets import DataTable
+    from textual import widgets
 
-    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui import home as tui_home
 
     a6 = tmp_path / ".agent6"
     events: list[dict[str, object]] = [
@@ -1242,9 +1235,9 @@ def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: Path) -> Non
     _write_run(a6, "runs", "friendly-crane-1X3ER0", events)
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6, tmp_path)
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test(size=(80, 24)) as pilot:
-            table = app.screen.query_one("#sessions", DataTable)
+            table = app.screen.query_one("#sessions", widgets.DataTable)
             await wait_for(pilot, lambda: table.row_count == 1, "the row")
             await pilot.pause()
             assert [str(c.label) for c in table.columns.values()] == [

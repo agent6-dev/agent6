@@ -5,16 +5,16 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.ui.cli.prompt_cmds import _cmd_prompt_show  # pyright: ignore[reportPrivateUsage]
+from agent6 import paths
+from agent6.ui.cli import prompt_cmds  # pyright: ignore[reportPrivateUsage]
 
 
-def _git_repo(tmp_path: Path) -> Path:
+def _git_repo(tmp_path: pathlib.Path) -> pathlib.Path:
     p = tmp_path / "repo"
     p.mkdir()
     (p / "f.py").write_text("x = 1\n", encoding="utf-8")
@@ -32,7 +32,7 @@ def _git_repo(tmp_path: Path) -> Path:
     return p
 
 
-def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, repo: Path) -> None:
+def _isolate(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, repo: pathlib.Path) -> None:
     monkeypatch.chdir(repo)
     # isolate from the developer's real global config / state
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -40,11 +40,11 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, repo: Path) -> Non
 
 
 def test_prompt_show_run_mode_injects_agents_md(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _git_repo(tmp_path)
     _isolate(tmp_path, monkeypatch, repo)
-    rc = _cmd_prompt_show(None, mode="run")
+    rc = prompt_cmds._cmd_prompt_show(None, mode="run")
     out = capsys.readouterr().out
     assert rc == 0
     # The run-mode base and the per-repo summary block.
@@ -54,17 +54,17 @@ def test_prompt_show_run_mode_injects_agents_md(
 
 
 def test_prompt_show_plan_mode_differs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _git_repo(tmp_path)
     _isolate(tmp_path, monkeypatch, repo)
-    rc = _cmd_prompt_show(None, mode="plan")
+    rc = prompt_cmds._cmd_prompt_show(None, mode="plan")
     out = capsys.readouterr().out
     assert rc == 0 and "PLAN mode" in out
 
 
 def test_prompt_show_includes_recorded_memories(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`prompt show` includes the recorded memories.
 
@@ -72,21 +72,21 @@ def test_prompt_show_includes_recorded_memories(
     injects; an operator checking whether a recorded memory would reach future runs must not see
     '(none recorded yet)' while the real prompt carries it.
     """
-    from agent6.memory import add
+    from agent6 import memory
 
     repo = _git_repo(tmp_path)
     _isolate(tmp_path, monkeypatch, repo)
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     state.mkdir(parents=True, exist_ok=True)
-    add(state, "facts", "the deploy script needs sudo")
+    memory.add(state, "facts", "the deploy script needs sudo")
 
-    assert _cmd_prompt_show(None, mode="run") == 0
+    assert prompt_cmds._cmd_prompt_show(None, mode="run") == 0
     out = capsys.readouterr().out
     assert "the deploy script needs sudo" in out
 
 
 def test_prompt_show_prints_the_tools_and_the_first_message(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The system prompt is half of what the model receives.
 
@@ -99,12 +99,12 @@ def test_prompt_show_prints_the_tools_and_the_first_message(
 
     repo = _git_repo(tmp_path)
     _isolate(tmp_path, monkeypatch, repo)
-    assert _cmd_prompt_show(None, mode="run") == 0
+    assert prompt_cmds._cmd_prompt_show(None, mode="run") == 0
     out = capsys.readouterr().out
     assert "=== tools (" in out and "--- run_command" in out and "--- finish_session" in out
     assert "=== first user message ===" in out and "`finish_session` requests the run end" in out
 
-    assert _cmd_prompt_show(None, mode="ask", as_json=True) == 0
+    assert prompt_cmds._cmd_prompt_show(None, mode="ask", as_json=True) == 0
     exchange = json.loads(capsys.readouterr().out)
     names = [t["name"] for t in exchange["tools"]]
     assert "read_file" in names and "agent6_docs" in names
@@ -114,7 +114,7 @@ def test_prompt_show_prints_the_tools_and_the_first_message(
 
 
 def test_prompt_show_infers_the_gate_a_run_would_infer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`prompt show` infers the gate a run would infer.
 
@@ -129,7 +129,7 @@ def test_prompt_show_infers_the_gate_a_run_would_infer(
     )
     _isolate(tmp_path, monkeypatch, repo)
 
-    assert _cmd_prompt_show(None, mode="run") == 0
+    assert prompt_cmds._cmd_prompt_show(None, mode="run") == 0
 
     out = capsys.readouterr().out
     assert "pytest -q" in out
@@ -137,7 +137,7 @@ def test_prompt_show_infers_the_gate_a_run_would_infer(
     assert "run_verify_command" in out
 
 
-def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: Path) -> None:
+def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> None:
     """A withheld tool gets no block and no offer.
 
     `run_commands = "no"` withholds every command tool, and a metric with no `[harness.metric]` can
@@ -147,9 +147,11 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: Path) -> None:
     import tempfile
 
     from agent6.config import Config
-    from agent6.harness import model_exchange_for
-    from agent6.harness._toolset import tool_definitions  # pyright: ignore[reportPrivateUsage]
-    from agent6.tools.dispatch import ToolDispatcher
+    from agent6.harness import (
+        _toolset,  # pyright: ignore[reportPrivateUsage]
+        model_exchange_for,
+    )
+    from agent6.tools import dispatch
 
     withheld = Config.model_validate(
         {
@@ -166,12 +168,12 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: Path) -> None:
     assert "<no-verify-command>" in exchange.system
 
     with tempfile.TemporaryDirectory() as td:
-        plain = ToolDispatcher(root=Path(td), config=Config())
-        names = [t.name for t in tool_definitions(plain, mode="run")]
+        plain = dispatch.ToolDispatcher(root=pathlib.Path(td), config=Config())
+        names = [t.name for t in _toolset.tool_definitions(plain, mode="run")]
     assert "run_metric_command" not in names, "offered with no [harness.metric]"
 
 
-def test_plan_mode_does_not_name_a_gate_it_says_is_absent(tmp_path: Path) -> None:
+def test_plan_mode_does_not_name_a_gate_it_says_is_absent(tmp_path: pathlib.Path) -> None:
     """Plan mode does not name a gate it says is absent.
 
     One plan prompt must not carry both "run_verify_command runs the operator's gate" and

@@ -10,14 +10,14 @@ never carries one; this path must not merge the whole `os.environ`.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.app._setup import apply_git_ops_policy
-from agent6.child_env import set_provider_key_env
+from agent6 import child_env
+from agent6.app import _setup
 from agent6.config import Config
-from agent6.tools.dispatch import ToolDispatcher
+from agent6.tools import dispatch
 
 _CFG = {
     "sandbox": {"run_commands": "yes", "isolation": "none"},
@@ -34,17 +34,17 @@ _CFG = {
 @pytest.fixture(autouse=True)
 def _reset_registry() -> object:  # pyright: ignore[reportUnusedFunction]
     yield
-    set_provider_key_env([])  # module-level state; do not leak across tests
+    child_env.set_provider_key_env([])  # module-level state; do not leak across tests
 
 
 def test_an_unconfined_command_does_not_see_the_provider_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-SECRET")
     monkeypatch.setenv("A_HARMLESS_VAR", "keep-me")
     cfg = Config.model_validate(_CFG)
-    apply_git_ops_policy(cfg)  # what a real run does at startup
-    dispatcher = ToolDispatcher(root=tmp_path, config=cfg, isolation="none")
+    _setup.apply_git_ops_policy(cfg)  # what a real run does at startup
+    dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=cfg, isolation="none")
 
     try:
         out = dispatcher.dispatch("run_command", {"argv": ["/usr/bin/env"]}).to_wire()["stdout"]

@@ -4,12 +4,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.machine._semantics import load_machine
-from agent6.machine.spec import AgentState, MachineError
+from agent6.machine import _semantics
+from agent6.machine import spec as machine_spec
 
 # The worked example from the state-machines page; error-case tests mutate a copy.
 VALID_MACHINE = """
@@ -89,20 +89,20 @@ reason = "machine budget exhausted"
 """
 
 
-def _write(tmp_path: Path, body: str) -> Path:
+def _write(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
     path = tmp_path / "m.asm.toml"
     path.write_text(body, encoding="utf-8")
     return path
 
 
-def _problems(tmp_path: Path, body: str) -> list[str]:
-    with pytest.raises(MachineError) as excinfo:
-        load_machine(_write(tmp_path, body))
+def _problems(tmp_path: pathlib.Path, body: str) -> list[str]:
+    with pytest.raises(machine_spec.MachineError) as excinfo:
+        _semantics.load_machine(_write(tmp_path, body))
     return excinfo.value.problems
 
 
-def test_valid_machine_loads(tmp_path: Path) -> None:
-    spec = load_machine(_write(tmp_path, VALID_MACHINE))
+def test_valid_machine_loads(tmp_path: pathlib.Path) -> None:
+    spec = _semantics.load_machine(_write(tmp_path, VALID_MACHINE))
     assert spec.machine == "item-classifier"
     assert spec.initial == "poll"
     assert set(spec.states) == {
@@ -116,16 +116,16 @@ def test_valid_machine_loads(tmp_path: Path) -> None:
     }
 
 
-def test_agent_state_model_defaults_to_inherit(tmp_path: Path) -> None:
+def test_agent_state_model_defaults_to_inherit(tmp_path: pathlib.Path) -> None:
     # Omitting `model` defaults to "inherit", so a machine need not hardcode one.
     body = VALID_MACHINE.replace('\nmodel = "claude-sonnet-4-5"', "")
-    spec = load_machine(_write(tmp_path, body))
+    spec = _semantics.load_machine(_write(tmp_path, body))
     classify = spec.states["classify"]
-    assert isinstance(classify, AgentState)
+    assert isinstance(classify, machine_spec.AgentState)
     assert classify.model == "inherit"
 
 
-def test_bad_toml(tmp_path: Path) -> None:
+def test_bad_toml(tmp_path: pathlib.Path) -> None:
     problems = _problems(tmp_path, "machine = ")
     assert any("not valid TOML" in p for p in problems)
 
@@ -145,26 +145,26 @@ def test_bad_toml(tmp_path: Path) -> None:
     ],
 )
 def test_native_toml_scalar_types_are_not_coerced(
-    tmp_path: Path, old: str, new: str, field: str, rule: str
+    tmp_path: pathlib.Path, old: str, new: str, field: str, rule: str
 ) -> None:
     """A quoted number or bool is malformed input, not a spelling the parser may coerce."""
     problems = _problems(tmp_path, VALID_MACHINE.replace(old, new, 1))
     assert any(field in problem and rule in problem for problem in problems)
 
 
-def test_non_utf8_file_raises_machine_error(tmp_path: Path) -> None:
+def test_non_utf8_file_raises_machine_error(tmp_path: pathlib.Path) -> None:
     # A non-UTF-8 machine file surfaces as a MachineError, not an unhandled decode error.
     path = tmp_path / "m.asm.toml"
     path.write_bytes(b"machine = \xff\xfe not utf-8")
-    with pytest.raises(MachineError) as excinfo:
-        load_machine(path)
+    with pytest.raises(machine_spec.MachineError) as excinfo:
+        _semantics.load_machine(path)
     assert any("UTF-8" in p for p in excinfo.value.problems)
 
 
 # , naming rules,,,,,,,,,,,,,,,
 
 
-def test_duplicate_name_across_owners(tmp_path: Path) -> None:
+def test_duplicate_name_across_owners(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         '[vars.agent]\nverdict = { type = "classification", default = {} }',
         '[vars.agent]\nverdict = { type = "classification", default = {} }\n'
@@ -174,14 +174,14 @@ def test_duplicate_name_across_owners(tmp_path: Path) -> None:
     assert any("declared in both" in p and "cursor" in p for p in problems)
 
 
-def test_bare_top_level_var(tmp_path: Path) -> None:
+def test_bare_top_level_var(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE + '\n[vars.stray]\nx = { type = "str", default = "" }\n'
     # `vars.stray` becomes an owner-less subtable.
     problems = _problems(tmp_path, body)
     assert any("no owner subtable" in p for p in problems)
 
 
-def test_reserved_name(tmp_path: Path) -> None:
+def test_reserved_name(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         "[vars.code]\npending",
         '[vars.code]\nresult = { type = "str", default = "" }\npending',
@@ -190,14 +190,14 @@ def test_reserved_name(tmp_path: Path) -> None:
     assert any("reserved" in p and "result" in p for p in problems)
 
 
-def test_cron_wait_is_an_unknown_key(tmp_path: Path) -> None:
+def test_cron_wait_is_an_unknown_key(tmp_path: pathlib.Path) -> None:
     # `wait` timings are every_secs and until; a `cron` key refuses like any unknown key.
     body = VALID_MACHINE.replace('every_secs = "{{ poll_secs }}"', 'cron = "0 * * * *"')
     problems = _problems(tmp_path, body)
     assert any("cron" in p for p in problems)
 
 
-def test_non_identifier_variable(tmp_path: Path) -> None:
+def test_non_identifier_variable(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'cursor  = { type = "str",       default = "" }',
         'cursor  = { type = "str",       default = "" }\n'
@@ -207,7 +207,7 @@ def test_non_identifier_variable(tmp_path: Path) -> None:
     assert any("not a valid identifier" in p for p in problems)
 
 
-def test_identifier_rejects_a_trailing_newline(tmp_path: Path) -> None:
+def test_identifier_rejects_a_trailing_newline(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'cursor  = { type = "str",       default = "" }',
         'cursor  = { type = "str",       default = "" }\n'
@@ -220,7 +220,7 @@ def test_identifier_rejects_a_trailing_newline(tmp_path: Path) -> None:
 # , ownership wall,,,,,,,,,,,,,,
 
 
-def test_tool_cannot_write_agent_var(tmp_path: Path) -> None:
+def test_tool_cannot_write_agent_var(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }',
         'capture = { set = { verdict = "{{ result.pending }}" } }',
@@ -229,7 +229,7 @@ def test_tool_cannot_write_agent_var(tmp_path: Path) -> None:
     assert any("may only write `[vars.code]`" in p for p in problems)
 
 
-def test_undeclared_capture_target_names_where_to_declare_it(tmp_path: Path) -> None:
+def test_undeclared_capture_target_names_where_to_declare_it(tmp_path: pathlib.Path) -> None:
     """The diagnostic states the accepted form, naming [vars.<owner>], not just the miss."""
     body = VALID_MACHINE.replace(
         'capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }',
@@ -239,7 +239,7 @@ def test_undeclared_capture_target_names_where_to_declare_it(tmp_path: Path) -> 
     assert any("declare it in [vars.code]" in p for p in problems)
 
 
-def test_capture_type_mismatch_names_the_type_to_declare(tmp_path: Path) -> None:
+def test_capture_type_mismatch_names_the_type_to_declare(tmp_path: pathlib.Path) -> None:
     """The type-mismatch diagnostic states the declaration that would fit."""
     body = VALID_MACHINE.replace(
         'verdict = { type = "classification", default = {} }',
@@ -249,7 +249,7 @@ def test_capture_type_mismatch_names_the_type_to_declare(tmp_path: Path) -> None
     assert any('declare it as type = "classification"' in p for p in problems)
 
 
-def test_set_assignment_type_mismatch_names_the_type_to_declare(tmp_path: Path) -> None:
+def test_set_assignment_type_mismatch_names_the_type_to_declare(tmp_path: pathlib.Path) -> None:
     """The lone-ref set mismatch states the declaration that would fit."""
     body = VALID_MACHINE.replace(
         'pending = { type = "list[str]", default = [] }',
@@ -259,7 +259,7 @@ def test_set_assignment_type_mismatch_names_the_type_to_declare(tmp_path: Path) 
     assert any('declare it as type = "list[str]"' in p for p in problems)
 
 
-def test_template_set_into_non_str_names_the_str_declaration(tmp_path: Path) -> None:
+def test_template_set_into_non_str_names_the_str_declaration(tmp_path: pathlib.Path) -> None:
     """The rendered-template mismatch states the str declaration and the lone-ref out."""
     body = VALID_MACHINE.replace(
         'capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }',
@@ -272,7 +272,7 @@ def test_template_set_into_non_str_names_the_str_declaration(tmp_path: Path) -> 
     )
 
 
-def test_capture_cannot_write_operator_var(tmp_path: Path) -> None:
+def test_capture_cannot_write_operator_var(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }',
         'capture = { set = { poll_secs = "{{ result.cursor }}" } }',
@@ -284,7 +284,7 @@ def test_capture_cannot_write_operator_var(tmp_path: Path) -> None:
 # , branches,,,,,,,,,,,,,,,,
 
 
-def test_branch_not_total(tmp_path: Path) -> None:
+def test_branch_not_total(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         '  { if = "len(pending) == 0", goto = "poll" },\n'
         '  { else = true,              goto = "classify" },',
@@ -294,7 +294,7 @@ def test_branch_not_total(tmp_path: Path) -> None:
     assert any("not total" in p for p in problems)
 
 
-def test_branch_else_must_be_last(tmp_path: Path) -> None:
+def test_branch_else_must_be_last(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         '  { if = "len(pending) == 0", goto = "poll" },\n'
         '  { else = true,              goto = "classify" },',
@@ -304,51 +304,51 @@ def test_branch_else_must_be_last(tmp_path: Path) -> None:
     assert any("must be the final" in p for p in problems)
 
 
-def test_predicate_misspelled_field(tmp_path: Path) -> None:
+def test_predicate_misspelled_field(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace("verdict.confidence >= 0.7", "verdict.confidense >= 0.7")
     problems = _problems(tmp_path, body)
     assert any("has no field" in p and "confidense" in p for p in problems)
 
 
-def test_predicate_unknown_variable(tmp_path: Path) -> None:
+def test_predicate_unknown_variable(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace("len(pending) == 0", "len(nonsense) == 0")
     problems = _problems(tmp_path, body)
     assert any("unknown variable" in p and "nonsense" in p for p in problems)
 
 
-def test_predicate_toml_boolean_literal_hints_python_form(tmp_path: Path) -> None:
+def test_predicate_toml_boolean_literal_hints_python_form(tmp_path: pathlib.Path) -> None:
     # `flag == true` reads `true` as an undeclared name; the error points at the Python literal.
     body = VALID_MACHINE.replace("len(pending) == 0", "len(pending) == 0 and pending == true")
     problems = _problems(tmp_path, body)
     assert any("True/False/None" in p for p in problems)
 
 
-def test_predicate_len_of_int_rejected_at_load(tmp_path: Path) -> None:
+def test_predicate_len_of_int_rejected_at_load(tmp_path: pathlib.Path) -> None:
     # `len(poll_secs)` on an int is a guaranteed PredicateError; caught at load.
     body = VALID_MACHINE.replace("len(pending) == 0", "len(poll_secs) == 0")
     problems = _problems(tmp_path, body)
     assert any("`len()` does not apply to int" in p and "poll_secs" in p for p in problems)
 
 
-def test_template_len_of_int_rejected_at_load(tmp_path: Path) -> None:
+def test_template_len_of_int_rejected_at_load(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace("{{ pending | json }}", "{{ poll_secs | len }}")
     problems = _problems(tmp_path, body)
     assert any("`| len` does not apply to int" in p and "poll_secs" in p for p in problems)
 
 
-def test_template_len_of_list_allowed(tmp_path: Path) -> None:
+def test_template_len_of_list_allowed(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace("{{ pending | json }}", "{{ pending | len }}")
-    load_machine(_write(tmp_path, body))
+    _semantics.load_machine(_write(tmp_path, body))
 
 
-def test_predicate_len_of_str_allowed(tmp_path: Path) -> None:
+def test_predicate_len_of_str_allowed(tmp_path: pathlib.Path) -> None:
     # `len(cursor)` (cursor is str) is fine and must NOT be flagged.
     body = VALID_MACHINE.replace("len(pending) == 0", "len(cursor) == 0")
     # No MachineError raised means the machine validated cleanly.
-    load_machine(_write(tmp_path, body))
+    _semantics.load_machine(_write(tmp_path, body))
 
 
-def test_wait_every_secs_float_ref_rejected(tmp_path: Path) -> None:
+def test_wait_every_secs_float_ref_rejected(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'poll_secs = { type = "int", value = 300 }',
         'poll_secs = { type = "float", value = 300.0 }',
@@ -357,13 +357,13 @@ def test_wait_every_secs_float_ref_rejected(tmp_path: Path) -> None:
     assert any("every_secs" in p and "int variable" in p for p in problems)
 
 
-def test_wait_every_secs_zero_literal_rejected(tmp_path: Path) -> None:
+def test_wait_every_secs_zero_literal_rejected(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace('every_secs = "{{ poll_secs }}"', 'every_secs = "0"')
     problems = _problems(tmp_path, body)
     assert any("every_secs" in p and ">= 1" in p for p in problems)
 
 
-def test_wait_every_secs_zero_operator_ref_rejected(tmp_path: Path) -> None:
+def test_wait_every_secs_zero_operator_ref_rejected(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'poll_secs = { type = "int", value = 300 }',
         'poll_secs = { type = "int", value = 0 }',
@@ -372,21 +372,21 @@ def test_wait_every_secs_zero_operator_ref_rejected(tmp_path: Path) -> None:
     assert any("every_secs" in p and "poll_secs" in p and ">= 1" in p for p in problems)
 
 
-def test_wait_every_secs_composite_template_allowed(tmp_path: Path) -> None:
+def test_wait_every_secs_composite_template_allowed(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'every_secs = "{{ poll_secs }}"',
         'every_secs = "{{ poll_secs }}0"',
     )
-    load_machine(_write(tmp_path, body))
+    _semantics.load_machine(_write(tmp_path, body))
 
 
-def test_wait_until_garbage_literal_rejected(tmp_path: Path) -> None:
+def test_wait_until_garbage_literal_rejected(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace('every_secs = "{{ poll_secs }}"', 'until = "not-a-date"')
     problems = _problems(tmp_path, body)
     assert any("until" in p and "ISO-8601" in p for p in problems)
 
 
-def test_wait_until_bad_operator_ref_rejected(tmp_path: Path) -> None:
+def test_wait_until_bad_operator_ref_rejected(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'poll_secs = { type = "int", value = 300 }',
         'when = { type = "str", value = "not-a-date" }',
@@ -395,7 +395,7 @@ def test_wait_until_bad_operator_ref_rejected(tmp_path: Path) -> None:
     assert any("until" in p and "when" in p and "ISO-8601" in p for p in problems)
 
 
-def test_wait_until_composite_template_allowed(tmp_path: Path) -> None:
+def test_wait_until_composite_template_allowed(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'poll_secs = { type = "int", value = 300 }',
         'day = { type = "str", value = "2030-01-01" }',
@@ -403,21 +403,21 @@ def test_wait_until_composite_template_allowed(tmp_path: Path) -> None:
         'every_secs = "{{ poll_secs }}"',
         'until = "{{ day }}T00:00:00Z"',
     )
-    load_machine(_write(tmp_path, body))
+    _semantics.load_machine(_write(tmp_path, body))
 
 
-def test_wait_until_unverifiable_composite_template_allowed_at_load(tmp_path: Path) -> None:
+def test_wait_until_unverifiable_composite_template_allowed_at_load(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'every_secs = "{{ poll_secs }}"',
         'until = "prefix-{{ cursor }}"',
     )
-    load_machine(_write(tmp_path, body))
+    _semantics.load_machine(_write(tmp_path, body))
 
 
 # , type checks,,,,,,,,,,,,,,, -
 
 
-def test_default_type_mismatch(tmp_path: Path) -> None:
+def test_default_type_mismatch(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'cursor  = { type = "str",       default = "" }',
         'cursor  = { type = "str",       default = 5 }',
@@ -426,13 +426,13 @@ def test_default_type_mismatch(tmp_path: Path) -> None:
     assert any("expected str" in p for p in problems)
 
 
-def test_unknown_type(tmp_path: Path) -> None:
+def test_unknown_type(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace('poll_secs = { type = "int"', 'poll_secs = { type = "integer"')
     problems = _problems(tmp_path, body)
     assert any("unknown type" in p for p in problems)
 
 
-def test_dotting_json_is_error(tmp_path: Path) -> None:
+def test_dotting_json_is_error(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         '[vars.code]\npending = { type = "list[str]", default = [] }',
         '[vars.code]\nblob = { type = "json", default = {} }\n'
@@ -443,7 +443,7 @@ def test_dotting_json_is_error(tmp_path: Path) -> None:
     assert any("cannot navigate into json" in p for p in problems)
 
 
-def test_enum_only_on_str(tmp_path: Path) -> None:
+def test_enum_only_on_str(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'confidence = "float"',
         'confidence = { type = "float", enum = ["a"] }',
@@ -452,7 +452,7 @@ def test_enum_only_on_str(tmp_path: Path) -> None:
     assert any("enum" in p and "str" in p for p in problems)
 
 
-def test_enum_must_allow_a_value(tmp_path: Path) -> None:
+def test_enum_must_allow_a_value(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'label      = { type = "str", enum = ["urgent", "normal", "spam"] }',
         'label      = { type = "str", enum = [] }',
@@ -461,7 +461,7 @@ def test_enum_must_allow_a_value(tmp_path: Path) -> None:
     assert any("enum" in p and "at least one" in p for p in problems)
 
 
-def test_record_default_must_respect_field_enum(tmp_path: Path) -> None:
+def test_record_default_must_respect_field_enum(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'verdict = { type = "classification", default = {} }',
         'verdict = { type = "classification", default = { label = "other" } }',
@@ -470,7 +470,7 @@ def test_record_default_must_respect_field_enum(tmp_path: Path) -> None:
     assert any("verdict" in p and ".label" in p and "not one of enum" in p for p in problems)
 
 
-def test_schema_cycle(tmp_path: Path) -> None:
+def test_schema_cycle(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         '[schemas.scan_result]\npending = "list[str]"\ncursor  = "str"',
         '[schemas.scan_result]\npending = "list[str]"\ncursor  = "str"\nself = "scan_result"',
@@ -482,14 +482,14 @@ def test_schema_cycle(tmp_path: Path) -> None:
 # , list splicing / templates,,,,,,,,,,,
 
 
-def test_bare_list_outside_argv_is_error(tmp_path: Path) -> None:
+def test_bare_list_outside_argv_is_error(tmp_path: pathlib.Path) -> None:
     # Reading a bare list into a prompt (not argv) must be a load error.
     body = VALID_MACHINE.replace("{{ pending | json }}", "{{ pending }}")
     problems = _problems(tmp_path, body)
     assert any("bare reference to list" in p for p in problems)
 
 
-def test_list_spliced_inside_larger_string_is_error(tmp_path: Path) -> None:
+def test_list_spliced_inside_larger_string_is_error(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace('"{{ pending }}"', '"--items={{ pending }}"')
     problems = _problems(tmp_path, body)
     assert any("bare reference to list" in p for p in problems)
@@ -498,7 +498,7 @@ def test_list_spliced_inside_larger_string_is_error(tmp_path: Path) -> None:
 # , wait timing,,,,,,,,,,,,,,, -
 
 
-def test_wait_rejects_two_timings(tmp_path: Path) -> None:
+def test_wait_rejects_two_timings(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'every_secs = "{{ poll_secs }}"',
         'every_secs = "{{ poll_secs }}"\nuntil = "2030-01-01T00:00:00Z"',
@@ -507,17 +507,17 @@ def test_wait_rejects_two_timings(tmp_path: Path) -> None:
     assert any("at most one of `every_secs`" in p for p in problems)
 
 
-def test_wait_forever_no_timer_is_valid(tmp_path: Path) -> None:
+def test_wait_forever_no_timer_is_valid(tmp_path: pathlib.Path) -> None:
     # A wait with no timer parks until a signal poke; it declares only `signal`.
     body = VALID_MACHINE.replace(
         'every_secs = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
         'on = { signal = "scan" }',
     )
-    spec = load_machine(_write(tmp_path, body))
+    spec = _semantics.load_machine(_write(tmp_path, body))
     assert spec.machine == "item-classifier"
 
 
-def test_wait_forever_rejects_tick_edge(tmp_path: Path) -> None:
+def test_wait_forever_rejects_tick_edge(tmp_path: pathlib.Path) -> None:
     # A no-timer wait can never tick; declaring a `tick` edge is a load error.
     body = VALID_MACHINE.replace(
         'every_secs = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
@@ -527,7 +527,7 @@ def test_wait_forever_rejects_tick_edge(tmp_path: Path) -> None:
     assert any("tick" in p for p in problems)
 
 
-def test_wait_forever_requires_signal_edge(tmp_path: Path) -> None:
+def test_wait_forever_requires_signal_edge(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'every_secs = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
         "on = { }",
@@ -539,7 +539,7 @@ def test_wait_forever_requires_signal_edge(tmp_path: Path) -> None:
 # , notify,,,,,,,,,,,,,,,,
 
 
-def test_notify_string_and_table_forms_load(tmp_path: Path) -> None:
+def test_notify_string_and_table_forms_load(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         '[states.scan]\nkind = "tool"',
         '[states.scan]\nkind = "tool"\nnotify = "scanned {{ cursor }}"',
@@ -547,11 +547,11 @@ def test_notify_string_and_table_forms_load(tmp_path: Path) -> None:
         '[states.record]\nkind = "tool"',
         '[states.record]\nkind = "tool"\nnotify = { message = "archived", level = "warn" }',
     )
-    spec = load_machine(_write(tmp_path, body))
+    spec = _semantics.load_machine(_write(tmp_path, body))
     assert spec.machine == "item-classifier"
 
 
-def test_notify_unknown_variable_is_load_error(tmp_path: Path) -> None:
+def test_notify_unknown_variable_is_load_error(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         '[states.scan]\nkind = "tool"',
         '[states.scan]\nkind = "tool"\nnotify = "{{ nope }}"',
@@ -560,34 +560,34 @@ def test_notify_unknown_variable_is_load_error(tmp_path: Path) -> None:
     assert any("notify" in p and "nope" in p for p in problems)
 
 
-def test_machine_overlay_cannot_set_notify_hook(tmp_path: Path) -> None:
+def test_machine_overlay_cannot_set_notify_hook(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE + '\n[config.machine.notify]\non_event = ["curl", "evil"]\n'
     problems = _problems(tmp_path, body)
     assert any("machine.notify" in p for p in problems)
 
 
-def test_machine_overlay_cannot_enable_mcp(tmp_path: Path) -> None:
+def test_machine_overlay_cannot_enable_mcp(tmp_path: pathlib.Path) -> None:
     # [mcp] servers spawn an operator argv outside the jail; a machine file must not wire one in.
     body = VALID_MACHINE + "\n[config.mcp]\nenabled = true\n"
     problems = _problems(tmp_path, body)
     assert any("mcp" in p for p in problems)
 
 
-def test_machine_overlay_cannot_set_the_completion_hook(tmp_path: Path) -> None:
+def test_machine_overlay_cannot_set_the_completion_hook(tmp_path: pathlib.Path) -> None:
     # [notify].on_complete runs outside the jail; the benign timeout_s knob stays allowed.
     body = VALID_MACHINE + '\n[config.notify]\non_complete = ["curl", "evil"]\n'
     problems = _problems(tmp_path, body)
     assert any("notify.on_complete" in p for p in problems)
 
 
-def test_machine_overlay_cannot_name_a_system_prompt_file(tmp_path: Path) -> None:
+def test_machine_overlay_cannot_name_a_system_prompt_file(tmp_path: pathlib.Path) -> None:
     # The file is read on the host and sent as the system prompt: an unbounded host-file read.
     body = VALID_MACHINE + '\n[config.prompt]\nsystem_prompt_file = "/etc/shadow"\n'
     problems = _problems(tmp_path, body)
     assert any("prompt.system_prompt_file" in p for p in problems)
 
 
-def test_machine_overlay_cannot_define_a_preset(tmp_path: Path) -> None:
+def test_machine_overlay_cannot_define_a_preset(tmp_path: pathlib.Path) -> None:
     # A `[config.presets.<name>]` table would splice operator-only policy into the effective config.
     body = VALID_MACHINE + (
         '\n[config.presets.hardened.sandbox]\nprotect_git = false\nrun_commands = "yes"\n'
@@ -596,31 +596,31 @@ def test_machine_overlay_cannot_define_a_preset(tmp_path: Path) -> None:
     assert any("presets" in p for p in problems)
 
 
-def test_machine_overlay_cannot_enable_repo_hooks(tmp_path: Path) -> None:
+def test_machine_overlay_cannot_enable_repo_hooks(tmp_path: pathlib.Path) -> None:
     # git.run_repo_hooks runs host code on auto-commit: a knob a machine file must not flip.
     body = VALID_MACHINE + "\n[config.git]\nrun_repo_hooks = true\n"
     problems = _problems(tmp_path, body)
     assert any("run_repo_hooks" in p for p in problems)
 
 
-def test_machine_overlay_cannot_enable_repo_filters(tmp_path: Path) -> None:
+def test_machine_overlay_cannot_enable_repo_filters(tmp_path: pathlib.Path) -> None:
     # git.run_repo_filters is the same RCE class as run_repo_hooks.
     body = VALID_MACHINE + "\n[config.git]\nrun_repo_filters = true\n"
     problems = _problems(tmp_path, body)
     assert any("run_repo_filters" in p for p in problems)
 
 
-def test_machine_overlay_allows_benign_git_commit_identity(tmp_path: Path) -> None:
+def test_machine_overlay_allows_benign_git_commit_identity(tmp_path: pathlib.Path) -> None:
     # A [config.git.commit] override is harmless; the forbid is surgical to run_repo_hooks.
     body = VALID_MACHINE + '\n[config.git.commit]\nname = "ci-bot"\nemail = "ci@example.com"\n'
-    spec = load_machine(_write(tmp_path, body))
+    spec = _semantics.load_machine(_write(tmp_path, body))
     assert spec.machine == "item-classifier"
 
 
 # , on-table completeness,,,,,,,,,,,, -
 
 
-def test_tool_missing_outcome_label(tmp_path: Path) -> None:
+def test_tool_missing_outcome_label(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'on = { ok = "have_items", nonzero = "poll", timeout = "poll" }',
         'on = { ok = "have_items", nonzero = "poll" }',
@@ -629,7 +629,7 @@ def test_tool_missing_outcome_label(tmp_path: Path) -> None:
     assert any("missing outcome 'timeout'" in p for p in problems)
 
 
-def test_unknown_outcome_label(tmp_path: Path) -> None:
+def test_unknown_outcome_label(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'on = { tick = "scan", signal = "scan" }',
         'on = { tick = "scan", signal = "scan", boom = "scan" }',
@@ -641,13 +641,13 @@ def test_unknown_outcome_label(tmp_path: Path) -> None:
 # , graph,,,,,,,,,,,,,,,, -
 
 
-def test_unknown_transition_target(tmp_path: Path) -> None:
+def test_unknown_transition_target(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace('signal = "scan" }', 'signal = "nowhere" }')
     problems = _problems(tmp_path, body)
     assert any("not a declared state" in p and "nowhere" in p for p in problems)
 
 
-def test_unreachable_state(tmp_path: Path) -> None:
+def test_unreachable_state(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE + (
         '\n[states.orphan]\nkind = "terminal"\nstatus = "ok"\nreason = "never reached"\n'
     )
@@ -655,7 +655,7 @@ def test_unreachable_state(tmp_path: Path) -> None:
     assert any("unreachable" in p and "orphan" in p for p in problems)
 
 
-def test_initial_must_exist(tmp_path: Path) -> None:
+def test_initial_must_exist(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace('initial = "poll"', 'initial = "ghost"')
     problems = _problems(tmp_path, body)
     assert any("initial state 'ghost'" in p for p in problems)
@@ -664,7 +664,7 @@ def test_initial_must_exist(tmp_path: Path) -> None:
 # , per-agent-state knobs + machine [config] overlay,,,,,,
 
 
-def test_agent_state_per_state_knobs_parse(tmp_path: Path) -> None:
+def test_agent_state_per_state_knobs_parse(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         '''[states.classify]
 kind  = "agent"
@@ -678,9 +678,9 @@ temperature = 0.2
 max_usd = 1.5
 max_tokens_fallback = 100000""",
     )
-    spec = load_machine(_write(tmp_path, body))
+    spec = _semantics.load_machine(_write(tmp_path, body))
     state = spec.states["classify"]
-    assert isinstance(state, AgentState)
+    assert isinstance(state, machine_spec.AgentState)
     assert state.provider == "anthropic"
     assert state.effort == "high"
     assert state.temperature == 0.2
@@ -688,17 +688,17 @@ max_tokens_fallback = 100000""",
     assert state.max_tokens_fallback == 100000
 
 
-def test_agent_state_knobs_default_none(tmp_path: Path) -> None:
-    spec = load_machine(_write(tmp_path, VALID_MACHINE))
+def test_agent_state_knobs_default_none(tmp_path: pathlib.Path) -> None:
+    spec = _semantics.load_machine(_write(tmp_path, VALID_MACHINE))
     state = spec.states["classify"]
-    assert isinstance(state, AgentState)
+    assert isinstance(state, machine_spec.AgentState)
     assert state.provider is None
     assert state.effort is None
     assert state.temperature is None
     assert state.max_usd is None
 
 
-def test_agent_state_unknown_effort_rejected(tmp_path: Path) -> None:
+def test_agent_state_unknown_effort_rejected(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'model = "claude-sonnet-4-5"',
         'model = "claude-sonnet-4-5"\neffort = "extreme"',
@@ -706,7 +706,7 @@ def test_agent_state_unknown_effort_rejected(tmp_path: Path) -> None:
     assert _problems(tmp_path, body)
 
 
-def test_machine_config_overlay_parses(tmp_path: Path) -> None:
+def test_machine_config_overlay_parses(tmp_path: pathlib.Path) -> None:
     body = (
         VALID_MACHINE
         + """
@@ -717,12 +717,12 @@ trigger = "on_verify_fail"
 max_tokens_fallback = 50000
 """
     )
-    spec = load_machine(_write(tmp_path, body))
+    spec = _semantics.load_machine(_write(tmp_path, body))
     assert spec.config["review"]["trigger"] == "on_verify_fail"
     assert spec.config["budget"]["max_tokens_fallback"] == 50000
 
 
-def test_machine_config_overlay_rejects_providers(tmp_path: Path) -> None:
+def test_machine_config_overlay_rejects_providers(tmp_path: pathlib.Path) -> None:
     body = (
         VALID_MACHINE
         + """
@@ -734,7 +734,7 @@ api_format = "anthropic"
     assert any("providers" in p for p in problems)
 
 
-def test_machine_config_overlay_rejects_sandbox(tmp_path: Path) -> None:
+def test_machine_config_overlay_rejects_sandbox(tmp_path: pathlib.Path) -> None:
     # Sandbox policy is operator-only; a machine file must not weaken it via its overlay.
     body = (
         VALID_MACHINE
@@ -747,60 +747,62 @@ tool_network = "host"
     assert any("sandbox" in p for p in problems)
 
 
-def test_budget_max_usd_is_optional(tmp_path: Path) -> None:
+def test_budget_max_usd_is_optional(tmp_path: pathlib.Path) -> None:
     # No USD limit is valid; max_transitions is the always-on runaway guard.
     neither = VALID_MACHINE.replace("max_usd         = 25.0", "")
-    spec = load_machine(_write(tmp_path, neither))
+    spec = _semantics.load_machine(_write(tmp_path, neither))
     assert spec.budget.max_usd is None
 
 
-def test_budget_max_usd_rejects_non_finite(tmp_path: Path) -> None:
+def test_budget_max_usd_rejects_non_finite(tmp_path: pathlib.Path) -> None:
     # TOML inf passes gt=0.0 and never binds, disabling the cap; refused at load.
     body = VALID_MACHINE.replace("max_usd         = 25.0", "max_usd         = inf")
     problems = _problems(tmp_path, body)
     assert any("finite" in p for p in problems)
 
 
-def test_agent_state_max_usd_rejects_non_finite(tmp_path: Path) -> None:
+def test_agent_state_max_usd_rejects_non_finite(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace('kind  = "agent"', 'kind  = "agent"\nmax_usd = inf')
     problems = _problems(tmp_path, body)
     assert any("finite" in p for p in problems)
 
 
-def test_budget_best_effort_usd_limit_is_gone(tmp_path: Path) -> None:
+def test_budget_best_effort_usd_limit_is_gone(tmp_path: pathlib.Path) -> None:
     # The old soft field must fail the grammar loudly, never load as an ignored knob.
     body = VALID_MACHINE.replace("max_usd         = 25.0", "best_effort_usd_limit = 25.0")
-    with pytest.raises(MachineError, match="best_effort_usd_limit"):
-        load_machine(_write(tmp_path, body))
+    with pytest.raises(machine_spec.MachineError, match="best_effort_usd_limit"):
+        _semantics.load_machine(_write(tmp_path, body))
 
 
-def test_agent_state_best_effort_field_is_gone(tmp_path: Path) -> None:
+def test_agent_state_best_effort_field_is_gone(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'kind  = "agent"',
         'kind  = "agent"\nbest_effort_usd_limit = 1.0',
         1,
     )
-    with pytest.raises(MachineError, match="best_effort_usd_limit"):
-        load_machine(_write(tmp_path, body))
+    with pytest.raises(machine_spec.MachineError, match="best_effort_usd_limit"):
+        _semantics.load_machine(_write(tmp_path, body))
 
 
 def test_wait_every_secs_accepts_a_bare_integer() -> None:
     """`every_secs = 30` coerces to the string the template field carries; floats stay refused."""
-    from pydantic import ValidationError
+    import pydantic
 
-    from agent6.machine.spec import WaitState
-
-    st = WaitState.model_validate({"kind": "wait", "every_secs": 30, "on": {"tick": "done"}})
+    st = machine_spec.WaitState.model_validate(
+        {"kind": "wait", "every_secs": 30, "on": {"tick": "done"}}
+    )
     assert st.every_secs == "30"
-    templated = WaitState.model_validate(
+    templated = machine_spec.WaitState.model_validate(
         {"kind": "wait", "every_secs": "{{ config.poll }}", "on": {"tick": "done"}}
     )
     assert templated.every_secs == "{{ config.poll }}"
-    with pytest.raises(ValidationError):
-        WaitState.model_validate({"kind": "wait", "every_secs": 1.5, "on": {"tick": "done"}})
+    with pytest.raises(pydantic.ValidationError):
+        machine_spec.WaitState.model_validate(
+            {"kind": "wait", "every_secs": 1.5, "on": {"tick": "done"}}
+        )
 
 
-def test_a_schema_named_after_a_builtin_type_is_refused(tmp_path: Path) -> None:
+def test_a_schema_named_after_a_builtin_type_is_refused(tmp_path: pathlib.Path) -> None:
     """`[schemas.str]` cannot shadow a builtin type name."""
     src = (
         'machine = "m1"\nversion = 1\ninitial = "done"\n\n'
@@ -811,5 +813,5 @@ def test_a_schema_named_after_a_builtin_type_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "m1.asm.toml"
     path.write_text(src, encoding="utf-8")
 
-    with pytest.raises(MachineError, match="built-in type"):
-        load_machine(path)
+    with pytest.raises(machine_spec.MachineError, match="built-in type"):
+        _semantics.load_machine(path)

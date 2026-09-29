@@ -8,30 +8,28 @@ passes rather than failing against a `strict` jail the agent would never use.
 
 from __future__ import annotations
 
-from pathlib import Path
-from types import SimpleNamespace
+import pathlib
+import types
 
 import pytest
 
+from agent6 import kinds
 from agent6.config import Config, SandboxConfig
-from agent6.kinds import CommandResult, JailPolicy
-from agent6.sandbox.detect import IsolationUnavailableError
-from agent6.sandbox.jail import JailUnavailableError
-from agent6.sandbox.landlock import LandlockError
+from agent6.sandbox import detect, jail, landlock
 from agent6.ui.cli import check_cmds
 
 
-def _fake_result(argv: tuple[str, ...], rc: int) -> CommandResult:
-    return CommandResult(argv=argv, returncode=rc, stdout="", stderr="", duration_s=0.0)
+def _fake_result(argv: tuple[str, ...], rc: int) -> kinds.CommandResult:
+    return kinds.CommandResult(argv=argv, returncode=rc, stdout="", stderr="", duration_s=0.0)
 
 
 @pytest.fixture
-def stub_jail(monkeypatch: pytest.MonkeyPatch) -> list[JailPolicy]:
+def stub_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
     """Stub landlock_abi + run_in_jail; record every policy the check builds."""
-    seen: list[JailPolicy] = []
+    seen: list[kinds.JailPolicy] = []
     monkeypatch.setattr(check_cmds, "landlock_abi", lambda: 8)
 
-    def fake_run(policy: JailPolicy) -> CommandResult:
+    def fake_run(policy: kinds.JailPolicy) -> kinds.CommandResult:
         seen.append(policy)
         # getent (network probe) "fails" (blocked); everything else succeeds.
         rc = 2 if policy.argv[0].endswith("getent") else 0
@@ -78,9 +76,11 @@ def test_check_sandbox_reports_a_landlock_probe_error(
     _force_profile(monkeypatch, "hardened")
 
     def _denied() -> int:
-        raise LandlockError("landlock_create_ruleset version probe failed: Operation not permitted")
+        raise landlock.LandlockError(
+            "landlock_create_ruleset version probe failed: Operation not permitted"
+        )
 
-    def _run(policy: JailPolicy) -> CommandResult:
+    def _run(policy: kinds.JailPolicy) -> kinds.CommandResult:
         return _fake_result(policy.argv, 0)
 
     monkeypatch.setattr(check_cmds, "landlock_abi", _denied)
@@ -93,7 +93,9 @@ def test_check_sandbox_reports_a_landlock_probe_error(
 
 
 def test_check_sandbox_hardened_passes_and_skips_network(
-    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    stub_jail: list[kinds.JailPolicy],
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     _force_profile(monkeypatch, "hardened")
     rc = check_cmds._cmd_check_sandbox()  # pyright: ignore[reportPrivateUsage]
@@ -107,7 +109,9 @@ def test_check_sandbox_hardened_passes_and_skips_network(
 
 
 def test_check_sandbox_strict_runs_network_probe(
-    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    stub_jail: list[kinds.JailPolicy],
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     _force_profile(monkeypatch, "strict")
     rc = check_cmds._cmd_check_sandbox()  # pyright: ignore[reportPrivateUsage]
@@ -122,15 +126,17 @@ def test_check_sandbox_strict_runs_network_probe(
 
 
 def test_check_sandbox_none_skips_probes(
-    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    stub_jail: list[kinds.JailPolicy],
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from agent6.sandbox.tool_paths import ToolMountNotes
+    from agent6.sandbox import tool_paths
 
     _force_profile(monkeypatch, "none")
     monkeypatch.setattr(
         check_cmds,
         "tool_mount_notes",
-        lambda: ToolMountNotes(exposes_home_dir=("~/.local/bin/x -> ~/.local/share/x",)),
+        lambda: tool_paths.ToolMountNotes(exposes_home_dir=("~/.local/bin/x -> ~/.local/share/x",)),
     )
     rc = check_cmds._cmd_check_sandbox()  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
@@ -144,20 +150,22 @@ def test_check_sandbox_none_skips_probes(
 
 
 def test_check_sandbox_degraded_names_why(
-    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    stub_jail: list[kinds.JailPolicy],
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A degraded level never appears without its cause.
 
     On a userns-blocked host the line reads `effective isolation (auto): hardened` and why.
     """
-    from agent6.sandbox.tool_paths import ToolMountNotes
+    from agent6.sandbox import tool_paths
 
     why = "unprivileged user namespaces are disabled (user.max_user_namespaces = 0)"
     _force_profile(monkeypatch, "hardened", reason=why)
     monkeypatch.setattr(
         check_cmds,
         "tool_mount_notes",
-        lambda: ToolMountNotes(exposes_home_dir=("~/.local/bin/x -> ~/.local/share/x",)),
+        lambda: tool_paths.ToolMountNotes(exposes_home_dir=("~/.local/bin/x -> ~/.local/share/x",)),
     )
     rc = check_cmds._cmd_check_sandbox()  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
@@ -170,7 +178,9 @@ def test_check_sandbox_degraded_names_why(
 
 
 def test_check_sandbox_probes_the_isolation_the_config_selects(
-    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    stub_jail: list[kinds.JailPolicy],
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The probes exercise the jail a run here would use.
 
@@ -187,7 +197,9 @@ def test_check_sandbox_probes_the_isolation_the_config_selects(
 
 
 def test_check_sandbox_names_the_degrade_reason_only_for_auto(
-    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    stub_jail: list[kinds.JailPolicy],
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The degrade reason prints only for `auto`.
 
@@ -205,7 +217,9 @@ def test_check_sandbox_names_the_degrade_reason_only_for_auto(
 
 
 def test_check_names_a_jail_binary_it_cannot_run(
-    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    stub_jail: list[kinds.JailPolicy],
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """An unusable AGENT6_JAIL_BIN is named as the binary's own refusal in each section.
 
@@ -214,7 +228,7 @@ def test_check_names_a_jail_binary_it_cannot_run(
     refusal = "agent6-jail at /opt/agent6-jail cannot be executed: Exec format error. Reinstall it"
 
     def _binary_refusal() -> object:
-        raise JailUnavailableError(refusal)
+        raise jail.JailUnavailableError(refusal)
 
     monkeypatch.setattr(check_cmds, "detect_env", _binary_refusal)
     rc = check_cmds._cmd_check_sandbox(None)  # pyright: ignore[reportPrivateUsage]
@@ -233,7 +247,9 @@ def test_check_names_a_jail_binary_it_cannot_run(
 
 
 def test_check_sandbox_fails_on_an_isolation_this_host_refuses(
-    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    stub_jail: list[kinds.JailPolicy],
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """An explicit level the host refuses is a FAIL naming the refusal.
 
@@ -242,7 +258,9 @@ def test_check_sandbox_fails_on_an_isolation_this_host_refuses(
     monkeypatch.setattr(check_cmds, "detect_env", object)
 
     def _refuse(req: str, _env: object) -> str:
-        raise IsolationUnavailableError(f"sandbox.isolation = {req!r} requires user namespaces")
+        raise detect.IsolationUnavailableError(
+            f"sandbox.isolation = {req!r} requires user namespaces"
+        )
 
     monkeypatch.setattr(check_cmds, "resolve_isolation", _refuse)
     rc = check_cmds._cmd_check_sandbox(  # pyright: ignore[reportPrivateUsage]
@@ -255,7 +273,9 @@ def test_check_sandbox_fails_on_an_isolation_this_host_refuses(
 
 
 def test_check_sandbox_names_which_opt_out_left_nothing_to_probe(
-    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    stub_jail: list[kinds.JailPolicy],
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`none` from the config is the operator's opt-out.
 
@@ -273,7 +293,7 @@ def test_check_sandbox_names_which_opt_out_left_nothing_to_probe(
 
 
 def test_check_sandbox_fails_when_its_config_cannot_be_loaded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A sandbox probe under defaults cannot certify the unusable config a run would load."""
     bad = tmp_path / "bad.toml"
@@ -298,8 +318,8 @@ def test_check_config_runs_the_refusal_ladder_a_run_applies(
 
     The case: hardened plus network = session.
     """
-    env = SimpleNamespace(
-        kernel=SimpleNamespace(raw="6.8"),
+    env = types.SimpleNamespace(
+        kernel=types.SimpleNamespace(raw="6.8"),
         userns_supported=True,
         sandbox_available=True,
         landlock_abi=5,
@@ -328,7 +348,7 @@ def test_check_config_runs_the_refusal_ladder_a_run_applies(
 
 @pytest.mark.needs_namespaces
 def test_check_sandbox_runs_its_probes_unstubbed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The operator's one "is my sandbox working" command runs its probes unstubbed once."""
     if check_cmds.landlock_abi() < 1:

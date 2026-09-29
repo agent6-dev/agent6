@@ -9,17 +9,17 @@ draft `attach` opens appears in this listing.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.layout import bucket_dir
+from agent6 import paths
+from agent6.sessions import layout
 from agent6.ui.cli import main
 
 
-def _session(state: Path, bucket: str, session_id: str, mode: str) -> None:
-    session = bucket_dir(state, bucket) / session_id
+def _session(state: pathlib.Path, bucket: str, session_id: str, mode: str) -> None:
+    session = layout.bucket_dir(state, bucket) / session_id
     session.mkdir(parents=True)
     # The task text is neutral: `f"a {mode}"` would satisfy the mode-column assertions vacuously.
     (session / "logs.jsonl").write_text(
@@ -29,10 +29,10 @@ def _session(state: Path, bucket: str, session_id: str, mode: str) -> None:
 
 
 def test_a_machine_draft_appears_in_the_listing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    state = state_dir(tmp_path)
+    state = paths.state_dir(tmp_path)
     _session(state, "machines", "fair-trail-AAAAAA", "machine")
 
     assert main(["sessions", "list"]) == 0
@@ -43,7 +43,7 @@ def test_a_machine_draft_appears_in_the_listing(
 
 
 def test_an_undone_run_lists_as_undone_and_never_unmerged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An undone run lists as undone in the listing and its JSON, never as unmerged."""
     import subprocess
@@ -60,7 +60,7 @@ def test_an_undone_run_lists_as_undone_and_never_unmerged(
     git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "run")
     git("branch", "agent6/undone-one-AAAAA", "HEAD")
     git("reset", "-q", "--hard", base)
-    session = bucket_dir(state_dir(tmp_path), "runs") / "undone-one-AAAAA"
+    session = layout.bucket_dir(paths.state_dir(tmp_path), "runs") / "undone-one-AAAAA"
     session.mkdir(parents=True)
     (session / "manifest.json").write_text(
         json.dumps(
@@ -90,10 +90,10 @@ def test_an_undone_run_lists_as_undone_and_never_unmerged(
 
 
 def test_every_bucket_is_listed_together(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    state = state_dir(tmp_path)
+    state = paths.state_dir(tmp_path)
     for bucket, mode, sid in (
         ("runs", "run", "runny-one-AAAAAA"),
         ("plans", "plan", "planny-two-BBBBB"),

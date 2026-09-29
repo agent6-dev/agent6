@@ -4,14 +4,12 @@
 
 from __future__ import annotations
 
+import pathlib
 import re
-from pathlib import Path
 
 import pytest
 
-from agent6.machine import dry_run, load_machine
-from agent6.machine._semantics import validate_record_payload
-from agent6.machine.dryrun import synthesize_record
+from agent6.machine import _semantics, dry_run, dryrun, load_machine
 
 # tool -> branch -> (agent | tool) -> terminal, with a typed capture + an enum.
 DEMO = """
@@ -75,7 +73,7 @@ reason = "failed"
 """
 
 
-def _write(tmp_path: Path, text: str = DEMO) -> Path:
+def _write(tmp_path: pathlib.Path, text: str = DEMO) -> pathlib.Path:
     f = tmp_path / "m.asm.toml"
     f.write_text(text, encoding="utf-8")
     return f
@@ -84,27 +82,29 @@ def _write(tmp_path: Path, text: str = DEMO) -> Path:
 # --- schema synthesis -------------------------------------------------------
 
 
-def test_synthesize_record_is_schema_valid(tmp_path: Path) -> None:
+def test_synthesize_record_is_schema_valid(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path))
-    payload = synthesize_record(spec, "review")
+    payload = dryrun.synthesize_record(spec, "review")
     # enum field -> first member; scalar -> zero value.
     assert payload == {"label": "low", "score": 0}
     # And it passes the same strict check the live agent path uses.
     assert (
-        validate_record_payload(spec.schemas, "review", payload, where="finish_session payload")
+        _semantics.validate_record_payload(
+            spec.schemas, "review", payload, where="finish_session payload"
+        )
         == []
     )
 
 
-def test_synthesize_handles_lists(tmp_path: Path) -> None:
+def test_synthesize_handles_lists(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path))
-    assert synthesize_record(spec, "scan_result") == {"items": []}
+    assert dryrun.synthesize_record(spec, "scan_result") == {"items": []}
 
 
 # --- per-state dry-run ------------------------------------------------------
 
 
-def test_dry_run_states_route_and_capture(tmp_path: Path) -> None:
+def test_dry_run_states_route_and_capture(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path))
     report = dry_run(spec)
     by_name = {s.name: s for s in report.states}
@@ -121,7 +121,7 @@ def test_dry_run_states_route_and_capture(tmp_path: Path) -> None:
 # --- per-branch routing -----------------------------------------------------
 
 
-def test_branch_routes_to_else_by_default(tmp_path: Path) -> None:
+def test_branch_routes_to_else_by_default(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path))
     report = dry_run(spec)  # approved defaults to false
     check = next(b for b in report.branches if b.name == "check")
@@ -130,7 +130,7 @@ def test_branch_routes_to_else_by_default(tmp_path: Path) -> None:
     assert check.ok
 
 
-def test_branch_fixture_steers_routing(tmp_path: Path) -> None:
+def test_branch_fixture_steers_routing(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path))
     report = dry_run(spec, {"approved": True})
     check = next(b for b in report.branches if b.name == "check")
@@ -139,7 +139,7 @@ def test_branch_fixture_steers_routing(tmp_path: Path) -> None:
     assert check.predicate == "approved"
 
 
-def test_branch_on_empty_record_default_synthesizes_fields(tmp_path: Path) -> None:
+def test_branch_on_empty_record_default_synthesizes_fields(tmp_path: pathlib.Path) -> None:
     # The dry-run synthesizes the schema-zero record so a `verdict.field` predicate evaluates.
     text = DEMO.replace(
         'verdict = { type = "review", default = { label = "low", score = 0 } }',
@@ -162,7 +162,9 @@ def test_branch_on_empty_record_default_synthesizes_fields(tmp_path: Path) -> No
 # --- CLI surface ------------------------------------------------------------
 
 
-def test_cli_machine_test_passes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_machine_test_passes(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     from agent6.ui.cli import main
 
     f = _write(tmp_path)
@@ -174,10 +176,10 @@ def test_cli_machine_test_passes(tmp_path: Path, capsys: pytest.CaptureFixture[s
 
 
 def test_cli_machine_test_verdict_names_unrun_offline_tests(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The OK verdict says how many offline script tests were not run and why."""
-    from types import SimpleNamespace
+    import types
 
     from agent6.ui.cli import machine_check, main
 
@@ -186,7 +188,7 @@ def test_cli_machine_test_verdict_names_unrun_offline_tests(
     scripts.mkdir()
     (scripts / "thing_test.py").write_text("raise SystemExit(1)\n", encoding="utf-8")
     monkeypatch.setattr(
-        machine_check, "detect_env", lambda: SimpleNamespace(detected_isolation="hardened")
+        machine_check, "detect_env", lambda: types.SimpleNamespace(detected_isolation="hardened")
     )
     assert main(["machine", "test", str(f)]) == 0
     out = capsys.readouterr().out
@@ -195,7 +197,7 @@ def test_cli_machine_test_verdict_names_unrun_offline_tests(
 
 
 def test_cli_machine_test_with_blackboard(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from agent6.ui.cli import main
 
@@ -209,7 +211,7 @@ def test_cli_machine_test_with_blackboard(
 
 
 def test_cli_machine_test_rejects_a_fixture_off_the_blackboard_schema(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The fixture is validated: every key names a declared var, every value satisfies its type."""
     from agent6.ui.cli import main
@@ -227,7 +229,7 @@ def test_cli_machine_test_rejects_a_fixture_off_the_blackboard_schema(
     assert "not a declared variable" in capsys.readouterr().err
 
 
-def test_cli_machine_test_runs_check_first(tmp_path: Path) -> None:
+def test_cli_machine_test_runs_check_first(tmp_path: pathlib.Path) -> None:
     from agent6.ui.cli import main
 
     # An invalid machine (goto target missing) must fail like `machine check`.
@@ -236,29 +238,29 @@ def test_cli_machine_test_runs_check_first(tmp_path: Path) -> None:
     assert main(["machine", "test", str(f)]) == 1
 
 
-def test_cli_machine_test_missing_fixture(tmp_path: Path) -> None:
-    from agent6.errors import OperatorError
+def test_cli_machine_test_missing_fixture(tmp_path: pathlib.Path) -> None:
+    from agent6 import errors
     from agent6.ui.cli import main
 
     f = _write(tmp_path)
-    with pytest.raises(OperatorError, match="could not read"):
+    with pytest.raises(errors.OperatorError, match="could not read"):
         main(["machine", "test", str(f), "--blackboard", str(tmp_path / "nope.toml")])
 
 
-def test_cli_machine_test_bad_fixture_toml(tmp_path: Path) -> None:
-    from agent6.errors import OperatorError
+def test_cli_machine_test_bad_fixture_toml(tmp_path: pathlib.Path) -> None:
+    from agent6 import errors
     from agent6.ui.cli import main
 
     f = _write(tmp_path)
     bb = tmp_path / "bb.toml"
     bb.write_text("not = valid = toml", encoding="utf-8")
-    with pytest.raises(OperatorError, match="not valid TOML"):
+    with pytest.raises(errors.OperatorError, match="not valid TOML"):
         main(["machine", "test", str(f), "--blackboard", str(bb)])
 
 
-def test_cli_machine_test_unreadable_fixture_refuses(tmp_path: Path) -> None:
+def test_cli_machine_test_unreadable_fixture_refuses(tmp_path: pathlib.Path) -> None:
     """An unreadable fixture is the operator-error refusal every unreadable operator file gets."""
-    from agent6.errors import OperatorError
+    from agent6 import errors
     from agent6.ui.cli import main
 
     f = _write(tmp_path)
@@ -266,13 +268,13 @@ def test_cli_machine_test_unreadable_fixture_refuses(tmp_path: Path) -> None:
     bb.write_text("approved = true\n", encoding="utf-8")
     bb.chmod(0o000)
     try:
-        with pytest.raises(OperatorError, match="could not read"):
+        with pytest.raises(errors.OperatorError, match="could not read"):
             main(["machine", "test", str(f), "--blackboard", str(bb)])
     finally:
         bb.chmod(0o600)
 
 
-def test_synthesized_records_omit_optional_fields(tmp_path: Path) -> None:
+def test_synthesized_records_omit_optional_fields(tmp_path: pathlib.Path) -> None:
     """Dry-run models the weakest state the capture gate permits: an optional field stays absent.
 
     A branch reading it unguarded fails `machine test` as it halts live; the has()-guarded twin

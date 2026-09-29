@@ -10,65 +10,71 @@ An id this run does not hold is refused with the ids it does.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
-from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS, parse_retire
-from agent6.graph.curator import GraphCurator
-from agent6.graph.models import AddSubtaskIntent, NodeActor, TaskNodeDraft
-from agent6.harness.loop import Harness
-from agent6.sessions.ipc import drain_requests, queue_request
-from agent6.sessions.layout import SessionLayout
-from agent6.ui.directives import act_on_directive
-from agent6.viewmodel.format import short_task_id
+from agent6 import directive
+from agent6.graph import curator as graph_curator
+from agent6.graph import models
+from agent6.harness import loop
+from agent6.sessions import ipc
+from agent6.sessions import layout as sessions_layout
+from agent6.ui import directives
+from agent6.viewmodel import format
 from tests.unit.test_task_queue_drain import (
     _workflow,  # pyright: ignore[reportPrivateUsage]
 )
 
 
-def _graph(tmp_path: Path) -> tuple[GraphCurator, Path, str, list[str], Harness]:
-    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
-    curator = GraphCurator(layout)
+def _graph(
+    tmp_path: pathlib.Path,
+) -> tuple[graph_curator.GraphCurator, pathlib.Path, str, list[str], loop.Harness]:
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
+    curator = graph_curator.GraphCurator(layout)
     root = curator.add_subtask(
-        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="the run", created_by="user"))
+        models.AddSubtaskIntent(
+            parent_id=None, draft=models.TaskNodeDraft(title="the run", created_by="user")
+        )
     ).id
-    actors: tuple[tuple[str, NodeActor], ...] = (
+    actors: tuple[tuple[str, models.NodeActor], ...] = (
         ("the model's own", "worker"),
         ("queued by you", "user"),
     )
     kids = [
         curator.add_subtask(
-            AddSubtaskIntent(parent_id=root, draft=TaskNodeDraft(title=title, created_by=by))
+            models.AddSubtaskIntent(
+                parent_id=root, draft=models.TaskNodeDraft(title=title, created_by=by)
+            )
         ).id
         for title, by in actors
     ]
-    from agent6.events import EventSink
+    from agent6 import events as agent6_events
 
-    sink = EventSink(layout.session_dir / "logs.jsonl")
+    sink = agent6_events.EventSink(layout.session_dir / "logs.jsonl")
     return curator, layout.session_dir, root, kids, _workflow(curator, sink)
 
 
 def test_the_grammar_takes_the_id() -> None:
-    assert parse_retire("/retire 01M2ABC") == "01M2ABC"
-    assert parse_retire("/retire") == ""
-    assert parse_retire("/retirement of the parser") is None
+    assert directive.parse_retire("/retire 01M2ABC") == "01M2ABC"
+    assert directive.parse_retire("/retire") == ""
+    assert directive.parse_retire("/retirement of the parser") is None
 
 
 def test_it_is_offered_only_on_a_live_run() -> None:
-    assert "/retire" in STEER_COMMANDS
-    assert "/retire" in LIVE_RUN_COMMANDS
+    assert "/retire" in directive.STEER_COMMANDS
+    assert "/retire" in directive.LIVE_RUN_COMMANDS
 
 
-def test_a_full_id_retires_at_the_next_turn(tmp_path: Path) -> None:
+def test_a_full_id_retires_at_the_next_turn(tmp_path: pathlib.Path) -> None:
     curator, session_dir, root, kids, wf = _graph(tmp_path)
 
-    did, said = act_on_directive(session_dir, f"/retire {kids[0]}") or (False, "")
+    did, said = directives.act_on_directive(session_dir, f"/retire {kids[0]}") or (False, "")
 
     assert did and "the model's own" in said
-    assert [r.text for r in drain_requests(session_dir)] == [kids[0]]
+    assert [r.text for r in ipc.drain_requests(session_dir)] == [kids[0]]
     del curator, root, wf
 
 
-def test_the_id_is_the_runs_own_count(tmp_path: Path) -> None:
+def test_the_id_is_the_runs_own_count(tmp_path: pathlib.Path) -> None:
     """The id is the run's own count.
 
     A task is `1`, `2`, `3` within its run, which is what an operator reads off `/tasks` and types
@@ -76,60 +82,60 @@ def test_the_id_is_the_runs_own_count(tmp_path: Path) -> None:
     """
     _curator, session_dir, root, kids, _wf = _graph(tmp_path)
     assert [root, *kids] == ["0001", "0002", "0003"]
-    assert [short_task_id(nid) for nid in kids] == ["2", "3"]
+    assert [format.short_task_id(nid) for nid in kids] == ["2", "3"]
 
-    did, said = act_on_directive(session_dir, "/retire 2") or (False, "")
+    did, said = directives.act_on_directive(session_dir, "/retire 2") or (False, "")
 
     assert did and "the model's own" in said
-    assert [r.text for r in drain_requests(session_dir)] == [kids[0]]
+    assert [r.text for r in ipc.drain_requests(session_dir)] == [kids[0]]
 
 
-def test_the_padded_id_works_too(tmp_path: Path) -> None:
+def test_the_padded_id_works_too(tmp_path: pathlib.Path) -> None:
     """Whichever form a listing or a log showed."""
     _curator, session_dir, _root, kids, _wf = _graph(tmp_path)
 
-    did, _said = act_on_directive(session_dir, f"/retire {kids[1]}") or (False, "")
+    did, _said = directives.act_on_directive(session_dir, f"/retire {kids[1]}") or (False, "")
 
-    assert did and [r.text for r in drain_requests(session_dir)] == [kids[1]]
+    assert did and [r.text for r in ipc.drain_requests(session_dir)] == [kids[1]]
 
 
-def test_an_unknown_id_is_refused_with_the_ones_that_exist(tmp_path: Path) -> None:
+def test_an_unknown_id_is_refused_with_the_ones_that_exist(tmp_path: pathlib.Path) -> None:
     _curator, session_dir, _root, _kids, _wf = _graph(tmp_path)
 
-    did, said = act_on_directive(session_dir, "/retire 9") or (True, "")
+    did, said = directives.act_on_directive(session_dir, "/retire 9") or (True, "")
 
     assert not did
     assert "no task '9' here" in said
     assert "1 the run" in said and "2 the model's own" in said
-    assert [r.text for r in drain_requests(session_dir)] == []
+    assert [r.text for r in ipc.drain_requests(session_dir)] == []
 
 
-def test_a_bare_directive_retires_nothing(tmp_path: Path) -> None:
+def test_a_bare_directive_retires_nothing(tmp_path: pathlib.Path) -> None:
     _curator, session_dir, _root, _kids, _wf = _graph(tmp_path)
 
-    did, said = act_on_directive(session_dir, "/retire") or (True, "")
+    did, said = directives.act_on_directive(session_dir, "/retire") or (True, "")
 
     assert not did and "/retire needs the task" in said
 
 
-def test_the_loop_retires_what_the_operator_named(tmp_path: Path) -> None:
+def test_the_loop_retires_what_the_operator_named(tmp_path: pathlib.Path) -> None:
     """Including a task the operator queued, which `update_task` refuses to the model.
 
     The curator is the operator's own route.
     """
     curator, session_dir, root, kids, wf = _graph(tmp_path)
     for task_id in kids:
-        act_on_directive(session_dir, f"/retire {task_id}")
+        directives.act_on_directive(session_dir, f"/retire {task_id}")
 
     wf.operator_tasks.take(root)
 
     assert [curator.nodes()[k].status for k in kids] == ["obsolete", "obsolete"]
-    assert [r.text for r in drain_requests(session_dir)] == []
+    assert [r.text for r in ipc.drain_requests(session_dir)] == []
 
 
-def test_an_id_that_vanished_is_logged_and_skipped(tmp_path: Path) -> None:
+def test_an_id_that_vanished_is_logged_and_skipped(tmp_path: pathlib.Path) -> None:
     curator, session_dir, root, kids, wf = _graph(tmp_path)
-    queue_request(session_dir, "retire", "01MISSINGMISSINGMISSINGMIS")
+    ipc.queue_request(session_dir, "retire", "01MISSINGMISSINGMISSINGMIS")
 
     wf.operator_tasks.take(root)
 

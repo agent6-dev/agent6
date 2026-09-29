@@ -12,24 +12,20 @@ the `Reviewer.critique` seam.
 
 from __future__ import annotations
 
-from pathlib import Path
-from types import SimpleNamespace
+import pathlib
+import types
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest import mock
 
-from agent6.harness._chain import RunChain
-from agent6.harness._conversation import Conversation, Notice
-from agent6.harness._provider_call import CallSettings
-from agent6.harness._reviewer import CritiqueResult, Reviewer, ReviewSettings
-from agent6.harness.loop import Harness
+from agent6.harness import _chain, _conversation, _provider_call, _reviewer, loop
 from agent6.providers import ProviderResponse
-from agent6.tools.results import ExecResult, RawResult
+from agent6.tools import results
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
 # identity (`commit_identity`), empty as a real Config carries it unset.
-_GIT_STUB = SimpleNamespace(
-    commit=SimpleNamespace(
-        checkpoint=SimpleNamespace(message="agent6"), name="", email="", trailer=""
+_GIT_STUB = types.SimpleNamespace(
+    commit=types.SimpleNamespace(
+        checkpoint=types.SimpleNamespace(message="agent6"), name="", email="", trailer=""
     )
 )
 
@@ -39,7 +35,7 @@ def _silent(_msg: str) -> None:
 
 
 def _wf(
-    root: Path | None = None,
+    root: pathlib.Path | None = None,
     *,
     ref: str | None = None,
     fallback_parent: str | None = None,
@@ -47,20 +43,20 @@ def _wf(
     per_step: bool = True,
     base_sha: str = "",
     **kw: Any,
-) -> Harness:
+) -> loop.Harness:
     defaults: dict[str, Any] = {
-        "chain": RunChain(
-            root or Path("/tmp"),
+        "chain": _chain.RunChain(
+            root or pathlib.Path("/tmp"),
             ref=ref,
             branch=branch,
             fallback_parent=fallback_parent,
             per_step=per_step,
             base_sha=base_sha,
         ),
-        "config": MagicMock(
+        "config": mock.MagicMock(
             git=_GIT_STUB,
-            prompt=MagicMock(system_prompt_file=""),
-            harness=MagicMock(
+            prompt=mock.MagicMock(system_prompt_file=""),
+            harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -70,14 +66,14 @@ def _wf(
                 verify_retries=2,
             ),
         ),
-        "provider": MagicMock(),
-        "dispatcher": MagicMock(),
+        "provider": mock.MagicMock(),
+        "dispatcher": mock.MagicMock(),
         "logger": _silent,
-        "call": CallSettings(retry_delay_s=0.01),
-        "review": ReviewSettings(seats=[MagicMock()]),
+        "call": _provider_call.CallSettings(retry_delay_s=0.01),
+        "review": _reviewer.ReviewSettings(seats=[mock.MagicMock()]),
     }
     defaults.update(kw)
-    return Harness(**defaults)
+    return loop.Harness(**defaults)
 
 
 def _resp(text: str) -> ProviderResponse:
@@ -122,7 +118,7 @@ class _PanelScript:
     Pops verdicts in order and counts how often the loop consulted the panel.
     """
 
-    def __init__(self, verdicts: list[CritiqueResult | None]) -> None:
+    def __init__(self, verdicts: list[_reviewer.CritiqueResult | None]) -> None:
         self.verdicts = list(verdicts)
         self.calls = 0
 
@@ -142,28 +138,28 @@ def test_before_finish_panel_revokes_finish_and_injects_findings() -> None:
     The tool_result still returns so the call is not half-applied; the findings ride into the next
     user turn under [review].
     """
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("attempting to finish", _finish_tool_use("tu1", "wrap up")),
         _resp("ok, looks good"),
         _resp("ok, looks good"),
         _resp("ok, looks good"),
     ]
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     panel = _PanelScript(
         [
-            CritiqueResult(text="* still TODOs left", satisfied=False),
-            CritiqueResult(text="* now fine", satisfied=True),
+            _reviewer.CritiqueResult(text="* still TODOs left", satisfied=False),
+            _reviewer.CritiqueResult(text="* now fine", satisfied=True),
         ]
     )
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=ReviewSettings(trigger="before_finish", seats=[MagicMock()]),
+        review=_reviewer.ReviewSettings(trigger="before_finish", seats=[mock.MagicMock()]),
     )
-    with patch.object(Reviewer, "critique", panel):
-        conversation = Conversation.from_wire(_MSGS)
+    with mock.patch.object(_reviewer.Reviewer, "critique", panel):
+        conversation = _conversation.Conversation.from_wire(_MSGS)
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=conversation,
@@ -183,22 +179,22 @@ def test_before_finish_panel_revokes_finish_and_injects_findings() -> None:
 
 
 def test_before_finish_panel_satisfied_accepts_finish() -> None:
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.return_value = _resp_with_tool_use(
         "wrapping up", _finish_tool_use("tu1", "all done")
     )
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
-    panel = _PanelScript([CritiqueResult(text="* clean", satisfied=True)])
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
+    panel = _PanelScript([_reviewer.CritiqueResult(text="* clean", satisfied=True)])
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=ReviewSettings(trigger="before_finish", seats=[MagicMock()]),
+        review=_reviewer.ReviewSettings(trigger="before_finish", seats=[mock.MagicMock()]),
     )
-    with patch.object(Reviewer, "critique", panel):
+    with mock.patch.object(_reviewer.Reviewer, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
-            conversation=Conversation.from_wire(_MSGS),
+            conversation=_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -215,22 +211,22 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
 
     The findings are still injected; the worker cannot bounce forever.
     """
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.return_value = _resp_with_tool_use("finishing", _finish_tool_use("tu1", "done"))
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
-    panel = _PanelScript([CritiqueResult(text="* nope", satisfied=False)] * 3)
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
+    panel = _PanelScript([_reviewer.CritiqueResult(text="* nope", satisfied=False)] * 3)
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=ReviewSettings(
-            trigger="before_finish", max_consecutive_rejections=2, seats=[MagicMock()]
+        review=_reviewer.ReviewSettings(
+            trigger="before_finish", max_consecutive_rejections=2, seats=[mock.MagicMock()]
         ),
     )
-    with patch.object(Reviewer, "critique", panel):
+    with mock.patch.object(_reviewer.Reviewer, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
-            conversation=Conversation.from_wire(_MSGS),
+            conversation=_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -242,20 +238,20 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
 
 
 def test_trigger_off_never_runs_a_panel() -> None:
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.return_value = _resp_with_tool_use("done", _finish_tool_use("tu1", "d"))
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     panel = _PanelScript([])
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=ReviewSettings(trigger="off", seats=[MagicMock()]),
+        review=_reviewer.ReviewSettings(trigger="off", seats=[mock.MagicMock()]),
     )
-    with patch.object(Reviewer, "critique", panel):
+    with mock.patch.object(_reviewer.Reviewer, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
-            conversation=Conversation.from_wire(_MSGS),
+            conversation=_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -270,7 +266,7 @@ def test_silent_finish_panel_revokes_and_continues() -> None:
 
     Rejected once, the run continues with the findings visible; a later pass exits.
     """
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use(
             "edit",
@@ -284,21 +280,21 @@ def test_silent_finish_panel_revokes_and_continues() -> None:
         _resp("i think we are done"),
         _resp("still done"),
     ]
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     panel = _PanelScript(
         [
-            CritiqueResult(text="* not yet", satisfied=False),
-            CritiqueResult(text="* fine now", satisfied=True),
+            _reviewer.CritiqueResult(text="* not yet", satisfied=False),
+            _reviewer.CritiqueResult(text="* fine now", satisfied=True),
         ]
     )
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=ReviewSettings(trigger="before_finish", seats=[MagicMock()]),
+        review=_reviewer.ReviewSettings(trigger="before_finish", seats=[mock.MagicMock()]),
     )
-    with patch.object(Reviewer, "critique", panel):
-        conversation = Conversation.from_wire(_MSGS)
+    with mock.patch.object(_reviewer.Reviewer, "critique", panel):
+        conversation = _conversation.Conversation.from_wire(_MSGS)
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=conversation,
@@ -323,8 +319,8 @@ def _verify_pass_tool_use(tu_id: str) -> dict[str, Any]:
     }
 
 
-def _exec(returncode: int, stderr: str = "") -> ExecResult:
-    return ExecResult(
+def _exec(returncode: int, stderr: str = "") -> results.ExecResult:
+    return results.ExecResult(
         returncode=returncode, stdout="", stderr=stderr, duration_s=0.0, exec_failed=False
     )
 
@@ -334,7 +330,7 @@ def test_periodic_panel_fires_every_n_iterations() -> None:
 
     The iteration-5 finish_session is not gated under periodic.
     """
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("t1", _verify_pass_tool_use("v1")),
         _resp_with_tool_use("t2", _verify_pass_tool_use("v2")),
@@ -342,23 +338,23 @@ def test_periodic_panel_fires_every_n_iterations() -> None:
         _resp_with_tool_use("t4", _verify_pass_tool_use("v4")),
         _resp_with_tool_use("done", _finish_tool_use("f", "summary")),
     ]
-    dispatcher = MagicMock()
+    dispatcher = mock.MagicMock()
     dispatcher.dispatch.return_value = _exec(0)
-    panel = _PanelScript([CritiqueResult(text="* fine", satisfied=True)] * 2)
+    panel = _PanelScript([_reviewer.CritiqueResult(text="* fine", satisfied=True)] * 2)
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=ReviewSettings(trigger="periodic", period=2, seats=[MagicMock()]),
+        review=_reviewer.ReviewSettings(trigger="periodic", period=2, seats=[mock.MagicMock()]),
     )
     # Each verify pass commits real progress (the normal success path), so the
     # verify-settled detector stays dormant and all 5 iterations run.
     with (
-        patch.object(Reviewer, "critique", panel),
-        patch("agent6.harness._chain.chain_commit", return_value="sha"),
+        mock.patch.object(_reviewer.Reviewer, "critique", panel),
+        mock.patch("agent6.harness._chain.chain_commit", return_value="sha"),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
-            conversation=Conversation.from_wire(_MSGS),
+            conversation=_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -371,21 +367,21 @@ def test_periodic_panel_fires_every_n_iterations() -> None:
 
 def test_periodic_panel_injects_text_into_next_user_msg() -> None:
     """Periodic findings are advisory: injected under [review] even on a satisfied verdict."""
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("t1", _verify_pass_tool_use("v1")),
         _resp_with_tool_use("done", _finish_tool_use("f", "ok")),
     ]
-    dispatcher = MagicMock()
+    dispatcher = mock.MagicMock()
     dispatcher.dispatch.return_value = _exec(0)
-    panel = _PanelScript([CritiqueResult(text="* CONSIDER X", satisfied=True)])
+    panel = _PanelScript([_reviewer.CritiqueResult(text="* CONSIDER X", satisfied=True)])
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=ReviewSettings(trigger="periodic", period=1, seats=[MagicMock()]),
+        review=_reviewer.ReviewSettings(trigger="periodic", period=1, seats=[mock.MagicMock()]),
     )
-    conversation = Conversation.from_wire(_MSGS)
-    with patch.object(Reviewer, "critique", panel):
+    conversation = _conversation.Conversation.from_wire(_MSGS)
+    with mock.patch.object(_reviewer.Reviewer, "critique", panel):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=conversation,
@@ -405,28 +401,28 @@ def test_on_verify_fail_panel_fires_only_on_nonzero_exit() -> None:
 
     Passing verifies never fire it.
     """
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("t1", _verify_pass_tool_use("v1")),  # passes
         _resp_with_tool_use("t2", _verify_pass_tool_use("v2")),  # FAILS
         _resp_with_tool_use("t3", _verify_pass_tool_use("v3")),  # passes
         _resp_with_tool_use("done", _finish_tool_use("f", "ok")),
     ]
-    dispatcher = MagicMock()
+    dispatcher = mock.MagicMock()
     dispatcher.dispatch.side_effect = [
         _exec(0),
         _exec(1, stderr="test x failed"),
         _exec(0),
-        RawResult({"ok": True}),
+        results.RawResult({"ok": True}),
     ]
-    panel = _PanelScript([CritiqueResult(text="* hmm", satisfied=False)])
+    panel = _PanelScript([_reviewer.CritiqueResult(text="* hmm", satisfied=False)])
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=ReviewSettings(trigger="on_verify_fail", seats=[MagicMock()]),
+        review=_reviewer.ReviewSettings(trigger="on_verify_fail", seats=[mock.MagicMock()]),
     )
-    conversation = Conversation.from_wire(_MSGS)
-    with patch.object(Reviewer, "critique", panel):
+    conversation = _conversation.Conversation.from_wire(_MSGS)
+    with mock.patch.object(_reviewer.Reviewer, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=conversation,
@@ -449,23 +445,23 @@ def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
     There is no failure signal.
     """
     edit_tool = {"type": "tool_use", "id": "e1", "name": "list_dir", "input": {"path": "."}}
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("editing", edit_tool),
         _resp_with_tool_use("done", _finish_tool_use("f", "ok")),
     ]
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"entries": []})
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"entries": []})
     panel = _PanelScript([])
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=ReviewSettings(trigger="on_verify_fail", seats=[MagicMock()]),
+        review=_reviewer.ReviewSettings(trigger="on_verify_fail", seats=[mock.MagicMock()]),
     )
-    with patch.object(Reviewer, "critique", panel):
+    with mock.patch.object(_reviewer.Reviewer, "critique", panel):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
-            conversation=Conversation.from_wire(_MSGS),
+            conversation=_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -478,27 +474,26 @@ def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
 
 
 def _settled_state() -> Any:
-    from agent6.harness._nudges import VERIFY_SETTLED_STOP_AFTER
-    from agent6.harness.loop import LoopState
+    from agent6.harness import _loop_state, _nudges
 
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.settled.gateless_ever_edited = True
-    state.settled.idle = VERIFY_SETTLED_STOP_AFTER
+    state.settled.idle = _nudges.VERIFY_SETTLED_STOP_AFTER
     return state
 
 
 def _idle_turn() -> Any:
-    from agent6.harness.loop import TurnState
+    from agent6.harness import _loop_state
 
-    return TurnState(iteration=9, resp=MagicMock(), assistant=MagicMock())
+    return _loop_state.TurnState(iteration=9, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
 
-def _settle(wf: Harness, state: Any, turn: Any) -> Any:
+def _settle(wf: loop.Harness, state: Any, turn: Any) -> Any:
     """The settled advisor's answer, applied through the loop (a stop runs the end gates)."""
-    from agent6.harness._guards import verify_settled
+    from agent6.harness import _guards
 
     ctx = wf._turn_context(state, iteration=turn.iteration, execution_start=1)  # pyright: ignore[reportPrivateUsage]
-    return wf._take(state, turn, ctx, verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
+    return wf._take(state, turn, ctx, _guards.verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
 def test_a_settled_end_is_reviewed_like_a_finish() -> None:
@@ -508,16 +503,16 @@ def test_a_settled_end_is_reviewed_like_a_finish() -> None:
     before-finish panel judges that end too: a rejection hands the findings to the model and
     restarts the idle count, an approval lets the end stand.
     """
-    wf = _wf(review=ReviewSettings(trigger="before_finish", seats=[MagicMock()]))
+    wf = _wf(review=_reviewer.ReviewSettings(trigger="before_finish", seats=[mock.MagicMock()]))
     wf.mode = "run"
     wf.config.harness.metric = None
     panel = _PanelScript(
         [
-            CritiqueResult(text="* a test is missing", satisfied=False),
-            CritiqueResult(text="* fine", satisfied=True),
+            _reviewer.CritiqueResult(text="* a test is missing", satisfied=False),
+            _reviewer.CritiqueResult(text="* fine", satisfied=True),
         ]
     )
-    with patch.object(Reviewer, "critique", panel):
+    with mock.patch.object(_reviewer.Reviewer, "critique", panel):
         state = _settled_state()
         turn = _idle_turn()
         assert _settle(wf, state, turn) is None
@@ -527,7 +522,7 @@ def test_a_settled_end_is_reviewed_like_a_finish() -> None:
         # findings ride the settled path's own notice.
         assert turn.review_text is None
         assert any(
-            isinstance(item, Notice) and "a test is missing" in item.text
+            isinstance(item, _conversation.Notice) and "a test is missing" in item.text
             for item in turn.tool_results
         )
         state = _settled_state()
@@ -543,20 +538,22 @@ def test_a_periodic_finding_on_a_settling_turn_is_delivered_once() -> None:
     The turn's notices deliver a periodic panel's text, and the settled gate delivers whatever the
     turn still holds; the same finding must not go out twice.
     """
-    wf = _wf(review=ReviewSettings(trigger="periodic", period=1, seats=[MagicMock()]))
+    wf = _wf(
+        review=_reviewer.ReviewSettings(trigger="periodic", period=1, seats=[mock.MagicMock()])
+    )
     wf.mode = "run"
     wf.config.harness.metric = None
-    panel = _PanelScript([CritiqueResult(text="* one periodic finding", satisfied=True)])
+    panel = _PanelScript([_reviewer.CritiqueResult(text="* one periodic finding", satisfied=True)])
     state = _settled_state()
     turn = _idle_turn()
-    with patch.object(Reviewer, "critique", panel):
+    with mock.patch.object(_reviewer.Reviewer, "critique", panel):
         wf.reviewer.triggers(state, turn)
         wf._turn_notices(state, turn)  # pyright: ignore[reportPrivateUsage]
         _settle(wf, state, turn)
     delivered = [
         item
         for item in turn.tool_results
-        if isinstance(item, Notice) and "one periodic finding" in item.text
+        if isinstance(item, _conversation.Notice) and "one periodic finding" in item.text
     ]
     assert len(delivered) == 1 and panel.calls == 1
 
@@ -566,11 +563,13 @@ def test_a_rejected_plateau_end_is_named_as_one() -> None:
 
     The metric plateau's wording names the plateau, not a settled end.
     """
-    wf = _wf(review=ReviewSettings(trigger="before_finish", seats=[MagicMock()]))
+    wf = _wf(review=_reviewer.ReviewSettings(trigger="before_finish", seats=[mock.MagicMock()]))
     wf.mode = "run"
-    panel = _PanelScript([CritiqueResult(text="* the gain is unmeasured", satisfied=False)])
+    panel = _PanelScript(
+        [_reviewer.CritiqueResult(text="* the gain is unmeasured", satisfied=False)]
+    )
     turn = _idle_turn()
-    with patch.object(Reviewer, "critique", panel):
+    with mock.patch.object(_reviewer.Reviewer, "critique", panel):
         assert wf.reviewer.end_rejected(_settled_state(), turn, ending="metric_plateau")
     assert turn.review_text is not None
     assert turn.review_text.startswith("The review panel rejected the end at the metric plateau")
@@ -589,12 +588,12 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     cfg = Config.model_validate(
         {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
     )
-    dispatcher = MagicMock()
+    dispatcher = mock.MagicMock()
     dispatcher.command_policy.return_value = "yes"
-    dispatcher.run_verify.return_value = ExecResult(
+    dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
     )
-    wf = _wf(config=cfg, dispatcher=dispatcher, review=ReviewSettings(seats=[]))
+    wf = _wf(config=cfg, dispatcher=dispatcher, review=_reviewer.ReviewSettings(seats=[]))
     wf.mode = "run"
     state = _settled_state()
     turn = _idle_turn()
@@ -611,7 +610,7 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     _settle(wf, state, turn)
     assert [stop.soft for stop in turn.stops] == ["verify_settled"]
     # A green gate certifies the end at once.
-    dispatcher.run_verify.return_value = ExecResult(
+    dispatcher.run_verify.return_value = results.ExecResult(
         returncode=0, stdout="", stderr="", duration_s=1.0, exec_failed=False
     )
     state = _settled_state()
@@ -628,30 +627,30 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     panel judges it.
     """
     from agent6.config import Config
-    from agent6.harness.loop import LoopState, TurnState
+    from agent6.harness import _loop_state
 
     cfg = Config.model_validate(
         {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
     )
-    dispatcher = MagicMock()
+    dispatcher = mock.MagicMock()
     dispatcher.command_policy.return_value = "yes"
-    dispatcher.run_verify.return_value = ExecResult(
+    dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="2 failed", stderr="", duration_s=1.0, exec_failed=False
     )
-    panel = _PanelScript([CritiqueResult(text="* fine", satisfied=True)])
+    panel = _PanelScript([_reviewer.CritiqueResult(text="* fine", satisfied=True)])
     wf = _wf(
         config=cfg,
         dispatcher=dispatcher,
-        review=ReviewSettings(trigger="before_finish", seats=[MagicMock()]),
+        review=_reviewer.ReviewSettings(trigger="before_finish", seats=[mock.MagicMock()]),
     )
     wf.mode = "run"
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.ever_edited = True
     state.verify.note_pass()
     state.verify.note_edit()  # green once, edited since: stale
-    conv = Conversation()
-    with patch.object(Reviewer, "critique", panel):
-        turn = TurnState(iteration=5, resp=_resp("Done."), assistant=MagicMock())
+    conv = _conversation.Conversation()
+    with mock.patch.object(_reviewer.Reviewer, "critique", panel):
+        turn = _loop_state.TurnState(iteration=5, resp=_resp("Done."), assistant=mock.MagicMock())
         ctx = wf._turn_context(state, iteration=5, execution_start=1)  # pyright: ignore[reportPrivateUsage]
         assert wf._handle_silent_finish("Done.", conv, state, turn, ctx) is None  # pyright: ignore[reportPrivateUsage]
         texts = [b["text"] for m in conv.to_wire() for b in m["content"] if b.get("type") == "text"]
@@ -659,7 +658,7 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
         assert any("the next red finish ends the run" in t for t in texts)
         assert panel.calls == 0  # a red gate returns the end before the panel sits
         # The return is spent: the next silent finish stands, the panel sits and approves.
-        turn = TurnState(iteration=6, resp=_resp("Done."), assistant=MagicMock())
+        turn = _loop_state.TurnState(iteration=6, resp=_resp("Done."), assistant=mock.MagicMock())
         ended = wf._handle_silent_finish("Done.", conv, state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
     assert ended.verified == "failed"

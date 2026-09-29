@@ -7,28 +7,27 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.sessions.id import SessionIdError, resolve_session
-from agent6.sessions.layout import bucket_dir
-from agent6.ui.cli._common import resolve_session_layout  # pyright: ignore[reportPrivateUsage]
+from agent6.sessions import id, layout
+from agent6.ui.cli import _common  # pyright: ignore[reportPrivateUsage]
 
 
 def test_the_cross_bucket_resolver_says_session(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SessionIdError) as caught:
-        resolve_session_layout(tmp_path, "nope-nope-NOPE00")
+    with pytest.raises(id.SessionIdError) as caught:
+        _common.resolve_session_layout(tmp_path, "nope-nope-NOPE00")
     assert "no session matches" in str(caught.value), str(caught.value)
 
 
-def test_the_bucket_scoped_resolver_says_session(tmp_path: Path) -> None:
-    bucket = bucket_dir(tmp_path, "runs")
+def test_the_bucket_scoped_resolver_says_session(tmp_path: pathlib.Path) -> None:
+    bucket = layout.bucket_dir(tmp_path, "runs")
     bucket.mkdir(parents=True)
-    with pytest.raises(SessionIdError) as caught:
-        resolve_session(tmp_path, "nope-nope-NOPE00", buckets=("runs",))
+    with pytest.raises(id.SessionIdError) as caught:
+        id.resolve_session(tmp_path, "nope-nope-NOPE00", buckets=("runs",))
     assert "no session matches" in str(caught.value), str(caught.value)
     assert str(tmp_path) in str(caught.value)  # the state dir searched

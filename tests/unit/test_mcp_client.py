@@ -12,23 +12,18 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import pathlib
 import signal
 import subprocess
 import sys
 import textwrap
 import threading
 import time
-from pathlib import Path
 
 import pytest
 
-from agent6.kinds import JailPolicy
-from agent6.tools.mcp_client import (
-    MCP_TOOL_PREFIX,
-    MCPError,
-    MCPManager,
-    MCPServerSpec,
-)
+from agent6 import kinds
+from agent6.tools import mcp_client as tools_mcp_client
 
 
 def _fake_server_argv(
@@ -125,9 +120,9 @@ def _fake_server_argv(
 
 
 def test_manager_starts_and_discovers_tools() -> None:
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="fake", command=_fake_server_argv(), startup_timeout_s=5.0, call_timeout_s=5.0
             )
         ],
@@ -136,8 +131,8 @@ def test_manager_starts_and_discovers_tools() -> None:
         descs = mgr.descriptors()
         names = sorted(d.qualified_name for d in descs)
         assert names == [
-            f"{MCP_TOOL_PREFIX}fake__echo",
-            f"{MCP_TOOL_PREFIX}fake__shout",
+            f"{tools_mcp_client.MCP_TOOL_PREFIX}fake__echo",
+            f"{tools_mcp_client.MCP_TOOL_PREFIX}fake__shout",
         ]
         for d in descs:
             assert d.input_schema.get("type") == "object"
@@ -148,9 +143,9 @@ def test_manager_starts_and_discovers_tools() -> None:
 def test_manager_skips_tools_with_invalid_names() -> None:
     # A server-advertised tool whose name isn't [A-Za-z0-9_-] can't form a valid
     # provider tool name; it must be skipped, not poison the whole tools array.
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="fake",
                 command=_fake_server_argv(bad_tool=True),
                 startup_timeout_s=5.0,
@@ -160,7 +155,10 @@ def test_manager_skips_tools_with_invalid_names() -> None:
     )
     try:
         names = sorted(d.qualified_name for d in mgr.descriptors())
-        assert names == [f"{MCP_TOOL_PREFIX}fake__echo", f"{MCP_TOOL_PREFIX}fake__shout"]
+        assert names == [
+            f"{tools_mcp_client.MCP_TOOL_PREFIX}fake__echo",
+            f"{tools_mcp_client.MCP_TOOL_PREFIX}fake__shout",
+        ]
     finally:
         mgr.close()
 
@@ -173,9 +171,9 @@ def test_a_tool_name_with_a_trailing_newline_is_skipped() -> None:
     into the LLM-visible tool definition; fullmatch admits none, so the tool is skipped like any
     other invalid name.
     """
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="fake",
                 command=_fake_server_argv(newline_tool=True),
                 startup_timeout_s=5.0,
@@ -185,23 +183,26 @@ def test_a_tool_name_with_a_trailing_newline_is_skipped() -> None:
     )
     try:
         names = sorted(d.qualified_name for d in mgr.descriptors())
-        assert names == [f"{MCP_TOOL_PREFIX}fake__echo", f"{MCP_TOOL_PREFIX}fake__shout"]
+        assert names == [
+            f"{tools_mcp_client.MCP_TOOL_PREFIX}fake__echo",
+            f"{tools_mcp_client.MCP_TOOL_PREFIX}fake__shout",
+        ]
     finally:
         mgr.close()
 
 
 def test_manager_routes_calls_to_right_server_and_tool() -> None:
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="fake", command=_fake_server_argv(), startup_timeout_s=5.0, call_timeout_s=5.0
             )
         ],
     )
     try:
-        echo = mgr.call(f"{MCP_TOOL_PREFIX}fake__echo", {"text": "hi"})
+        echo = mgr.call(f"{tools_mcp_client.MCP_TOOL_PREFIX}fake__echo", {"text": "hi"})
         assert echo["content"][0]["text"] == "hi"
-        shout = mgr.call(f"{MCP_TOOL_PREFIX}fake__shout", {"text": "hi"})
+        shout = mgr.call(f"{tools_mcp_client.MCP_TOOL_PREFIX}fake__shout", {"text": "hi"})
         assert shout["content"][0]["text"] == "HI"
     finally:
         mgr.close()
@@ -214,43 +215,43 @@ def test_call_tool_rejects_unadvertised_tool_name() -> None:
     told to reach) must be refused HERE, before any tools/call leaves agent6, otherwise the fake
     server below happily echoes it back as a successful result.
     """
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="fake", command=_fake_server_argv(), startup_timeout_s=5.0, call_timeout_s=5.0
             )
         ]
     )
     try:
-        with pytest.raises(MCPError, match="did not advertise"):
-            mgr.call(f"{MCP_TOOL_PREFIX}fake__sneaky", {"text": "hi"})
+        with pytest.raises(tools_mcp_client.MCPError, match="did not advertise"):
+            mgr.call(f"{tools_mcp_client.MCP_TOOL_PREFIX}fake__sneaky", {"text": "hi"})
     finally:
         mgr.close()
 
 
 def test_manager_rejects_non_mcp_name() -> None:
-    mgr = MCPManager.start([])
+    mgr = tools_mcp_client.MCPManager.start([])
     try:
-        with pytest.raises(MCPError, match="not an MCP tool name"):
+        with pytest.raises(tools_mcp_client.MCPError, match="not an MCP tool name"):
             mgr.call("not_mcp", {})
     finally:
         mgr.close()
 
 
 def test_manager_rejects_unknown_server() -> None:
-    mgr = MCPManager.start([])
+    mgr = tools_mcp_client.MCPManager.start([])
     try:
-        with pytest.raises(MCPError, match="unknown MCP server"):
-            mgr.call(f"{MCP_TOOL_PREFIX}nope__t", {})
+        with pytest.raises(tools_mcp_client.MCPError, match="unknown MCP server"):
+            mgr.call(f"{tools_mcp_client.MCP_TOOL_PREFIX}nope__t", {})
     finally:
         mgr.close()
 
 
 def test_manager_logs_and_skips_unstartable_server() -> None:
     logs: list[str] = []
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="bogus",
                 command=("/this/binary/does/not/exist/agent6-test", "x"),
                 startup_timeout_s=1.0,
@@ -272,9 +273,9 @@ def test_manager_times_out_on_hanging_server() -> None:
     # servers. We do NOT raise from MCPManager.start because the
     # design is "one bad server doesn't take the run down".
     logs: list[str] = []
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="hang",
                 command=_fake_server_argv(hang=True),
                 startup_timeout_s=0.5,
@@ -298,9 +299,9 @@ def test_a_timeout_carries_the_servers_own_words() -> None:
     sandbox grants that were not the problem, while the same server exiting says why.
     """
     logs: list[str] = []
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="errlog",
                 command=(
                     "/bin/sh",
@@ -325,8 +326,7 @@ def test_a_broken_stdin_carries_the_servers_own_words() -> None:
     A server can print its startup failure and close stdin before the first request; reporting only
     Broken pipe hides the actionable failure.
     """
-    from agent6.sandbox.jail import JailedProcess
-    from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
+    from agent6.sandbox import jail
 
     proc = subprocess.Popen(
         ["/bin/sh", "-c", "exit 1"],
@@ -336,11 +336,13 @@ def test_a_broken_stdin_carries_the_servers_own_words() -> None:
         start_new_session=True,
     )
     proc.wait(timeout=5)
-    srv = _MCPServer(name="dead", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0)
-    srv._proc = JailedProcess(proc)  # pyright: ignore[reportPrivateUsage]
+    srv = tools_mcp_client._MCPServer(
+        name="dead", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0
+    )
+    srv._proc = jail.JailedProcess(proc)  # pyright: ignore[reportPrivateUsage]
     srv._errors = [b"executable was not found\n"]  # pyright: ignore[reportPrivateUsage]
     try:
-        with pytest.raises(MCPError, match="executable was not found"):
+        with pytest.raises(tools_mcp_client.MCPError, match="executable was not found"):
             srv._write_line({"jsonrpc": "2.0"})  # pyright: ignore[reportPrivateUsage]
     finally:
         srv.close()
@@ -353,9 +355,9 @@ def test_a_timed_out_call_restarts_the_server_before_the_next_call() -> None:
     owns the spawn, so the timed-out call's error names the restart and the next call gets a fresh
     server.
     """
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="slow",
                 command=_fake_server_argv(sleep_on="sleep"),
                 startup_timeout_s=5.0,
@@ -365,11 +367,12 @@ def test_a_timed_out_call_restarts_the_server_before_the_next_call() -> None:
     )
     try:
         with pytest.raises(
-            MCPError, match=r"timed out after 0\.5s on tools/call; the server was restarted"
+            tools_mcp_client.MCPError,
+            match=r"timed out after 0\.5s on tools/call; the server was restarted",
         ):
-            mgr.call(f"{MCP_TOOL_PREFIX}slow__echo", {"text": "sleep"})
+            mgr.call(f"{tools_mcp_client.MCP_TOOL_PREFIX}slow__echo", {"text": "sleep"})
         started = time.monotonic()
-        result = mgr.call(f"{MCP_TOOL_PREFIX}slow__echo", {"text": "hi"})
+        result = mgr.call(f"{tools_mcp_client.MCP_TOOL_PREFIX}slow__echo", {"text": "hi"})
         assert result == {"content": [{"type": "text", "text": "hi"}]}
         assert time.monotonic() - started < 0.5, "the second call waited on the wedged server"
     finally:
@@ -378,9 +381,9 @@ def test_a_timed_out_call_restarts_the_server_before_the_next_call() -> None:
 
 def test_the_started_line_counts_one_tool_as_one_tool() -> None:
     logs: list[str] = []
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="one",
                 command=_fake_server_argv(single_tool=True),
                 startup_timeout_s=5.0,
@@ -394,21 +397,22 @@ def test_the_started_line_counts_one_tool_as_one_tool() -> None:
 
 
 def test_a_stderr_tail_is_cut_at_a_line_and_says_what_was_dropped() -> None:
-    from agent6.portable import stderr_tail
+    from agent6 import portable
 
-    assert stderr_tail([b"short\n"]) == "short"
+    assert portable.stderr_tail([b"short\n"]) == "short"
     kept = [b"first line\n" + b"x" * 390 + b"\nlast line\n"]
-    assert stderr_tail(kept) == "\u2026[agent6: 402 earlier chars cut]\nlast line"
+    assert portable.stderr_tail(kept) == "\u2026[agent6: 402 earlier chars cut]\nlast line"
     # One line longer than the limit keeps its end, still marked.
     assert (
-        stderr_tail([b"y" * 500], limit=10) == "\u2026[agent6: 490 earlier chars cut]\n" + "y" * 10
+        portable.stderr_tail([b"y" * 500], limit=10)
+        == "\u2026[agent6: 490 earlier chars cut]\n" + "y" * 10
     )
 
 
 def test_manager_close_is_idempotent() -> None:
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="fake", command=_fake_server_argv(), startup_timeout_s=5.0, call_timeout_s=5.0
             )
         ]
@@ -425,9 +429,9 @@ def test_concurrent_calls_do_not_interleave_stdin_writes() -> None:
     unlocked writers and corrupt the JSON-RPC framing, so the server reads malformed JSON and dies,
     failing every in-flight call.
     """
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="fake",
                 command=_fake_server_argv(),
                 startup_timeout_s=10.0,
@@ -442,7 +446,9 @@ def test_concurrent_calls_do_not_interleave_stdin_writes() -> None:
 
         def call(i: int) -> None:
             try:
-                out = mgr.call(f"{MCP_TOOL_PREFIX}fake__echo", {"text": payloads[i]})
+                out = mgr.call(
+                    f"{tools_mcp_client.MCP_TOOL_PREFIX}fake__echo", {"text": payloads[i]}
+                )
                 results[i] = out["content"][0]["text"]
             except Exception as exc:
                 errors.append(exc)
@@ -480,9 +486,9 @@ def test_a_server_is_not_handed_the_provider_keys(monkeypatch: pytest.MonkeyPatc
         "        w({'jsonrpc':'2.0','id':m['id'],'result':{'tools':[{'name':'x',"
         "'description':json.dumps(seen),'inputSchema':{'type':'object'}}]}})\n"
     )
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="probe",
                 command=(sys.executable, "-c", script),
                 startup_timeout_s=10.0,
@@ -505,30 +511,25 @@ def test_oversized_descriptions_and_results_degrade_instead_of_breaking_turns() 
     descriptions (riding in every provider request) and results (flooding the context); both are
     bounded at the trust boundary with a marker.
     """
-    from agent6.tools.mcp_client import (
-        _MAX_INLINE_TEXT_CHARS,  # pyright: ignore[reportPrivateUsage]
-        _MAX_RESULT_CHARS,  # pyright: ignore[reportPrivateUsage]
-        _bounded_inline_text,  # pyright: ignore[reportPrivateUsage]
-        _bounded_result,  # pyright: ignore[reportPrivateUsage]
+    desc = tools_mcp_client._bounded_inline_text(
+        "d" * (tools_mcp_client._MAX_INLINE_TEXT_CHARS * 4)
     )
-
-    desc = _bounded_inline_text("d" * (_MAX_INLINE_TEXT_CHARS * 4))
-    assert len(desc) <= _MAX_INLINE_TEXT_CHARS + 40 and "truncated" in desc
-    assert _bounded_inline_text("short") == "short"
+    assert len(desc) <= tools_mcp_client._MAX_INLINE_TEXT_CHARS + 40 and "truncated" in desc
+    assert tools_mcp_client._bounded_inline_text("short") == "short"
 
     huge = {
         "content": [
-            {"type": "text", "text": "x" * (_MAX_RESULT_CHARS + 100)},
+            {"type": "text", "text": "x" * (tools_mcp_client._MAX_RESULT_CHARS + 100)},
             {"type": "image", "data": "A" * 1000},
         ]
     }
-    out = _bounded_result(huge)
-    assert len(json.dumps(out)) <= _MAX_RESULT_CHARS + 500
+    out = tools_mcp_client._bounded_result(huge)
+    assert len(json.dumps(out)) <= tools_mcp_client._MAX_RESULT_CHARS + 500
     (block,) = out["content"]
     assert block["type"] == "text" and "everything else dropped" in block["text"]
 
     small = {"content": [{"type": "text", "text": "ok"}]}
-    assert _bounded_result(small) is small
+    assert tools_mcp_client._bounded_result(small) is small
 
 
 def test_an_oversized_echo_result_comes_back_bounded() -> None:
@@ -536,19 +537,17 @@ def test_an_oversized_echo_result_comes_back_bounded() -> None:
 
     End to end, a result serialized past the cap reaches the model as one bounded text block.
     """
-    from agent6.tools.mcp_client import _MAX_RESULT_CHARS  # pyright: ignore[reportPrivateUsage]
-
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="fake", command=_fake_server_argv(), startup_timeout_s=5.0, call_timeout_s=15.0
             )
         ],
     )
     try:
-        big = "y" * (_MAX_RESULT_CHARS + 10)
-        result = mgr.call(MCP_TOOL_PREFIX + "fake__echo", {"text": big})
-        assert len(json.dumps(result)) <= _MAX_RESULT_CHARS + 500
+        big = "y" * (tools_mcp_client._MAX_RESULT_CHARS + 10)
+        result = mgr.call(tools_mcp_client.MCP_TOOL_PREFIX + "fake__echo", {"text": big})
+        assert len(json.dumps(result)) <= tools_mcp_client._MAX_RESULT_CHARS + 500
         (block,) = result["content"]
         assert "kept up to" in block["text"]
     finally:
@@ -566,7 +565,7 @@ def _pid_alive(pid: int) -> bool:
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="setsid sweep is Linux-only")
-def test_manager_close_kills_setsid_escapee(tmp_path: Path) -> None:
+def test_manager_close_kills_setsid_escapee(tmp_path: pathlib.Path) -> None:
     """Closing an MCP server must not leave a process behind.
 
     A server with no PID namespace (`hardened`, or `none` here) that forks a `setsid` child puts
@@ -574,10 +573,10 @@ def test_manager_close_kills_setsid_escapee(tmp_path: Path) -> None:
     kill of the launcher pid alone. close() must run the escapee sweep, not just signal the
     launcher.
     """
-    from agent6.sandbox.jail import _become_subreaper  # pyright: ignore[reportPrivateUsage]
+    from agent6.sandbox import jail  # pyright: ignore[reportPrivateUsage]
 
     # So the escapee reparents onto THIS process, where the sweep looks.
-    _become_subreaper()
+    jail._become_subreaper()
     marker = tmp_path / "escapee.pid"
     script = (
         "import json, os, sys, time\n"
@@ -602,17 +601,17 @@ def test_manager_close_kills_setsid_escapee(tmp_path: Path) -> None:
         "        reply(m['id'], {})\n"
     )
     argv = (sys.executable, "-c", script, str(marker))
-    spec = MCPServerSpec(
+    spec = tools_mcp_client.MCPServerSpec(
         name="esc",
         command=argv,
         startup_timeout_s=10.0,
         call_timeout_s=10.0,
-        policy=JailPolicy(
+        policy=kinds.JailPolicy(
             cwd=tmp_path, argv=argv, isolation="none", network="none", timeout_s=30.0
         ),
     )
     gc_pid: int | None = None
-    mgr = MCPManager.start([spec])
+    mgr = tools_mcp_client.MCPManager.start([spec])
     try:
         assert mgr.failures == (), mgr.failures
         for _ in range(100):
@@ -632,10 +631,9 @@ def test_manager_close_kills_setsid_escapee(tmp_path: Path) -> None:
                 os.kill(gc_pid, signal.SIGKILL)
 
 
-def test_initialize_sends_the_canonical_version(tmp_path: Path) -> None:
+def test_initialize_sends_the_canonical_version(tmp_path: pathlib.Path) -> None:
     """The handshake sends `agent6.__version__` as clientInfo.version, like every public surface."""
     import agent6
-    from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
 
     seen = tmp_path / "init.json"
     srv_py = tmp_path / "srv.py"
@@ -660,7 +658,7 @@ def test_initialize_sends_the_canonical_version(tmp_path: Path) -> None:
         "sys.stdin.read()\n",
         encoding="utf-8",
     )
-    srv = _MCPServer(
+    srv = tools_mcp_client._MCPServer(
         name="v",
         command=("/usr/bin/python3", str(srv_py)),
         startup_timeout_s=5.0,
@@ -722,15 +720,14 @@ def test_a_failed_starts_survivors_reach_the_managers_close(
     A server whose handshake fails is closed by the manager's start; the pids that close's sweep
     could not kill must not be dropped there.
     """
-    from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 
     def sweep(exclude: frozenset[int]) -> frozenset[int]:
         return frozenset({4321})
 
     monkeypatch.setattr("agent6.sandbox.jail._kill_escapees", sweep)
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="dead",
                 command=("/bin/sh", "-c", "exit 1"),
                 startup_timeout_s=2.0,
@@ -748,8 +745,7 @@ def test_a_restarted_servers_survivors_accumulate(monkeypatch: pytest.MonkeyPatc
 
     A server closed twice (a restart, then the teardown) hands back the survivors of both closes.
     """
-    from agent6.sandbox.jail import JailedProcess
-    from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
+    from agent6.sandbox import jail
 
     pids = iter([4321, 4322])
 
@@ -757,12 +753,14 @@ def test_a_restarted_servers_survivors_accumulate(monkeypatch: pytest.MonkeyPatc
         return frozenset({next(pids)})
 
     monkeypatch.setattr("agent6.sandbox.jail._kill_escapees", sweep)
-    srv = _MCPServer(name="a", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0)
+    srv = tools_mcp_client._MCPServer(
+        name="a", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0
+    )
     procs = [subprocess.Popen(["sleep", "60"], start_new_session=True) for _ in range(2)]
     try:
-        srv._proc = JailedProcess(procs[0])  # pyright: ignore[reportPrivateUsage]
+        srv._proc = jail.JailedProcess(procs[0])  # pyright: ignore[reportPrivateUsage]
         assert srv.close() == frozenset({4321})
-        srv._proc = JailedProcess(procs[1])  # pyright: ignore[reportPrivateUsage]
+        srv._proc = jail.JailedProcess(procs[1])  # pyright: ignore[reportPrivateUsage]
         assert srv.close() == frozenset({4321, 4322})
     finally:
         for proc in procs:
@@ -776,9 +774,9 @@ def test_a_call_cut_short_by_another_callers_restart_is_retried_once() -> None:
     A's timeout replaces the process under B's in-flight call. B neither times out on the replaced
     server nor restarts the fresh one: it goes once more on it. One restart in total.
     """
-    mgr = MCPManager.start(
+    mgr = tools_mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            tools_mcp_client.MCPServerSpec(
                 name="slow",
                 command=_fake_server_argv(sleep_on="sleep"),
                 startup_timeout_s=5.0,
@@ -790,8 +788,10 @@ def test_a_call_cut_short_by_another_callers_restart_is_retried_once() -> None:
 
     def call(tag: str, text: str) -> None:
         try:
-            outcomes[tag] = mgr.call(f"{MCP_TOOL_PREFIX}slow__echo", {"text": text})
-        except MCPError as exc:
+            outcomes[tag] = mgr.call(
+                f"{tools_mcp_client.MCP_TOOL_PREFIX}slow__echo", {"text": text}
+            )
+        except tools_mcp_client.MCPError as exc:
             outcomes[tag] = str(exc)
 
     a = threading.Thread(target=call, args=("a", "sleep"))
@@ -823,21 +823,21 @@ def test_the_manager_hands_back_every_survivor_of_its_servers(
     session close does; a client close that drops an escapee the sweep could not kill loses it.
     Driven through the real client: a stand-in with a `close()` of its own pins only the union.
     """
-    from agent6.sandbox.jail import JailedProcess
-    from agent6.tools.mcp_client import (
-        MCPManager,
-        _MCPServer,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.sandbox import jail
 
     def sweep(exclude: frozenset[int]) -> frozenset[int]:
         return frozenset({4321})
 
     monkeypatch.setattr("agent6.sandbox.jail._kill_escapees", sweep)
     escapee = subprocess.Popen(["sleep", "60"], start_new_session=True)
-    survived = _MCPServer(name="a", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0)
-    survived._proc = JailedProcess(escapee)  # pyright: ignore[reportPrivateUsage]
-    clean = _MCPServer(name="b", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0)
-    manager = MCPManager()
+    survived = tools_mcp_client._MCPServer(
+        name="a", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0
+    )
+    survived._proc = jail.JailedProcess(escapee)  # pyright: ignore[reportPrivateUsage]
+    clean = tools_mcp_client._MCPServer(
+        name="b", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0
+    )
+    manager = tools_mcp_client.MCPManager()
     manager._servers = {"a": survived, "b": clean}  # pyright: ignore[reportPrivateUsage]
     try:
         assert manager.close() == frozenset({4321})

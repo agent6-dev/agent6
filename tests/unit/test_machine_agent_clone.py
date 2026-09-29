@@ -9,27 +9,27 @@ same tip; the operator's checkout is never touched.
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess
-from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
 
+from agent6 import git_ops
 from agent6.app import machine_agent as ma
-from agent6.git_ops import chain_ref_for, chain_tip
 from agent6.machine import AgentRequest
 
 BRANCH = "agent6/machine-m1"
-CHAIN = chain_ref_for("machine-m1")
+CHAIN = git_ops.chain_ref_for("machine-m1")
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: pathlib.Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
     ).stdout.strip()
 
 
-def _origin(tmp_path: Path) -> Path:
+def _origin(tmp_path: pathlib.Path) -> pathlib.Path:
     repo = tmp_path / "origin"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
@@ -55,17 +55,17 @@ class _FakeChild:
     """Stand in for the machine-agent subprocess: commit one file in cwd, write result.json."""
 
     captured_env: ClassVar[dict[str, str]] = {}
-    workdirs: ClassVar[list[Path]] = []
-    seen_cwds: ClassVar[list[Path]] = []
+    workdirs: ClassVar[list[pathlib.Path]] = []
+    seen_cwds: ClassVar[list[pathlib.Path]] = []
     seen_files: ClassVar[list[set[str]]] = []
 
     def __init__(self, argv: list[str], **kw: Any) -> None:
         _FakeChild.captured_env = dict(kw.get("env") or {})
-        req = json.loads(Path(argv[-2]).read_text(encoding="utf-8"))
+        req = json.loads(pathlib.Path(argv[-2]).read_text(encoding="utf-8"))
         # `root` is the execution root (a clone); `cwd` stays the checkout for the config reload.
-        cwd = Path(req["root"])
+        cwd = pathlib.Path(req["root"])
         _FakeChild.workdirs.append(cwd)
-        _FakeChild.seen_cwds.append(Path(req["cwd"]))
+        _FakeChild.seen_cwds.append(pathlib.Path(req["cwd"]))
         _FakeChild.seen_files.append({e.name for e in cwd.iterdir()})
         seq = req["request"]["step_seq"]
         if req["request"]["mode"] == "run":
@@ -74,7 +74,7 @@ class _FakeChild:
             _git(cwd, "add", "-A")
             _git(cwd, "commit", "-q", "-m", f"agent6 iter 1: state {seq}")
             _git(cwd, "update-ref", CHAIN, "HEAD")
-        Path(argv[-1]).write_text(
+        pathlib.Path(argv[-1]).write_text(
             json.dumps({"reason": "finish_session", "payload": None, "usd": 0.0}),
             encoding="utf-8",
         )
@@ -85,7 +85,7 @@ class _FakeChild:
         return 0
 
 
-def _runner(origin: Path, tmp_path: Path):  # type: ignore[no-untyped-def]
+def _runner(origin: pathlib.Path, tmp_path: pathlib.Path):  # type: ignore[no-untyped-def]
     return ma.build_machine_agent_runner(
         {},
         origin,
@@ -103,7 +103,7 @@ def _req(seq: int, mode: str = "run") -> AgentRequest:
 
 
 def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     origin = _origin(tmp_path)
     monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
@@ -117,7 +117,7 @@ def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
     # State 1 built on state 0's tree, and the visible branch tracks the chain's tip.
     files = _git(origin, "ls-tree", "--name-only", BRANCH)
     assert "work0.txt" in files and "work1.txt" in files
-    assert chain_tip(origin, CHAIN) == chain_tip(origin, BRANCH)
+    assert git_ops.chain_tip(origin, CHAIN) == git_ops.chain_tip(origin, BRANCH)
     # The operator's checkout never moved and holds neither file.
     assert _git(origin, "branch", "--show-current") == "main"
     assert not (origin / "work0.txt").exists()
@@ -127,7 +127,7 @@ def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
 
 
 def test_run_state_request_keeps_the_true_checkout_as_cwd_for_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A run state's request keeps the operator's repo as `cwd`; `root` is the clone it works in."""
     origin = _origin(tmp_path)
@@ -143,7 +143,7 @@ def test_run_state_request_keeps_the_true_checkout_as_cwd_for_config(
 
 
 def test_read_only_states_see_the_machine_tree_and_land_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A read-only judge in a machine with run states runs in a fresh clone at the chain tip.
 
@@ -155,17 +155,17 @@ def test_read_only_states_see_the_machine_tree_and_land_nothing(
     _FakeChild.seen_files = []
     runner = _runner(origin, tmp_path)
     assert runner(_req(0), None).reason == "finish_session"
-    tip_after_run = chain_tip(origin, BRANCH)
+    tip_after_run = git_ops.chain_tip(origin, BRANCH)
     assert runner(_req(1, mode="agent"), None).reason == "finish_session"
     judge_dir = _FakeChild.workdirs[-1]
     assert judge_dir != origin
     assert "work0.txt" in _FakeChild.seen_files[-1]  # the run state's committed work
-    assert chain_tip(origin, BRANCH) == tip_after_run  # nothing landed
+    assert git_ops.chain_tip(origin, BRANCH) == tip_after_run  # nothing landed
     assert not any((tmp_path / "clones").glob("state-*"))  # cleaned up
 
 
 def test_without_a_machine_tree_read_only_states_run_in_place(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With no machine_id or clone_root a read-only request runs in cwd."""
     origin = _origin(tmp_path)
@@ -180,14 +180,14 @@ def test_without_a_machine_tree_read_only_states_run_in_place(
 
 
 def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A tool state's jail mounts a clone of the chain tip, so it sees the run states' commits.
 
     The runner remaps the bundle protect paths to the clone and discards the tree after.
     """
+    from agent6 import kinds
     from agent6.app.machine import run as machine_run
-    from agent6.kinds import CommandResult, JailPolicy
 
     origin = _origin(tmp_path)
     _git(origin, "checkout", "-q", "-b", "scratch")
@@ -201,25 +201,27 @@ def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
 
     captured: dict[str, object] = {}
 
-    def fake_jail(policy: JailPolicy) -> CommandResult:
+    def fake_jail(policy: kinds.JailPolicy) -> kinds.CommandResult:
         captured["cwd"] = policy.cwd
         captured["saw_work"] = (policy.cwd / "work.txt").exists()
         captured["protect"] = policy.extra_protect_paths
-        return CommandResult(argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0)
+        return kinds.CommandResult(
+            argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0
+        )
 
     monkeypatch.setattr(machine_run, "run_in_jail", fake_jail)
     runner = machine_run.machine_tool_runner(origin, "m1", tmp_path / "clones")
-    policy = JailPolicy(cwd=origin, argv=("x",), extra_protect_paths=(origin / "scripts",))
+    policy = kinds.JailPolicy(cwd=origin, argv=("x",), extra_protect_paths=(origin / "scripts",))
     assert runner(policy).returncode == 0
     clone_cwd = captured["cwd"]
-    assert isinstance(clone_cwd, Path) and clone_cwd != origin
+    assert isinstance(clone_cwd, pathlib.Path) and clone_cwd != origin
     assert captured["saw_work"] is True
     assert captured["protect"] == (clone_cwd / "scripts",)
     assert not clone_cwd.exists()  # scratch tree, discarded
 
 
 def test_invalid_utf8_result_routes_failed_instead_of_escaping(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Arbitrary result bytes from a killed child read like a missing result: the failed edge."""
     origin = _origin(tmp_path)
@@ -229,7 +231,7 @@ def test_invalid_utf8_result_routes_failed_instead_of_escaping(
         returncode = 0
 
         def __init__(self, argv: list[str], **_kwargs: object) -> None:
-            Path(argv[-1]).write_bytes(b"\xff\xfe")
+            pathlib.Path(argv[-1]).write_bytes(b"\xff\xfe")
 
         def wait(self, timeout: float | None = None) -> int:
             return 0
@@ -246,7 +248,7 @@ def test_invalid_utf8_result_routes_failed_instead_of_escaping(
 
 
 def test_spawn_failure_routes_failed_and_discards_the_unused_clone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A child that cannot start is a failed state, not an escaping host exception."""
     origin = _origin(tmp_path)
@@ -264,21 +266,19 @@ def test_spawn_failure_routes_failed_and_discards_the_unused_clone(
 
 
 def test_import_failure_keeps_the_clone_and_routes_failed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A state whose commits did not land routes failed; the clone is kept for adopt and prune."""
-    from agent6.git_ops import GitError
-
     origin = _origin(tmp_path)
     monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
 
     def _boom(*_a: object, **_k: object) -> None:
-        raise GitError("refs locked")
+        raise git_ops.GitError("refs locked")
 
     monkeypatch.setattr(ma, "fetch_branch", _boom)
     runner = _runner(origin, tmp_path)
     r = runner(_req(0), None)
     assert r.reason.startswith("import of")
     assert r.payload is None
-    assert chain_tip(origin, CHAIN) is None  # nothing landed
+    assert git_ops.chain_tip(origin, CHAIN) is None  # nothing landed
     assert list((tmp_path / "clones").glob("state-*"))  # evidence kept

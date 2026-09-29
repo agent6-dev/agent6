@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 import agent6.prompts.loop as loop_prompts
-from agent6.tools.schema import ALL_TOOLS, ASK_EXTRA_TOOLS, LOOP_EXTRA_TOOLS, PLAN_EXTRA_TOOLS
+from agent6.tools import schema
 
 _CALL = re.compile(r"\b([a-z_][a-z0-9_]*)\(\s*([a-z_][^()]*)\)")
 _ARG = re.compile(r"\s*([a-z_][a-z0-9_]*)")
@@ -20,7 +20,10 @@ _ARG = re.compile(r"\s*([a-z_][a-z0-9_]*)")
 def test_prompt_tool_call_examples_use_schema_field_names() -> None:
     fields = {
         cls.TOOL_NAME: set(cls.model_fields)
-        for cls in ALL_TOOLS + LOOP_EXTRA_TOOLS + PLAN_EXTRA_TOOLS + ASK_EXTRA_TOOLS
+        for cls in schema.ALL_TOOLS
+        + schema.LOOP_EXTRA_TOOLS
+        + schema.PLAN_EXTRA_TOOLS
+        + schema.ASK_EXTRA_TOOLS
     }
     bad: list[str] = []
     checked = 0

@@ -7,17 +7,17 @@ communicate() never sees EOF.
 
 from __future__ import annotations
 
+import pathlib
 import stat
 import time
-from pathlib import Path
 
 import pytest
 
-from agent6.kinds import JailPolicy
+from agent6 import kinds
 from agent6.sandbox import jail
 
 
-def _write_fake_launcher(tmp_path: Path) -> Path:
+def _write_fake_launcher(tmp_path: pathlib.Path) -> pathlib.Path:
     # A child holds stdout open and blocks forever; the marker file shows whether the group died.
     marker = tmp_path / "grandchild_alive"
     script = tmp_path / "fake-jail.sh"
@@ -33,17 +33,17 @@ def _write_fake_launcher(tmp_path: Path) -> Path:
 
 
 def test_jail_timeout_returns_124_and_kills_group(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = _write_fake_launcher(tmp_path)
     monkeypatch.setattr(jail, "locate_jail_binary", lambda: fake)
 
-    def _policy_spec(policy: JailPolicy) -> dict[str, object]:
+    def _policy_spec(policy: kinds.JailPolicy) -> dict[str, object]:
         return {}
 
     monkeypatch.setattr(jail, "_policy_spec", _policy_spec)
 
-    policy = JailPolicy(
+    policy = kinds.JailPolicy(
         cwd=tmp_path,
         argv=("/bin/true",),
         isolation="strict",

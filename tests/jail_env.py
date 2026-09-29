@@ -17,16 +17,16 @@ import sys
 
 import pytest
 
-from agent6.sandbox.detect import degrade_reason, detect
+from agent6.sandbox import detect
 
 
 def require_userns_jail() -> None:
-    env = detect()
+    env = detect.detect()
     if not env.sandbox_available:
         pytest.skip(f"no kernel sandbox on {sys.platform!r}")
     if env.userns_supported:
         return
-    cause = degrade_reason(env) or "user namespaces unavailable"
+    cause = detect.degrade_reason(env) or "user namespaces unavailable"
     if env.in_container or env.landlock_abi < 1:
         pytest.skip(f"jail unavailable here: {cause}")
     if os.environ.get("AGENT6_TEST_SKIP_JAIL") == "1":

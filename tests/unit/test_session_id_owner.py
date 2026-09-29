@@ -4,25 +4,27 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.sessions.id import unused_session_id
+from agent6.sessions import id
 
 
-def test_the_owner_skips_a_taken_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_owner_skips_a_taken_directory(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from agent6.sessions import id as id_mod
 
     minted = iter(["taken-one-AAAAAA", "free-two-BBBBBB"])
     monkeypatch.setattr(id_mod, "friendly_token", lambda: next(minted))
     (tmp_path / "sessions" / "machines" / "taken-one-AAAAAA").mkdir(parents=True)
 
-    assert unused_session_id(tmp_path, "machines") == "free-two-BBBBBB"
+    assert id.unused_session_id(tmp_path, "machines") == "free-two-BBBBBB"
 
 
 def test_the_owner_gives_up_rather_than_reusing_a_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from agent6.sessions import id as id_mod
 
@@ -30,11 +32,11 @@ def test_the_owner_gives_up_rather_than_reusing_a_directory(
     (tmp_path / "sessions" / "runs" / "taken-one-AAAAAA").mkdir(parents=True)
 
     with pytest.raises(RuntimeError, match="could not mint"):
-        unused_session_id(tmp_path, "runs")
+        id.unused_session_id(tmp_path, "runs")
 
 
 def test_an_id_taken_in_another_bucket_is_not_minted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The mint skips a candidate id that exists in any bucket.
 
@@ -47,12 +49,10 @@ def test_an_id_taken_in_another_bucket_is_not_minted(
     monkeypatch.setattr(id_mod, "friendly_token", lambda: next(minted))
     (tmp_path / "sessions" / "runs" / "same-name-AAAAAA").mkdir(parents=True)
 
-    assert unused_session_id(tmp_path, "plans") == "fresh-name-BBBBBB"
+    assert id.unused_session_id(tmp_path, "plans") == "fresh-name-BBBBBB"
 
 
-def test_session_id_bucket_names_the_holder(tmp_path: Path) -> None:
-    from agent6.sessions.id import session_id_bucket
-
+def test_session_id_bucket_names_the_holder(tmp_path: pathlib.Path) -> None:
     (tmp_path / "sessions" / "plans" / "demo").mkdir(parents=True)
-    assert session_id_bucket(tmp_path, "demo") == "plans"
-    assert session_id_bucket(tmp_path, "other") is None
+    assert id.session_id_bucket(tmp_path, "demo") == "plans"
+    assert id.session_id_bucket(tmp_path, "other") is None

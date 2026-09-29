@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import re
 
-from agent6.ui.web.page import PAGE_HTML
+from agent6.ui.web import page
 
 
 def _nav_labels() -> list[str]:
     """The rail's link text (both the wide rail and the mobile menu)."""
     return [
         re.sub(r"[^A-Za-z ]", "", re.sub(r"<[^>]+>", "", chunk)).strip()
-        for chunk in re.findall(r'<a href="#/" data-tab="hub"[^>]*>(.*?)</a>', PAGE_HTML)
+        for chunk in re.findall(r'<a href="#/" data-tab="hub"[^>]*>(.*?)</a>', page.PAGE_HTML)
     ]
 
 
@@ -29,5 +29,5 @@ def test_the_hub_tab_is_not_called_runs() -> None:
 
 
 def test_nothing_on_the_page_still_calls_the_hub_runs() -> None:
-    assert ">Runs<" not in PAGE_HTML
-    assert 'title="Runs"' not in PAGE_HTML
+    assert ">Runs<" not in page.PAGE_HTML
+    assert 'title="Runs"' not in page.PAGE_HTML

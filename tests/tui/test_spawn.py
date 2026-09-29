@@ -4,18 +4,18 @@
 
 from __future__ import annotations
 
+import pathlib
 import sys
-from pathlib import Path
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.layout import bucket_dir
+from agent6 import paths
+from agent6.sessions import layout
 from agent6.ui import spawn
 
 
 def test_spawn_and_locate_finds_new_log_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     base = tmp_path / "dirs"
     base.mkdir()
@@ -48,7 +48,7 @@ def test_spawn_and_locate_finds_new_log_dir(
 
 
 def test_spawn_and_locate_ignores_preexisting_dirs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     base = tmp_path / "dirs"
     base.mkdir()
@@ -78,7 +78,7 @@ def test_spawn_and_locate_ignores_preexisting_dirs(
 
 
 def test_spawn_and_locate_surfaces_spawn_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def _boom(*_a: object, **_k: object) -> object:
         raise OSError("no exec")
@@ -94,14 +94,14 @@ def test_spawn_and_locate_surfaces_spawn_failure(
 # --- spawn_and_confirm: the machine-run launch with early-exit stderr capture --
 
 
-def test_spawn_and_confirm_surfaces_refusal_stderr(tmp_path: Path) -> None:
+def test_spawn_and_confirm_surfaces_refusal_stderr(tmp_path: pathlib.Path) -> None:
     # A child that prints a refusal and exits nonzero before taking ownership surfaces its stderr.
     argv = [sys.executable, "-c", "import sys; sys.stderr.write('lock held'); sys.exit(2)"]
     err = spawn.spawn_and_confirm(argv, tmp_path, started=lambda _pid: False, timeout_s=10.0)
     assert err == "lock held"  # the child's own words, no plumbing prefix
 
 
-def test_spawn_and_confirm_returns_clean_once_started(tmp_path: Path) -> None:
+def test_spawn_and_confirm_returns_clean_once_started(tmp_path: pathlib.Path) -> None:
     # started(pid) flipping true ends the wait with "" while the child runs on.
     marker = tmp_path / "worker.pid"
     # The detached child exits on its own shortly after the started() signal.
@@ -121,7 +121,7 @@ def test_spawn_and_confirm_returns_clean_once_started(tmp_path: Path) -> None:
     assert err == ""
 
 
-def test_spawn_and_confirm_clean_fast_exit_is_ok(tmp_path: Path) -> None:
+def test_spawn_and_confirm_clean_fast_exit_is_ok(tmp_path: pathlib.Path) -> None:
     # Exit 0 without the signal is a clean fast completion, not an error.
     err = spawn.spawn_and_confirm(
         [sys.executable, "-c", "raise SystemExit(0)"], tmp_path, started=lambda _pid: False
@@ -132,13 +132,13 @@ def test_spawn_and_confirm_clean_fast_exit_is_ok(tmp_path: Path) -> None:
 # --- spawn_detached_resume: the resume launch over the same early-exit capture --
 
 
-def _run_dir(cwd: Path, session_id: str) -> Path:
-    d = bucket_dir(state_dir(cwd), "runs") / session_id
+def _run_dir(cwd: pathlib.Path, session_id: str) -> pathlib.Path:
+    d = layout.bucket_dir(paths.state_dir(cwd), "runs") / session_id
     d.mkdir(parents=True)
     return d
 
 
-def _fake_agent6(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) -> None:
+def _fake_agent6(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, script: str) -> None:
     exe = tmp_path / "agent6"
     exe.write_text("#!/bin/sh\n" + script, encoding="utf-8")
     exe.chmod(0o755)
@@ -146,7 +146,7 @@ def _fake_agent6(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) -
 
 
 def test_spawn_detached_resume_reports_the_childs_early_exit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A resume child that refuses at once reports its refusal, not "resuming".
 
@@ -159,7 +159,7 @@ def test_spawn_detached_resume_reports_the_childs_early_exit(
 
 
 def test_spawn_detached_resume_argv_env_and_owning_signal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The answer is "" once the child owns the run: its pid is the run's worker.pid.
 
@@ -183,14 +183,14 @@ def test_spawn_detached_resume_argv_env_and_owning_signal(
     assert "AGENT6_STREAM_TO_LOG=1" in lines and "AGENT6_DETACHED_AWAY=wait" in lines
 
 
-def test_spawn_detached_resume_names_an_unknown_session(tmp_path: Path) -> None:
+def test_spawn_detached_resume_names_an_unknown_session(tmp_path: pathlib.Path) -> None:
     """A refusal resolved before the spawn is worded as the CLI words it."""
     err = spawn.spawn_detached_resume(tmp_path, "no-such-run-AAAAAA")
     assert "no session matches 'no-such-run-AAAAAA'" in err
 
 
 def test_spawn_detached_resume_reports_oserror(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _run_dir(tmp_path, "tidy-owl-9Z3AAA")
 
@@ -215,7 +215,7 @@ def test_subcommand_label_names_the_full_subcommand() -> None:
 
 
 def test_run_cli_capture_strips_console_prefixes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The CLI brands its console lines "[agent6] "; in a front-end toast that prefix is noise.
     class _Done:
@@ -243,7 +243,7 @@ def test_capture_message_drops_the_error_prefix_a_failure_field_already_states()
 
 
 def test_agent6_exe_finds_the_binary_beside_the_interpreter(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A view started as `python -m agent6.ui.tui` finds the binary beside its interpreter."""
     binary = tmp_path / "bin" / "agent6"
@@ -254,7 +254,7 @@ def test_agent6_exe_finds_the_binary_beside_the_interpreter(
     assert spawn.agent6_exe() == str(binary.resolve())
 
 
-def test_stderr_tail_starts_at_a_line(tmp_path: Path) -> None:
+def test_stderr_tail_starts_at_a_line(tmp_path: pathlib.Path) -> None:
     """A long refusal is clipped at a line start, never mid-word."""
     f = tmp_path / "err"
     f.write_text("REFUSING: " + "x" * 50 + "\n" + "y" * 30 + "\n", encoding="utf-8")
@@ -264,7 +264,7 @@ def test_stderr_tail_starts_at_a_line(tmp_path: Path) -> None:
 
 
 def test_run_cli_output_hands_back_stdout_alone_on_success(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A review's markdown is the deliverable; the console notes on stderr are not part of it.
 

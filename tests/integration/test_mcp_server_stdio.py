@@ -9,12 +9,12 @@ loading and the stdio reader loop.
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess
 import sys
-from pathlib import Path
 
-from agent6.paths import state_dir
-from agent6.sessions.manifest import MANIFEST_VERSION
+from agent6 import paths
+from agent6.sessions import manifest
 from tests.jail_env import require_userns_jail
 
 _VALID_TOML = """
@@ -58,12 +58,12 @@ def _send_recv(
     return responses
 
 
-def test_mcp_serve_roundtrip(tmp_path: Path) -> None:
+def test_mcp_serve_roundtrip(tmp_path: pathlib.Path) -> None:
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(_VALID_TOML, encoding="utf-8")
     # Seed a run dir so list_sessions has something to enumerate.
-    (state_dir(tmp_path) / "sessions" / "runs" / "demo").mkdir(parents=True)
-    (state_dir(tmp_path) / "sessions" / "runs" / "demo" / "manifest.json").write_text(
+    (paths.state_dir(tmp_path) / "sessions" / "runs" / "demo").mkdir(parents=True)
+    (paths.state_dir(tmp_path) / "sessions" / "runs" / "demo" / "manifest.json").write_text(
         json.dumps({"user_task": "demo-task"}), encoding="utf-8"
     )
 
@@ -138,10 +138,10 @@ def test_mcp_serve_roundtrip(tmp_path: Path) -> None:
     assert runs[0]["session_id"] == "demo"
     # The manifest ships as the typed SessionManifest dump (defaults filled in).
     assert runs[0]["manifest"]["user_task"] == "demo-task"
-    assert runs[0]["manifest"]["version"] == MANIFEST_VERSION
+    assert runs[0]["manifest"]["version"] == manifest.MANIFEST_VERSION
 
 
-def test_mcp_run_verify_resolves_through_real_dispatcher(tmp_path: Path) -> None:
+def test_mcp_run_verify_resolves_through_real_dispatcher(tmp_path: pathlib.Path) -> None:
     """End-to-end `run_verify` through the real server + jailed dispatcher.
 
     Regression: the handler dispatched the dispatcher tool name `run_verify`,

@@ -4,11 +4,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest import mock
 
-from agent6.app.providers import (
-    build_role_provider,
-)
+from agent6.app import providers
 from agent6.config import Config, ModelsConfig, OpenAIProviderEntry, RoleModel
 from agent6.providers import OpenAIProvider
 
@@ -26,7 +24,9 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
         },
         models=ModelsConfig(worker=RoleModel(provider="openrouter", model="kimi")),
     )
-    prov = build_role_provider(cfg, "worker", transcript_sink=MagicMock(), budget=MagicMock())
+    prov = providers.build_role_provider(
+        cfg, "worker", transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
+    )
     assert isinstance(prov, OpenAIProvider)
     assert prov.extra_body == {"provider": {"sort": "throughput"}}
     assert ("X-Title", "agent6") in prov.extra_headers
@@ -37,13 +37,6 @@ def test_reviewer_family_builders_stamp_their_own_seats() -> None:
 
     They share the reviewer route; a transcript still tells which actor made a call.
     """
-    from unittest.mock import call
-
-    from agent6.app.providers import (
-        build_prompt_reviser_provider,
-        build_review_seats,
-        reviewer_seat_provider,
-    )
     from agent6.config import PromptConfig, ReviewConfig
 
     cfg = Config(
@@ -56,21 +49,23 @@ def test_reviewer_family_builders_stamp_their_own_seats() -> None:
         prompt=PromptConfig(revise_prompt="auto"),
     )
 
-    sink = MagicMock()
-    build_prompt_reviser_provider(cfg, transcript_sink=sink, budget=MagicMock(), events=MagicMock())
-    assert sink.for_seat.call_args == call("prompt_reviser")
-
-    sink = MagicMock()
-    reviewer_seat_provider(
-        cfg, "summariser", transcript_sink=sink, budget=MagicMock(), events=MagicMock()
+    sink = mock.MagicMock()
+    providers.build_prompt_reviser_provider(
+        cfg, transcript_sink=sink, budget=mock.MagicMock(), events=mock.MagicMock()
     )
-    assert sink.for_seat.call_args == call("summariser")
+    assert sink.for_seat.call_args == mock.call("prompt_reviser")
 
-    sink = MagicMock()
-    build_review_seats(cfg, transcript_sink=sink, budget=MagicMock(), n=1)
-    assert sink.for_seat.call_args == call("review:security")
+    sink = mock.MagicMock()
+    providers.reviewer_seat_provider(
+        cfg, "summariser", transcript_sink=sink, budget=mock.MagicMock(), events=mock.MagicMock()
+    )
+    assert sink.for_seat.call_args == mock.call("summariser")
+
+    sink = mock.MagicMock()
+    providers.build_review_seats(cfg, transcript_sink=sink, budget=mock.MagicMock(), n=1)
+    assert sink.for_seat.call_args == mock.call("review:security")
 
     # The role builders keep stamping the role itself.
-    sink = MagicMock()
-    build_role_provider(cfg, "worker", transcript_sink=sink, budget=MagicMock())
-    assert sink.for_seat.call_args == call("worker")
+    sink = mock.MagicMock()
+    providers.build_role_provider(cfg, "worker", transcript_sink=sink, budget=mock.MagicMock())
+    assert sink.for_seat.call_args == mock.call("worker")

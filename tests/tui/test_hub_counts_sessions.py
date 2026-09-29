@@ -10,14 +10,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
+import pathlib
 
-from agent6.sessions.layout import bucket_dir
-from agent6.ui.tui.home import Agent6HomeApp
+from agent6.sessions import layout
+from agent6.ui.tui import home
 
 
-def _session(state: Path, bucket: str, session_id: str, mode: str) -> None:
-    session = bucket_dir(state, bucket) / session_id
+def _session(state: pathlib.Path, bucket: str, session_id: str, mode: str) -> None:
+    session = layout.bucket_dir(state, bucket) / session_id
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": mode, "user_task": "t"}) + "\n",
@@ -25,11 +25,11 @@ def _session(state: Path, bucket: str, session_id: str, mode: str) -> None:
     )
 
 
-def _subtitle(state: Path, repo: Path) -> str:
+def _subtitle(state: pathlib.Path, repo: pathlib.Path) -> str:
     """The header the hub paints, from a real mounted app."""
 
     async def scenario() -> str:
-        app = Agent6HomeApp(state, repo)
+        app = home.Agent6HomeApp(state, repo)
         async with app.run_test(size=(120, 30)) as pilot:
             for _ in range(20):
                 await pilot.pause()
@@ -38,7 +38,7 @@ def _subtitle(state: Path, repo: Path) -> str:
     return asyncio.run(scenario())
 
 
-def test_a_mixed_hub_does_not_call_them_all_runs(tmp_path: Path) -> None:
+def test_a_mixed_hub_does_not_call_them_all_runs(tmp_path: pathlib.Path) -> None:
     state, repo = tmp_path / "state", tmp_path / "repo"
     repo.mkdir()
     _session(state, "runs", "runny-one-AAAAAA", "run")
@@ -49,7 +49,7 @@ def test_a_mixed_hub_does_not_call_them_all_runs(tmp_path: Path) -> None:
     assert "3 sessions" in subtitle, subtitle
 
 
-def test_one_session_is_singular(tmp_path: Path) -> None:
+def test_one_session_is_singular(tmp_path: pathlib.Path) -> None:
     state, repo = tmp_path / "state", tmp_path / "repo"
     repo.mkdir()
     _session(state, "runs", "runny-one-AAAAAA", "run")
@@ -58,7 +58,7 @@ def test_one_session_is_singular(tmp_path: Path) -> None:
     assert "1 session" in subtitle and "sessions" not in subtitle, subtitle
 
 
-def test_an_empty_hub_says_what_to_do_next(tmp_path: Path) -> None:
+def test_an_empty_hub_says_what_to_do_next(tmp_path: pathlib.Path) -> None:
     """An empty hub names the next step, as the CLI, the web and the machines screen do."""
     state, repo = tmp_path / "state", tmp_path / "repo"
     repo.mkdir()
@@ -68,7 +68,7 @@ def test_an_empty_hub_says_what_to_do_next(tmp_path: Path) -> None:
     assert "no sessions yet" in subtitle and "agent6 run" in subtitle, subtitle
 
 
-def test_the_hub_names_the_repository_by_its_directory(tmp_path: Path) -> None:
+def test_the_hub_names_the_repository_by_its_directory(tmp_path: pathlib.Path) -> None:
     """The header carries the repository's name, not its full path, so the count fits 80 columns."""
     state, repo = tmp_path / "state", tmp_path / "some-repo"
     repo.mkdir()

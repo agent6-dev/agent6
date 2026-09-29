@@ -10,32 +10,34 @@ what this pins against.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
-from agent6.graph.curator import GraphCurator
-from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
-from agent6.harness.loop import Harness
-from agent6.sessions.layout import SessionLayout
-from agent6.ui.cli.parser import build_parser
+from agent6.graph import curator as graph_curator
+from agent6.graph import models
+from agent6.harness import loop
+from agent6.sessions import layout as sessions_layout
+from agent6.ui.cli import parser as cli_parser
 from tests.unit.test_task_queue_drain import (
     _workflow,  # pyright: ignore[reportPrivateUsage]
 )
 
 
-def _seeded(tmp_path: Path) -> tuple[GraphCurator, str, Harness]:
-    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
-    curator = GraphCurator(layout)
+def _seeded(tmp_path: pathlib.Path) -> tuple[graph_curator.GraphCurator, str, loop.Harness]:
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
+    curator = graph_curator.GraphCurator(layout)
     root = curator.add_subtask(
-        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="the run", created_by="user"))
+        models.AddSubtaskIntent(
+            parent_id=None, draft=models.TaskNodeDraft(title="the run", created_by="user")
+        )
     ).id
-    from agent6.events import EventSink
+    from agent6 import events
 
-    return curator, root, _workflow(curator, EventSink(layout.session_dir / "logs.jsonl"))
+    return curator, root, _workflow(curator, events.EventSink(layout.session_dir / "logs.jsonl"))
 
 
 def test_only_a_fresh_run_takes_the_flag() -> None:
     """A continuation never offers `--standing`; the flag does nothing on a session with a goal."""
-    parser = build_parser()
+    parser = cli_parser.build_parser()
 
     assert parser.parse_args(["run", "do it", "--standing", "keep it green"]).standing
     for verb in ("resume", "fork"):
@@ -43,7 +45,7 @@ def test_only_a_fresh_run_takes_the_flag() -> None:
         assert not hasattr(args, "standing"), f"{verb} still offers --standing"
 
 
-def test_a_fresh_run_seeds_the_goal(tmp_path: Path) -> None:
+def test_a_fresh_run_seeds_the_goal(tmp_path: pathlib.Path) -> None:
     curator, root, wf = _seeded(tmp_path)
     wf.operator_tasks.seed_standing(root, "keep the suite green")
 
@@ -51,7 +53,7 @@ def test_a_fresh_run_seeds_the_goal(tmp_path: Path) -> None:
     assert [(n.title, n.created_by) for n in standing] == [("keep the suite green", "steering")]
 
 
-def test_no_flag_seeds_nothing(tmp_path: Path) -> None:
+def test_no_flag_seeds_nothing(tmp_path: pathlib.Path) -> None:
     curator, root, wf = _seeded(tmp_path)
 
     wf.operator_tasks.seed_standing(root, "")

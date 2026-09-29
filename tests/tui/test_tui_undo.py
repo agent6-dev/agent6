@@ -9,19 +9,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import pathlib
 import time
-from pathlib import Path
 from typing import Any
 
 import pytest
-from textual.widgets import Static
+from textual import widgets
 
 from agent6.ui.tui import app as app_mod
-from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.composer import SteerInput
+from agent6.ui.tui import composer
 
 
-def _undone_run(d: Path) -> None:
+def _undone_run(d: pathlib.Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "add it"},
@@ -37,13 +36,13 @@ def _undone_run(d: Path) -> None:
 
 
 def test_a_live_undo_hands_both_resumes_to_the_fork_under_the_picks(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """The composer holds the undone text, its title names the fork, and Enter continues it."""
     spawned: list[tuple[str, str, str, str]] = []
 
     def _fake_resume(
-        _cwd: Path,
+        _cwd: pathlib.Path,
         rid: str,
         *,
         steer: str = "",
@@ -59,11 +58,11 @@ def test_a_live_undo_hands_both_resumes_to_the_fork_under_the_picks(
     _undone_run(run)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = app_mod.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.pause()
-            bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert app.continue_as == "fork-child-AAAAAA"
             assert bar.text == "name it better"
             assert "continue as fork-child-AAAAAA" in str(bar.border_title)
@@ -81,21 +80,21 @@ def test_a_live_undo_hands_both_resumes_to_the_fork_under_the_picks(
             app._heartbeat_at = 0.0  # pyright: ignore[reportPrivateUsage]
             app._tick()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
-            dash_bar = app._dash.query_one("#dash-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            dash_bar = app._dash.query_one("#dash-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert "continue as fork-child-AAAAAA" in str(dash_bar.border_title)
-            assert isinstance(app._dash.query_one("#top", Static), Static)  # pyright: ignore[reportPrivateUsage]
+            assert isinstance(app._dash.query_one("#top", widgets.Static), widgets.Static)  # pyright: ignore[reportPrivateUsage]
 
     asyncio.run(scenario())
 
 
 def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """The non-live path forks in-process, and the view still hands the follow-up to the child."""
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
-        _cwd: Path,
+        _cwd: pathlib.Path,
         rid: str,
         *,
         steer: str = "",
@@ -120,13 +119,13 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
     (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = app_mod.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.pause()
             app.submit_instruction("/undo")
             await pilot.pause()
-            bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert bar.text == "the message taken back"
             assert app.continue_as == "fork-child-BBBBBB"
             app.submit_instruction("the message, edited")
@@ -138,14 +137,12 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
 
 @pytest.mark.parametrize("continue_as", ["", "fork-child-AAAAAA"])
 def test_composer_labels_name_the_fork(continue_as: str) -> None:
-    from agent6.ui.tui.composer import composer_labels
-
-    title, _ = composer_labels("resume", continue_as=continue_as)
+    title, _ = composer.composer_labels("resume", continue_as=continue_as)
     assert title == ("continue as fork-child-AAAAAA" if continue_as else "continue this session")
 
 
 def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """Run > Fork creates the fork unstarted; on a finished run the composer routes to it.
 
@@ -154,7 +151,7 @@ def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
-        _cwd: Path,
+        _cwd: pathlib.Path,
         rid: str,
         *,
         steer: str = "",
@@ -179,14 +176,14 @@ def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
     (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = app_mod.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.pause()
             app.action_fork()
             await pilot.pause()
             assert app.continue_as == "fork-child-CCCCCC"
-            bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert "continue as fork-child-CCCCCC" in str(bar.border_title)
             app.submit_instruction("try the other design")
             await app.workers.wait_for_complete()
@@ -196,12 +193,12 @@ def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
 
 
 def test_fork_of_a_live_run_leaves_the_composer_steering_this_run(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """The live composer steers this run; a fork made while live is created unstarted."""
     import os
 
-    from agent6.sessions.ipc import write_worker_pid
+    from agent6.sessions import ipc
 
     def _fake_create_fork(*_a: object, **_k: object) -> tuple[str, int]:
         return ("fork-child-DDDDDD", 0)
@@ -216,10 +213,10 @@ def test_fork_of_a_live_run_leaves_the_composer_steering_this_run(
         + "\n",
         encoding="utf-8",
     )
-    write_worker_pid(run, os.getpid())
+    ipc.write_worker_pid(run, os.getpid())
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = app_mod.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.action_fork()
@@ -231,7 +228,7 @@ def test_fork_of_a_live_run_leaves_the_composer_steering_this_run(
 
 
 def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """Run > Resume on a run the agent ended lands the refusal here; the composer gives new work.
 
@@ -241,7 +238,7 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
-        _cwd: Path,
+        _cwd: pathlib.Path,
         rid: str,
         *,
         steer: str = "",
@@ -263,7 +260,7 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
     notes: list[str] = []
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = app_mod.Agent6TUI(run)
         original = app.notify
 
         def spy(message: Any, *a: Any, **k: Any) -> None:
@@ -296,17 +293,17 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
     asyncio.run(scenario())
 
 
-def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any) -> None:
+def test_run_this_plan_spawns_the_run_detached(tmp_path: pathlib.Path, monkeypatch: Any) -> None:
     """Run > Run this plan on a finished plan spawns `agent6 run --from <id>` detached.
 
     From the hub it ends the view with the new run; standalone it names the run to attach to.
     """
-    from agent6.ui.tui.app import TuiExit
-
     seen: dict[str, Any] = {}
     child = tmp_path / "sessions" / "runs" / "fresh-run-CCCCCC"
 
-    def _fake_spawn(argv: list[str], _cwd: Path, **kw: Any) -> tuple[Path | None, str]:
+    def _fake_spawn(
+        argv: list[str], _cwd: pathlib.Path, **kw: Any
+    ) -> tuple[pathlib.Path | None, str]:
         seen["argv"] = argv
         seen["env"] = kw.get("env")
         return child, ""
@@ -322,7 +319,7 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any)
     (plan / "plan.md").write_text("# Plan\n", encoding="utf-8")
 
     async def scenario() -> None:
-        app = Agent6TUI(plan, from_hub=True)
+        app = app_mod.Agent6TUI(plan, from_hub=True)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.action_run_plan()
@@ -330,7 +327,7 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any)
             deadline = time.monotonic() + 5
             while app.return_value is None and time.monotonic() < deadline:
                 await pilot.pause(0.05)
-        assert app.return_value == TuiExit(open_next=child)
+        assert app.return_value == app_mod.TuiExit(open_next=child)
 
     asyncio.run(scenario())
     assert seen["argv"][-3:] == ["run", "--from", "planny-one-AAAAAA"]
@@ -338,7 +335,7 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any)
 
     async def standalone() -> None:
         notes: list[str] = []
-        app = Agent6TUI(plan)
+        app = app_mod.Agent6TUI(plan)
         original = app.notify
 
         def spy(message: Any, *args: Any, **kwargs: Any) -> None:
@@ -360,7 +357,7 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any)
     (plan / "plan.md").write_text(" \n\t", encoding="utf-8")
 
     async def refuse_empty() -> None:
-        app = Agent6TUI(plan)
+        app = app_mod.Agent6TUI(plan)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.action_run_plan()
@@ -374,7 +371,7 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any)
     (run / "logs.jsonl").write_text("", encoding="utf-8")
 
     async def refuse() -> None:
-        app = Agent6TUI(run)
+        app = app_mod.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.action_run_plan()
@@ -384,24 +381,26 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any)
     assert not seen
 
 
-def test_a_refused_btw_toasts_as_a_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_refused_btw_toasts_as_a_warning(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A refused side question toasts at the error severity, like every other refusal."""
 
-    def refused(_session_dir: Path, _question: str) -> tuple[bool, str]:
+    def refused(_session_dir: pathlib.Path, _question: str) -> tuple[bool, str]:
         return False, "no live run to ask beside"
 
-    def controllable(_app: Agent6TUI) -> bool:
+    def controllable(_app: app_mod.Agent6TUI) -> bool:
         return True
 
     # The one directive owner spawns the side ask, so the patch goes where the name is read.
     monkeypatch.setattr("agent6.ui.directives.open_btw", refused)
-    monkeypatch.setattr(Agent6TUI, "session_controllable", controllable)
+    monkeypatch.setattr(app_mod.Agent6TUI, "session_controllable", controllable)
     run = tmp_path / "sessions" / "runs" / "runny-two-BBBBBB"
     run.mkdir(parents=True)
     (run / "logs.jsonl").write_text("", encoding="utf-8")
 
     async def scenario() -> list[tuple[str, str]]:
-        app = Agent6TUI(run)
+        app = app_mod.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.submit_instruction("/btw why?")

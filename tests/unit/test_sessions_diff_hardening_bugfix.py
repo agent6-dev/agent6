@@ -7,18 +7,18 @@ Without them a poisoned `.git/config` core.fsmonitor fired on the host during `g
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
-from agent6.git_ops import git_hardening_flags
-from agent6.ui.cli.sessions_cmds import _dirty_worktree_note  # pyright: ignore[reportPrivateUsage]
+from agent6 import git_ops
+from agent6.ui.cli import sessions_cmds  # pyright: ignore[reportPrivateUsage]
 
 
 def test_dirty_worktree_note_hardens_its_git_probes(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[list[str]] = []
-    flags = list(git_hardening_flags(Path.cwd()))
+    flags = list(git_ops.git_hardening_flags(pathlib.Path.cwd()))
 
     class _Done:
         def __init__(self, stdout: str) -> None:
@@ -31,7 +31,7 @@ def test_dirty_worktree_note_hardens_its_git_probes(monkeypatch: pytest.MonkeyPa
         return _Done("agent6/run\n" if "rev-parse" in argv else " M a.py\n")
 
     monkeypatch.setattr(subprocess, "run", _fake_run)
-    note = _dirty_worktree_note(Path("/repo"), "agent6/run")
+    note = sessions_cmds._dirty_worktree_note(pathlib.Path("/repo"), "agent6/run")
     assert "1 file modified" in note
     # `git_hardening_flags` reads the repo's driver names first, so each probe
     # is preceded by that config read (an absolute-path git, not "git").

@@ -10,14 +10,14 @@ is never to edit the page: run ``uv run python docs/gen_config.py``.
 from __future__ import annotations
 
 import importlib.util
+import pathlib
 import sys
-from pathlib import Path
-from types import ModuleType
+import types
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
-def _load_generator() -> ModuleType:
+def _load_generator() -> types.ModuleType:
     spec = importlib.util.spec_from_file_location("gen_config", _ROOT / "docs" / "gen_config.py")
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

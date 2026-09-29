@@ -5,30 +5,27 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.ui.cli import main
-from agent6.ui.cli.plan_watch import (
-    _most_recent_plan_session_id,  # pyright: ignore[reportPrivateUsage]
-)
+from agent6 import paths
+from agent6.ui.cli import main, plan_watch
 from agent6.viewmodel import newest_session_dir
 
 
-def test_newest_run_dir_none_for_missing_bucket(tmp_path: Path) -> None:
+def test_newest_run_dir_none_for_missing_bucket(tmp_path: pathlib.Path) -> None:
     assert newest_session_dir([tmp_path / "missing"]) is None
 
 
-def test_newest_run_dir_none_when_empty(tmp_path: Path) -> None:
-    runs = state_dir(tmp_path) / "sessions" / "runs"
+def test_newest_run_dir_none_when_empty(tmp_path: pathlib.Path) -> None:
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs"
     runs.mkdir(parents=True)
     assert newest_session_dir([runs]) is None
 
 
-def test_newest_run_dir_uses_log_activity_not_frontend_dir_touch(tmp_path: Path) -> None:
-    runs = state_dir(tmp_path) / "sessions" / "runs"
+def test_newest_run_dir_uses_log_activity_not_frontend_dir_touch(tmp_path: pathlib.Path) -> None:
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs"
     runs.mkdir(parents=True)
     older = runs / "alpha-bravo-charlie"
     newer = runs / "delta-echo-foxtrot"
@@ -44,8 +41,10 @@ def test_newest_run_dir_uses_log_activity_not_frontend_dir_touch(tmp_path: Path)
     assert newest.name == "delta-echo-foxtrot"
 
 
-def test_most_recent_plan_run_id_uses_log_activity_not_frontend_dir_touch(tmp_path: Path) -> None:
-    plans = state_dir(tmp_path) / "sessions" / "plans"
+def test_most_recent_plan_run_id_uses_log_activity_not_frontend_dir_touch(
+    tmp_path: pathlib.Path,
+) -> None:
+    plans = paths.state_dir(tmp_path) / "sessions" / "plans"
     plans.mkdir(parents=True)
     older = plans / "older-plan"
     newer = plans / "newer-plan"
@@ -57,11 +56,11 @@ def test_most_recent_plan_run_id_uses_log_activity_not_frontend_dir_touch(tmp_pa
     os.utime(older / "logs.jsonl", (100, 100))
     os.utime(newer / "logs.jsonl", (1000, 1000))
     (older / "frontend.pid").write_text("12345", encoding="utf-8")
-    assert _most_recent_plan_session_id(plans) == "newer-plan"
+    assert plan_watch._most_recent_plan_session_id(plans) == "newer-plan"
 
 
 def test_run_without_task_errors(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -76,13 +75,13 @@ def test_run_without_task_errors(
 
 
 def test_run_no_task_points_at_most_recent_plan(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # No task but a prior plan, non-interactively: refuse and point at the plan and the --from form.
     monkeypatch.chdir(tmp_path)
-    session_dir = state_dir(tmp_path) / "sessions" / "plans" / "tidy-otter-AB12CD"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "plans" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
     (session_dir / "plan.md").write_text("# Plan: wire up the thing\n", encoding="utf-8")
     rc = main(["run"])
@@ -93,14 +92,14 @@ def test_run_no_task_points_at_most_recent_plan(
 
 
 def test_run_no_task_terminal_offer_names_the_newest_updated_plan(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     from agent6.ui import cli
 
     monkeypatch.chdir(tmp_path)
-    plans = state_dir(tmp_path) / "sessions" / "plans"
+    plans = paths.state_dir(tmp_path) / "sessions" / "plans"
     old = plans / "zebra-plan-OLD111"
     new = plans / "alpha-plan-NEW222"
     for session_dir, title in ((old, "old work"), (new, "new work")):
@@ -124,7 +123,7 @@ def test_run_no_task_terminal_offer_names_the_newest_updated_plan(
 
 
 def test_run_no_task_at_a_terminal_executes_the_plan_on_enter(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -133,7 +132,7 @@ def test_run_no_task_at_a_terminal_executes_the_plan_on_enter(
     from agent6.ui.cli import run as run_mod
 
     monkeypatch.chdir(tmp_path)
-    session_dir = state_dir(tmp_path) / "sessions" / "plans" / "tidy-otter-AB12CD"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "plans" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
     (session_dir / "plan.md").write_text("# Plan: wire up the thing\n", encoding="utf-8")
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
@@ -158,7 +157,7 @@ def test_run_no_task_at_a_terminal_executes_the_plan_on_enter(
     assert "wire up the thing" in ran[0] if ran else True
 
 
-def test_run_continue_flag_is_gone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_continue_flag_is_gone(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # `run --continue` was a subset of `resume`; argparse refuses it like any unknown flag.
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit) as exc:
@@ -167,7 +166,7 @@ def test_run_continue_flag_is_gone(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
 
 def test_parallel_refuses_an_explicit_run_id(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -179,7 +178,7 @@ def test_parallel_refuses_an_explicit_run_id(
 
 
 def test_parallel_refuses_a_standing_goal(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:

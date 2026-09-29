@@ -10,14 +10,14 @@ fix is never to edit the page: run `uv run python docs/gen_contracts.py`.
 from __future__ import annotations
 
 import importlib.util
+import pathlib
 import sys
-from pathlib import Path
-from types import ModuleType
+import types
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
-def _load_generator() -> ModuleType:
+def _load_generator() -> types.ModuleType:
     spec = importlib.util.spec_from_file_location(
         "gen_contracts", _ROOT / "docs" / "gen_contracts.py"
     )

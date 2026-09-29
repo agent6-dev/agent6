@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 
 from agent6.config import Config
-from agent6.tools.policy import resolve_network
-from agent6.ui.cli.check_cmds import _isolation_means  # pyright: ignore[reportPrivateUsage]
+from agent6.tools import policy
+from agent6.ui.cli import check_cmds  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.parametrize(
@@ -30,7 +30,7 @@ def test_the_resolved_network_follows_the_level_and_the_knob(
     configured: str, isolation: str, expected: str
 ) -> None:
     cfg = Config.model_validate({"sandbox": {"network": configured}})
-    assert resolve_network(cfg, isolation) == expected  # type: ignore[arg-type]
+    assert policy.resolve_network(cfg, isolation) == expected  # type: ignore[arg-type]
 
 
 def test_a_callers_own_answer_wins_but_still_cannot_outrun_the_level() -> None:
@@ -40,8 +40,8 @@ def test_a_callers_own_answer_wins_but_still_cannot_outrun_the_level() -> None:
     it is still the host's network.
     """
     cfg = Config()
-    assert resolve_network(cfg, "strict", override="none") == "none"
-    assert resolve_network(cfg, "hardened", override="none") == "host"
+    assert policy.resolve_network(cfg, "strict", override="none") == "none"
+    assert policy.resolve_network(cfg, "hardened", override="none") == "host"
 
 
 def test_the_level_line_does_not_promise_a_network_the_config_can_decline() -> None:
@@ -49,7 +49,7 @@ def test_the_level_line_does_not_promise_a_network_the_config_can_decline() -> N
 
     `check sandbox` runs before any config is loaded.
     """
-    strict = _isolation_means("strict")
+    strict = check_cmds._isolation_means("strict")
     assert "sandbox.network" in strict, strict
     for level in ("hardened", "none"):
-        assert "the run's own network" not in _isolation_means(level)  # type: ignore[arg-type]
+        assert "the run's own network" not in check_cmds._isolation_means(level)  # type: ignore[arg-type]

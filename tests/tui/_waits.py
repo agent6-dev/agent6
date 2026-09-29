@@ -18,12 +18,12 @@ call through `call_after_refresh`, which is what these waits stand in for.
 
 from __future__ import annotations
 
+import pathlib
 import time
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
-from agent6.ui.tui.composer import ApprovalRow
+from agent6.ui.tui import composer
 
 TIMEOUT_S = 10.0
 
@@ -53,7 +53,7 @@ def answerable(view: Any) -> bool:
 
     `query(ApprovalRow)` alone is true a frame earlier.
     """
-    rows = view.query(ApprovalRow)
+    rows = view.query(composer.ApprovalRow)
     return bool(rows) and bool(rows.first().query(".answer-yes"))
 
 
@@ -64,11 +64,11 @@ async def focus_answers(view: Any, pilot: Any, timeout: float = TIMEOUT_S) -> No
     """
 
     def holds() -> bool:
-        rows = view.query(ApprovalRow)
+        rows = view.query(composer.ApprovalRow)
         return bool(rows) and bool(rows.first().holds_focus())
 
     def nudge() -> None:
-        rows = view.query(ApprovalRow)
+        rows = view.query(composer.ApprovalRow)
         if rows:
             rows.first().focus_answers()
 
@@ -83,7 +83,7 @@ async def row_gone(
     `pump` feeds the fold each pass, for a withdrawal that waits on an unread event.
     """
     deadline = time.monotonic() + timeout
-    while view.query(ApprovalRow):
+    while view.query(composer.ApprovalRow):
         if time.monotonic() >= deadline:
             return False
         if pump is not None:
@@ -93,7 +93,7 @@ async def row_gone(
 
 
 async def answer_written(
-    run: Path, pilot: Any, name: str = "ap1", timeout: float = TIMEOUT_S
+    run: pathlib.Path, pilot: Any, name: str = "ap1", timeout: float = TIMEOUT_S
 ) -> str:
     """The answer file's text once the click's or key's answer has landed through the host.
 
@@ -111,7 +111,7 @@ async def answer_written(
             raise AssertionError(
                 f"no answer for {name} in {timeout:.0f}s:"
                 f" focus={type(app.focused).__name__}"
-                f" rows={len(screen.query(ApprovalRow))}"
+                f" rows={len(screen.query(composer.ApprovalRow))}"
                 f" open={getattr(screen, '_approval', None)}"
                 f" controllable={app.session_controllable()} status={app.dir_status}"
                 f" files={sorted(p.name for p in (run / 'approvals').iterdir())}"

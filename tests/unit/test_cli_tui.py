@@ -9,22 +9,21 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import re
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-from agent6.events import EventSink
-from agent6.sessions.ipc import COMMAND_SCOPE
-from agent6.tools.operator_prompts import OperatorPrompts
-from agent6.tools.schema import UserQuestion
+from agent6 import events as agent6_events
+from agent6.sessions import ipc
+from agent6.tools import operator_prompts, schema
+from agent6.ui import steer
 from agent6.ui.cli import _interact as interactmod
 from agent6.ui.cli import _live as livemod
-from agent6.ui.steer import SteerState
 
 
-def _events_of(log: Path, type_: str) -> list[dict[str, Any]]:
+def _events_of(log: pathlib.Path, type_: str) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for line in log.read_text(encoding="utf-8").splitlines():
         obj = json.loads(line)
@@ -34,13 +33,15 @@ def _events_of(log: Path, type_: str) -> list[dict[str, Any]]:
 
 
 def _prompts(
-    session_dir: Path, events: EventSink, steer_cell: list[SteerState | None] | None = None
-) -> OperatorPrompts:
+    session_dir: pathlib.Path,
+    events: agent6_events.EventSink,
+    steer_cell: list[steer.SteerState | None] | None = None,
+) -> operator_prompts.OperatorPrompts:
     """The gate over the CLI's own approver and questioner, the pairing a run wires.
 
     Journaling into events.
     """
-    return OperatorPrompts(
+    return operator_prompts.OperatorPrompts(
         approver=interactmod.build_approver(session_dir, None, steer_cell),
         questioner=interactmod.build_questioner(session_dir),
         journal=events.emit,
@@ -81,15 +82,15 @@ def _stdin_session(_p: object, **_k: object) -> str:
 
 
 def test_approver_uses_tui_answer_when_live(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     log = tmp_path / "logs.jsonl"
-    events = EventSink(log)
+    events = agent6_events.EventSink(log)
     monkeypatch.setattr(interactmod, "frontend_is_live", _live)
     monkeypatch.setattr(interactmod, "read_answer", _ans_yes)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
     approve = _prompts(tmp_path, events).approve
-    assert approve("run `ls`?", scope=COMMAND_SCOPE) is True
+    assert approve("run `ls`?", scope=ipc.COMMAND_SCOPE) is True
     assert _events_of(log, "approval.prompt")
     ans = _events_of(log, "approval.answer")[0]
     assert ans["approved"] is True
@@ -97,54 +98,50 @@ def test_approver_uses_tui_answer_when_live(
 
 
 def test_approver_does_not_consume_an_answer_written_before_the_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A premature approve pre-writes approval-1.answer; the gate clears the stale slot first.
     import functools
 
-    from agent6.sessions.ipc import read_answer, write_answer
-
     log = tmp_path / "logs.jsonl"
-    events = EventSink(log)
+    events = agent6_events.EventSink(log)
     monkeypatch.setattr(interactmod, "frontend_is_live", _live)
     monkeypatch.setattr(
-        interactmod, "read_answer", functools.partial(read_answer, timeout_s=0.4, poll_s=0.05)
+        interactmod, "read_answer", functools.partial(ipc.read_answer, timeout_s=0.4, poll_s=0.05)
     )
     monkeypatch.setattr(interactmod, "has_controlling_tty", _tty)  # foreground stdin path
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
-    write_answer(tmp_path, "approval-1", "yes")  # the premature POST
+    ipc.write_answer(tmp_path, "approval-1", "yes")  # the premature POST
     approve = _prompts(tmp_path, events).approve
     # The premature "yes" is cleared; read_answer times out and falls back to stdin, which denies.
-    assert approve("run `curl evil`?", scope=COMMAND_SCOPE) is False
+    assert approve("run `curl evil`?", scope=ipc.COMMAND_SCOPE) is False
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
 
 
 def test_approver_consumes_an_answer_written_after_the_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The legitimate path: the front-end writes the answer after it renders the prompt.
     import functools
     import threading
     import time
 
-    from agent6.sessions.ipc import read_answer, write_answer
-
     log = tmp_path / "logs.jsonl"
-    events = EventSink(log)
+    events = agent6_events.EventSink(log)
     monkeypatch.setattr(interactmod, "frontend_is_live", _live)
     monkeypatch.setattr(
-        interactmod, "read_answer", functools.partial(read_answer, timeout_s=3.0, poll_s=0.05)
+        interactmod, "read_answer", functools.partial(ipc.read_answer, timeout_s=3.0, poll_s=0.05)
     )
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
 
     def writer() -> None:
         time.sleep(0.3)  # after the prompt is emitted and the poll starts
-        write_answer(tmp_path, "approval-1", "yes")
+        ipc.write_answer(tmp_path, "approval-1", "yes")
 
     t = threading.Thread(target=writer, daemon=True)
     t.start()
     approve = _prompts(tmp_path, events).approve
-    assert approve("run `ls`?", scope=COMMAND_SCOPE) is True
+    assert approve("run `ls`?", scope=ipc.COMMAND_SCOPE) is True
     t.join(timeout=2)
     assert _events_of(log, "approval.answer")[0]["source"] == "frontend"
 
@@ -154,72 +151,70 @@ def _tty(_: object = None) -> bool:
 
 
 def test_approver_falls_back_to_stdin_without_tui(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     log = tmp_path / "logs.jsonl"
-    events = EventSink(log)
+    events = agent6_events.EventSink(log)
     monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
     monkeypatch.setattr(interactmod, "has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
     approve = _prompts(tmp_path, events).approve
-    assert approve("x", scope=COMMAND_SCOPE) is False
+    assert approve("x", scope=ipc.COMMAND_SCOPE) is False
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
 
 
 def test_approver_headless_no_frontend_waits_not_denies(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # No terminal, no away-mode, nothing attached: the run waits for a front-end, never denies.
     import threading
     import time
 
-    from agent6.sessions.ipc import register_frontend, write_answer
-
     log = tmp_path / "logs.jsonl"
-    events = EventSink(log)
+    events = agent6_events.EventSink(log)
     # The real frontend_is_live: nothing is attached at approve() time, so the wait path runs.
     monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: False)  # headless
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
 
     def attach_and_answer() -> None:
         time.sleep(0.3)
-        register_frontend(tmp_path, os.getpid())
-        write_answer(tmp_path, "approval-1", "yes")
+        ipc.register_frontend(tmp_path, os.getpid())
+        ipc.write_answer(tmp_path, "approval-1", "yes")
 
     threading.Thread(target=attach_and_answer, daemon=True).start()
     approve = _prompts(tmp_path, events).approve
-    assert approve("rm -rf build", scope=COMMAND_SCOPE) is True
+    assert approve("rm -rf build", scope=ipc.COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
 
 
 def test_approver_session_allows_every_later_command(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # "allow session" approves this command and every later one across the run.
     log = tmp_path / "logs.jsonl"
-    events = EventSink(log)
+    events = agent6_events.EventSink(log)
     monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
     monkeypatch.setattr(interactmod, "has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_session)
     approve = _prompts(tmp_path, events).approve
-    assert approve("first?", scope=COMMAND_SCOPE) is True
+    assert approve("first?", scope=ipc.COMMAND_SCOPE) is True
     # A second prompt never reaches the stdin approver: the session marker auto-passes.
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
-    assert approve("second?", scope=COMMAND_SCOPE) is True
+    assert approve("second?", scope=ipc.COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[-1]["source"] == "session"
 
 
 def test_approver_tui_timeout_falls_back_to_stdin(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     log = tmp_path / "logs.jsonl"
-    events = EventSink(log)
+    events = agent6_events.EventSink(log)
     monkeypatch.setattr(interactmod, "frontend_is_live", _live)
     monkeypatch.setattr(interactmod, "read_answer", _ans_none)  # TUI died / timed out
     monkeypatch.setattr(interactmod, "has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
     approve = _prompts(tmp_path, events).approve
-    assert approve("x", scope=COMMAND_SCOPE) is True
+    assert approve("x", scope=ipc.COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
 
 
@@ -290,7 +285,7 @@ def test_stream_modes(monkeypatch: pytest.MonkeyPatch) -> None:
     assert modes(tui_enabled=False) == (True, False)
 
 
-def test_tui_session_disabled_is_noop(tmp_path: Path) -> None:
+def test_tui_session_disabled_is_noop(tmp_path: pathlib.Path) -> None:
     # enabled=False must not spawn anything or touch stdout.
     with livemod.tui_session(tmp_path, enabled=False):
         pass
@@ -298,19 +293,18 @@ def test_tui_session_disabled_is_noop(tmp_path: Path) -> None:
 
 
 def test_spawned_away_default_sets_wait_from_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A front-end launcher sets AGENT6_DETACHED_AWAY so a terminal-less run waits for a viewer.
-    from agent6.app.frontend import apply_spawned_away_default
-    from agent6.sessions.ipc import away_mode
+    from agent6.app import frontend
 
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
-    apply_spawned_away_default(tmp_path, (COMMAND_SCOPE,))
-    assert away_mode(tmp_path) == "wait"
+    frontend.apply_spawned_away_default(tmp_path, (ipc.COMMAND_SCOPE,))
+    assert ipc.away_mode(tmp_path) == "wait"
 
 
 def test_spawned_away_default_approve_reuses_session_allow(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """AGENT6_DETACHED_AWAY=approve maps to the session-allow marker.
 
@@ -318,93 +312,90 @@ def test_spawned_away_default_approve_reuses_session_allow(
 
     away.mode's vocabulary is deny|wait; "approve" written there falls into the wait branch.
     """
-    from agent6.app.frontend import apply_spawned_away_default
-    from agent6.sessions.ipc import COMMAND_SCOPE, away_mode, session_allow_set
+    from agent6.app import frontend
 
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "approve")
-    apply_spawned_away_default(tmp_path, (COMMAND_SCOPE,))
-    assert session_allow_set(tmp_path, COMMAND_SCOPE) is True
-    assert away_mode(tmp_path) == ""  # approve is never stored in away.mode
+    frontend.apply_spawned_away_default(tmp_path, (ipc.COMMAND_SCOPE,))
+    assert ipc.session_allow_set(tmp_path, ipc.COMMAND_SCOPE) is True
+    assert ipc.away_mode(tmp_path) == ""  # approve is never stored in away.mode
 
 
-def test_set_away_mode_rejects_values_outside_its_vocabulary(tmp_path: Path) -> None:
+def test_set_away_mode_rejects_values_outside_its_vocabulary(tmp_path: pathlib.Path) -> None:
     # away.mode's contract is deny|wait; anything else fails at the writer.
-    from agent6.sessions.ipc import set_away_mode
 
     with pytest.raises(ValueError, match="deny"):
-        set_away_mode(tmp_path, "approve")
+        ipc.set_away_mode(tmp_path, "approve")
 
 
 def test_spawned_away_default_is_noop_without_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A pure headless run keeps its non-hanging default, so CI never blocks on a question.
-    from agent6.app.frontend import apply_spawned_away_default
-    from agent6.sessions.ipc import away_mode
+    from agent6.app import frontend
 
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
-    apply_spawned_away_default(tmp_path, (COMMAND_SCOPE,))
-    assert away_mode(tmp_path) == ""
+    frontend.apply_spawned_away_default(tmp_path, (ipc.COMMAND_SCOPE,))
+    assert ipc.away_mode(tmp_path) == ""
 
 
-def test_approver_away_deny_auto_denies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_approver_away_deny_auto_denies(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # Detach chose "deny all": every run_command is denied without prompting.
-    from agent6.sessions.ipc import set_away_mode
 
     log = tmp_path / "logs.jsonl"
-    events = EventSink(log)
+    events = agent6_events.EventSink(log)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # must NOT prompt
-    set_away_mode(tmp_path, "deny")
+    ipc.set_away_mode(tmp_path, "deny")
     approve = _prompts(tmp_path, events).approve
-    assert approve("rm -rf /", scope=COMMAND_SCOPE) is False
+    assert approve("rm -rf /", scope=ipc.COMMAND_SCOPE) is False
     assert _events_of(log, "approval.answer")[0]["source"] == "away-deny"
 
 
 def test_approver_live_front_end_wins_over_away_mode(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A live front-end is always asked in its own UI; away-mode governs only the unattended window.
-    from agent6.sessions.ipc import set_away_mode
 
     log = tmp_path / "logs.jsonl"
-    events = EventSink(log)
+    events = agent6_events.EventSink(log)
     monkeypatch.setattr(interactmod, "frontend_is_live", _live)  # a front-end is attached
     monkeypatch.setattr(interactmod, "read_answer", _ans_yes)  # and it approved
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # no stdin fall
-    set_away_mode(tmp_path, "deny")  # would deny if the front-end did NOT win
+    ipc.set_away_mode(tmp_path, "deny")  # would deny if the front-end did NOT win
     approve = _prompts(tmp_path, events).approve
     assert (
-        approve("ls", scope=COMMAND_SCOPE) is True
+        approve("ls", scope=ipc.COMMAND_SCOPE) is True
     )  # the attached front-end approved despite away=deny
     assert _events_of(log, "approval.answer")[0]["source"] == "frontend"
 
 
 def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # away="wait" with nothing attached blocks until a front-end attaches and answers.
     import threading
     import time
 
-    from agent6.sessions.ipc import register_frontend, set_away_mode, write_answer
-
     log = tmp_path / "logs.jsonl"
-    events = EventSink(log)
+    events = agent6_events.EventSink(log)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
-    set_away_mode(tmp_path, "wait")
+    ipc.set_away_mode(tmp_path, "wait")
 
     def attach_and_answer() -> None:
         time.sleep(0.3)
-        register_frontend(tmp_path, os.getpid())  # a front-end re-attaches
-        write_answer(tmp_path, "approval-1", "yes")  # and answers
+        ipc.register_frontend(tmp_path, os.getpid())  # a front-end re-attaches
+        ipc.write_answer(tmp_path, "approval-1", "yes")  # and answers
 
     threading.Thread(target=attach_and_answer, daemon=True).start()
     approve = _prompts(tmp_path, events).approve
-    assert approve("ls", scope=COMMAND_SCOPE) is True
+    assert approve("ls", scope=ipc.COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
 
 
-def test_a_stop_request_ends_an_away_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_stop_request_ends_an_away_wait(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A stop request breaks an away-wait.
 
     The questioner returns empty answers and the run parks or denies.
@@ -414,48 +405,47 @@ def test_a_stop_request_ends_an_away_wait(tmp_path: Path, monkeypatch: pytest.Mo
     import threading
     import time
 
-    from agent6.sessions.ipc import request_stop, set_away_mode
-
     log = tmp_path / "logs.jsonl"
-    events = EventSink(log)
+    events = agent6_events.EventSink(log)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
-    set_away_mode(tmp_path, "wait")
+    ipc.set_away_mode(tmp_path, "wait")
 
     def stop_it() -> None:
         time.sleep(0.3)
-        request_stop(tmp_path)
+        ipc.request_stop(tmp_path)
 
     threading.Thread(target=stop_it, daemon=True).start()
     ask = _prompts(tmp_path, events).ask
     started = time.monotonic()
-    answer = ask((UserQuestion(question="stash?", options=("stash", "cancel")),))
+    answer = ask((schema.UserQuestion(question="stash?", options=("stash", "cancel")),))
     assert answer.answers == ("",) and answer.unseen
     assert time.monotonic() - started < 10
 
 
-def test_spawned_away_default_does_not_overwrite_the_operators_choice(tmp_path: Path) -> None:
+def test_spawned_away_default_does_not_overwrite_the_operators_choice(
+    tmp_path: pathlib.Path,
+) -> None:
     """The spawned away default never overwrites the operator's explicit detach choice.
 
     A `deny` chosen on detach stays `deny` under AGENT6_DETACHED_AWAY=wait.
     """
     import os
 
-    from agent6.app.frontend import apply_spawned_away_default
-    from agent6.sessions.ipc import away_mode, set_away_mode
+    from agent6.app import frontend
 
     session_dir = tmp_path / "run"
     session_dir.mkdir()
-    set_away_mode(session_dir, "deny")  # the operator's detach answer
+    ipc.set_away_mode(session_dir, "deny")  # the operator's detach answer
     old = os.environ.get("AGENT6_DETACHED_AWAY")
     os.environ["AGENT6_DETACHED_AWAY"] = "wait"  # what the spawned resume carries
     try:
-        apply_spawned_away_default(session_dir, (COMMAND_SCOPE,))
-        assert away_mode(session_dir) == "deny"
+        frontend.apply_spawned_away_default(session_dir, (ipc.COMMAND_SCOPE,))
+        assert ipc.away_mode(session_dir) == "deny"
         # With nothing chosen, the launcher's default still applies.
         other = tmp_path / "other"
         other.mkdir()
-        apply_spawned_away_default(other, (COMMAND_SCOPE,))
-        assert away_mode(other) == "wait"
+        frontend.apply_spawned_away_default(other, (ipc.COMMAND_SCOPE,))
+        assert ipc.away_mode(other) == "wait"
     finally:
         if old is None:
             del os.environ["AGENT6_DETACHED_AWAY"]
@@ -464,7 +454,7 @@ def test_spawned_away_default_does_not_overwrite_the_operators_choice(tmp_path: 
 
 
 def test_approver_wait_consumes_a_claimless_answer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The approver wait consumes an answer written with no front-end claim.
 
@@ -473,26 +463,24 @@ def test_approver_wait_consumes_a_claimless_answer(
     import threading
     import time
 
-    from agent6.sessions.ipc import write_answer, write_steer_answer
-
     log = tmp_path / "logs.jsonl"
-    events = EventSink(log)
+    events = agent6_events.EventSink(log)
     monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: False)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
 
     def answer_never_claiming() -> None:
         time.sleep(0.3)
-        write_answer(tmp_path, "approval-1", "yes")  # no register_frontend
+        ipc.write_answer(tmp_path, "approval-1", "yes")  # no register_frontend
 
     def abort_if_wedged() -> None:
         # A wait loop that never reads a claim-less answer fails fast instead of hanging the suite.
         time.sleep(15)
-        write_steer_answer(tmp_path, "abort")
+        ipc.write_steer_answer(tmp_path, "abort")
 
     threading.Thread(target=answer_never_claiming, daemon=True).start()
     threading.Thread(target=abort_if_wedged, daemon=True).start()
     approve = _prompts(tmp_path, events).approve
-    assert approve("run_verify_command", scope=COMMAND_SCOPE) is True
+    assert approve("run_verify_command", scope=ipc.COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
 
 
@@ -529,23 +517,21 @@ def test_stdin_approver_renders_the_command_on_its_own_lines(
 
 
 def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An approval prompt with a pause armed says so and opens the pause menu after the answer.
 
     An operator prompt counts as a Ctrl-C boundary; the menu's action seeds the next boundary's
     steer.
     """
-    from agent6.events import EventSink
     from agent6.ui.cli import _interact as interactmod
-    from agent6.ui.steer import SteerState
 
-    events = EventSink(tmp_path / "logs.jsonl")
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
     notices: list[str] = []
     calls: list[str] = []
 
-    def _steer(armed: bool) -> SteerState:
-        return SteerState(
+    def _steer(armed: bool) -> steer.SteerState:
+        return steer.SteerState(
             requested=lambda: armed,
             clear=lambda: None,
             prompt=lambda: None,
@@ -557,10 +543,10 @@ def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
             prompt_now=lambda: calls.append("menu"),
         )
 
-    def _not_live(_d: Path) -> bool:
+    def _not_live(_d: pathlib.Path) -> bool:
         return False
 
-    def _no_away(_d: Path) -> str | None:
+    def _no_away(_d: pathlib.Path) -> str | None:
         return None
 
     def _approve_yes(_p: str, **_k: object) -> str:
@@ -585,35 +571,34 @@ def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
 
 
 def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The approver and questioner read the console view at prompt time, not at build time.
 
     The lifecycle builds the gate before the execution attaches the view; a view captured at build
     time pauses nothing, and the heartbeat's line-erase wipes the tty prompt.
     """
-    from agent6.ui.cli._console_view import ConsoleView
-    from agent6.ui.cli.run import session_frontend
+    from agent6.ui.cli import _console_view, run
 
-    paused: list[ConsoleView] = []
-    real_pause = ConsoleView.pause
+    paused: list[_console_view.ConsoleView] = []
+    real_pause = _console_view.ConsoleView.pause
 
-    def _pause(self: ConsoleView) -> Any:
+    def _pause(self: _console_view.ConsoleView) -> Any:
         paused.append(self)
         return real_pause(self)
 
-    monkeypatch.setattr(ConsoleView, "pause", _pause)
+    monkeypatch.setattr(_console_view.ConsoleView, "pause", _pause)
     monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
     monkeypatch.setattr(interactmod, "has_controlling_tty", _tty)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
 
-    def _first(_q: tuple[UserQuestion, ...], **_k: object) -> tuple[str, ...]:
+    def _first(_q: tuple[schema.UserQuestion, ...], **_k: object) -> tuple[str, ...]:
         return ("a",)
 
     monkeypatch.setattr(interactmod, "default_stdin_questioner", _first)
-    fe = session_frontend()
-    events = EventSink(tmp_path / "logs.jsonl")
-    prompts = OperatorPrompts(
+    fe = run.session_frontend()
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    prompts = operator_prompts.OperatorPrompts(
         approver=fe.build_approver(tmp_path),
         questioner=fe.build_questioner(tmp_path),
         journal=events.emit,
@@ -621,15 +606,17 @@ def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
     )
     fe.attach_console_view(events)  # the execution attaches the view after the gate exists
     try:
-        assert prompts.approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
-        assert prompts.ask((UserQuestion(question="pick?", options=("a", "b")),)).answers == ("a",)
+        assert prompts.approve("Allow run_command: ls", scope=ipc.COMMAND_SCOPE) is True
+        assert prompts.ask(
+            (schema.UserQuestion(question="pick?", options=("a", "b")),)
+        ).answers == ("a",)
     finally:
         fe.close_console_view()
     assert len(paused) == 2, "both prompts pause the view the execution attached"
 
 
 def test_a_dashboard_that_dies_before_the_run_ends_is_reported(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A dashboard gone before the run ends is reported with where the output went.
 
@@ -690,7 +677,7 @@ def test_a_dashboard_that_dies_before_the_run_ends_is_reported(
 
 
 def test_tui_session_degrades_when_console_log_cannot_open(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An unopenable tui_console.log degrades to a TUI-less run, like a spawn failure."""
     import subprocess
@@ -720,7 +707,7 @@ def test_tui_session_degrades_when_console_log_cannot_open(
 
 
 def test_ctrl_c_kills_a_dashboard_that_ignores_graceful_shutdown(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Ctrl-C kills a dashboard that ignores SIGINT and SIGTERM before the parent returns."""
     import subprocess
@@ -765,7 +752,7 @@ def test_ctrl_c_kills_a_dashboard_that_ignores_graceful_shutdown(
 
 
 def test_tui_session_restores_the_console_when_a_second_ctrl_c_lands(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A second Ctrl-C, landing in the wait for the dashboard, still restores the console."""
     import subprocess

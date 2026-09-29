@@ -8,10 +8,10 @@ The answer goes back over the file bridge; historical and answered prompts are n
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 from typing import Any
 
-from agent6.sessions.ipc import ANSWERED_ELSEWHERE, approvals_dir, questions_dir, write_answer
+from agent6.sessions import ipc
 from agent6.ui.cli import plan_watch
 
 
@@ -31,11 +31,13 @@ def _view() -> Any:
     return _V()
 
 
-def _write_log(path: Path, events: list[dict[str, Any]]) -> None:
+def _write_log(path: pathlib.Path, events: list[dict[str, Any]]) -> None:
     path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
 
-def test_open_prompt_at_attach_is_answered_and_written(tmp_path: Path, monkeypatch: Any) -> None:
+def test_open_prompt_at_attach_is_answered_and_written(
+    tmp_path: pathlib.Path, monkeypatch: Any
+) -> None:
     # A run already waiting at approval-1 when you attach: the front-end prompts
     # and writes the answer the worker is blocked reading.
     def _yes(_prompt: str, *, standing: bool = True) -> str:
@@ -55,10 +57,10 @@ def test_open_prompt_at_attach_is_answered_and_written(tmp_path: Path, monkeypat
     assert [(e["type"], e["id"]) for e in opens] == [("approval.prompt", "approval-1")]
     for event in opens:
         fe.handle(event)
-    assert (approvals_dir(tmp_path) / "approval-1.answer").read_text() == "yes"
+    assert (ipc.approvals_dir(tmp_path) / "approval-1.answer").read_text() == "yes"
 
 
-def test_already_answered_prompt_is_not_reasked(tmp_path: Path, monkeypatch: Any) -> None:
+def test_already_answered_prompt_is_not_reasked(tmp_path: pathlib.Path, monkeypatch: Any) -> None:
     # approval-1 was emitted AND answered in history: not open at attach, and the
     # replay must not re-prompt it (the approver would fail the test if called).
     def _forbidden(_p: object, *, standing: bool = True) -> str:
@@ -84,7 +86,7 @@ def test_already_answered_prompt_is_not_reasked(tmp_path: Path, monkeypatch: Any
         fe.react(ev)  # no exception == not re-prompted
 
 
-def test_react_answers_a_new_live_question(tmp_path: Path, monkeypatch: Any) -> None:
+def test_react_answers_a_new_live_question(tmp_path: pathlib.Path, monkeypatch: Any) -> None:
     def _beta(_qs: object) -> tuple[str, ...]:
         return ("beta",)
 
@@ -102,10 +104,12 @@ def test_react_answers_a_new_live_question(tmp_path: Path, monkeypatch: Any) -> 
         "questions": [{"question": "which?", "options": ["alpha", "beta"]}],
     }
     fe.react(event)
-    assert json.loads((questions_dir(tmp_path) / "question-1.answer").read_text()) == ["beta"]
+    assert json.loads((ipc.questions_dir(tmp_path) / "question-1.answer").read_text()) == ["beta"]
 
 
-def test_attach_replay_does_not_reask_an_answered_prompt(tmp_path: Path, monkeypatch: Any) -> None:
+def test_attach_replay_does_not_reask_an_answered_prompt(
+    tmp_path: pathlib.Path, monkeypatch: Any
+) -> None:
     """The pre-scan's answered ids survive the follow loop's replay of session.start.
 
     Cleared there, attaching to any run that had answered a prompt re-asked it and blocked.
@@ -134,7 +138,7 @@ def test_attach_replay_does_not_reask_an_answered_prompt(tmp_path: Path, monkeyp
 
 
 def test_resumed_execution_reuses_prompt_ids_and_is_still_answered(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """The answered set clears at the session boundary, since prompt ids restart per execution.
 
@@ -177,12 +181,12 @@ def test_resumed_execution_reuses_prompt_ids_and_is_still_answered(
     for ev in leg2:
         fe.react(ev)
     assert asked == ["execution 2 ok?", "question"]  # both prompted, neither swallowed
-    assert (approvals_dir(tmp_path) / "approval-1.answer").read_text(encoding="utf-8") == "yes"
-    assert (questions_dir(tmp_path) / "question-1.answer").exists()
+    assert (ipc.approvals_dir(tmp_path) / "approval-1.answer").read_text(encoding="utf-8") == "yes"
+    assert (ipc.questions_dir(tmp_path) / "question-1.answer").exists()
 
 
 def test_an_answer_that_lost_to_another_surface_is_reported(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """A prompt answered elsewhere while this terminal asked keeps the first answer, and says so."""
 
@@ -191,14 +195,16 @@ def test_an_answer_that_lost_to_another_surface_is_reported(
 
     monkeypatch.setattr(plan_watch, "default_stdin_approver", _yes)
     event: dict[str, Any] = {"type": "approval.prompt", "id": "approval-1", "prompt": "run `ls`?"}
-    assert write_answer(tmp_path, "approval-1", "no")
+    assert ipc.write_answer(tmp_path, "approval-1", "no")
     view = _view()
     plan_watch._CliFrontEnd(tmp_path, view).handle(event)  # pyright: ignore[reportPrivateUsage]
-    assert view.notices == [f"[agent6] {ANSWERED_ELSEWHERE}"]
-    assert (approvals_dir(tmp_path) / "approval-1.answer").read_text() == "no"
+    assert view.notices == [f"[agent6] {ipc.ANSWERED_ELSEWHERE}"]
+    assert (ipc.approvals_dir(tmp_path) / "approval-1.answer").read_text() == "no"
 
 
-def test_an_unscoped_approval_offers_no_session_choice(tmp_path: Path, monkeypatch: Any) -> None:
+def test_an_unscoped_approval_offers_no_session_choice(
+    tmp_path: pathlib.Path, monkeypatch: Any
+) -> None:
     """A gate with no scope to grant offers no "allow all" answer on the foreground prompt.
 
     `fetch` journals `standing: false` and `record_answer` drops a grant it cannot scope.

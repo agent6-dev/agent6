@@ -6,18 +6,11 @@ from __future__ import annotations
 
 import base64
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.ui.cli.history_cmds import (
-    _char_span,  # pyright: ignore[reportPrivateUsage]
-    _parse_rg_matches,  # pyright: ignore[reportPrivateUsage]
-    _render_history_hits,  # pyright: ignore[reportPrivateUsage]
-    _session_id_from_path,  # pyright: ignore[reportPrivateUsage]
-    _strings_in,  # pyright: ignore[reportPrivateUsage]
-    _window,  # pyright: ignore[reportPrivateUsage]
-)
+from agent6.ui.cli import history_cmds
 
 
 def _rg_match(path: str, line: str, col: int) -> str:
@@ -35,54 +28,64 @@ def _rg_match(path: str, line: str, col: int) -> str:
 
 def test_window_clips_a_huge_line_around_the_match() -> None:
     line = "x" * 500 + "NEEDLE" + "y" * 500
-    out = _window(line, 500)
+    out = history_cmds._window(line, 500)
     assert "NEEDLE" in out
     assert out.startswith("…") and out.endswith("…")
     assert len(out) < 200  # not the whole 1000+ char line
 
 
 def test_window_collapses_json_escaped_newlines() -> None:
-    assert _window("the\\nfirst message here", 0) == "the first message here"
+    assert history_cmds._window("the\\nfirst message here", 0) == "the first message here"
 
 
 def test_window_decodes_backslashes_not_bare_backslash_space() -> None:
     # A double-encoded newline decodes `\\\\` first, so no "\ " artifact is left.
-    assert "\\ " not in _window("cmd = tail \\\\nlog NEEDLE", 0)
+    assert "\\ " not in history_cmds._window("cmd = tail \\\\nlog NEEDLE", 0)
     # An escaped backslash renders as one backslash and an escaped quote as a quote.
     assert (
-        _window('path C:\\\\Users and \\"quoted\\" NEEDLE', 0)
+        history_cmds._window('path C:\\\\Users and \\"quoted\\" NEEDLE', 0)
         == 'path C:\\Users and "quoted" NEEDLE'
     )
 
 
 def test_run_id_from_path_finds_the_run_dir_child() -> None:
     assert (
-        _session_id_from_path(Path("/s/sessions/runs/deep-poppy-AB/logs.jsonl")) == "deep-poppy-AB"
-    )
-    assert (
-        _session_id_from_path(Path("/s/sessions/asks/quiet-fox-CD/transcripts/0003.json"))
-        == "quiet-fox-CD"
-    )
-    # A state-base ancestor sharing a bucket name must not shadow the real bucket.
-    assert (
-        _session_id_from_path(
-            Path("/mnt/runs/state/agent6/repo-x/sessions/runs/deep-poppy-AB/logs.jsonl")
+        history_cmds._session_id_from_path(
+            pathlib.Path("/s/sessions/runs/deep-poppy-AB/logs.jsonl")
         )
         == "deep-poppy-AB"
     )
     assert (
-        _session_id_from_path(
-            Path("/mnt/asks/state/agent6/repo-x/sessions/asks/quiet-fox-CD/logs.jsonl")
+        history_cmds._session_id_from_path(
+            pathlib.Path("/s/sessions/asks/quiet-fox-CD/transcripts/0003.json")
+        )
+        == "quiet-fox-CD"
+    )
+    # A state-base ancestor sharing a bucket name must not shadow the real bucket.
+    assert (
+        history_cmds._session_id_from_path(
+            pathlib.Path("/mnt/runs/state/agent6/repo-x/sessions/runs/deep-poppy-AB/logs.jsonl")
+        )
+        == "deep-poppy-AB"
+    )
+    assert (
+        history_cmds._session_id_from_path(
+            pathlib.Path("/mnt/asks/state/agent6/repo-x/sessions/asks/quiet-fox-CD/logs.jsonl")
         )
         == "quiet-fox-CD"
     )
     # A valid explicit id may itself equal a bucket name.
-    assert _session_id_from_path(Path("/s/sessions/runs/runs/logs.jsonl")) == "runs"
+    assert (
+        history_cmds._session_id_from_path(pathlib.Path("/s/sessions/runs/runs/logs.jsonl"))
+        == "runs"
+    )
 
 
 def test_parse_extracts_event_type_and_time_for_logs_jsonl() -> None:
     event = {"ts": "2026-07-12T09:15:30.1Z", "type": "tool.call", "name": "grep"}
-    out = _parse_rg_matches(_rg_match("/s/sessions/runs/r1/logs.jsonl", json.dumps(event), 40))
+    out = history_cmds._parse_rg_matches(
+        _rg_match("/s/sessions/runs/r1/logs.jsonl", json.dumps(event), 40)
+    )
     assert len(out) == 1
     assert out[0].session_id == "r1"
     assert out[0].kind == "tool.call"
@@ -91,7 +94,7 @@ def test_parse_extracts_event_type_and_time_for_logs_jsonl() -> None:
 
 def test_a_valid_json_non_event_in_the_journal_degrades_to_a_file_hit() -> None:
     line = '["NEEDLE", "a partial write"]'
-    out = _parse_rg_matches(_rg_match("/s/sessions/runs/r1/logs.jsonl", line, 2))
+    out = history_cmds._parse_rg_matches(_rg_match("/s/sessions/runs/r1/logs.jsonl", line, 2))
     assert len(out) == 1
     assert (out[0].when, out[0].kind) == ("", "logs.jsonl")
 
@@ -100,13 +103,13 @@ def test_summary_counts_matching_lines_not_submatches(capsys: pytest.CaptureFixt
     line = "NEEDLE then NEEDLE"
     rec = json.loads(_rg_match("/s/sessions/runs/r1/notes.md", line, 0))
     rec["data"]["submatches"].append({"start": 12, "end": 18})
-    hits = _parse_rg_matches(json.dumps(rec))
-    _render_history_hits(hits, Path("/s/sessions"))
+    hits = history_cmds._parse_rg_matches(json.dumps(rec))
+    history_cmds._render_history_hits(hits, pathlib.Path("/s/sessions"))
     assert "1 matching line in 1 session" in capsys.readouterr().out
 
 
 def test_search_summary_calls_an_ask_a_session(capsys: pytest.CaptureFixture[str]) -> None:
-    hits = _parse_rg_matches(
+    hits = history_cmds._parse_rg_matches(
         _rg_match(
             "/s/sessions/asks/ask-one/logs.jsonl",
             json.dumps({"type": "session.start", "user_task": "find NEEDLE"}),
@@ -114,7 +117,7 @@ def test_search_summary_calls_an_ask_a_session(capsys: pytest.CaptureFixture[str
         )
     )
 
-    _render_history_hits(hits, Path("/s/sessions"))
+    history_cmds._render_history_hits(hits, pathlib.Path("/s/sessions"))
 
     summary = capsys.readouterr().out.splitlines()[-1]
     assert summary == "1 matching line in 1 session"
@@ -127,9 +130,9 @@ def test_transcripts_share_one_label(capsys: pytest.CaptureFixture[str]) -> None
         _rg_match(f"/s/sessions/runs/r1/transcripts/000{i}.json", '  "text": "hello NEEDLE",', 12)
         for i in (3, 5, 7)
     )
-    hits = _parse_rg_matches(lines)
+    hits = history_cmds._parse_rg_matches(lines)
     assert all(h.kind == "transcript" for h in hits)
-    _render_history_hits(hits, Path("/s/runs"))
+    history_cmds._render_history_hits(hits, pathlib.Path("/s/runs"))
     out = capsys.readouterr().out
     assert "(x3)" in out  # three identical snapshot hits collapsed
     assert out.count("hello NEEDLE") == 1
@@ -146,11 +149,11 @@ def test_event_snippet_windows_inside_the_matched_field(
             "text": "I improved the NEEDLE of one bullet in README.md",
         }
     )
-    hits = _parse_rg_matches(
+    hits = history_cmds._parse_rg_matches(
         _rg_match("/s/sessions/runs/r1/logs.jsonl", event, event.index("NEEDLE"))
     )
     assert hits[0].snippet == "I improved the NEEDLE of one bullet in README.md"
-    _render_history_hits(hits, Path("/s/runs"))
+    history_cmds._render_history_hits(hits, pathlib.Path("/s/runs"))
     assert '"type"' not in capsys.readouterr().out
 
 
@@ -171,9 +174,9 @@ def test_one_task_in_many_encodings_collapses_to_the_readable_one(
         _rg_match("/s/sessions/runs/r1/transcripts/0003.json", body, body.index("Improve"))
     )
 
-    hits = _parse_rg_matches("\n".join(lines))
+    hits = history_cmds._parse_rg_matches("\n".join(lines))
     assert len({h.key for h in hits}) == 1  # every encoding shares the content key
-    _render_history_hits(hits, Path("/s/runs"))
+    history_cmds._render_history_hits(hits, pathlib.Path("/s/runs"))
     out = capsys.readouterr().out
     assert out.count("Improve the wording") == 1  # one representative line
     assert "(x3)" in out  # all three encodings counted
@@ -207,7 +210,9 @@ def test_byte_offsets_convert_to_characters_on_non_ascii_lines() -> None:
         },
         ensure_ascii=False,
     )
-    hits = _parse_rg_matches(_rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", event, "NEEDLE"))
+    hits = history_cmds._parse_rg_matches(
+        _rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", event, "NEEDLE")
+    )
     assert "NEEDLE found mid prose" in hits[0].snippet
     assert "needle found mid prose" in hits[0].key
 
@@ -221,7 +226,7 @@ def test_ascii_escaped_and_raw_utf8_encodings_share_one_key() -> None:
     )
     escaped_manifest = json.dumps({"version": 2, "user_task": task})  # ascii-escaped
     assert "\\u00e9" in escaped_manifest  # the divergence under test
-    hits = _parse_rg_matches(
+    hits = history_cmds._parse_rg_matches(
         _rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", raw_event, "NEEDLE")
         + "\n"
         + _rg_match_bytes("/s/sessions/runs/r1/manifest.json", escaped_manifest, "NEEDLE")
@@ -248,12 +253,12 @@ def test_distinct_sentences_ending_with_the_query_stay_distinct(
             "text": "then I rewrote a completely new NEEDLE",
         }
     )
-    hits = _parse_rg_matches(
+    hits = history_cmds._parse_rg_matches(
         _rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", e1, "NEEDLE")
         + "\n"
         + _rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", e2, "NEEDLE")
     )
-    _render_history_hits(hits, Path("/s/runs"))
+    history_cmds._render_history_hits(hits, pathlib.Path("/s/runs"))
     out = capsys.readouterr().out
     assert "deleted the broken NEEDLE" in out
     assert "rewrote a completely new NEEDLE" in out
@@ -271,8 +276,8 @@ def test_distinct_sentences_with_the_same_match_suffix_stay_distinct(
     ):
         event = json.dumps({"ts": f"2026-07-12T{when}.1Z", "type": "role.text_delta", "text": text})
         lines.append(_rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", event, "NEEDLE"))
-    hits = _parse_rg_matches("\n".join(lines))
-    _render_history_hits(hits, Path("/s/sessions"))
+    hits = history_cmds._parse_rg_matches("\n".join(lines))
+    history_cmds._render_history_hits(hits, pathlib.Path("/s/sessions"))
     out = capsys.readouterr().out
     assert "deleted the NEEDLE" in out and "restored the NEEDLE" in out
     assert "(x2)" not in out
@@ -281,7 +286,9 @@ def test_distinct_sentences_with_the_same_match_suffix_stay_distinct(
 def test_deeply_nested_json_line_degrades_instead_of_crashing() -> None:
     depth = 100_000
     line = '{"a":' * depth + "1" + "}" * depth
-    hits = _parse_rg_matches(_rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", line, '"a"'))
+    hits = history_cmds._parse_rg_matches(
+        _rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", line, '"a"')
+    )
     assert len(hits) == 1  # fell back to the raw window, no RecursionError
 
 
@@ -293,7 +300,7 @@ def test_string_walk_survives_nesting_the_parser_accepted() -> None:
     deep: dict[str, object] = {"leaf": "NEEDLE"}
     for _ in range(100_000):
         deep = {"a": deep}
-    assert list(_strings_in(deep)) == ["NEEDLE"]
+    assert list(history_cmds._strings_in(deep)) == ["NEEDLE"]
 
 
 def test_a_line_that_is_not_utf8_still_parses_from_its_bytes() -> None:
@@ -313,7 +320,7 @@ def test_a_line_that_is_not_utf8_still_parses_from_its_bytes() -> None:
             "submatches": [{"match": {"text": "NEEDLE"}, "start": start, "end": start + 6}],
         },
     }
-    out = _parse_rg_matches(json.dumps(rec))
+    out = history_cmds._parse_rg_matches(json.dumps(rec))
     assert len(out) == 1
     assert (out[0].session_id, out[0].kind) == ("r1", "tool.call")
     assert "NEEDLE" in out[0].snippet and "caf\ufffd" in out[0].snippet
@@ -325,26 +332,26 @@ def test_byte_offsets_map_onto_the_decoded_line_past_a_byte_that_is_not_utf8() -
     Re-encoding U+FFFD grows every non-UTF-8 byte to three and slides the window early.
     """
     line = b"caf\xe9 NEEDLE and \xe2\x80\x9cmore\xe2\x80\x9d"
-    start, end = _char_span(line, line.index(b"NEEDLE"), line.index(b"NEEDLE") + 6)
+    start, end = history_cmds._char_span(line, line.index(b"NEEDLE"), line.index(b"NEEDLE") + 6)
     assert line.decode("utf-8", "replace")[start:end] == "NEEDLE"
-    start, end = _char_span(line, line.index(b"more"), line.index(b"more") + 4)
+    start, end = history_cmds._char_span(line, line.index(b"more"), line.index(b"more") + 4)
     assert line.decode("utf-8", "replace")[start:end] == "more"
 
 
 def test_a_scoped_search_names_the_session_it_searched(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`history search TERM --session ID` searches one session dir; an empty result names it."""
     import shutil
 
-    from agent6.paths import state_dir
-    from agent6.sessions.layout import bucket_dir
+    from agent6 import paths
+    from agent6.sessions import layout
     from agent6.ui.cli import main
 
     if shutil.which("rg") is None:
         pytest.skip("ripgrep is not installed")
     monkeypatch.chdir(tmp_path)
-    runs = bucket_dir(state_dir(tmp_path), "runs")
+    runs = layout.bucket_dir(paths.state_dir(tmp_path), "runs")
     for sid, text in (("quiet-run-AAAAAA", "nothing here"), ("other-run-BBBBBB", "UNIQUETERM123")):
         (runs / sid).mkdir(parents=True)
         (runs / sid / "logs.jsonl").write_text(
@@ -358,16 +365,16 @@ def test_a_scoped_search_names_the_session_it_searched(
 @pytest.mark.parametrize("verb", ["graph", "transcript"])
 def test_cross_bucket_inspection_errors_call_an_ask_a_session(
     verb: str,
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from agent6.paths import state_dir
-    from agent6.sessions.layout import bucket_dir
+    from agent6 import paths
+    from agent6.sessions import layout
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    session = bucket_dir(state_dir(tmp_path), "asks") / "ask-one-AAAAAA"
+    session = layout.bucket_dir(paths.state_dir(tmp_path), "asks") / "ask-one-AAAAAA"
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "ask"}) + "\n", encoding="utf-8"
@@ -380,21 +387,20 @@ def test_cross_bucket_inspection_errors_call_an_ask_a_session(
 
 
 def test_an_unscoped_no_match_names_the_sessions_root_it_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A bare `history search` reads `<state>/sessions`, and an empty result names that."""
     import shutil
 
-    from agent6 import memory
-    from agent6.paths import state_dir
-    from agent6.sessions.layout import bucket_dir
+    from agent6 import memory, paths
+    from agent6.sessions import layout
     from agent6.ui.cli import main
 
     if shutil.which("rg") is None:
         pytest.skip("ripgrep is not installed")
     monkeypatch.chdir(tmp_path)
-    state = state_dir(tmp_path)
-    run_dir = bucket_dir(state, "runs") / "quiet-run-AAAAAA"
+    state = paths.state_dir(tmp_path)
+    run_dir = layout.bucket_dir(state, "runs") / "quiet-run-AAAAAA"
     run_dir.mkdir(parents=True)
     (run_dir / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "nothing here"}) + "\n",

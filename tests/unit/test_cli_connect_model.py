@@ -4,21 +4,20 @@
 
 from __future__ import annotations
 
+import pathlib
 import stat
 from collections.abc import Callable
-from pathlib import Path
 
 import pytest
 
-from agent6 import secrets
-from agent6.models.cache import KeyProbeResult
-from agent6.paths import state_dir
+from agent6 import paths, secrets
+from agent6.models import cache
 from agent6.ui.cli import main
 from agent6.ui.cli import model as modelmod
 
 
 @pytest.fixture
-def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)
     # An interactive terminal by default: the masked-input path runs only when stdin is a TTY.
@@ -26,7 +25,7 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     # The post-save key probe is stubbed so no test makes a network call; probe tests re-patch it.
     monkeypatch.setattr(
         "agent6.ui.cli.connect.probe_provider_key",
-        lambda *a, **k: KeyProbeResult(  # type: ignore[misc]
+        lambda *a, **k: cache.KeyProbeResult(  # type: ignore[misc]
             ok=True, status="ok", detail="provider returned 1 models"
         ),
     )
@@ -34,7 +33,7 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 def test_connect_stores_key_and_provider_and_never_execs(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
     # Security: connect must NEVER run a subprocess (no remote-supplied command).
@@ -59,7 +58,7 @@ def test_connect_stores_key_and_provider_and_never_execs(
 
 
 def test_connect_preserves_hand_edited_provider_keys(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """Re-running connect for a key rotation keeps the operator's hand-added sibling keys."""
     gc = tmp_path / "g" / "agent6" / "config.toml"
@@ -86,7 +85,7 @@ def test_connect_preserves_hand_edited_provider_keys(
 
 
 def test_connect_validates_key_and_reports_ok(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-REAL")
     rc = main(["connect", "anthropic"])  # iso stubs the probe -> ok
@@ -97,12 +96,12 @@ def test_connect_validates_key_and_reports_ok(
 
 
 def test_connect_warns_when_provider_rejects_key(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-BAD")
     monkeypatch.setattr(
         "agent6.ui.cli.connect.probe_provider_key",
-        lambda *a, **k: KeyProbeResult(ok=False, status="auth_failed", detail="HTTP 401"),  # type: ignore[misc]
+        lambda *a, **k: cache.KeyProbeResult(ok=False, status="auth_failed", detail="HTTP 401"),  # type: ignore[misc]
     )
     rc = main(["connect", "anthropic"])
     assert rc == 0  # the key is saved anyway; the warning is advisory
@@ -114,11 +113,11 @@ def test_connect_warns_when_provider_rejects_key(
 
 
 def test_connect_no_verify_skips_the_probe(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-REAL")
 
-    def _boom(*_a: object, **_k: object) -> KeyProbeResult:
+    def _boom(*_a: object, **_k: object) -> cache.KeyProbeResult:
         raise AssertionError("--no-verify must not probe the provider")
 
     monkeypatch.setattr("agent6.ui.cli.connect.probe_provider_key", _boom)
@@ -128,7 +127,7 @@ def test_connect_no_verify_skips_the_probe(
 
 
 def test_connect_non_tty_reads_plain_input_without_getpass(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     # With no controlling terminal the key is read with input(), never getpass.
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
@@ -145,7 +144,7 @@ def test_connect_non_tty_reads_plain_input_without_getpass(
 
 
 def test_connect_rejects_non_bare_key_provider_name(
-    iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A name with a space would corrupt `[providers.<name>]`; rejected before any write.
     rc = main(["connect", "my provider"])
@@ -158,7 +157,7 @@ def test_connect_rejects_non_bare_key_provider_name(
 
 
 def test_connect_prints_post_entry_key_summary(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Python < 3.14 getpass has no echo_char: the helper prints a length and last-four summary.
     def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
@@ -177,7 +176,7 @@ def test_connect_prints_post_entry_key_summary(
 
 
 def test_connect_short_key_summary_omits_tail(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
         if "echo_char" in kwargs:
@@ -193,7 +192,7 @@ def test_connect_short_key_summary_omits_tail(
 
 
 def test_connect_masked_echo_skips_summary(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Python 3.14+ getpass masks live, so no post-entry summary.
     def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
@@ -207,7 +206,7 @@ def test_connect_masked_echo_skips_summary(
 
 
 def test_connect_local_endpoint_no_key(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "")
     monkeypatch.setattr("builtins.input", lambda prompt="": "")  # accept default base_url
@@ -219,7 +218,9 @@ def test_connect_local_endpoint_no_key(
     assert not (tmp_path / "g" / "agent6" / "secrets.toml").is_file()
 
 
-def test_model_set_and_show(iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_model_set_and_show(
+    iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     rc = main(["model", "worker", "anthropic/claude-x", "--effort", "medium"])
     assert rc == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
@@ -236,7 +237,7 @@ def test_model_set_and_show(iso: Path, tmp_path: Path, capsys: pytest.CaptureFix
 
 
 def test_model_all_sets_every_role(
-    iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # "all" is a pseudo-role: one command writes planner/worker/reviewer alike.
     rc = main(["model", "all", "anthropic/claude-x"])
@@ -250,9 +251,9 @@ def test_model_all_sets_every_role(
 
 
 def test_model_invalid_provider_refuses_and_rolls_back(
-    iso: Path,
+    iso: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # A role on an unconfigured provider refuses at rc 2 and leaves config.toml byte for byte.
@@ -276,7 +277,7 @@ def test_model_invalid_provider_refuses_and_rolls_back(
 
 
 def test_connect_config_rollback_uses_the_shared_refusal_without_saving_the_key(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
 
@@ -292,7 +293,7 @@ def test_connect_config_rollback_uses_the_shared_refusal_without_saving_the_key(
 
 
 def test_connect_config_rollback_precedes_the_chatgpt_sign_in(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The provider block is validated and written before the ChatGPT sign-in stores any token."""
     signed_in: list[str] = []
@@ -312,7 +313,7 @@ def test_connect_config_rollback_precedes_the_chatgpt_sign_in(
     assert signed_in == []
 
 
-def test_model_rejects_unknown_role(iso: Path) -> None:
+def test_model_rejects_unknown_role(iso: pathlib.Path) -> None:
     # argparse `choices` validates the role positional (and feeds argcomplete).
     with pytest.raises(SystemExit) as exc:
         main(["model", "bogus", "anthropic", "claude-x"])
@@ -338,7 +339,10 @@ def _key_stub(key: str | None) -> Callable[..., str | None]:
 
 
 def test_model_piped_without_model_lists_the_catalog(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     # No tty and no model named: a listing, one id per line at exit 0, with the hint on stderr.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
@@ -359,7 +363,10 @@ def test_model_piped_without_model_lists_the_catalog(
 
 
 def test_model_set_warns_when_the_provider_has_no_key(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     # A configured but keyless provider is valid config; the warning names the first run's refusal.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
@@ -375,7 +382,10 @@ def test_model_set_warns_when_the_provider_has_no_key(
 
 
 def test_model_set_stays_quiet_when_the_key_resolves(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
@@ -388,7 +398,7 @@ def test_model_set_stays_quiet_when_the_key_resolves(
 
 
 def test_model_set_keeps_an_openrouter_slug_on_the_roles_provider(
-    iso: Path, tmp_path: Path
+    iso: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
     """A slash inside a model id splits only when its head names a configured provider."""
     config = tmp_path / "g" / "agent6" / "config.toml"
@@ -406,7 +416,7 @@ def test_model_set_keeps_an_openrouter_slug_on_the_roles_provider(
 
 
 def test_model_piped_unknown_provider_errors(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("agent6.models.choices.list_models", _models_stub([]))
@@ -416,7 +426,10 @@ def test_model_piped_unknown_provider_errors(
 
 
 def test_model_stdout_piped_lists_even_with_a_tty_stdin(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     # Stdin stays a tty while stdout is piped: the listing triggers on the piped stdout.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
@@ -430,7 +443,7 @@ def test_model_stdout_piped_lists_even_with_a_tty_stdin(
 
 
 def test_model_piped_without_provider_errors_without_prompt_dump(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The provider prompt is interactive-only; piped, it is a listing.
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
@@ -442,14 +455,17 @@ def test_model_piped_without_provider_errors_without_prompt_dump(
 
 
 def test_model_whitespace_route_names_the_value(
-    iso: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["model", "worker", "   "]) == 2
     assert "'   ': no model id" in capsys.readouterr().err
 
 
 def test_model_piped_listing_notes_an_ignored_thinking_flag(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
@@ -462,14 +478,14 @@ def test_model_piped_listing_notes_an_ignored_thinking_flag(
     assert "--effort ignored" in capsys.readouterr().err
 
 
-def test_model_aborts_without_provider(iso: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_model_aborts_without_provider(iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Role given, provider omitted, none connected: refuse instead of writing bad config.
     monkeypatch.setattr("builtins.input", lambda prompt="": "")
     assert main(["model", "worker"]) == 2
 
 
 def test_model_interactive_prefill(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     # The operator picks the provider by default and the model by number from a mocked live list.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
@@ -492,7 +508,7 @@ def test_model_interactive_prefill(
 
 
 def test_model_all_interactive_prompts_once(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     # "all" prompts ONCE for provider/model (not per role), then applies to each.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
@@ -522,14 +538,14 @@ def test_model_all_interactive_prompts_once(
     assert gc.count("claude-b") == 3
 
 
-def test_model_repo_scope_writes_repo(iso: Path, tmp_path: Path) -> None:
+def test_model_repo_scope_writes_repo(iso: pathlib.Path, tmp_path: pathlib.Path) -> None:
     rc = main(["model", "reviewer", "anthropic/claude-o", "--repo"])
     assert rc == 0
-    repo_cfg = (state_dir(tmp_path) / "config.toml").read_text(encoding="utf-8")
+    repo_cfg = (paths.state_dir(tmp_path) / "config.toml").read_text(encoding="utf-8")
     assert "[models.reviewer]" in repo_cfg
 
 
-def test_config_fill_writes_global(iso: Path, tmp_path: Path) -> None:
+def test_config_fill_writes_global(iso: pathlib.Path, tmp_path: pathlib.Path) -> None:
     rc = main(["config", "fill"])
     assert rc == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
@@ -537,14 +553,14 @@ def test_config_fill_writes_global(iso: Path, tmp_path: Path) -> None:
     assert "[budget]" in gc
 
 
-def test_config_show_runs(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_config_show_runs(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["config", "show"]) == 0
     out = capsys.readouterr().out
     assert "[sandbox]" in out
     assert "source:" in out
 
 
-def test_config_path_runs(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_config_path_runs(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["config", "path"]) == 0
     out = capsys.readouterr().out
     assert "global config" in out
@@ -580,7 +596,10 @@ class _TokenResp:
 
 
 def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The headless ChatGPT paste flow signs in and writes the config.
 
@@ -628,7 +647,10 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
 
 
 def test_connect_claude_writes_the_format_only_and_stores_no_secret(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`connect claude` writes `api_format` and no secret.
 
@@ -658,7 +680,9 @@ def test_connect_claude_writes_the_format_only_and_stores_no_secret(
     assert "claude auth logout" in capsys.readouterr().err
 
 
-def test_connect_chatgpt_state_mismatch_refuses(iso: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_connect_chatgpt_state_mismatch_refuses(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("agent6.ui.cli.connect.pysecrets.token_urlsafe", lambda n=24: "STATE1")
     monkeypatch.setattr(
@@ -678,9 +702,9 @@ def test_oauth_callback_server_round_trip() -> None:
     import urllib.error
     import urllib.request
 
-    from agent6.ui.cli.connect import _CallbackServer  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import connect  # pyright: ignore[reportPrivateUsage]
 
-    srv = _CallbackServer("S1", port=0)
+    srv = connect._CallbackServer("S1", port=0)
     try:
         base = f"http://127.0.0.1:{srv.port}"
         with pytest.raises(urllib.error.HTTPError) as e404:
@@ -698,7 +722,7 @@ def test_oauth_callback_server_round_trip() -> None:
 
 
 def test_connect_logout_revokes_and_removes_tokens(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--logout revokes a ChatGPT grant at the issuer and removes the secrets entry."""
     import time as _time
@@ -730,7 +754,7 @@ def test_connect_logout_revokes_and_removes_tokens(
 
 
 def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A tty without a display signs in by device code: no browser, no localhost server.
 
@@ -740,14 +764,16 @@ def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr("sys.platform", "linux")
 
-    from agent6.providers.chatgpt_oauth import DeviceAuth, TokenGrant
+    from agent6.providers import chatgpt_oauth
 
-    def fake_start(issuer: str, client_id: str) -> DeviceAuth:
-        return DeviceAuth(device_auth_id="da_1", user_code="AB-12", interval_s=5.0)
+    def fake_start(issuer: str, client_id: str) -> chatgpt_oauth.DeviceAuth:
+        return chatgpt_oauth.DeviceAuth(device_auth_id="da_1", user_code="AB-12", interval_s=5.0)
 
-    def fake_poll(issuer: str, client_id: str, device: DeviceAuth, *, provider: str) -> TokenGrant:
+    def fake_poll(
+        issuer: str, client_id: str, device: chatgpt_oauth.DeviceAuth, *, provider: str
+    ) -> chatgpt_oauth.TokenGrant:
         assert provider == "chatgpt"
-        return TokenGrant(_grant_jwt(), "RT9", 3600.0)
+        return chatgpt_oauth.TokenGrant(_grant_jwt(), "RT9", 3600.0)
 
     monkeypatch.setattr("agent6.ui.cli.connect.start_device_auth", fake_start)
     monkeypatch.setattr("agent6.ui.cli.connect.poll_device_auth", fake_poll)
@@ -768,23 +794,25 @@ def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
 
 
 def test_connect_chatgpt_format_under_another_name_signs_in_as_itself(
-    iso: Path, monkeypatch: pytest.MonkeyPatch
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A chatgpt-format provider under another name signs in and stores tokens as itself."""
     monkeypatch.delenv("DISPLAY", raising=False)
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr("sys.platform", "linux")
 
-    from agent6.providers.chatgpt_oauth import DeviceAuth, TokenGrant
+    from agent6.providers import chatgpt_oauth
 
-    def fake_start(issuer: str, client_id: str) -> DeviceAuth:
-        return DeviceAuth(device_auth_id="da_1", user_code="AB-12", interval_s=5.0)
+    def fake_start(issuer: str, client_id: str) -> chatgpt_oauth.DeviceAuth:
+        return chatgpt_oauth.DeviceAuth(device_auth_id="da_1", user_code="AB-12", interval_s=5.0)
 
     told: list[str] = []
 
-    def fake_poll(issuer: str, client_id: str, device: DeviceAuth, *, provider: str) -> TokenGrant:
+    def fake_poll(
+        issuer: str, client_id: str, device: chatgpt_oauth.DeviceAuth, *, provider: str
+    ) -> chatgpt_oauth.TokenGrant:
         told.append(provider)
-        return TokenGrant(_grant_jwt(), "RT9", 3600.0)
+        return chatgpt_oauth.TokenGrant(_grant_jwt(), "RT9", 3600.0)
 
     monkeypatch.setattr("agent6.ui.cli.connect.start_device_auth", fake_start)
     monkeypatch.setattr("agent6.ui.cli.connect.poll_device_auth", fake_poll)
@@ -805,7 +833,7 @@ def test_connect_chatgpt_format_under_another_name_signs_in_as_itself(
 
 
 def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(
-    iso: Path, monkeypatch: pytest.MonkeyPatch
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("DISPLAY", raising=False)
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
@@ -831,7 +859,7 @@ def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(
 
 
 def test_connect_eof_at_the_api_format_prompt_says_why(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """EOF at the api_format prompt names the abort: a custom provider name has no preset format."""
 
@@ -855,7 +883,7 @@ model = "claude-sonnet-4-5"
 
 
 def test_a_role_that_falls_back_to_the_worker_says_so(
-    iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An unset planner or reviewer shows the worker's model with an origin naming the fallback."""
     gpath = tmp_path / "g" / "agent6" / "config.toml"
@@ -871,12 +899,12 @@ def test_a_role_that_falls_back_to_the_worker_says_so(
 
 
 def test_a_number_outside_the_model_list_is_refused(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
 ) -> None:
     """A number past the picker's list is refused, not written as a model id."""
     typed = ["7", "2"]
 
-    def models(config_path: Path | None, provider: str) -> list[str]:
+    def models(config_path: pathlib.Path | None, provider: str) -> list[str]:
         return ["a", "b"]
 
     def answer(prompt: str) -> str:

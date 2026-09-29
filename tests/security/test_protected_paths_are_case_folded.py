@@ -13,31 +13,30 @@ refuses a distinct `.GIT` too.
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
 from agent6.config import Config
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.errors import ToolError
+from agent6.tools import dispatch, errors
 
 CASINGS = [".git", ".GIT", ".Git", ".gIt"]
 
 
-def _repo(tmp_path: Path) -> Path:
+def _repo(tmp_path: pathlib.Path) -> pathlib.Path:
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / "f.txt").write_text("hello\n", encoding="utf-8")
     return tmp_path
 
 
 @pytest.mark.parametrize("cased", CASINGS)
-def test_the_git_dir_is_refused_in_any_casing(tmp_path: Path, cased: str) -> None:
+def test_the_git_dir_is_refused_in_any_casing(tmp_path: pathlib.Path, cased: str) -> None:
     root = _repo(tmp_path)
-    d = ToolDispatcher(root=root, config=Config(), isolation="none")
+    d = dispatch.ToolDispatcher(root=root, config=Config(), isolation="none")
     payload = '[filter "pwn"]\n\tclean = touch /tmp/pwned\n[core]'
     try:
-        with pytest.raises(ToolError, match="Refusing to write under"):
+        with pytest.raises(errors.ToolError, match="Refusing to write under"):
             d.dispatch(
                 "apply_edit",
                 {
@@ -46,14 +45,14 @@ def test_the_git_dir_is_refused_in_any_casing(tmp_path: Path, cased: str) -> Non
                 },
             )
         patch = f"--- a/{cased}/config\n+++ b/{cased}/config\n@@ -1 +1,2 @@\n [core]\n+x\n"
-        with pytest.raises(ToolError, match="Refusing to write under"):
+        with pytest.raises(errors.ToolError, match="Refusing to write under"):
             d.dispatch("apply_patch", {"patch": patch})
     finally:
         d.close()
     assert "filter" not in (root / ".git" / "config").read_text(encoding="utf-8")
 
 
-def test_a_protect_path_covers_the_same_name_cased_differently(tmp_path: Path) -> None:
+def test_a_protect_path_covers_the_same_name_cased_differently(tmp_path: pathlib.Path) -> None:
     """The machine-bundle guard: a `mode="run"` state cannot rewrite the next run's scripts.
 
     Whichever way it spells them.
@@ -61,7 +60,7 @@ def test_a_protect_path_covers_the_same_name_cased_differently(tmp_path: Path) -
     protected = tmp_path / "scripts"
     protected.mkdir()
     (protected / "build.sh").write_text("echo real\n", encoding="utf-8")
-    d = ToolDispatcher(
+    d = dispatch.ToolDispatcher(
         root=tmp_path,
         config=Config(),
         isolation="none",
@@ -69,7 +68,7 @@ def test_a_protect_path_covers_the_same_name_cased_differently(tmp_path: Path) -
     )
     try:
         for cased in ("scripts", "SCRIPTS", "Scripts"):
-            with pytest.raises(ToolError, match="protected path"):
+            with pytest.raises(errors.ToolError, match="protected path"):
                 d.dispatch(
                     "apply_edit",
                     {
@@ -82,15 +81,15 @@ def test_a_protect_path_covers_the_same_name_cased_differently(tmp_path: Path) -
     assert (protected / "build.sh").read_text(encoding="utf-8") == "echo real\n"
 
 
-def test_an_installed_package_tree_is_refused_in_any_casing(tmp_path: Path) -> None:
+def test_an_installed_package_tree_is_refused_in_any_casing(tmp_path: pathlib.Path) -> None:
     """Editing an installed tree corrupts the operator's venv, unseen in any diff (gitignored)."""
     for cased in ("site-packages", "SITE-PACKAGES", "Site-Packages"):
         tree = tmp_path / "lib" / cased / "pkg"
         tree.mkdir(parents=True)
         (tree / "mod.py").write_text("VALUE = 1\n", encoding="utf-8")
-        d = ToolDispatcher(root=tmp_path, config=Config(), isolation="none")
+        d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="none")
         try:
-            with pytest.raises(ToolError, match="installed-package tree"):
+            with pytest.raises(errors.ToolError, match="installed-package tree"):
                 d.dispatch(
                     "apply_edit",
                     {
@@ -103,12 +102,12 @@ def test_an_installed_package_tree_is_refused_in_any_casing(tmp_path: Path) -> N
         assert (tree / "mod.py").read_text(encoding="utf-8") == "VALUE = 1\n"
 
 
-def test_a_neighbour_that_merely_starts_the_same_is_untouched(tmp_path: Path) -> None:
+def test_a_neighbour_that_merely_starts_the_same_is_untouched(tmp_path: pathlib.Path) -> None:
     """Folding compares whole components: `.github` is ordinary content."""
     root = _repo(tmp_path)
     (root / ".github" / "workflows").mkdir(parents=True)
     (root / ".github" / "workflows" / "ci.yml").write_text("on: push\n", encoding="utf-8")
-    d = ToolDispatcher(root=root, config=Config(), isolation="none")
+    d = dispatch.ToolDispatcher(root=root, config=Config(), isolation="none")
     try:
         d.dispatch(
             "apply_edit",

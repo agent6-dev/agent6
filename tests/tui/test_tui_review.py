@@ -10,18 +10,17 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from pathlib import Path
+import pathlib
 from typing import Any
 
-from textual.widgets import TextArea
+from textual import widgets
 
-from agent6.sessions.ipc import write_worker_pid
+from agent6.sessions import ipc
 from agent6.ui.tui import app as app_mod
-from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.modals import TextModal
+from agent6.ui.tui import modals
 
 
-def _run_dir(tmp_path: Path, name: str, *, ended: bool) -> Path:
+def _run_dir(tmp_path: pathlib.Path, name: str, *, ended: bool) -> pathlib.Path:
     run = tmp_path / name
     run.mkdir()
     events: list[dict[str, Any]] = [
@@ -33,10 +32,14 @@ def _run_dir(tmp_path: Path, name: str, *, ended: bool) -> Path:
     return run
 
 
-def test_review_this_run_opens_the_cli_review_in_a_modal(tmp_path: Path, monkeypatch: Any) -> None:
+def test_review_this_run_opens_the_cli_review_in_a_modal(
+    tmp_path: pathlib.Path, monkeypatch: Any
+) -> None:
     calls: list[list[str]] = []
 
-    def _fake_output(argv: list[str], _cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+    def _fake_output(
+        argv: list[str], _cwd: pathlib.Path, *, timeout_s: float = 120.0
+    ) -> tuple[bool, str]:
         calls.append(argv[-3:])
         return True, "## Outcome\nfinished green"
 
@@ -44,7 +47,7 @@ def test_review_this_run_opens_the_cli_review_in_a_modal(tmp_path: Path, monkeyp
     run = _run_dir(tmp_path, "done-run-AAAAAA", ended=True)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = app_mod.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.pause()
@@ -52,58 +55,64 @@ def test_review_this_run_opens_the_cli_review_in_a_modal(tmp_path: Path, monkeyp
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert calls == [["review", "--", "done-run-AAAAAA"]]
-            assert isinstance(app.screen, TextModal)
-            assert "finished green" in app.screen.query_one("#text-view", TextArea).text
+            assert isinstance(app.screen, modals.TextModal)
+            assert "finished green" in app.screen.query_one("#text-view", widgets.TextArea).text
 
     asyncio.run(scenario())
 
 
-def test_review_of_a_live_run_is_refused_without_a_call(tmp_path: Path, monkeypatch: Any) -> None:
+def test_review_of_a_live_run_is_refused_without_a_call(
+    tmp_path: pathlib.Path, monkeypatch: Any
+) -> None:
     calls: list[list[str]] = []
 
-    def _fake_output(argv: list[str], _cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+    def _fake_output(
+        argv: list[str], _cwd: pathlib.Path, *, timeout_s: float = 120.0
+    ) -> tuple[bool, str]:
         calls.append(argv)
         return True, "never"
 
     monkeypatch.setattr(app_mod, "run_cli_output", _fake_output)
     run = _run_dir(tmp_path, "live-run-AAAAAA", ended=False)
-    write_worker_pid(run, os.getpid())
+    ipc.write_worker_pid(run, os.getpid())
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = app_mod.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.action_review_run()
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert calls == []
-            assert not isinstance(app.screen, TextModal)
+            assert not isinstance(app.screen, modals.TextModal)
 
     asyncio.run(scenario())
 
 
-def test_a_refused_review_is_a_notice_not_a_modal(tmp_path: Path, monkeypatch: Any) -> None:
-    def _fake_output(_argv: list[str], _cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+def test_a_refused_review_is_a_notice_not_a_modal(tmp_path: pathlib.Path, monkeypatch: Any) -> None:
+    def _fake_output(
+        _argv: list[str], _cwd: pathlib.Path, *, timeout_s: float = 120.0
+    ) -> tuple[bool, str]:
         return False, "no reviewer route"
 
     monkeypatch.setattr(app_mod, "run_cli_output", _fake_output)
     run = _run_dir(tmp_path, "done-run-BBBBBB", ended=True)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = app_mod.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.pause()
             app.action_review_run()
             await app.workers.wait_for_complete()
             await pilot.pause()
-            assert not isinstance(app.screen, TextModal)
+            assert not isinstance(app.screen, modals.TextModal)
 
     asyncio.run(scenario())
 
 
 def test_a_second_pick_while_a_review_runs_starts_no_second_call(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """Run > Review this run… picked twice during a call runs one reviewer and opens one modal."""
     import threading
@@ -111,7 +120,9 @@ def test_a_second_pick_while_a_review_runs_starts_no_second_call(
     gate = threading.Event()
     calls: list[list[str]] = []
 
-    def _slow_output(argv: list[str], _cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+    def _slow_output(
+        argv: list[str], _cwd: pathlib.Path, *, timeout_s: float = 120.0
+    ) -> tuple[bool, str]:
         calls.append(argv[-3:])
         gate.wait(5)
         return True, "## Outcome\nfinished green"
@@ -120,7 +131,7 @@ def test_a_second_pick_while_a_review_runs_starts_no_second_call(
     run = _run_dir(tmp_path, "done-run-CCCCCC", ended=True)
 
     async def scenario() -> None:
-        app = Agent6TUI(run)
+        app = app_mod.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.pause()
@@ -132,6 +143,6 @@ def test_a_second_pick_while_a_review_runs_starts_no_second_call(
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert calls == [["review", "--", "done-run-CCCCCC"]]
-            assert isinstance(app.screen, TextModal)
+            assert isinstance(app.screen, modals.TextModal)
 
     asyncio.run(scenario())

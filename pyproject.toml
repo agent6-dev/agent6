@@ -150,7 +150,9 @@ max-complexity = 20
 # Members are never imported from these: `from agent6.pkg import module` and
 # `module.name` at the call site (typing and collections.abc excepted). The
 # agent6 entries are every leaf module of the tree, pinned by
-# tests/unit/test_import_style.py.
+# tests/unit/test_import_style.py. A package whose submodules are imported
+# (textual, importlib, unittest) is not listed: `from textual import widgets`
+# is the module style, and the rule would refuse it.
 banned-from = [
     "agent6._data.words",
     "agent6.app._execution",
@@ -439,7 +441,6 @@ banned-from = [
     "functools",
     "http.client",
     "http.server",
-    "importlib",
     "io",
     "ipaddress",
     "itertools",
@@ -451,7 +452,6 @@ banned-from = [
     "pydantic_core",
     "rich.markup",
     "rich.text",
-    "textual",
     "textual.app",
     "textual.binding",
     "textual.command",
@@ -462,12 +462,10 @@ banned-from = [
     "textual.screen",
     "textual.timer",
     "textual.widgets",
-    "textual.widgets._select",
     "threading",
     "tree_sitter",
     "tree_sitter_language_pack",
     "types",
-    "unittest",
     "unittest.mock",
     "urllib.error",
     "urllib.parse",
@@ -512,7 +510,7 @@ banned-from = [
 # page.py composes embedded HTML asset strings; line length is meaningless there.
 "src/agent6/ui/web/page.py" = ["E501"]
 # A test module, class or function needs no docstring; one that has one names the regression.
-"tests/**" = ["ANN", "B017", "D1", "DOC", "ICN003", "PLC0415", "PLR0915", "PLR2004", "S"]
+"tests/**" = ["ANN", "B017", "D1", "DOC", "PLC0415", "PLR0915", "PLR2004", "S"]
 
 [tool.pyright]
 include = ["docs/gen_contracts.py", "src", "tests"]
@@ -531,11 +529,11 @@ reportPrivateUsage = false
 reportUnusedFunction = false
 reportUnusedClass = false
 
-# The headless TUI tests poke internal seams (`_handle_event`, `_tick`) on
-# purpose, so silence the private-usage check here only. The root also decides
-# where an absolute import resolves from, so the tree itself stays on the path.
+# Tests reach a module's internal seams (`_handle_event`, `_policy_spec`) by attribute
+# on purpose, so the private-usage check is off for them. The root also decides where
+# an absolute import resolves from, so the tree itself stays on the path.
 [[tool.pyright.executionEnvironments]]
-root = "tests/tui"
+root = "tests"
 extraPaths = ["."]
 reportPrivateUsage = false
 

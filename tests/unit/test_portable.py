@@ -9,12 +9,11 @@ single-writer invariants on Windows/macOS/Linux alike.
 from __future__ import annotations
 
 import os
-from pathlib import Path
+import pathlib
 
 import pytest
 
 from agent6 import portable
-from agent6.portable import atomic_write, fsync_dir, lock_exclusive, unlock
 
 
 def test_toml_basic_string_round_trips_including_control_chars() -> None:
@@ -28,57 +27,57 @@ def test_toml_basic_string_round_trips_including_control_chars() -> None:
         assert tomllib.loads(f"k = {rendered}")["k"] == raw
 
 
-def test_exclusive_lock_blocks_second_holder(tmp_path: Path) -> None:
+def test_exclusive_lock_blocks_second_holder(tmp_path: pathlib.Path) -> None:
     lock_path = tmp_path / "x.lock"
     fd1 = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     fd2 = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        lock_exclusive(fd1, blocking=False)
+        portable.lock_exclusive(fd1, blocking=False)
         with pytest.raises(OSError):
-            lock_exclusive(fd2, blocking=False)
-        unlock(fd1)
+            portable.lock_exclusive(fd2, blocking=False)
+        portable.unlock(fd1)
         # Now the second holder can take it.
-        lock_exclusive(fd2, blocking=False)
-        unlock(fd2)
+        portable.lock_exclusive(fd2, blocking=False)
+        portable.unlock(fd2)
     finally:
         os.close(fd1)
         os.close(fd2)
 
 
-def test_lock_then_unlock_is_reusable(tmp_path: Path) -> None:
+def test_lock_then_unlock_is_reusable(tmp_path: pathlib.Path) -> None:
     lock_path = tmp_path / "y.lock"
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        lock_exclusive(fd, blocking=True)
-        unlock(fd)
-        lock_exclusive(fd, blocking=True)
-        unlock(fd)
+        portable.lock_exclusive(fd, blocking=True)
+        portable.unlock(fd)
+        portable.lock_exclusive(fd, blocking=True)
+        portable.unlock(fd)
     finally:
         os.close(fd)
 
 
-def test_fsync_dir_does_not_raise(tmp_path: Path) -> None:
+def test_fsync_dir_does_not_raise(tmp_path: pathlib.Path) -> None:
     # Should be a durable no-op-or-fsync regardless of platform.
-    fsync_dir(tmp_path)
+    portable.fsync_dir(tmp_path)
 
 
 def test_atomic_write_fsyncs_file_and_parent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fsynced_files: list[int] = []
-    fsynced_dirs: list[Path] = []
+    fsynced_dirs: list[pathlib.Path] = []
 
     def record_file_fsync(fd: int) -> None:
         fsynced_files.append(fd)
 
-    def record_dir_fsync(path: Path) -> None:
+    def record_dir_fsync(path: pathlib.Path) -> None:
         fsynced_dirs.append(path)
 
     monkeypatch.setattr(portable.os, "fsync", record_file_fsync)
     monkeypatch.setattr(portable, "fsync_dir", record_dir_fsync)
 
     target = tmp_path / "state.json"
-    atomic_write(target, '{"ok": true}')
+    portable.atomic_write(target, '{"ok": true}')
 
     assert target.read_text(encoding="utf-8") == '{"ok": true}'
     assert not (tmp_path / "state.json.tmp").exists()
@@ -87,24 +86,24 @@ def test_atomic_write_fsyncs_file_and_parent(
 
 
 def test_atomic_write_fsyncs_new_parent_dirs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fsynced_dirs: list[Path] = []
+    fsynced_dirs: list[pathlib.Path] = []
 
-    def record_dir_fsync(path: Path) -> None:
+    def record_dir_fsync(path: pathlib.Path) -> None:
         fsynced_dirs.append(path)
 
     monkeypatch.setattr(portable, "fsync_dir", record_dir_fsync)
 
     target = tmp_path / "new" / "nested" / "state.json"
-    atomic_write(target, "ok")
+    portable.atomic_write(target, "ok")
 
     assert target.read_text(encoding="utf-8") == "ok"
     assert fsynced_dirs == [tmp_path, tmp_path / "new", tmp_path / "new" / "nested"]
 
 
 def test_atomic_write_concurrent_writers_do_not_share_temp(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import threading
 
@@ -116,12 +115,12 @@ def test_atomic_write_concurrent_writers_do_not_share_temp(
     def wait_at_file_fsync(_fd: int) -> None:
         barrier.wait(timeout=5.0)
 
-    def noop_fsync_dir(_path: Path) -> None:
+    def noop_fsync_dir(_path: pathlib.Path) -> None:
         return None
 
     def write_payload(n: int) -> None:
         try:
-            atomic_write(target, f"payload-{n}")
+            portable.atomic_write(target, f"payload-{n}")
         except Exception as exc:  # pragma: no cover - assertion reports it
             errors.append(exc)
 
@@ -139,7 +138,9 @@ def test_atomic_write_concurrent_writers_do_not_share_temp(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
-def test_atomic_write_new_file_is_owner_only_under_restrictive_umask(tmp_path: Path) -> None:
+def test_atomic_write_new_file_is_owner_only_under_restrictive_umask(
+    tmp_path: pathlib.Path,
+) -> None:
     import stat
 
     # A new state file must not be widened to a hardcoded 0o644 (bypassing the
@@ -147,24 +148,24 @@ def test_atomic_write_new_file_is_owner_only_under_restrictive_umask(tmp_path: P
     old = os.umask(0o077)
     try:
         target = tmp_path / "state.json"
-        atomic_write(target, "{}")
+        portable.atomic_write(target, "{}")
         assert stat.S_IMODE(target.stat().st_mode) == 0o600
     finally:
         os.umask(old)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
-def test_atomic_write_preserves_existing_mode(tmp_path: Path) -> None:
+def test_atomic_write_preserves_existing_mode(tmp_path: pathlib.Path) -> None:
     import stat
 
     target = tmp_path / "state.json"
-    atomic_write(target, "first")
+    portable.atomic_write(target, "first")
     target.chmod(0o640)
-    atomic_write(target, "second")  # a re-publish must keep the file's own mode
+    portable.atomic_write(target, "second")  # a re-publish must keep the file's own mode
     assert stat.S_IMODE(target.stat().st_mode) == 0o640
 
 
-def test_locked_file_is_same_thread_reentrant(tmp_path: Path) -> None:
+def test_locked_file_is_same_thread_reentrant(tmp_path: pathlib.Path) -> None:
     """locked_file is reentrant on the same thread.
 
     A transaction (write, revalidate, rollback) holds locked_file around per-write helpers that each
@@ -191,7 +192,7 @@ def test_locked_file_is_same_thread_reentrant(tmp_path: Path) -> None:
     assert not (tmp_path / "c.toml.lock").exists()  # released and cleaned once
 
 
-def test_locked_file_blocks_other_threads_despite_reentrancy(tmp_path: Path) -> None:
+def test_locked_file_blocks_other_threads_despite_reentrancy(tmp_path: pathlib.Path) -> None:
     """Reentrancy is per-thread only: a second thread must still queue.
 
     The holder records its exit INSIDE the block. A lock orders critical
@@ -233,7 +234,7 @@ def test_locked_file_blocks_other_threads_despite_reentrancy(tmp_path: Path) -> 
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks + O_NOFOLLOW")
-def test_locked_file_refuses_a_symlinked_lock_and_fails_open(tmp_path: Path) -> None:
+def test_locked_file_refuses_a_symlinked_lock_and_fails_open(tmp_path: pathlib.Path) -> None:
     """A planted symlink at the predictable ``<name>.lock`` path must never be followed.
 
     An earlier build chowned that fd as root, turning the lock into an arbitrary-file ownership-
@@ -255,7 +256,9 @@ def test_locked_file_refuses_a_symlinked_lock_and_fails_open(tmp_path: Path) -> 
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
-def test_locked_file_reentrant_across_atomic_write_of_symlinked_target(tmp_path: Path) -> None:
+def test_locked_file_reentrant_across_atomic_write_of_symlinked_target(
+    tmp_path: pathlib.Path,
+) -> None:
     """locked_file stays reentrant across an atomic_write of a symlinked target.
 
     Keying reentrancy on `target.resolve()` self-deadlocks a symlinked config: the first
@@ -274,7 +277,7 @@ def test_locked_file_reentrant_across_atomic_write_of_symlinked_target(tmp_path:
     def txn() -> None:
         with portable.locked_file(target):
             entered.append("leaf-1")
-            atomic_write(target, "x = 1\n")  # replaces the symlink with a regular file
+            portable.atomic_write(target, "x = 1\n")  # replaces the symlink with a regular file
             with portable.locked_file(target):
                 entered.append("leaf-2")
 
@@ -287,7 +290,7 @@ def test_locked_file_reentrant_across_atomic_write_of_symlinked_target(tmp_path:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
-def test_locked_file_fails_open_on_an_unreopenable_lock(tmp_path: Path) -> None:
+def test_locked_file_fails_open_on_an_unreopenable_lock(tmp_path: pathlib.Path) -> None:
     """locked_file fails open on an unreopenable lock.
 
     A stale lock a killed `sudo` writer left root-owned is unreopenable by a later non-root process;
@@ -307,7 +310,9 @@ def test_locked_file_fails_open_on_an_unreopenable_lock(tmp_path: Path) -> None:
         lock.chmod(0o600)
 
 
-def test_locked_file_reports_acquisition(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_locked_file_reports_acquisition(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """locked_file reports whether it acquired the lock.
 
     The fail-open contract is unchanged; the yielded bool lets a transaction that would restore a
@@ -322,7 +327,7 @@ def test_locked_file_reports_acquisition(tmp_path: Path, monkeypatch: pytest.Mon
         with portable_mod.locked_file(target) as inner:
             assert inner is True  # reentrant: the outer acquisition's truth
 
-    def _no_lock(_p: Path) -> int | None:
+    def _no_lock(_p: pathlib.Path) -> int | None:
         return None
 
     monkeypatch.setattr(portable_mod, "_acquire_lock", _no_lock)
@@ -338,13 +343,11 @@ def test_a_cut_stderr_tail_says_it_was_cut() -> None:
     A diagnostic cut at 400 characters with no marker reads a partial failure as a complete one; the
     one owner marks the cut and starts at a line.
     """
-    from agent6.portable import stderr_tail
-
     keep = [(f"line {i}: " + "x" * 60 + "\n").encode() for i in range(20)]
-    tail = stderr_tail(keep, limit=200)
+    tail = portable.stderr_tail(keep, limit=200)
     assert tail.startswith("…[agent6: ") and "earlier chars cut]" in tail
     assert tail.endswith("x" * 60)
-    assert stderr_tail([b"short\n"]) == "short"
+    assert portable.stderr_tail([b"short\n"]) == "short"
 
 
 def test_the_stderr_drain_keeps_what_a_live_child_said() -> None:
@@ -356,12 +359,10 @@ def test_the_stderr_drain_keeps_what_a_live_child_said() -> None:
     import threading
     import time
 
-    from agent6.portable import drain_stderr
-
     r, w = os.pipe()
     reader = os.fdopen(r, "rb")  # buffered, as a Popen pipe is by default
     kept: list[bytes] = []
-    threading.Thread(target=drain_stderr, args=(reader, kept), daemon=True).start()
+    threading.Thread(target=portable.drain_stderr, args=(reader, kept), daemon=True).start()
     os.write(w, b"FATAL: missing API token\n")
     deadline = time.monotonic() + 2.0
     while not kept and time.monotonic() < deadline:
@@ -381,12 +382,10 @@ def test_the_stderr_drain_keeps_a_byte_budget_of_tail() -> None:
     """
     import threading
 
-    from agent6.portable import STDERR_KEEP_BYTES, drain_stderr
-
     r, w = os.pipe()
     reader = os.fdopen(r, "rb")
     kept: list[bytes] = []
-    drain = threading.Thread(target=drain_stderr, args=(reader, kept), daemon=True)
+    drain = threading.Thread(target=portable.drain_stderr, args=(reader, kept), daemon=True)
     drain.start()
     for i in range(3000):
         os.write(w, f"line {i:05d}\n".encode())
@@ -394,5 +393,5 @@ def test_the_stderr_drain_keeps_a_byte_budget_of_tail() -> None:
     drain.join(timeout=5.0)
     reader.close()
     tail = b"".join(kept)
-    assert STDERR_KEEP_BYTES <= len(tail) <= STDERR_KEEP_BYTES + 4096, len(tail)
+    assert portable.STDERR_KEEP_BYTES <= len(tail) <= portable.STDERR_KEEP_BYTES + 4096, len(tail)
     assert tail.endswith(b"line 02999\n")

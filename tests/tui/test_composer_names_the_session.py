@@ -9,18 +9,18 @@ other surface.
 
 from __future__ import annotations
 
-from agent6.ui.tui.composer import composer_labels
+from agent6.ui.tui import composer
 
 
 def test_a_finished_session_offers_to_continue_the_session() -> None:
-    title, keys = composer_labels("resume")
+    title, keys = composer.composer_labels("resume")
     assert "run" not in title, title
     assert "session" in title
     assert "resumes" in keys
 
 
 def test_a_live_session_offers_to_steer_the_session() -> None:
-    title, _keys = composer_labels("steer")
+    title, _keys = composer.composer_labels("steer")
     assert "run" not in title, title
     assert "session" in title
     assert "/pin" in title and "/compact" in title
@@ -28,6 +28,9 @@ def test_a_live_session_offers_to_steer_the_session() -> None:
 
 def test_a_finished_run_asks_for_new_work() -> None:
     """A run finished green has nothing to continue: the TUI asks what it should do next."""
-    assert composer_labels("resume", needs_new_work=True)[0] == "what should it do next"
-    assert composer_labels("resume")[0] == "continue this session"
-    assert composer_labels("resume", continue_as="f", needs_new_work=True)[0] == "continue as f"
+    assert composer.composer_labels("resume", needs_new_work=True)[0] == "what should it do next"
+    assert composer.composer_labels("resume")[0] == "continue this session"
+    assert (
+        composer.composer_labels("resume", continue_as="f", needs_new_work=True)[0]
+        == "continue as f"
+    )

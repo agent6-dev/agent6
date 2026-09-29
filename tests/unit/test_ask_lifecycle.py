@@ -5,17 +5,16 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
+from agent6 import paths
 from agent6.config import Config
-from agent6.paths import state_dir
-from agent6.sessions.layout import session_layout
-from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.sessions import layout, manifest
 
 
-def _session(state: Path, bucket: str, sid: str, mode: str) -> Path:
+def _session(state: pathlib.Path, bucket: str, sid: str, mode: str) -> pathlib.Path:
     d = state / "sessions" / bucket / sid
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
@@ -24,68 +23,72 @@ def _session(state: Path, bucket: str, sid: str, mode: str) -> Path:
     return d
 
 
-def test_an_ask_id_resolves_to_its_own_bucket(tmp_path: Path) -> None:
+def test_an_ask_id_resolves_to_its_own_bucket(tmp_path: pathlib.Path) -> None:
     """Resume looked only under runs/, so an ask could not be continued at all."""
     _session(tmp_path, "asks", "quiet-fox-AAAAAA", "ask")
     _session(tmp_path, "runs", "brave-elk-BBBBBB", "run")
-    ask = session_layout(tmp_path, "quiet-fox-AAAAAA")
-    run = session_layout(tmp_path, "brave-elk-BBBBBB")
+    ask = layout.session_layout(tmp_path, "quiet-fox-AAAAAA")
+    run = layout.session_layout(tmp_path, "brave-elk-BBBBBB")
     assert ask is not None and ask.subdir == "asks"
     assert run is not None and run.subdir == "runs"
     assert ask.session_dir.is_dir()
 
 
-def test_a_unique_prefix_resolves_across_buckets(tmp_path: Path) -> None:
+def test_a_unique_prefix_resolves_across_buckets(tmp_path: pathlib.Path) -> None:
     _session(tmp_path, "asks", "quiet-fox-AAAAAA", "ask")
-    found = session_layout(tmp_path, "quiet-fox")
+    found = layout.session_layout(tmp_path, "quiet-fox")
     assert found is not None and found.session_id == "quiet-fox-AAAAAA"
 
 
-def test_an_ambiguous_prefix_resolves_to_nothing_rather_than_guessing(tmp_path: Path) -> None:
+def test_an_ambiguous_prefix_resolves_to_nothing_rather_than_guessing(
+    tmp_path: pathlib.Path,
+) -> None:
     _session(tmp_path, "asks", "quiet-fox-AAAAAA", "ask")
     _session(tmp_path, "runs", "quiet-fox-BBBBBB", "run")
-    assert session_layout(tmp_path, "quiet-fox") is None
+    assert layout.session_layout(tmp_path, "quiet-fox") is None
 
 
-def test_an_unknown_id_resolves_to_nothing(tmp_path: Path) -> None:
-    assert session_layout(tmp_path, "nope") is None
-    assert session_layout(tmp_path, "") is None
+def test_an_unknown_id_resolves_to_nothing(tmp_path: pathlib.Path) -> None:
+    assert layout.session_layout(tmp_path, "nope") is None
+    assert layout.session_layout(tmp_path, "") is None
 
 
-def test_ask_is_a_mode_resume_and_fork_may_act_on(tmp_path: Path) -> None:
+def test_ask_is_a_mode_resume_and_fork_may_act_on(tmp_path: pathlib.Path) -> None:
     """The ask mode passes the privilege gate as less privileged than plan.
 
     Resume and fork act on it.
     """
     d = _session(tmp_path, "asks", "quiet-fox-AAAAAA", "ask")
-    assert read_manifest(d).session_mode() == "ask"
+    assert manifest.read_manifest(d).session_mode() == "ask"
 
 
-def test_an_unknown_mode_is_still_refused(tmp_path: Path) -> None:
+def test_an_unknown_mode_is_still_refused(tmp_path: pathlib.Path) -> None:
     """A damaged manifest must not fall open to the privileged write mode."""
     d = _session(tmp_path, "asks", "odd-AAAAAA", "wat")
-    with pytest.raises(ManifestError, match="unknown session mode"):
-        read_manifest(d).session_mode()
+    with pytest.raises(manifest.ManifestError, match="unknown session mode"):
+        manifest.read_manifest(d).session_mode()
 
 
 def test_a_resumed_ask_is_still_clamped() -> None:
     """A resumed ask is still clamped: the clamp lives with the mode, not one lifecycle."""
-    from agent6.app._setup import session_config
+    from agent6.app import _setup
 
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
-    assert session_config(cfg, "ask").sandbox.run_commands == "ask"
-    assert session_config(cfg, "run").sandbox.run_commands == "yes"
+    assert _setup.session_config(cfg, "ask").sandbox.run_commands == "ask"
+    assert _setup.session_config(cfg, "run").sandbox.run_commands == "yes"
 
 
-def test_a_run_can_be_seeded_from_an_ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_run_can_be_seeded_from_an_ask(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A run can be seeded from an ask; the ask is untouched, since seeding starts a new session."""
     import json
 
     from agent6.config import Config
-    from agent6.ui.cli.run import _compose_task  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import run as cli_run  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
-    ask = state_dir(tmp_path) / "sessions" / "asks" / "quiet-fox-AAAAAA"
+    ask = paths.state_dir(tmp_path) / "sessions" / "asks" / "quiet-fox-AAAAAA"
     ask.mkdir(parents=True)
     (ask / "manifest.json").write_text(
         json.dumps({"version": 3, "mode": "ask", "user_task": "how do I convert h264"}),
@@ -95,7 +98,7 @@ def test_a_run_can_be_seeded_from_an_ask(tmp_path: Path, monkeypatch: pytest.Mon
         json.dumps({"type": "session.end", "reason": "answered", "iterations": 1}) + "\n",
         encoding="utf-8",
     )
-    composed = _compose_task("do it", Config(), skills=(), seed_from="quiet-fox-AAAAAA")
+    composed = cli_run._compose_task("do it", Config(), skills=(), seed_from="quiet-fox-AAAAAA")
     assert composed.source_session_id == "quiet-fox-AAAAAA"
     assert "how do I convert h264" in composed.text  # the ask's context came across
     assert composed.text.endswith("do it")  # the operator's new task is what it ends on
@@ -103,12 +106,12 @@ def test_a_run_can_be_seeded_from_an_ask(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 def test_seeding_from_an_unknown_session_fails_loudly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from agent6 import errors
     from agent6.config import Config
-    from agent6.errors import OperatorError
-    from agent6.ui.cli.run import _compose_task  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import run as cli_run  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(OperatorError, match="could not seed"):
-        _compose_task("do it", Config(), skills=(), seed_from="nope")
+    with pytest.raises(errors.OperatorError, match="could not seed"):
+        cli_run._compose_task("do it", Config(), skills=(), seed_from="nope")

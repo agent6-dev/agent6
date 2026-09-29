@@ -8,37 +8,28 @@ in the teardown.
 
 from __future__ import annotations
 
-from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock
+import pathlib
+import types
+from unittest import mock
 
 import pytest
 
-from agent6.harness._chain import RunChain
-from agent6.harness._finish_gates import (
-    FinishCall,
-    finish_reason,
-    red_gate_returns,
-    verify_finish,
-)
-from agent6.harness.loop import (
-    Harness,
-    LoopState,
-    TurnState,
-)
-from agent6.tools.results import ExecResult
+from agent6.harness import _chain, _finish_gates, _loop_state, loop
+from agent6.tools import results
 from tests.unit.turn_context import turn_context
 
 _BASE = "b" * 40
 
 
-def _wf(*, head: str = _BASE, clean: bool = True) -> Harness:
-    wf = Harness.__new__(Harness)
-    wf.chain = RunChain(Path("/nonexistent"), base_sha=_BASE)
-    object.__setattr__(wf, "_git_status", lambda: SimpleNamespace(is_clean=clean, head_sha=head))
+def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
+    wf = loop.Harness.__new__(loop.Harness)
+    wf.chain = _chain.RunChain(pathlib.Path("/nonexistent"), base_sha=_BASE)
+    object.__setattr__(
+        wf, "_git_status", lambda: types.SimpleNamespace(is_clean=clean, head_sha=head)
+    )
     object.__setattr__(wf, "_emit", _quiet)
-    wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        harness=SimpleNamespace(
+    wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -51,7 +42,7 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> Harness:
         )
     )
     # Gate presence reads the command policy first: a gate someone may run.
-    wf.dispatcher = SimpleNamespace(command_policy=lambda: "yes")  # pyright: ignore[reportAttributeAccessIssue]
+    wf.dispatcher = types.SimpleNamespace(command_policy=lambda: "yes")  # pyright: ignore[reportAttributeAccessIssue]
     return wf
 
 
@@ -59,23 +50,25 @@ def _quiet(*_a: object, **_k: object) -> None:
     return None
 
 
-def _patch_git(monkeypatch: pytest.MonkeyPatch, wf: Harness) -> None:
+def _patch_git(monkeypatch: pytest.MonkeyPatch, wf: loop.Harness) -> None:
     def _status(_root: object, **_kw: object) -> object:
         return wf._git_status()  # pyright: ignore[reportAttributeAccessIssue]
 
     monkeypatch.setattr("agent6.harness._verify_gate.git_status", _status)
 
 
-def _state() -> LoopState:
-    return LoopState(original_task="t", tool_calls=0)
+def _state() -> _loop_state.LoopState:
+    return _loop_state.LoopState(original_task="t", tool_calls=0)
 
 
-def _verify(rc: int, *, duration_s: float = 5.0) -> ExecResult:
-    return ExecResult(returncode=rc, stdout="", stderr="", duration_s=duration_s, exec_failed=False)
+def _verify(rc: int, *, duration_s: float = 5.0) -> results.ExecResult:
+    return results.ExecResult(
+        returncode=rc, stdout="", stderr="", duration_s=duration_s, exec_failed=False
+    )
 
 
-def _turn() -> TurnState:
-    return TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
+def _turn() -> _loop_state.TurnState:
+    return _loop_state.TurnState(iteration=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
 
 @pytest.mark.parametrize("rc", [0, 1])
@@ -126,10 +119,10 @@ def test_an_unreadable_git_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> No
 
     "assume clean" would exonerate the run's own breakage.
     """
-    from agent6.git_ops import GitError
+    from agent6 import git_ops
 
     def _boom(_root: object, **_kw: object) -> object:
-        raise GitError("index.lock held")
+        raise git_ops.GitError("index.lock held")
 
     state, turn = _state(), _turn()
     monkeypatch.setattr("agent6.harness._verify_gate.git_status", _boom)
@@ -154,7 +147,7 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
     """
     wf = _wf()
     wf.mode = "run"
-    wf.dispatcher = MagicMock()
+    wf.dispatcher = mock.MagicMock()
     wf.dispatcher.command_policy.return_value = "ask"
     wf.config.harness.verify_when = "finish"
     wf.config.harness.verify_retries = 2
@@ -162,9 +155,9 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
     state.verify.baseline_ok = False
     state.verify.ever_passed = True
     state.verify.last_ok = False
-    finish = FinishCall("finish_session", "done")
+    finish = _finish_gates.FinishCall("finish_session", "done")
 
-    assert red_gate_returns(
+    assert _finish_gates.red_gate_returns(
         wf.config.harness.verify_when,
         wf.config.harness.verify_retries,
         state.verify,
@@ -172,7 +165,7 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
         gate_present=wf.gate.present(state.verify),
     )
     assert (
-        finish_reason(
+        _finish_gates.finish_reason(
             finish.kind,
             stale_gate=finish.stale_gate,
             tree_green=wf.gate.tree_green(state.verify),
@@ -185,20 +178,22 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
 @pytest.mark.parametrize(
     "result",
     [
-        ExecResult(
+        results.ExecResult(
             returncode=127,
             stdout="",
             stderr="pytest: command not found",
             duration_s=0.01,
             exec_failed=False,
         ),
-        ExecResult(returncode=124, stdout="", stderr="", duration_s=600.0, exec_failed=False),
-        ExecResult(returncode=1, stdout="", stderr="", duration_s=1.0, exec_failed=True),
+        results.ExecResult(
+            returncode=124, stdout="", stderr="", duration_s=600.0, exec_failed=False
+        ),
+        results.ExecResult(returncode=1, stdout="", stderr="", duration_s=1.0, exec_failed=True),
     ],
     ids=["runner-absent", "timed-out", "could-not-exec"],
 )
 def test_a_gate_that_never_produced_a_verdict_is_not_a_red_baseline(
-    result: ExecResult, monkeypatch: pytest.MonkeyPatch
+    result: results.ExecResult, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Recording one would excuse every real failure for the rest of the run."""
     state, turn = _state(), _turn()
@@ -210,11 +205,11 @@ def test_a_gate_that_never_produced_a_verdict_is_not_a_red_baseline(
 
 def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
     """A plan pass is never relabelled as a red gate: plan mode runs the gate but never edits."""
-    wf = Harness.__new__(Harness)
-    wf.chain = RunChain(Path("/nonexistent"))
+    wf = loop.Harness.__new__(loop.Harness)
+    wf.chain = _chain.RunChain(pathlib.Path("/nonexistent"))
     wf.mode = "plan"
-    wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        harness=SimpleNamespace(
+    wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -226,13 +221,13 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
             verify_infer=True,
         )
     )
-    wf.dispatcher = SimpleNamespace(command_policy=lambda: "yes")  # pyright: ignore[reportAttributeAccessIssue]
+    wf.dispatcher = types.SimpleNamespace(command_policy=lambda: "yes")  # pyright: ignore[reportAttributeAccessIssue]
     state = _state()
     state.verify.baseline_ok = False
     state.verify.last_ok = False
-    finish = FinishCall("finish_planning", "done")
+    finish = _finish_gates.FinishCall("finish_planning", "done")
     assert (
-        finish_reason(
+        _finish_gates.finish_reason(
             finish.kind,
             stale_gate=finish.stale_gate,
             tree_green=wf.gate.tree_green(state.verify),
@@ -247,10 +242,10 @@ def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
 
     The exit code.
     """
-    from agent6.app.finalize import session_exit_code
-    from agent6.harness._snapshot import SessionResult
+    from agent6.app import finalize
+    from agent6.harness import _snapshot
 
-    inherited = SessionResult(
+    inherited = _snapshot.SessionResult(
         completed=True,
         reason="gate_red_at_base",
         summary="s",
@@ -258,27 +253,27 @@ def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
         tool_calls=1,
         verified="failed",
     )
-    assert session_exit_code(inherited) == 4
+    assert finalize.session_exit_code(inherited) == 4
 
 
 def test_the_listing_and_the_header_agree_on_the_word() -> None:
-    from agent6.viewmodel.listing import status_word
+    from agent6.viewmodel import listing
 
-    assert status_word(finished=True, all_passed=False, end_reason="gate_red_at_base") == (
+    assert listing.status_word(finished=True, all_passed=False, end_reason="gate_red_at_base") == (
         "finished",
         "gate was already red",
     )
 
 
-def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path) -> None:
+def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: pathlib.Path) -> None:
     """A red finish is returned until the gate goes green.
 
     Whatever the gate looked like at start.
     """
     wf = _wf()
     wf.mode = "run"
-    wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        harness=SimpleNamespace(
+    wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -290,12 +285,12 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path
             verify_infer=True,
         )
     )
-    state = LoopState(original_task="t", tool_calls=0)
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.last_ok = False
     state.verify.baseline_ok = False
-    turn = TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
-    turn.finish = FinishCall("finish_session", "done")
+    turn = _loop_state.TurnState(iteration=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn.finish = _finish_gates.FinishCall("finish_session", "done")
 
     ctx = turn_context(tree_green=lambda: False, gate_present=lambda: True)
-    bounced = verify_finish(turn, state, ctx) is not None
+    bounced = _finish_gates.verify_finish(turn, state, ctx) is not None
     assert not bounced, "the finish was bounced over an inherited failure"

@@ -14,8 +14,7 @@ import sys
 
 import pytest
 
-from agent6.ui.cli._console_view import ConsoleView
-from agent6.ui.cli._live import loop_logger
+from agent6.ui.cli import _console_view, _live
 
 
 def _drive(mode: str, stream: str) -> bool:
@@ -65,7 +64,7 @@ def test_live_console_drops_the_loop_narration(monkeypatch: pytest.MonkeyPatch) 
     """
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     out = io.StringIO()
-    log = loop_logger("run", ConsoleView(out, color=False))
+    log = _live.loop_logger("run", _console_view.ConsoleView(out, color=False))
     log("[agent6] LOOP: LOAD_CONTEXT")
     log("compaction: dropped 3 old tool results")
     log("compaction thresholds: drop at 471,859 chars, summarise at 983,040 [adaptive]")
@@ -79,6 +78,6 @@ def test_live_console_drops_the_loop_narration(monkeypatch: pytest.MonkeyPatch) 
     assert out.getvalue().strip() == "[agent6] verify adopted from verify.sh: ./verify.sh"
     monkeypatch.setenv("AGENT6_DEBUG", "1")
     out = io.StringIO()
-    log = loop_logger("run", ConsoleView(out, color=False))
+    log = _live.loop_logger("run", _console_view.ConsoleView(out, color=False))
     log("compaction thresholds: drop at 1 chars, summarise at 2 [fixed]")
     assert "compaction thresholds" in out.getvalue()

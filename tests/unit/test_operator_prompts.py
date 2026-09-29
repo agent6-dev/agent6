@@ -9,64 +9,61 @@ end journals a copy.
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 import threading
-from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
+from concurrent import futures
 from typing import Any
 
 import pytest
 
+from agent6 import events as agent6_events
 from agent6.config import Config
-from agent6.events import EventSink
-from agent6.sessions.ipc import COMMAND_SCOPE, set_session_allow, write_answer
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.errors import ToolDeniedError
-from agent6.tools.operator_prompts import (
-    ApprovalAnswer,
-    ApprovalRequest,
-    OperatorPrompts,
-    QuestionAnswer,
-    QuestionRequest,
-)
-from agent6.tools.schema import UserQuestion
+from agent6.sessions import ipc
+from agent6.tools import dispatch, errors, operator_prompts, schema
 
-_SRC = Path(__file__).resolve().parents[2] / "src" / "agent6"
+_SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "agent6"
 
 
-def _journal(session_dir: Path) -> list[dict[str, Any]]:
+def _journal(session_dir: pathlib.Path) -> list[dict[str, Any]]:
     lines = (session_dir / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     return [json.loads(line) for line in lines]
 
 
-def _of(session_dir: Path, event_type: str) -> list[dict[str, Any]]:
+def _of(session_dir: pathlib.Path, event_type: str) -> list[dict[str, Any]]:
     return [e for e in _journal(session_dir) if e["type"] == event_type]
 
 
-def _deny(_request: ApprovalRequest, /) -> ApprovalAnswer:
-    return ApprovalAnswer(False, "stdin")
+def _deny(_request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
+    return operator_prompts.ApprovalAnswer(False, "stdin")
 
 
-def _sink(session_dir: Path) -> EventSink:
+def _sink(session_dir: pathlib.Path) -> agent6_events.EventSink:
     session_dir.mkdir(parents=True, exist_ok=True)
-    return EventSink(session_dir / "logs.jsonl")
+    return agent6_events.EventSink(session_dir / "logs.jsonl")
 
 
-def _prompts(session_dir: Path, events: EventSink, **kw: Any) -> OperatorPrompts:
-    return OperatorPrompts(journal=events.emit, session_dir=session_dir, **kw)
+def _prompts(
+    session_dir: pathlib.Path, events: agent6_events.EventSink, **kw: Any
+) -> operator_prompts.OperatorPrompts:
+    return operator_prompts.OperatorPrompts(journal=events.emit, session_dir=session_dir, **kw)
 
 
-def _dispatcher(session_dir: Path, events: EventSink, prompts: OperatorPrompts) -> ToolDispatcher:
+def _dispatcher(
+    session_dir: pathlib.Path,
+    events: agent6_events.EventSink,
+    prompts: operator_prompts.OperatorPrompts,
+) -> dispatch.ToolDispatcher:
     """A run's wiring: the gate and the dispatcher journal to the one sink."""
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": "ask"}, "harness": {"verify_command": ["true"]}}
     )
-    return ToolDispatcher(
+    return dispatch.ToolDispatcher(
         root=session_dir.parent, config=cfg, prompts=prompts, events=events, session_dir=session_dir
     )
 
 
-def test_an_approval_is_journaled_with_the_call_it_gates(tmp_path: Path) -> None:
+def test_an_approval_is_journaled_with_the_call_it_gates(tmp_path: pathlib.Path) -> None:
     """An approval is journaled with the call it gates.
 
     The dispatcher journals tool.call, then the gate journals the prompt stamped with that call's id
@@ -75,7 +72,7 @@ def test_an_approval_is_journaled_with_the_call_it_gates(tmp_path: Path) -> None
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
     d = _dispatcher(session_dir, events, _prompts(session_dir, events, approver=_deny))
-    with pytest.raises(ToolDeniedError):
+    with pytest.raises(errors.ToolDeniedError):
         d.dispatch("run_command", {"argv": ["ls"]})
     (call,) = _of(session_dir, "tool.call")
     (prompt,) = _of(session_dir, "approval.prompt")
@@ -89,14 +86,14 @@ def test_an_approval_is_journaled_with_the_call_it_gates(tmp_path: Path) -> None
     assert (answer["id"], answer["approved"], answer["source"]) == ("approval-1", False, "stdin")
 
 
-def test_a_question_is_journaled_with_the_call_it_gates(tmp_path: Path) -> None:
+def test_a_question_is_journaled_with_the_call_it_gates(tmp_path: pathlib.Path) -> None:
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
-    seen: list[QuestionRequest] = []
+    seen: list[operator_prompts.QuestionRequest] = []
 
-    def _pick(request: QuestionRequest, /) -> QuestionAnswer:
+    def _pick(request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         seen.append(request)
-        return QuestionAnswer(("b",), "stdin")
+        return operator_prompts.QuestionAnswer(("b",), "stdin")
 
     d = _dispatcher(session_dir, events, _prompts(session_dir, events, questioner=_pick))
     out = d.dispatch("ask_user", {"questions": [{"question": "which?", "options": ["a", "b"]}]})
@@ -110,7 +107,7 @@ def test_a_question_is_journaled_with_the_call_it_gates(tmp_path: Path) -> None:
     assert (answer["answers"], answer["source"]) == (["b"], "stdin")
 
 
-def test_concurrent_seats_each_name_their_own_call(tmp_path: Path) -> None:
+def test_concurrent_seats_each_name_their_own_call(tmp_path: pathlib.Path) -> None:
     """Concurrent seats each name their own call.
 
     Two seats dispatching at once on one dispatcher, both past their stamp before either reads it:
@@ -121,9 +118,9 @@ def test_concurrent_seats_each_name_their_own_call(tmp_path: Path) -> None:
     events = _sink(session_dir)
     named: dict[str, int | None] = {}
 
-    def _record(request: ApprovalRequest, /) -> ApprovalAnswer:
+    def _record(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
         named[request.prompt] = request.call_id
-        return ApprovalAnswer(False, "stdin")
+        return operator_prompts.ApprovalAnswer(False, "stdin")
 
     d = _dispatcher(session_dir, events, _prompts(session_dir, events, approver=_record))
     both_stamped = threading.Barrier(2)
@@ -134,17 +131,17 @@ def test_concurrent_seats_each_name_their_own_call(tmp_path: Path) -> None:
         return policy()
 
     d.command_policy = _rendezvous  # read after the stamp, before the gate
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    with futures.ThreadPoolExecutor(max_workers=2) as pool:
         seats = [pool.submit(d.dispatch, "run_command", {"argv": ["ls", arg]}) for arg in "ab"]
         for seat in seats:
-            with pytest.raises(ToolDeniedError):
+            with pytest.raises(errors.ToolDeniedError):
                 seat.result(timeout=30)
     stamped = {" ".join(e["args"]["argv"]): e["call_id"] for e in _of(session_dir, "tool.call")}
     assert named == {f"Allow run_command: {argv}": cid for argv, cid in stamped.items()}
     assert len(set(named.values())) == 2
 
 
-def test_a_verify_the_harness_runs_gates_no_call(tmp_path: Path) -> None:
+def test_a_verify_the_harness_runs_gates_no_call(tmp_path: pathlib.Path) -> None:
     """A verify the harness runs gates no call.
 
     `run_verify` outside a dispatch (the harness's own certification) goes through the same gate and
@@ -154,16 +151,16 @@ def test_a_verify_the_harness_runs_gates_no_call(tmp_path: Path) -> None:
     events = _sink(session_dir)
     prompts = _prompts(session_dir, events, approver=_deny)
     d = _dispatcher(session_dir, events, prompts)
-    with pytest.raises(ToolDeniedError):
+    with pytest.raises(errors.ToolDeniedError):
         d.run_verify()
-    prompts.ask((UserQuestion(question="stash?", options=("stash", "cancel")),))
+    prompts.ask((schema.UserQuestion(question="stash?", options=("stash", "cancel")),))
     (approval,) = _of(session_dir, "approval.prompt")
     (question,) = _of(session_dir, "question.prompt")
     assert approval["prompt"] == "Allow run_verify_command: true"
     assert approval["call_id"] is None and question["call_id"] is None
 
 
-def test_a_standing_grant_answers_without_a_prompt(tmp_path: Path) -> None:
+def test_a_standing_grant_answers_without_a_prompt(tmp_path: pathlib.Path) -> None:
     """An "Allow all" for a scope answers that scope's later prompts itself.
 
     No front-end is asked and no prompt is journaled, only the answer. The id is still consumed, so
@@ -173,13 +170,13 @@ def test_a_standing_grant_answers_without_a_prompt(tmp_path: Path) -> None:
     events = _sink(session_dir)
     seen: list[str] = []
 
-    def _record(request: ApprovalRequest, /) -> ApprovalAnswer:
+    def _record(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
         seen.append(request.id)
-        return ApprovalAnswer(False, "stdin")
+        return operator_prompts.ApprovalAnswer(False, "stdin")
 
     prompts = _prompts(session_dir, events, approver=_record)
-    set_session_allow(session_dir, COMMAND_SCOPE)
-    assert prompts.approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
+    ipc.set_session_allow(session_dir, ipc.COMMAND_SCOPE)
+    assert prompts.approve("Allow run_command: ls", scope=ipc.COMMAND_SCOPE) is True
     assert seen == [] and _of(session_dir, "approval.prompt") == []
     (answer,) = _of(session_dir, "approval.answer")
     assert (answer["id"], answer["approved"], answer["source"]) == ("approval-1", True, "session")
@@ -187,7 +184,9 @@ def test_a_standing_grant_answers_without_a_prompt(tmp_path: Path) -> None:
     assert seen == ["approval-2"]
 
 
-def test_a_premature_answer_is_cleared_before_the_prompt_is_journaled(tmp_path: Path) -> None:
+def test_a_premature_answer_is_cleared_before_the_prompt_is_journaled(
+    tmp_path: pathlib.Path,
+) -> None:
     """A premature answer is cleared before the prompt is journaled.
 
     Ids are predictable counters, so an answer written ahead of its prompt must be gone before any
@@ -195,21 +194,21 @@ def test_a_premature_answer_is_cleared_before_the_prompt_is_journaled(tmp_path: 
     """
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
-    write_answer(session_dir, "approval-1", "yes")  # the premature POST
+    ipc.write_answer(session_dir, "approval-1", "yes")  # the premature POST
     slot = session_dir / "approvals" / "approval-1.answer"
     assert slot.exists()
     observed: list[tuple[bool, list[str]]] = []
 
-    def _observe(_request: ApprovalRequest, /) -> ApprovalAnswer:
+    def _observe(_request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
         observed.append((slot.exists(), [e["type"] for e in _journal(session_dir)]))
-        return ApprovalAnswer(False, "stdin")
+        return operator_prompts.ApprovalAnswer(False, "stdin")
 
     prompts = _prompts(session_dir, events, approver=_observe)
-    assert prompts.approve("Allow run_command: ls", scope=COMMAND_SCOPE) is False
+    assert prompts.approve("Allow run_command: ls", scope=ipc.COMMAND_SCOPE) is False
     assert observed == [(False, ["approval.prompt"])]
 
 
-def test_answers_align_to_the_questions(tmp_path: Path) -> None:
+def test_answers_align_to_the_questions(tmp_path: pathlib.Path) -> None:
     """Answers align to the questions.
 
     A front-end that answered fewer questions leaves the rest unanswered (the TUI writes no answers
@@ -217,17 +216,17 @@ def test_answers_align_to_the_questions(tmp_path: Path) -> None:
     """
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
-    questions = (UserQuestion(question="a?"), UserQuestion(question="b?"))
+    questions = (schema.UserQuestion(question="a?"), schema.UserQuestion(question="b?"))
 
-    def _short(_request: QuestionRequest, /) -> QuestionAnswer:
-        return QuestionAnswer((), "frontend")
+    def _short(_request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
+        return operator_prompts.QuestionAnswer((), "frontend")
 
     assert _prompts(session_dir, events, questioner=_short).ask(questions).answers == ("", "")
     (answer,) = _of(session_dir, "question.answer")
     assert answer["answers"] == ["", ""]
 
-    def _long(_request: QuestionRequest, /) -> QuestionAnswer:
-        return QuestionAnswer(("x", "y", "z"), "frontend")
+    def _long(_request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
+        return operator_prompts.QuestionAnswer(("x", "y", "z"), "frontend")
 
     with pytest.raises(ValueError, match="2 questions with 3 answers"):
         _prompts(session_dir, events, questioner=_long).ask(questions)
@@ -253,28 +252,33 @@ def test_every_prompt_event_has_exactly_one_emitter() -> None:
     }
 
 
-def test_an_unseen_question_says_so_in_its_result(tmp_path: Path) -> None:
+def test_an_unseen_question_says_so_in_its_result(tmp_path: pathlib.Path) -> None:
     """A headless run answered `ask_user` with bare empty strings, and the model asked again.
 
     The reason (nobody attached) reached the console only. The result carries it; a blank a person
     left does not.
     """
-    from agent6.tools.operator_prompts import UNANSWERED_NOTE, unanswered_note
-
     session_dir = tmp_path / "s"
     session_dir.mkdir()
     events = _sink(session_dir)
 
-    def _nobody(request: QuestionRequest, /) -> QuestionAnswer:
-        return QuestionAnswer(tuple("" for _ in request.questions), "headless-default", unseen=True)
+    def _nobody(request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
+        return operator_prompts.QuestionAnswer(
+            tuple("" for _ in request.questions), "headless-default", unseen=True
+        )
 
-    def _blank(request: QuestionRequest, /) -> QuestionAnswer:
-        return QuestionAnswer(tuple("" for _ in request.questions), "stdin")
+    def _blank(request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
+        return operator_prompts.QuestionAnswer(tuple("" for _ in request.questions), "stdin")
 
-    questions = (UserQuestion(question="which?", options=("a", "b")),)
+    questions = (schema.UserQuestion(question="which?", options=("a", "b")),)
     unseen = _prompts(session_dir, events, questioner=_nobody).ask(questions)
-    assert unanswered_note(unseen) == UNANSWERED_NOTE
-    assert unanswered_note(_prompts(session_dir, events, questioner=_blank).ask(questions)) == ""
+    assert operator_prompts.unanswered_note(unseen) == operator_prompts.UNANSWERED_NOTE
+    assert (
+        operator_prompts.unanswered_note(
+            _prompts(session_dir, events, questioner=_blank).ask(questions)
+        )
+        == ""
+    )
     # The journal says which it was, so a listing can count the questions
     # nobody saw without knowing every answerer's name.
     answers = [
@@ -285,4 +289,4 @@ def test_an_unseen_question_says_so_in_its_result(tmp_path: Path) -> None:
     assert [a["unseen"] for a in answers] == [True, False]
     d = _dispatcher(session_dir, events, _prompts(session_dir, events, questioner=_nobody))
     wire = d.dispatch("ask_user", {"questions": [{"question": "which?"}]}).to_wire()
-    assert wire == {"answers": [""], "note": UNANSWERED_NOTE}
+    assert wire == {"answers": [""], "note": operator_prompts.UNANSWERED_NOTE}

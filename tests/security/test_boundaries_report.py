@@ -10,17 +10,19 @@ against the launcher's source text.
 
 from __future__ import annotations
 
+import pathlib
 import re
-from pathlib import Path
 
 import pytest
 
+from agent6 import paths
 from agent6.config import Config, SandboxConfig
-from agent6.paths import jail_cache_home, state_dir
-from agent6.sandbox.tool_paths import ToolMountNotes
+from agent6.sandbox import tool_paths
 from agent6.ui.cli import check_cmds
 
-_MAIN_RS = Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail" / "src" / "main.rs"
+_MAIN_RS = (
+    pathlib.Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail" / "src" / "main.rs"
+)
 
 
 def test_strict_system_binds_mirror_the_launcher() -> None:
@@ -51,7 +53,9 @@ def _force(monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None =
     monkeypatch.setattr(check_cmds, "resolve_isolation", _select)
     monkeypatch.setattr(check_cmds, "degrade_reason", _reason)
     monkeypatch.setattr(
-        check_cmds, "tool_mount_notes", lambda: ToolMountNotes(exposes_home_dir=("a -> b",))
+        check_cmds,
+        "tool_mount_notes",
+        lambda: tool_paths.ToolMountNotes(exposes_home_dir=("a -> b",)),
     )
 
 
@@ -111,7 +115,7 @@ def test_boundaries_report_is_level_aware(
     assert checks == [], "the section reports facts; the summary owns verdicts"
     assert "not strict: userns blocked (test)" in out
     assert "ro  system (Landlock): /usr /bin /sbin /lib /lib64 /etc /dev" in out
-    assert f"rw  {jail_cache_home()}  (HOME" in out and "persists" in out
+    assert f"rw  {paths.jail_cache_home()}  (HOME" in out and "persists" in out
     assert "denied by Landlock" in out
     assert "re-bound" not in out
     assert "private to the command" not in out
@@ -130,7 +134,7 @@ def test_boundaries_report_names_the_opted_in_persistent_home(
         Config(sandbox=SandboxConfig(home="cache"))
     )
     out = capsys.readouterr().out
-    assert f"rw  {jail_cache_home()}  (HOME" in out and "sandbox.home = cache" in out
+    assert f"rw  {paths.jail_cache_home()}  (HOME" in out and "sandbox.home = cache" in out
     assert "/tmp/agent6-home" not in out
 
 
@@ -145,11 +149,14 @@ def test_boundaries_report_names_the_home_under_none(
     check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     assert "UNCONFINED" in out
-    assert f"rw  {jail_cache_home()}  (HOME, persists across runs: none has no private /tmp)" in out
+    assert (
+        f"rw  {paths.jail_cache_home()}  (HOME, persists across runs: none has no private /tmp)"
+        in out
+    )
 
 
 def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Inside a fork's worktree, the report lists the repository git dir a jailed command reaches.
 
@@ -161,8 +168,8 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
     import json
     import subprocess
 
-    from agent6.git_ops import add_worktree
-    from agent6.sessions.layout import SessionLayout
+    from agent6 import git_ops
+    from agent6.sessions import layout as sessions_layout
 
     repo = tmp_path / "repo"
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
@@ -173,9 +180,11 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
         check=True,
     )
     worktree = tmp_path / "wt"
-    add_worktree(repo, worktree, "HEAD")
+    git_ops.add_worktree(repo, worktree, "HEAD")
     git_dir = (repo / ".git").resolve()
-    layout = SessionLayout(state_dir=state_dir(repo), session_id="fork-AAAA11")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo), session_id="fork-AAAA11"
+    )
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -222,20 +231,20 @@ def test_boundaries_report_says_withheld_rather_than_unapproved(
 def test_boundaries_report_names_each_mcp_server(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.config._sandbox import MCPConfig, MCPSandbox, MCPServerEntry
+    from agent6.config import _sandbox
 
     _force(monkeypatch, "strict")
     cfg = Config(
-        mcp=MCPConfig(
+        mcp=_sandbox.MCPConfig(
             enabled=True,
             servers={
-                "docs": MCPServerEntry(url="http://127.0.0.1:9000/mcp"),
-                "fs": MCPServerEntry(
+                "docs": _sandbox.MCPServerEntry(url="http://127.0.0.1:9000/mcp"),
+                "fs": _sandbox.MCPServerEntry(
                     command=("mcp-fs",),
-                    sandbox=MCPSandbox(read_paths=("/data",), network="none"),
+                    sandbox=_sandbox.MCPSandbox(read_paths=("/data",), network="none"),
                 ),
-                "off": MCPServerEntry(command=("x",), enabled=False),
-                "plain": MCPServerEntry(command=("y",)),
+                "off": _sandbox.MCPServerEntry(command=("x",), enabled=False),
+                "plain": _sandbox.MCPServerEntry(command=("y",)),
             },
         )
     )
@@ -257,13 +266,17 @@ def test_boundaries_report_prints_the_refusal_for_a_network_the_level_cannot_giv
     A run refuses such a server before it starts; the report never names a network the server
     never gets.
     """
-    from agent6.config._sandbox import MCPConfig, MCPSandbox, MCPServerEntry
+    from agent6.config import _sandbox
 
     _force(monkeypatch, "hardened", "no user namespaces")
     cfg = Config(
-        mcp=MCPConfig(
+        mcp=_sandbox.MCPConfig(
             enabled=True,
-            servers={"quiet": MCPServerEntry(command=("y",), sandbox=MCPSandbox(network="none"))},
+            servers={
+                "quiet": _sandbox.MCPServerEntry(
+                    command=("y",), sandbox=_sandbox.MCPSandbox(network="none")
+                )
+            },
         )
     )
     check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
@@ -279,10 +292,14 @@ def test_boundaries_report_gives_an_mcp_server_the_network_the_level_can(
 
     Never the knob's own word.
     """
-    from agent6.config._sandbox import MCPConfig, MCPServerEntry
+    from agent6.config import _sandbox
 
     _force(monkeypatch, "hardened", "no user namespaces")
-    cfg = Config(mcp=MCPConfig(enabled=True, servers={"plain": MCPServerEntry(command=("y",))}))
+    cfg = Config(
+        mcp=_sandbox.MCPConfig(
+            enabled=True, servers={"plain": _sandbox.MCPServerEntry(command=("y",))}
+        )
+    )
     check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     assert "plain: spawned in the jail" in out and "network host" in out

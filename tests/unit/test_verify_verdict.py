@@ -4,11 +4,11 @@
 
 from __future__ import annotations
 
-from agent6.harness._verify_verdict import VerifyVerdict
+from agent6.harness import _verify_verdict
 
 
 def test_pass_resets_streak_and_covers_earlier_edits() -> None:
-    v = VerifyVerdict()
+    v = _verify_verdict.VerifyVerdict()
     v.note_edit()
     v.note_fail("sig-a")
     v.note_pass()
@@ -19,7 +19,7 @@ def test_pass_resets_streak_and_covers_earlier_edits() -> None:
 
 
 def test_same_signature_extends_the_streak_a_new_one_restarts_it() -> None:
-    v = VerifyVerdict()
+    v = _verify_verdict.VerifyVerdict()
     v.note_fail("sig-a")
     v.note_fail("sig-a")
     assert v.fail_streak == 2
@@ -29,7 +29,7 @@ def test_same_signature_extends_the_streak_a_new_one_restarts_it() -> None:
 
 def test_a_red_verdict_covers_its_tree_like_a_green_one() -> None:
     """A red clears edited_since like a green: an untouched red tree is not re-run or recounted."""
-    v = VerifyVerdict()
+    v = _verify_verdict.VerifyVerdict()
     v.note_edit()
     v.note_fail("sig")
     assert v.judged_and_untouched  # the red judged the tree as it stands
@@ -39,7 +39,7 @@ def test_a_red_verdict_covers_its_tree_like_a_green_one() -> None:
 
 
 def test_an_edit_after_green_withdraws_the_green() -> None:
-    v = VerifyVerdict()
+    v = _verify_verdict.VerifyVerdict()
     v.note_pass()
     assert v.green_and_untouched
     v.note_edit()

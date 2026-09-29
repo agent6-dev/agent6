@@ -5,16 +5,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 from typing import Any
 from unittest import mock
 
 import httpx2
 import pytest
 
-from agent6.providers import ProviderError
-from agent6.providers.openai import OpenAIProvider
-from agent6.providers.token_command import CommandToken
+from agent6.providers import ProviderError, openai, token_command
 
 
 def _fake_response(body: dict[str, Any], status: int = 200) -> httpx2.Response:
@@ -27,7 +25,7 @@ def _fake_response(body: dict[str, Any], status: int = 200) -> httpx2.Response:
 
 
 def test_call_translates_messages_and_parses_usage() -> None:
-    provider = OpenAIProvider(api_key="sk-test", model="gpt-x")
+    provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-x")
     captured: dict[str, Any] = {}
 
     def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
@@ -86,14 +84,14 @@ def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
         )
 
     # OpenAI-direct reasoning model (default base_url = api.openai.com).
-    direct = OpenAIProvider(api_key="sk", model="o3-mini", reasoning_effort="medium")
+    direct = openai.OpenAIProvider(api_key="sk", model="o3-mini", reasoning_effort="medium")
     with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         direct.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"].get("reasoning_effort") == "medium"
     assert "reasoning" not in captured["body"]
 
     # Non-direct host (OpenRouter): nested reasoning object, no top-level field.
-    router = OpenAIProvider(
+    router = openai.OpenAIProvider(
         api_key="sk",
         model="z-ai/glm-5.2",
         base_url="https://openrouter.ai/api/v1",
@@ -112,9 +110,7 @@ def test_openai_direct_gpt5_honors_reasoning_effort() -> None:
     block gated on the latter alone drops the setting silently; they emit the top-level
     `reasoning_effort` like any other openai-direct reasoner.
     """
-    from agent6.providers.openai import _is_reasoning_model  # pyright: ignore[reportPrivateUsage]
-
-    assert _is_reasoning_model("gpt-5") is False  # the exact gap this closes
+    assert openai._is_reasoning_model("gpt-5") is False  # the exact gap this closes
     captured: dict[str, Any] = {}
 
     def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
@@ -123,7 +119,7 @@ def test_openai_direct_gpt5_honors_reasoning_effort() -> None:
             {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {}}
         )
 
-    direct = OpenAIProvider(api_key="sk", model="gpt-5", reasoning_effort="high")
+    direct = openai.OpenAIProvider(api_key="sk", model="gpt-5", reasoning_effort="high")
     with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         direct.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"].get("reasoning_effort") == "high"
@@ -134,7 +130,7 @@ def test_openai_direct_gpt5_honors_reasoning_effort() -> None:
 def test_call_merges_extra_body() -> None:
     # extra_body (e.g. OpenRouter `provider` routing) is merged into the request
     # body, last, so an operator can pin a caching/fast backend.
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="sk-test",
         model="kimi",
         extra_body={"provider": {"sort": "throughput"}},
@@ -160,7 +156,7 @@ def test_extra_body_cannot_replace_the_structural_request_shape() -> None:
     tool_choice, response_format, n) never does, since replacing the tool schema silently changes
     the model's surface and a response the parser cannot read as choices[0] breaks every call.
     """
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="sk-test",
         model="kimi",
         extra_body={
@@ -194,7 +190,7 @@ def test_call_clamps_negative_fresh_input_to_zero() -> None:
     An upstream reporting cached > prompt must not produce a negative `input_tokens`, which corrupts
     the BudgetTracker counters.
     """
-    provider = OpenAIProvider(api_key="sk", model="gpt-x")
+    provider = openai.OpenAIProvider(api_key="sk", model="gpt-x")
 
     def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
         return _fake_response(
@@ -219,7 +215,7 @@ def test_call_clamps_negative_fresh_input_to_zero() -> None:
 
 
 def test_call_flattens_anthropic_block_content() -> None:
-    provider = OpenAIProvider(api_key="sk", model="gpt-x")
+    provider = openai.OpenAIProvider(api_key="sk", model="gpt-x")
     captured: dict[str, Any] = {}
 
     def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
@@ -238,7 +234,7 @@ def test_call_flattens_anthropic_block_content() -> None:
 
 
 def test_call_raises_provider_error_on_http_status() -> None:
-    provider = OpenAIProvider(api_key="sk", model="gpt-x")
+    provider = openai.OpenAIProvider(api_key="sk", model="gpt-x")
     with (
         mock.patch(
             "agent6.providers._transport.http_post",
@@ -254,7 +250,7 @@ def test_an_empty_key_sends_no_auth_header() -> None:
 
     The provider sends no authorization header rather than an empty bearer.
     """
-    provider = OpenAIProvider(api_key="", model="gpt-x")
+    provider = openai.OpenAIProvider(api_key="", model="gpt-x")
     captured: dict[str, Any] = {}
 
     def fake_post(_url: str, *_a: Any, **kw: Any) -> httpx2.Response:
@@ -274,7 +270,7 @@ def test_an_empty_key_sends_no_auth_header() -> None:
 
 def test_base_url_override_and_extra_headers() -> None:
     """OpenRouter-style usage: custom endpoint + required identifying headers."""
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="or-test",
         model="meta-llama/llama-3.3-70b-instruct",
         base_url="https://openrouter.ai/api/v1",
@@ -362,9 +358,7 @@ def test_call_bumps_max_tokens_for_reasoning_models() -> None:
     `reasoning_content` shares the budget with content and tool calls and starves them at low caps;
     non-reasoning models keep the caller's value.
     """
-    from agent6.providers.openai import REASONING_MODEL_MIN_MAX_TOKENS
-
-    provider = OpenAIProvider(api_key="sk", model="kimi-k2-thinking")
+    provider = openai.OpenAIProvider(api_key="sk", model="kimi-k2-thinking")
     captured: dict[str, Any] = {}
 
     def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
@@ -373,7 +367,7 @@ def test_call_bumps_max_tokens_for_reasoning_models() -> None:
 
     with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}], max_tokens=16384)
-    assert captured["body"]["max_tokens"] == REASONING_MODEL_MIN_MAX_TOKENS
+    assert captured["body"]["max_tokens"] == openai.REASONING_MODEL_MIN_MAX_TOKENS
 
     # Caller-supplied value above the floor wins.
     with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
@@ -382,7 +376,7 @@ def test_call_bumps_max_tokens_for_reasoning_models() -> None:
 
 
 def test_call_does_not_bump_max_tokens_for_normal_models() -> None:
-    provider = OpenAIProvider(api_key="sk", model="gpt-4o")
+    provider = openai.OpenAIProvider(api_key="sk", model="gpt-4o")
     captured: dict[str, Any] = {}
 
     def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
@@ -401,7 +395,7 @@ def test_reasoning_effort_arg_overrides_default(monkeypatch: Any) -> None:
     block leaves it on by default on K2.6, so the recovery turn still starves.
     """
     monkeypatch.setenv("AGENT6_REASONING_EFFORT", "medium")
-    provider = OpenAIProvider(api_key="sk", model="moonshotai/kimi-k2.6")
+    provider = openai.OpenAIProvider(api_key="sk", model="moonshotai/kimi-k2.6")
     captured: dict[str, Any] = {}
 
     def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
@@ -434,7 +428,7 @@ def test_call_captures_reasoning_content_in_raw() -> None:
     It is preserved on `resp.raw["content"]` as an Anthropic-style `{"type": "thinking"}` block; the
     loop strips `<thinking>` prefixes from the auto-commit summary and must not print it twice.
     """
-    provider = OpenAIProvider(api_key="sk", model="kimi-k2-thinking")
+    provider = openai.OpenAIProvider(api_key="sk", model="kimi-k2-thinking")
 
     def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
         return _fake_response(
@@ -466,7 +460,7 @@ def test_call_captures_reasoning_content_in_raw() -> None:
 
 def test_call_captures_deepseek_reasoning_field() -> None:
     """DeepSeek-R1 / OpenRouter spell it ``reasoning`` (no _content)."""
-    provider = OpenAIProvider(api_key="sk", model="deepseek-r1")
+    provider = openai.OpenAIProvider(api_key="sk", model="deepseek-r1")
 
     def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
         return _fake_response(
@@ -490,7 +484,7 @@ def test_call_captures_deepseek_reasoning_field() -> None:
     )
 
 
-def _counter_argv(tmp_path: Path) -> list[str]:
+def _counter_argv(tmp_path: pathlib.Path) -> list[str]:
     counter = tmp_path / "counter"
     script = (
         f'n=$(cat "{counter}" 2>/dev/null || echo 0); '
@@ -501,8 +495,10 @@ def _counter_argv(tmp_path: Path) -> list[str]:
 
 def test_credential_overrides_static_key_in_auth_header() -> None:
     # A token_command credential mints the bearer; the static api_key is ignored.
-    provider = OpenAIProvider(
-        api_key="static-key", model="m", credential=CommandToken(["printf", "minted-tok"])
+    provider = openai.OpenAIProvider(
+        api_key="static-key",
+        model="m",
+        credential=token_command.CommandToken(["printf", "minted-tok"]),
     )
     captured: dict[str, Any] = {}
 
@@ -519,11 +515,13 @@ def test_credential_overrides_static_key_in_auth_header() -> None:
     assert resp.text == "ok"
 
 
-def test_401_refreshes_token_command_and_retries(tmp_path: Path) -> None:
+def test_401_refreshes_token_command_and_retries(tmp_path: pathlib.Path) -> None:
     # First attempt 401s; the credential is invalidated and the retry carries a
     # freshly-minted token (tok2), then succeeds.
-    provider = OpenAIProvider(
-        api_key="", model="m", credential=CommandToken(_counter_argv(tmp_path), ttl_s=1000.0)
+    provider = openai.OpenAIProvider(
+        api_key="",
+        model="m",
+        credential=token_command.CommandToken(_counter_argv(tmp_path), ttl_s=1000.0),
     )
     seen: list[str | None] = []
     responses = [
@@ -546,7 +544,7 @@ def test_401_refreshes_token_command_and_retries(tmp_path: Path) -> None:
 
 def test_401_without_credential_is_not_retried() -> None:
     # No credential -> single attempt, the 401 surfaces immediately (no loop).
-    provider = OpenAIProvider(api_key="static", model="m")
+    provider = openai.OpenAIProvider(api_key="static", model="m")
     calls = {"n": 0}
 
     def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
@@ -569,7 +567,7 @@ def test_an_upstream_error_completion_is_retryable_and_still_metered() -> None:
     went-quiet nudge on an upstream failure and abstains a review seat as if the model had answered;
     the tokens are billed either way, so it meters first and then retries.
     """
-    from agent6.budget import BudgetTracker
+    from agent6 import budget as agent6_budget
 
     failed = {
         "choices": [
@@ -577,8 +575,8 @@ def test_an_upstream_error_completion_is_retryable_and_still_metered() -> None:
         ],
         "usage": {"prompt_tokens": 12000, "completion_tokens": 16801},
     }
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
-    provider = OpenAIProvider(api_key="k", model="gpt-x", budget=budget)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    provider = openai.OpenAIProvider(api_key="k", model="gpt-x", budget=budget)
 
     def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
         return _fake_response(failed)
@@ -593,13 +591,13 @@ def test_an_upstream_error_completion_is_retryable_and_still_metered() -> None:
     assert (snap.input_total, snap.output_total) == (12000, 16801), "billed tokens went unmetered"
 
     # A partial answer under the same finish reason is still handed back.
-    from agent6.providers._openai_parse import parse_response
+    from agent6.providers import _openai_parse
 
     partial = {
         "choices": [{"finish_reason": "error", "message": {"content": "half an answer"}}],
         "usage": {"prompt_tokens": 10, "completion_tokens": 5},
     }
-    assert parse_response(partial).text == "half an answer"
+    assert _openai_parse.parse_response(partial).text == "half an answer"
 
 
 def test_a_streamed_upstream_error_completion_is_refused_the_same_way() -> None:
@@ -609,7 +607,7 @@ def test_a_streamed_upstream_error_completion_is_refused_the_same_way() -> None:
     refusal have one owner so the two shapes cannot drift, or a streamed upstream failure comes back
     as a finished, silent turn.
     """
-    from agent6.budget import BudgetTracker
+    from agent6 import budget as agent6_budget
     from tests.unit.test_anthropic_streaming import FakeStreamResponse
 
     def chunk(obj: dict[str, Any]) -> list[str]:
@@ -620,8 +618,8 @@ def test_a_streamed_upstream_error_completion_is_refused_the_same_way() -> None:
     lines += chunk({"usage": {"prompt_tokens": 12000, "completion_tokens": 16801}, "choices": []})
     lines += ["data: [DONE]", ""]
 
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
-    provider = OpenAIProvider(api_key="k", model="gpt-x", budget=budget)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    provider = openai.OpenAIProvider(api_key="k", model="gpt-x", budget=budget)
     with (
         mock.patch(
             "agent6.providers._stream.http_stream",
@@ -654,7 +652,7 @@ def test_a_streamed_upstream_error_completion_is_refused_the_same_way() -> None:
     ],
 )
 def test_openai_usage_counts_are_non_negative_integers(field: str, value: object) -> None:
-    from agent6.providers._openai_parse import parse_response
+    from agent6.providers import _openai_parse
 
     usage: dict[str, object] = {"prompt_tokens": 10, "completion_tokens": 2}
     if field == "cached_tokens":
@@ -663,7 +661,7 @@ def test_openai_usage_counts_are_non_negative_integers(field: str, value: object
         usage[field] = value
 
     with pytest.raises(ProviderError, match=rf"usage\..*{field}"):
-        parse_response(
+        _openai_parse.parse_response(
             {
                 "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
                 "usage": usage,
@@ -672,9 +670,9 @@ def test_openai_usage_counts_are_non_negative_integers(field: str, value: object
 
 
 def test_openai_usage_counts_accept_integer_strings_and_integral_floats() -> None:
-    from agent6.providers._openai_parse import parse_response
+    from agent6.providers import _openai_parse
 
-    response = parse_response(
+    response = _openai_parse.parse_response(
         {
             "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
             "usage": {
@@ -718,10 +716,12 @@ def test_openai_usage_counts_accept_integer_strings_and_integral_floats() -> Non
     ],
 )
 def test_openai_response_fields_are_not_coerced(choice: dict[str, Any]) -> None:
-    from agent6.providers._openai_parse import parse_response
+    from agent6.providers import _openai_parse
 
     with pytest.raises(ProviderError):
-        parse_response({"choices": [choice], "usage": {"prompt_tokens": 1, "completion_tokens": 1}})
+        _openai_parse.parse_response(
+            {"choices": [choice], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+        )
 
 
 def test_a_nameless_tool_call_is_dropped_beside_a_valid_one() -> None:
@@ -730,7 +730,7 @@ def test_a_nameless_tool_call_is_dropped_beside_a_valid_one() -> None:
     A native tool_call with no `function.name` is dropped, as the comment above the check says;
     requiring a string there refuses the whole body.
     """
-    from agent6.providers._openai_parse import parse_response
+    from agent6.providers import _openai_parse
 
     body = {
         "choices": [
@@ -747,14 +747,13 @@ def test_a_nameless_tool_call_is_dropped_beside_a_valid_one() -> None:
         ],
         "usage": {"prompt_tokens": 1, "completion_tokens": 1},
     }
-    resp = parse_response(body, tool_names=frozenset({"read_file"}))
+    resp = _openai_parse.parse_response(body, tool_names=frozenset({"read_file"}))
     assert [t["name"] for t in resp.tool_uses] == ["read_file"]
     assert resp.stop_reason == ""
 
 
 def test_a_nested_usage_count_error_names_its_path() -> None:
-    from agent6.providers._openai_parse import parse_response
-    from agent6.providers.types import ProviderError
+    from agent6.providers import _openai_parse, types
 
     body = {
         "choices": [],
@@ -764,15 +763,15 @@ def test_a_nested_usage_count_error_names_its_path() -> None:
             "prompt_tokens_details": {"cached_tokens": -1},
         },
     }
-    with pytest.raises(ProviderError, match=r"usage\.prompt_tokens_details\.cached_tokens"):
-        parse_response(body)
+    with pytest.raises(types.ProviderError, match=r"usage\.prompt_tokens_details\.cached_tokens"):
+        _openai_parse.parse_response(body)
 
 
 def test_openai_tool_call_ids_are_unique() -> None:
-    from agent6.providers._openai_parse import parse_response
+    from agent6.providers import _openai_parse
 
     with pytest.raises(ProviderError, match=r"duplicate.*tool_call.id"):
-        parse_response(
+        _openai_parse.parse_response(
             {
                 "choices": [
                     {

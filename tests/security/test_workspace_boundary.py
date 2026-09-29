@@ -14,27 +14,28 @@ no jail) never widens it.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import pytest
 
 from agent6.config import Config
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.errors import ToolError
+from agent6.tools import dispatch, errors
 
 _SECRET = "AWS_SECRET_ACCESS_KEY=leaked-xyz"
 
 
-def _dispatcher(root: Path, cfg: Config, isolation: str = "none") -> ToolDispatcher:
-    return ToolDispatcher(root=root, config=cfg, isolation=isolation)  # pyright: ignore[reportArgumentType]
+def _dispatcher(
+    root: pathlib.Path, cfg: Config, isolation: str = "none"
+) -> dispatch.ToolDispatcher:
+    return dispatch.ToolDispatcher(root=root, config=cfg, isolation=isolation)  # pyright: ignore[reportArgumentType]
 
 
-def _hiding(root: Path, *rel: str) -> Config:
+def _hiding(root: pathlib.Path, *rel: str) -> Config:
     return Config.model_validate({"sandbox": {"hide_paths": [str(root / r) for r in rel]}})
 
 
-def _dispatch(root: Path, cfg: Config, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+def _dispatch(root: pathlib.Path, cfg: Config, tool: str, args: dict[str, Any]) -> dict[str, Any]:
     d = _dispatcher(root, cfg)
     try:
         return d.dispatch(tool, args).to_wire()
@@ -42,13 +43,13 @@ def _dispatch(root: Path, cfg: Config, tool: str, args: dict[str, Any]) -> dict[
         d.close()
 
 
-def test_read_file_refuses_a_hidden_path(tmp_path: Path) -> None:
+def test_read_file_refuses_a_hidden_path(tmp_path: pathlib.Path) -> None:
     (tmp_path / ".env").write_text(_SECRET, encoding="utf-8")
-    with pytest.raises(ToolError, match="hidden from this run"):
+    with pytest.raises(errors.ToolError, match="hidden from this run"):
         _dispatch(tmp_path, _hiding(tmp_path, ".env"), "read_file", {"path": ".env"})
 
 
-def test_list_dir_hides_the_entry_but_says_how_many(tmp_path: Path) -> None:
+def test_list_dir_hides_the_entry_but_says_how_many(tmp_path: pathlib.Path) -> None:
     """Filtered, not named: the listing stays true without disclosing what is hidden.
 
     "Something is hidden" is enough, and the model stops probing.
@@ -60,14 +61,14 @@ def test_list_dir_hides_the_entry_but_says_how_many(tmp_path: Path) -> None:
     assert out["hidden"] == 1
 
 
-def test_list_dir_omits_the_count_when_nothing_is_hidden(tmp_path: Path) -> None:
+def test_list_dir_omits_the_count_when_nothing_is_hidden(tmp_path: pathlib.Path) -> None:
     (tmp_path / "main.py").write_text("x = 1\n", encoding="utf-8")
     out = _dispatch(tmp_path, Config(), "list_dir", {"path": "."})
     assert out["entries"] == ["main.py"]
     assert "hidden" not in out
 
 
-def test_apply_edit_refuses_to_write_a_hidden_path(tmp_path: Path) -> None:
+def test_apply_edit_refuses_to_write_a_hidden_path(tmp_path: pathlib.Path) -> None:
     """The write half: a hidden path cannot be written either.
 
     Refusing the read while allowing the write would let the model plant content in a path
@@ -75,7 +76,7 @@ def test_apply_edit_refuses_to_write_a_hidden_path(tmp_path: Path) -> None:
     """
     secret = tmp_path / ".env"
     secret.write_text(_SECRET, encoding="utf-8")
-    with pytest.raises(ToolError, match="hidden from this run"):
+    with pytest.raises(errors.ToolError, match="hidden from this run"):
         _dispatch(
             tmp_path,
             _hiding(tmp_path, ".env"),
@@ -85,13 +86,13 @@ def test_apply_edit_refuses_to_write_a_hidden_path(tmp_path: Path) -> None:
     assert secret.read_text(encoding="utf-8") == _SECRET
 
 
-def test_a_normal_path_is_untouched(tmp_path: Path) -> None:
+def test_a_normal_path_is_untouched(tmp_path: pathlib.Path) -> None:
     (tmp_path / "main.py").write_text("x = 1\n", encoding="utf-8")
     out = _dispatch(tmp_path, _hiding(tmp_path, ".env"), "read_file", {"path": "main.py"})
     assert out["content"] == "x = 1\n"
 
 
-def test_a_hidden_file_never_reaches_the_symbol_index(tmp_path: Path) -> None:
+def test_a_hidden_file_never_reaches_the_symbol_index(tmp_path: pathlib.Path) -> None:
     """find_definition does not leak the symbol names and line numbers of an unreadable file."""
     (tmp_path / "secrets.py").write_text("def leaked_symbol():\n    pass\n", encoding="utf-8")
     (tmp_path / "main.py").write_text("def public_symbol():\n    pass\n", encoding="utf-8")
@@ -103,7 +104,9 @@ def test_a_hidden_file_never_reaches_the_symbol_index(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("isolation", ["strict", "hardened", "none"])
-def test_the_boundary_holds_at_every_isolation_level(tmp_path: Path, isolation: str) -> None:
+def test_the_boundary_holds_at_every_isolation_level(
+    tmp_path: pathlib.Path, isolation: str
+) -> None:
     """Config values define the boundary, never the isolation level.
 
     `none` has no jail at all (and is what macOS resolves to), so a boundary that tracked
@@ -112,14 +115,14 @@ def test_the_boundary_holds_at_every_isolation_level(tmp_path: Path, isolation: 
     (tmp_path / ".env").write_text(_SECRET, encoding="utf-8")
     d = _dispatcher(tmp_path, _hiding(tmp_path, ".env"), isolation)
     try:
-        with pytest.raises(ToolError, match="hidden from this run"):
+        with pytest.raises(errors.ToolError, match="hidden from this run"):
             d.dispatch("read_file", {"path": ".env"})
     finally:
         d.close()
 
 
 def test_agent6s_own_secrets_are_denied_when_the_workspace_contains_them(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The builtin private dirs are denied under a workspace root that contains the config dir.
 
@@ -134,12 +137,12 @@ def test_agent6s_own_secrets_are_denied_when_the_workspace_contains_them(
     cfg_dir.mkdir(parents=True)
     (cfg_dir / "secrets.toml").write_text('[fake]\nKEY="fake-not-real"\n', encoding="utf-8")
 
-    with pytest.raises(ToolError, match="hidden from this run"):
+    with pytest.raises(errors.ToolError, match="hidden from this run"):
         _dispatch(root, Config(), "read_file", {"path": ".config/agent6/secrets.toml"})
 
 
 def test_the_config_a_later_run_loads_cannot_be_written(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Persistence, not just disclosure.
 
@@ -154,7 +157,7 @@ def test_the_config_a_later_run_loads_cannot_be_written(
     conf = cfg_dir / "config.toml"
     conf.write_text('[sandbox]\nisolation = "strict"\n', encoding="utf-8")
 
-    with pytest.raises(ToolError, match="hidden from this run"):
+    with pytest.raises(errors.ToolError, match="hidden from this run"):
         _dispatch(
             root,
             Config(),
@@ -168,48 +171,48 @@ def test_the_config_a_later_run_loads_cannot_be_written(
 
 
 def test_a_workspace_inside_a_private_dir_refuses_at_preflight(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A run every tool call would refuse is told why up front.
 
     One exactly-known case, not an enumeration.
     """
-    from agent6.app.confine import check_workspace_outside_private_dirs
+    from agent6.app import confine
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     inside = tmp_path / "state" / "agent6" / "somerepo"
     inside.mkdir(parents=True)
-    refusal = check_workspace_outside_private_dirs(inside)
+    refusal = confine.check_workspace_outside_private_dirs(inside)
     assert refusal is not None and "private" in refusal
 
     ordinary = tmp_path / "project"
     ordinary.mkdir()
-    assert check_workspace_outside_private_dirs(ordinary) is None
+    assert confine.check_workspace_outside_private_dirs(ordinary) is None
 
 
 def test_a_state_dir_inside_the_workspace_refuses_at_preflight(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Preflight refuses a state base relocated inside the workspace.
 
     `XDG_STATE_HOME` pointing into it exposes transcripts and keys to jailed commands and
     stages them into commits; masking alone does not stop the auto-commit from staging them.
     """
-    from agent6.app.confine import check_workspace_outside_private_dirs
+    from agent6.app import confine
 
     workspace = tmp_path / "project"
     workspace.mkdir()
     monkeypatch.setenv("XDG_STATE_HOME", str(workspace / ".a6state"))
 
-    refusal = check_workspace_outside_private_dirs(workspace)
+    refusal = confine.check_workspace_outside_private_dirs(workspace)
     assert refusal is not None and "inside the workspace" in refusal
 
 
 # --- operator grants ---------------------------------------------------------
 
 
-def _granting(read: Path | None = None, write: Path | None = None) -> Config:
+def _granting(read: pathlib.Path | None = None, write: pathlib.Path | None = None) -> Config:
     sb: dict[str, Any] = {}
     if read is not None:
         sb["extra_read_paths"] = [str(read)]
@@ -218,7 +221,7 @@ def _granting(read: Path | None = None, write: Path | None = None) -> Config:
     return Config.model_validate({"sandbox": sb})
 
 
-def test_an_absolute_path_inside_a_grant_is_readable(tmp_path: Path) -> None:
+def test_an_absolute_path_inside_a_grant_is_readable(tmp_path: pathlib.Path) -> None:
     """The tools reach the trees the jail mounts for commands, by absolute path.
 
     An absolute path is the only way to name one, so grants would otherwise be unreachable.
@@ -233,7 +236,9 @@ def test_an_absolute_path_inside_a_grant_is_readable(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("target", ["ungranted", "/etc/passwd"])
-def test_an_absolute_path_outside_every_grant_is_refused(tmp_path: Path, target: str) -> None:
+def test_an_absolute_path_outside_every_grant_is_refused(
+    tmp_path: pathlib.Path, target: str
+) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     sdk = tmp_path / "sdk"
@@ -242,11 +247,11 @@ def test_an_absolute_path_outside_every_grant_is_refused(tmp_path: Path, target:
     outside.mkdir()
     (outside / "secret.txt").write_text("NOT granted\n", encoding="utf-8")
     path = "/etc/passwd" if target.startswith("/") else str(outside / "secret.txt")
-    with pytest.raises(ToolError, match="Absolute"):
+    with pytest.raises(errors.ToolError, match="Absolute"):
         _dispatch(root, _granting(read=sdk), "read_file", {"path": path})
 
 
-def test_a_read_grant_is_not_writable(tmp_path: Path) -> None:
+def test_a_read_grant_is_not_writable(tmp_path: pathlib.Path) -> None:
     """`extra_read_paths` grants reading only, exactly as the jail mounts it."""
     root = tmp_path / "repo"
     root.mkdir()
@@ -254,7 +259,7 @@ def test_a_read_grant_is_not_writable(tmp_path: Path) -> None:
     sdk.mkdir()
     target = sdk / "h.h"
     target.write_text("granted header\n", encoding="utf-8")
-    with pytest.raises(ToolError, match="Absolute"):
+    with pytest.raises(errors.ToolError, match="Absolute"):
         _dispatch(
             root,
             _granting(read=sdk),
@@ -264,7 +269,7 @@ def test_a_read_grant_is_not_writable(tmp_path: Path) -> None:
     assert target.read_text(encoding="utf-8") == "granted header\n"
 
 
-def test_a_write_grant_is_writable_and_readable(tmp_path: Path) -> None:
+def test_a_write_grant_is_writable_and_readable(tmp_path: pathlib.Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     out_dir = tmp_path / "artifacts"
@@ -282,7 +287,7 @@ def test_a_write_grant_is_writable_and_readable(tmp_path: Path) -> None:
     assert _dispatch(root, cfg, "read_file", {"path": str(target)})["content"] == "after\n"
 
 
-def test_denied_beats_a_grant(tmp_path: Path) -> None:
+def test_denied_beats_a_grant(tmp_path: pathlib.Path) -> None:
     """A hide inside a granted region wins.
 
     The same precedence the jail uses when it masks a hidden path out of a broader mount.
@@ -300,19 +305,21 @@ def test_denied_beats_a_grant(tmp_path: Path) -> None:
             }
         }
     )
-    with pytest.raises(ToolError, match="hidden from this run"):
+    with pytest.raises(errors.ToolError, match="hidden from this run"):
         _dispatch(root, cfg, "read_file", {"path": str(granted / "keys" / "id_rsa")})
 
 
-def _hide_on_hardened(root: Path, path: str, extra: dict[str, object] | None = None) -> str | None:
-    from agent6.app.confine import check_hide_paths_support
+def _hide_on_hardened(
+    root: pathlib.Path, path: str, extra: dict[str, object] | None = None
+) -> str | None:
+    from agent6.app import confine
 
     data: dict[str, object] = {"sandbox": {"hide_paths": [path], **(extra or {})}}
-    return check_hide_paths_support(Config.model_validate(data), "hardened", root)
+    return confine.check_hide_paths_support(Config.model_validate(data), "hardened", root)
 
 
 def test_hide_paths_refuses_the_launcher_grant_regions(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Preflight's region set covers everything the launcher grants, not only cwd and the extras.
 
@@ -321,7 +328,7 @@ def test_hide_paths_refuses_the_launcher_grant_regions(
     explicit setting.
     """
     monkeypatch.chdir(tmp_path)
-    tool_dir = Path("/nonexistent-tools/bin")
+    tool_dir = pathlib.Path("/nonexistent-tools/bin")
     monkeypatch.setattr(
         "agent6.tools.policy.operator_tool_paths", lambda: ("/usr/bin:/bin", (tool_dir,))
     )
@@ -335,7 +342,7 @@ def test_hide_paths_refuses_the_launcher_grant_regions(
 
 
 def test_hide_paths_resolves_aliases_and_refuses_inner_grants(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A literal `..` refuses at config validation; a symlink alias resolves before containment.
 
@@ -347,7 +354,7 @@ def test_hide_paths_resolves_aliases_and_refuses_inner_grants(
     link = tmp_path / "alias"
     link.symlink_to("/etc")
     assert _hide_on_hardened(tmp_path, str(link / "agent6-private")) is not None
-    hidden_tree = Path("/nonexistent-vault")
+    hidden_tree = pathlib.Path("/nonexistent-vault")
     r = _hide_on_hardened(
         tmp_path, str(hidden_tree), {"extra_read_paths": [str(hidden_tree / "inner")]}
     )
@@ -355,13 +362,13 @@ def test_hide_paths_resolves_aliases_and_refuses_inner_grants(
 
 
 def test_hide_paths_refuses_an_mcp_server_grant(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Each enabled server's own policy regions join the preflight set."""
-    from agent6.app.confine import check_hide_paths_support
+    from agent6.app import confine
 
     monkeypatch.chdir(tmp_path)
-    mcp_dir = Path("/nonexistent-mcp-data")
+    mcp_dir = pathlib.Path("/nonexistent-mcp-data")
     cfg = Config.model_validate(
         {
             "sandbox": {"hide_paths": [str(mcp_dir / "creds")]},
@@ -376,5 +383,5 @@ def test_hide_paths_refuses_an_mcp_server_grant(
             },
         }
     )
-    r = check_hide_paths_support(cfg, "hardened", tmp_path)
+    r = confine.check_hide_paths_support(cfg, "hardened", tmp_path)
     assert r is not None and "mcp.servers.srv" in r

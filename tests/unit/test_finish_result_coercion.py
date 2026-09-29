@@ -4,35 +4,31 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
 from agent6.config import Config
-from agent6.harness._chain import RunChain
-from agent6.harness._conversation import AssistantTurn
-from agent6.harness._finish_gates import FinishCall
-from agent6.harness.loop import (
-    Harness,
-    TurnState,
-)
+from agent6.harness import _chain, _conversation, _finish_gates, _loop_state, loop
 
 
-def _wf(**kw: Any) -> Harness:
-    kw.setdefault("state_dir", Path("/tmp/state"))
-    return Harness(
-        chain=RunChain(Path("/tmp")),
+def _wf(**kw: Any) -> loop.Harness:
+    kw.setdefault("state_dir", pathlib.Path("/tmp/state"))
+    return loop.Harness(
+        chain=_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate({}),
-        provider=MagicMock(),
-        dispatcher=MagicMock(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
         logger=lambda _m: None,
         **kw,
     )
 
 
-def _capture(tool_input: dict[str, Any]) -> FinishCall:
+def _capture(tool_input: dict[str, Any]) -> _finish_gates.FinishCall:
     wf = _wf()
-    turn = TurnState(iteration=1, resp=MagicMock(), assistant=AssistantTurn((), ()))
+    turn = _loop_state.TurnState(
+        iteration=1, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+    )
     wf._capture_finish(turn, "finish_session", tool_input)  # pyright: ignore[reportPrivateUsage]
     assert turn.finish is not None
     return turn.finish

@@ -5,50 +5,53 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.app.finalize import fire_notify_hook
+from agent6.app import finalize, reporter
 from agent6.app.machine import (
     build_machine_notify_hook,
 )
-from agent6.app.reporter import STDIO_REPORTER
 from agent6.config import Config, NotifyConfig, load_config
 
 
-def test_notify_noop_when_unconfigured(tmp_path: Path) -> None:
+def test_notify_noop_when_unconfigured(tmp_path: pathlib.Path) -> None:
     """An empty `on_complete` tuple is a no-op (no subprocess, no error)."""
     notify = NotifyConfig()
     # Should return without raising, without doing anything.
-    fire_notify_hook(
+    finalize.fire_notify_hook(
         notify,
         session_id="abcdef0123456789",
         session_dir=tmp_path,
         ok=True,
         reason="finish_session",
         verified="passed",
-        reporter=STDIO_REPORTER,
+        reporter=reporter.STDIO_REPORTER,
     )
 
 
-def test_notify_failure_does_not_raise(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_notify_failure_does_not_raise(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A failing argv (nonexistent binary) logs but does not raise."""
     notify = NotifyConfig(on_complete=("/nonexistent/agent6-notify-binary",), timeout_s=5.0)
-    fire_notify_hook(
+    finalize.fire_notify_hook(
         notify,
         session_id="run-xyz",
         session_dir=tmp_path,
         ok=False,
         reason="budget_exhausted",
         verified="passed",
-        reporter=STDIO_REPORTER,
+        reporter=reporter.STDIO_REPORTER,
     )
     captured = capsys.readouterr()
     assert "notify.on_complete failed" in captured.err
 
 
-def test_both_hooks_run_the_same_way(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_both_hooks_run_the_same_way(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Two runners for one job drifted in both directions.
 
     The run hook swallowed a non-zero exit (a hook that fails silently stops notifying with nobody
@@ -56,14 +59,14 @@ def test_both_hooks_run_the_same_way(tmp_path: Path, capsys: pytest.CaptureFixtu
     that is the JSON-RPC stream.
     """
     argv = ("sh", "-c", "echo HOOK_STDOUT; exit 3")
-    fire_notify_hook(
+    finalize.fire_notify_hook(
         NotifyConfig(on_complete=argv, timeout_s=5.0),
         session_id="run-xyz",
         session_dir=tmp_path,
         ok=True,
         reason="finish_session",
         verified="passed",
-        reporter=STDIO_REPORTER,
+        reporter=reporter.STDIO_REPORTER,
     )
     cfg = Config.model_validate({"machine": {"notify": {"on_event": list(argv)}}})
     fire = build_machine_notify_hook(cfg, "machine-1", tmp_path)
@@ -76,7 +79,7 @@ def test_both_hooks_run_the_same_way(tmp_path: Path, capsys: pytest.CaptureFixtu
     assert "HOOK_STDOUT" not in captured.out
 
 
-def test_notify_ok_zero_when_failed(tmp_path: Path) -> None:
+def test_notify_ok_zero_when_failed(tmp_path: pathlib.Path) -> None:
     """ok=False sets AGENT6_SESSION_OK=0."""
     out = tmp_path / "ok.txt"
     argv = (
@@ -85,14 +88,14 @@ def test_notify_ok_zero_when_failed(tmp_path: Path) -> None:
         f'printf "%s" "$AGENT6_SESSION_OK" > {out}',
     )
     notify = NotifyConfig(on_complete=argv, timeout_s=5.0)
-    fire_notify_hook(
+    finalize.fire_notify_hook(
         notify,
         session_id="r",
         session_dir=tmp_path,
         ok=False,
         reason="provider_error",
         verified="passed",
-        reporter=STDIO_REPORTER,
+        reporter=reporter.STDIO_REPORTER,
     )
     assert out.read_text(encoding="utf-8") == "0"
 
@@ -122,7 +125,7 @@ timeout_s = 10.0
 """
 
 
-def test_machine_notify_hook_fires_with_env(tmp_path: Path) -> None:
+def test_machine_notify_hook_fires_with_env(tmp_path: pathlib.Path) -> None:
     out = tmp_path / "machine-notify.json"
     script = (
         "import json,os,sys; json.dump({"
@@ -153,7 +156,7 @@ def test_machine_notify_hook_fires_with_env(tmp_path: Path) -> None:
 
 
 def test_machine_notify_hook_nonzero_exit_is_reported(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """check=False keeps the hook non-fatal, but a nonzero exit was discarded entirely.
 
@@ -168,7 +171,7 @@ def test_machine_notify_hook_nonzero_exit_is_reported(
     assert "hook exited 3" in capsys.readouterr().err
 
 
-def test_machine_notify_hook_none_when_unconfigured(tmp_path: Path) -> None:
+def test_machine_notify_hook_none_when_unconfigured(tmp_path: pathlib.Path) -> None:
     body = _MACHINE_CFG_BODY.replace(
         '\n[machine.notify]\non_event = ["python3", "-c", "PLACEHOLDER"]\ntimeout_s = 10.0\n', ""
     )
@@ -178,7 +181,7 @@ def test_machine_notify_hook_none_when_unconfigured(tmp_path: Path) -> None:
     assert build_machine_notify_hook(cfg, "m", tmp_path) is None
 
 
-def test_notify_in_config_loads(tmp_path: Path) -> None:
+def test_notify_in_config_loads(tmp_path: pathlib.Path) -> None:
     """[notify] section round-trips through the config loader."""
     body = """
 [agent6]
@@ -222,7 +225,7 @@ timeout_s = 12.5
 
 
 def test_notify_hook_env_carries_no_secrets(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The notify hook's environment carries no secrets.
 
@@ -246,21 +249,21 @@ def test_notify_hook_env_carries_no_secrets(
         str(out),
     )
     notify = NotifyConfig(on_complete=argv, timeout_s=10.0)
-    fire_notify_hook(
+    finalize.fire_notify_hook(
         notify,
         session_id="r1",
         session_dir=tmp_path,
         ok=True,
         reason="finish_session",
         verified="passed",
-        reporter=STDIO_REPORTER,
+        reporter=reporter.STDIO_REPORTER,
     )
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload == {"key": None, "or_key": None, "path": True, "home": True, "id": "r1"}
 
 
 def test_machine_notify_hook_env_carries_no_secrets(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The machine hook goes through the same hook_env owner.
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-super-secret")
@@ -283,7 +286,7 @@ def test_machine_notify_hook_env_carries_no_secrets(
     assert payload == {"key": None, "path": True, "id": "m1"}
 
 
-def test_hook_env_separates_deliberate_from_verified(tmp_path: Path) -> None:
+def test_hook_env_separates_deliberate_from_verified(tmp_path: pathlib.Path) -> None:
     """The hook env separates deliberate from verified.
 
     AGENT6_SESSION_OK says the agent stopped deliberately; AGENT6_SESSION_VERIFIED says what the
@@ -296,19 +299,19 @@ def test_hook_env_separates_deliberate_from_verified(tmp_path: Path) -> None:
         f'#!/bin/sh\necho "$AGENT6_SESSION_OK $AGENT6_SESSION_VERIFIED" > {out}\n', encoding="utf-8"
     )
     script.chmod(0o755)
-    fire_notify_hook(
+    finalize.fire_notify_hook(
         NotifyConfig(on_complete=(str(script),)),
         session_id="r1",
         session_dir=tmp_path,
         ok=True,
         reason="finish_session",
         verified="failed",
-        reporter=STDIO_REPORTER,
+        reporter=reporter.STDIO_REPORTER,
     )
     assert out.read_text(encoding="utf-8").strip() == "1 failed"
 
 
-def test_the_hook_env_names_the_session_not_the_run(tmp_path: Path) -> None:
+def test_the_hook_env_names_the_session_not_the_run(tmp_path: pathlib.Path) -> None:
     """The hook env names the session, not the run.
 
     `run` is the verb for the agentic coding loop; the session is the thing a hook is told about,
@@ -323,14 +326,14 @@ def test_the_hook_env_names_the_session_not_the_run(tmp_path: Path) -> None:
         " open(sys.argv[1], 'w'))",
         str(out),
     )
-    fire_notify_hook(
+    finalize.fire_notify_hook(
         NotifyConfig(on_complete=argv),
         session_id="brave-oak-AAAAAA",
         session_dir=tmp_path,
         ok=True,
         reason="finish_session",
         verified="passed",
-        reporter=STDIO_REPORTER,
+        reporter=reporter.STDIO_REPORTER,
     )
     env = json.loads(out.read_text(encoding="utf-8"))
 

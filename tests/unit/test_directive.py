@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec, steer_problem
+from agent6 import directive
 
 
 def _segs(text: str) -> list[tuple[str, str]]:
-    parsed = parse_directive(text)
+    parsed = directive.parse_directive(text)
     assert parsed is not None
     return [(s.spec, s.task) for s in parsed]
 
@@ -19,31 +19,31 @@ def _segs(text: str) -> list[tuple[str, str]]:
 
 
 def test_parse_spec_omitted_is_one_default_lane() -> None:
-    assert parse_spec("", limit=4) == [None]
-    assert parse_spec("   ", limit=4) == [None]
+    assert directive.parse_spec("", limit=4) == [None]
+    assert directive.parse_spec("   ", limit=4) == [None]
 
 
 def test_parse_spec_int_is_n_default_lanes() -> None:
-    assert parse_spec("3", limit=4) == [None, None, None]
-    assert parse_spec("1", limit=4) == [None]
+    assert directive.parse_spec("3", limit=4) == [None, None, None]
+    assert directive.parse_spec("1", limit=4) == [None]
 
 
 def test_parse_spec_model_list_is_one_lane_per_model() -> None:
-    assert parse_spec("gpt-5,opus", limit=4) == ["gpt-5", "opus"]
-    assert parse_spec("kimi, glm ", limit=4) == ["kimi", "glm"]
+    assert directive.parse_spec("gpt-5,opus", limit=4) == ["gpt-5", "opus"]
+    assert directive.parse_spec("kimi, glm ", limit=4) == ["kimi", "glm"]
 
 
 def test_parse_spec_slash_model_id_is_one_lane() -> None:
     # provider/model ids pass through whole; the CLI --parallel value shares this
-    assert parse_spec("moonshotai/kimi-k2.6", limit=4) == ["moonshotai/kimi-k2.6"]
-    assert parse_spec("a/b,c/d", limit=4) == ["a/b", "c/d"]
+    assert directive.parse_spec("moonshotai/kimi-k2.6", limit=4) == ["moonshotai/kimi-k2.6"]
+    assert directive.parse_spec("a/b,c/d", limit=4) == ["a/b", "c/d"]
 
 
 def test_parse_spec_zero_and_empty_models_raise() -> None:
-    with pytest.raises(DirectiveError):
-        parse_spec("0", limit=4)
-    with pytest.raises(DirectiveError):
-        parse_spec(",", limit=4)
+    with pytest.raises(directive.DirectiveError):
+        directive.parse_spec("0", limit=4)
+    with pytest.raises(directive.DirectiveError):
+        directive.parse_spec(",", limit=4)
 
 
 def test_parse_spec_over_limit_refuses_before_allocating() -> None:
@@ -52,26 +52,26 @@ def test_parse_spec_over_limit_refuses_before_allocating() -> None:
     Pinned with small values: a test that proves the bound by allocating past it is the bug it tests
     for.
     """
-    with pytest.raises(DirectiveError, match=r"max_lanes = 4"):
-        parse_spec("9", limit=4)
-    with pytest.raises(DirectiveError, match=r"max_lanes = 2"):
-        parse_spec("a,b,c", limit=2)
-    assert parse_spec("4", limit=4) == [None] * 4  # the bound is inclusive
+    with pytest.raises(directive.DirectiveError, match=r"max_lanes = 4"):
+        directive.parse_spec("9", limit=4)
+    with pytest.raises(directive.DirectiveError, match=r"max_lanes = 2"):
+        directive.parse_spec("a,b,c", limit=2)
+    assert directive.parse_spec("4", limit=4) == [None] * 4  # the bound is inclusive
 
 
 # --- directive gate: only a leading exact /parallel token -----------------
 
 
 def test_non_directive_returns_none() -> None:
-    assert parse_directive("just fix the bug") is None
+    assert directive.parse_directive("just fix the bug") is None
     # a /parallel that is not at the start is ordinary text, not a directive
-    assert parse_directive("do this\n/parallel nope") is None
+    assert directive.parse_directive("do this\n/parallel nope") is None
 
 
 def test_prefix_lookalike_is_not_a_directive() -> None:
     # byte-for-byte: /parallelfoo is not the exact token
-    assert parse_directive("/parallelfoo do x") is None
-    assert parse_directive("/parallelize the loop") is None
+    assert directive.parse_directive("/parallelfoo do x") is None
+    assert directive.parse_directive("/parallelize the loop") is None
 
 
 def test_leading_whitespace_before_the_token_is_allowed() -> None:
@@ -116,8 +116,8 @@ def test_slash_first_task_word_parses_as_spec_documented_ambiguity() -> None:
 
 
 def test_slash_spec_without_task_raises() -> None:
-    with pytest.raises(DirectiveError):
-        parse_directive("/parallel moonshotai/kimi-k2.6")
+    with pytest.raises(directive.DirectiveError):
+        directive.parse_directive("/parallel moonshotai/kimi-k2.6")
 
 
 def test_task_keeps_internal_spacing() -> None:
@@ -164,25 +164,25 @@ def test_whitespace_delimited_mid_message_slash_parallel_is_a_separator() -> Non
 
 def test_bare_directive_raises() -> None:
     for bad in ("/parallel", "/parallel   ", "  /parallel  "):
-        with pytest.raises(DirectiveError):
-            parse_directive(bad)
+        with pytest.raises(directive.DirectiveError):
+            directive.parse_directive(bad)
 
 
 def test_spec_without_task_raises() -> None:
     for bad in ("/parallel 2", "/parallel gpt-5,opus", "/parallel 2   "):
-        with pytest.raises(DirectiveError):
-            parse_directive(bad)
+        with pytest.raises(directive.DirectiveError):
+            directive.parse_directive(bad)
 
 
 def test_empty_segment_mid_message_raises() -> None:
     # all-or-nothing: a later empty segment fails the whole parse
-    with pytest.raises(DirectiveError):
-        parse_directive("/parallel 2 good task /parallel")
+    with pytest.raises(directive.DirectiveError):
+        directive.parse_directive("/parallel 2 good task /parallel")
 
 
 def test_segment_is_a_frozen_dataclass() -> None:
-    (seg,) = parse_directive("/parallel 2 x")  # type: ignore[misc]
-    assert isinstance(seg, Segment)
+    (seg,) = directive.parse_directive("/parallel 2 x")  # type: ignore[misc]
+    assert isinstance(seg, directive.Segment)
     with pytest.raises(AttributeError):
         seg.spec = "3"  # type: ignore[misc]
 
@@ -193,64 +193,55 @@ def test_superscript_digit_is_not_a_lane_count() -> None:
     `isdigit()` accepts superscripts `int()` rejects, so `/parallel ²` raised a bare ValueError past
     every DirectiveError-catching caller.
     """
-    assert parse_spec("\u00b2", limit=4) == ["\u00b2"]  # a (bogus) model token, no raise
+    assert directive.parse_spec("\u00b2", limit=4) == ["\u00b2"]  # a (bogus) model token, no raise
     assert _segs("/parallel \u00b2 fix the bug") == [("", "\u00b2 fix the bug")]
     # A genuine Unicode decimal digit still counts as a lane count (int('٢')==2).
-    assert parse_spec("\u0662", limit=4) == [None, None]
+    assert directive.parse_spec("\u0662", limit=4) == [None, None]
 
 
 # --- /pin steer directive ------------------------------------------------------
 
 
 def test_parse_pin_returns_instruction_text() -> None:
-    from agent6.directive import parse_pin
-
-    assert parse_pin("/pin always run the full suite") == "always run the full suite"
-    assert parse_pin("  /pin keep the API stable  ") == "keep the API stable"
+    assert directive.parse_pin("/pin always run the full suite") == "always run the full suite"
+    assert directive.parse_pin("  /pin keep the API stable  ") == "keep the API stable"
 
 
 def test_parse_pin_none_unless_leading_exact_token() -> None:
-    from agent6.directive import parse_pin
-
-    assert parse_pin("please /pin this") is None  # mid-text, not a directive
-    assert parse_pin("/pinfoo bar") is None  # prefix lookalike
-    assert parse_pin("src//pin/x is a path") is None
-    assert parse_pin("ordinary steer text") is None
+    assert directive.parse_pin("please /pin this") is None  # mid-text, not a directive
+    assert directive.parse_pin("/pinfoo bar") is None  # prefix lookalike
+    assert directive.parse_pin("src//pin/x is a path") is None
+    assert directive.parse_pin("ordinary steer text") is None
 
 
 def test_parse_pin_multiline_instruction_preserved() -> None:
-    from agent6.directive import parse_pin
-
-    assert parse_pin("/pin goal:\n- ship X\n- keep Y green") == "goal:\n- ship X\n- keep Y green"
+    assert (
+        directive.parse_pin("/pin goal:\n- ship X\n- keep Y green")
+        == "goal:\n- ship X\n- keep Y green"
+    )
 
 
 def test_parse_pin_bare_token_raises() -> None:
-    from agent6.directive import parse_pin
-
-    with pytest.raises(DirectiveError):
-        parse_pin("/pin")
-    with pytest.raises(DirectiveError):
-        parse_pin("  /pin   ")
+    with pytest.raises(directive.DirectiveError):
+        directive.parse_pin("/pin")
+    with pytest.raises(directive.DirectiveError):
+        directive.parse_pin("  /pin   ")
 
 
 # --- /compact composer directive ----------------------------------------------
 
 
 def test_parse_compact_returns_focus() -> None:
-    from agent6.directive import parse_compact
-
-    assert parse_compact("/compact keep the auth decisions") == "keep the auth decisions"
-    assert parse_compact("  /compact   focus on tests ") == "focus on tests"
-    assert parse_compact("/compact") == ""  # bare = plain compact
-    assert parse_compact("   /compact   ") == ""
+    assert directive.parse_compact("/compact keep the auth decisions") == "keep the auth decisions"
+    assert directive.parse_compact("  /compact   focus on tests ") == "focus on tests"
+    assert directive.parse_compact("/compact") == ""  # bare = plain compact
+    assert directive.parse_compact("   /compact   ") == ""
 
 
 def test_parse_compact_none_unless_leading_exact_token() -> None:
-    from agent6.directive import parse_compact
-
-    assert parse_compact("please /compact this") is None
-    assert parse_compact("/compaction is neat") is None
-    assert parse_compact("ordinary steer") is None
+    assert directive.parse_compact("please /compact this") is None
+    assert directive.parse_compact("/compaction is neat") is None
+    assert directive.parse_compact("ordinary steer") is None
 
 
 def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None:
@@ -258,10 +249,10 @@ def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None
 
     The refusal reaches an operator typing into a composer, so it names the mistake and what to do.
     """
-    assert steer_problem("/pin") is not None and "pin needs an instruction" in (
-        steer_problem("/pin") or ""
+    assert directive.steer_problem("/pin") is not None and "pin needs an instruction" in (
+        directive.steer_problem("/pin") or ""
     )
-    assert steer_problem("/parallel 2") is not None
+    assert directive.steer_problem("/parallel 2") is not None
     # /now included: the composers parse it and the loop never does.
     for live_only in (
         "/compact",
@@ -273,64 +264,52 @@ def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None
         "/now",
         "/stop",
     ):
-        problem = steer_problem(live_only) or ""
+        problem = directive.steer_problem(live_only) or ""
         assert "not an instruction" in problem, live_only
         assert "type it in the composer" in problem, live_only
-    assert steer_problem("/pin keep the API stable") is None
-    assert steer_problem("/parallel 2 try the other design") is None
-    assert steer_problem("focus on the parser") is None
+    assert directive.steer_problem("/pin keep the API stable") is None
+    assert directive.steer_problem("/parallel 2 try the other design") is None
+    assert directive.steer_problem("focus on the parser") is None
 
 
 # --- spec_fragment: the /parallel autocomplete key --------------------------
 
 
 def test_spec_fragment_first_segment() -> None:
-    from agent6.directive import spec_fragment
-
-    assert spec_fragment("/parallel gp") == "gp"
-    assert spec_fragment("/parallel ") == ""
-    assert spec_fragment("/parallel 2") is None  # a bare lane count, not a model fragment
+    assert directive.spec_fragment("/parallel gp") == "gp"
+    assert directive.spec_fragment("/parallel ") == ""
+    assert directive.spec_fragment("/parallel 2") is None  # a bare lane count, not a model fragment
 
 
 def test_spec_fragment_later_segment_under_construction() -> None:
     """A later `/parallel` segment's spec fragment completes like the first one's."""
-    from agent6.directive import spec_fragment
-
-    assert spec_fragment("/parallel 2 task A /parallel gp") == "gp"
-    assert spec_fragment("/parallel 2 task A /parallel gpt-5,op") == "op"
+    assert directive.spec_fragment("/parallel 2 task A /parallel gp") == "gp"
+    assert directive.spec_fragment("/parallel 2 task A /parallel gpt-5,op") == "op"
 
 
 def test_spec_fragment_none_once_the_task_has_started() -> None:
-    from agent6.directive import spec_fragment
-
-    assert spec_fragment("/parallel 2 fix the bug") is None
-    assert spec_fragment("/parallel 2 task A /parallel 3 fix it") is None
+    assert directive.spec_fragment("/parallel 2 fix the bug") is None
+    assert directive.spec_fragment("/parallel 2 task A /parallel 3 fix it") is None
 
 
 def test_spec_fragment_none_without_a_leading_directive() -> None:
-    from agent6.directive import spec_fragment
-
     # a message not starting with /parallel is not a directive at all
-    assert spec_fragment("do this /parallel 2") is None
+    assert directive.spec_fragment("do this /parallel 2") is None
     # /parallel embedded in a path is not whitespace-delimited: not a directive
-    assert spec_fragment("edit src/parallel foo") is None
+    assert directive.spec_fragment("edit src/parallel foo") is None
 
 
 def test_parse_now_carries_the_steer_and_the_urgency() -> None:
     """`steer --now` was a CLI-only word; the composers say `/now <text>`."""
-    from agent6.directive import STEER_COMMANDS, parse_now
-
-    assert parse_now("/now focus on the tests") == "focus on the tests"
-    assert parse_now("  /now\tstop touching config") == "stop touching config"
-    assert parse_now("/now") == ""  # bare: nothing to steer with, the caller says so
-    assert parse_now("/nowhere") is None and parse_now("now please") is None
-    assert "/now" in STEER_COMMANDS
+    assert directive.parse_now("/now focus on the tests") == "focus on the tests"
+    assert directive.parse_now("  /now\tstop touching config") == "stop touching config"
+    assert directive.parse_now("/now") == ""  # bare: nothing to steer with, the caller says so
+    assert directive.parse_now("/nowhere") is None and directive.parse_now("now please") is None
+    assert "/now" in directive.STEER_COMMANDS
 
 
 def test_directive_words_fold_case_once() -> None:
     """The pause menu and the composers fold case the same way: `/Pin x` pins everywhere."""
-    from agent6.directive import parse_compact, parse_pin, parse_task
-
-    assert parse_pin("/Pin keep the tests green") == "keep the tests green"
-    assert parse_task("/TASK add a flag") == "add a flag"
-    assert parse_compact("/Compact") == ""
+    assert directive.parse_pin("/Pin keep the tests green") == "keep the tests green"
+    assert directive.parse_task("/TASK add a flag") == "add a flag"
+    assert directive.parse_compact("/Compact") == ""

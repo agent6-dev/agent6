@@ -9,14 +9,13 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.ipc import write_worker_pid
-from agent6.ui.cli import main
-from agent6.ui.cli.ps_cmd import cmd_ps
+from agent6 import paths
+from agent6.sessions import ipc
+from agent6.ui.cli import main, ps_cmd
 
 WAITER = """
 machine = "waiter_demo"
@@ -48,7 +47,7 @@ reason = "signalled"
 
 
 def test_ps_reads_a_live_machine_through_the_shared_status_word(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`ps` reads a live machine through the shared status word.
 
@@ -61,10 +60,10 @@ def test_ps_reads_a_live_machine_through_the_shared_status_word(
     f.write_text(WAITER, encoding="utf-8")
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    assert not (state_dir(tmp_path) / "sessions").exists()
-    instance = state_dir(tmp_path) / "machines" / "waiter_demo"
-    write_worker_pid(instance, os.getpid())  # this process: alive by the pid rule
-    assert cmd_ps() == 0
+    assert not (paths.state_dir(tmp_path) / "sessions").exists()
+    instance = paths.state_dir(tmp_path) / "machines" / "waiter_demo"
+    ipc.write_worker_pid(instance, os.getpid())  # this process: alive by the pid rule
+    assert ps_cmd.cmd_ps() == 0
     out = capsys.readouterr().out
     row = next(line for line in out.splitlines() if "waiter_demo" in line)
     assert "machine" in row and "waiting" in row and str(os.getpid()) in row, row
@@ -73,7 +72,7 @@ def test_ps_reads_a_live_machine_through_the_shared_status_word(
 
 
 def test_ps_lists_a_linked_lane_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A fan-out lane's run dir is linked under the coordinator repo as well as its own state dir.
 
@@ -89,16 +88,16 @@ def test_ps_lists_a_linked_lane_once(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    write_worker_pid(lane, os.getpid())
+    ipc.write_worker_pid(lane, os.getpid())
     coordinator = base / "agent6" / "coord-repo-111111" / "sessions" / "runs"
     coordinator.mkdir(parents=True)
     (coordinator / "fan-l1").symlink_to(lane, target_is_directory=True)
-    assert cmd_ps() == 0
+    assert ps_cmd.cmd_ps() == 0
     assert capsys.readouterr().out.count("fan-l1") == 1
 
 
 def test_ps_lists_same_named_live_sessions_from_different_repositories(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     base = tmp_path / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(base))
@@ -111,9 +110,9 @@ def test_ps_lists_same_named_live_sessions_from_different_repositories(
             json.dumps({"type": "session.start", "mode": "run", "user_task": repo_id}) + "\n",
             encoding="utf-8",
         )
-        write_worker_pid(session, os.getpid())
+        ipc.write_worker_pid(session, os.getpid())
 
-    assert cmd_ps(as_json=True) == 0
+    assert ps_cmd.cmd_ps(as_json=True) == 0
     rows = json.loads(capsys.readouterr().out)
     assert {(row["repo_id"], row["id"]) for row in rows} == {
         ("first-repo-111111", "same-run"),
@@ -122,7 +121,7 @@ def test_ps_lists_same_named_live_sessions_from_different_repositories(
 
 
 def test_ps_json_carries_the_row_facts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`ps --json` carries the row facts.
 
@@ -138,7 +137,7 @@ def test_ps_json_carries_the_row_facts(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    write_worker_pid(lane, os.getpid())
+    ipc.write_worker_pid(lane, os.getpid())
     assert main(["ps", "--json"]) == 0
     (row,) = json.loads(capsys.readouterr().out)
     assert row["id"] == "fan-l1" and row["mode"] == "run" and row["pid"] == os.getpid()
@@ -146,18 +145,18 @@ def test_ps_json_carries_the_row_facts(
     assert row["directory"] is None  # a state-dir id with no checkout behind it
 
 
-def _live(session_dir: Path, manifest: dict[str, object]) -> None:
+def _live(session_dir: pathlib.Path, manifest: dict[str, object]) -> None:
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     (session_dir / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    write_worker_pid(session_dir, os.getpid())
+    ipc.write_worker_pid(session_dir, os.getpid())
 
 
 def test_ps_folds_a_live_lane_under_its_live_coordinator(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`ps` folds a live lane under its live coordinator.
 
@@ -178,19 +177,19 @@ def test_ps_folds_a_live_lane_under_its_live_coordinator(
         {"mode": "run", "parallel": {"group": "old", "lane": 1, "coordinator": "old"}},
     )
 
-    assert cmd_ps() == 0
+    assert ps_cmd.cmd_ps() == 0
     out = capsys.readouterr().out
     assert "fan (1 lane)" in out and "fan-l1" not in out and "old-l1" in out
-    assert cmd_ps(lanes=True) == 0
+    assert ps_cmd.cmd_ps(lanes=True) == 0
     assert "└ fan-l1" in capsys.readouterr().out
-    assert cmd_ps(as_json=True) == 0
+    assert ps_cmd.cmd_ps(as_json=True) == 0
     rows = {r["id"]: r for r in json.loads(capsys.readouterr().out)}
     assert set(rows) == {"fan", "old-l1"}
     assert [ln["id"] for ln in rows["fan"]["lanes"]] == ["fan-l1"]
 
 
 def test_ps_nests_a_lane_under_its_coordinator_whatever_the_scan_order(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A live lane is seen twice: in its clone's own state dir and through the origin's symlink.
 
@@ -211,7 +210,7 @@ def test_ps_nests_a_lane_under_its_coordinator_whatever_the_scan_order(
         )
         (origin / f"fan-l{lane}").symlink_to(clone / f"fan-l{lane}", target_is_directory=True)
 
-    assert cmd_ps(as_json=True) == 0
+    assert ps_cmd.cmd_ps(as_json=True) == 0
     (row,) = json.loads(capsys.readouterr().out)
     assert row["id"] == "fan" and [ln["id"] for ln in row["lanes"]] == ["fan-l1", "fan-l2"]
     assert {ln["repo_id"] for ln in row["lanes"]} == {"aaa-origin-000000"}

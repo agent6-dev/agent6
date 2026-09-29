@@ -6,286 +6,272 @@ from __future__ import annotations
 
 import hashlib
 import json
+import pathlib
 import threading
-from pathlib import Path
 
 import pytest
 
-from agent6.memory import (
-    MemoryMerge,
-    MemoryStoreError,
-    MemoryUse,
-    Touch,
-    add,
-    decisions_path,
-    index_name,
-    index_path,
-    index_text,
-    memory_dir,
-    merge_decisions,
-    merge_memory,
-    read_use,
-    record_decision,
-    record_use,
-    remove,
-    seed_digests,
-    seed_path,
-    seed_store,
-    show,
-    use_path,
-)
+from agent6 import memory
 
 
-def test_add_writes_file_and_index_line(tmp_path: Path) -> None:
-    path = add(tmp_path, "build-quirk", "The build needs FOO=1.\nDetails here.")
-    assert path == memory_dir(tmp_path) / "build-quirk.md"
+def test_add_writes_file_and_index_line(tmp_path: pathlib.Path) -> None:
+    path = memory.add(tmp_path, "build-quirk", "The build needs FOO=1.\nDetails here.")
+    assert path == memory.memory_dir(tmp_path) / "build-quirk.md"
     assert path.read_text() == "The build needs FOO=1.\nDetails here.\n"
-    assert index_text(tmp_path) == "- build-quirk: The build needs FOO=1."
+    assert memory.index_text(tmp_path) == "- build-quirk: The build needs FOO=1."
 
 
-def test_add_refuses_duplicate_and_bad_names(tmp_path: Path) -> None:
-    add(tmp_path, "one", "fact")
-    with pytest.raises(MemoryStoreError, match="exists"):
-        add(tmp_path, "one", "other")
+def test_add_refuses_duplicate_and_bad_names(tmp_path: pathlib.Path) -> None:
+    memory.add(tmp_path, "one", "fact")
+    with pytest.raises(memory.MemoryStoreError, match="exists"):
+        memory.add(tmp_path, "one", "other")
     for bad in ("Has-Caps", "sl/ash", "..", "-lead", "a" * 65, "looks-valid\n"):
-        with pytest.raises(MemoryStoreError, match="bad memory name"):
-            add(tmp_path, bad, "x")
-    with pytest.raises(MemoryStoreError, match="non-empty"):
-        add(tmp_path, "empty", "   ")
+        with pytest.raises(memory.MemoryStoreError, match="bad memory name"):
+            memory.add(tmp_path, bad, "x")
+    with pytest.raises(memory.MemoryStoreError, match="non-empty"):
+        memory.add(tmp_path, "empty", "   ")
 
 
-def test_remove_deletes_file_and_index_line(tmp_path: Path) -> None:
-    add(tmp_path, "keep", "kept fact")
-    add(tmp_path, "drop", "dropped fact")
-    remove(tmp_path, "drop")
-    assert not (memory_dir(tmp_path) / "drop.md").exists()
-    assert index_text(tmp_path) == "- keep: kept fact"
-    with pytest.raises(MemoryStoreError, match="no memory named"):
-        remove(tmp_path, "drop")
+def test_remove_deletes_file_and_index_line(tmp_path: pathlib.Path) -> None:
+    memory.add(tmp_path, "keep", "kept fact")
+    memory.add(tmp_path, "drop", "dropped fact")
+    memory.remove(tmp_path, "drop")
+    assert not (memory.memory_dir(tmp_path) / "drop.md").exists()
+    assert memory.index_text(tmp_path) == "- keep: kept fact"
+    with pytest.raises(memory.MemoryStoreError, match="no memory named"):
+        memory.remove(tmp_path, "drop")
 
 
-def test_add_reindexes_a_file_the_index_lost(tmp_path: Path) -> None:
+def test_add_reindexes_a_file_the_index_lost(tmp_path: pathlib.Path) -> None:
     """A fault between add's two writes leaves the file present and the index line missing.
 
     The fact is invisible to runs, so a retry refused with "exists" would leave it unseen forever.
     The retry re-indexes from the file's own first line and says the new body was not saved.
     """
-    d = memory_dir(tmp_path)
+    d = memory.memory_dir(tmp_path)
     d.mkdir(parents=True)
     (d / "orphan.md").write_text("The original fact.\n", encoding="utf-8")
-    with pytest.raises(MemoryStoreError, match="re-indexed"):
-        add(tmp_path, "orphan", "a different body")
-    assert index_text(tmp_path) == "- orphan: The original fact."
+    with pytest.raises(memory.MemoryStoreError, match="re-indexed"):
+        memory.add(tmp_path, "orphan", "a different body")
+    assert memory.index_text(tmp_path) == "- orphan: The original fact."
     assert (d / "orphan.md").read_text() == "The original fact.\n"
 
 
-def test_remove_heals_either_remnant(tmp_path: Path) -> None:
+def test_remove_heals_either_remnant(tmp_path: pathlib.Path) -> None:
     """A fault between remove's two writes leaves one remnant.
 
     A dangling index line (a prompt naming a memory that will not open) or an unindexed file. Either
     alone is removable; only a name with neither refuses.
     """
-    add(tmp_path, "dangling", "fact one")
-    (memory_dir(tmp_path) / "dangling.md").unlink()
-    remove(tmp_path, "dangling")
-    assert index_text(tmp_path) == ""
+    memory.add(tmp_path, "dangling", "fact one")
+    (memory.memory_dir(tmp_path) / "dangling.md").unlink()
+    memory.remove(tmp_path, "dangling")
+    assert memory.index_text(tmp_path) == ""
 
-    add(tmp_path, "fileonly", "fact two")
-    index_path(tmp_path).write_text("", encoding="utf-8")
-    remove(tmp_path, "fileonly")
-    assert not (memory_dir(tmp_path) / "fileonly.md").exists()
+    memory.add(tmp_path, "fileonly", "fact two")
+    memory.index_path(tmp_path).write_text("", encoding="utf-8")
+    memory.remove(tmp_path, "fileonly")
+    assert not (memory.memory_dir(tmp_path) / "fileonly.md").exists()
 
-    with pytest.raises(MemoryStoreError, match="no memory named"):
-        remove(tmp_path, "gone")
-
-
-def test_show_reads_one_entry(tmp_path: Path) -> None:
-    add(tmp_path, "fact", "body text")
-    assert show(tmp_path, "fact") == "body text\n"
-    with pytest.raises(MemoryStoreError, match="no memory named"):
-        show(tmp_path, "absent")
+    with pytest.raises(memory.MemoryStoreError, match="no memory named"):
+        memory.remove(tmp_path, "gone")
 
 
-def test_a_bad_byte_costs_one_character_not_the_index(tmp_path: Path) -> None:
+def test_show_reads_one_entry(tmp_path: pathlib.Path) -> None:
+    memory.add(tmp_path, "fact", "body text")
+    assert memory.show(tmp_path, "fact") == "body text\n"
+    with pytest.raises(memory.MemoryStoreError, match="no memory named"):
+        memory.show(tmp_path, "absent")
+
+
+def test_a_bad_byte_costs_one_character_not_the_index(tmp_path: pathlib.Path) -> None:
     """A byte that is not UTF-8 costs one character, never the index.
 
     Memory is context: an absent index is "" for injection, never an error that kills every run in
     the repo. Read strictly, one bad byte empties the index for every run, and the next `memory add`
     rebuilds the file from that empty read, deleting every line the operator had.
     """
-    from agent6.memory import add
-
-    assert index_text(tmp_path) == ""
-    add(tmp_path, "alpha", "the parser is generated")
-    add(tmp_path, "beta", "the cache is per repo")
-    idx = memory_dir(tmp_path) / "MEMORY.md"
+    assert memory.index_text(tmp_path) == ""
+    memory.add(tmp_path, "alpha", "the parser is generated")
+    memory.add(tmp_path, "beta", "the cache is per repo")
+    idx = memory.memory_dir(tmp_path) / "MEMORY.md"
     idx.write_bytes(idx.read_bytes() + b"- gamma: caf\xe9 a latin-1 byte\n")
 
-    kept = index_text(tmp_path)
+    kept = memory.index_text(tmp_path)
 
     assert "alpha" in kept and "beta" in kept and "gamma" in kept
 
-    add(tmp_path, "delta", "a third fact")
+    memory.add(tmp_path, "delta", "a third fact")
 
-    after = index_text(tmp_path)
+    after = memory.index_text(tmp_path)
     assert all(name in after for name in ("alpha", "beta", "gamma", "delta")), after
 
 
-def test_index_lines_stay_adjacent_across_adds(tmp_path: Path) -> None:
+def test_index_lines_stay_adjacent_across_adds(tmp_path: pathlib.Path) -> None:
     """Index lines stay adjacent across adds.
 
     Asking the stripped index text for its trailing newline, which it never has, opens every add
     after the first with a blank line.
     """
-    add(tmp_path, "one", "first fact")
-    add(tmp_path, "two", "second fact")
-    add(tmp_path, "three", "third fact")
-    assert index_path(tmp_path).read_text(encoding="utf-8") == (
+    memory.add(tmp_path, "one", "first fact")
+    memory.add(tmp_path, "two", "second fact")
+    memory.add(tmp_path, "three", "third fact")
+    assert memory.index_path(tmp_path).read_text(encoding="utf-8") == (
         "- one: first fact\n- two: second fact\n- three: third fact\n"
     )
 
 
-def test_index_add_starts_a_line_of_its_own(tmp_path: Path) -> None:
+def test_index_add_starts_a_line_of_its_own(tmp_path: pathlib.Path) -> None:
     """An index add starts a line of its own.
 
     An index edited by hand without a final newline gets one before the appended entry.
     """
-    idx = index_path(tmp_path)
+    idx = memory.index_path(tmp_path)
     idx.parent.mkdir(parents=True)
     idx.write_text("- hand: written by hand", encoding="utf-8")
-    add(tmp_path, "two", "second fact")
+    memory.add(tmp_path, "two", "second fact")
     assert idx.read_text(encoding="utf-8") == "- hand: written by hand\n- two: second fact\n"
 
 
-def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(tmp_path: Path) -> None:
+def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(
+    tmp_path: pathlib.Path,
+) -> None:
     """The harness-owned DECISIONS.md.
 
     Append-only entries (question, answer verbatim with continuation lines indented, session, UTC
     time); the injected text keeps the newest rulings behind a pointer past the cap.
     """
-    from agent6.memory import DECISIONS_INJECT_CAP, decisions_path, decisions_text, record_decision
-
-    assert decisions_text(tmp_path) == ""
-    first = record_decision(
+    assert memory.decisions_text(tmp_path) == ""
+    first = memory.record_decision(
         tmp_path, question="Keep the modal?", answer="No.\nInline item.", session="s1", when=0
     )
-    second = record_decision(tmp_path, question="Port?", answer="8931", session="s2", when=60)
-    text = decisions_path(tmp_path).read_text(encoding="utf-8")
+    second = memory.record_decision(
+        tmp_path, question="Port?", answer="8931", session="s2", when=60
+    )
+    text = memory.decisions_path(tmp_path).read_text(encoding="utf-8")
     assert text == first + second
     assert first == "- 1970-01-01 00:00Z [s1] Q: Keep the modal?\n  A: No.\n  Inline item.\n"
-    assert decisions_text(tmp_path) == text.strip()
+    assert memory.decisions_text(tmp_path) == text.strip()
     for i in range(200):
-        record_decision(
+        memory.record_decision(
             tmp_path, question=f"q{i} " + "x" * 40, answer="y" * 40, session="s", when=0
         )
-    clipped = decisions_text(tmp_path)
-    assert len(clipped) <= DECISIONS_INJECT_CAP
+    clipped = memory.decisions_text(tmp_path)
+    assert len(clipped) <= memory.DECISIONS_INJECT_CAP
     assert clipped.startswith("... (earlier rulings clipped") and clipped.rstrip().endswith(
         "y" * 40
     )
     assert "q199" in clipped and "Keep the modal" not in clipped
 
 
-def test_merge_decisions_appends_a_lanes_rulings(tmp_path: Path) -> None:
+def test_merge_decisions_appends_a_lanes_rulings(tmp_path: pathlib.Path) -> None:
     """A fan-out lane's rulings land in the coordinator's DECISIONS.md after its own.
 
     A lane that recorded none writes nothing.
     """
     lane, origin = tmp_path / "lane", tmp_path / "origin"
-    assert merge_decisions(lane, origin) == (0, 0)
-    assert not decisions_path(origin).exists()
-    record_decision(origin, question="q0?", answer="a0", session="run")
-    record_decision(lane, question="q1?", answer="a1\n\nsecond paragraph", session="l1")
-    assert merge_decisions(lane, origin) == (1, 0)
-    text = decisions_path(origin).read_text(encoding="utf-8")
+    assert memory.merge_decisions(lane, origin) == (0, 0)
+    assert not memory.decisions_path(origin).exists()
+    memory.record_decision(origin, question="q0?", answer="a0", session="run")
+    memory.record_decision(lane, question="q1?", answer="a1\n\nsecond paragraph", session="l1")
+    assert memory.merge_decisions(lane, origin) == (1, 0)
+    text = memory.decisions_path(origin).read_text(encoding="utf-8")
     assert text.index("Q: q0?") < text.index("Q: q1?")
     assert "[l1]" in text
     assert text.endswith("  A: a1\n  \n  second paragraph\n"), text
 
 
-def test_merge_decisions_skips_a_ruling_the_origin_already_holds(tmp_path: Path) -> None:
+def test_merge_decisions_skips_a_ruling_the_origin_already_holds(tmp_path: pathlib.Path) -> None:
     """N lanes asked the same question and got the same answer.
 
     One ruling, recorded once, however many session tags it arrived under.
     """
     l1, l2, origin = tmp_path / "l1", tmp_path / "l2", tmp_path / "origin"
-    record_decision(l1, question="Tabs?", answer="spaces", session="fan-l1", when=0)
-    record_decision(l2, question="Tabs?", answer="spaces", session="fan-l2", when=60)
-    record_decision(l2, question="Tabs?", answer="tabs", session="fan-l2", when=120)
-    assert merge_decisions(l1, origin) == (1, 0)
-    assert merge_decisions(l2, origin) == (1, 1)
-    assert merge_decisions(l2, origin) == (0, 2)
-    text = decisions_path(origin).read_text(encoding="utf-8")
+    memory.record_decision(l1, question="Tabs?", answer="spaces", session="fan-l1", when=0)
+    memory.record_decision(l2, question="Tabs?", answer="spaces", session="fan-l2", when=60)
+    memory.record_decision(l2, question="Tabs?", answer="tabs", session="fan-l2", when=120)
+    assert memory.merge_decisions(l1, origin) == (1, 0)
+    assert memory.merge_decisions(l2, origin) == (1, 1)
+    assert memory.merge_decisions(l2, origin) == (0, 2)
+    text = memory.decisions_path(origin).read_text(encoding="utf-8")
     assert text.count("Q: Tabs?") == 2
     assert text.count("A: spaces") == 1 and "[fan-l1]" in text and "A: tabs" in text
 
 
-def test_a_ruling_larger_than_the_cap_shows_its_tail(tmp_path: Path) -> None:
+def test_a_ruling_larger_than_the_cap_shows_its_tail(tmp_path: pathlib.Path) -> None:
     """A ruling longer than the injection cap shows its tail.
 
     The tail is the newest words the operator said; the block never holds the clip marker alone.
     """
-    from agent6.memory import DECISIONS_INJECT_CAP, decisions_text
-
-    record_decision(
-        tmp_path, question="Style?", answer="y" * (DECISIONS_INJECT_CAP + 500), session="s", when=0
+    memory.record_decision(
+        tmp_path,
+        question="Style?",
+        answer="y" * (memory.DECISIONS_INJECT_CAP + 500),
+        session="s",
+        when=0,
     )
-    text = decisions_text(tmp_path)
-    assert len(text) <= DECISIONS_INJECT_CAP
+    text = memory.decisions_text(tmp_path)
+    assert len(text) <= memory.DECISIONS_INJECT_CAP
     assert text.startswith("... (earlier rulings clipped")
     assert text.rstrip().endswith("y" * 100)
 
 
-def test_record_decision_dedupes_a_ruling_already_recorded(tmp_path: Path) -> None:
+def test_record_decision_dedupes_a_ruling_already_recorded(tmp_path: pathlib.Path) -> None:
     """Repeated delivery of one question and answer records one ruling."""
-    first = record_decision(tmp_path, question="Tabs?", answer="spaces", session="s1", when=0)
-    second = record_decision(tmp_path, question="Tabs?", answer="spaces", session="s2", when=60)
+    first = memory.record_decision(
+        tmp_path, question="Tabs?", answer="spaces", session="s1", when=0
+    )
+    second = memory.record_decision(
+        tmp_path, question="Tabs?", answer="spaces", session="s2", when=60
+    )
     assert second == first
-    assert decisions_path(tmp_path).read_text(encoding="utf-8").count("Q: Tabs?") == 1
+    assert memory.decisions_path(tmp_path).read_text(encoding="utf-8").count("Q: Tabs?") == 1
 
 
-def test_merge_decisions_skips_a_repeat_within_the_source(tmp_path: Path) -> None:
+def test_merge_decisions_skips_a_repeat_within_the_source(tmp_path: pathlib.Path) -> None:
     """A repeat within the source is carried over once.
 
     A ruling the origin recorded long ago, under another session, is a skip too.
     """
     lane, origin = tmp_path / "lane", tmp_path / "origin"
-    record_decision(origin, question="Tabs?", answer="spaces", session="old", when=0)
-    record_decision(lane, question="Tabs?", answer="spaces", session="lane", when=3600)
-    record_decision(lane, question="Lint?", answer="ruff", session="lane", when=3660)
+    memory.record_decision(origin, question="Tabs?", answer="spaces", session="old", when=0)
+    memory.record_decision(lane, question="Tabs?", answer="spaces", session="lane", when=3600)
+    memory.record_decision(lane, question="Lint?", answer="ruff", session="lane", when=3660)
     # Preserve a duplicate written by an older version or hand edit; the
     # current writer itself dedupes it.
-    with decisions_path(lane).open("a", encoding="utf-8") as fh:
+    with memory.decisions_path(lane).open("a", encoding="utf-8") as fh:
         fh.write("- 1970-01-01 01:02Z [lane] Q: Lint?\n  A: ruff\n")
-    assert merge_decisions(lane, origin) == (1, 2)
-    text = decisions_path(origin).read_text(encoding="utf-8")
+    assert memory.merge_decisions(lane, origin) == (1, 2)
+    text = memory.decisions_path(origin).read_text(encoding="utf-8")
     assert text.count("Q: Tabs?") == 1 and text.count("Q: Lint?") == 1
 
 
-def test_merge_decisions_starts_on_its_own_line(tmp_path: Path) -> None:
+def test_merge_decisions_starts_on_its_own_line(tmp_path: pathlib.Path) -> None:
     """A merged ruling starts on its own line.
 
     A destination cut short of its trailing newline (a partial write, a hand edit) gets one before
     the first appended entry.
     """
     lane, origin = tmp_path / "lane", tmp_path / "origin"
-    path = decisions_path(origin)
+    path = memory.decisions_path(origin)
     path.parent.mkdir(parents=True)
     path.write_text("- 2026-01-01 00:00Z [x] Q: a?\n  A: b", encoding="utf-8")
-    record_decision(lane, question="c?", answer="d", session="lane", when=0)
-    assert merge_decisions(lane, origin) == (1, 0)
+    memory.record_decision(lane, question="c?", answer="d", session="lane", when=0)
+    assert memory.merge_decisions(lane, origin) == (1, 0)
     assert path.read_text(encoding="utf-8") == (
         "- 2026-01-01 00:00Z [x] Q: a?\n  A: b\n- 1970-01-01 00:00Z [lane] Q: c?\n  A: d\n"
     )
 
 
-def _seeded_lane(tmp_path: Path, origin: Path, name: str = "lane") -> Path:
+def _seeded_lane(tmp_path: pathlib.Path, origin: pathlib.Path, name: str = "lane") -> pathlib.Path:
     lane = tmp_path / name
-    seed_store(origin, lane)
+    memory.seed_store(origin, lane)
     return lane
 
 
-def test_merge_memory_lands_new_facts_and_leaves_untouched_copies_alone(tmp_path: Path) -> None:
+def test_merge_memory_lands_new_facts_and_leaves_untouched_copies_alone(
+    tmp_path: pathlib.Path,
+) -> None:
     """A lane's store is a copy of the origin's.
 
     At import a fact the lane added lands with its index line; the copies it never touched are
@@ -293,69 +279,76 @@ def test_merge_memory_lands_new_facts_and_leaves_untouched_copies_alone(tmp_path
     sides is nothing either.
     """
     origin = tmp_path / "origin"
-    add(origin, "repo-fact", "The build needs BUILD_ID set.")
+    memory.add(origin, "repo-fact", "The build needs BUILD_ID set.")
     lane = _seeded_lane(tmp_path, origin)
-    assert list(json.loads(seed_path(lane).read_text(encoding="utf-8"))) == ["repo-fact"]
-    add(lane, "lane-fact", "The flaky test is test_clock.")
+    assert list(json.loads(memory.seed_path(lane).read_text(encoding="utf-8"))) == ["repo-fact"]
+    memory.add(lane, "lane-fact", "The flaky test is test_clock.")
     held = tmp_path / "held"
-    assert merge_memory(lane, origin, held_dir=held) == MemoryMerge(carried=("lane-fact",))
-    assert "test_clock" in show(origin, "lane-fact")
-    assert index_text(origin).splitlines() == [
+    assert memory.merge_memory(lane, origin, held_dir=held) == memory.MemoryMerge(
+        carried=("lane-fact",)
+    )
+    assert "test_clock" in memory.show(origin, "lane-fact")
+    assert memory.index_text(origin).splitlines() == [
         "- repo-fact: The build needs BUILD_ID set.",
         "- lane-fact: The flaky test is test_clock.",
     ]
     assert not held.exists()
-    assert merge_memory(lane, origin, held_dir=held) == MemoryMerge()
+    assert memory.merge_memory(lane, origin, held_dir=held) == memory.MemoryMerge()
 
 
-def test_merge_memory_fast_forwards_a_lanes_edit_and_deletion(tmp_path: Path) -> None:
+def test_merge_memory_fast_forwards_a_lanes_edit_and_deletion(tmp_path: pathlib.Path) -> None:
     """A lane's edit and deletion fast-forward over a copy the origin has not touched.
 
     The lane's edit replaces the file and its index line in place, and its deletion removes both:
     the branch rule, applied to the store.
     """
     origin = tmp_path / "origin"
-    add(origin, "a-fact", "A first.")
-    add(origin, "b-fact", "B first.")
-    add(origin, "c-fact", "C first.")
+    memory.add(origin, "a-fact", "A first.")
+    memory.add(origin, "b-fact", "B first.")
+    memory.add(origin, "c-fact", "C first.")
     lane = _seeded_lane(tmp_path, origin)
-    (memory_dir(lane) / "a-fact.md").write_text("A second, refined.\n", encoding="utf-8")
-    idx = index_path(lane)
+    (memory.memory_dir(lane) / "a-fact.md").write_text("A second, refined.\n", encoding="utf-8")
+    idx = memory.index_path(lane)
     idx.write_text(idx.read_text(encoding="utf-8").replace("A first.", "A second, refined."))
-    remove(lane, "c-fact")
+    memory.remove(lane, "c-fact")
     held = tmp_path / "held"
-    assert merge_memory(lane, origin, held_dir=held) == MemoryMerge(
+    assert memory.merge_memory(lane, origin, held_dir=held) == memory.MemoryMerge(
         updated=("a-fact",), deleted=("c-fact",)
     )
-    assert show(origin, "a-fact") == "A second, refined.\n"
-    assert not (memory_dir(origin) / "c-fact.md").exists()
-    assert index_text(origin).splitlines() == ["- a-fact: A second, refined.", "- b-fact: B first."]
+    assert memory.show(origin, "a-fact") == "A second, refined.\n"
+    assert not (memory.memory_dir(origin) / "c-fact.md").exists()
+    assert memory.index_text(origin).splitlines() == [
+        "- a-fact: A second, refined.",
+        "- b-fact: B first.",
+    ]
     assert not held.exists()
 
 
-def test_merge_memory_holds_back_a_change_on_both_sides(tmp_path: Path) -> None:
+def test_merge_memory_holds_back_a_change_on_both_sides(tmp_path: pathlib.Path) -> None:
     """Changed in the lane and in the origin since seeding.
 
     The origin keeps its version, the lane's is kept under held_dir, and both names are reported. A
     lane deletion over an origin edit is held the same way, with nothing to keep.
     """
     origin = tmp_path / "origin"
-    add(origin, "a-fact", "A first.")
-    add(origin, "d-fact", "D first.")
+    memory.add(origin, "a-fact", "A first.")
+    memory.add(origin, "d-fact", "D first.")
     lane = _seeded_lane(tmp_path, origin)
-    (memory_dir(lane) / "a-fact.md").write_text("A per the lane.\n", encoding="utf-8")
-    (memory_dir(origin) / "a-fact.md").write_text("A per the origin.\n", encoding="utf-8")
-    remove(lane, "d-fact")
-    (memory_dir(origin) / "d-fact.md").write_text("D per the origin.\n", encoding="utf-8")
+    (memory.memory_dir(lane) / "a-fact.md").write_text("A per the lane.\n", encoding="utf-8")
+    (memory.memory_dir(origin) / "a-fact.md").write_text("A per the origin.\n", encoding="utf-8")
+    memory.remove(lane, "d-fact")
+    (memory.memory_dir(origin) / "d-fact.md").write_text("D per the origin.\n", encoding="utf-8")
     held = tmp_path / "held"
-    assert merge_memory(lane, origin, held_dir=held) == MemoryMerge(held=("a-fact", "d-fact"))
-    assert show(origin, "a-fact") == "A per the origin.\n"
-    assert show(origin, "d-fact") == "D per the origin.\n"
+    assert memory.merge_memory(lane, origin, held_dir=held) == memory.MemoryMerge(
+        held=("a-fact", "d-fact")
+    )
+    assert memory.show(origin, "a-fact") == "A per the origin.\n"
+    assert memory.show(origin, "d-fact") == "D per the origin.\n"
     assert (held / "a-fact.md").read_text(encoding="utf-8") == "A per the lane.\n"
     assert not (held / "d-fact.md").exists()
 
 
-def test_merge_memory_holds_back_a_name_two_lanes_invented(tmp_path: Path) -> None:
+def test_merge_memory_holds_back_a_name_two_lanes_invented(tmp_path: pathlib.Path) -> None:
     """Two lanes recording different facts under one new name.
 
     The first lands, the second is held with its version kept, so neither silently overwrites the
@@ -363,19 +356,21 @@ def test_merge_memory_holds_back_a_name_two_lanes_invented(tmp_path: Path) -> No
     """
     origin = tmp_path / "origin"
     l1, l2 = _seeded_lane(tmp_path, origin, "l1"), _seeded_lane(tmp_path, origin, "l2")
-    add(l1, "shared-name", "What lane one saw.")
-    add(l2, "shared-name", "What lane two saw.")
-    assert merge_memory(l1, origin, held_dir=tmp_path / "h1") == MemoryMerge(
+    memory.add(l1, "shared-name", "What lane one saw.")
+    memory.add(l2, "shared-name", "What lane two saw.")
+    assert memory.merge_memory(l1, origin, held_dir=tmp_path / "h1") == memory.MemoryMerge(
         carried=("shared-name",)
     )
-    assert merge_memory(l2, origin, held_dir=tmp_path / "h2") == MemoryMerge(held=("shared-name",))
+    assert memory.merge_memory(l2, origin, held_dir=tmp_path / "h2") == memory.MemoryMerge(
+        held=("shared-name",)
+    )
     assert (tmp_path / "h2" / "shared-name.md").read_text(
         encoding="utf-8"
     ) == "What lane two saw.\n"
-    assert show(origin, "shared-name") == "What lane one saw.\n"
+    assert memory.show(origin, "shared-name") == "What lane one saw.\n"
 
 
-def test_merge_memory_skips_a_name_outside_the_stores_rule(tmp_path: Path) -> None:
+def test_merge_memory_skips_a_name_outside_the_stores_rule(tmp_path: pathlib.Path) -> None:
     """A name outside the store's rule is skipped on both sides.
 
     A seed key or a stray file whose name breaks the rule (a path fragment, an upper-case name) is
@@ -383,165 +378,170 @@ def test_merge_memory_skips_a_name_outside_the_stores_rule(tmp_path: Path) -> No
     otherwise read as "deleted in the lane" and be unlinked outside the store.
     """
     origin = tmp_path / "origin"
-    add(origin, "a-fact", "A first.")
+    memory.add(origin, "a-fact", "A first.")
     lane = _seeded_lane(tmp_path, origin)
     outside = origin / "escape.md"
     outside.write_text("outside\n", encoding="utf-8")
-    seeds = json.loads(seed_path(lane).read_text(encoding="utf-8"))
+    seeds = json.loads(memory.seed_path(lane).read_text(encoding="utf-8"))
     seeds["../escape"] = hashlib.sha256(b"outside\n").hexdigest()
     seeds["Bad Name"] = "0" * 64
-    seed_path(lane).write_text(json.dumps(seeds), encoding="utf-8")
-    (memory_dir(lane) / "Bad Name.md").write_text("stray\n", encoding="utf-8")
+    memory.seed_path(lane).write_text(json.dumps(seeds), encoding="utf-8")
+    (memory.memory_dir(lane) / "Bad Name.md").write_text("stray\n", encoding="utf-8")
     held = tmp_path / "held"
-    merged = merge_memory(lane, origin, held_dir=held)
+    merged = memory.merge_memory(lane, origin, held_dir=held)
     assert outside.read_text(encoding="utf-8") == "outside\n"
-    assert merged == MemoryMerge()
-    assert not (memory_dir(origin) / "Bad Name.md").exists() and not held.exists()
+    assert merged == memory.MemoryMerge()
+    assert not (memory.memory_dir(origin) / "Bad Name.md").exists() and not held.exists()
 
 
-def test_merge_memory_lands_an_edit_whose_index_line_the_lane_lost(tmp_path: Path) -> None:
+def test_merge_memory_lands_an_edit_whose_index_line_the_lane_lost(tmp_path: pathlib.Path) -> None:
     """An edit whose index line the lane lost still lands.
 
     A lane that edits a fact and rewrites MEMORY.md without its line (a model tidying the index)
     must not crash the import; the edit lands and the origin's own index line stays.
     """
     origin = tmp_path / "origin"
-    add(origin, "a-fact", "A first.")
+    memory.add(origin, "a-fact", "A first.")
     lane = _seeded_lane(tmp_path, origin)
-    (memory_dir(lane) / "a-fact.md").write_text("A second.\n", encoding="utf-8")
-    index_path(lane).write_text("", encoding="utf-8")
-    assert merge_memory(lane, origin, held_dir=tmp_path / "held") == MemoryMerge(
+    (memory.memory_dir(lane) / "a-fact.md").write_text("A second.\n", encoding="utf-8")
+    memory.index_path(lane).write_text("", encoding="utf-8")
+    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held") == memory.MemoryMerge(
         updated=("a-fact",)
     )
-    assert show(origin, "a-fact") == "A second.\n"
-    assert index_text(origin) == "- a-fact: A first."
+    assert memory.show(origin, "a-fact") == "A second.\n"
+    assert memory.index_text(origin) == "- a-fact: A first."
 
 
-def test_merge_memory_deletes_over_an_origin_with_no_index(tmp_path: Path) -> None:
+def test_merge_memory_deletes_over_an_origin_with_no_index(tmp_path: pathlib.Path) -> None:
     """The origin's MEMORY.md gone (an operator's rm).
 
     A lane's deletion of an untouched fact raised FileNotFoundError out of the import instead of
     removing the file.
     """
     origin = tmp_path / "origin"
-    add(origin, "a-fact", "A first.")
+    memory.add(origin, "a-fact", "A first.")
     lane = _seeded_lane(tmp_path, origin)
-    remove(lane, "a-fact")
-    index_path(origin).unlink()
-    assert merge_memory(lane, origin, held_dir=tmp_path / "held") == MemoryMerge(
+    memory.remove(lane, "a-fact")
+    memory.index_path(origin).unlink()
+    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held") == memory.MemoryMerge(
         deleted=("a-fact",)
     )
-    assert not (memory_dir(origin) / "a-fact.md").exists()
+    assert not (memory.memory_dir(origin) / "a-fact.md").exists()
 
 
-def test_seed_store_keeps_the_digests_of_an_earlier_seeding(tmp_path: Path) -> None:
+def test_seed_store_keeps_the_digests_of_an_earlier_seeding(tmp_path: pathlib.Path) -> None:
     """A second seeding keeps the digests of an earlier one.
 
     A manifest rewritten with this seeding's files alone makes every earlier copy read as new at
     import and be held back.
     """
     origin = tmp_path / "origin"
-    add(origin, "a-fact", "A first.")
+    memory.add(origin, "a-fact", "A first.")
     lane = _seeded_lane(tmp_path, origin)
-    add(origin, "b-fact", "B first.")
-    seed_store(origin, lane)
-    assert sorted(json.loads(seed_path(lane).read_text(encoding="utf-8"))) == ["a-fact", "b-fact"]
-    assert merge_memory(lane, origin, held_dir=tmp_path / "held") == MemoryMerge()
+    memory.add(origin, "b-fact", "B first.")
+    memory.seed_store(origin, lane)
+    assert sorted(json.loads(memory.seed_path(lane).read_text(encoding="utf-8"))) == [
+        "a-fact",
+        "b-fact",
+    ]
+    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held") == memory.MemoryMerge()
 
 
-def test_a_seed_manifest_that_is_not_an_object_reads_as_no_seeds(tmp_path: Path) -> None:
+def test_a_seed_manifest_that_is_not_an_object_reads_as_no_seeds(tmp_path: pathlib.Path) -> None:
     """A seed manifest that is not an object reads as no seeds.
 
     One reader owns the manifest's shape; a hand-edited JSON array raises neither TypeError out of
     seed_store nor AttributeError out of merge_memory.
     """
     origin = tmp_path / "origin"
-    add(origin, "a-fact", "A first.")
+    memory.add(origin, "a-fact", "A first.")
     lane = _seeded_lane(tmp_path, origin)
-    seed_path(lane).write_text("[]\n", encoding="utf-8")
-    add(origin, "b-fact", "B first.")
-    seed_store(origin, lane)
-    assert sorted(json.loads(seed_path(lane).read_text(encoding="utf-8"))) == ["b-fact"]
-    seed_path(lane).write_text("[]\n", encoding="utf-8")
-    assert merge_memory(lane, origin, held_dir=tmp_path / "held") == MemoryMerge()
+    memory.seed_path(lane).write_text("[]\n", encoding="utf-8")
+    memory.add(origin, "b-fact", "B first.")
+    memory.seed_store(origin, lane)
+    assert sorted(json.loads(memory.seed_path(lane).read_text(encoding="utf-8"))) == ["b-fact"]
+    memory.seed_path(lane).write_text("[]\n", encoding="utf-8")
+    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held") == memory.MemoryMerge()
 
 
-def test_merge_memory_finishes_a_carried_fact_after_a_crash(tmp_path: Path) -> None:
+def test_merge_memory_finishes_a_carried_fact_after_a_crash(tmp_path: pathlib.Path) -> None:
     """A carried fact left without its index line by a crash heals on retry.
 
     Otherwise the fact stays invisible forever.
     """
     origin = tmp_path / "origin"
     lane = _seeded_lane(tmp_path, origin)
-    add(lane, "lane-fact", "The parser is generated.")
-    dst = memory_dir(origin)
+    memory.add(lane, "lane-fact", "The parser is generated.")
+    dst = memory.memory_dir(origin)
     dst.mkdir(parents=True)
-    (dst / "lane-fact.md").write_bytes((memory_dir(lane) / "lane-fact.md").read_bytes())
+    (dst / "lane-fact.md").write_bytes((memory.memory_dir(lane) / "lane-fact.md").read_bytes())
 
-    assert merge_memory(lane, origin, held_dir=tmp_path / "held") == MemoryMerge(
+    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held") == memory.MemoryMerge(
         carried=("lane-fact",)
     )
-    assert index_text(origin) == "- lane-fact: The parser is generated."
+    assert memory.index_text(origin) == "- lane-fact: The parser is generated."
 
 
-def test_seed_store_recovers_a_copy_published_before_its_digest(tmp_path: Path) -> None:
+def test_seed_store_recovers_a_copy_published_before_its_digest(tmp_path: pathlib.Path) -> None:
     """A seed copy published before its digest is recorded on retry.
 
     A crash between copying a seed fact and publishing the manifest must not lose the digest.
     """
     origin, lane = tmp_path / "origin", tmp_path / "lane"
-    add(origin, "a-fact", "A first.")
-    dst = memory_dir(lane)
+    memory.add(origin, "a-fact", "A first.")
+    dst = memory.memory_dir(lane)
     dst.mkdir(parents=True)
-    (dst / "a-fact.md").write_bytes((memory_dir(origin) / "a-fact.md").read_bytes())
+    (dst / "a-fact.md").write_bytes((memory.memory_dir(origin) / "a-fact.md").read_bytes())
 
-    seed_store(origin, lane)
+    memory.seed_store(origin, lane)
 
-    assert set(seed_digests(lane)) == {"a-fact"}
+    assert set(memory.seed_digests(lane)) == {"a-fact"}
 
 
-def test_add_publishes_a_fact_atomically(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_add_publishes_a_fact_atomically(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A crash in the durable publish must not expose a partial fact file."""
     from agent6 import memory as mem
 
     real_atomic_write = mem.atomic_write
 
-    def crash(path: Path, data: str | bytes) -> None:
+    def crash(path: pathlib.Path, data: str | bytes) -> None:
         if path.name == "crash.md":
             raise OSError("simulated crash")
         real_atomic_write(path, data)
 
     monkeypatch.setattr(mem, "atomic_write", crash)
     with pytest.raises(OSError, match="simulated crash"):
-        add(tmp_path, "crash", "A complete fact.")
-    assert not (memory_dir(tmp_path) / "crash.md").exists()
+        memory.add(tmp_path, "crash", "A complete fact.")
+    assert not (memory.memory_dir(tmp_path) / "crash.md").exists()
 
 
 def test_an_index_rewrite_cannot_erase_a_concurrent_add(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Every index read-modify-write and append shares one lock."""
     from agent6 import memory as mem
 
-    add(tmp_path, "keep", "Keep this.")
-    add(tmp_path, "drop", "Drop this.")
-    idx = index_path(tmp_path)
+    memory.add(tmp_path, "keep", "Keep this.")
+    memory.add(tmp_path, "drop", "Drop this.")
+    idx = memory.index_path(tmp_path)
     rewrite_ready = threading.Event()
     release_rewrite = threading.Event()
     added = threading.Event()
     real_atomic_write = mem.atomic_write
 
-    def pause_rewrite(path: Path, data: str | bytes) -> None:
+    def pause_rewrite(path: pathlib.Path, data: str | bytes) -> None:
         if threading.current_thread().name == "remove" and path == idx:
             rewrite_ready.set()
             assert release_rewrite.wait(5)
         real_atomic_write(path, data)
 
     monkeypatch.setattr(mem, "atomic_write", pause_rewrite)
-    remover = threading.Thread(target=remove, args=(tmp_path, "drop"), name="remove")
+    remover = threading.Thread(target=memory.remove, args=(tmp_path, "drop"), name="remove")
 
     def add_one() -> None:
-        add(tmp_path, "new", "New fact.")
+        memory.add(tmp_path, "new", "New fact.")
         added.set()
 
     adder = threading.Thread(target=add_one, name="add")
@@ -554,69 +554,75 @@ def test_an_index_rewrite_cannot_erase_a_concurrent_add(
     adder.join(5)
 
     assert not remover.is_alive() and not adder.is_alive()
-    assert "- new: New fact." in index_text(tmp_path)
+    assert "- new: New fact." in memory.index_text(tmp_path)
 
 
-def test_record_use_keeps_who_wrote_and_who_read(tmp_path: Path) -> None:
+def test_record_use_keeps_who_wrote_and_who_read(tmp_path: pathlib.Path) -> None:
     """The use record keeps who wrote and who read.
 
     The creating write stays as `created`, the latest as `updated`; reads accumulate with the last
     reader.
     """
-    record_use(tmp_path, session="run-a", wrote=("fact",), created=("fact",), read={}, when=0.0)
-    record_use(tmp_path, session="run-b", wrote=("fact",), read={"fact": 2}, when=3600.0)
-    record_use(tmp_path, session="run-c", wrote=(), read={"fact": 1, "other": 1}, when=7200.0)
-    record_use(tmp_path, session="run-b", wrote=("fact",), read={}, when=10800.0)
-    record_use(tmp_path, session="run-d", wrote=("older",), read={}, when=14400.0)
-    use = read_use(tmp_path)
-    assert use["fact"] == MemoryUse(
-        created=Touch("run-a", "1970-01-01 00:00Z"),
+    memory.record_use(
+        tmp_path, session="run-a", wrote=("fact",), created=("fact",), read={}, when=0.0
+    )
+    memory.record_use(tmp_path, session="run-b", wrote=("fact",), read={"fact": 2}, when=3600.0)
+    memory.record_use(
+        tmp_path, session="run-c", wrote=(), read={"fact": 1, "other": 1}, when=7200.0
+    )
+    memory.record_use(tmp_path, session="run-b", wrote=("fact",), read={}, when=10800.0)
+    memory.record_use(tmp_path, session="run-d", wrote=("older",), read={}, when=14400.0)
+    use = memory.read_use(tmp_path)
+    assert use["fact"] == memory.MemoryUse(
+        created=memory.Touch("run-a", "1970-01-01 00:00Z"),
         writes=(
-            Touch("run-a", "1970-01-01 00:00Z"),
-            Touch("run-b", "1970-01-01 01:00Z"),
-            Touch("run-b", "1970-01-01 03:00Z"),
+            memory.Touch("run-a", "1970-01-01 00:00Z"),
+            memory.Touch("run-b", "1970-01-01 01:00Z"),
+            memory.Touch("run-b", "1970-01-01 03:00Z"),
         ),
         reads=3,
-        last_read=Touch("run-c", "1970-01-01 02:00Z"),
+        last_read=memory.Touch("run-c", "1970-01-01 02:00Z"),
     )
     assert use["fact"].writers == ("run-a", "run-b")
-    assert use["fact"].updated == Touch("run-b", "1970-01-01 03:00Z")
+    assert use["fact"].updated == memory.Touch("run-b", "1970-01-01 03:00Z")
     # A write of a fact the record never saw created (hand-written, or older
     # than the record) is an edit: no creation is claimed.
-    assert use["older"] == MemoryUse(writes=(Touch("run-d", "1970-01-01 04:00Z"),))
+    assert use["older"] == memory.MemoryUse(writes=(memory.Touch("run-d", "1970-01-01 04:00Z"),))
     # A deletion ends the entry, as `memory rm` does; alone, it still writes.
-    record_use(
+    memory.record_use(
         tmp_path, session="run-e", wrote=(), read={"older": 1}, deleted=("older",), when=18000.0
     )
-    assert "older" not in read_use(tmp_path)  # a read of its old life brings nothing back
+    assert "older" not in memory.read_use(tmp_path)  # a read of its old life brings nothing back
     # A read of a fact nobody recorded writing (hand-written, or older than
     # the record) still counts, with no writer named.
-    assert use["other"] == MemoryUse(reads=1, last_read=Touch("run-c", "1970-01-01 02:00Z"))
+    assert use["other"] == memory.MemoryUse(
+        reads=1, last_read=memory.Touch("run-c", "1970-01-01 02:00Z")
+    )
     assert use["other"].created is None
-    assert use_path(tmp_path) == tmp_path / "memory-use.json"
+    assert memory.use_path(tmp_path) == tmp_path / "memory-use.json"
 
 
-def test_operator_add_and_rm_keep_the_use_record_in_step(tmp_path: Path) -> None:
-    add(tmp_path, "quirk", "The build needs FOO=1.")
-    use = read_use(tmp_path)
+def test_operator_add_and_rm_keep_the_use_record_in_step(tmp_path: pathlib.Path) -> None:
+    memory.add(tmp_path, "quirk", "The build needs FOO=1.")
+    use = memory.read_use(tmp_path)
     assert use["quirk"].writers == ("operator",)
     assert use["quirk"].created is not None and use["quirk"].created.session == "operator"
     assert use["quirk"].reads == 0
-    remove(tmp_path, "quirk")
-    assert "quirk" not in read_use(tmp_path)
+    memory.remove(tmp_path, "quirk")
+    assert "quirk" not in memory.read_use(tmp_path)
 
 
-def test_read_use_tolerates_a_missing_or_misshapen_record(tmp_path: Path) -> None:
-    assert read_use(tmp_path) == {}
-    use_path(tmp_path).write_text("[1, 2]", encoding="utf-8")
-    assert read_use(tmp_path) == {}
-    use_path(tmp_path).write_text(
+def test_read_use_tolerates_a_missing_or_misshapen_record(tmp_path: pathlib.Path) -> None:
+    assert memory.read_use(tmp_path) == {}
+    memory.use_path(tmp_path).write_text("[1, 2]", encoding="utf-8")
+    assert memory.read_use(tmp_path) == {}
+    memory.use_path(tmp_path).write_text(
         '{"fact": {"reads": "many", "writes": []}, "ok": {"reads": 2, "writes": []},'
         ' "w": {"reads": 1}}',
         encoding="utf-8",
     )
-    assert read_use(tmp_path) == {"ok": MemoryUse(reads=2)}
-    use_path(tmp_path).write_text(
+    assert memory.read_use(tmp_path) == {"ok": memory.MemoryUse(reads=2)}
+    memory.use_path(tmp_path).write_text(
         '{"n": {"created": {"session": "run-a", "at": "2026-01-01 00:00Z"},'
         ' "writes": [{"session": "run-a", "at": "2026-01-01 00:00Z"}], "reads": 1,'
         ' "last_read": {"session": "run-b", "at": "2026-01-02 00:00Z"}},'
@@ -627,47 +633,43 @@ def test_read_use_tolerates_a_missing_or_misshapen_record(tmp_path: Path) -> Non
         ' "blank": {"writes": [{"session": "run-a", "at": ""}]}}',
         encoding="utf-8",
     )
-    assert read_use(tmp_path) == {
-        "n": MemoryUse(
-            created=Touch("run-a", "2026-01-01 00:00Z"),
-            writes=(Touch("run-a", "2026-01-01 00:00Z"),),
+    assert memory.read_use(tmp_path) == {
+        "n": memory.MemoryUse(
+            created=memory.Touch("run-a", "2026-01-01 00:00Z"),
+            writes=(memory.Touch("run-a", "2026-01-01 00:00Z"),),
             reads=1,
-            last_read=Touch("run-b", "2026-01-02 00:00Z"),
+            last_read=memory.Touch("run-b", "2026-01-02 00:00Z"),
         ),
-        "e": MemoryUse(writes=(Touch("run-a", "2026-01-01 00:00Z"),)),
+        "e": memory.MemoryUse(writes=(memory.Touch("run-a", "2026-01-01 00:00Z"),)),
     }
 
 
-def test_unindexed_names_lists_only_names_rm_can_take(tmp_path: Path) -> None:
-    from agent6.memory import unindexed_names
-
-    d = memory_dir(tmp_path)
+def test_unindexed_names_lists_only_names_rm_can_take(tmp_path: pathlib.Path) -> None:
+    d = memory.memory_dir(tmp_path)
     d.mkdir(parents=True)
     for name in ("Draft.md", "ok.md", "notes.txt"):
         (d / name).write_text("x\n", encoding="utf-8")
-    assert unindexed_names(tmp_path) == ("ok",)
+    assert memory.unindexed_names(tmp_path) == ("ok",)
 
 
 def test_index_name_reads_the_entry_a_line_names() -> None:
-    assert index_name("- build-quirk: Needs FOO=1.") == "build-quirk"
-    assert index_name("* other-fact : x") == "other-fact"
-    assert index_name("not an entry") is None
+    assert memory.index_name("- build-quirk: Needs FOO=1.") == "build-quirk"
+    assert memory.index_name("* other-fact : x") == "other-fact"
+    assert memory.index_name("not an entry") is None
     # A model wrote the link shape other agents' indexes use, and the list
     # called its fact "not in the index" beside the line that named it.
-    assert index_name("- [Public API](public-api.md): re-exported helpers") == "public-api"
-    assert index_name("- [x](Not-A-Name.md)") is None
-    assert index_name("- Bad Name: x") is None
+    assert memory.index_name("- [Public API](public-api.md): re-exported helpers") == "public-api"
+    assert memory.index_name("- [x](Not-A-Name.md)") is None
+    assert memory.index_name("- Bad Name: x") is None
 
 
-def test_merge_use_carries_a_lanes_record_into_the_origin(tmp_path: Path) -> None:
+def test_merge_use_carries_a_lanes_record_into_the_origin(tmp_path: pathlib.Path) -> None:
     """A --parallel lane's use record died with its state dir.
 
     The origin never named the lane as a fact's writer or reader.
     """
-    from agent6.memory import merge_use
-
     origin, lane = tmp_path / "origin", tmp_path / "lane"
-    record_use(
+    memory.record_use(
         origin,
         session="run-o",
         wrote=("shared",),
@@ -675,7 +677,7 @@ def test_merge_use_carries_a_lanes_record_into_the_origin(tmp_path: Path) -> Non
         read={"shared": 1},
         when=0.0,
     )
-    record_use(
+    memory.record_use(
         lane,
         session="lane-1",
         wrote=("shared", "fresh"),
@@ -683,35 +685,38 @@ def test_merge_use_carries_a_lanes_record_into_the_origin(tmp_path: Path) -> Non
         read={"shared": 2, "gone": 1},
         when=60.0,
     )
-    merged, reads = merge_use(lane, origin, written=("shared", "fresh"))
+    merged, reads = memory.merge_use(lane, origin, written=("shared", "fresh"))
     assert (merged, reads) == (2, 1)  # two writers carried; one fact read (gone was never held)
-    use = read_use(origin)
+    use = memory.read_use(origin)
     assert use["shared"].writers == ("run-o", "lane-1")
     assert (use["shared"].reads, use["shared"].last_read) == (
         3,
-        Touch("lane-1", "1970-01-01 00:01Z"),
+        memory.Touch("lane-1", "1970-01-01 00:01Z"),
     )
-    assert use["shared"].created == Touch("run-o", "1970-01-01 00:00Z")  # the origin's stands
-    assert use["fresh"].created == Touch("lane-1", "1970-01-01 00:01Z")
+    assert use["shared"].created == memory.Touch(
+        "run-o", "1970-01-01 00:00Z"
+    )  # the origin's stands
+    assert use["fresh"].created == memory.Touch("lane-1", "1970-01-01 00:01Z")
     assert "gone" not in use  # a read of a fact the origin never held travels nowhere
     # Nothing to carry leaves the origin alone.
-    assert merge_use(tmp_path / "empty", origin, written=()) == (0, 0)
+    assert memory.merge_use(tmp_path / "empty", origin, written=()) == (0, 0)
 
 
-def test_carry_back_lands_a_lanes_use_record(tmp_path: Path) -> None:
+def test_carry_back_lands_a_lanes_use_record(tmp_path: pathlib.Path) -> None:
     """The lane import carries the use record along with the facts and the rulings.
 
     Otherwise it goes with the lane's state dir.
     """
-    from agent6.app.parallel import carry_back
-    from agent6.app.reporter import Reporter
+    from agent6.app import parallel, reporter
 
     origin, lane, dest = tmp_path / "origin", tmp_path / "lane", tmp_path / "dest"
-    add(lane, "lane-fact", "A fact the lane found.")
-    record_use(lane, session="lane-1", wrote=("lane-fact",), read={"lane-fact": 2})
+    memory.add(lane, "lane-fact", "A fact the lane found.")
+    memory.record_use(lane, session="lane-1", wrote=("lane-fact",), read={"lane-fact": 2})
     said: list[str] = []
-    carry_back(lane, origin, dest, lane=1, reporter=Reporter(out=said.append, err=said.append))
-    use = read_use(origin)
+    parallel.carry_back(
+        lane, origin, dest, lane=1, reporter=reporter.Reporter(out=said.append, err=said.append)
+    )
+    use = memory.read_use(origin)
     assert use["lane-fact"].writers == ("operator", "lane-1")
     assert use["lane-fact"].reads == 2
     assert any("use record carried for 1" in line for line in said)

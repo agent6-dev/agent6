@@ -6,31 +6,14 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import pytest
 
+from agent6.machine import journal as machine_journal
 from agent6.machine import load_machine
-from agent6.machine.journal import (
-    BranchFact,
-    MachineEnd,
-    MachineJournal,
-    MachineNotify,
-    PendingWait,
-    StepEvent,
-)
-from agent6.viewmodel.machine_state import (
-    _NOTIFY_KEEP,  # pyright: ignore[reportPrivateUsage]
-    NotificationView,
-    fold_machine,
-    machine_state_as_dict,
-    machine_status_word,
-    machine_word_for_dir,
-    newest_state_log,
-    notification_key,
-    probe_instance,
-)
+from agent6.viewmodel import machine_state
 
 # A branch -> terminal machine: two states, no I/O, valid to load.
 TINY = """
@@ -58,15 +41,15 @@ reason = "routed"
 """
 
 
-def _spec(tmp_path: Path):
+def _spec(tmp_path: pathlib.Path):
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     return load_machine(f)
 
 
-def test_fold_empty_starts_at_initial(tmp_path: Path) -> None:
+def test_fold_empty_starts_at_initial(tmp_path: pathlib.Path) -> None:
     # No journal yet: the machine is at its initial state, nothing visited.
-    ms = fold_machine(_spec(tmp_path), [])
+    ms = machine_state.fold_machine(_spec(tmp_path), [])
     assert (ms.machine, ms.version, ms.initial, ms.current) == ("tiny", 1, "route", "route")
     assert ms.transitions == ()
     assert ms.ended is None
@@ -76,14 +59,21 @@ def test_fold_empty_starts_at_initial(tmp_path: Path) -> None:
     assert all(not s.is_visited for s in ms.states)
 
 
-def test_fold_tracks_position_transitions_and_end(tmp_path: Path) -> None:
+def test_fold_tracks_position_transitions_and_end(tmp_path: pathlib.Path) -> None:
     events = [
-        StepEvent(
-            ts="t", seq=0, state="route", label="else", goto="done", fact=BranchFact(clause_index=1)
+        machine_journal.StepEvent(
+            ts="t",
+            seq=0,
+            state="route",
+            label="else",
+            goto="done",
+            fact=machine_journal.BranchFact(clause_index=1),
         ),
-        MachineEnd(ts="t", status="ok", reason="routed", state="done", transitions=1),
+        machine_journal.MachineEnd(
+            ts="t", status="ok", reason="routed", state="done", transitions=1
+        ),
     ]
-    ms = fold_machine(_spec(tmp_path), events)
+    ms = machine_state.fold_machine(_spec(tmp_path), events)
     by = {s.name: s for s in ms.states}
     # current = goto of the last transition; both endpoints are visited.
     assert ms.current == "done"
@@ -100,22 +90,27 @@ def test_fold_tracks_position_transitions_and_end(tmp_path: Path) -> None:
     )
 
 
-def test_machine_status_word_distinguishes_waiting_from_running(tmp_path: Path) -> None:
+def test_machine_status_word_distinguishes_waiting_from_running(tmp_path: pathlib.Path) -> None:
     spec = _spec(tmp_path)
-    ended = fold_machine(
-        spec, [MachineEnd(ts="t", status="failed", reason="boom", state="done", transitions=1)]
+    ended = machine_state.fold_machine(
+        spec,
+        [
+            machine_journal.MachineEnd(
+                ts="t", status="failed", reason="boom", state="done", transitions=1
+            )
+        ],
     )
     # A terminal instance reports its end status regardless of liveness probes.
-    assert machine_status_word(ended, parked=True, alive=True) == "failed"
+    assert machine_state.machine_status_word(ended, parked=True, alive=True) == "failed"
 
-    live = fold_machine(spec, [])  # not ended
+    live = machine_state.fold_machine(spec, [])  # not ended
     # Parked (an armed --exit-on-wait wait) reads waiting, even if a stale pid
     # probe were to lie alive; running only when live and not parked; a dead pid
     # that is neither parked nor ended is stopped.
-    assert machine_status_word(live, parked=True, alive=False) == "waiting"
-    assert machine_status_word(live, parked=True, alive=True) == "waiting"
-    assert machine_status_word(live, parked=False, alive=True) == "running"
-    assert machine_status_word(live, parked=False, alive=False) == "stopped"
+    assert machine_state.machine_status_word(live, parked=True, alive=False) == "waiting"
+    assert machine_state.machine_status_word(live, parked=True, alive=True) == "waiting"
+    assert machine_state.machine_status_word(live, parked=False, alive=True) == "running"
+    assert machine_state.machine_status_word(live, parked=False, alive=False) == "stopped"
 
     # A live worker blocked in a foreground `wait` state is "waiting", not
     # "running" (the default `machine run` persists no PendingWait).
@@ -127,49 +122,58 @@ def test_machine_status_word_distinguishes_waiting_from_running(tmp_path: Path) 
         '[states.done]\nkind = "terminal"\nstatus = "ok"\nreason = "d"\n',
         encoding="utf-8",
     )
-    waiting = fold_machine(load_machine(wf), [])
-    assert machine_status_word(waiting, parked=False, alive=True) == "waiting"
+    waiting = machine_state.fold_machine(load_machine(wf), [])
+    assert machine_state.machine_status_word(waiting, parked=False, alive=True) == "waiting"
 
 
-def test_machine_word_for_dir_pairs_the_dir_probes(tmp_path: Path) -> None:
+def test_machine_word_for_dir_pairs_the_dir_probes(tmp_path: pathlib.Path) -> None:
     """The dir-level owner feeds the pure word the armed-wait and worker-pid probes."""
     spec = _spec(tmp_path)
-    live = fold_machine(spec, [])
+    live = machine_state.fold_machine(spec, [])
     d = tmp_path / "inst"
     d.mkdir()
-    assert machine_word_for_dir(live, d) == "stopped"  # no wait, no worker
-    MachineJournal(d).write_pending_wait(PendingWait(state="route", wake_epoch=None))
-    assert machine_word_for_dir(live, d) == "waiting"  # armed wait, no worker
-    MachineJournal(d).clear_pending_wait()
-    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert machine_word_for_dir(live, d) == "running"
-    ended = fold_machine(
-        spec, [MachineEnd(ts="t", status="ok", reason="routed", state="done", transitions=1)]
+    assert machine_state.machine_word_for_dir(live, d) == "stopped"  # no wait, no worker
+    machine_journal.MachineJournal(d).write_pending_wait(
+        machine_journal.PendingWait(state="route", wake_epoch=None)
     )
-    assert machine_word_for_dir(ended, d) == "ok"  # the end outranks the probes
+    assert machine_state.machine_word_for_dir(live, d) == "waiting"  # armed wait, no worker
+    machine_journal.MachineJournal(d).clear_pending_wait()
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    assert machine_state.machine_word_for_dir(live, d) == "running"
+    ended = machine_state.fold_machine(
+        spec,
+        [
+            machine_journal.MachineEnd(
+                ts="t", status="ok", reason="routed", state="done", transitions=1
+            )
+        ],
+    )
+    assert machine_state.machine_word_for_dir(ended, d) == "ok"  # the end outranks the probes
 
 
-def test_machine_state_as_dict_stamps_the_dir_word(tmp_path: Path) -> None:
+def test_machine_state_as_dict_stamps_the_dir_word(tmp_path: pathlib.Path) -> None:
     # With a dir in hand the wire form carries the dir-aware word; a genuinely
     # dir-less stream keeps the bare fold (no fabricated liveness claim).
     spec = _spec(tmp_path)
-    live = fold_machine(spec, [])
+    live = machine_state.fold_machine(spec, [])
     d = tmp_path / "inst"
     d.mkdir()
-    MachineJournal(d).write_pending_wait(PendingWait(state="route", wake_epoch=None))
-    assert machine_state_as_dict(live, d)["status"] == "waiting"
-    assert "status" not in machine_state_as_dict(live)
+    machine_journal.MachineJournal(d).write_pending_wait(
+        machine_journal.PendingWait(state="route", wake_epoch=None)
+    )
+    assert machine_state.machine_state_as_dict(live, d)["status"] == "waiting"
+    assert "status" not in machine_state.machine_state_as_dict(live)
 
 
-def test_the_wire_form_carries_every_verb_refusal(tmp_path: Path) -> None:
+def test_the_wire_form_carries_every_verb_refusal(tmp_path: pathlib.Path) -> None:
     """A front-end paints all four verbs from the same readiness facts."""
     spec = _spec(tmp_path)
-    live = fold_machine(spec, [])
+    live = machine_state.fold_machine(spec, [])
     d = tmp_path / "inst"
     d.mkdir()
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
-    refusals = machine_state_as_dict(live, d)["refusals"]
+    refusals = machine_state.machine_state_as_dict(live, d)["refusals"]
 
     assert refusals == {
         "stop": "",
@@ -177,33 +181,33 @@ def test_the_wire_form_carries_every_verb_refusal(tmp_path: Path) -> None:
         "steer": "machine 'inst' has no open agent state to steer",
         "answer": "machine 'inst' has no open prompt to answer",
     }
-    MachineJournal(d).write_pending_wait(PendingWait(state="route", wake_epoch=None))
-    parked = machine_state_as_dict(live, d)
+    machine_journal.MachineJournal(d).write_pending_wait(
+        machine_journal.PendingWait(state="route", wake_epoch=None)
+    )
+    parked = machine_state.machine_state_as_dict(live, d)
     assert parked["status"] == "waiting"
     assert parked["refusals"]["poke"] == ""
     assert "no open prompt" in parked["refusals"]["answer"]
     assert "reads no steer" in parked["refusals"]["steer"]
 
 
-def test_a_live_machine_without_an_open_agent_wait_refuses_by_name(tmp_path: Path) -> None:
+def test_a_live_machine_without_an_open_agent_wait_refuses_by_name(tmp_path: pathlib.Path) -> None:
     """A live worker alone does not make a past or unborn agent state a reader."""
-    from agent6.viewmodel.machine_state import machine_verb_refusal
-
     d = tmp_path / "inst"
     d.mkdir()
     (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
-    MachineJournal(d).begin(machine="tiny", version=1)
+    machine_journal.MachineJournal(d).begin(machine="tiny", version=1)
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
-    assert machine_verb_refusal(d, "tiny", "steer") == (
+    assert machine_state.machine_verb_refusal(d, "tiny", "steer") == (
         "machine 'tiny' has no open agent state to steer"
     )
-    assert machine_verb_refusal(d, "tiny", "answer") == (
+    assert machine_state.machine_verb_refusal(d, "tiny", "answer") == (
         "machine 'tiny' has no open prompt to answer"
     )
 
 
-def test_the_wire_form_reads_the_journal_once(tmp_path: Path) -> None:
+def test_the_wire_form_reads_the_journal_once(tmp_path: pathlib.Path) -> None:
     """The refusals ride on the fold the caller already has.
 
     Asking `machine_verb_refusals` for them re-read the journal and re-folded the machine, so every
@@ -212,21 +216,21 @@ def test_the_wire_form_reads_the_journal_once(tmp_path: Path) -> None:
     import agent6.viewmodel.machine_state as mod
 
     spec = _spec(tmp_path)
-    live = fold_machine(spec, [])
+    live = machine_state.fold_machine(spec, [])
     d = tmp_path / "inst"
     d.mkdir()
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     reads = 0
-    real_read = MachineJournal.read
+    real_read = machine_journal.MachineJournal.read
 
-    def counting_read(self: MachineJournal) -> list[object]:
+    def counting_read(self: machine_journal.MachineJournal) -> list[object]:
         nonlocal reads
         reads += 1
         return real_read(self)
 
     mod.MachineJournal.read = counting_read  # type: ignore[method-assign]
     try:
-        d_out = machine_state_as_dict(live, d)
+        d_out = machine_state.machine_state_as_dict(live, d)
     finally:
         mod.MachineJournal.read = real_read  # type: ignore[method-assign]
 
@@ -234,116 +238,129 @@ def test_the_wire_form_reads_the_journal_once(tmp_path: Path) -> None:
     assert reads == 0, f"the wire form re-read the journal {reads} time(s)"
 
 
-def test_a_corrupt_wait_file_counts_as_parked(tmp_path: Path) -> None:
+def test_a_corrupt_wait_file_counts_as_parked(tmp_path: pathlib.Path) -> None:
     # Better to render "waiting" than to guess "stopped"/close the stream over
     # an unreadable wait record; the one rule every surface shares.
     spec = _spec(tmp_path)
-    live = fold_machine(spec, [])
+    live = machine_state.fold_machine(spec, [])
     d = tmp_path / "inst"
     d.mkdir()
     (d / "wait.json").write_text("{ not json", encoding="utf-8")
-    assert probe_instance(d, live).parked is True
-    assert machine_word_for_dir(live, d) == "waiting"
+    assert machine_state.probe_instance(d, live).parked is True
+    assert machine_state.machine_word_for_dir(live, d) == "waiting"
     # The verbs name the corruption on the wire as the CLI does: the poke
     # button read enabled while the POST behind it refused.
-    refusals = machine_state_as_dict(live, d)["refusals"]
+    refusals = machine_state.machine_state_as_dict(live, d)["refusals"]
     assert all("corrupt pending wait" in text for text in refusals.values()), refusals
 
 
-def test_newest_state_log_picks_highest_seq(tmp_path: Path) -> None:
+def test_newest_state_log_picks_highest_seq(tmp_path: pathlib.Path) -> None:
     states = tmp_path / "states"
     for name in ("0000-greet", "0002-review", "0001-greet"):
         (states / name).mkdir(parents=True)
         (states / name / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     # A dir without a log yet (the agent hasn't written) must be ignored.
     (states / "0009-pending").mkdir()
-    assert newest_state_log(tmp_path) == states / "0002-review" / "logs.jsonl"
-    assert newest_state_log(tmp_path / "absent") is None
+    assert machine_state.newest_state_log(tmp_path) == states / "0002-review" / "logs.jsonl"
+    assert machine_state.newest_state_log(tmp_path / "absent") is None
 
 
-def test_fold_collects_notifications(tmp_path: Path) -> None:
+def test_fold_collects_notifications(tmp_path: pathlib.Path) -> None:
     events = [
-        MachineNotify(ts="t1", state="route", message="starting", level="info"),
-        StepEvent(
-            ts="t", seq=0, state="route", label="else", goto="done", fact=BranchFact(clause_index=1)
+        machine_journal.MachineNotify(ts="t1", state="route", message="starting", level="info"),
+        machine_journal.StepEvent(
+            ts="t",
+            seq=0,
+            state="route",
+            label="else",
+            goto="done",
+            fact=machine_journal.BranchFact(clause_index=1),
         ),
-        MachineNotify(ts="t2", state="done", message="all done", level="warn"),
-        MachineEnd(ts="t", status="ok", reason="routed", state="done", transitions=1),
+        machine_journal.MachineNotify(ts="t2", state="done", message="all done", level="warn"),
+        machine_journal.MachineEnd(
+            ts="t", status="ok", reason="routed", state="done", transitions=1
+        ),
     ]
-    ms = fold_machine(_spec(tmp_path), events)
+    ms = machine_state.fold_machine(_spec(tmp_path), events)
     assert [(n.state, n.message, n.level) for n in ms.notifications] == [
         ("route", "starting", "info"),
         ("done", "all done", "warn"),
     ]
 
 
-def test_notifications_are_a_capped_sliding_window(tmp_path: Path) -> None:
+def test_notifications_are_a_capped_sliding_window(tmp_path: pathlib.Path) -> None:
     # notifications is capped to the recent tail: a front-end must dedup by
     # notification_key, NOT by a count index (which would miss every one past
     # the cap once the window slides).
     events = [
-        MachineNotify(ts=f"t{i}", state="route", message=f"n{i}", level="info")
-        for i in range(_NOTIFY_KEEP + 5)
+        machine_journal.MachineNotify(ts=f"t{i}", state="route", message=f"n{i}", level="info")
+        for i in range(machine_state._NOTIFY_KEEP + 5)
     ]
-    ms = fold_machine(_spec(tmp_path), events)
-    assert len(ms.notifications) == _NOTIFY_KEEP
-    assert ms.notifications[-1].message == f"n{_NOTIFY_KEEP + 4}"  # newest kept
+    ms = machine_state.fold_machine(_spec(tmp_path), events)
+    assert len(ms.notifications) == machine_state._NOTIFY_KEEP
+    assert ms.notifications[-1].message == f"n{machine_state._NOTIFY_KEEP + 4}"  # newest kept
     assert ms.notifications[0].message == "n5"  # oldest dropped
 
 
 def test_notification_key_is_stable_identity() -> None:
-    n = NotificationView(ts="t1", state="poll", message="hi", level="warn")
-    assert notification_key(n) == ("t1", "poll", "hi")
+    n = machine_state.NotificationView(ts="t1", state="poll", message="hi", level="warn")
+    assert machine_state.notification_key(n) == ("t1", "poll", "hi")
 
 
-def test_machine_state_as_dict_is_json_serializable(tmp_path: Path) -> None:
+def test_machine_state_as_dict_is_json_serializable(tmp_path: pathlib.Path) -> None:
     import json
 
-    from agent6.viewmodel.machine_state import machine_state_as_dict
-
     events = [
-        StepEvent(
-            ts="t", seq=0, state="route", label="else", goto="done", fact=BranchFact(clause_index=1)
+        machine_journal.StepEvent(
+            ts="t",
+            seq=0,
+            state="route",
+            label="else",
+            goto="done",
+            fact=machine_journal.BranchFact(clause_index=1),
         ),
-        MachineEnd(ts="t", status="ok", reason="routed", state="done", transitions=1),
+        machine_journal.MachineEnd(
+            ts="t", status="ok", reason="routed", state="done", transitions=1
+        ),
     ]
-    d = machine_state_as_dict(fold_machine(_spec(tmp_path), events))
+    d = machine_state.machine_state_as_dict(machine_state.fold_machine(_spec(tmp_path), events))
     assert d["machine"] == "tiny" and d["current"] == "done"
     assert d["states"][0]["name"] == "route"  # tuple -> list, dataclass -> dict
     assert d["ended"]["status"] == "ok"
     json.dumps(d)  # the wire form must serialize
 
 
-def test_machine_verb_refusal_is_one_reading_per_state_and_verb(tmp_path: Path) -> None:
+def test_machine_verb_refusal_is_one_reading_per_state_and_verb(tmp_path: pathlib.Path) -> None:
     """The one gate every surface's stop, poke, steer and answer runs.
 
     An unknown machine is named as unknown; an ended one takes nothing; a stopped one takes only
     a poke with an armed wait; a live one takes stop, poke with an open wait, steer with an
     agent state, and answer with a prompt.
     """
-    from agent6.viewmodel.machine_state import machine_verb_refusal
-
     verbs = ("stop", "poke", "steer", "answer")
     missing = tmp_path / "ghost"
-    assert all(machine_verb_refusal(missing, "ghost", v) == "no machine 'ghost'" for v in verbs)
+    assert all(
+        machine_state.machine_verb_refusal(missing, "ghost", v) == "no machine 'ghost'"
+        for v in verbs
+    )
 
     d = tmp_path / "inst"
     d.mkdir()
     (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
-    journal = MachineJournal(d)
+    journal = machine_journal.MachineJournal(d)
     journal.begin(machine="tiny", version=1)
     # Stopped: no worker, no wait. No verb goes through.
-    assert "no open wait" in machine_verb_refusal(d, "tiny", "poke")
+    assert "no open wait" in machine_state.machine_verb_refusal(d, "tiny", "poke")
     for verb in ("stop", "steer", "answer"):
-        assert "is not running" in machine_verb_refusal(d, "tiny", verb), verb
+        assert "is not running" in machine_state.machine_verb_refusal(d, "tiny", verb), verb
     # Live in an armed wait: stop and poke reach it; answer has no prompt and
     # steer has no agent loop.
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    journal.write_pending_wait(PendingWait(state="route", wake_epoch=None))
-    assert machine_verb_refusal(d, "tiny", "stop") == ""
-    assert machine_verb_refusal(d, "tiny", "poke") == ""
-    assert "no open prompt" in machine_verb_refusal(d, "tiny", "answer")
-    assert "reads no steer" in machine_verb_refusal(d, "tiny", "steer")
+    journal.write_pending_wait(machine_journal.PendingWait(state="route", wake_epoch=None))
+    assert machine_state.machine_verb_refusal(d, "tiny", "stop") == ""
+    assert machine_state.machine_verb_refusal(d, "tiny", "poke") == ""
+    assert "no open prompt" in machine_state.machine_verb_refusal(d, "tiny", "answer")
+    assert "reads no steer" in machine_state.machine_verb_refusal(d, "tiny", "steer")
     journal.clear_pending_wait()
     # An open agent loop takes steer, and its open question takes answer.
     log = d / "states" / "0000-route" / "logs.jsonl"
@@ -353,37 +370,41 @@ def test_machine_verb_refusal_is_one_reading_per_state_and_verb(tmp_path: Path) 
         '{"type":"question.prompt","id":"q1","questions":[{"question":"Which?"}]}\n',
         encoding="utf-8",
     )
-    assert machine_verb_refusal(d, "tiny", "poke")
-    assert all(machine_verb_refusal(d, "tiny", v) == "" for v in ("stop", "steer", "answer"))
+    assert machine_state.machine_verb_refusal(d, "tiny", "poke")
+    assert all(
+        machine_state.machine_verb_refusal(d, "tiny", v) == "" for v in ("stop", "steer", "answer")
+    )
     # Ended: nothing does, and the end is named.
-    journal.append(MachineEnd(ts="t", status="ok", reason="routed", state="done", transitions=1))
+    journal.append(
+        machine_journal.MachineEnd(
+            ts="t", status="ok", reason="routed", state="done", transitions=1
+        )
+    )
     for verb in verbs:
-        msg = machine_verb_refusal(d, "tiny", verb)
+        msg = machine_state.machine_verb_refusal(d, "tiny", verb)
         assert "already ended in 'done' (ok: routed)" in msg, (verb, msg)
 
 
-def test_an_open_prompt_in_the_newest_state_blocks_the_machine(tmp_path: Path) -> None:
+def test_an_open_prompt_in_the_newest_state_blocks_the_machine(tmp_path: pathlib.Path) -> None:
     """The newest log's unanswered approval names the waited-on state; a blocked worker waits."""
-    from agent6.viewmodel.machine_state import machine_status_word, newest_agent_execution
-
     states = tmp_path / "states"
     (states / "0001-attempt").mkdir(parents=True)
     log = states / "0001-attempt" / "logs.jsonl"
     prompt = {"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: pytest"}
     log.write_text(json.dumps(prompt) + "\n", encoding="utf-8")
-    assert newest_agent_execution(tmp_path).blocked_in == "0001-attempt"
+    assert machine_state.newest_agent_execution(tmp_path).blocked_in == "0001-attempt"
     answer = {"type": "approval.answer", "id": "a1", "approved": True}
     log.write_text(json.dumps(prompt) + "\n" + json.dumps(answer) + "\n", encoding="utf-8")
-    assert newest_agent_execution(tmp_path).blocked_in == ""
-    ms = fold_machine(_spec(tmp_path), [])
-    assert machine_status_word(ms, parked=False, alive=True, blocked=True) == "waiting"
-    assert machine_status_word(ms, parked=False, alive=True) == "running"
+    assert machine_state.newest_agent_execution(tmp_path).blocked_in == ""
+    ms = machine_state.fold_machine(_spec(tmp_path), [])
+    assert (
+        machine_state.machine_status_word(ms, parked=False, alive=True, blocked=True) == "waiting"
+    )
+    assert machine_state.machine_status_word(ms, parked=False, alive=True) == "running"
 
 
-def test_a_blocked_summary_names_an_answer_whichever_prompt_waits(tmp_path: Path) -> None:
+def test_a_blocked_summary_names_an_answer_whichever_prompt_waits(tmp_path: pathlib.Path) -> None:
     """A machine held on an `ask_user` question reads as waiting on a question, not an approval."""
-    from agent6.viewmodel.machine_state import summarize_machine_dir
-
     (tmp_path / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     log = tmp_path / "states" / "0001-attempt" / "logs.jsonl"
     log.parent.mkdir(parents=True)
@@ -391,52 +412,58 @@ def test_a_blocked_summary_names_an_answer_whichever_prompt_waits(tmp_path: Path
     log.write_text(json.dumps(prompt) + "\n", encoding="utf-8")
     (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
-    assert summarize_machine_dir(tmp_path).reason == "waiting on an answer in 0001-attempt"
+    assert (
+        machine_state.summarize_machine_dir(tmp_path).reason
+        == "waiting on an answer in 0001-attempt"
+    )
     # A stopped machine's prompt has no reader (its execution restarts on resume).
     (tmp_path / "worker.pid").unlink()
-    assert summarize_machine_dir(tmp_path).reason == ""
+    assert machine_state.summarize_machine_dir(tmp_path).reason == ""
 
 
 @pytest.mark.parametrize(
-    "stale", [PendingWait(state="elsewhere"), PendingWait(state="route", seq=1)]
+    "stale",
+    [
+        machine_journal.PendingWait(state="elsewhere"),
+        machine_journal.PendingWait(state="route", seq=1),
+    ],
 )
 def test_a_wait_record_of_another_occurrence_is_not_an_open_wait(
-    tmp_path: Path, stale: PendingWait
+    tmp_path: pathlib.Path, stale: machine_journal.PendingWait
 ) -> None:
     """A wait record a death left behind an earlier visit is not an open wait.
 
     The engine's own test (state and seq) is the one reading; the machine showed "waiting" and
     took a poke its next wait would consume.
     """
-    from agent6.viewmodel.machine_state import machine_verb_refusal
-
     spec = _spec(tmp_path)
-    live = fold_machine(spec, [])
+    live = machine_state.fold_machine(spec, [])
     d = tmp_path / "inst"
     d.mkdir()
     (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
-    journal = MachineJournal(d)
+    journal = machine_journal.MachineJournal(d)
     journal.begin(machine="tiny", version=1)
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     journal.write_pending_wait(stale)
-    assert "no open wait" in machine_verb_refusal(d, "tiny", "poke")
-    assert machine_state_as_dict(live, d)["status"] == "running"
+    assert "no open wait" in machine_state.machine_verb_refusal(d, "tiny", "poke")
+    assert machine_state.machine_state_as_dict(live, d)["status"] == "running"
 
-    journal.write_pending_wait(PendingWait(state="route", seq=0))
-    assert machine_verb_refusal(d, "tiny", "poke") == ""
-    assert machine_state_as_dict(live, d)["status"] == "waiting"
+    journal.write_pending_wait(machine_journal.PendingWait(state="route", seq=0))
+    assert machine_state.machine_verb_refusal(d, "tiny", "poke") == ""
+    assert machine_state.machine_state_as_dict(live, d)["status"] == "waiting"
 
 
-def test_verb_refusals_fold_no_state_log_unless_a_live_execution_could_read(tmp_path: Path) -> None:
+def test_verb_refusals_fold_no_state_log_unless_a_live_execution_could_read(
+    tmp_path: pathlib.Path,
+) -> None:
     """The refusals fold the newest state log only for a live, unended machine."""
     import agent6.viewmodel.machine_state as mod
-    from agent6.viewmodel.machine_state import machine_verb_refusals
 
     d = tmp_path / "inst"
     d.mkdir()
     (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
-    journal = MachineJournal(d)
+    journal = machine_journal.MachineJournal(d)
     journal.begin(machine="tiny", version=1)
     log = d / "states" / "0000-route" / "logs.jsonl"
     log.parent.mkdir(parents=True)
@@ -451,72 +478,77 @@ def test_verb_refusals_fold_no_state_log_unless_a_live_execution_could_read(tmp_
 
     mod.tail_events = counting_tail  # type: ignore[assignment]
     try:
-        machine_verb_refusals(d, "tiny")  # stopped: no worker
+        machine_state.machine_verb_refusals(d, "tiny")  # stopped: no worker
         assert folds == 0
         (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-        machine_verb_refusals(d, "tiny")  # live
+        machine_state.machine_verb_refusals(d, "tiny")  # live
         assert folds == 1
         journal.append(
-            MachineEnd(ts="t", status="ok", reason="routed", state="done", transitions=1)
+            machine_journal.MachineEnd(
+                ts="t", status="ok", reason="routed", state="done", transitions=1
+            )
         )
-        machine_verb_refusals(d, "tiny")  # ended
+        machine_state.machine_verb_refusals(d, "tiny")  # ended
         assert folds == 1
     finally:
         mod.tail_events = real_tail
 
 
 def test_an_unreadable_summary_keeps_its_reason_to_one_line(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A spec with several problems keeps the listing's reason cell to one line."""
     import agent6.viewmodel.machine_state as mod
     from agent6.machine import MachineError
-    from agent6.viewmodel.machine_state import summarize_machine_dir
 
     d = tmp_path / "inst"
     d.mkdir()
     (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
 
-    def broken(_path: Path) -> Any:
+    def broken(_path: pathlib.Path) -> Any:
         raise MachineError(["state 'a' is unreachable", "state 'b' is unreachable"])
 
     monkeypatch.setattr(mod, "load_machine", broken)
-    summary = summarize_machine_dir(d)
+    summary = machine_state.summarize_machine_dir(d)
     assert summary.status == "unreadable"
     assert summary.reason == "state 'a' is unreachable"
 
 
-def test_the_wire_form_carries_the_status_level(tmp_path: Path) -> None:
+def test_the_wire_form_carries_the_status_level(tmp_path: pathlib.Path) -> None:
     """The machine page's header stamps a level beside its status word, like the hub row."""
-    from agent6.viewmodel.format import status_level
+    from agent6.viewmodel import format
 
     spec = _spec(tmp_path)
     d = tmp_path / "inst"
     d.mkdir()
     (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
-    live = fold_machine(spec, [])
-    running = machine_state_as_dict(live, d)
-    assert running["level"] == status_level(running["status"])
-    failed = fold_machine(
-        spec, [MachineEnd(ts="t", status="failed", reason="budget", state="done", transitions=1)]
+    live = machine_state.fold_machine(spec, [])
+    running = machine_state.machine_state_as_dict(live, d)
+    assert running["level"] == format.status_level(running["status"])
+    failed = machine_state.fold_machine(
+        spec,
+        [
+            machine_journal.MachineEnd(
+                ts="t", status="failed", reason="budget", state="done", transitions=1
+            )
+        ],
     )
-    ended = machine_state_as_dict(failed, d)
-    assert (ended["status"], ended["level"]) == ("failed", status_level("failed"))
+    ended = machine_state.machine_state_as_dict(failed, d)
+    assert (ended["status"], ended["level"]) == ("failed", format.status_level("failed"))
 
 
-def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: Path) -> None:
+def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: pathlib.Path) -> None:
     """The held fold reads appended bytes only, follows a newer state, restarts on a rewrite."""
     import agent6.viewmodel.machine_state as mod
-    from agent6.viewmodel.machine_state import AgentExecution, NewestExecutionFold
-    from agent6.viewmodel.tail import tail_events
+    from agent6.viewmodel import tail
 
     d = tmp_path / "inst"
     log = d / "states" / "0000-route" / "logs.jsonl"
     log.parent.mkdir(parents=True)
     log.write_text('{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8")
-    fold = NewestExecutionFold()
+    fold = machine_state.NewestExecutionFold()
     assert fold.refresh(d) == log
-    assert fold.execution() == AgentExecution(open=True, blocked_in="")
+    assert fold.execution() == machine_state.AgentExecution(open=True, blocked_in="")
 
     def no_full_read(*_a: object, **_k: object) -> Any:
         raise AssertionError("the whole log was read again")
@@ -526,7 +558,7 @@ def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: Path
         with log.open("a", encoding="utf-8") as fh:
             fh.write('{"type":"question.prompt","id":"q1","questions":[{"question":"?"}]}\n')
         fold.refresh(d)
-        assert fold.execution() == AgentExecution(open=True, blocked_in="0000-route")
+        assert fold.execution() == machine_state.AgentExecution(open=True, blocked_in="0000-route")
         # A newer agent state: the fold moves to its log.
         newer = d / "states" / "0001-work" / "logs.jsonl"
         newer.parent.mkdir(parents=True)
@@ -534,28 +566,28 @@ def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: Path
             '{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8"
         )
         assert fold.refresh(d) == newer
-        assert fold.execution() == AgentExecution(open=True, blocked_in="")
+        assert fold.execution() == machine_state.AgentExecution(open=True, blocked_in="")
         # A rewritten (shorter) log: the fold starts over rather than folding
         # the new bytes onto the old state.
         newer.write_text('{"type":"session.end","reason":"finish_session"}\n', encoding="utf-8")
         fold.refresh(d)
-        assert fold.execution() == AgentExecution(open=False, blocked_in="")
+        assert fold.execution() == machine_state.AgentExecution(open=False, blocked_in="")
     finally:
-        mod.tail_events = tail_events
+        mod.tail_events = tail.tail_events
 
 
-def test_the_wire_form_names_a_stopped_machine_as_resumable(tmp_path: Path) -> None:
+def test_the_wire_form_names_a_stopped_machine_as_resumable(tmp_path: pathlib.Path) -> None:
     """The wire form carries `worker_lost` wherever it is read, not only on the web stream.
 
     The first paint lacked it and the next frame announced an hours-old stop as news.
     """
     spec = _spec(tmp_path)
-    live = fold_machine(spec, [])
+    live = machine_state.fold_machine(spec, [])
     d = tmp_path / "inst"
     d.mkdir()
     (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
-    stopped = machine_state_as_dict(live, d)
+    stopped = machine_state.machine_state_as_dict(live, d)
     assert stopped["status"] == "stopped"
     assert stopped["worker_lost"] == {"reason": "no worker running", "state": "route"}
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert "worker_lost" not in machine_state_as_dict(live, d)
+    assert "worker_lost" not in machine_state.machine_state_as_dict(live, d)

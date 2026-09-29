@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from agent6.budget import BudgetTracker, format_usd
+from agent6 import budget
 
 
 @pytest.fixture(autouse=True)
@@ -32,14 +32,14 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPa
 
 
 def test_estimate_usd_zero_when_no_calls() -> None:
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     usd, partial = bt.estimate_usd()
     assert usd == 0.0
     assert partial is False
 
 
 def test_estimate_usd_known_model() -> None:
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     # sonnet-4-5 is $3 / Mtok in, $15 / Mtok out.
     bt.record(
         model="claude-sonnet-4-5",
@@ -54,7 +54,7 @@ def test_estimate_usd_known_model() -> None:
 
 
 def test_estimate_usd_unknown_model_flags_partial() -> None:
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="some-future-model-not-in-table",
         input_tokens=500_000,
@@ -68,7 +68,7 @@ def test_estimate_usd_unknown_model_flags_partial() -> None:
 
 
 def test_estimate_usd_cache_read_priced_at_10_percent() -> None:
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     # sonnet at $3/Mtok input -> $0.30/Mtok for cache_read.
     bt.record(
         model="claude-sonnet-4-5",
@@ -86,7 +86,7 @@ def test_estimate_usd_cache_creation_priced_at_125_percent() -> None:
 
     Sonnet at $3/Mtok input is $3.75/Mtok for cache_creation.
     """
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
         input_tokens=0,
@@ -100,7 +100,7 @@ def test_estimate_usd_cache_creation_priced_at_125_percent() -> None:
 
 def test_estimate_usd_fresh_input_excludes_cache_creation() -> None:
     """cache_creation tokens are priced as their own term, never summed into the input term."""
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
         input_tokens=1_000_000,
@@ -115,7 +115,7 @@ def test_estimate_usd_fresh_input_excludes_cache_creation() -> None:
 
 def test_estimate_usd_matches_format_summary_total() -> None:
     """The live meter and the end-of-run summary must agree on the total."""
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
         input_tokens=12_345,
@@ -133,12 +133,12 @@ def test_estimate_usd_matches_format_summary_total() -> None:
     usd, _ = bt.estimate_usd()
     summary = bt.format_summary()
     # format_summary prints the total through format_usd, marked `~`.
-    assert f"cost~{format_usd(usd)}" in summary
+    assert f"cost~{budget.format_usd(usd)}" in summary
 
 
 def test_reported_cost_overrides_table_estimate() -> None:
     """A reported `usage.cost` on every call to a model overrides the table estimate verbatim."""
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     # A priced model whose provider also reports a different cost, so the reported value wins.
     bt.record(
         model="claude-sonnet-4-5",
@@ -159,7 +159,7 @@ def test_reported_cost_overrides_table_estimate() -> None:
 
 def test_reported_cost_works_for_unknown_model() -> None:
     """A model not in the price table contributes its reported cost."""
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="future/unknown-model",
         input_tokens=10_000,
@@ -178,7 +178,7 @@ def test_mixed_reported_cost_adds_table_estimate_for_unreported_calls() -> None:
 
     A whole-model table fallback would present a lower estimate as exact.
     """
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
         input_tokens=1_000_000,
@@ -205,7 +205,7 @@ def test_mixed_reported_cost_adds_table_estimate_for_unreported_calls() -> None:
 
 def test_mixed_reported_cost_counts_toward_usd_ceiling() -> None:
     """The enforced ceiling sees reported plus estimated spend."""
-    bt = BudgetTracker(max_usd=60.0, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=60.0, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
         input_tokens=1_000_000,
@@ -231,7 +231,7 @@ def test_fraction_remaining_tracks_usd_ceiling() -> None:
     and what the wind-down nudges have to see.
     """
     # Token caps huge so only the $5 USD ceiling binds; a cache-heavy turn counts zero toward them.
-    bt = BudgetTracker(max_usd=5.0, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=5.0, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
         input_tokens=100_000,  # $0.30 fresh input
@@ -247,7 +247,7 @@ def test_fraction_remaining_tracks_usd_ceiling() -> None:
 
 def test_fraction_remaining_unlimited_usd_never_depletes() -> None:
     """With max_usd = -1, metered spend depletes nothing; only a positive cap can."""
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=1_000, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1_000, max_percent=-1)
     bt.record(
         model="claude-sonnet-4-5",
         input_tokens=5_000_000,
@@ -271,7 +271,7 @@ def test_partially_reported_unpriced_model_keeps_the_reported_spend() -> None:
 
     Dropping it would read $0.00 and never trip the best-effort USD cap.
     """
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="future/unpriced-model",
         input_tokens=1_000,
@@ -297,11 +297,9 @@ def test_a_sub_cent_cap_prints_at_the_spends_precision() -> None:
 
     Cents at $1 and above, four decimals below.
     """
-    from agent6.budget import format_usd
-
-    assert format_usd(0.004) == "$0.0040"
-    assert format_usd(10.0) == "$10.00"
-    bt = BudgetTracker(max_usd=0.004, max_tokens_fallback=-1, max_percent=-1)
+    assert budget.format_usd(0.004) == "$0.0040"
+    assert budget.format_usd(10.0) == "$10.00"
+    bt = budget.BudgetTracker(max_usd=0.004, max_tokens_fallback=-1, max_percent=-1)
     bt.record(
         model="claude-haiku-4-5",
         input_tokens=5000,

@@ -106,25 +106,36 @@ def test_the_scrub_is_default_deny_not_a_csi_blocklist() -> None:
     Stripping CSI alone let a demonstrated OSC 52 write the operator's clipboard from command
     stdout. \n and \t stay; plain text and cut-off payloads surface as inert text.
     """
-    from agent6.viewmodel.transcript import scrub_terminal_controls as scrub
+    from agent6.viewmodel import transcript
 
     payload = "cGF5bG9hZA=="
-    assert scrub(f"\x1b]52;c;{payload}\x07after") == "after"  # OSC 52, BEL-terminated
-    assert scrub(f"\x1b]52;c;{payload}\x1b\\after") == "after"  # OSC 52, ST-terminated
-    assert scrub("\x1b]0;title\x07x") == "x"  # OSC 0 (window title)
-    assert scrub("\x1bPq#payload\x1b\\x") == "x"  # DCS
-    assert scrub("\x1b_apc\x1b\\x") == "x" and scrub("\x1b^pm\x1b\\x") == "x"  # APC / PM
-    assert scrub("\x1b[31mred\x1b[0m") == "red"  # CSI still goes
-    assert scrub("\x9b31mx") == "31mx"  # a C1 byte cannot reopen the door
-    assert scrub("a\rb\x07c") == "abc"  # stray \r spoofing and BEL drop
-    assert scrub("keep\nthese\ttwo") == "keep\nthese\ttwo"
+    assert (
+        transcript.scrub_terminal_controls(f"\x1b]52;c;{payload}\x07after") == "after"
+    )  # OSC 52, BEL-terminated
+    assert (
+        transcript.scrub_terminal_controls(f"\x1b]52;c;{payload}\x1b\\after") == "after"
+    )  # OSC 52, ST-terminated
+    assert transcript.scrub_terminal_controls("\x1b]0;title\x07x") == "x"  # OSC 0 (window title)
+    assert transcript.scrub_terminal_controls("\x1bPq#payload\x1b\\x") == "x"  # DCS
+    assert (
+        transcript.scrub_terminal_controls("\x1b_apc\x1b\\x") == "x"
+        and transcript.scrub_terminal_controls("\x1b^pm\x1b\\x") == "x"
+    )  # APC / PM
+    assert transcript.scrub_terminal_controls("\x1b[31mred\x1b[0m") == "red"  # CSI still goes
+    assert (
+        transcript.scrub_terminal_controls("\x9b31mx") == "31mx"
+    )  # a C1 byte cannot reopen the door
+    assert (
+        transcript.scrub_terminal_controls("a\rb\x07c") == "abc"
+    )  # stray \r spoofing and BEL drop
+    assert transcript.scrub_terminal_controls("keep\nthese\ttwo") == "keep\nthese\ttwo"
     # Cut off mid-sequence (a stream chunk boundary): the opener's tail goes,
     # and the continuation is inert text on its own.
-    assert scrub(f"\x1b]52;c;{payload[:4]}") == ""
-    assert scrub(f"{payload[4:]}\x07done") == f"{payload[4:]}done"
+    assert transcript.scrub_terminal_controls(f"\x1b]52;c;{payload[:4]}") == ""
+    assert transcript.scrub_terminal_controls(f"{payload[4:]}\x07done") == f"{payload[4:]}done"
     # Idempotent: re-scrubbing accumulated tails changes nothing.
-    once = scrub("\x1b]52;c;x\x07text\x1b[1mbold")
-    assert scrub(once) == once == "textbold"
+    once = transcript.scrub_terminal_controls("\x1b]52;c;x\x07text\x1b[1mbold")
+    assert transcript.scrub_terminal_controls(once) == once == "textbold"
 
 
 def test_a_jail_degradation_is_a_marker_in_the_fold() -> None:
@@ -260,9 +271,9 @@ def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
     """session.end reason="interrupted" is in SessionEndReason and reads as the operator's stop."""
     from typing import get_args
 
-    from agent6.harness._snapshot import SessionEndReason
+    from agent6.harness import _snapshot
 
-    assert "interrupted" in get_args(SessionEndReason)
+    assert "interrupted" in get_args(_snapshot.SessionEndReason)
     (done,) = fold_transcript(
         [{"type": "session.end", "reason": "interrupted", "all_passed": False}]
     )
@@ -274,18 +285,17 @@ def test_operator_steer_text_becomes_an_operator_item() -> None:
 
     Old logs that carry only a char count yield nothing.
     """
-    from agent6.viewmodel.transcript import OPERATOR, TranscriptFold
-    from agent6.viewmodel.transcript_style import item_lines
+    from agent6.viewmodel import transcript, transcript_style
 
-    fold = TranscriptFold()
+    fold = transcript.TranscriptFold()
     items = fold.feed({"type": "loop.steer.injected", "chars": 9, "text": "try it\nagain"})
     assert [i.kind for i in items] == ["operator"]
     assert items[0].body == "try it\nagain"
     # Rendered at every detail level, glyph + the operator's own words.
     for level in ("hidden", "collapsed", "expanded"):
-        lines = item_lines(items[0], detail=level)
+        lines = transcript_style.item_lines(items[0], detail=level)
         flat = "".join(chunk for line in lines for chunk, _ in line)
-        assert f"{OPERATOR} try it" in flat and "again" in flat
+        assert f"{transcript.OPERATOR} try it" in flat and "again" in flat
     # An old log without the text field adds no item.
     assert fold.feed({"type": "loop.steer.injected", "chars": 9}) == []
 
@@ -296,9 +306,9 @@ def test_pins_render_once_as_operator_items() -> None:
     The execution-start announcement and each /pin; a resume boundary restating the list adds
     nothing.
     """
-    from agent6.viewmodel.transcript import TranscriptFold
+    from agent6.viewmodel import transcript
 
-    fold = TranscriptFold()
+    fold = transcript.TranscriptFold()
     items = fold.feed({"type": "loop.pin.restored", "pins": ["never touch tests"], "count": 1})
     assert [(i.kind, i.body) for i in items] == [("operator", "pinned: never touch tests")]
     items = fold.feed({"type": "loop.pin.added", "text": "keep the API", "chars": 12, "count": 2})
@@ -345,12 +355,12 @@ def test_a_streamed_reply_still_renders_when_the_role_is_unnamed() -> None:
 
 def test_streamed_deltas_are_scrubbed_even_when_a_sequence_splits() -> None:
     """The fold scrubs the concatenation of live deltas, since an escape can arrive split."""
-    from agent6.viewmodel.state import apply_event, initial_state
+    from agent6.viewmodel import state
 
-    s = initial_state()
-    s = apply_event(s, {"type": "role.call", "role": "worker", "model": "m"})
-    s = apply_event(s, {"type": "role.text_delta", "text": "safe \x1b]52;c;cGF5"})
-    s = apply_event(s, {"type": "role.text_delta", "text": "bG9hZA==\x07 text"})
+    s = state.initial_state()
+    s = state.apply_event(s, {"type": "role.call", "role": "worker", "model": "m"})
+    s = state.apply_event(s, {"type": "role.text_delta", "text": "safe \x1b]52;c;cGF5"})
+    s = state.apply_event(s, {"type": "role.text_delta", "text": "bG9hZA==\x07 text"})
     assert s.last_role is not None
     # The opener died with its own delta; the continuation is inert text.
     assert s.last_role.streamed_text == "safe bG9hZA== text"
@@ -360,9 +370,9 @@ def test_streamed_deltas_are_scrubbed_even_when_a_sequence_splits() -> None:
 
 def test_log_lines_carry_no_terminal_controls() -> None:
     """format_log_line's finished line is scrubbed; it embeds model-authored fields."""
-    from agent6.viewmodel.log_line import format_log_line
+    from agent6.viewmodel import log_line
 
-    line = format_log_line(
+    line = log_line.format_log_line(
         {
             "type": "tool.result",
             "name": "run_command",
@@ -593,9 +603,9 @@ def test_every_end_reason_has_a_done_line_label() -> None:
     """
     from typing import get_args
 
-    from agent6.harness._snapshot import SessionEndReason
+    from agent6.harness import _snapshot
 
-    assert set(_DONE_LABELS) == set(get_args(SessionEndReason))
+    assert set(_DONE_LABELS) == set(get_args(_snapshot.SessionEndReason))
     for reason, label in _DONE_LABELS.items():
         done = next(
             it
@@ -666,11 +676,11 @@ def test_a_tool_call_is_in_flight_until_its_result_settles_it() -> None:
 
     `ok=None` reads "running" on every surface; the batch form keeps one item per call.
     """
-    from agent6.viewmodel.transcript import TranscriptFold
+    from agent6.viewmodel import transcript
 
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
     result = {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"}
-    fold = TranscriptFold()
+    fold = transcript.TranscriptFold()
     (pending,) = fold.feed({**call, "call_id": 7})
     assert (pending.kind, pending.name, pending.arg) == ("tool", "run_command", "sleep 60")
     assert pending.ok is None and pending.call_id == "7"
@@ -688,7 +698,7 @@ def test_an_approval_prompt_marks_the_call_it_gates_as_awaiting() -> None:
 
     tool.call is journaled before the approval gate, so the call is in flight the whole time.
     """
-    from agent6.viewmodel.transcript import TranscriptFold
+    from agent6.viewmodel import transcript
 
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
     prompt = {
@@ -698,7 +708,7 @@ def test_an_approval_prompt_marks_the_call_it_gates_as_awaiting() -> None:
         "call_id": 1,
     }
     answer = {"type": "approval.answer", "id": "approval-1", "approved": True}
-    fold = TranscriptFold()
+    fold = transcript.TranscriptFold()
     fold.feed(call)
     (waiting,) = fold.feed(prompt)
     assert (waiting.ok, waiting.call_id, waiting.detail) == (None, "1", "awaiting approval")
@@ -716,13 +726,13 @@ def test_a_prompt_marks_the_call_it_names_not_the_newest_in_flight() -> None:
 
     A prompt naming no call (an id-less journal, a harness-run verify) marks nothing.
     """
-    from agent6.viewmodel.transcript import TranscriptFold
+    from agent6.viewmodel import transcript
 
     gated = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
     newest = {"type": "tool.call", "name": "read_file", "args": {"path": "x"}, "call_id": 2}
     prompt = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow", "call_id": 1}
     answer = {"type": "approval.answer", "id": "approval-1", "approved": True}
-    fold = TranscriptFold()
+    fold = transcript.TranscriptFold()
     fold.feed(gated)
     fold.feed(newest)
     (waiting,) = fold.feed(prompt)
@@ -739,7 +749,7 @@ def test_a_prompt_marks_the_call_it_names_not_the_newest_in_flight() -> None:
 
 def test_a_question_prompt_marks_the_ask_user_call_as_awaiting() -> None:
     """An ask_user call reads as waiting while the operator answers, like an approval."""
-    from agent6.viewmodel.transcript import TranscriptFold
+    from agent6.viewmodel import transcript
 
     call = {
         "type": "tool.call",
@@ -754,7 +764,7 @@ def test_a_question_prompt_marks_the_ask_user_call_as_awaiting() -> None:
         "call_id": 1,
     }
     answer = {"type": "question.answer", "id": "question-1", "answers": ["a"]}
-    fold = TranscriptFold()
+    fold = transcript.TranscriptFold()
     fold.feed(call)
     (waiting,) = fold.feed(prompt)
     assert (waiting.ok, waiting.call_id, waiting.detail) == (None, "1", "awaiting answer")

@@ -8,22 +8,15 @@ import io
 import json
 from typing import Any
 
-from agent6.ui.acp.rpc import INVALID_PARAMS, PARSE_ERROR
-from agent6.ui.acp.server import (
-    INVALID_REQUEST,
-    MAX_LINE_BYTES,
-    METHOD_NOT_FOUND,
-    PROTOCOL_VERSION,
-    ACPServer,
-    capabilities_from,
-)
+from agent6.ui.acp import rpc
+from agent6.ui.acp import server as acp_server
 
 
 def _exchange(*messages: object, raw: bytes = b"") -> list[dict[str, Any]]:
     """Feed messages in, return whatever came back out."""
     payload = raw or b"".join(json.dumps(m).encode() + b"\n" for m in messages)
     out = io.BytesIO()
-    ACPServer(stdin=io.BytesIO(payload), stdout=out).serve()
+    acp_server.ACPServer(stdin=io.BytesIO(payload), stdout=out).serve()
     return [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
 
 
@@ -40,7 +33,7 @@ def test_the_handshake_answers_with_what_agent6_can_do() -> None:
     (reply,) = _exchange(_init())
     assert reply["id"] == 1
     result = reply["result"]
-    assert result["protocolVersion"] == PROTOCOL_VERSION
+    assert result["protocolVersion"] == acp_server.PROTOCOL_VERSION
     assert result["agentInfo"]["name"] == "agent6"
 
 
@@ -52,13 +45,13 @@ def test_session_load_is_reported_absent_rather_than_half_answered() -> None:
 
 def test_the_clients_capabilities_become_the_frontend_seam() -> None:
     """ACP's handshake is a capability exchange, so FrontendCapabilities maps onto it."""
-    bare = capabilities_from({})
+    bare = acp_server.capabilities_from({})
     assert bare.can_ask is True, "every ACP client must answer session/request_permission"
 
 
 def test_an_unknown_method_is_an_error_not_a_crash() -> None:
     (reply,) = _exchange({"jsonrpc": "2.0", "id": 7, "method": "session/load", "params": {}})
-    assert reply["error"]["code"] == METHOD_NOT_FOUND
+    assert reply["error"]["code"] == rpc.METHOD_NOT_FOUND
     assert "session/load" in reply["error"]["message"]
 
 
@@ -72,27 +65,27 @@ def test_a_notification_is_acted_on_and_not_answered() -> None:
 
 def test_a_request_with_no_method_is_refused_by_id() -> None:
     (reply,) = _exchange({"jsonrpc": "2.0", "id": 3})
-    assert reply["error"]["code"] == INVALID_REQUEST
+    assert reply["error"]["code"] == rpc.INVALID_REQUEST
 
 
 def test_garbage_gets_a_parse_error_without_killing_the_connection() -> None:
     """A parse error gets a null-id reply and the next valid request still works."""
     replies = _exchange(raw=b"not json\n" + json.dumps(_init()).encode() + b"\n")
     assert replies[0]["id"] is None
-    assert replies[0]["error"]["code"] == PARSE_ERROR
+    assert replies[0]["error"]["code"] == rpc.PARSE_ERROR
     assert "invalid JSON" in replies[0]["error"]["message"]
     assert replies[1]["id"] == 1
 
 
 def test_a_wrong_jsonrpc_version_names_the_invalid_envelope() -> None:
     (reply,) = _exchange({**_init(), "jsonrpc": "1.0"})
-    assert reply["error"]["code"] == INVALID_REQUEST
+    assert reply["error"]["code"] == rpc.INVALID_REQUEST
     assert "jsonrpc" in reply["error"]["message"] and "2.0" in reply["error"]["message"]
 
 
 def test_non_object_params_name_the_supported_method_they_malformed() -> None:
     (reply,) = _exchange({"jsonrpc": "2.0", "id": 8, "method": "initialize", "params": []})
-    assert reply["error"]["code"] == INVALID_PARAMS
+    assert reply["error"]["code"] == rpc.INVALID_PARAMS
     assert "initialize" in reply["error"]["message"] and "object" in reply["error"]["message"]
 
 
@@ -105,7 +98,7 @@ def test_initialize_requires_a_numeric_protocol_version() -> None:
         {"protocolVersion": 65_536},
     ):
         (reply,) = _exchange({"jsonrpc": "2.0", "id": 9, "method": "initialize", "params": params})
-        assert reply["error"]["code"] == INVALID_PARAMS
+        assert reply["error"]["code"] == rpc.INVALID_PARAMS
         assert "protocolVersion" in reply["error"]["message"]
 
 
@@ -113,14 +106,14 @@ def test_an_invalid_request_id_is_refused_with_a_null_protocol_id() -> None:
     for bad_id in ([], True, 1.5):
         (reply,) = _exchange({**_init(), "id": bad_id})
         assert reply["id"] is None
-        assert reply["error"]["code"] == INVALID_REQUEST
+        assert reply["error"]["code"] == rpc.INVALID_REQUEST
         assert "id" in reply["error"]["message"]
 
 
 def test_a_non_object_message_is_an_invalid_request() -> None:
     (reply,) = _exchange(["initialize"])
     assert reply["id"] is None
-    assert reply["error"]["code"] == INVALID_REQUEST
+    assert reply["error"]["code"] == rpc.INVALID_REQUEST
     assert "object" in reply["error"]["message"]
 
 
@@ -130,17 +123,17 @@ def test_an_oversized_line_is_refused_not_buffered() -> None:
     An unbounded readline buffers the whole line before any size check.
     """
     huge = b'{"jsonrpc":"2.0","id":9,"method":"initialize","params":{"x":"'
-    huge += b"A" * (MAX_LINE_BYTES + 64) + b'"}}\n'
+    huge += b"A" * (acp_server.MAX_LINE_BYTES + 64) + b'"}}\n'
     replies = _exchange(raw=huge + json.dumps(_init()).encode() + b"\n")
     assert [r["id"] for r in replies] == [None, 1]
-    assert replies[0]["error"]["code"] == INVALID_REQUEST
-    assert str(MAX_LINE_BYTES) in replies[0]["error"]["message"]
+    assert replies[0]["error"]["code"] == rpc.INVALID_REQUEST
+    assert str(acp_server.MAX_LINE_BYTES) in replies[0]["error"]["message"]
 
 
 def test_text_that_cannot_encode_does_not_desynchronise_the_stream() -> None:
     """A lone surrogate in model text is written, not raised mid-write into a half line."""
     out = io.BytesIO()
-    server = ACPServer(stdin=io.BytesIO(b""), stdout=out)
+    server = acp_server.ACPServer(stdin=io.BytesIO(b""), stdout=out)
     server.notify_raw({"jsonrpc": "2.0", "method": "x", "params": {"t": "ok \ud83d tail"}})
     line = out.getvalue()
     assert line.endswith(b"\n")
@@ -159,7 +152,7 @@ def test_a_clients_answer_is_delivered_before_its_envelope_is_judged() -> None:
     malformed = {"jsonrpc": "2.0", "id": "agent6-2"}
     payload = (json.dumps(answer) + "\n" + json.dumps(malformed) + "\n").encode()
     out = io.BytesIO()
-    server = ACPServer(stdin=io.BytesIO(payload), stdout=out)
+    server = acp_server.ACPServer(stdin=io.BytesIO(payload), stdout=out)
     got: list[dict[str, Any]] = []
 
     def ask() -> None:

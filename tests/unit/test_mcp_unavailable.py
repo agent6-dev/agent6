@@ -11,14 +11,14 @@ there.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.app._setup import start_mcp_manager_if_enabled
+from agent6 import events as agent6_events
+from agent6.app import _setup
 from agent6.config import Config
-from agent6.events import EventSink
-from agent6.viewmodel.transcript import TranscriptFold
+from agent6.viewmodel import transcript
 
 
 def _cfg(command: list[str]) -> Config:
@@ -27,12 +27,12 @@ def _cfg(command: list[str]) -> Config:
     )
 
 
-def test_a_server_that_cannot_spawn_is_recorded_not_just_logged(tmp_path: Path) -> None:
+def test_a_server_that_cannot_spawn_is_recorded_not_just_logged(tmp_path: pathlib.Path) -> None:
     """A server that cannot spawn is recorded, not just logged.
 
     The manager knows which servers are missing; a logger that may go nowhere is not a record.
     """
-    mgr = start_mcp_manager_if_enabled(_cfg(["/nonexistent/mcp-server"]), tmp_path, "none")
+    mgr = _setup.start_mcp_manager_if_enabled(_cfg(["/nonexistent/mcp-server"]), tmp_path, "none")
     assert mgr is not None
     try:
         assert [f.name for f in mgr.failures] == ["notes"]
@@ -41,10 +41,10 @@ def test_a_server_that_cannot_spawn_is_recorded_not_just_logged(tmp_path: Path) 
         mgr.close()
 
 
-def test_the_failure_reaches_the_journal(tmp_path: Path) -> None:
+def test_the_failure_reaches_the_journal(tmp_path: pathlib.Path) -> None:
     logs = tmp_path / "logs.jsonl"
-    events = EventSink(logs)
-    mgr = start_mcp_manager_if_enabled(
+    events = agent6_events.EventSink(logs)
+    mgr = _setup.start_mcp_manager_if_enabled(
         _cfg(["/nonexistent/mcp-server"]), tmp_path, "none", events=events
     )
     assert mgr is not None
@@ -58,7 +58,7 @@ def test_the_failure_reaches_the_journal(tmp_path: Path) -> None:
 
 
 def test_a_server_that_starts_emits_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Only the failure is news.
 
@@ -71,7 +71,9 @@ def test_a_server_that_starts_emits_nothing(
 
     monkeypatch.setattr(mcp_client._MCPServer, "start", _ok)  # pyright: ignore[reportPrivateUsage]
     logs = tmp_path / "logs.jsonl"
-    mgr = start_mcp_manager_if_enabled(_cfg(["true"]), tmp_path, "none", events=EventSink(logs))
+    mgr = _setup.start_mcp_manager_if_enabled(
+        _cfg(["true"]), tmp_path, "none", events=agent6_events.EventSink(logs)
+    )
     assert mgr is not None
     mgr.close()
     assert not logs.exists() or "mcp.server_unavailable" not in logs.read_text(encoding="utf-8")
@@ -83,7 +85,7 @@ def test_the_conversation_shows_it_on_every_surface() -> None:
     A marker in the shared transcript fold, so the CLI, TUI, web and ACP all render it without each
     learning the event.
     """
-    fold = TranscriptFold()
+    fold = transcript.TranscriptFold()
     items = list(
         fold.feed(
             {
@@ -107,8 +109,7 @@ def test_the_editor_is_told_too() -> None:
     ACP projects the same fold, so the editor gets it in the conversation instead of a log pane it
     may not show.
     """
-    from agent6.ui.acp.updates import updates_for
-    from agent6.viewmodel.transcript import TranscriptFold
+    from agent6.ui.acp import updates as acp_updates
 
     event = {
         "type": "mcp.server_unavailable",
@@ -116,7 +117,9 @@ def test_the_editor_is_told_too() -> None:
         "error": "could not spawn MCP server 'notes': boom",
     }
     updates = [
-        u for item in TranscriptFold().feed(event) for u in updates_for(item, acp_session_id="s")
+        u
+        for item in transcript.TranscriptFold().feed(event)
+        for u in acp_updates.updates_for(item, acp_session_id="s")
     ]
     assert updates, "the editor was told nothing"
     text = updates[0]["params"]["update"]["content"]["text"]

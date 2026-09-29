@@ -4,18 +4,14 @@
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Callable
-from pathlib import Path
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.ipc import ANSWERED_ELSEWHERE
-from agent6.sessions.layout import machines_root
-from agent6.ui.cli.parser import (
-    _inject_default_verb,  # pyright: ignore[reportPrivateUsage]
-    build_parser,
-)
+from agent6 import paths
+from agent6.sessions import ipc, layout
+from agent6.ui.cli import parser
 from agent6.ui.web import actions
 
 TINY = """
@@ -47,11 +43,13 @@ reason = "routed"
 
 
 def test_spawn_machine_create_argv_ends_options_before_task(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured: list[list[str]] = []
 
-    def _fake_locate(argv: list[str], cwd: Path, **_k: object) -> tuple[Path | None, str]:
+    def _fake_locate(
+        argv: list[str], cwd: pathlib.Path, **_k: object
+    ) -> tuple[pathlib.Path | None, str]:
         captured.append(list(argv))
         return None, "not started"
 
@@ -61,11 +59,11 @@ def test_spawn_machine_create_argv_ends_options_before_task(
 
 
 def test_merge_and_config_argv_end_options_before_values(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured: list[list[str]] = []
 
-    def _fake_capture(argv: list[str], cwd: Path, **_k: object) -> tuple[bool, str]:
+    def _fake_capture(argv: list[str], cwd: pathlib.Path, **_k: object) -> tuple[bool, str]:
         captured.append(list(argv))
         return True, "ok"
 
@@ -91,7 +89,7 @@ def test_merge_and_config_argv_end_options_before_values(
 )
 def test_cli_parser_accepts_double_dash_before_positionals(argv: list[str]) -> None:
     # `--` ends options, so a dashy value lands in the positional.
-    ns = build_parser().parse_args(_inject_default_verb(argv))
+    ns = parser.build_parser().parse_args(parser._inject_default_verb(argv))
     positional = ns.task if hasattr(ns, "task") else getattr(ns, "session_id", None) or ns.value
     assert str(positional).startswith("-")
 
@@ -100,7 +98,7 @@ def test_cli_parser_accepts_double_dash_before_positionals(argv: list[str]) -> N
 
 
 def test_spawn_machine_run_propagates_refusal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     mf = tmp_path / "tiny.asm.toml"
     mf.write_text(TINY, encoding="utf-8")
@@ -115,10 +113,9 @@ def test_spawn_machine_run_propagates_refusal(
 
 
 def test_spawn_machine_run_started_signal_is_child_worker_pid(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # started(pid) fires only when worker.pid holds the child's own pid, never a running machine's.
-    from agent6.sessions.ipc import write_worker_pid
 
     mf = tmp_path / "tiny.asm.toml"
     mf.write_text(TINY, encoding="utf-8")
@@ -127,7 +124,7 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
 
     def _fake_confirm(
         argv: list[str],
-        cwd: Path,
+        cwd: pathlib.Path,
         *,
         started: Callable[[int], bool],
         timeout_s: float = 25.0,
@@ -141,10 +138,10 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
     assert ok is True and msg == "started"
     assert captured_argv[-1][1:] == ["machine", "run", str(mf)]
     started = started_fns[-1]
-    instance = machines_root(state_dir(tmp_path)) / "tiny"
+    instance = layout.machines_root(paths.state_dir(tmp_path)) / "tiny"
     instance.mkdir(parents=True)
     assert started(4242) is False  # no worker.pid yet
-    write_worker_pid(instance, 4242)
+    ipc.write_worker_pid(instance, 4242)
     assert started(4242) is True  # the child owns the instance
     assert started(4243) is False  # someone else's pid (a prior runner)
 
@@ -152,9 +149,9 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
 # --- ended machines take no input ---------------------------------------------
 
 
-def _ended_machine(cwd: Path, name: str) -> Path:
+def _ended_machine(cwd: pathlib.Path, name: str) -> pathlib.Path:
     """An instance whose journal records a MachineEnd, with one state-log dir."""
-    inst = state_dir(cwd) / "machines" / name
+    inst = paths.state_dir(cwd) / "machines" / name
     (inst / "states" / "0000-route").mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (inst / "states" / "0000-route" / "logs.jsonl").write_text("", encoding="utf-8")
@@ -167,7 +164,7 @@ def _ended_machine(cwd: Path, name: str) -> Path:
     return inst
 
 
-def test_machine_poke_refuses_ended_machine(tmp_path: Path) -> None:
+def test_machine_poke_refuses_ended_machine(tmp_path: pathlib.Path) -> None:
     inst = _ended_machine(tmp_path, "tiny")
     ok, msg = actions.machine_poke(tmp_path, "tiny", message="wake up")
     assert not ok
@@ -175,7 +172,7 @@ def test_machine_poke_refuses_ended_machine(tmp_path: Path) -> None:
     assert not (inst / "signal").exists()  # nothing pretends to be delivered
 
 
-def test_machine_approve_refuses_ended_machine(tmp_path: Path) -> None:
+def test_machine_approve_refuses_ended_machine(tmp_path: pathlib.Path) -> None:
     inst = _ended_machine(tmp_path, "tiny")
     ok, msg = actions.machine_approve(tmp_path, "tiny", "approval-1", "yes")
     assert not ok
@@ -183,7 +180,7 @@ def test_machine_approve_refuses_ended_machine(tmp_path: Path) -> None:
     assert not list((inst / "states" / "0000-route").glob("**/*.answer"))
 
 
-def test_machine_answer_refuses_ended_machine(tmp_path: Path) -> None:
+def test_machine_answer_refuses_ended_machine(tmp_path: pathlib.Path) -> None:
     inst = _ended_machine(tmp_path, "tiny")
     ok, msg = actions.machine_answer(tmp_path, "tiny", "question-1", ["yes"])
     assert not ok
@@ -191,7 +188,7 @@ def test_machine_answer_refuses_ended_machine(tmp_path: Path) -> None:
     assert not list((inst / "states" / "0000-route").glob("**/*.answer"))
 
 
-def test_machine_steer_refuses_ended_machine(tmp_path: Path) -> None:
+def test_machine_steer_refuses_ended_machine(tmp_path: pathlib.Path) -> None:
     inst = _ended_machine(tmp_path, "tiny")
     ok, msg = actions.machine_steer(tmp_path, "tiny", "do more")
     assert not ok
@@ -199,9 +196,9 @@ def test_machine_steer_refuses_ended_machine(tmp_path: Path) -> None:
     assert not list((inst / "states" / "0000-route").glob("*.answer"))
 
 
-def _parked_machine(cwd: Path, name: str) -> Path:
+def _parked_machine(cwd: pathlib.Path, name: str) -> pathlib.Path:
     """An instance parked on an armed wait whose newest state dir is a completed agent state."""
-    inst = state_dir(cwd) / "machines" / name
+    inst = paths.state_dir(cwd) / "machines" / name
     (inst / "states" / "0001-work").mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (inst / "states" / "0001-work" / "logs.jsonl").write_text("", encoding="utf-8")
@@ -215,7 +212,7 @@ def _parked_machine(cwd: Path, name: str) -> Path:
     return inst
 
 
-def test_machine_steer_refuses_when_no_state_is_executing(tmp_path: Path) -> None:
+def test_machine_steer_refuses_when_no_state_is_executing(tmp_path: pathlib.Path) -> None:
     """Steering a parked or stopped machine is refused, as the run steer refuses a dead run.
 
     Its newest state dir is a finished agent state whose loop has exited, so nothing polls the
@@ -229,13 +226,13 @@ def test_machine_steer_refuses_when_no_state_is_executing(tmp_path: Path) -> Non
     assert not (inst / "states" / "0001-work" / "steer.request").exists()
 
 
-def test_approve_and_answer_refuse_a_dead_run(tmp_path: Path) -> None:
+def test_approve_and_answer_refuse_a_dead_run(tmp_path: pathlib.Path) -> None:
     """Answering a run killed while blocked on a prompt is refused, like every sibling action.
 
     The client filters the prompt box on `answered`, not liveness, so the box still renders;
     writing the answer reported success with no worker left to consume it.
     """
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "dead-run-A1"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "dead-run-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         '{"version":2,"session_id":"dead-run-A1","mode":"run","user_task":"t"}', encoding="utf-8"
@@ -255,7 +252,7 @@ def test_approve_and_answer_refuse_a_dead_run(tmp_path: Path) -> None:
     assert sorted(p.name for p in session_dir.iterdir()) == before, "nothing may be written"
 
 
-def test_approve_and_answer_reach_a_run_waiting_at_its_own_terminal(tmp_path: Path) -> None:
+def test_approve_and_answer_reach_a_run_waiting_at_its_own_terminal(tmp_path: pathlib.Path) -> None:
     """A live run with no away mode and no front-end claim takes the web's answer.
 
     Its terminal prompt reads the answer file while it waits; refusing it as "waiting at its own
@@ -263,9 +260,7 @@ def test_approve_and_answer_reach_a_run_waiting_at_its_own_terminal(tmp_path: Pa
     """
     import os
 
-    from agent6.sessions.ipc import read_answer, read_question_answers
-
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "tty-run-A1"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "tty-run-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         '{"version":2,"session_id":"tty-run-A1","mode":"run","user_task":"t"}', encoding="utf-8"
@@ -284,18 +279,18 @@ def test_approve_and_answer_reach_a_run_waiting_at_its_own_terminal(tmp_path: Pa
         "answered",
     )
 
-    assert read_answer(session_dir, "approval-1", timeout_s=1.0) == "yes"
-    assert read_question_answers(session_dir, "question-1", timeout_s=1.0) == ("9090",)
+    assert ipc.read_answer(session_dir, "approval-1", timeout_s=1.0) == "yes"
+    assert ipc.read_question_answers(session_dir, "question-1", timeout_s=1.0) == ("9090",)
 
 
-def test_an_approval_the_run_already_journaled_is_refused(tmp_path: Path) -> None:
+def test_an_approval_the_run_already_journaled_is_refused(tmp_path: pathlib.Path) -> None:
     """Once the worker journals an approval, a stale prompt box cannot recreate its answer file.
 
     Another prompt may be opening under the same path.
     """
     import os
 
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "approved-A1"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "approved-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         '{"version":2,"session_id":"approved-A1","mode":"run","user_task":"t"}',
@@ -316,11 +311,11 @@ def test_an_approval_the_run_already_journaled_is_refused(tmp_path: Path) -> Non
     assert not (session_dir / "approvals" / "approval-1.answer").exists()
 
 
-def test_an_approval_answer_already_on_disk_is_refused(tmp_path: Path) -> None:
+def test_an_approval_answer_already_on_disk_is_refused(tmp_path: pathlib.Path) -> None:
     """A repeated approval POST before the worker consumes the first keeps the operator's choice."""
     import os
 
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "approving-A1"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "approving-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         '{"version":2,"session_id":"approving-A1","mode":"run","user_task":"t"}',
@@ -340,16 +335,16 @@ def test_an_approval_answer_already_on_disk_is_refused(tmp_path: Path) -> None:
     ok, reason = actions.approve(tmp_path, "approving-A1", "approval-1", "no")
 
     assert not ok
-    assert reason == ANSWERED_ELSEWHERE
+    assert reason == ipc.ANSWERED_ELSEWHERE
     assert (session_dir / "approvals" / "approval-1.answer").read_text(encoding="utf-8") == "yes"
 
 
-def test_a_question_answer_already_on_disk_is_refused(tmp_path: Path) -> None:
+def test_a_question_answer_already_on_disk_is_refused(tmp_path: pathlib.Path) -> None:
     """A repeated answer POST before the worker consumes the first keeps the operator's answer."""
     import json
     import os
 
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "asking-A1"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "asking-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         '{"version":2,"session_id":"asking-A1","mode":"run","user_task":"t"}',
@@ -370,18 +365,18 @@ def test_a_question_answer_already_on_disk_is_refused(tmp_path: Path) -> None:
     ok, reason = actions.answer_question(tmp_path, "asking-A1", "question-1", ["9090"])
 
     assert not ok
-    assert reason == ANSWERED_ELSEWHERE
+    assert reason == ipc.ANSWERED_ELSEWHERE
     assert json.loads(
         (session_dir / "questions" / "question-1.answer").read_text(encoding="utf-8")
     ) == ["8080"]
 
 
-def test_machine_prompt_answers_already_on_disk_are_refused(tmp_path: Path) -> None:
+def test_machine_prompt_answers_already_on_disk_are_refused(tmp_path: pathlib.Path) -> None:
     """Repeated machine prompt POSTs keep the first answers until the state worker journals them."""
     import json
     import os
 
-    inst = state_dir(tmp_path) / "machines" / "asking-machine"
+    inst = paths.state_dir(tmp_path) / "machines" / "asking-machine"
     state = inst / "states" / "0001-work"
     state.mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -401,7 +396,7 @@ def test_machine_prompt_answers_already_on_disk_are_refused(tmp_path: Path) -> N
     )
     assert actions.machine_approve(tmp_path, "asking-machine", "approval-1", "no") == (
         False,
-        ANSWERED_ELSEWHERE,
+        ipc.ANSWERED_ELSEWHERE,
     )
     assert (state / "approvals" / "approval-1.answer").read_text(encoding="utf-8") == "yes"
 
@@ -411,21 +406,21 @@ def test_machine_prompt_answers_already_on_disk_are_refused(tmp_path: Path) -> N
     )
     assert actions.machine_answer(tmp_path, "asking-machine", "question-1", ["9090"]) == (
         False,
-        ANSWERED_ELSEWHERE,
+        ipc.ANSWERED_ELSEWHERE,
     )
     assert json.loads((state / "questions" / "question-1.answer").read_text(encoding="utf-8")) == [
         "8080"
     ]
 
 
-def test_machine_prompt_answers_must_match_the_open_prompt(tmp_path: Path) -> None:
+def test_machine_prompt_answers_must_match_the_open_prompt(tmp_path: pathlib.Path) -> None:
     """A stale prompt id or a mis-sized answer list is refused before it creates files.
 
     Machine prompt ids reset in each state.
     """
     import os
 
-    inst = state_dir(tmp_path) / "machines" / "open-prompts"
+    inst = paths.state_dir(tmp_path) / "machines" / "open-prompts"
     state = inst / "states" / "0001-work"
     state.mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -454,7 +449,9 @@ def test_machine_prompt_answers_must_match_the_open_prompt(tmp_path: Path) -> No
     assert not list(state.glob("**/*.answer"))
 
 
-def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(tmp_path: Path) -> None:
+def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(
+    tmp_path: pathlib.Path,
+) -> None:
     """Approving or answering a parked or dead machine is refused, as steer is.
 
     The newest state dir is a finished agent state whose loop has exited, so a marker written
@@ -463,7 +460,7 @@ def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(tmp_path: P
     """
     from agent6.ui.web import actions
 
-    inst = state_dir(tmp_path) / "machines" / "dead"
+    inst = paths.state_dir(tmp_path) / "machines" / "dead"
     (inst / "states" / "0001-work").mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (inst / "journal.jsonl").write_text("", encoding="utf-8")
@@ -476,7 +473,7 @@ def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(tmp_path: P
     assert ok is False and "not running" in msg
 
 
-_UNKNOWN_MACHINE_CALLS: list[tuple[Callable[[Path], tuple[bool, str]], str]] = [
+_UNKNOWN_MACHINE_CALLS: list[tuple[Callable[[pathlib.Path], tuple[bool, str]], str]] = [
     (lambda cwd: actions.machine_approve(cwd, "ghost", "approval-1", "yes"), "approve"),
     (lambda cwd: actions.machine_answer(cwd, "ghost", "question-1", ["yes"]), "answer"),
     (lambda cwd: actions.machine_steer(cwd, "ghost", "do more"), "steer"),
@@ -485,7 +482,7 @@ _UNKNOWN_MACHINE_CALLS: list[tuple[Callable[[Path], tuple[bool, str]], str]] = [
 
 @pytest.mark.parametrize(("call", "label"), _UNKNOWN_MACHINE_CALLS)
 def test_an_unknown_machine_is_named_as_unknown_not_as_stopped(
-    tmp_path: Path, call: Callable[[Path], tuple[bool, str]], label: str
+    tmp_path: pathlib.Path, call: Callable[[pathlib.Path], tuple[bool, str]], label: str
 ) -> None:
     """A machine that does not exist must not be described as one that stopped.
 
@@ -502,7 +499,7 @@ def test_an_unknown_machine_is_named_as_unknown_not_as_stopped(
 
 
 def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Continuing a run the agent ended is refused here, naming the composer.
 
@@ -512,7 +509,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     """
     import json
 
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "done-WEB111"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "done-WEB111"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": "done-WEB111", "mode": "run", "user_task": "t"}),
@@ -525,7 +522,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     spawned: list[str] = []
 
     def _spawn(
-        _cwd: Path,
+        _cwd: pathlib.Path,
         _session_id: str,
         *,
         steer: str = "",
@@ -548,12 +545,12 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     assert spawned == ["do more"]
 
 
-def test_machine_stop_notes_ended_and_marks_a_live_one(tmp_path: Path) -> None:
+def test_machine_stop_notes_ended_and_marks_a_live_one(tmp_path: pathlib.Path) -> None:
     """The stop verb plants a marker only for a live worker.
 
     An ended or dead instance would trip over a marker planted for it later.
     """
-    from unittest.mock import patch
+    from unittest import mock
 
     from agent6.viewmodel import machine_state as machine_state_mod
 
@@ -575,14 +572,16 @@ def test_machine_stop_notes_ended_and_marks_a_live_one(tmp_path: Path) -> None:
     (inst / "journal.jsonl").write_text(begin, encoding="utf-8")
     ok, msg = actions.machine_stop(tmp_path, "tiny")
     assert ok and "not running" in msg
-    with patch.object(machine_state_mod, "worker_is_alive", return_value=True):  # the gate's owner
+    with mock.patch.object(
+        machine_state_mod, "worker_is_alive", return_value=True
+    ):  # the gate's owner
         ok, msg = actions.machine_stop(tmp_path, "tiny")
     assert ok and "stop requested" in msg
     assert (inst / "stop").is_file()
 
 
 def test_run_plan_spawns_from_plan_and_refuses_non_plans(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Run this plan spawns `agent6 run --from <id>` detached and hands back the new run id.
 
@@ -590,14 +589,14 @@ def test_run_plan_spawns_from_plan_and_refuses_non_plans(
     """
     import json
 
-    plan = state_dir(tmp_path) / "sessions" / "plans" / "planny-one-AAAAAA"
+    plan = paths.state_dir(tmp_path) / "sessions" / "plans" / "planny-one-AAAAAA"
     plan.mkdir(parents=True)
     (plan / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": plan.name, "mode": "plan", "user_task": "t"}),
         encoding="utf-8",
     )
     (plan / "logs.jsonl").write_text("", encoding="utf-8")
-    run = state_dir(tmp_path) / "sessions" / "runs" / "runny-one-AAAAAA"
+    run = paths.state_dir(tmp_path) / "sessions" / "runs" / "runny-one-AAAAAA"
     run.mkdir(parents=True)
     (run / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": run.name, "mode": "run", "user_task": "t"}),
@@ -606,10 +605,10 @@ def test_run_plan_spawns_from_plan_and_refuses_non_plans(
     (run / "logs.jsonl").write_text("", encoding="utf-8")
     seen: dict[str, object] = {}
 
-    def _fake_spawn(argv: list[str], _cwd: Path, **kw: object) -> tuple[Path, str]:
+    def _fake_spawn(argv: list[str], _cwd: pathlib.Path, **kw: object) -> tuple[pathlib.Path, str]:
         seen["argv"] = argv
         seen["env"] = kw.get("env")
-        child = state_dir(tmp_path) / "sessions" / "runs" / "fresh-run-BBBBBB"
+        child = paths.state_dir(tmp_path) / "sessions" / "runs" / "fresh-run-BBBBBB"
         child.mkdir(parents=True, exist_ok=True)
         return child, ""
 
@@ -635,7 +634,7 @@ def test_run_plan_spawns_from_plan_and_refuses_non_plans(
 
 
 def test_spawn_machine_run_takes_the_listed_name_or_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The hub lists a file by path and name; both name it.
 
@@ -657,7 +656,7 @@ def test_spawn_machine_run_takes_the_listed_name_or_path(
 
 
 def test_prune_carries_the_squash_opt_in_only_when_asked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The hub's prune passes the squash flag, or under the default strategy it deletes nothing.
 
@@ -665,7 +664,7 @@ def test_prune_carries_the_squash_opt_in_only_when_asked(
     """
     captured: list[list[str]] = []
 
-    def _fake_capture(argv: list[str], cwd: Path, **_k: object) -> tuple[bool, str]:
+    def _fake_capture(argv: list[str], cwd: pathlib.Path, **_k: object) -> tuple[bool, str]:
         captured.append(list(argv))
         return True, "ok"
 
@@ -678,7 +677,7 @@ def test_prune_carries_the_squash_opt_in_only_when_asked(
 
 
 def test_a_now_steer_writes_the_urgent_marker(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`/now <text>` on the web composer is the CLI's `steer --now`.
 
@@ -686,18 +685,16 @@ def test_a_now_steer_writes_the_urgent_marker(
     """
     import os
 
-    from agent6.paths import state_dir
-    from agent6.sessions.ipc import STEER_ANSWER_FILE, STEER_REQUEST_FILE, write_worker_pid
     from agent6.ui.web import actions
 
     monkeypatch.chdir(tmp_path)
-    d = state_dir(tmp_path) / "sessions" / "runs" / "live-one-AAAAAA"
+    d = paths.state_dir(tmp_path) / "sessions" / "runs" / "live-one-AAAAAA"
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text('{"type": "session.start", "mode": "run"}\n', encoding="utf-8")
-    write_worker_pid(d, os.getpid())
+    ipc.write_worker_pid(d, os.getpid())
     ok, msg = actions.steer(tmp_path, "live-one-AAAAAA", "/now stop and report")
     assert ok and msg == "steering now, interrupting the call in flight"
-    assert (d / STEER_REQUEST_FILE).read_text(encoding="utf-8") == "now"
-    assert (d / STEER_ANSWER_FILE).read_text(encoding="utf-8") == "stop and report"
+    assert (d / ipc.STEER_REQUEST_FILE).read_text(encoding="utf-8") == "now"
+    assert (d / ipc.STEER_ANSWER_FILE).read_text(encoding="utf-8") == "stop and report"
     ok, msg = actions.steer(tmp_path, "live-one-AAAAAA", "/now")
     assert not ok and "needs the instruction" in msg

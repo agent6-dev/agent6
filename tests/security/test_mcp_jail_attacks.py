@@ -9,30 +9,30 @@ needs a special case in the launcher, the design is wrong; these are here to fin
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
 import time
-from pathlib import Path
 
 import pytest
 
 from agent6.config import Config
-from agent6.sandbox.jail import spawn_in_jail
-from agent6.tools.policy import jail_policy
+from agent6.sandbox import jail
+from agent6.tools import policy as tools_policy
 
 pytestmark = pytest.mark.needs_namespaces
 
 
-def _attack(script: str, cwd: Path, **policy_kw: object) -> str:
+def _attack(script: str, cwd: pathlib.Path, **policy_kw: object) -> str:
     argv = ("/usr/bin/python3", "-c", script)
-    policy = jail_policy(cwd, Config(), "strict", argv, network="none", **policy_kw)  # pyright: ignore[reportArgumentType]
-    proc = spawn_in_jail(
+    policy = tools_policy.jail_policy(cwd, Config(), "strict", argv, network="none", **policy_kw)  # pyright: ignore[reportArgumentType]
+    proc = jail.spawn_in_jail(
         policy, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     ).popen
     out, err = proc.communicate(timeout=30)
     return out.decode(errors="replace") + err.decode(errors="replace")
 
 
-def test_the_server_cannot_read_the_policy_channel(tmp_path: Path) -> None:
+def test_the_server_cannot_read_the_policy_channel(tmp_path: pathlib.Path) -> None:
     """The policy's inherited fd does not survive the exec.
 
     A server that could read it would have the operator's whole sandbox description, every
@@ -57,7 +57,7 @@ def test_the_server_cannot_read_the_policy_channel(tmp_path: Path) -> None:
     assert "EXTRA_FDS []" in out, f"an inherited fd survived into the server: {out}"
 
 
-def test_the_server_cannot_read_the_launchers_environment(tmp_path: Path) -> None:
+def test_the_server_cannot_read_the_launchers_environment(tmp_path: pathlib.Path) -> None:
     """The launcher's own /proc entry, PID 1 of the jail's namespace, is unreadable.
 
     Readable, it would let a server lift whatever the launcher was started with.
@@ -78,7 +78,7 @@ def test_the_server_cannot_read_the_launchers_environment(tmp_path: Path) -> Non
 
 
 def test_the_server_cannot_reach_the_operators_secrets(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The config dir is masked: a server can neither read nor write it.
 
@@ -110,7 +110,7 @@ def test_the_server_cannot_reach_the_operators_secrets(
     assert not (cfg_dir / "config.toml").exists()
 
 
-def test_the_server_cannot_plant_a_tool_for_the_next_run(tmp_path: Path) -> None:
+def test_the_server_cannot_plant_a_tool_for_the_next_run(tmp_path: pathlib.Path) -> None:
     """`~/.local/bin` is a read-only mount, and $HOME is not granted.
 
     The other half of the persistence attack: it is mounted read+exec into every jail, so a
@@ -133,10 +133,10 @@ def test_the_server_cannot_plant_a_tool_for_the_next_run(tmp_path: Path) -> None
     # which is exactly why HOME is FORCED to the jail's own writable path
     # rather than inherited from the environment.
     assert "/tmp/agent6-home" in out or "PLANT-REFUSED" in out, out
-    assert not (Path.home() / ".local" / "bin" / "agent6-pwned").exists()
+    assert not (pathlib.Path.home() / ".local" / "bin" / "agent6-pwned").exists()
 
 
-def test_a_symlink_out_of_the_workspace_reaches_nothing(tmp_path: Path) -> None:
+def test_a_symlink_out_of_the_workspace_reaches_nothing(tmp_path: pathlib.Path) -> None:
     """A symlink a server creates inside its workspace buys nothing.
 
     The target does not exist in the assembled root, so the resolution fails rather than
@@ -159,7 +159,7 @@ def test_a_symlink_out_of_the_workspace_reaches_nothing(tmp_path: Path) -> None:
     assert "DANGLING" in out, out
 
 
-def test_killing_agent6_takes_the_server_with_it(tmp_path: Path) -> None:
+def test_killing_agent6_takes_the_server_with_it(tmp_path: pathlib.Path) -> None:
     """A server dies with its namespace, no sweep required.
 
     The launcher is PID 1 of the server's namespace; a server that outlived the run would
@@ -167,8 +167,8 @@ def test_killing_agent6_takes_the_server_with_it(tmp_path: Path) -> None:
     """
     script = "import time\nprint('UP', flush=True)\ntime.sleep(300)\n"
     argv = ("/usr/bin/python3", "-c", script)
-    policy = jail_policy(tmp_path, Config(), "strict", argv, network="none")
-    proc = spawn_in_jail(
+    policy = tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="none")
+    proc = jail.spawn_in_jail(
         policy, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
     ).popen
     assert proc.stdout is not None
@@ -182,7 +182,7 @@ def test_killing_agent6_takes_the_server_with_it(tmp_path: Path) -> None:
     assert "sleep(300)" not in survivors, f"the server outlived its launcher: {survivors}"
 
 
-def test_the_server_cannot_write_the_repos_git_dir(tmp_path: Path) -> None:
+def test_the_server_cannot_write_the_repos_git_dir(tmp_path: pathlib.Path) -> None:
     """protect_git covers a server.
 
     A poisoned `.git/config` filter runs on the host at agent6's next auto-commit, so a
@@ -205,7 +205,7 @@ def test_the_server_cannot_write_the_repos_git_dir(tmp_path: Path) -> None:
     assert (git_dir / "config").read_text(encoding="utf-8") == "[core]\n"
 
 
-def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: Path) -> None:
+def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: pathlib.Path) -> None:
     """A server's stderr is drained and capped, and the tail still says what happened.
 
     Capturing it is what makes a failed start explainable, and it is a channel third-party
@@ -214,8 +214,8 @@ def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: Path) 
     """
     import threading
 
-    from agent6.portable import drain_stderr, stderr_tail
-    from agent6.tools.mcp_client import _spawn_server  # pyright: ignore[reportPrivateUsage]
+    from agent6 import portable
+    from agent6.tools import mcp_client  # pyright: ignore[reportPrivateUsage]
 
     flood = (
         "import sys\n"
@@ -224,24 +224,24 @@ def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: Path) 
         "    sys.stderr.write('A' * 65536)\n"
     )
     argv = ("/usr/bin/python3", "-c", flood)
-    proc = _spawn_server(
-        argv, jail_policy(tmp_path, Config(), "strict", argv, network="none"), ()
+    proc = mcp_client._spawn_server(
+        argv, tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="none"), ()
     ).popen
     keep: list[bytes] = []
     assert proc.stderr is not None
-    threading.Thread(target=drain_stderr, args=(proc.stderr, keep), daemon=True).start()
+    threading.Thread(target=portable.drain_stderr, args=(proc.stderr, keep), daemon=True).start()
     try:
         time.sleep(2.0)
         held = sum(len(chunk) for chunk in keep)
         assert held <= 16384, f"the capture is unbounded: {held} bytes held"
         assert proc.poll() is None, "the server wedged on its own stderr"
-        assert stderr_tail(keep), "nothing was kept to explain a failure with"
+        assert portable.stderr_tail(keep), "nothing was kept to explain a failure with"
     finally:
         proc.kill()
         proc.wait(timeout=10)
 
 
-def test_a_finished_launcher_stops_shielding_its_pid(tmp_path: Path) -> None:
+def test_a_finished_launcher_stops_shielding_its_pid(tmp_path: pathlib.Path) -> None:
     """`_live_launchers` is pruned against the real children; a dead server's pid is not shielded.
 
     The escapee sweep skips pids in the set; a transport that forgot to remove one would let
@@ -250,8 +250,8 @@ def test_a_finished_launcher_stops_shielding_its_pid(tmp_path: Path) -> None:
     from agent6.sandbox import jail as jail_mod
 
     argv = ("/usr/bin/python3", "-c", "pass")
-    policy = jail_policy(tmp_path, Config(), "strict", argv, network="none")
-    proc = spawn_in_jail(
+    policy = tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="none")
+    proc = jail.spawn_in_jail(
         policy,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,

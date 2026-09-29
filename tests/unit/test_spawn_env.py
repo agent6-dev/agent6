@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import pytest
@@ -13,7 +13,7 @@ from agent6.ui import spawn as spawn_mod
 
 
 def test_hub_machine_spawn_carries_the_wait_away_mode(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`spawn_and_confirm` sets the away marker under a caller's additions.
 

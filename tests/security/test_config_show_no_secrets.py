@@ -9,18 +9,18 @@ start leaking it.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.ui.cli.config_cmds import _cmd_config_show  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import config_cmds  # pyright: ignore[reportPrivateUsage]
 
 _SECRET = "sk-super-secret-do-not-print"
 _ENV_SECRET = "env-secret-also-hidden"
 
 
 @pytest.fixture
-def config_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def config_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     home = tmp_path / "agent6-config"
     (home / "agent6").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home))
@@ -45,10 +45,10 @@ def config_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_config_show_prints_no_secret_values(
-    config_home: Path, capsys: pytest.CaptureFixture[str]
+    config_home: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     for as_json in (False, True):
-        assert _cmd_config_show(None, as_json=as_json) == 0
+        assert config_cmds._cmd_config_show(None, as_json=as_json) == 0
         out = capsys.readouterr().out
         assert _SECRET not in out
         assert _ENV_SECRET not in out

@@ -8,22 +8,21 @@ contract is frozen; the files are transient per invocation, so the pin is a same
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
-from agent6.app.machine_agent import MachineAgentRequest
-from agent6.git_ops import CommitIdentity
-from agent6.machine import AgentExecResult, AgentRequest
-from agent6.machine.spec import FieldSpec
+from agent6 import git_ops
+from agent6.app import machine_agent
+from agent6.machine import AgentExecResult, AgentRequest, spec
 
-_REQUEST = MachineAgentRequest(
-    cwd=Path("/work/repo"),
-    root=Path("/work/repo"),
+_REQUEST = machine_agent.MachineAgentRequest(
+    cwd=pathlib.Path("/work/repo"),
+    root=pathlib.Path("/work/repo"),
     overlay={"budget": {"max_tokens_fallback": 9000}},
     isolation="strict",
-    transcript_dir=Path("/state/machines/m/i/transcripts"),
-    events_log=Path("/state/machines/m/i/states/0002-review/logs.jsonl"),
-    protect_paths=(Path("/work/repo/m.asm.toml"),),
-    commit_identity=CommitIdentity(name="Machine Bot", email="bot@example.com"),
+    transcript_dir=pathlib.Path("/state/machines/m/i/transcripts"),
+    events_log=pathlib.Path("/state/machines/m/i/states/0002-review/logs.jsonl"),
+    protect_paths=(pathlib.Path("/work/repo/m.asm.toml"),),
+    commit_identity=git_ops.CommitIdentity(name="Machine Bot", email="bot@example.com"),
     request=AgentRequest(
         prompt="review the queue",
         timeout_s=600.0,
@@ -38,7 +37,10 @@ _REQUEST = MachineAgentRequest(
         step_seq=2,
         output_schema="verdict",
         schemas={
-            "verdict": {"ok": FieldSpec(type="bool"), "note": FieldSpec(type="str", optional=True)}
+            "verdict": {
+                "ok": spec.FieldSpec(type="bool"),
+                "note": spec.FieldSpec(type="str", optional=True),
+            }
         },
     ),
 )
@@ -77,7 +79,7 @@ def test_request_serializes_to_pinned_bytes() -> None:
 
 
 def test_request_bytes_validate_to_same_object() -> None:
-    assert MachineAgentRequest.model_validate_json(_REQUEST_BYTES) == _REQUEST
+    assert machine_agent.MachineAgentRequest.model_validate_json(_REQUEST_BYTES) == _REQUEST
 
 
 def test_result_serializes_to_pinned_bytes() -> None:
@@ -104,12 +106,12 @@ def test_result_payload_with_a_lone_surrogate_still_serializes() -> None:
 
 def test_defaulted_request_omits_nothing() -> None:
     # Optional envelope fields serialize explicitly, never key-drop, so the reader needs no default.
-    minimal = MachineAgentRequest(
-        cwd=Path("/w"),
-        root=Path("/w"),
+    minimal = machine_agent.MachineAgentRequest(
+        cwd=pathlib.Path("/w"),
+        root=pathlib.Path("/w"),
         overlay={},
         isolation="none",
-        transcript_dir=Path("/t"),
+        transcript_dir=pathlib.Path("/t"),
         request=AgentRequest(prompt="p", timeout_s=1.0),
     )
     assert minimal.model_dump_json() == (

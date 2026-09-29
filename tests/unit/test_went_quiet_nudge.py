@@ -13,19 +13,16 @@ times PER STREAK; on any non-empty turn the counter resets.
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess as _sp
-from pathlib import Path
-from types import SimpleNamespace
+import types
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
-from agent6.events import EventSink
-from agent6.harness._chain import RunChain
-from agent6.harness._operator import OperatorBridge
-from agent6.harness._provider_call import CallSettings
-from agent6.harness.loop import Harness
+from agent6 import events as agent6_events
+from agent6.harness import _chain, _operator, _provider_call, loop
 from agent6.providers import ProviderResponse
-from agent6.tools.results import RawResult
+from agent6.tools import results
 
 
 def _silent(_msg: str) -> None:
@@ -85,7 +82,7 @@ def _starved_resp() -> ProviderResponse:
     )
 
 
-def _init_repo(repo: Path) -> None:
+def _init_repo(repo: pathlib.Path) -> None:
     repo.mkdir()
     _sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
     _sp.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
@@ -95,22 +92,22 @@ def _init_repo(repo: Path) -> None:
     _sp.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
 
 
-def _knobs(wf: Harness, **knobs: Any) -> Harness:
+def _knobs(wf: loop.Harness, **knobs: Any) -> loop.Harness:
     """The harness with `[harness]` guard knobs set on its mocked config."""
     for key, value in knobs.items():
         setattr(wf.config.harness, key, value)
     return wf
 
 
-def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Harness:
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
-    return Harness(
-        chain=RunChain(repo),
-        config=MagicMock(
-            budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=MagicMock(system_prompt_file=""),
-            harness=MagicMock(
+def _build_wf(repo: pathlib.Path, provider: mock.MagicMock, **kwargs: Any) -> loop.Harness:
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
+    return loop.Harness(
+        chain=_chain.RunChain(repo),
+        config=mock.MagicMock(
+            budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+            prompt=mock.MagicMock(system_prompt_file=""),
+            harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -123,7 +120,7 @@ def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Harness:
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
-        call=CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=10,
         **kwargs,
     )
@@ -145,12 +142,12 @@ def _nudge_blocks(messages: list[dict[str, Any]]) -> list[str]:
     return out
 
 
-def test_went_quiet_nudges_then_succeeds(tmp_path: Path) -> None:
+def test_went_quiet_nudges_then_succeeds(tmp_path: pathlib.Path) -> None:
     """Empty turn -> nudge injected -> model recovers and finishes."""
     repo = tmp_path / "repo"
     _init_repo(repo)
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _empty_resp(),
         # early prose finishes on an untouched tree bounce twice off the
@@ -171,7 +168,7 @@ def test_went_quiet_nudges_then_succeeds(tmp_path: Path) -> None:
     assert any("empty" in n.lower() for n in nudges)
 
 
-def test_starvation_injects_nudge_without_suppressing_reasoning(tmp_path: Path) -> None:
+def test_starvation_injects_nudge_without_suppressing_reasoning(tmp_path: pathlib.Path) -> None:
     """The starvation nudge is injected without forcing reasoning_effort='off'.
 
     An N=8 K2.6 perf batch showed forcing reasoning off on recovery turns hurt win-rate.
@@ -179,7 +176,7 @@ def test_starvation_injects_nudge_without_suppressing_reasoning(tmp_path: Path) 
     repo = tmp_path / "repo"
     _init_repo(repo)
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _starved_resp(),
         _resp_text("done"),
@@ -201,12 +198,12 @@ def test_starvation_injects_nudge_without_suppressing_reasoning(tmp_path: Path) 
     assert any("whole output budget" in n for n in nudges)
 
 
-def test_went_quiet_drops_empty_assistant_turn(tmp_path: Path) -> None:
+def test_went_quiet_drops_empty_assistant_turn(tmp_path: pathlib.Path) -> None:
     """The empty assistant turn is popped before the nudge, or Anthropic rejects the next call."""
     repo = tmp_path / "repo"
     _init_repo(repo)
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _empty_resp(),
         _resp_text("done"),
@@ -225,12 +222,12 @@ def test_went_quiet_drops_empty_assistant_turn(tmp_path: Path) -> None:
             assert msg.get("content"), f"empty assistant turn leaked: {msg}"
 
 
-def test_went_quiet_exhausts_nudges_then_fails(tmp_path: Path) -> None:
+def test_went_quiet_exhausts_nudges_then_fails(tmp_path: pathlib.Path) -> None:
     """After `went_quiet_max_nudges` consecutive empty turns, give up."""
     repo = tmp_path / "repo"
     _init_repo(repo)
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     # 3 empty turns; with max_nudges=2 the third gives up.
     provider.call.side_effect = [_empty_resp(), _empty_resp(), _empty_resp()]
     wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=2)
@@ -242,12 +239,12 @@ def test_went_quiet_exhausts_nudges_then_fails(tmp_path: Path) -> None:
     assert provider.call.call_count == 3
 
 
-def test_went_quiet_disabled_when_max_nudges_zero(tmp_path: Path) -> None:
+def test_went_quiet_disabled_when_max_nudges_zero(tmp_path: pathlib.Path) -> None:
     """`went_quiet_max_nudges = 0` restores the fail-fast behaviour."""
     repo = tmp_path / "repo"
     _init_repo(repo)
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [_empty_resp(), _resp_text("never reached")]
     wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=0)
     result = wf.run("task")
@@ -257,12 +254,12 @@ def test_went_quiet_disabled_when_max_nudges_zero(tmp_path: Path) -> None:
     assert provider.call.call_count == 1
 
 
-def test_went_quiet_nudges_reset_after_successful_turn(tmp_path: Path) -> None:
+def test_went_quiet_nudges_reset_after_successful_turn(tmp_path: pathlib.Path) -> None:
     """A non-empty turn refills the nudge counter for a later streak of empties."""
     repo = tmp_path / "repo"
     _init_repo(repo)
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     # empty, tool_use (resets), empty, empty (uses budget), text.
     provider.call.side_effect = [
         _empty_resp(),
@@ -281,7 +278,7 @@ def test_went_quiet_nudges_reset_after_successful_turn(tmp_path: Path) -> None:
     assert len(_nudge_blocks(final_messages)) == 3
 
 
-def test_went_quiet_budget_refills_on_a_bounced_prose_turn(tmp_path: Path) -> None:
+def test_went_quiet_budget_refills_on_a_bounced_prose_turn(tmp_path: pathlib.Path) -> None:
     """The refill contract is "reset on any NON-EMPTY turn", not only tool_use turns.
 
     Interleaving quiet streaks with bounced prose turns (the silent- no-work gate) drained one
@@ -291,7 +288,7 @@ def test_went_quiet_budget_refills_on_a_bounced_prose_turn(tmp_path: Path) -> No
     repo = tmp_path / "repo"
     _init_repo(repo)
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_text("I think the answer is..."),  # iter 1: prose, bounced (early stall)
         _empty_resp(),  # iter 2: quiet -> nudge 1/1
@@ -306,7 +303,7 @@ def test_went_quiet_budget_refills_on_a_bounced_prose_turn(tmp_path: Path) -> No
     assert result.completed is True
 
 
-def test_a_billed_empty_turn_says_so(tmp_path: Path) -> None:
+def test_a_billed_empty_turn_says_so(tmp_path: pathlib.Path) -> None:
     """An empty turn the provider charged output tokens for carries the count in the log and event.
 
     Reasoning that never surfaced or a dropped tool call is not a model that chose silence.
@@ -323,12 +320,12 @@ def test_a_billed_empty_turn_says_so(tmp_path: Path) -> None:
         cache_creation_tokens=0,
         raw={"content": []},
     )
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [billed, _resp_text("done"), _resp_text("done"), _resp_text("done")]
     lines: list[str] = []
     wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=2)
     wf.logger = lines.append
-    wf.events = EventSink(tmp_path / "logs.jsonl")
+    wf.events = agent6_events.EventSink(tmp_path / "logs.jsonl")
     wf.run("do something")
 
     quiet = [ln for ln in lines if "went_quiet at iter" in ln]
@@ -339,9 +336,9 @@ def test_a_billed_empty_turn_says_so(tmp_path: Path) -> None:
     assert nudge["output_tokens"] == 128
 
 
-def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: Path) -> None:
+def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: pathlib.Path) -> None:
     """On a subscription plan the went-quiet line never says the tokens were "billed"."""
-    from agent6.budget import BudgetTracker, PlanUsage
+    from agent6 import budget
 
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -355,20 +352,20 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: Path) -> None
         cache_creation_tokens=0,
         raw={"content": []},
     )
-    provider = MagicMock()
+    provider = mock.MagicMock()
     provider.call.side_effect = [billed, _resp_text("done"), _resp_text("done"), _resp_text("done")]
     lines: list[str] = []
     wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=2)
     wf.logger = lines.append
-    wf.events = EventSink(tmp_path / "logs.jsonl")
-    wf.budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    wf.events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    wf.budget = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     wf.budget.record(
         model="gpt-5.6-sol",
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
         cache_creation_tokens=0,
-        plan_usage=PlanUsage.single(used_percent=2.0, window_minutes=10080, resets_at=2e9),
+        plan_usage=budget.PlanUsage.single(used_percent=2.0, window_minutes=10080, resets_at=2e9),
     )
     wf.run("do something")
 
@@ -379,17 +376,20 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: Path) -> None
 
 def test_unrunnable_signature_names_only_the_adopted_runner() -> None:
     """Exit 127 and the adopted `-m` module missing are the unrunnable signatures; a red is not."""
-    from agent6.harness._nudges import unrunnable_signature
+    from agent6.harness import _nudges
 
     argv = ("python3", "-m", "pytest", "-q")
-    assert unrunnable_signature(argv, 127, "", "") == "exit 127, the command is not found"
-    assert unrunnable_signature(argv, 1, "", "No module named pytest") == "no module named pytest"
-    assert unrunnable_signature(argv, 1, "", "No module named numpy") == ""
-    assert unrunnable_signature(argv, 1, "3 failed, 2 passed", "") == ""
-    assert unrunnable_signature(("pytest",), 1, "", "No module named pytest") == ""
+    assert _nudges.unrunnable_signature(argv, 127, "", "") == "exit 127, the command is not found"
+    assert (
+        _nudges.unrunnable_signature(argv, 1, "", "No module named pytest")
+        == "no module named pytest"
+    )
+    assert _nudges.unrunnable_signature(argv, 1, "", "No module named numpy") == ""
+    assert _nudges.unrunnable_signature(argv, 1, "3 failed, 2 passed", "") == ""
+    assert _nudges.unrunnable_signature(("pytest",), 1, "", "No module named pytest") == ""
 
 
-def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: Path) -> None:
+def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: pathlib.Path) -> None:
     """The empty assistant turn is popped on the park path too, not only on the nudge path.
 
     Sent as `{"role": "assistant", "content": []}` on every later call, Anthropic rejected it.
@@ -397,13 +397,13 @@ def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: Path) -> N
     repo = tmp_path / "repo"
     _init_repo(repo)
 
-    provider = MagicMock()
+    provider = mock.MagicMock()
 
     def _respond(**_kw: Any) -> ProviderResponse:
         return _empty_resp() if provider.call.call_count == 1 else _resp_text("done")
 
     provider.call.side_effect = _respond
-    events = EventSink(tmp_path / "logs.jsonl")
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
     # Steer only once the run has parked: at any earlier boundary the steer
     # handler would take it and the park would wait forever.
     steers = ["carry on", "abort"]
@@ -415,7 +415,7 @@ def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: Path) -> N
         provider,
         events=events,
         interactive=True,
-        bridge=OperatorBridge(
+        bridge=_operator.OperatorBridge(
             steer_requested=lambda: bool(parked) and bool(steers),
             steer_prompt=lambda: steers.pop(0) if steers else None,
             steer_clear=parked.clear,

@@ -9,19 +9,17 @@ allow-list is what makes a read silent.
 from __future__ import annotations
 
 import gzip
+import pathlib
 import socket
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 import httpx2
 import pytest
 
+from agent6 import kinds
 from agent6.config import Config
-from agent6.kinds import IsolationLevel
-from agent6.tools.dispatch import ToolDeniedError, ToolDispatcher, ToolError
-from agent6.tools.fetch import MAX_BYTES, FetchRefusedError, check_url, fetch, host_allowed
-from agent6.tools.operator_prompts import ApprovalAnswer, ApprovalRequest, OperatorPrompts
+from agent6.tools import dispatch, errors, fetch, operator_prompts
 
 
 class _Body(httpx2.SyncByteStream):
@@ -69,8 +67,8 @@ def _fetch_serving(
     ],
 )
 def test_only_https_with_a_host_is_fetched(url: str) -> None:
-    with pytest.raises(FetchRefusedError):
-        check_url(url)
+    with pytest.raises(fetch.FetchRefusedError):
+        fetch.check_url(url)
 
 
 @pytest.mark.parametrize(
@@ -85,8 +83,8 @@ def test_only_https_with_a_host_is_fetched(url: str) -> None:
 )
 def test_a_literal_address_off_the_public_internet_is_refused(host: str) -> None:
     """A literal address is refused before anyone is asked: SSRF is the whole threat."""
-    with pytest.raises(FetchRefusedError, match="not a public address"):
-        check_url(f"https://{host}/x")
+    with pytest.raises(fetch.FetchRefusedError, match="not a public address"):
+        fetch.check_url(f"https://{host}/x")
 
 
 def test_a_name_resolving_off_the_public_internet_is_refused(
@@ -98,8 +96,8 @@ def test_a_name_resolving_off_the_public_internet_is_refused(
         return [(0, 0, 0, "", ("127.0.0.1", 443))]
 
     monkeypatch.setattr(socket, "getaddrinfo", _local)
-    with pytest.raises(FetchRefusedError, match="not a public address"):
-        fetch(check_url("https://localhost/x"))
+    with pytest.raises(fetch.FetchRefusedError, match="not a public address"):
+        fetch.fetch(fetch.check_url("https://localhost/x"))
 
 
 @pytest.mark.parametrize(
@@ -119,10 +117,10 @@ def test_the_allow_list_matches_hosts_not_prefixes(
     host: str, allowed: tuple[str, ...], expected: bool
 ) -> None:
     """A URL-prefix match would let `evil.com/docs.python.org` through."""
-    assert host_allowed(host, allowed) is expected
+    assert fetch.host_allowed(host, allowed) is expected
 
 
-def test_a_host_the_operator_never_named_is_asked_about(tmp_path: Path) -> None:
+def test_a_host_the_operator_never_named_is_asked_about(tmp_path: pathlib.Path) -> None:
     """The list is the standing approval; a host off it is the operator's call.
 
     The ask shows the parsed host plus the full path and query (a GET's exfil channel), never the
@@ -130,38 +128,41 @@ def test_a_host_the_operator_never_named_is_asked_about(tmp_path: Path) -> None:
     """
     asked: list[str] = []
 
-    def _deny(request: ApprovalRequest, /) -> ApprovalAnswer:
+    def _deny(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
         asked.append(request.prompt)
-        return ApprovalAnswer(False, "stdin")
+        return operator_prompts.ApprovalAnswer(False, "stdin")
 
-    d = ToolDispatcher(root=tmp_path, config=Config(), prompts=OperatorPrompts(approver=_deny))
-    with pytest.raises(ToolDeniedError, match="fetch not approved"):
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=Config(), prompts=operator_prompts.OperatorPrompts(approver=_deny)
+    )
+    with pytest.raises(errors.ToolDeniedError, match="fetch not approved"):
         d.dispatch("fetch", {"url": "https://example.com/x?k=v"})
     assert asked == ["Allow fetch: example.com /x?k=v"]
 
 
 def test_an_allowed_host_is_never_prompted_for(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from agent6.tools import dispatch as dispatch_mod
-    from agent6.tools.fetch import Checked, Fetched
 
-    def _loud(_request: ApprovalRequest, /) -> ApprovalAnswer:
+    def _loud(_request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
         return pytest.fail("an allowed host must not prompt")
 
-    def _fetched(checked: Checked) -> Fetched:
-        return Fetched(url=checked.url, status=200, content_type="text/plain", body="hello")
+    def _fetched(checked: fetch.Checked) -> fetch.Fetched:
+        return fetch.Fetched(url=checked.url, status=200, content_type="text/plain", body="hello")
 
     monkeypatch.setattr(dispatch_mod, "fetch", _fetched)
     cfg = Config.model_validate({"sandbox": {"fetch_hosts": ["example.com"]}})
-    d = ToolDispatcher(root=tmp_path, config=cfg, prompts=OperatorPrompts(approver=_loud))
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=cfg, prompts=operator_prompts.OperatorPrompts(approver=_loud)
+    )
     assert d.dispatch("fetch", {"url": "https://example.com/x"}).to_wire()["body"] == "hello"
 
 
-def test_the_tool_is_hidden_when_commands_already_have_the_network(tmp_path: Path) -> None:
+def test_the_tool_is_hidden_when_commands_already_have_the_network(tmp_path: pathlib.Path) -> None:
     """With `sandbox.network = "host"` the worker can run curl, so `fetch` is not offered."""
-    blocked = ToolDispatcher(root=tmp_path, config=Config())
-    allowed = ToolDispatcher(
+    blocked = dispatch.ToolDispatcher(root=tmp_path, config=Config())
+    allowed = dispatch.ToolDispatcher(
         root=tmp_path, config=Config.model_validate({"sandbox": {"network": "host"}})
     )
     assert "fetch" in blocked.available_tool_names()
@@ -170,50 +171,48 @@ def test_the_tool_is_hidden_when_commands_already_have_the_network(tmp_path: Pat
 
 def test_a_url_naming_one_host_and_dialling_another_is_refused() -> None:
     """Userinfo in a URL is refused: `@` chooses a credential and hides the real host."""
-    with pytest.raises(FetchRefusedError, match="credentials"):
-        check_url("https://docs.python.org@evil.example/exfil?k=SECRET")
+    with pytest.raises(fetch.FetchRefusedError, match="credentials"):
+        fetch.check_url("https://docs.python.org@evil.example/exfil?k=SECRET")
 
 
 def test_the_approval_prompt_shows_the_full_path_and_query() -> None:
     """The consent line carries the full path and query, a GET's exfiltration channel."""
     secret = "SECRET_EXFIL_TOKEN"
     long_path = "/" + "p" * 300
-    prompt = check_url(f"https://example.com{long_path}?leak={secret}").prompt()
+    prompt = fetch.check_url(f"https://example.com{long_path}?leak={secret}").prompt()
     assert secret in prompt, "the query string is the exfil channel; it must be shown"
     assert long_path in prompt, "a clipped path hides where the GET really goes"
 
 
 def test_allowing_every_command_does_not_allow_the_network(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An "s" answered at a run_command prompt never auto-approves later fetches."""
-    from agent6.events import EventSink
-    from agent6.sessions.ipc import COMMAND_SCOPE, set_away_mode, set_session_allow
-    from agent6.tools.operator_prompts import OperatorPrompts
-    from agent6.ui.cli._interact import build_approver
+    from agent6 import events
+    from agent6.sessions import ipc
+    from agent6.ui.cli import _interact
 
     session_dir = tmp_path / "run"
     (session_dir / "approvals").mkdir(parents=True)
-    set_session_allow(session_dir, COMMAND_SCOPE)
-    approve = OperatorPrompts(
-        approver=build_approver(session_dir),
-        journal=EventSink(session_dir / "logs.jsonl").emit,
+    ipc.set_session_allow(session_dir, ipc.COMMAND_SCOPE)
+    approve = operator_prompts.OperatorPrompts(
+        approver=_interact.build_approver(session_dir),
+        journal=events.EventSink(session_dir / "logs.jsonl").emit,
         session_dir=session_dir,
     ).approve
 
-    assert approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
+    assert approve("Allow run_command: ls", scope=ipc.COMMAND_SCOPE) is True
     # away-mode deny, so the opted-out call refuses instead of polling for a front-end.
-    set_away_mode(session_dir, "deny")
+    ipc.set_away_mode(session_dir, "deny")
     assert approve("Allow fetch: evil.example /x") is False
 
 
 def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An "a" typed at a fetch prompt grants nothing: the asking side decides what it means."""
-    from agent6.events import EventSink
-    from agent6.sessions.ipc import COMMAND_SCOPE, session_allow_set
-    from agent6.tools.operator_prompts import OperatorPrompts
+    from agent6 import events
+    from agent6.sessions import ipc
     from agent6.ui.cli import _interact as interactmod
 
     session_dir = tmp_path / "run"
@@ -226,47 +225,47 @@ def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
 
     monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: True)
     monkeypatch.setattr(interactmod, "tty_prompt", _typed)
-    approve = OperatorPrompts(
+    approve = operator_prompts.OperatorPrompts(
         approver=interactmod.build_approver(session_dir),
-        journal=EventSink(session_dir / "logs.jsonl").emit,
+        journal=events.EventSink(session_dir / "logs.jsonl").emit,
         session_dir=session_dir,
     ).approve
 
     approve("Allow fetch: evil.example /x")
-    assert not session_allow_set(session_dir, COMMAND_SCOPE)
+    assert not ipc.session_allow_set(session_dir, ipc.COMMAND_SCOPE)
     # The prompt never offered it: an "allow all" covering one call would lie about itself.
-    approve("Allow run_command: ls", scope=COMMAND_SCOPE)
+    approve("Allow run_command: ls", scope=ipc.COMMAND_SCOPE)
     assert "[y/N]" in shown[0] and "allow all" not in shown[0]
     assert "allow all" in shown[1]
 
 
-def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: Path) -> None:
+def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: pathlib.Path) -> None:
     """Every hiding rule has a matching refusal in dispatch, so exposure and enforcement agree."""
     cfg = Config.model_validate({"sandbox": {"network": "host"}})
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     assert "fetch" not in d.available_tool_names()
-    with pytest.raises(ToolError, match="not available"):
+    with pytest.raises(errors.ToolError, match="not available"):
         d.dispatch("fetch", {"url": "https://example.com/x"})
 
 
 @pytest.mark.parametrize("isolation", ["hardened", "none"])
 def test_fetch_is_hidden_wherever_a_command_reaches_the_network(
-    tmp_path: Path, isolation: IsolationLevel
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
     """The rule reads the resolved isolation: only strict has network namespaces."""
-    d = ToolDispatcher(
+    d = dispatch.ToolDispatcher(
         root=tmp_path,
         config=Config.model_validate({"sandbox": {"network": "auto"}}),
         isolation=isolation,
     )
     assert "fetch" not in d.available_tool_names()
-    with pytest.raises(ToolError, match="not available"):
+    with pytest.raises(errors.ToolError, match="not available"):
         d.dispatch("fetch", {"url": "https://example.com/x"})
 
 
 def test_a_plain_text_response_streams_back(monkeypatch: pytest.MonkeyPatch) -> None:
     _fetch_serving(monkeypatch, headers={"content-type": "text/plain"}, content=b"hello")
-    got = fetch(check_url("https://example.com/x"))
+    got = fetch.fetch(fetch.check_url("https://example.com/x"))
     assert (got.status, got.body) == (200, "hello")
 
 
@@ -281,20 +280,20 @@ def test_a_compressed_response_is_refused_not_decoded(monkeypatch: pytest.Monkey
         headers={"content-type": "text/plain", "content-encoding": "gzip"},
         content=gzip.compress(b"a" * 4096),
     )
-    with pytest.raises(FetchRefusedError, match="content-encoding"):
-        fetch(check_url("https://example.com/x"))
+    with pytest.raises(fetch.FetchRefusedError, match="content-encoding"):
+        fetch.fetch(fetch.check_url("https://example.com/x"))
 
 
 def test_an_oversized_body_is_refused_while_it_arrives(monkeypatch: pytest.MonkeyPatch) -> None:
     _fetch_serving(
-        monkeypatch, headers={"content-type": "text/plain"}, content=b"x" * (MAX_BYTES + 1)
+        monkeypatch, headers={"content-type": "text/plain"}, content=b"x" * (fetch.MAX_BYTES + 1)
     )
-    with pytest.raises(FetchRefusedError, match="larger than"):
-        fetch(check_url("https://example.com/x"))
+    with pytest.raises(fetch.FetchRefusedError, match="larger than"):
+        fetch.fetch(fetch.check_url("https://example.com/x"))
 
 
 def test_a_denied_fetch_never_touches_the_resolver(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A URL's host is not resolved before the gate approves the fetch.
 
@@ -309,37 +308,38 @@ def test_a_denied_fetch_never_touches_the_resolver(
 
     monkeypatch.setattr(socket, "getaddrinfo", _spy)
 
-    def _deny(_request: ApprovalRequest, /) -> ApprovalAnswer:
-        return ApprovalAnswer(False, "stdin")
+    def _deny(_request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
+        return operator_prompts.ApprovalAnswer(False, "stdin")
 
-    d = ToolDispatcher(root=tmp_path, config=Config(), prompts=OperatorPrompts(approver=_deny))
-    with pytest.raises(ToolDeniedError, match="fetch not approved"):
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=Config(), prompts=operator_prompts.OperatorPrompts(approver=_deny)
+    )
+    with pytest.raises(errors.ToolDeniedError, match="fetch not approved"):
         d.dispatch("fetch", {"url": "https://payload.exfil.attacker.example/x"})
     assert resolved == []
 
 
-def test_a_machine_state_gets_no_network(tmp_path: Path) -> None:
+def test_a_machine_state_gets_no_network(tmp_path: pathlib.Path) -> None:
     """`fetch` answers about its input; a page it fetched is not the operator's deliverable."""
-    from agent6.tools.schema import mode_tools
+    from agent6.tools import schema
 
-    assert "fetch" in mode_tools("run").names
-    assert "fetch" in mode_tools("ask").names
-    assert "fetch" not in mode_tools("machine").names
-    assert "fetch" not in mode_tools("agent").names
+    assert "fetch" in schema.mode_tools("run").names
+    assert "fetch" in schema.mode_tools("ask").names
+    assert "fetch" not in schema.mode_tools("machine").names
+    assert "fetch" not in schema.mode_tools("agent").names
 
 
 def test_a_port_out_of_range_is_a_fetch_refusal_and_a_note_needs_a_30x() -> None:
     """`check_url` refuses an out-of-range port, and the redirect note rides only on a redirect."""
-    from agent6.tools.fetch import FetchRefusedError, check_url
-    from agent6.tools.results import FetchResult
+    from agent6.tools import results
 
-    with pytest.raises(FetchRefusedError, match="cannot be read"):
-        check_url("https://example.com:99999/x")
-    created = FetchResult(
+    with pytest.raises(fetch.FetchRefusedError, match="cannot be read"):
+        fetch.check_url("https://example.com:99999/x")
+    created = results.FetchResult(
         url="https://x", status=201, content_type="text/plain", body="", location="/new"
     )
     assert "note" not in created.to_wire() and "location" not in created.to_wire()
-    moved = FetchResult(
+    moved = results.FetchResult(
         url="https://x", status=302, content_type="text/plain", body="", location="/new"
     )
     assert "redirects are not followed" in moved.to_wire()["note"]
@@ -347,7 +347,5 @@ def test_a_port_out_of_range_is_a_fetch_refusal_and_a_note_needs_a_30x() -> None
 
 def test_the_approval_line_names_a_port_other_than_443() -> None:
     """The consent line names the port: the operator consents to `h.example:8443`, not to a host."""
-    from agent6.tools.fetch import check_url
-
-    assert check_url("https://h.example:8443/admin").prompt() == "h.example:8443 /admin"
-    assert check_url("https://h.example/admin").prompt() == "h.example /admin"
+    assert fetch.check_url("https://h.example:8443/admin").prompt() == "h.example:8443 /admin"
+    assert fetch.check_url("https://h.example/admin").prompt() == "h.example /admin"

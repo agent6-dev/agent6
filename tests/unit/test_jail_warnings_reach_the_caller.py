@@ -8,44 +8,45 @@ too; measured in rootless podman, where the fresh /proc mount is refused.
 
 from __future__ import annotations
 
+import pathlib
 import tempfile
-from pathlib import Path
 
+from agent6 import kinds
 from agent6.config import Config
-from agent6.kinds import CommandResult
-from agent6.sandbox.jail import (
-    _with_launcher_warnings,  # pyright: ignore[reportPrivateUsage]
-    run_in_jail,
-)
-from agent6.tools.policy import jail_policy
+from agent6.sandbox import jail
+from agent6.tools import policy
 
 WARNING = "[agent6-jail] warning: fresh /proc mount failed (EPERM: Operation not permitted)"
 
 
-def _result(stderr: str = "") -> CommandResult:
-    return CommandResult(
+def _result(stderr: str = "") -> kinds.CommandResult:
+    return kinds.CommandResult(
         argv=("/bin/true",), returncode=0, stdout="", stderr=stderr, duration_s=0.0
     )
 
 
 def test_a_launcher_warning_reaches_the_caller_beside_the_child_output() -> None:
-    got = _with_launcher_warnings(_result("cannot open shared object file"), f"{WARNING}\n")
+    got = jail._with_launcher_warnings(_result("cannot open shared object file"), f"{WARNING}\n")
     assert "cannot open shared object file" in got.stderr
     assert WARNING in got.stderr, "the reason was dropped, leaving only the symptom"
 
 
 def test_a_quiet_launcher_adds_nothing() -> None:
     """A normal run grows no blank line or stray newline a caller would render."""
-    assert _with_launcher_warnings(_result("boom"), "").stderr == "boom"
-    assert _with_launcher_warnings(_result("boom"), "  \n ").stderr == "boom"
-    assert _with_launcher_warnings(_result(), "").stderr == ""
+    assert jail._with_launcher_warnings(_result("boom"), "").stderr == "boom"
+    assert jail._with_launcher_warnings(_result("boom"), "  \n ").stderr == "boom"
+    assert jail._with_launcher_warnings(_result(), "").stderr == ""
 
 
 def test_a_real_jailed_command_carries_no_launcher_noise() -> None:
     """End to end on this host, where the jail sets up cleanly, a command's stderr stays clean."""
-    result = run_in_jail(
-        jail_policy(
-            Path(tempfile.mkdtemp()), Config(), "strict", ("/bin/echo", "hi"), network="none"
+    result = jail.run_in_jail(
+        policy.jail_policy(
+            pathlib.Path(tempfile.mkdtemp()),
+            Config(),
+            "strict",
+            ("/bin/echo", "hi"),
+            network="none",
         )
     )
     assert result.returncode == 0

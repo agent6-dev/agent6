@@ -8,27 +8,21 @@ unconfined.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.app.confine import (
-    check_network_support,
-    warn_cleartext_credential_endpoints,
-    warn_sandbox_gaps,
-)
+from agent6 import paths
+from agent6.app import confine
 from agent6.config import Config, SandboxConfig
-from agent6.paths import jail_cache_home
-from agent6.sandbox import tool_paths
-from agent6.sandbox.detect import Environment, KernelInfo
-from agent6.sandbox.tool_paths import ToolMountNotes
+from agent6.sandbox import detect, tool_paths
 
 
-def _env(landlock_abi: int) -> Environment:
-    return Environment(
+def _env(landlock_abi: int) -> detect.Environment:
+    return detect.Environment(
         in_container=False,
         container_signals=(),
-        kernel=KernelInfo(raw="6.14.0", major=6, minor=14),
+        kernel=detect.KernelInfo(raw="6.14.0", major=6, minor=14),
         userns_supported=True,
         landlock_abi=landlock_abi,
         seccomp_arch_supported=True,
@@ -42,41 +36,43 @@ def _cfg(tool_network: str = "auto", isolation: str = "auto") -> Config:
     )
 
 
-def test_none_warns_unsandboxed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_none_warns_unsandboxed(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """The list of what is absent has to be complete, and the memory cap is not on it.
 
     Measured with `memory_limit_mb = 64` and isolation `none`: a 400 MB allocation raises
     MemoryError through the run's jail session (the launcher applies the rlimit with confinement
     off), and succeeds only on the one-shot path, which runs a plain subprocess.
     """
-    warn_sandbox_gaps("none", _env(4), _cfg(), root=tmp_path)
+    confine.warn_sandbox_gaps("none", _env(4), _cfg(), root=tmp_path)
     err = capsys.readouterr().err
     assert "UNSANDBOXED" in err
     assert "memory_limit_mb" in err
 
 
-def test_strict_without_landlock_warns(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_strict_without_landlock_warns(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Strict on a Landlock-less kernel (ABI 0) silently lost a documented layer.
 
     The launcher's best-effort ruleset enforces nothing and no surface said so, breaking the "no
     silent downgrade, always loudly" contract.
     """
-    warn_sandbox_gaps("strict", _env(0), _cfg(), root=tmp_path)
+    confine.warn_sandbox_gaps("strict", _env(0), _cfg(), root=tmp_path)
     err = capsys.readouterr().err
     assert "WARNING" in err
     assert "Landlock" in err
 
 
 def test_strict_with_landlock_is_silent(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
-    warn_sandbox_gaps("strict", _env(2), _cfg(), root=tmp_path)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
+    confine.warn_sandbox_gaps("strict", _env(2), _cfg(), root=tmp_path)
     assert capsys.readouterr().err == ""
 
 
 def test_unreachable_tool_is_named_once(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An unreachable tool is named once.
 
@@ -86,16 +82,16 @@ def test_unreachable_tool_is_named_once(
     """
     monkeypatch.setattr(
         "agent6.app.confine.tool_mount_notes",
-        lambda: ToolMountNotes(unreachable=("/home/op/.local/bin/x -> /home/op/x.sh",)),
+        lambda: tool_paths.ToolMountNotes(unreachable=("/home/op/.local/bin/x -> /home/op/x.sh",)),
     )
-    warn_sandbox_gaps("strict", _env(2), _cfg(), root=tmp_path)
+    confine.warn_sandbox_gaps("strict", _env(2), _cfg(), root=tmp_path)
     err = capsys.readouterr().err
     assert "/home/op/.local/bin/x -> /home/op/x.sh" in err
     assert "never" in err and "mounted" in err
 
 
 def test_a_tool_dragging_a_home_dir_into_the_jail_is_not_a_per_run_warning(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A tool dragging a home dir into the jail is not a per-run warning.
 
@@ -107,27 +103,29 @@ def test_a_tool_dragging_a_home_dir_into_the_jail_is_not_a_per_run_warning(
     """
     monkeypatch.setattr(
         "agent6.app.confine.tool_mount_notes",
-        lambda: ToolMountNotes(exposes_home_dir=("/home/op/.local/bin/x -> /home/op/.ssh/helper",)),
+        lambda: tool_paths.ToolMountNotes(
+            exposes_home_dir=("/home/op/.local/bin/x -> /home/op/.ssh/helper",)
+        ),
     )
-    warn_sandbox_gaps("strict", _env(2), _cfg(), root=tmp_path)
+    confine.warn_sandbox_gaps("strict", _env(2), _cfg(), root=tmp_path)
     assert capsys.readouterr().err == ""
 
 
 def test_hardened_auto_warns_tool_network_degrade(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Hardened with network='auto' says it degrades to the host network.
 
     The secure default cannot be offline on hardened (no netns); the degrade is never silent.
     """
-    warn_sandbox_gaps("hardened", _env(4), _cfg("auto"), root=tmp_path)
+    confine.warn_sandbox_gaps("hardened", _env(4), _cfg("auto"), root=tmp_path)
     err = capsys.readouterr().err
     assert "WARNING" in err and "network" in err and "network namespace" in err
 
 
 @pytest.mark.parametrize("abi", [1, 2])
 def test_hardened_below_abi3_warns_truncate_unconfined(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], abi: int
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], abi: int
 ) -> None:
     """Hardened below Landlock ABI 3 warns that truncate is unconfined.
 
@@ -135,35 +133,35 @@ def test_hardened_below_abi3_warns_truncate_unconfined(
     grants; `auto` still resolves to hardened there, so the over-promise is said once per run,
     naming ABI 3 and Linux 6.2.
     """
-    warn_sandbox_gaps("hardened", _env(abi), _cfg("host"), root=tmp_path)
+    confine.warn_sandbox_gaps("hardened", _env(abi), _cfg("host"), root=tmp_path)
     err = capsys.readouterr().err
     assert "WARNING" in err and "truncat" in err
     assert "ABI 3" in err and "6.2" in err
 
 
 def test_hardened_abi3_plus_is_silent_on_truncate(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """From ABI 3 up Landlock confines truncation, so no truncate warning."""
-    warn_sandbox_gaps("hardened", _env(3), _cfg("host"), root=tmp_path)
+    confine.warn_sandbox_gaps("hardened", _env(3), _cfg("host"), root=tmp_path)
     assert "truncat" not in capsys.readouterr().err
 
 
 def test_hardened_allow_says_nothing_about_the_network(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # An operator who set network='allow' asked for the tool to have the
     # network, so no degrade warning for it. `.git` is a separate degrade and
     # is expected here: hardened cannot protect it at all.
-    warn_sandbox_gaps("hardened", _env(4), _cfg("host"), root=tmp_path)
+    confine.warn_sandbox_gaps("hardened", _env(4), _cfg("host"), root=tmp_path)
     err = capsys.readouterr().err
     assert "network" not in err.lower().split("cannot protect .git")[-1]
     assert "cannot protect .git" in err
 
 
 def test_hardened_warning_names_shared_tmp_and_persistent_home(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The hardened warnings name the shared /tmp and the persistent HOME.
@@ -174,32 +172,34 @@ def test_hardened_warning_names_shared_tmp_and_persistent_home(
     `protect_git = false` removes.
     """
     for cfg in (_cfg(), Config(sandbox=SandboxConfig(protect_git=False))):
-        warn_sandbox_gaps("hardened", _env(4), cfg, root=tmp_path)
+        confine.warn_sandbox_gaps("hardened", _env(4), cfg, root=tmp_path)
         err = capsys.readouterr().err
-        assert str(jail_cache_home()) in err
+        assert str(paths.jail_cache_home()) in err
         assert "/tmp/agent6-home" not in err
         assert "persists across runs" in err and "executable" in err
         assert ("cannot protect .git" in err) == cfg.sandbox.protect_git
 
 
 def test_strict_cache_home_warns_naming_the_cost(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`home = "cache"` under strict is an explicit widening.
 
     It runs, with a loud warning naming the persistence and the executable grant. The default strict
     HOME warns nothing.
     """
-    warn_sandbox_gaps("strict", _env(4), Config(sandbox=SandboxConfig(home="cache")), root=tmp_path)
+    confine.warn_sandbox_gaps(
+        "strict", _env(4), Config(sandbox=SandboxConfig(home="cache")), root=tmp_path
+    )
     err = capsys.readouterr().err
-    assert "sandbox.home = 'cache'" in err and str(jail_cache_home()) in err
+    assert "sandbox.home = 'cache'" in err and str(paths.jail_cache_home()) in err
     assert "persists across runs" in err and "executable" in err
-    warn_sandbox_gaps("strict", _env(4), _cfg(), root=tmp_path)
-    assert str(jail_cache_home()) not in capsys.readouterr().err
+    confine.warn_sandbox_gaps("strict", _env(4), _cfg(), root=tmp_path)
+    assert str(paths.jail_cache_home()) not in capsys.readouterr().err
 
 
 def test_a_cleartext_credential_endpoint_warns_at_run_entry(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A cleartext credential endpoint warns once at run entry and never refuses.
@@ -218,30 +218,30 @@ def test_a_cleartext_credential_endpoint_warns_at_run_entry(
             }
         }
     )
-    warn_cleartext_credential_endpoints(cfg)
+    confine.warn_cleartext_credential_endpoints(cfg)
     err = capsys.readouterr().err
     assert "WARNING" in err and "[providers.corp]" in err and "plaintext http" in err
-    warn_cleartext_credential_endpoints(Config())
+    confine.warn_cleartext_credential_endpoints(Config())
     assert capsys.readouterr().err == ""
 
 
-def test_explicit_block_refuses_on_hardened(tmp_path: Path) -> None:
+def test_explicit_block_refuses_on_hardened(tmp_path: pathlib.Path) -> None:
     """network='session' is an ENFORCE setting.
 
     It needs a netns only strict provides, so on hardened we refuse (name what's unsupported + the
     fix) rather than run silently under-confined. 'auto' degrades instead.
     """
-    err = check_network_support(_cfg("session"), "hardened")
+    err = confine.check_network_support(_cfg("session"), "hardened")
     assert err is not None
     assert "sandbox.network = 'session'" in err and "auto" in err and "strict" in err
     # auto is NOT refused (it degrades with a warning) -> None.
-    assert check_network_support(_cfg("auto"), "hardened") is None
+    assert confine.check_network_support(_cfg("auto"), "hardened") is None
     # On strict, block is enforceable -> no refusal.
-    assert check_network_support(_cfg("session"), "strict") is None
+    assert confine.check_network_support(_cfg("session"), "strict") is None
 
 
 def test_scanner_separates_unreachable_from_home_exposing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The scanner separates an unreachable symlink from a home-exposing one.
 
@@ -259,7 +259,7 @@ def test_scanner_separates_unreachable_from_home_exposing(
     (binf / "x").symlink_to(home / "x.sh")
     (binf / "y").symlink_to(home / "tools" / "y.sh")
     (binf / "z").symlink_to(binf / "z.sh")
-    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
+    monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda _cls: home))
 
     notes = tool_paths.tool_mount_notes()
     assert notes.unreachable == (f"{binf}/x -> {home}/x.sh",)
@@ -267,7 +267,7 @@ def test_scanner_separates_unreachable_from_home_exposing(
 
 
 def test_hardened_warns_loudly_when_a_grant_exposes_the_private_dirs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Granting a region containing the config dir is a choice the operator may mean.
 
@@ -275,29 +275,29 @@ def test_hardened_warns_loudly_when_a_grant_exposes_the_private_dirs(
     be paternalism. It warns instead and names what becomes readable. Strict masks the same grant
     and says nothing.
     """
-    from agent6.app.confine import check_hide_paths_support
-
     home = tmp_path / "home"
     cfg_dir = home / ".config" / "agent6"
     (cfg_dir / "agent6").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_dir))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
     cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(home),)))
 
-    warn_sandbox_gaps("hardened", _env(4), cfg, root=tmp_path)
+    confine.warn_sandbox_gaps("hardened", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err
     assert "WARNING" in err and "can read" in err
     assert str(cfg_dir) in err and str(home) in err
-    assert check_hide_paths_support(cfg, "hardened", tmp_path) is None  # warned, not refused
+    assert (
+        confine.check_hide_paths_support(cfg, "hardened", tmp_path) is None
+    )  # warned, not refused
 
-    warn_sandbox_gaps("strict", _env(4), cfg, root=tmp_path)
+    confine.warn_sandbox_gaps("strict", _env(4), cfg, root=tmp_path)
     assert str(cfg_dir) not in capsys.readouterr().err
 
 
 def test_the_workspace_itself_counts_as_a_granted_region(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Verified live before this existed.
 
@@ -309,22 +309,20 @@ def test_the_workspace_itself_counts_as_a_granted_region(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_dir))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
 
-    warn_sandbox_gaps("hardened", _env(4), Config(), root=tmp_path)
+    confine.warn_sandbox_gaps("hardened", _env(4), Config(), root=tmp_path)
     assert str(cfg_dir) in capsys.readouterr().err
 
 
 def test_hardened_refuses_an_explicit_hide_entry_it_cannot_mask(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Hardened refuses an explicit hide_paths entry it cannot mask.
 
     An operator who wrote hide_paths down asked explicitly: a default degrades with a warning, an
     explicit value refuses rather than being silently ineffective.
     """
-    from agent6.app.confine import check_hide_paths_support
-
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     ws = tmp_path / "ws"
@@ -332,16 +330,14 @@ def test_hardened_refuses_an_explicit_hide_entry_it_cannot_mask(
     monkeypatch.chdir(ws)
     hidden = ws / "cred.txt"
     cfg = Config(sandbox=SandboxConfig(hide_paths=(str(hidden),)))
-    err = check_hide_paths_support(cfg, "hardened", tmp_path)
+    err = confine.check_hide_paths_support(cfg, "hardened", tmp_path)
     assert err is not None and str(hidden) in err
-    assert check_hide_paths_support(cfg, "strict", tmp_path) is None
+    assert confine.check_hide_paths_support(cfg, "strict", tmp_path) is None
 
 
 def test_a_plain_hardened_run_neither_warns_nor_refuses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.app.confine import check_hide_paths_support
-
     # Private homes OUTSIDE every hardened grant region (/tmp is granted RW,
     # so a tmp-based home is genuinely exposed there -- the twin below pins
     # that as a true positive). The normal ~/.local layout is this case. The
@@ -352,19 +348,19 @@ def test_a_plain_hardened_run_neither_warns_nor_refuses(
     ws = tmp_path / "ws"
     ws.mkdir()
     monkeypatch.chdir(ws)
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
     cfg = Config(sandbox=SandboxConfig(network="host", protect_git=False))
-    warn_sandbox_gaps("hardened", _env(4), cfg, root=tmp_path)
+    confine.warn_sandbox_gaps("hardened", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err
     # hardened's persistent HOME is the one notice every such run carries;
     # nothing here is an exposure.
-    assert err.count("WARNING") == 1 and str(jail_cache_home()) in err, err
+    assert err.count("WARNING") == 1 and str(paths.jail_cache_home()) in err, err
     assert "can read" not in err
-    assert check_hide_paths_support(cfg, "hardened", tmp_path) is None
+    assert confine.check_hide_paths_support(cfg, "hardened", tmp_path) is None
 
 
 def test_hardened_warns_when_private_state_sits_in_a_granted_region(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Hardened warns when private state sits in a granted region.
 
@@ -376,16 +372,16 @@ def test_hardened_warns_when_private_state_sits_in_a_granted_region(
     ws = tmp_path / "ws"
     ws.mkdir()
     monkeypatch.chdir(ws)
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
     cfg = Config(sandbox=SandboxConfig(network="host", protect_git=False))
-    warn_sandbox_gaps("hardened", _env(4), cfg, root=tmp_path)
+    confine.warn_sandbox_gaps("hardened", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err
     assert str(tmp_path).startswith("/tmp"), "the fixture premise: pytest tmp lives under /tmp"
     assert "jailed commands can read" in err and "/tmp" in err
 
 
 def test_root_on_hardened_names_what_it_costs(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Root on hardened warns and names what it costs.
 
@@ -395,9 +391,9 @@ def test_root_on_hardened_names_what_it_costs(
     the documented read-only system set and root stops file permissions narrowing it. The root
     banner names running as root; it does not name this.
     """
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
     monkeypatch.setattr("agent6.app.confine.is_root", lambda: True)
-    warn_sandbox_gaps(
+    confine.warn_sandbox_gaps(
         "hardened", _env(4), Config(sandbox=SandboxConfig(protect_git=False)), root=tmp_path
     )
     err = capsys.readouterr().err
@@ -406,82 +402,82 @@ def test_root_on_hardened_names_what_it_costs(
 
 
 def test_root_on_strict_says_nothing_about_it(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Root on strict says nothing about it.
 
     Strict pivots into a minimal rootfs: verified as real uid 0, its /etc holds a single entry and
     none of those files exist. A warning there would name a cost the operator is not paying.
     """
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
     monkeypatch.setattr("agent6.app.confine.is_root", lambda: True)
-    warn_sandbox_gaps("strict", _env(4), Config(), root=tmp_path)
+    confine.warn_sandbox_gaps("strict", _env(4), Config(), root=tmp_path)
     assert capsys.readouterr().err == ""
 
 
 def test_a_normal_user_on_hardened_is_not_told_about_root(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
     monkeypatch.setattr("agent6.app.confine.is_root", lambda: False)
-    warn_sandbox_gaps(
+    confine.warn_sandbox_gaps(
         "hardened", _env(4), Config(sandbox=SandboxConfig(protect_git=False)), root=tmp_path
     )
     assert "running as root" not in capsys.readouterr().err
 
 
 def test_auto_degrade_warns_with_the_reason(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The degrade ITSELF is loud, not only its consequences.
 
     Auto landing on hardened printed the network/protect_git consequences but never why strict was
     skipped. One owner (detect.degrade_reason) feeds this line, check sandbox, and check config.
     """
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
 
     def _why(_env: object) -> str:
         return "userns blocked (test)"
 
     monkeypatch.setattr("agent6.app.confine.degrade_reason", _why)
-    warn_sandbox_gaps("hardened", _env(4), _cfg(), root=tmp_path)
+    confine.warn_sandbox_gaps("hardened", _env(4), _cfg(), root=tmp_path)
     err = capsys.readouterr().err
     assert "'auto' selected 'hardened', not 'strict': userns blocked (test)" in err
 
 
 def test_explicit_hardened_has_no_degrade_line(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An operator who WROTE hardened chose it; nothing degraded."""
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
 
     def _why(_env: object) -> str:
         return "userns blocked (test)"
 
     monkeypatch.setattr("agent6.app.confine.degrade_reason", _why)
-    warn_sandbox_gaps("hardened", _env(4), _cfg(isolation="hardened"), root=tmp_path)
+    confine.warn_sandbox_gaps("hardened", _env(4), _cfg(isolation="hardened"), root=tmp_path)
     err = capsys.readouterr().err
     assert "not 'strict'" not in err
 
 
 def test_unsandboxed_origin_says_auto_or_the_operator(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The UNSANDBOXED banner attributes `isolation = 'none'` to `auto` or to the operator.
 
     `auto` resolves there on a host with no confinement mechanism; that is not the operator's
     choice.
     """
-    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", tool_paths.ToolMountNotes)
 
     def _why(_env: object) -> str:
         return "nothing here (test)"
 
     monkeypatch.setattr("agent6.app.confine.degrade_reason", _why)
-    warn_sandbox_gaps("none", _env(0), _cfg(), root=tmp_path)
+    confine.warn_sandbox_gaps("none", _env(0), _cfg(), root=tmp_path)
     err = capsys.readouterr().err
     assert "'auto' found no confinement mechanism" in err
     assert "sandbox.isolation = 'none'" not in err
-    warn_sandbox_gaps("none", _env(0), _cfg(isolation="none"), root=tmp_path)
+    confine.warn_sandbox_gaps("none", _env(0), _cfg(isolation="none"), root=tmp_path)
     err = capsys.readouterr().err
     assert "sandbox.isolation = 'none'" in err

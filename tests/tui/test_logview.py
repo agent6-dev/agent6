@@ -6,35 +6,35 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
+import pathlib
 
-from textual.app import App
-from textual.widgets import Static
+from textual import app as textual_app
+from textual import widgets
 
-from agent6.ui.tui.logview import LogScreen
-from agent6.viewmodel.log_line import format_log_line
+from agent6.ui.tui import logview
+from agent6.viewmodel import log_line
 
 
-class _Host(App[None]):
-    def __init__(self, logs_path: Path) -> None:
+class _Host(textual_app.App[None]):
+    def __init__(self, logs_path: pathlib.Path) -> None:
         super().__init__()
         self._logs = logs_path
 
     def on_mount(self) -> None:
-        self.push_screen(LogScreen(self._logs, title=lambda: "logs · test"))
+        self.push_screen(logview.LogScreen(self._logs, title=lambda: "logs · test"))
 
 
-def _write_log(path: Path, events: list[dict[str, object]]) -> None:
+def _write_log(path: pathlib.Path, events: list[dict[str, object]]) -> None:
     path.write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
 
 
-def _lines(screen: LogScreen) -> list[str]:
+def _lines(screen: logview.LogScreen) -> list[str]:
     # The body is a Static (selectable, unlike RichLog); its text is the renderable.
-    body = screen.query_one("#logview-body", Static)
+    body = screen.query_one("#logview-body", widgets.Static)
     return [ln for ln in str(body.content).splitlines() if ln.strip()]
 
 
-def test_logscreen_renders_structural_events(tmp_path: Path) -> None:
+def test_logscreen_renders_structural_events(tmp_path: pathlib.Path) -> None:
     logs = tmp_path / "logs.jsonl"
     events: list[dict[str, object]] = [
         {
@@ -54,13 +54,13 @@ def test_logscreen_renders_structural_events(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, LogScreen)
+            assert isinstance(screen, logview.LogScreen)
             assert len(_lines(screen)) == len(events)  # one line per structural event
 
     asyncio.run(scenario())
 
 
-def test_logscreen_skips_streaming_deltas(tmp_path: Path) -> None:
+def test_logscreen_skips_streaming_deltas(tmp_path: pathlib.Path) -> None:
     # Thousands of role.thinking_delta events are live-stream noise, not audit-log lines.
     logs = tmp_path / "logs.jsonl"
     _write_log(
@@ -85,7 +85,7 @@ def test_logscreen_skips_streaming_deltas(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_logscreen_skips_the_loop_mirrors_like_the_dashboard_tail(tmp_path: Path) -> None:
+def test_logscreen_skips_the_loop_mirrors_like_the_dashboard_tail(tmp_path: pathlib.Path) -> None:
     """Events that format to an empty detail are dropped from the full log view as from the tail."""
     logs = tmp_path / "logs.jsonl"
     _write_log(
@@ -109,7 +109,7 @@ def test_logscreen_skips_the_loop_mirrors_like_the_dashboard_tail(tmp_path: Path
     asyncio.run(scenario())
 
 
-def test_logscreen_reload_picks_up_appended_lines(tmp_path: Path) -> None:
+def test_logscreen_reload_picks_up_appended_lines(tmp_path: pathlib.Path) -> None:
     logs = tmp_path / "logs.jsonl"
     _write_log(logs, [{"type": "session.start", "mode": "run", "user_task": "x", "ts": "t"}])
 
@@ -118,7 +118,7 @@ def test_logscreen_reload_picks_up_appended_lines(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, LogScreen)
+            assert isinstance(screen, logview.LogScreen)
             assert len(_lines(screen)) == 1
             # A live run keeps appending; reload pulls the new lines in.
             with logs.open("a", encoding="utf-8") as fh:
@@ -130,19 +130,19 @@ def test_logscreen_reload_picks_up_appended_lines(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_logscreen_empty_log(tmp_path: Path) -> None:
+def test_logscreen_empty_log(tmp_path: pathlib.Path) -> None:
     logs = tmp_path / "logs.jsonl"  # does not exist
 
     async def scenario() -> None:
         app = _Host(logs)
         async with app.run_test() as pilot:
             await pilot.pause()
-            body = app.screen.query_one("#logview-body", Static)
+            body = app.screen.query_one("#logview-body", widgets.Static)
             assert "no events yet" in str(body.content)
 
     asyncio.run(scenario())
 
 
 def test_format_log_line_is_public_and_compact() -> None:
-    line = format_log_line({"type": "tool.call", "name": "grep", "args": {}, "ts": "t"})
+    line = log_line.format_log_line({"type": "tool.call", "name": "grep", "args": {}, "ts": "t"})
     assert "tool.call" in line and "grep" in line

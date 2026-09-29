@@ -5,17 +5,17 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
+from agent6 import kinds
 from agent6.config import Config
-from agent6.kinds import ModelRoute
 from agent6.models import validate
 
 
 @pytest.fixture
-def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     return tmp_path / "cache" / "agent6"
 
@@ -43,14 +43,14 @@ def _fresh(monkeypatch: pytest.MonkeyPatch, result: list[str] | None) -> None:
     monkeypatch.setattr(validate, "_fresh_listing", _stub)
 
 
-def _write_cache(cache_home: Path, provider: str, models: list[str]) -> None:
+def _write_cache(cache_home: pathlib.Path, provider: str, models: list[str]) -> None:
     p = cache_home / "models" / f"{provider}.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps({"models": models}), encoding="utf-8")
 
 
-def _r(model: str, provider: str = "o") -> ModelRoute:
-    return ModelRoute(provider, model)
+def _r(model: str, provider: str = "o") -> kinds.ModelRoute:
+    return kinds.ModelRoute(provider, model)
 
 
 def _cfg(model: str = "kimi-k2") -> Config:
@@ -62,13 +62,13 @@ def _cfg(model: str = "kimi-k2") -> Config:
     )
 
 
-def test_known_role_model_ok_without_cache(cache_home: Path) -> None:
+def test_known_role_model_ok_without_cache(cache_home: pathlib.Path) -> None:
     v = validate.validate_spec_models([_r("kimi-k2")], _cfg("kimi-k2"))
     assert v.unknown == ()
     assert not v.refused and not v.warned
 
 
-def test_known_cached_model_ok(cache_home: Path) -> None:
+def test_known_cached_model_ok(cache_home: pathlib.Path) -> None:
     _write_cache(cache_home, "o", ["gpt-x", "gpt-y"])
     v = validate.validate_spec_models([_r("gpt-x")], _cfg())
     assert v.unknown == ()
@@ -76,7 +76,7 @@ def test_known_cached_model_ok(cache_home: Path) -> None:
 
 
 def test_unknown_with_cache_refuses_with_suggestions(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_cache(cache_home, "o", ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"])
     _fresh(monkeypatch, ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"])
@@ -92,7 +92,7 @@ def test_unknown_with_cache_refuses_with_suggestions(
 
 
 def test_bare_nickname_typo_suggests_closest_bare_model(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The natural typo shape is a short nickname (`glm`, `kimi`), not a full
     # provider-prefixed id. Matching only the full ids scored these below difflib's
@@ -112,7 +112,7 @@ def test_bare_nickname_typo_suggests_closest_bare_model(
 
 
 def test_bare_nickname_match_stays_on_the_routes_provider(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A bare-nickname hit maps only to ids on the route's own provider: a
     # sibling provider's model would run elsewhere, so it is never suggested.
@@ -124,7 +124,7 @@ def test_bare_nickname_match_stays_on_the_routes_provider(
     assert all(m.startswith("w/w/") for m in v.suggestions["w/glm"])
 
 
-def test_unknown_no_cache_warns_and_proceeds(cache_home: Path) -> None:
+def test_unknown_no_cache_warns_and_proceeds(cache_home: pathlib.Path) -> None:
     # A role model exists but no on-disk cache: cannot validate, so warn.
     v = validate.validate_spec_models([_r("totally-made-up")], _cfg())
     assert v.warned and not v.refused
@@ -132,14 +132,16 @@ def test_unknown_no_cache_warns_and_proceeds(cache_home: Path) -> None:
     assert "o/totally-made-up" in validate.warning_message(v)
 
 
-def test_none_lanes_skipped(cache_home: Path) -> None:
+def test_none_lanes_skipped(cache_home: pathlib.Path) -> None:
     _write_cache(cache_home, "o", ["gpt-x"])
     v = validate.validate_spec_models([None, None], _cfg())
     assert v.unknown == ()
     assert not v.refused and not v.warned
 
 
-def test_unknown_deduped_in_spec_order(cache_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unknown_deduped_in_spec_order(
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _write_cache(cache_home, "o", ["gpt-x"])
     _fresh(monkeypatch, ["gpt-x"])
     v = validate.validate_spec_models([_r("bad-b"), _r("bad-a"), _r("bad-b")], _cfg())
@@ -147,7 +149,7 @@ def test_unknown_deduped_in_spec_order(cache_home: Path, monkeypatch: pytest.Mon
 
 
 def test_refusal_message_non_directive_omits_backtick_hint(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_cache(cache_home, "o", ["gpt-x"])
     _fresh(monkeypatch, ["gpt-x"])
@@ -155,7 +157,9 @@ def test_refusal_message_non_directive_omits_backtick_hint(
     assert "backtick" not in validate.refusal_message(v, directive=False)
 
 
-def test_known_models_is_the_roles_models_plus_the_providers_cache(cache_home: Path) -> None:
+def test_known_models_is_the_roles_models_plus_the_providers_cache(
+    cache_home: pathlib.Path,
+) -> None:
     _write_cache(cache_home, "o", ["gpt-x"])
     known = validate._known_models(_cfg("kimi-k2"), "o")  # pyright: ignore[reportPrivateUsage]
     assert known == {"kimi-k2", "gpt-x"}
@@ -177,7 +181,7 @@ def _two_provider_cfg() -> Config:
 
 
 def test_a_route_on_a_sibling_provider_checks_that_providers_listing(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_cache(cache_home, "w", ["w/model-a", "w/model-b"])
     _write_cache(cache_home, "s", ["s/only-model"])
@@ -190,7 +194,7 @@ def test_a_route_on_a_sibling_provider_checks_that_providers_listing(
     assert all(m.startswith("s/s/") for m in v.suggestions["s/s/typo"])
 
 
-def test_a_route_on_an_uncached_provider_warns_and_proceeds(cache_home: Path) -> None:
+def test_a_route_on_an_uncached_provider_warns_and_proceeds(cache_home: pathlib.Path) -> None:
     # can_validate keys on the route's own provider's cache: a sibling's cache
     # proves nothing about what this provider serves.
     _write_cache(cache_home, "s", ["s/only-model"])
@@ -200,7 +204,7 @@ def test_a_route_on_an_uncached_provider_warns_and_proceeds(cache_home: Path) ->
 
 
 def test_a_confirmed_miss_refuses_even_beside_an_unvalidated_route(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_cache(cache_home, "s", ["s/only-model"])
     _fresh(monkeypatch, ["s/only-model"])
@@ -212,14 +216,14 @@ def test_a_confirmed_miss_refuses_even_beside_an_unvalidated_route(
 # --- configured-model validation (a typo'd models.<role>.model, U3) -----------
 
 
-def test_configured_model_ok_when_in_cache(cache_home: Path) -> None:
+def test_configured_model_ok_when_in_cache(cache_home: pathlib.Path) -> None:
     _write_cache(cache_home, "o", ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"])
     v = validate.validate_configured_model(_cfg("moonshotai/kimi-k2.6"), "worker")
     assert v.unknown == () and not v.refused and v.can_validate
 
 
 def test_configured_model_typo_refuses_with_suggestion(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_cache(cache_home, "o", ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"])
     _fresh(monkeypatch, ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"])
@@ -236,7 +240,7 @@ def test_configured_model_typo_refuses_with_suggestion(
 
 
 def test_refusal_names_the_entry_the_user_wrote_on_worker_fallback(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `plan` validates the planner role, but with no [models.planner] the model
     # comes from the worker entry; the refusal must point at models.worker.model
@@ -252,21 +256,21 @@ def test_refusal_names_the_entry_the_user_wrote_on_worker_fallback(
     assert "models.planner" not in msg
 
 
-def test_configured_model_no_cache_never_refuses(cache_home: Path) -> None:
+def test_configured_model_no_cache_never_refuses(cache_home: pathlib.Path) -> None:
     # No cached listing (fresh machine, or a provider that lists nothing like
     # Anthropic): must proceed, never block a configured model.
     v = validate.validate_configured_model(_cfg("anything-goes"), "worker")
     assert not v.refused and not v.can_validate
 
 
-def test_known_models_excludes_sibling_provider_catalog(cache_home: Path) -> None:
+def test_known_models_excludes_sibling_provider_catalog(cache_home: pathlib.Path) -> None:
     _write_cache(cache_home, "w", ["w/model-a"])
     _write_cache(cache_home, "s", ["s/only-model"])
     known = validate._known_models(_two_provider_cfg(), "w")  # pyright: ignore[reportPrivateUsage]
     assert known == {"w/base-model", "w/model-a"}
 
 
-def test_a_route_needs_no_worker_role(cache_home: Path) -> None:
+def test_a_route_needs_no_worker_role(cache_home: pathlib.Path) -> None:
     cfg = Config.model_validate(
         {"providers": {"w": {"api_format": "openai", "base_url": "https://w.example/v1"}}}
     )
@@ -278,7 +282,7 @@ def test_a_route_needs_no_worker_role(cache_home: Path) -> None:
 # --- fresh-evidence refusals: a hard stop needs a listing fetched NOW ---------
 
 
-def test_variant_of_listed_model_passes_without_fetch(cache_home: Path) -> None:
+def test_variant_of_listed_model_passes_without_fetch(cache_home: pathlib.Path) -> None:
     # A dated/tagged variant of a listed id is provider-plausible (the registry
     # normalizes the same way); it must never hard-refuse -- and it matches from
     # the cache alone (the autouse guard proves no fetch happened).
@@ -292,7 +296,7 @@ def test_variant_of_listed_model_passes_without_fetch(cache_home: Path) -> None:
 
 
 def test_stale_cache_heals_via_live_listing(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # THE false-refusal fix: a just-pulled/just-published model missing from the
     # snapshot must not refuse -- the live listing has it, so the run proceeds.
@@ -305,7 +309,7 @@ def test_stale_cache_heals_via_live_listing(
 
 
 def test_failed_live_fetch_downgrades_refusal_to_warning(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Offline / provider down: the snapshot could not be freshened, so a miss
     # must warn and proceed, never refuse on stale evidence.
@@ -319,7 +323,7 @@ def test_failed_live_fetch_downgrades_refusal_to_warning(
 
 
 def test_refusal_suggestions_come_from_the_fresh_listing(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The did-you-mean must reflect the listing the refusal rests on, not the
     # stale snapshot it replaced.

@@ -4,10 +4,10 @@
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
-from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
@@ -36,13 +36,13 @@ def test_head_without_base_is_rejected_before_config_load(
 
 
 def test_an_empty_range_is_reported_before_provider_preflight(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A valid empty range is a successful no-work review before any provider preflight.
 
     The note names the range and paths on stderr, so a script reading stdout sees no verdict.
     """
-    from types import SimpleNamespace
+    import types
 
     from agent6.config import Config
     from agent6.ui.cli import review_cmds
@@ -69,17 +69,17 @@ def test_an_empty_range_is_reported_before_provider_preflight(
     monkeypatch.setattr(
         review_cmds,
         "load_effective",
-        MagicMock(return_value=SimpleNamespace(config=Config())),
+        mock.MagicMock(return_value=types.SimpleNamespace(config=Config())),
     )
     monkeypatch.setattr(
         review_cmds,
         "check_provider_keys",
-        MagicMock(side_effect=AssertionError("provider keys checked")),
+        mock.MagicMock(side_effect=AssertionError("provider keys checked")),
     )
     monkeypatch.setattr(
         review_cmds,
         "build_review_seats",
-        MagicMock(side_effect=AssertionError("seat built")),
+        mock.MagicMock(side_effect=AssertionError("seat built")),
     )
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
@@ -97,7 +97,7 @@ def test_an_empty_range_is_reported_before_provider_preflight(
 
 
 def test_personas_without_reviewers_is_said_to_be_ignored(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`--personas` without `--reviewers N` prints a note that it is ignored.
 
@@ -120,10 +120,10 @@ def test_personas_without_reviewers_is_said_to_be_ignored(
 
 
 def test_personas_under_configured_seats_is_said_to_be_ignored(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`--personas` under a configured `[review].seats` roster is said to be ignored."""
-    from types import SimpleNamespace
+    import types
 
     from agent6.config import Config
 
@@ -131,8 +131,8 @@ def test_personas_under_configured_seats_is_said_to_be_ignored(
     monkeypatch.chdir(tmp_path)
     cfg = Config.model_validate({"review": {"seats": ["security@openrouter/some-model"]}})
 
-    def loaded(*_a: object, **_k: object) -> SimpleNamespace:
-        return SimpleNamespace(config=cfg)
+    def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
+        return types.SimpleNamespace(config=cfg)
 
     monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
     rc = cli_main(["review", "--personas", "tests", "--reviewers", "2"])
@@ -151,7 +151,7 @@ def _panel_config(*, with_reviewer: bool) -> Any:
     return Config.model_validate(data)
 
 
-def _two_commits(repo: Path) -> tuple[str, str]:
+def _two_commits(repo: pathlib.Path) -> tuple[str, str]:
     """Commit A defines `f(x)` with a caller `f(1)`.
 
     Commit B widens the signature and updates the caller.
@@ -203,13 +203,13 @@ class _FixedReviewProvider:
 
 
 def test_an_arbitrary_range_uses_the_selected_heads_log(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The reviewer's recent-history context is the reviewed head's log.
 
     The checkout's HEAD is not consulted.
     """
-    from types import SimpleNamespace
+    import types
 
     from agent6.ui.cli import review_cmds
 
@@ -223,10 +223,12 @@ def test_an_arbitrary_range_uses_the_selected_heads_log(
     monkeypatch.setattr(
         review_cmds,
         "load_effective",
-        MagicMock(return_value=SimpleNamespace(config=_panel_config(with_reviewer=True))),
+        mock.MagicMock(
+            return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=True))
+        ),
     )
-    monkeypatch.setattr(review_cmds, "check_provider_keys", MagicMock(return_value=None))
-    monkeypatch.setattr(review_cmds, "build_role_provider", MagicMock(return_value=provider))
+    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(review_cmds, "build_role_provider", mock.MagicMock(return_value=provider))
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         None, base=base, head=head, paths=()
@@ -240,10 +242,10 @@ def test_an_arbitrary_range_uses_the_selected_heads_log(
 
 
 def test_an_unknown_pinned_provider_is_named_without_a_reviewer_route(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Every seat's pinned provider is checked before any seat is built, reviewer route or not."""
-    from types import SimpleNamespace
+    import types
 
     from agent6.ui.cli import review_cmds
 
@@ -253,10 +255,12 @@ def test_an_unknown_pinned_provider_is_named_without_a_reviewer_route(
     monkeypatch.setattr(
         review_cmds,
         "load_effective",
-        MagicMock(return_value=SimpleNamespace(config=_panel_config(with_reviewer=False))),
+        mock.MagicMock(
+            return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=False))
+        ),
     )
     monkeypatch.setattr(
-        review_cmds, "check_provider_keys", MagicMock(return_value="unrelated missing key")
+        review_cmds, "check_provider_keys", mock.MagicMock(return_value="unrelated missing key")
     )
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
@@ -275,10 +279,10 @@ def test_an_unknown_pinned_provider_is_named_without_a_reviewer_route(
 
 
 def test_a_fully_pinned_panel_needs_no_reviewer_route(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A panel whose every seat pins a model needs no [models.reviewer]."""
-    from types import SimpleNamespace
+    import types
 
     from agent6.app import providers as provider_builders
     from agent6.ui.cli import review_cmds
@@ -290,10 +294,14 @@ def test_a_fully_pinned_panel_needs_no_reviewer_route(
     monkeypatch.setattr(
         review_cmds,
         "load_effective",
-        MagicMock(return_value=SimpleNamespace(config=_panel_config(with_reviewer=False))),
+        mock.MagicMock(
+            return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=False))
+        ),
     )
-    monkeypatch.setattr(review_cmds, "check_provider_keys", MagicMock(return_value=None))
-    monkeypatch.setattr(provider_builders, "_provider_from_entry", MagicMock(return_value=provider))
+    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(
+        provider_builders, "_provider_from_entry", mock.MagicMock(return_value=provider)
+    )
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         None,
@@ -312,18 +320,17 @@ def test_a_fully_pinned_panel_needs_no_reviewer_route(
 
 
 def _explore_review(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, base: str, head: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, base: str, head: str
 ) -> tuple[int, dict[str, Any]]:
     """Run `agent6 review --reviewers 1` under `review.tier = "explore"` with one fake seat.
 
     The seat reads `caller.py` the way the explore prompt tells it to. Returns the exit code and
     what the seat read.
     """
-    from types import SimpleNamespace
+    import types
 
     from agent6.config import Config
-    from agent6.harness._panel import PanelResult
-    from agent6.harness._reviewer import ReviewSeat
+    from agent6.harness import _panel, _reviewer
     from agent6.ui.cli import review_cmds
 
     monkeypatch.chdir(tmp_path)
@@ -331,8 +338,8 @@ def _explore_review(
     cfg = Config.model_validate({"review": {"tier": "explore"}})
     seen: dict[str, Any] = {}
 
-    def _fake_effective(*_a: object, **_k: object) -> SimpleNamespace:
-        return SimpleNamespace(config=cfg)
+    def _fake_effective(*_a: object, **_k: object) -> types.SimpleNamespace:
+        return types.SimpleNamespace(config=cfg)
 
     def _runnable(_self: Config, _role: str) -> None:
         return None
@@ -340,9 +347,9 @@ def _explore_review(
     def _no_key_error(*_a: object, **_k: object) -> None:
         return None
 
-    def _fake_seats(_cfg: Config, **_k: Any) -> list[ReviewSeat]:
+    def _fake_seats(_cfg: Config, **_k: Any) -> list[_reviewer.ReviewSeat]:
         return [
-            ReviewSeat(
+            _reviewer.ReviewSeat(
                 persona="correctness",
                 model="fake",
                 provider=None,  # pyright: ignore[reportArgumentType]
@@ -350,9 +357,9 @@ def _explore_review(
             )
         ]
 
-    def _fake_panel(_seats: Any, _ctx: Any, **kw: Any) -> PanelResult:
+    def _fake_panel(_seats: Any, _ctx: Any, **kw: Any) -> _panel.PanelResult:
         seen["read_file"] = kw["dispatch"]("read_file", {"path": "caller.py"}).content
-        return PanelResult(
+        return _panel.PanelResult(
             panel_id="cli",
             decision="advisory",
             blocked=False,
@@ -374,7 +381,7 @@ def _explore_review(
 
 
 def test_explore_tier_gates_on_the_head_being_the_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The explore tier runs only when `--head` is the checkout.
 
@@ -396,7 +403,7 @@ def test_explore_tier_gates_on_the_head_being_the_checkout(
 
 
 def test_explore_tier_refuses_a_dirty_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The explore tier refuses a dirty checkout, whose tree contradicts the `base..HEAD` diff."""
     base, head = _two_commits(tmp_path)
@@ -410,13 +417,13 @@ def test_explore_tier_refuses_a_dirty_checkout(
 
 
 def test_a_panel_with_an_unpinned_seat_still_requires_the_reviewer_route(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A panel with an unpinned seat still requires the reviewer route.
 
     The refusal carries `require_runnable`'s remedy.
     """
-    from types import SimpleNamespace
+    import types
 
     from agent6.config import ConfigError
     from agent6.ui.cli import review_cmds
@@ -427,9 +434,11 @@ def test_a_panel_with_an_unpinned_seat_still_requires_the_reviewer_route(
     monkeypatch.setattr(
         review_cmds,
         "load_effective",
-        MagicMock(return_value=SimpleNamespace(config=_panel_config(with_reviewer=False))),
+        mock.MagicMock(
+            return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=False))
+        ),
     )
-    monkeypatch.setattr(review_cmds, "check_provider_keys", MagicMock(return_value=None))
+    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
 
     with pytest.raises(ConfigError, match="reviewer"):
         review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
@@ -439,13 +448,16 @@ def test_a_panel_with_an_unpinned_seat_still_requires_the_reviewer_route(
 
 @pytest.mark.parametrize("head", ["rel", ""])
 def test_the_recent_log_survives_a_head_that_is_also_a_path_or_empty(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], head: str
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    head: str,
 ) -> None:
     """The recent log survives a head that is also a path, or an empty head from `--base` alone.
 
     The rev is named as a rev and defaults to HEAD.
     """
-    from types import SimpleNamespace
+    import types
 
     from agent6.ui.cli import review_cmds
 
@@ -474,10 +486,12 @@ def test_the_recent_log_survives_a_head_that_is_also_a_path_or_empty(
     monkeypatch.setattr(
         review_cmds,
         "load_effective",
-        MagicMock(return_value=SimpleNamespace(config=_panel_config(with_reviewer=True))),
+        mock.MagicMock(
+            return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=True))
+        ),
     )
-    monkeypatch.setattr(review_cmds, "check_provider_keys", MagicMock(return_value=None))
-    monkeypatch.setattr(review_cmds, "build_role_provider", MagicMock(return_value=provider))
+    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(review_cmds, "build_role_provider", mock.MagicMock(return_value=provider))
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         None, base=base, head=head, paths=()
@@ -488,13 +502,13 @@ def test_the_recent_log_survives_a_head_that_is_also_a_path_or_empty(
 
 
 def test_personas_a_configured_roster_ignores_are_not_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Personas a configured roster ignores are not parsed.
 
     A malformed spec cannot fail the run.
     """
-    from types import SimpleNamespace
+    import types
 
     from agent6.config import Config
     from agent6.ui.cli import review_cmds
@@ -515,9 +529,11 @@ def test_personas_a_configured_roster_ignores_are_not_read(
         return "stop here"
 
     monkeypatch.setattr(
-        review_cmds, "load_effective", MagicMock(return_value=SimpleNamespace(config=cfg))
+        review_cmds,
+        "load_effective",
+        mock.MagicMock(return_value=types.SimpleNamespace(config=cfg)),
     )
-    monkeypatch.setattr(review_cmds, "build_review_seats", MagicMock(return_value=[]))
+    monkeypatch.setattr(review_cmds, "build_review_seats", mock.MagicMock(return_value=[]))
     monkeypatch.setattr(review_cmds, "check_provider_keys", _keys)
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
@@ -530,10 +546,10 @@ def test_personas_a_configured_roster_ignores_are_not_read(
 
 
 def test_a_tracked_file_named_head_does_not_break_the_diff(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A tracked file named HEAD does not make `git diff HEAD` ambiguous for the review."""
-    from types import SimpleNamespace
+    import types
 
     from agent6.ui.cli import review_cmds
 
@@ -551,10 +567,12 @@ def test_a_tracked_file_named_head_does_not_break_the_diff(
     monkeypatch.setattr(
         review_cmds,
         "load_effective",
-        MagicMock(return_value=SimpleNamespace(config=_panel_config(with_reviewer=True))),
+        mock.MagicMock(
+            return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=True))
+        ),
     )
-    monkeypatch.setattr(review_cmds, "check_provider_keys", MagicMock(return_value=None))
-    monkeypatch.setattr(review_cmds, "build_role_provider", MagicMock(return_value=provider))
+    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(review_cmds, "build_role_provider", mock.MagicMock(return_value=provider))
 
     rc = review_cmds._cmd_review(None, base="", head="", paths=())  # pyright: ignore[reportPrivateUsage]
 
@@ -569,10 +587,10 @@ def _other_provider() -> Config:
 
 
 def test_review_model_routes_the_reviewer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`review --model provider/model` re-routes the reviewer role for this review."""
-    from types import SimpleNamespace
+    import types
 
     from agent6.ui.cli import review_cmds
 
@@ -581,11 +599,13 @@ def test_review_model_routes_the_reviewer(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     cfg = _other_provider()
-    built = MagicMock(return_value=_FixedReviewProvider())
+    built = mock.MagicMock(return_value=_FixedReviewProvider())
     monkeypatch.setattr(
-        review_cmds, "load_effective", MagicMock(return_value=SimpleNamespace(config=cfg))
+        review_cmds,
+        "load_effective",
+        mock.MagicMock(return_value=types.SimpleNamespace(config=cfg)),
     )
-    monkeypatch.setattr(review_cmds, "check_provider_keys", MagicMock(return_value=None))
+    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
     monkeypatch.setattr(review_cmds, "build_role_provider", built)
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
@@ -598,13 +618,13 @@ def test_review_model_routes_the_reviewer(
 
 
 def test_review_model_naming_no_provider_is_refused_before_the_diff(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A `--model` naming no configured provider is refused with the configured names.
 
     The refusal comes before any git call.
     """
-    from types import SimpleNamespace
+    import types
 
     from agent6.ui.cli import review_cmds
 
@@ -612,9 +632,9 @@ def test_review_model_naming_no_provider_is_refused_before_the_diff(
     monkeypatch.setattr(
         review_cmds,
         "load_effective",
-        MagicMock(return_value=SimpleNamespace(config=_other_provider())),
+        mock.MagicMock(return_value=types.SimpleNamespace(config=_other_provider())),
     )
-    monkeypatch.setattr(review_cmds, "_reviewed_diff", MagicMock(side_effect=AssertionError))
+    monkeypatch.setattr(review_cmds, "_reviewed_diff", mock.MagicMock(side_effect=AssertionError))
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         None, base="", head="", paths=(), model="nope/m"

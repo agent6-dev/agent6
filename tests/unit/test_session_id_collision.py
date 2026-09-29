@@ -11,18 +11,18 @@ identical rows, and the web silently picked whichever bucket came first.
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess
 import time
-from pathlib import Path
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
+from agent6 import paths
 from agent6.config import Config
-from agent6.paths import state_dir
 
 
-def _init_repo(path: Path) -> None:
+def _init_repo(path: pathlib.Path) -> None:
     subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
     subprocess.run(["git", "-C", str(path), "config", "user.email", "t@t"], check=True)
     subprocess.run(["git", "-C", str(path), "config", "user.name", "t"], check=True)
@@ -32,7 +32,7 @@ def _init_repo(path: Path) -> None:
 
 
 @pytest.fixture
-def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     gdir = tmp_path / "cfg"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
@@ -57,9 +57,9 @@ def _no_keys(_cfg: Config) -> None:
 
 
 def _load_cfg() -> Config:
-    from agent6.config.layer import load_effective
+    from agent6.config import layer
 
-    return load_effective(Path.cwd(), None).config
+    return layer.load_effective(pathlib.Path.cwd(), None).config
 
 
 def _strict(*_args: object, **_kwargs: object) -> str:
@@ -67,18 +67,18 @@ def _strict(*_args: object, **_kwargs: object) -> str:
 
 
 def test_run_refuses_an_explicit_id_held_by_another_bucket(
-    repo: Path, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.app.run import run_task
+    from agent6.app import run
 
-    state = state_dir(repo)
+    state = paths.state_dir(repo)
     (state / "sessions" / "plans" / "demo").mkdir(parents=True)
 
-    rc = run_task(
+    rc = run.run_task(
         _load_cfg(),
         "do a thing",
         started_at=time.time(),
-        frontend=MagicMock(),
+        frontend=mock.MagicMock(),
         session_id="demo",
         mode="run",
     )
@@ -91,7 +91,7 @@ def test_run_refuses_an_explicit_id_held_by_another_bucket(
 
 
 def test_run_refuses_an_invalid_id_before_sandbox_and_git_preflight(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A malformed identifier is refused before the unconfined prompt or a host failure."""
     from agent6.app import run as run_mod
@@ -106,7 +106,7 @@ def test_run_refuses_an_invalid_id_before_sandbox_and_git_preflight(
         _load_cfg(),
         "do a thing",
         started_at=time.time(),
-        frontend=MagicMock(),
+        frontend=mock.MagicMock(),
         session_id="bad id",
         mode="run",
     )
@@ -116,12 +116,12 @@ def test_run_refuses_an_invalid_id_before_sandbox_and_git_preflight(
 
 
 def test_an_existing_finished_id_names_a_runnable_resume_command(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A finished run's collision hint includes the --steer that gives it new work."""
     from agent6.app import run as run_mod
 
-    session = state_dir(repo) / "sessions" / "runs" / "done-run"
+    session = paths.state_dir(repo) / "sessions" / "runs" / "done-run"
     session.mkdir(parents=True)
     (session / "manifest.json").write_text(
         json.dumps({"version": 3, "session_id": "done-run", "mode": "run", "user_task": "t"}),
@@ -137,7 +137,7 @@ def test_an_existing_finished_id_names_a_runnable_resume_command(
         _load_cfg(),
         "do a thing",
         started_at=time.time(),
-        frontend=MagicMock(),
+        frontend=mock.MagicMock(),
         session_id="done-run",
         mode="run",
     )
@@ -147,12 +147,12 @@ def test_an_existing_finished_id_names_a_runnable_resume_command(
 
 
 def test_a_damaged_existing_id_does_not_name_an_unusable_resume_command(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The refusal for a malformed manifest never points at a resume known to fail on it."""
     from agent6.app import run as run_mod
 
-    session = state_dir(repo) / "sessions" / "runs" / "damaged-run"
+    session = paths.state_dir(repo) / "sessions" / "runs" / "damaged-run"
     session.mkdir(parents=True)
     (session / "manifest.json").write_text("{not json\n", encoding="utf-8")
     monkeypatch.setattr(run_mod, "select_isolation", _strict)
@@ -161,7 +161,7 @@ def test_a_damaged_existing_id_does_not_name_an_unusable_resume_command(
         _load_cfg(),
         "do a thing",
         started_at=time.time(),
-        frontend=MagicMock(),
+        frontend=mock.MagicMock(),
         session_id="damaged-run",
         mode="run",
     )

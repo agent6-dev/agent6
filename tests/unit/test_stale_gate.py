@@ -4,15 +4,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
-from contextlib import redirect_stdout
 
 import pytest
 
-from agent6.app.reporter import STDIO_REPORTER
-from agent6.harness._snapshot import SessionResult
-from agent6.tools.results import FinishSessionResult
-from agent6.viewmodel.listing import status_word
+from agent6.app import reporter
+from agent6.harness import _snapshot
+from agent6.tools import results
+from agent6.viewmodel import listing
 
 
 def test_the_reason_reads_as_a_failure_with_its_cause() -> None:
@@ -20,7 +20,7 @@ def test_the_reason_reads_as_a_failure_with_its_cause() -> None:
 
     `died_without_end`, the compare gates and the TUI colours key off the existing set.
     """
-    assert status_word(finished=True, all_passed=False, end_reason="gate_stale") == (
+    assert listing.status_word(finished=True, all_passed=False, end_reason="gate_stale") == (
         "failed",
         "gate_stale",
     )
@@ -31,27 +31,33 @@ def test_a_green_tree_is_still_what_passes() -> None:
 
     `gate_stale` never reaches a green run (see finish_reason).
     """
-    assert status_word(finished=True, all_passed=True, end_reason="gate_stale") == ("passed", "")
+    assert listing.status_word(finished=True, all_passed=True, end_reason="gate_stale") == (
+        "passed",
+        "",
+    )
 
 
 def test_the_tool_result_says_nothing_changed() -> None:
     """The tool result says nothing changed, so the model cannot believe it swapped the gate."""
-    wire = FinishSessionResult(
+    wire = results.FinishSessionResult(
         summary_text="done", result=None, stale_gate="uv run pytest tests/unit"
     ).to_wire()
     assert "unchanged" in wire["stale_gate"]
     assert "does not pass" in wire["stale_gate"]
-    assert FinishSessionResult(summary_text="d", result=None).to_wire().get("stale_gate") is None
+    assert (
+        results.FinishSessionResult(summary_text="d", result=None).to_wire().get("stale_gate")
+        is None
+    )
 
 
 def test_the_operator_gets_a_paste_ready_line() -> None:
     """Applying the proposal is the operator's call, so the run prints the exact command instead."""
-    from agent6.app.finalize import _print_stale_gate  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
 
     out = io.StringIO()
-    with redirect_stdout(out):
-        _print_stale_gate(
-            SessionResult(
+    with contextlib.redirect_stdout(out):
+        finalize._print_stale_gate(
+            _snapshot.SessionResult(
                 completed=True,
                 reason="gate_stale",
                 summary="s",
@@ -60,7 +66,7 @@ def test_the_operator_gets_a_paste_ready_line() -> None:
                 stale_gate="uv run pytest tests/unit",
                 verified="failed",
             ),
-            reporter=STDIO_REPORTER,
+            reporter=reporter.STDIO_REPORTER,
         )
     text = out.getvalue()
     assert "nothing changed" in text
@@ -73,12 +79,12 @@ def test_the_operator_gets_a_paste_ready_line() -> None:
 
 def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
     """It would ask the operator to replace a gate that just passed."""
-    from agent6.app.finalize import _print_stale_gate  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
 
     out = io.StringIO()
-    with redirect_stdout(out):
-        _print_stale_gate(
-            SessionResult(
+    with contextlib.redirect_stdout(out):
+        finalize._print_stale_gate(
+            _snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="s",
@@ -87,21 +93,21 @@ def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
                 stale_gate="uv run pytest tests/unit",
                 verified="passed",
             ),
-            reporter=STDIO_REPORTER,
+            reporter=reporter.STDIO_REPORTER,
         )
     assert out.getvalue() == ""
 
 
 def test_nothing_is_printed_without_a_declaration() -> None:
-    from agent6.app.finalize import _print_stale_gate  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
 
     out = io.StringIO()
-    with redirect_stdout(out):
-        _print_stale_gate(
-            SessionResult(
+    with contextlib.redirect_stdout(out):
+        finalize._print_stale_gate(
+            _snapshot.SessionResult(
                 completed=True, reason="finish_session", summary="s", iterations=1, tool_calls=1
             ),
-            reporter=STDIO_REPORTER,
+            reporter=reporter.STDIO_REPORTER,
         )
     assert out.getvalue() == ""
 
@@ -120,11 +126,13 @@ def test_nothing_is_printed_without_a_declaration() -> None:
 def test_a_declaration_names_the_end_only_over_a_red_tree(
     declared: str, green: bool | None, expected: str
 ) -> None:
-    from agent6.harness._finish_gates import finish_reason
-    from agent6.harness._verify_verdict import VerifyVerdict
+    from agent6.harness import _finish_gates, _verify_verdict
 
-    reason = finish_reason(
-        "finish_session", stale_gate=declared, tree_green=green, verify=VerifyVerdict()
+    reason = _finish_gates.finish_reason(
+        "finish_session",
+        stale_gate=declared,
+        tree_green=green,
+        verify=_verify_verdict.VerifyVerdict(),
     )
     assert reason == expected
 
@@ -134,9 +142,7 @@ def test_the_verify_result_names_the_command_that_judged_the_run() -> None:
 
     It never chose this one: the gate is the operator's, or inferred from the repo.
     """
-    from agent6.tools.results import ExecResult
-
-    wire = ExecResult(
+    wire = results.ExecResult(
         returncode=1,
         stdout="",
         stderr="boom",
@@ -149,9 +155,7 @@ def test_the_verify_result_names_the_command_that_judged_the_run() -> None:
 
 def test_a_command_the_model_chose_is_not_echoed_back() -> None:
     """run_command already knows its own argv; repeating it is noise."""
-    from agent6.tools.results import ExecResult
-
-    wire = ExecResult(
+    wire = results.ExecResult(
         returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
     ).to_wire()
     assert "command" not in wire

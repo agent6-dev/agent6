@@ -10,25 +10,13 @@ gaps, and uncited claims are mechanically downgraded and can never stall a run.
 
 from __future__ import annotations
 
+import dataclasses
 import json
-from dataclasses import replace
-from pathlib import Path
+import pathlib
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
-from agent6.harness._panel import (
-    Finding,
-    Hunk,
-    PanelResult,
-    ReviewContext,
-    ReviewDecision,
-    ReviewVerdict,
-    _dedup_key,  # pyright: ignore[reportPrivateUsage]
-    aggregate_verdicts,
-    diff_hunks,
-    is_grounded,
-    render_findings,
-)
+from agent6.harness import _panel as harness__panel
 
 # A real unified diff touching foo.py new-lines 10..14 and creating bar.py 1..2.
 SAMPLE_DIFF = """\
@@ -47,49 +35,55 @@ SAMPLE_DIFF = """\
 """
 
 
-def _ctx(**kw: Any) -> ReviewContext:
-    return ReviewContext(diff=SAMPLE_DIFF, **kw)
+def _ctx(**kw: Any) -> harness__panel.ReviewContext:
+    return harness__panel.ReviewContext(diff=SAMPLE_DIFF, **kw)
 
 
 def _seat(
-    model: str, *findings: Finding, seat: str = "s", error: str | None = None
-) -> ReviewVerdict:
+    model: str, *findings: harness__panel.Finding, seat: str = "s", error: str | None = None
+) -> harness__panel.ReviewVerdict:
     verdict = "block" if any(f.severity == "block" for f in findings) else "pass"
-    return ReviewVerdict(seat=seat, model=model, verdict=verdict, findings=findings, error=error)
+    return harness__panel.ReviewVerdict(
+        seat=seat, model=model, verdict=verdict, findings=findings, error=error
+    )
 
 
-def _block(category: str, file_line: str) -> Finding:
-    return Finding(category=category, severity="block", file_line=file_line, title="x")
+def _block(category: str, file_line: str) -> harness__panel.Finding:
+    return harness__panel.Finding(
+        category=category, severity="block", file_line=file_line, title="x"
+    )
 
 
 def _agg(
-    seats: list[ReviewVerdict],
+    seats: list[harness__panel.ReviewVerdict],
     *,
-    decision: ReviewDecision = "veto",
+    decision: harness__panel.ReviewDecision = "veto",
     quorum: int = 2,
-    ctx: ReviewContext | None = None,
-) -> PanelResult:
-    return aggregate_verdicts(seats, ctx or _ctx(), decision=decision, quorum=quorum, panel_id="p")
+    ctx: harness__panel.ReviewContext | None = None,
+) -> harness__panel.PanelResult:
+    return harness__panel.aggregate_verdicts(
+        seats, ctx or _ctx(), decision=decision, quorum=quorum, panel_id="p"
+    )
 
 
 # --- diff grounding primitives ------------------------------------------------
 
 
 def test_diff_hunks_parses_paths_and_both_sides_of_each_hunk() -> None:
-    hunks = diff_hunks(SAMPLE_DIFF)
+    hunks = harness__panel.diff_hunks(SAMPLE_DIFF)
     # One hunk, both sides (pre-image line numbers must ground too); a created
     # file's old side spans the line the change sits at.
-    assert hunks["foo.py"] == [Hunk(old=(10, 12), new=(10, 14))]
-    assert hunks["bar.py"] == [Hunk(old=None, new=(1, 2))]
+    assert hunks["foo.py"] == [harness__panel.Hunk(old=(10, 12), new=(10, 14))]
+    assert hunks["bar.py"] == [harness__panel.Hunk(old=None, new=(1, 2))]
 
 
 def test_is_grounded_line_in_range_path_only_and_misses() -> None:
-    ranges = diff_hunks(SAMPLE_DIFF)
-    assert is_grounded("foo.py:11", ranges)  # inside 10..14
-    assert is_grounded("foo.py", ranges)  # path-only, file touched
-    assert not is_grounded("foo.py:99", ranges)  # outside the touched range
-    assert not is_grounded("other.py:1", ranges)  # file not in the diff
-    assert not is_grounded("", ranges)
+    ranges = harness__panel.diff_hunks(SAMPLE_DIFF)
+    assert harness__panel.is_grounded("foo.py:11", ranges)  # inside 10..14
+    assert harness__panel.is_grounded("foo.py", ranges)  # path-only, file touched
+    assert not harness__panel.is_grounded("foo.py:99", ranges)  # outside the touched range
+    assert not harness__panel.is_grounded("other.py:1", ranges)  # file not in the diff
+    assert not harness__panel.is_grounded("", ranges)
 
 
 def test_is_grounded_accepts_a_line_col_citation() -> None:
@@ -98,14 +92,14 @@ def test_is_grounded_accepts_a_line_col_citation() -> None:
     The single rpartition read the COLUMN as the line and the rest as the path, so the lookup missed
     and a real block was silently downgraded to a warning.
     """
-    ranges = diff_hunks(SAMPLE_DIFF)
-    assert is_grounded("foo.py:11:5", ranges)  # line 11 is inside 10..14
-    assert not is_grounded("foo.py:99:5", ranges)  # column must not rescue it
+    ranges = harness__panel.diff_hunks(SAMPLE_DIFF)
+    assert harness__panel.is_grounded("foo.py:11:5", ranges)  # line 11 is inside 10..14
+    assert not harness__panel.is_grounded("foo.py:99:5", ranges)  # column must not rescue it
     # the dedup key drops the column and lands in the hunk
-    assert _dedup_key(_block("security", "foo.py:11:5"), ranges) == (
+    assert harness__panel._dedup_key(_block("security", "foo.py:11:5"), ranges) == (
         "foo.py",
         "security",
-        Hunk(old=(10, 12), new=(10, 14)),
+        harness__panel.Hunk(old=(10, 12), new=(10, 14)),
     )
 
 
@@ -215,8 +209,8 @@ def test_dedup_across_seats_and_against_prior_findings() -> None:
     f = _block("security", "foo.py:11")
     res = _agg([_seat("m1", f, seat="a"), _seat("m2", f, seat="b")], decision="advisory")
     assert len(res.merged_findings) == 1  # same (path, category) merged
-    prior = (Finding("security", "block", "foo.py:11", "already shown"),)
-    res2 = aggregate_verdicts(
+    prior = (harness__panel.Finding("security", "block", "foo.py:11", "already shown"),)
+    res2 = harness__panel.aggregate_verdicts(
         [_seat("m1", f)], _ctx(prior_findings=prior), decision="advisory", quorum=2, panel_id="p"
     )
     assert res2.merged_findings == ()  # already injected -> not re-surfaced
@@ -227,16 +221,16 @@ def test_prior_deduped_block_does_not_count_toward_the_gate() -> None:
     # not gate: otherwise blocked=True ships with merged_findings=() and the
     # worker is rejected while being told "No blocking findings.".
     f = _block("security", "foo.py:11")
-    prior = (Finding("security", "block", "foo.py:11", "already shown"),)
+    prior = (harness__panel.Finding("security", "block", "foo.py:11", "already shown"),)
     for decision in ("veto", "quorum", "all"):
-        res = aggregate_verdicts(
+        res = harness__panel.aggregate_verdicts(
             [_seat("m1", f)], _ctx(prior_findings=prior), decision=decision, quorum=1, panel_id="p"
         )
         assert res.merged_findings == ()
         assert res.n_block == 0 and res.blocked is False, decision
     # A NEW grounded block alongside the deduped one still gates.
     new = _block("data-loss", "bar.py:1")
-    res2 = aggregate_verdicts(
+    res2 = harness__panel.aggregate_verdicts(
         [_seat("m1", f, new)], _ctx(prior_findings=prior), decision="veto", quorum=2, panel_id="p"
     )
     assert res2.blocked is True and res2.n_block == 1
@@ -244,14 +238,18 @@ def test_prior_deduped_block_does_not_count_toward_the_gate() -> None:
 
 
 def test_render_findings_formats_and_empty() -> None:
-    assert render_findings(()) == ""
-    out = render_findings((Finding("security", "block", "foo.py:11", "leak", "fix it"),))
+    assert harness__panel.render_findings(()) == ""
+    out = harness__panel.render_findings(
+        (harness__panel.Finding("security", "block", "foo.py:11", "leak", "fix it"),)
+    )
     assert "[block:security]" in out and "foo.py:11" in out and "leak" in out and "fix it" in out
 
 
 def test_a_pass_verdict_cannot_contribute_a_blocking_vote() -> None:
     finding = _block("security", "foo.py:11")
-    contradictory = ReviewVerdict(seat="s", model="m1", verdict="pass", findings=(finding,))
+    contradictory = harness__panel.ReviewVerdict(
+        seat="s", model="m1", verdict="pass", findings=(finding,)
+    )
     res = _agg([contradictory], decision="veto")
     assert res.blocked is False and res.n_block == 0
 
@@ -269,9 +267,12 @@ def test_added_line_starting_like_a_header_is_not_a_file_header() -> None:
         "@@ -1,2 +1,3 @@\n keep\n+++ b/evil.py\n+real = 1\n"
         "@@ -10,2 +10,3 @@\n ctx\n+added\n more\n"
     )
-    ranges = diff_hunks(diff)
+    ranges = harness__panel.diff_hunks(diff)
     assert "evil.py" not in ranges
-    assert ranges["foo.py"] == [Hunk(old=(1, 2), new=(1, 3)), Hunk(old=(10, 11), new=(10, 12))]
+    assert ranges["foo.py"] == [
+        harness__panel.Hunk(old=(1, 2), new=(1, 3)),
+        harness__panel.Hunk(old=(10, 11), new=(10, 12)),
+    ]
 
 
 def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
@@ -285,9 +286,9 @@ def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
         "@@ -10,3 +10,2 @@\n CREATE TABLE t (\n--- legacy column note\n   id INT\n"
         "@@ -50,2 +50,3 @@\n cols\n+  api_key TEXT\n more\n"
     )
-    ranges = diff_hunks(diff)
+    ranges = harness__panel.diff_hunks(diff)
     assert "legacy column note" not in ranges  # the deletion was not read as a header
-    assert is_grounded("schema.sql:51", ranges)  # the later hunk still grounds
+    assert harness__panel.is_grounded("schema.sql:51", ranges)  # the later hunk still grounds
 
 
 def test_in_place_modification_grounds_old_side_lines() -> None:
@@ -295,13 +296,13 @@ def test_in_place_modification_grounds_old_side_lines() -> None:
     # the deleted code at its OLD line number grounds, so a review of deleted
     # code can gate.
     diff = "--- a/mod.py\n+++ b/mod.py\n@@ -100,5 +50,2 @@\n ctx\n-gone1\n-gone2\n-gone3\n ctx2\n"
-    ranges = diff_hunks(diff)
+    ranges = harness__panel.diff_hunks(diff)
     assert [h.old for h in ranges["mod.py"]] == [(100, 104)]  # old side of the in-place hunk
-    assert is_grounded("mod.py:103", ranges)
+    assert harness__panel.is_grounded("mod.py:103", ranges)
     res = _agg(
         [_seat("m1", _block("data-loss", "mod.py:103"))],
         decision="veto",
-        ctx=ReviewContext(diff=diff),
+        ctx=harness__panel.ReviewContext(diff=diff),
     )
     assert res.blocked is True and res.n_block == 1
     assert res.merged_findings[0].severity == "block"
@@ -311,29 +312,39 @@ def test_pure_deletion_grounds_on_the_old_path() -> None:
     # A file deleted entirely (post-image /dev/null) still grounds a citation
     # of the deleted file, so a data-loss block on it can gate.
     diff = "--- a/gone.py\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-a\n-b\n-c\n"
-    ranges = diff_hunks(diff)
-    assert ranges["gone.py"] == [Hunk(old=(1, 3), new=None)]
-    assert is_grounded("gone.py:2", ranges)
+    ranges = harness__panel.diff_hunks(diff)
+    assert ranges["gone.py"] == [harness__panel.Hunk(old=(1, 3), new=None)]
+    assert harness__panel.is_grounded("gone.py:2", ranges)
 
 
 def test_grounding_tolerates_trailing_colon_and_line_range() -> None:
-    ranges = diff_hunks(SAMPLE_DIFF)
-    assert is_grounded("foo.py:11:", ranges)  # ripgrep-style trailing colon
-    assert is_grounded("foo.py:11-13", ranges)  # a range fully inside 10..14
+    ranges = harness__panel.diff_hunks(SAMPLE_DIFF)
+    assert harness__panel.is_grounded("foo.py:11:", ranges)  # ripgrep-style trailing colon
+    assert harness__panel.is_grounded("foo.py:11-13", ranges)  # a range fully inside 10..14
 
 
 def test_grounding_range_overlap_not_just_start_line() -> None:
     # foo.py changed lines 10..14. A range whose START line is unchanged but whose
     # INTERIOR overlaps the touched range must still ground (FINDING 2 regression:
     # previously only the start line was checked, so this was wrongly ungrounded).
-    ranges = diff_hunks(SAMPLE_DIFF)
-    assert is_grounded("foo.py:8-12", ranges)  # start 8 untouched, but 10..12 overlap
-    assert is_grounded("foo.py:13-20", ranges)  # end 20 untouched, but 13..14 overlap
-    assert is_grounded("foo.py:1-99", ranges)  # span fully contains the touched range
-    assert is_grounded("foo.py:14-30", ranges)  # touches only the last changed line
-    assert not is_grounded("foo.py:1-9", ranges)  # entirely before the touched range
-    assert not is_grounded("foo.py:15-30", ranges)  # entirely after the touched range
-    assert is_grounded("foo.py:12-10", ranges)  # reversed range normalized, still grounds
+    ranges = harness__panel.diff_hunks(SAMPLE_DIFF)
+    assert harness__panel.is_grounded(
+        "foo.py:8-12", ranges
+    )  # start 8 untouched, but 10..12 overlap
+    assert harness__panel.is_grounded(
+        "foo.py:13-20", ranges
+    )  # end 20 untouched, but 13..14 overlap
+    assert harness__panel.is_grounded(
+        "foo.py:1-99", ranges
+    )  # span fully contains the touched range
+    assert harness__panel.is_grounded("foo.py:14-30", ranges)  # touches only the last changed line
+    assert not harness__panel.is_grounded("foo.py:1-9", ranges)  # entirely before the touched range
+    assert not harness__panel.is_grounded(
+        "foo.py:15-30", ranges
+    )  # entirely after the touched range
+    assert harness__panel.is_grounded(
+        "foo.py:12-10", ranges
+    )  # reversed range normalized, still grounds
 
 
 def test_a_citation_under_a_real_top_level_a_or_b_dir_grounds() -> None:
@@ -344,15 +355,19 @@ def test_a_citation_under_a_real_top_level_a_or_b_dir_grounds() -> None:
     a real `a/` dir stays ungrounded and is downgraded to a warning in silence.
     """
     diff = "--- a/a/foo.py\n+++ b/a/foo.py\n@@ -1,2 +1,2 @@\n x\n-y\n+z\n"
-    ranges = diff_hunks(diff)
+    ranges = harness__panel.diff_hunks(diff)
     assert list(ranges) == ["a/foo.py"]
-    assert is_grounded("a/foo.py:2", ranges) and is_grounded("a/foo.py", ranges)
-    assert not is_grounded("foo.py:2", ranges)  # a different file
-    assert _dedup_key(_block("security", "a/foo.py:2"), ranges)[0] == "a/foo.py"
-    res = _agg([_seat("m1", _block("security", "a/foo.py:2"))], ctx=ReviewContext(diff=diff))
+    assert harness__panel.is_grounded("a/foo.py:2", ranges) and harness__panel.is_grounded(
+        "a/foo.py", ranges
+    )
+    assert not harness__panel.is_grounded("foo.py:2", ranges)  # a different file
+    assert harness__panel._dedup_key(_block("security", "a/foo.py:2"), ranges)[0] == "a/foo.py"
+    res = _agg(
+        [_seat("m1", _block("security", "a/foo.py:2"))], ctx=harness__panel.ReviewContext(diff=diff)
+    )
     assert res.blocked is True and res.merged_findings[0].severity == "block"
     # A prefix copied from the diff header still grounds on the repo path.
-    assert is_grounded("b/foo.py:11", diff_hunks(SAMPLE_DIFF))
+    assert harness__panel.is_grounded("b/foo.py:11", harness__panel.diff_hunks(SAMPLE_DIFF))
 
 
 def test_range_block_with_unchanged_start_still_gates() -> None:
@@ -364,7 +379,7 @@ def test_range_block_with_unchanged_start_still_gates() -> None:
 
 
 def test_all_abstain_panel_prints_inconclusive_not_pass(
-    monkeypatch: Any, capsys: Any, tmp_path: Path
+    monkeypatch: Any, capsys: Any, tmp_path: pathlib.Path
 ) -> None:
     """An all-abstain panel prints INCONCLUSIVE, never PASS.
 
@@ -372,7 +387,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
     verdict. `run_panel` already short-circuits on an all-abstain panel; the printed verdict is the
     CLI's, so this pins the CLI.
     """
-    from agent6.budget import BudgetTracker
+    from agent6 import budget
     from agent6.config import Config
     from agent6.providers import TranscriptSink
     from agent6.ui.cli import review_cmds
@@ -381,13 +396,13 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
         persona = "security"
         tier = "diff"
 
-    abstain = ReviewVerdict(
+    abstain = harness__panel.ReviewVerdict(
         seat="security",
         model="moonshotai/kimi-k3",
         verdict="pass",
         error="unparseable reviewer output",
     )
-    res = PanelResult(
+    res = harness__panel.PanelResult(
         panel_id="cli",
         decision="advisory",
         blocked=False,
@@ -400,7 +415,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
     def _fake_seats(*_a: object, **_k: object) -> list[_Seat]:
         return [_Seat(), _Seat(), _Seat()]
 
-    def _fake_panel(*_a: object, **_k: object) -> PanelResult:
+    def _fake_panel(*_a: object, **_k: object) -> harness__panel.PanelResult:
         return res
 
     monkeypatch.setattr(review_cmds, "build_review_seats", _fake_seats)
@@ -408,7 +423,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
     rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
         Config(),
         git="git",
-        root=Path.cwd(),
+        root=pathlib.Path.cwd(),
         base="main",
         head="topic",
         label="main..topic",
@@ -418,7 +433,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
         personas="security,correctness,tests",
         transcript_sink=TranscriptSink(tmp_path),
         reviews_dir=tmp_path / "reviews",
-        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
     )
     out, err = capsys.readouterr()
     assert "main..topic" in err
@@ -432,13 +447,13 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
 
 
 def test_review_exit_code_is_consistent_across_verdicts(
-    monkeypatch: Any, capsys: Any, tmp_path: Path
+    monkeypatch: Any, capsys: Any, tmp_path: pathlib.Path
 ) -> None:
     """The exit code carries the verdict consistently: PASS 0, INCONCLUSIVE 1, BLOCK 2.
 
     A BLOCK left at 0 lets a CI gate pass a security block while failing on 'nothing reviewed'.
     """
-    from agent6.budget import BudgetTracker
+    from agent6 import budget
     from agent6.config import Config
     from agent6.ui.cli import review_cmds
 
@@ -450,9 +465,12 @@ def test_review_exit_code_is_consistent_across_verdicts(
     passing = _seat("m2", seat="s2")
 
     def run(
-        per_seat: tuple[ReviewVerdict, ...], *, blocked: bool, findings: tuple[Any, ...]
+        per_seat: tuple[harness__panel.ReviewVerdict, ...],
+        *,
+        blocked: bool,
+        findings: tuple[Any, ...],
     ) -> int:
-        res = PanelResult(
+        res = harness__panel.PanelResult(
             panel_id="cli",
             decision="veto",
             blocked=blocked,
@@ -465,7 +483,7 @@ def test_review_exit_code_is_consistent_across_verdicts(
         def _seats(*_a: object, **_k: object) -> list[_Seat]:
             return [_Seat()]
 
-        def _panel(*_a: object, **_k: object) -> PanelResult:
+        def _panel(*_a: object, **_k: object) -> harness__panel.PanelResult:
             return res
 
         monkeypatch.setattr(review_cmds, "build_review_seats", _seats)
@@ -473,7 +491,7 @@ def test_review_exit_code_is_consistent_across_verdicts(
         rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
             Config(),
             git="git",
-            root=Path.cwd(),
+            root=pathlib.Path.cwd(),
             base="",
             head="HEAD",
             label="working tree vs HEAD",
@@ -481,9 +499,9 @@ def test_review_exit_code_is_consistent_across_verdicts(
             agents_md="",
             reviewers=1,
             personas="security",
-            transcript_sink=MagicMock(),
+            transcript_sink=mock.MagicMock(),
             reviews_dir=tmp_path,
-            budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         )
         capsys.readouterr()
         return rc
@@ -516,11 +534,9 @@ def test_output_cap_truncated_case_folds_both_spellings() -> None:
 
 
 def test_panel_is_inconclusive_owner() -> None:
-    from agent6.harness._panel import panel_is_inconclusive
-
-    abstain = ReviewVerdict(seat="s", model="m", verdict="pass", error="starved")
-    passing = ReviewVerdict(seat="s2", model="m2", verdict="pass")
-    all_abstain = PanelResult(
+    abstain = harness__panel.ReviewVerdict(seat="s", model="m", verdict="pass", error="starved")
+    passing = harness__panel.ReviewVerdict(seat="s2", model="m2", verdict="pass")
+    all_abstain = harness__panel.PanelResult(
         panel_id="p",
         decision="advisory",
         blocked=False,
@@ -529,8 +545,8 @@ def test_panel_is_inconclusive_owner() -> None:
         n_block=0,
         n_abstain=2,
     )
-    assert panel_is_inconclusive(all_abstain) is True
-    mixed = PanelResult(
+    assert harness__panel.panel_is_inconclusive(all_abstain) is True
+    mixed = harness__panel.PanelResult(
         panel_id="p",
         decision="advisory",
         blocked=False,
@@ -539,8 +555,8 @@ def test_panel_is_inconclusive_owner() -> None:
         n_block=0,
         n_abstain=1,
     )
-    assert panel_is_inconclusive(mixed) is False
-    empty = PanelResult(
+    assert harness__panel.panel_is_inconclusive(mixed) is False
+    empty = harness__panel.PanelResult(
         panel_id="p",
         decision="advisory",
         blocked=False,
@@ -549,7 +565,7 @@ def test_panel_is_inconclusive_owner() -> None:
         n_block=0,
         n_abstain=0,
     )
-    assert panel_is_inconclusive(empty) is False  # nothing to be inconclusive about
+    assert harness__panel.panel_is_inconclusive(empty) is False  # nothing to be inconclusive about
 
 
 def test_review_degrades_on_an_unreadable_agents_md(
@@ -560,7 +576,7 @@ def test_review_degrades_on_an_unreadable_agents_md(
     AGENTS.md is optional review context, read tolerantly on the run path; `agent6 review` reviews
     without it rather than raising through the bug reporter.
     """
-    from types import SimpleNamespace
+    import types
 
     from agent6.config import Config
     from agent6.ui.cli import review_cmds
@@ -577,8 +593,8 @@ def test_review_degrades_on_an_unreadable_agents_md(
         seen["agents_md"] = kwargs["agents_md"]
         return 0
 
-    def _fake_effective(*_a: object, **_k: object) -> SimpleNamespace:
-        return SimpleNamespace(config=Config())
+    def _fake_effective(*_a: object, **_k: object) -> types.SimpleNamespace:
+        return types.SimpleNamespace(config=Config())
 
     def _runnable(_self: Config, _role: str) -> None:
         return None
@@ -586,8 +602,8 @@ def test_review_degrades_on_an_unreadable_agents_md(
     def _no_key_error(_cfg: Config) -> None:
         return None
 
-    def _fake_diff(*_a: object, **_k: object) -> SimpleNamespace:
-        return SimpleNamespace(returncode=0, stdout="diff --git a/x\n+1\n", stderr="")
+    def _fake_diff(*_a: object, **_k: object) -> types.SimpleNamespace:
+        return types.SimpleNamespace(returncode=0, stdout="diff --git a/x\n+1\n", stderr="")
 
     monkeypatch.setattr(review_cmds, "load_effective", _fake_effective)
     monkeypatch.setattr(Config, "require_runnable", _runnable)
@@ -612,7 +628,7 @@ def test_the_panel_reviews_under_the_freeform_reviews_label(
     The panel's header and transcript named the range alone, dropping the `-- paths` the freeform
     review's label carries.
     """
-    from types import SimpleNamespace
+    import types
 
     from agent6.config import Config
     from agent6.ui.cli import review_cmds
@@ -625,8 +641,8 @@ def test_the_panel_reviews_under_the_freeform_reviews_label(
         seen["label"] = kwargs["label"]
         return 0
 
-    def _fake_effective(*_a: object, **_k: object) -> SimpleNamespace:
-        return SimpleNamespace(config=Config())
+    def _fake_effective(*_a: object, **_k: object) -> types.SimpleNamespace:
+        return types.SimpleNamespace(config=Config())
 
     def _runnable(_self: Config, _role: str) -> None:
         return None
@@ -634,8 +650,8 @@ def test_the_panel_reviews_under_the_freeform_reviews_label(
     def _no_key_error(_cfg: Config) -> None:
         return None
 
-    def _fake_diff(*_a: object, **_k: object) -> SimpleNamespace:
-        return SimpleNamespace(returncode=0, stdout="diff --git a/x\n+1\n", stderr="")
+    def _fake_diff(*_a: object, **_k: object) -> types.SimpleNamespace:
+        return types.SimpleNamespace(returncode=0, stdout="diff --git a/x\n+1\n", stderr="")
 
     monkeypatch.setattr(review_cmds, "load_effective", _fake_effective)
     monkeypatch.setattr(Config, "require_runnable", _runnable)
@@ -671,10 +687,12 @@ def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
         "old mode 100644\n"
         "new mode 100755\n"
     )
-    ranges = diff_hunks(diff)
+    ranges = harness__panel.diff_hunks(diff)
     assert ranges == {"img.png": [], "old.py": [], "new.py": [], "run.sh": []}
-    assert is_grounded("img.png", ranges) and is_grounded("new.py", ranges)
-    assert not is_grounded("img.png:3", ranges)
+    assert harness__panel.is_grounded("img.png", ranges) and harness__panel.is_grounded(
+        "new.py", ranges
+    )
+    assert not harness__panel.is_grounded("img.png:3", ranges)
 
 
 def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
@@ -683,17 +701,17 @@ def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
     `agent6 review` runs no verify command and the loop has none when none is configured; "none
     configured" is wrong for a review of a repo that has one.
     """
-    from agent6.harness._reviewer import _build_user_message  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness import _reviewer  # pyright: ignore[reportPrivateUsage]
 
-    prompt = _build_user_message(ReviewContext(task="t"))
+    prompt = _reviewer._build_user_message(harness__panel.ReviewContext(task="t"))
     assert "VERIFY: not run." in prompt and "none configured" not in prompt
 
 
 def test_the_seat_prompt_carries_the_whole_large_diff() -> None:
-    from agent6.harness._reviewer import _build_user_message  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness import _reviewer  # pyright: ignore[reportPrivateUsage]
 
     diff = "start\n" + "x" * 200_000 + "\nend"
-    prompt = _build_user_message(ReviewContext(task="t", diff=diff))
+    prompt = _reviewer._build_user_message(harness__panel.ReviewContext(task="t", diff=diff))
     assert prompt.endswith(f"DIFF:\n{diff}")
 
 
@@ -711,7 +729,7 @@ def test_two_findings_in_different_hunks_of_one_file_both_survive() -> None:
     A second finding in another hunk of the same file was dropped as a duplicate of the first, and
     the report never said it existed. The key carries the hunk.
     """
-    ctx = ReviewContext(diff=TWO_HUNKS_DIFF)
+    ctx = harness__panel.ReviewContext(diff=TWO_HUNKS_DIFF)
     seat = _seat("m1", _block("security", "foo.py:11"), _block("security", "foo.py:43"))
     res = _agg([seat], ctx=ctx)
     assert [f.file_line for f in res.merged_findings] == ["foo.py:11", "foo.py:43"]
@@ -749,9 +767,9 @@ def test_the_two_sides_of_one_hunk_key_alike_and_a_deletion_does_not_swallow_a_l
         "@@ -10,50 +10,2 @@ def g():\n     x = 1\n" + "-    gone\n" * 48 + "     return x\n"
         "@@ -70,3 +23,4 @@ def h():\n     y = 1\n+    z = 2\n     return y\n"
     )
-    ctx = ReviewContext(diff=diff)
+    ctx = harness__panel.ReviewContext(diff=diff)
     pre, post = _block("security", "foo.py:40"), _block("security", "foo.py:42")
-    res = _agg([_seat("m1", post)], ctx=replace(ctx, prior_findings=(pre,)))
+    res = _agg([_seat("m1", post)], ctx=dataclasses.replace(ctx, prior_findings=(pre,)))
     assert res.merged_findings == () and not res.blocked
     seat = _seat("m1", _block("security", "bar.py:23"), _block("security", "bar.py:55"))
     res = _agg([seat], ctx=ctx)
@@ -766,19 +784,27 @@ def test_a_renames_two_names_do_not_ground_each_others_lines() -> None:
     own side.
     """
     diff = "--- a/old.py\n+++ b/new.py\n@@ -10,3 +200,3 @@\n a\n-b\n+B\n c\n"
-    hunks = diff_hunks(diff)
+    hunks = harness__panel.diff_hunks(diff)
     assert hunks == {
-        "new.py": [Hunk(old=None, new=(200, 202))],
-        "old.py": [Hunk(old=(10, 12), new=None)],
+        "new.py": [harness__panel.Hunk(old=None, new=(200, 202))],
+        "old.py": [harness__panel.Hunk(old=(10, 12), new=None)],
     }
-    assert is_grounded("old.py:11", hunks) and is_grounded("new.py:201", hunks)
-    assert not is_grounded("old.py:201", hunks) and not is_grounded("new.py:11", hunks)
-    assert not is_grounded("new.py:0", hunks)  # the other name's side is None
+    assert harness__panel.is_grounded("old.py:11", hunks) and harness__panel.is_grounded(
+        "new.py:201", hunks
+    )
+    assert not harness__panel.is_grounded("old.py:201", hunks) and not harness__panel.is_grounded(
+        "new.py:11", hunks
+    )
+    assert not harness__panel.is_grounded("new.py:0", hunks)  # the other name's side is None
     # A pure deletion inside a kept file still grounds the post-image line it
     # sits at, and a pure insertion the pre-image one.
-    kept = diff_hunks("--- a/k.py\n+++ b/k.py\n@@ -10,5 +9,0 @@\n-a\n-b\n-c\n-d\n-e\n")
-    assert kept["k.py"] == [Hunk(old=(10, 14), new=(9, 9))]
-    assert is_grounded("k.py:9", kept) and is_grounded("k.py:12", kept)
+    kept = harness__panel.diff_hunks(
+        "--- a/k.py\n+++ b/k.py\n@@ -10,5 +9,0 @@\n-a\n-b\n-c\n-d\n-e\n"
+    )
+    assert kept["k.py"] == [harness__panel.Hunk(old=(10, 14), new=(9, 9))]
+    assert harness__panel.is_grounded("k.py:9", kept) and harness__panel.is_grounded(
+        "k.py:12", kept
+    )
 
 
 def test_a_review_notice_is_cut_head_first_at_a_character_boundary() -> None:
@@ -787,10 +813,8 @@ def test_a_review_notice_is_cut_head_first_at_a_character_boundary() -> None:
     The cut keeps the head (the findings lead), lands inside the byte budget, and names the bytes it
     dropped.
     """
-    from agent6.harness._panel import REVIEW_NOTICE_BYTES, review_notice
-
-    assert review_notice("short") == "[review]\nshort"
+    assert harness__panel.review_notice("short") == "[review]\nshort"
     text = "\u6f22" * 2_000  # three bytes a character
-    head, marker = review_notice(text).removeprefix("[review]\n").rsplit("\n", 1)
-    assert head == "\u6f22" * (REVIEW_NOTICE_BYTES // 3)
+    head, marker = harness__panel.review_notice(text).removeprefix("[review]\n").rsplit("\n", 1)
+    assert head == "\u6f22" * (harness__panel.REVIEW_NOTICE_BYTES // 3)
     assert marker == f"[review: {6_000 - len(head.encode())} more bytes cut]"

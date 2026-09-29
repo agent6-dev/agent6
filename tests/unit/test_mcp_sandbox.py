@@ -9,8 +9,8 @@ it spawns inherit.
 
 from __future__ import annotations
 
+import pathlib
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -58,14 +58,14 @@ def test_a_confined_server_loses_the_session_bus() -> None:
     """
     import pytest
 
-    from agent6.child_env import curated_env
+    from agent6 import child_env
 
     # Set them in the parent first: an unset var is absent from any allowlist,
     # so without this the assertions pass even if desktop=False were a no-op.
     with pytest.MonkeyPatch().context() as mp:
         for var in ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "DISPLAY", "WAYLAND_DISPLAY"):
             mp.setenv(var, "set-in-parent")
-        confined = curated_env(desktop=False)
+        confined = child_env.curated_env(desktop=False)
         for var in ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "DISPLAY", "WAYLAND_DISPLAY"):
             assert var not in confined, f"{var} reaches a process that is not confined"
         assert "PATH" in confined, "it still has to be able to run"
@@ -76,17 +76,17 @@ def test_a_notify_hook_keeps_the_desktop_it_needs(monkeypatch: pytest.MonkeyPatc
 
     `notify-send` talks to the session bus, and a hook is the operator's own command.
     """
-    from agent6.child_env import curated_env
+    from agent6 import child_env
 
     monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
-    assert "DBUS_SESSION_BUS_ADDRESS" in curated_env()
+    assert "DBUS_SESSION_BUS_ADDRESS" in child_env.curated_env()
 
 
 def test_a_server_description_cannot_repaint_the_terminal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The server chose this text. It is printed, so it must not carry ESC."""
-    from agent6.ui.cli.mcp_connect import cmd_mcp_connect
+    from agent6.ui.cli import mcp_connect
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -104,7 +104,7 @@ def test_a_server_description_cannot_repaint_the_terminal(
         f"'description':\"{hostile}\",'inputSchema':{{}}}}]}}}})\n"
     )
     assert (
-        cmd_mcp_connect(
+        mcp_connect.cmd_mcp_connect(
             "h",
             # /usr/bin: the probe runs under the run's jail, which grants /usr, not the venv.
             command=["/usr/bin/python3", "-c", script],
@@ -177,7 +177,7 @@ def test_a_plaintext_nonloopback_credential_warns_instead_of_refusing() -> None:
 
 
 def test_a_server_name_is_refused_before_it_becomes_a_table_header(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The name is spliced into `[mcp.servers.<name>]` as raw TOML.
 
@@ -186,12 +186,12 @@ def test_a_server_name_is_refused_before_it_becomes_a_table_header(
     sandbox off. It was contained only by accident, because the duplicate table made the re-
     validation roll back.
     """
-    from agent6.ui.cli.mcp_connect import cmd_mcp_connect
+    from agent6.ui.cli import mcp_connect
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     hostile = 'evil]\n[sandbox]\nisolation = "none"\nrun_commands = "yes"\n#'
-    rc = cmd_mcp_connect(
+    rc = mcp_connect.cmd_mcp_connect(
         hostile, command=["true"], url="", token_env="", pass_env=[], to_repo=False
     )
     assert rc != 0
@@ -201,14 +201,14 @@ def test_a_server_name_is_refused_before_it_becomes_a_table_header(
 
 
 def test_a_provider_key_is_never_passed_to_an_mcp_server(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A provider key is never passed to an MCP server.
 
     `curated_env` keeps provider keys out of every child agent6 spawns, on the stated basis that
     nobody would write one down; `--pass-env` is exactly writing one down, so it is checked.
     """
-    from agent6.ui.cli.mcp_connect import cmd_mcp_connect
+    from agent6.ui.cli import mcp_connect
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -219,7 +219,7 @@ def test_a_provider_key_is_never_passed_to_an_mcp_server(
         'base_url = "https://openrouter.ai/api/v1"\napi_key_env = "OPENROUTER_API_KEY"\n',
         encoding="utf-8",
     )
-    rc = cmd_mcp_connect(
+    rc = mcp_connect.cmd_mcp_connect(
         "files",
         command=["true"],
         url="",
@@ -232,17 +232,17 @@ def test_a_provider_key_is_never_passed_to_an_mcp_server(
     assert "OPENROUTER_API_KEY" in err and "provider API key" in err
 
 
-def _policy_for(body: dict[str, object] | None, tmp_path: Path):
-    from agent6.app._setup import mcp_server_policy
+def _policy_for(body: dict[str, object] | None, tmp_path: pathlib.Path):
+    from agent6.app import _setup
 
     spec: dict[str, object] = {"command": ["npx", "server"]}
     if body is not None:
         spec["sandbox"] = body
     cfg = Config.model_validate({"mcp": {"enabled": True, "servers": {"s": spec}}})
-    return mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["s"])
+    return _setup.mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["s"])
 
 
-def test_a_server_block_names_only_what_is_extra(tmp_path: Path) -> None:
+def test_a_server_block_names_only_what_is_extra(tmp_path: pathlib.Path) -> None:
     """The whole ergonomic point.
 
     A server gets the same sandbox a jailed command gets (system dirs, the operator's tool dirs, a
@@ -251,19 +251,19 @@ def test_a_server_block_names_only_what_is_extra(tmp_path: Path) -> None:
     """
     policy = _policy_for({"read_paths": ["/srv/notes"]}, tmp_path)
     assert policy is not None
-    assert Path("/srv/notes") in policy.extra_ro_paths
+    assert pathlib.Path("/srv/notes") in policy.extra_ro_paths
     assert policy.tool_paths, "the operator's tool dirs come with the base"
     assert dict(policy.env)["HOME"].startswith("/tmp"), "a writable HOME comes with the base"
     assert policy.cwd == tmp_path
 
 
-def test_one_servers_grants_do_not_reach_its_sibling(tmp_path: Path) -> None:
+def test_one_servers_grants_do_not_reach_its_sibling(tmp_path: pathlib.Path) -> None:
     """Additive means additive TO THAT SERVER.
 
     Each gets its own policy and its own launcher, so a browser server granted the network and a
     data dir leaves the memory server beside it with neither.
     """
-    from agent6.app._setup import mcp_server_policy
+    from agent6.app import _setup
 
     cfg = Config.model_validate(
         {
@@ -279,15 +279,15 @@ def test_one_servers_grants_do_not_reach_its_sibling(tmp_path: Path) -> None:
             }
         }
     )
-    browser = mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["browser"])
-    memory = mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["memory"])
+    browser = _setup.mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["browser"])
+    memory = _setup.mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["memory"])
     assert browser is not None and memory is not None
-    assert Path("/srv/profile") in browser.extra_ro_paths and browser.network == "host"
-    assert Path("/srv/profile") not in memory.extra_ro_paths
+    assert pathlib.Path("/srv/profile") in browser.extra_ro_paths and browser.network == "host"
+    assert pathlib.Path("/srv/profile") not in memory.extra_ro_paths
     assert memory.network == "none"
 
 
-def test_no_block_still_confines(tmp_path: Path) -> None:
+def test_no_block_still_confines(tmp_path: pathlib.Path) -> None:
     """An absent block is the secure default, not an opt-out.
 
     The server is confined exactly like a command, on a network of its own.
@@ -298,7 +298,7 @@ def test_no_block_still_confines(tmp_path: Path) -> None:
     assert policy.network == "none"
 
 
-def test_unconfined_is_the_only_way_out(tmp_path: Path) -> None:
+def test_unconfined_is_the_only_way_out(tmp_path: pathlib.Path) -> None:
     assert _policy_for({"unconfined": True}, tmp_path) is None
 
 
@@ -318,7 +318,7 @@ def test_unconfined_cannot_be_half_applied() -> None:
 
 
 def test_a_server_cannot_be_granted_the_private_dirs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The same refusal `[sandbox].extra_read_paths` gets.
 
@@ -342,7 +342,7 @@ def test_a_server_cannot_be_granted_the_private_dirs(
 
 
 def test_a_confined_server_gets_no_desktop_addresses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """PROVED escape, re-pinned on the new path.
 

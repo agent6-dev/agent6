@@ -15,12 +15,12 @@ write during planning is operator-approved, never auto-run.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Literal
 
+from agent6 import kinds
 from agent6.config import Config, load_config
-from agent6.harness.loop import build_system_prompt  # pyright: ignore[reportPrivateUsage]
-from agent6.kinds import RepoSummary
+from agent6.harness import _prompt_blocks  # pyright: ignore[reportPrivateUsage]
 
 _INTERACTIVE: tuple[Literal["plan", "ask"], ...] = ("plan", "ask")
 
@@ -38,10 +38,10 @@ _CONFIG_TOML = "\n".join(
 )
 
 
-def _prompt(tmp_path: Path, mode: Literal["plan", "ask"]) -> str:
+def _prompt(tmp_path: pathlib.Path, mode: Literal["plan", "ask"]) -> str:
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(_CONFIG_TOML, encoding="utf-8")
-    repo = RepoSummary(
+    repo = kinds.RepoSummary(
         root=tmp_path,
         branch="",
         head_sha="",
@@ -51,10 +51,12 @@ def _prompt(tmp_path: Path, mode: Literal["plan", "ask"]) -> str:
         recent_log="",
         is_git=False,
     )
-    return build_system_prompt(config=load_config(cfg_path), repo=repo, mode=mode, skills=None)
+    return _prompt_blocks.build_system_prompt(
+        config=load_config(cfg_path), repo=repo, mode=mode, skills=None
+    )
 
 
-def _norm(tmp_path: Path, mode: Literal["plan", "ask"]) -> str:
+def _norm(tmp_path: pathlib.Path, mode: Literal["plan", "ask"]) -> str:
     """Return the prompt lower-cased with runs of whitespace collapsed.
 
     A substring check then does not depend on where the prose happens to wrap.
@@ -62,7 +64,7 @@ def _norm(tmp_path: Path, mode: Literal["plan", "ask"]) -> str:
     return " ".join(_prompt(tmp_path, mode).lower().split())
 
 
-def test_plan_and_ask_prompts_do_not_promise_a_read_only_workspace(tmp_path: Path) -> None:
+def test_plan_and_ask_prompts_do_not_promise_a_read_only_workspace(tmp_path: pathlib.Path) -> None:
     for mode in _INTERACTIVE:
         low = _norm(tmp_path, mode)
         # A jailed run_command can write the workspace, so no false absolute.
@@ -75,7 +77,7 @@ def test_plan_and_ask_prompts_do_not_promise_a_read_only_workspace(tmp_path: Pat
         assert "land in the workspace" in low, mode
 
 
-def test_plan_and_ask_prompts_state_that_probe_writes_go_nowhere(tmp_path: Path) -> None:
+def test_plan_and_ask_prompts_state_that_probe_writes_go_nowhere(tmp_path: pathlib.Path) -> None:
     """Withhold the false guarantee and state the consequence.
 
     Nothing carries a probe's writes forward, so an edit the answer or plan needs is described or
@@ -86,7 +88,7 @@ def test_plan_and_ask_prompts_state_that_probe_writes_go_nowhere(tmp_path: Path)
         assert "nothing carries them forward" in low, mode
 
 
-def test_plan_clamps_run_commands_like_ask(tmp_path: Path) -> None:
+def test_plan_clamps_run_commands_like_ask(tmp_path: pathlib.Path) -> None:
     """Plan clamps run_commands like ask.
 
     Plan runs with the operator present, so a standing `run_commands="yes"` is clamped to "ask"
@@ -94,18 +96,18 @@ def test_plan_clamps_run_commands_like_ask(tmp_path: Path) -> None:
     tightens (a configured "no" stays "no"), and an allow-all session answer upgrades the clamped
     "ask" back to "yes".
     """
-    from agent6.app._setup import session_config
-    from agent6.sessions.ipc import COMMAND_SCOPE, effective_run_commands, set_session_allow
+    from agent6.app import _setup
+    from agent6.sessions import ipc
 
     yes = Config.model_validate({"sandbox": {"run_commands": "yes"}})
     # Both interactive modes clamp yes->ask; run keeps the operator's yes.
-    assert session_config(yes, "plan").sandbox.run_commands == "ask"
-    assert session_config(yes, "ask").sandbox.run_commands == "ask"
-    assert session_config(yes, "run").sandbox.run_commands == "yes"
+    assert _setup.session_config(yes, "plan").sandbox.run_commands == "ask"
+    assert _setup.session_config(yes, "ask").sandbox.run_commands == "ask"
+    assert _setup.session_config(yes, "run").sandbox.run_commands == "yes"
     # Only tightens: a withheld "no" is never loosened by the clamp.
     no = Config.model_validate({"sandbox": {"run_commands": "no"}})
-    assert session_config(no, "plan").sandbox.run_commands == "no"
+    assert _setup.session_config(no, "plan").sandbox.run_commands == "no"
     # The clamped "ask" still upgrades to "yes" for the session on allow-all.
-    assert effective_run_commands("ask", tmp_path) == "ask"
-    set_session_allow(tmp_path, COMMAND_SCOPE)
-    assert effective_run_commands("ask", tmp_path) == "yes"
+    assert ipc.effective_run_commands("ask", tmp_path) == "ask"
+    ipc.set_session_allow(tmp_path, ipc.COMMAND_SCOPE)
+    assert ipc.effective_run_commands("ask", tmp_path) == "yes"

@@ -9,16 +9,16 @@ bench config key that did not match the Config field, a dependency count written
 from __future__ import annotations
 
 import os
+import pathlib
 import re
 import subprocess
 import tomllib
-from pathlib import Path
 
 from agent6.prompts import loop as prompts
+from agent6.tools import patch_apply
 from agent6.tools import schema as tool_schema
-from agent6.tools.patch_apply import split_patch_files
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = pathlib.Path(__file__).resolve().parents[2]
 
 _PROMPT_CONSTANTS = (
     prompts.SYSTEM_PROMPT_BASE,
@@ -84,7 +84,7 @@ def test_apply_patch_prompt_contract_mentions_multi_file_patches() -> None:
         "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-a\n+A\n"
         "diff --git a/b b/b\n--- a/b\n+++ b/b\n@@ -1 +1 @@\n-b\n+B\n"
     )
-    assert len(split_patch_files(patch)) == 2
+    assert len(patch_apply.split_patch_files(patch)) == 2
     assert "multi-file" in prompts.SYSTEM_PROMPT_BASE
 
 

@@ -7,16 +7,16 @@ Scanning the file rather than the line catches a flag named on a continuation li
 
 from __future__ import annotations
 
+import argparse
+import pathlib
 import re
 import tomllib
-from argparse import ArgumentParser
-from pathlib import Path
 
 import pytest
 
-from agent6.ui.cli.parser import build_parser
+from agent6.ui.cli import parser as cli_parser
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 DOCS = [*sorted((ROOT / "docs").glob("*.md")), ROOT / "README.md"]
 
 # Other tools' flags named in prose: git's, and Claude Code's on the claude_code argv.
@@ -36,16 +36,16 @@ def _cli_flags() -> set[str]:
     """Every long option the parser knows, at every subcommand depth."""
     found: set[str] = set()
 
-    def walk(parser: ArgumentParser) -> None:
+    def walk(parser: argparse.ArgumentParser) -> None:
         for action in parser._actions:  # pyright: ignore[reportPrivateUsage]
             found.update(o for o in action.option_strings if o.startswith("--"))
             # Subparsers hang off a dict-valued `choices`; a plain argument's is a tuple.
             if isinstance(action.choices, dict):
                 for sub in action.choices.values():
-                    if isinstance(sub, ArgumentParser):
+                    if isinstance(sub, argparse.ArgumentParser):
                         walk(sub)
 
-    walk(build_parser())
+    walk(cli_parser.build_parser())
     return found
 
 
@@ -64,13 +64,13 @@ def _named_flags(text: str) -> set[str]:
 
 
 @pytest.mark.parametrize("doc", DOCS, ids=lambda p: p.name)
-def test_documented_flags_exist(doc: Path) -> None:
+def test_documented_flags_exist(doc: pathlib.Path) -> None:
     missing = _named_flags(doc.read_text("utf-8")) - _cli_flags() - _NOT_OURS
     assert not missing, f"{doc.name} names flags the CLI does not have: {sorted(missing)}"
 
 
 @pytest.mark.parametrize("doc", DOCS, ids=lambda p: p.name)
-def test_documented_source_links_resolve(doc: Path) -> None:
+def test_documented_source_links_resolve(doc: pathlib.Path) -> None:
     """Every `blob/master/<path>` link a doc carries points at a real file."""
     pat = re.compile(r"https://github\.com/agent6-dev/agent6/(?:blob|tree)/master/([^)\s#]+)")
     linked = pat.findall(doc.read_text(encoding="utf-8"))
@@ -79,7 +79,7 @@ def test_documented_source_links_resolve(doc: Path) -> None:
 
 
 @pytest.mark.parametrize("doc", DOCS, ids=lambda p: p.name)
-def test_documented_toml_examples_parse(doc: Path) -> None:
+def test_documented_toml_examples_parse(doc: pathlib.Path) -> None:
     """Every ```toml block a doc ships parses as TOML.
 
     Blocks using `<name>` placeholders or `...` elisions are sketches of shape and are skipped.

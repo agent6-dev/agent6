@@ -9,17 +9,19 @@ completed=False is exit 1, a clean or ungated finish is 0.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
-from agent6.app.finalize import session_exit_code
-from agent6.harness._snapshot import SessionEndReason, Verification
-from agent6.harness.loop import SessionResult
+from agent6.app import finalize
+from agent6.harness import _snapshot
 
 
 def _result(
-    *, completed: bool, reason: SessionEndReason, verified: Verification = "not_applicable"
-) -> SessionResult:
-    return SessionResult(
+    *,
+    completed: bool,
+    reason: _snapshot.SessionEndReason,
+    verified: _snapshot.Verification = "not_applicable",
+) -> _snapshot.SessionResult:
+    return _snapshot.SessionResult(
         completed=completed,
         reason=reason,
         summary="",
@@ -30,17 +32,17 @@ def _result(
 
 
 def test_exit_code_success_is_zero() -> None:
-    assert session_exit_code(_result(completed=True, reason="finish_session")) == 0
+    assert finalize.session_exit_code(_result(completed=True, reason="finish_session")) == 0
 
 
 def test_exit_code_budget_exhausted_is_three() -> None:
     # The documented "raise the cap and resume" signal.
-    assert session_exit_code(_result(completed=False, reason="budget_exhausted")) == 3
+    assert finalize.session_exit_code(_result(completed=False, reason="budget_exhausted")) == 3
 
 
 def test_exit_code_other_failures_are_one() -> None:
     for reason in ("provider_error", "max_iterations", "went_quiet", "steer_abort"):
-        assert session_exit_code(_result(completed=False, reason=reason)) == 1
+        assert finalize.session_exit_code(_result(completed=False, reason=reason)) == 1
 
 
 def test_exit_code_finish_over_a_red_verify_is_four() -> None:
@@ -50,18 +52,30 @@ def test_exit_code_finish_over_a_red_verify_is_four() -> None:
     its own code is distinct from a broken run (1).
     """
     assert (
-        session_exit_code(_result(completed=True, reason="finish_session", verified="failed")) == 4
+        finalize.session_exit_code(
+            _result(completed=True, reason="finish_session", verified="failed")
+        )
+        == 4
     )
-    assert session_exit_code(_result(completed=True, reason="settled", verified="failed")) == 4
+    assert (
+        finalize.session_exit_code(_result(completed=True, reason="settled", verified="failed"))
+        == 4
+    )
 
 
 def test_exit_code_verified_finish_is_zero() -> None:
     # Green, and gateless (nothing to verify) -- both are exit 0.
     assert (
-        session_exit_code(_result(completed=True, reason="finish_session", verified="passed")) == 0
+        finalize.session_exit_code(
+            _result(completed=True, reason="finish_session", verified="passed")
+        )
+        == 0
     )
     assert (
-        session_exit_code(_result(completed=True, reason="settled", verified="not_applicable")) == 0
+        finalize.session_exit_code(
+            _result(completed=True, reason="settled", verified="not_applicable")
+        )
+        == 0
     )
 
 
@@ -72,7 +86,9 @@ def test_exit_code_unverified_finish_is_four() -> None:
     worker pass by never running the gate.
     """
     assert (
-        session_exit_code(_result(completed=True, reason="finish_session", verified="unverified"))
+        finalize.session_exit_code(
+            _result(completed=True, reason="finish_session", verified="unverified")
+        )
         == 4
     )
 
@@ -82,15 +98,17 @@ def test_auto_merge_needs_a_vouched_for_tree() -> None:
 
     A red or unverified finish stays on its branch; run and resume share the one predicate.
     """
-    from agent6.app.finalize import auto_merge_eligible
-
-    assert auto_merge_eligible(_result(completed=True, reason="finish_session", verified="passed"))
-    assert auto_merge_eligible(_result(completed=True, reason="settled", verified="not_applicable"))
+    assert finalize.auto_merge_eligible(
+        _result(completed=True, reason="finish_session", verified="passed")
+    )
+    assert finalize.auto_merge_eligible(
+        _result(completed=True, reason="settled", verified="not_applicable")
+    )
     for bad in ("failed", "unverified"):
-        assert not auto_merge_eligible(
+        assert not finalize.auto_merge_eligible(
             _result(completed=True, reason="finish_session", verified=bad)  # pyright: ignore[reportArgumentType]
         )
-    assert not auto_merge_eligible(
+    assert not finalize.auto_merge_eligible(
         _result(completed=False, reason="max_iterations", verified="passed")
     )
 
@@ -102,23 +120,22 @@ def test_exit_code_stranded_edits_are_five() -> None:
     outranks 5; an unstranded finish stays 0.
     """
     ok = _result(completed=True, reason="finish_session", verified="passed")
-    assert session_exit_code(ok, stranded=True) == 5
-    assert session_exit_code(ok, stranded=False) == 0
+    assert finalize.session_exit_code(ok, stranded=True) == 5
+    assert finalize.session_exit_code(ok, stranded=False) == 0
     red = _result(completed=True, reason="finish_session", verified="failed")
-    assert session_exit_code(red, stranded=True) == 4
+    assert finalize.session_exit_code(red, stranded=True) == 4
     broke = _result(completed=False, reason="provider_error")
-    assert session_exit_code(broke, stranded=True) == 1
+    assert finalize.session_exit_code(broke, stranded=True) == 1
 
 
-def test_stranded_edits_reads_git_reality(tmp_path: Path) -> None:
+def test_stranded_edits_reads_git_reality(tmp_path: pathlib.Path) -> None:
     """The predicate is true exactly when the promised branch is missing and the tree is dirty.
 
     A clean tree and an existing branch are both False.
     """
     import subprocess
 
-    from agent6.app.finalize import stranded_edits
-    from agent6.sessions.layout import SessionLayout
+    from agent6.sessions import layout as sessions_layout
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -131,7 +148,7 @@ def test_stranded_edits_reads_git_reality(tmp_path: Path) -> None:
     )
     import json
 
-    layout = SessionLayout(state_dir=tmp_path / "state", session_id="r1")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="r1")
     layout.session_dir.mkdir(parents=True)
     (layout.session_dir / "manifest.json").write_text(
         json.dumps(
@@ -142,19 +159,19 @@ def test_stranded_edits_reads_git_reality(tmp_path: Path) -> None:
     result = _result(completed=True, reason="finish_session", verified="passed")
     import os
 
-    old = Path.cwd()
+    old = pathlib.Path.cwd()
     os.chdir(repo)
     try:
-        assert stranded_edits(result, layout, repo) is False  # clean tree
+        assert finalize.stranded_edits(result, layout, repo) is False  # clean tree
         (repo / "a.txt").write_text("changed", encoding="utf-8")
-        assert stranded_edits(result, layout, repo) is True  # dirty + branch missing
+        assert finalize.stranded_edits(result, layout, repo) is True  # dirty + branch missing
         subprocess.run(["git", "-C", str(repo), "branch", "agent6/r1"], check=True)
-        assert stranded_edits(result, layout, repo) is False  # branch exists
+        assert finalize.stranded_edits(result, layout, repo) is False  # branch exists
     finally:
         os.chdir(old)
 
 
-def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: Path) -> None:
+def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: pathlib.Path) -> None:
     """The stranded predicate reads the commit record, not the branch name.
 
     Keyed on the branch name, `branch_per_run = false` exited 0 with no warning over a commit
@@ -166,9 +183,8 @@ def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: Path) -> N
     import os
     import subprocess
 
-    from agent6.app.finalize import stranded_edits
-    from agent6.git_ops import chain_ref_for
-    from agent6.sessions.layout import SessionLayout
+    from agent6 import git_ops
+    from agent6.sessions import layout as sessions_layout
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -181,24 +197,28 @@ def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: Path) -> N
     )
     result = _result(completed=True, reason="finish_session", verified="passed")
 
-    def layout_for(session_id: str, manifest: dict[str, object]) -> SessionLayout:
-        layout = SessionLayout(state_dir=tmp_path / "state", session_id=session_id)
+    def layout_for(session_id: str, manifest: dict[str, object]) -> sessions_layout.SessionLayout:
+        layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id=session_id)
         layout.session_dir.mkdir(parents=True)
         (layout.session_dir / "manifest.json").write_text(
             json.dumps({"mode": "run", **manifest}), encoding="utf-8"
         )
         return layout
 
-    old = Path.cwd()
+    old = pathlib.Path.cwd()
     os.chdir(repo)
     try:
         (repo / "a.txt").write_text("changed", encoding="utf-8")
         branchless = layout_for("b1", {"session_id": "b1", "user_task": "t", "run_branch": None})
-        assert stranded_edits(result, branchless, repo) is True  # dirty, no chain: nothing landed
+        assert (
+            finalize.stranded_edits(result, branchless, repo) is True
+        )  # dirty, no chain: nothing landed
         subprocess.run(
-            ["git", "-C", str(repo), "update-ref", chain_ref_for("b1"), "HEAD"], check=True
+            ["git", "-C", str(repo), "update-ref", git_ops.chain_ref_for("b1"), "HEAD"], check=True
         )
-        assert stranded_edits(result, branchless, repo) is False  # the chain holds the record
+        assert (
+            finalize.stranded_edits(result, branchless, repo) is False
+        )  # the chain holds the record
         never_commits = layout_for(
             "n1",
             {
@@ -208,20 +228,24 @@ def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: Path) -> N
                 "policy": {"commit_per_step": False},
             },
         )
-        assert stranded_edits(result, never_commits, repo) is False  # nothing commits by design
+        assert (
+            finalize.stranded_edits(result, never_commits, repo) is False
+        )  # nothing commits by design
         branch_lost = layout_for(
             "c1", {"session_id": "c1", "user_task": "t", "run_branch": "agent6/c1"}
         )
-        assert stranded_edits(result, branch_lost, repo) is True  # no branch, no chain
+        assert finalize.stranded_edits(result, branch_lost, repo) is True  # no branch, no chain
         subprocess.run(
-            ["git", "-C", str(repo), "update-ref", chain_ref_for("c1"), "HEAD"], check=True
+            ["git", "-C", str(repo), "update-ref", git_ops.chain_ref_for("c1"), "HEAD"], check=True
         )
-        assert stranded_edits(result, branch_lost, repo) is False  # the chain holds the record
+        assert (
+            finalize.stranded_edits(result, branch_lost, repo) is False
+        )  # the chain holds the record
         for design in ({"mode": "plan"}, {"mode": "run", "git_control": "model"}):
             layout = layout_for(
                 f"d-{design.get('git_control', design['mode'])}",
                 {"session_id": "d", "user_task": "t", "run_branch": None, **design},
             )
-            assert stranded_edits(result, layout, repo) is False  # no chain to commit to
+            assert finalize.stranded_edits(result, layout, repo) is False  # no chain to commit to
     finally:
         os.chdir(old)

@@ -5,8 +5,8 @@
 from __future__ import annotations
 
 import io
+import pathlib
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -14,7 +14,7 @@ from agent6.ui.cli import cli_main
 
 
 def test_the_cli_line_buffers_a_redirected_stdout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)

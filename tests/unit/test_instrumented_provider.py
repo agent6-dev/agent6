@@ -9,14 +9,14 @@ run.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 
-from agent6.app.providers import InstrumentedProvider
-from agent6.budget import BudgetTracker
+from agent6 import budget as agent6_budget
+from agent6.app import providers
 from agent6.providers import ProviderResponse
 
 
@@ -33,19 +33,19 @@ def _resp() -> ProviderResponse:
     )
 
 
-def _wrap(inner: MagicMock) -> InstrumentedProvider:
-    return InstrumentedProvider(
+def _wrap(inner: mock.MagicMock) -> providers.InstrumentedProvider:
+    return providers.InstrumentedProvider(
         inner=inner,
         role="worker",
         model="moonshotai/kimi-k2.6",
         provider_name="openai",
-        events=MagicMock(),
-        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        events=mock.MagicMock(),
+        budget=agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
     )
 
 
 def test_instrumented_provider_forwards_reasoning_effort() -> None:
-    inner = MagicMock()
+    inner = mock.MagicMock()
     inner.call.return_value = _resp()
     wrapper = _wrap(inner)
 
@@ -60,7 +60,7 @@ def test_instrumented_provider_forwards_reasoning_effort() -> None:
 
 
 def test_instrumented_provider_forwards_should_abort() -> None:
-    inner = MagicMock()
+    inner = mock.MagicMock()
     inner.call.return_value = _resp()
     wrapper = _wrap(inner)
 
@@ -72,7 +72,7 @@ def test_instrumented_provider_forwards_should_abort() -> None:
 
 
 def test_instrumented_provider_defaults_reasoning_effort_to_none() -> None:
-    inner = MagicMock()
+    inner = mock.MagicMock()
     inner.call.return_value = _resp()
     wrapper = _wrap(inner)
 
@@ -81,21 +81,18 @@ def test_instrumented_provider_defaults_reasoning_effort_to_none() -> None:
     assert inner.call.call_args.kwargs["reasoning_effort"] is None
 
 
-def test_the_journal_records_what_the_assistant_said(tmp_path: Path) -> None:
+def test_the_journal_records_what_the_assistant_said(tmp_path: pathlib.Path) -> None:
     """The assistant text event is pinned at the emitter: three readers rebuild the conversation.
 
     `read_session`, `/btw` and the transcript fold; a fixture can drift, the emitter cannot.
     """
-    from types import SimpleNamespace
-    from unittest.mock import MagicMock
+    import types
 
-    from agent6.app.providers import InstrumentedProvider
-    from agent6.budget import BudgetTracker
-    from agent6.events import EventSink
+    from agent6 import events as agent6_events
 
-    events = EventSink(tmp_path / "logs.jsonl")
-    inner = MagicMock()
-    inner.call.return_value = SimpleNamespace(
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    inner = mock.MagicMock()
+    inner.call.return_value = types.SimpleNamespace(
         text="the answer",
         tool_uses=(),
         refused={},
@@ -106,13 +103,13 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: Path) -> None:
         cache_creation_tokens=0,
         raw={},
     )
-    InstrumentedProvider(
+    providers.InstrumentedProvider(
         inner=inner,
         role="worker",
         model="m",
         provider_name="p",
         events=events,
-        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
     ).call(system="s", messages=[], tools=[], max_tokens=8)
 
     settled = [
@@ -124,13 +121,13 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: Path) -> None:
 
 
 def test_a_failed_call_still_reports_what_it_spent(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A cut stream is billed, and `budget.update` is the only path spend takes to a surface.
 
     The live meters, `sessions list` and the machine spend ledger all read that event.
     """
-    from agent6.events import EventSink
+    from agent6 import events as agent6_events
     from agent6.providers import ProviderError
 
     # The USD assertion needs a table price; the suite isolates the price cache, so seed one.
@@ -140,8 +137,10 @@ def test_a_failed_call_still_reports_what_it_spent(
     (tmp_path / "agent6" / "models" / "anthropic.json").write_text(
         json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
     )
-    events = EventSink(tmp_path / "logs.jsonl")
-    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=2_000_000, max_percent=-1)
+    events = agent6_events.EventSink(tmp_path / "logs.jsonl")
+    budget = agent6_budget.BudgetTracker(
+        max_usd=10.0, max_tokens_fallback=2_000_000, max_percent=-1
+    )
 
     def _cut_stream(**_: object) -> ProviderResponse:
         budget.record(
@@ -153,9 +152,9 @@ def test_a_failed_call_still_reports_what_it_spent(
         )
         raise ProviderError("stream cut before completion")
 
-    inner = MagicMock()
+    inner = mock.MagicMock()
     inner.call.side_effect = _cut_stream
-    wrapper = InstrumentedProvider(
+    wrapper = providers.InstrumentedProvider(
         inner=inner,
         role="worker",
         model="anthropic/claude-haiku-4.5",
@@ -182,7 +181,7 @@ def test_a_provider_error_is_stamped_with_the_provider_name() -> None:
     """The credential hint names the failing provider's config key, not a `<name>` placeholder."""
     from agent6.providers import ProviderError
 
-    inner = MagicMock()
+    inner = mock.MagicMock()
     inner.call.side_effect = ProviderError("401 nope", status_code=401)
     with pytest.raises(ProviderError) as info:
         _wrap(inner).call(system="s", messages=[])

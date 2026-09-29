@@ -6,16 +6,18 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import time
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-from agent6.sessions.manifest import CompareStamp
+from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import (
+    format,
     is_session_husk,
     is_winner,
+    listing,
     manifest_branches,
     session_compare,
     session_is_live,
@@ -23,11 +25,9 @@ from agent6.viewmodel import (
     summarize_session_dir,
     task_snippet,
 )
-from agent6.viewmodel.format import format_branch, format_compare, format_lineage, status_level
-from agent6.viewmodel.listing import finished_needs_new_work
 
 
-def test_run_mtime_prefers_log_over_dir(tmp_path: Path) -> None:
+def test_run_mtime_prefers_log_over_dir(tmp_path: pathlib.Path) -> None:
     d = tmp_path / "run"
     d.mkdir()
     log = d / "logs.jsonl"
@@ -37,7 +37,7 @@ def test_run_mtime_prefers_log_over_dir(tmp_path: Path) -> None:
     assert session_mtime(d) == 1000.0  # keyed off the log, not the dir
 
 
-def test_run_mtime_of_a_log_less_session_is_its_manifest(tmp_path: Path) -> None:
+def test_run_mtime_of_a_log_less_session_is_its_manifest(tmp_path: pathlib.Path) -> None:
     """Opening a parked run or a `fork --no-run` in a viewer never floats it to the top of a list.
 
     Both have no log, and the `frontends/` claim the viewer writes bumped the dir mtime.
@@ -71,7 +71,7 @@ def test_task_snippet_is_the_operators_words_under_a_from_seed_and_skills() -> N
 
     A clipped copy that cuts inside the block drops the open block instead of showing its opener.
     """
-    from agent6.task_text import operator_task_text
+    from agent6 import task_text
 
     seeded = (
         '<prior-run id="agile-echo-H2EWX5">\nThis question is about a PRIOR agent6 run.\n'
@@ -85,8 +85,10 @@ def test_task_snippet_is_the_operators_words_under_a_from_seed_and_skills() -> N
         "add a --json flag\nmore detail"
     )
     assert task_snippet(skilled) == "add a --json flag"
-    assert operator_task_text(skilled) == "add a --json flag\nmore detail"
-    assert operator_task_text(seeded[:60]) == ""  # clipped inside the block: nothing invented
+    assert task_text.operator_task_text(skilled) == "add a --json flag\nmore detail"
+    assert (
+        task_text.operator_task_text(seeded[:60]) == ""
+    )  # clipped inside the block: nothing invented
     assert task_snippet("plain words") == "plain words"
 
 
@@ -116,18 +118,18 @@ def test_task_snippet_of_a_task_that_is_only_a_file_block_is_its_first_line() ->
     assert task_snippet(task) == '<file path="question.md">'
 
 
-def _stamp(session_dir: Path, compare: object) -> None:
+def _stamp(session_dir: pathlib.Path, compare: object) -> None:
     session_dir.mkdir(parents=True, exist_ok=True)
     (session_dir / "manifest.json").write_text(json.dumps({"compare": compare}), encoding="utf-8")
 
 
-def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: Path) -> None:
+def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: pathlib.Path) -> None:
     # The fixture writes the legacy `group` key; the model ignores it (old-shape
     # compat), so a fan-out lane recorded before the dedup still reads its stamp.
     win = tmp_path / "win"
     _stamp(win, {"group": "fan", "rank": 1, "of": 2, "winner": True, "ranked_by": "judge"})
     assert is_winner(win) is True
-    assert isinstance(session_compare(win), CompareStamp)
+    assert isinstance(session_compare(win), sessions_manifest.CompareStamp)
     loser = tmp_path / "loser"
     _stamp(loser, {"group": "fan", "rank": 2, "of": 2, "winner": False, "ranked_by": "judge"})
     assert is_winner(loser) is False
@@ -138,30 +140,36 @@ def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: Path) -> No
 
 
 def test_format_compare_headline_and_rationale() -> None:
-    won = format_compare(
-        CompareStamp(rank=1, of=3, winner=True, ranked_by="judge", rationale="cleanest diff")
+    won = format.format_compare(
+        sessions_manifest.CompareStamp(
+            rank=1, of=3, winner=True, ranked_by="judge", rationale="cleanest diff"
+        )
     )
     assert won == ("rank 1/3 · winner · judge", "cleanest diff")
     # A loser, mechanical, no rationale.
-    lost = format_compare(
-        CompareStamp(rank=2, of=3, winner=False, ranked_by="mechanical", rationale="")
+    lost = format.format_compare(
+        sessions_manifest.CompareStamp(
+            rank=2, of=3, winner=False, ranked_by="mechanical", rationale=""
+        )
     )
     assert lost == ("rank 2/3 · mechanical", "")
     # No stamp -> None.
-    assert format_compare(None) is None
+    assert format.format_compare(None) is None
 
 
-def test_format_branch_is_the_one_wording_and_manifest_branches_carries_it(tmp_path: Path) -> None:
+def test_format_branch_is_the_one_wording_and_manifest_branches_carries_it(
+    tmp_path: pathlib.Path,
+) -> None:
     """`branch_line` is the header's branch line: merged into its base, else the base it lands on.
 
     "" without a run branch; `manifest_branches` hands it to every header.
     """
     import json
 
-    assert format_branch("agent6/x", "main", "") == "agent6/x → merges into main"
-    assert format_branch("agent6/x", "main", "main") == "agent6/x (merged into main)"
-    assert format_branch("agent6/x", "", "") == "agent6/x"
-    assert format_branch("", "main", "") == ""
+    assert format.format_branch("agent6/x", "main", "") == "agent6/x → merges into main"
+    assert format.format_branch("agent6/x", "main", "main") == "agent6/x (merged into main)"
+    assert format.format_branch("agent6/x", "", "") == "agent6/x"
+    assert format.format_branch("", "main", "") == ""
     d = tmp_path / "run-x"
     d.mkdir()
     (d / "manifest.json").write_text(
@@ -176,15 +184,18 @@ def test_format_branch_is_the_one_wording_and_manifest_branches_carries_it(tmp_p
     assert manifest_branches(d) == {}
 
 
-def test_manifest_header_carries_the_fork_lineage_in_one_wording(tmp_path: Path) -> None:
+def test_manifest_header_carries_the_fork_lineage_in_one_wording(tmp_path: pathlib.Path) -> None:
     """`forked_from` is `<parent>@turn <n> (<sha12>)` on every header of a fork, else absent."""
     import json
 
     from agent6.viewmodel import manifest_header
 
-    assert format_lineage("orig-run-AAAAAA", 3, "a" * 40) == "orig-run-AAAAAA@turn 3 (aaaaaaaaaaaa)"
-    assert format_lineage("orig-run-AAAAAA", 3, None) == "orig-run-AAAAAA@turn 3"
-    assert format_lineage(None, None, None) == ""
+    assert (
+        format.format_lineage("orig-run-AAAAAA", 3, "a" * 40)
+        == "orig-run-AAAAAA@turn 3 (aaaaaaaaaaaa)"
+    )
+    assert format.format_lineage("orig-run-AAAAAA", 3, None) == "orig-run-AAAAAA@turn 3"
+    assert format.format_lineage(None, None, None) == ""
     d = tmp_path / "fork-x"
     d.mkdir()
     (d / "manifest.json").write_text(
@@ -202,7 +213,7 @@ def test_manifest_header_carries_the_fork_lineage_in_one_wording(tmp_path: Path)
     assert "forked_from" not in manifest_header(d)
 
 
-def test_manifest_branches_claims_merged_only_while_the_stamp_holds(tmp_path: Path) -> None:
+def test_manifest_branches_claims_merged_only_while_the_stamp_holds(tmp_path: pathlib.Path) -> None:
     """A run resumed after its merge reads as awaiting a merge again, with the repo at hand.
 
     The web Merge button read the raw stamp and stayed disabled over unmerged commits.
@@ -241,7 +252,7 @@ def test_manifest_branches_claims_merged_only_while_the_stamp_holds(tmp_path: Pa
     assert manifest_branches(d)["merged_into"] == "main"
 
 
-def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: Path) -> None:
+def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: pathlib.Path) -> None:
     """`commits_ref` is the ref a merge or diff reads: run branch, else chain ref, else none.
 
     The web Merge button gated on `run_branch`, so a `branch_per_run = false` run read "no branch
@@ -249,7 +260,7 @@ def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: Path) -> 
     """
     import subprocess
 
-    from agent6.git_ops import chain_ref_for
+    from agent6 import git_ops
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -266,7 +277,7 @@ def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: Path) -> 
         json.dumps({"session_id": "x", "run_branch": None, "base_branch": "main"}), encoding="utf-8"
     )
     assert "commits_ref" not in manifest_branches(d, repo=repo)
-    chain = chain_ref_for("x")
+    chain = git_ops.chain_ref_for("x")
     subprocess.run(["git", "-C", str(repo), "update-ref", chain, "HEAD"], check=True)
     assert manifest_branches(d, repo=repo)["commits_ref"] == chain
     (d / "manifest.json").write_text(
@@ -278,7 +289,7 @@ def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: Path) -> 
     assert manifest_branches(d, repo=repo)["commits_ref"] == "agent6/x"
 
 
-def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: Path) -> None:
+def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: pathlib.Path) -> None:
     """The manifest names the run branch at run start; git creates it at the first commit.
 
     A run stopped before one (or parked before starting) had a header reading `agent6/x → merges
@@ -288,7 +299,6 @@ def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: Path) ->
     import json
     import subprocess
 
-    from agent6.sessions.manifest import read_manifest
     from agent6.viewmodel import existing_run_branch, session_snapshot
 
     repo = tmp_path / "repo"
@@ -306,7 +316,7 @@ def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: Path) ->
         + json.dumps({"type": "session.end", "reason": "steer_abort"})
         + "\n"
     )
-    assert existing_run_branch(read_manifest(d), repo) == ""
+    assert existing_run_branch(sessions_manifest.read_manifest(d), repo) == ""
     assert manifest_branches(d, repo=repo) == {"base_branch": "main"}
     snap = session_snapshot(d, repo=repo)
     assert "run_branch" not in snap and "branch_line" not in snap
@@ -315,14 +325,16 @@ def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: Path) ->
     env["GIT_COMMITTER_EMAIL"] = "t@t"
     subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "base"], check=True, env=env)
     subprocess.run([*git, "branch", "agent6/x"], check=True)
-    assert existing_run_branch(read_manifest(d), repo) == "agent6/x"
+    assert existing_run_branch(sessions_manifest.read_manifest(d), repo) == "agent6/x"
     assert session_snapshot(d, repo=repo)["branch_line"] == "agent6/x → merges into main"
 
 
 # --- summarize_session_dir / status_word (shared by TUI hub, web hub, runs list) --
 
 
-def _write_run(base: Path, sub: str, session_id: str, events: list[dict[str, object]]) -> Path:
+def _write_run(
+    base: pathlib.Path, sub: str, session_id: str, events: list[dict[str, object]]
+) -> pathlib.Path:
     """A session dir as one looks on disk: a started session has a live worker.pid.
 
     Tests that model a death overwrite or unlink it.
@@ -338,7 +350,7 @@ def _write_run(base: Path, sub: str, session_id: str, events: list[dict[str, obj
     return rd
 
 
-def test_summary_reads_mode_task_and_passed(tmp_path: Path) -> None:
+def test_summary_reads_mode_task_and_passed(tmp_path: pathlib.Path) -> None:
     rd = _write_run(
         tmp_path,
         "runs",
@@ -355,7 +367,7 @@ def test_summary_reads_mode_task_and_passed(tmp_path: Path) -> None:
     assert s.cost_usd == 0.12
 
 
-def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: Path) -> None:
+def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathlib.Path) -> None:
     """The judge's verify tri-state reads the gate facts, not the folded status word.
 
     finish_session over a red gate folds to "finished", so an all-red fan-out crowned a rank 1
@@ -402,7 +414,7 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: Path)
     assert summarize_session_dir(rd).verify_ok is None
 
 
-def test_a_finish_over_a_red_gate_resumes_plainly(tmp_path: Path) -> None:
+def test_a_finish_over_a_red_gate_resumes_plainly(tmp_path: pathlib.Path) -> None:
     """A finish_session over an observed red gate takes a plain resume.
 
     `finished_needs_new_work` read only the end reason, against its own rule that a red verify is
@@ -413,17 +425,17 @@ def test_a_finish_over_a_red_gate_resumes_plainly(tmp_path: Path) -> None:
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
         {"type": "session.end", "all_passed": False, "reason": "finish_session"},
     ]
-    assert finished_needs_new_work(_write_run(tmp_path, "runs", "r-red", red)) is False
+    assert listing.finished_needs_new_work(_write_run(tmp_path, "runs", "r-red", red)) is False
     green: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "session.end", "all_passed": True, "reason": "finish_session"},
     ]
-    assert finished_needs_new_work(_write_run(tmp_path, "runs", "r-green", green)) is True
+    assert listing.finished_needs_new_work(_write_run(tmp_path, "runs", "r-green", green)) is True
     gateless: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "session.end", "all_passed": None, "reason": "finish_session"},
     ]
-    assert finished_needs_new_work(_write_run(tmp_path, "runs", "r-none", gateless)) is True
+    assert listing.finished_needs_new_work(_write_run(tmp_path, "runs", "r-none", gateless)) is True
 
 
 def test_needs_new_work_is_one_predicate_for_every_surface() -> None:
@@ -431,17 +443,22 @@ def test_needs_new_work_is_one_predicate_for_every_surface() -> None:
 
     The web composer re-derived it without the all_passed clause.
     """
-    from agent6.viewmodel.listing import needs_new_work
-
     fin = "finish_session"
-    assert needs_new_work(finished=True, end_reason=fin, all_passed=True) is True
-    assert needs_new_work(finished=True, end_reason=fin, all_passed=None) is True  # gateless
-    assert needs_new_work(finished=True, end_reason=fin, all_passed=False) is False  # red gate
-    assert needs_new_work(finished=True, end_reason="budget_exhausted", all_passed=True) is False
-    assert needs_new_work(finished=False, end_reason=fin, all_passed=True) is False
+    assert listing.needs_new_work(finished=True, end_reason=fin, all_passed=True) is True
+    assert (
+        listing.needs_new_work(finished=True, end_reason=fin, all_passed=None) is True
+    )  # gateless
+    assert (
+        listing.needs_new_work(finished=True, end_reason=fin, all_passed=False) is False
+    )  # red gate
+    assert (
+        listing.needs_new_work(finished=True, end_reason="budget_exhausted", all_passed=True)
+        is False
+    )
+    assert listing.needs_new_work(finished=False, end_reason=fin, all_passed=True) is False
 
 
-def test_a_finish_over_a_red_gate_reads_gate_red(tmp_path: Path) -> None:
+def test_a_finish_over_a_red_gate_reads_gate_red(tmp_path: pathlib.Path) -> None:
     """A finish_session over an observed red gate reads "finished · gate red"."""
     red: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
@@ -466,7 +483,7 @@ def test_a_finish_over_a_red_gate_reads_gate_red(tmp_path: Path) -> None:
     ],
 )
 def test_implicit_clean_ends_do_not_read_as_failures(
-    tmp_path: Path, reason: str, verify_exit: int, detail: str
+    tmp_path: pathlib.Path, reason: str, verify_exit: int, detail: str
 ) -> None:
     """Silent and metric-driven completion are clean ends; a not-green tree qualifies them."""
     events: list[dict[str, object]] = [
@@ -478,7 +495,7 @@ def test_implicit_clean_ends_do_not_read_as_failures(
     assert (s.status, s.reason) == ("finished", detail)
 
 
-def test_summary_ask_reads_answered_not_passed(tmp_path: Path) -> None:
+def test_summary_ask_reads_answered_not_passed(tmp_path: pathlib.Path) -> None:
     # An ask verifies nothing; "passed" for a Q&A is a category error. The ask
     # flow's own banner already says "answered", so listings must agree.
     rd = _write_run(
@@ -494,7 +511,7 @@ def test_summary_ask_reads_answered_not_passed(tmp_path: Path) -> None:
     assert (s.mode, s.status, s.reason) == ("ask", "answered", "")
 
 
-def test_summary_failure_carries_its_reason(tmp_path: Path) -> None:
+def test_summary_failure_carries_its_reason(tmp_path: pathlib.Path) -> None:
     """A provider_error death reads 'failed · provider_error', never a neutral 'done'."""
     rd = _write_run(
         tmp_path,
@@ -509,7 +526,7 @@ def test_summary_failure_carries_its_reason(tmp_path: Path) -> None:
     assert (s.status, s.reason) == ("failed", "provider_error")
 
 
-def test_summary_stop_is_not_a_failure(tmp_path: Path) -> None:
+def test_summary_stop_is_not_a_failure(tmp_path: pathlib.Path) -> None:
     rd = _write_run(
         tmp_path,
         "runs",
@@ -522,7 +539,7 @@ def test_summary_stop_is_not_a_failure(tmp_path: Path) -> None:
     assert summarize_session_dir(rd).status == "stopped"
 
 
-def test_summary_interrupt_reads_as_stopped(tmp_path: Path) -> None:
+def test_summary_interrupt_reads_as_stopped(tmp_path: pathlib.Path) -> None:
     # A Ctrl-C interrupt is the operator's own act, like steer_abort -- not a
     # failure the listing should flag red.
     rd = _write_run(
@@ -537,10 +554,8 @@ def test_summary_interrupt_reads_as_stopped(tmp_path: Path) -> None:
     assert summarize_session_dir(rd).status == "stopped"
 
 
-def test_summary_undone_reads_undone_and_never_unmerged(tmp_path: Path) -> None:
+def test_summary_undone_reads_undone_and_never_unmerged(tmp_path: pathlib.Path) -> None:
     """/undo ends a run with reason "undone", its own word everywhere, never the unmerged mark."""
-    from agent6.viewmodel.format import listing_status_label
-
     rd = _write_run(
         tmp_path,
         "runs",
@@ -558,21 +573,21 @@ def test_summary_undone_reads_undone_and_never_unmerged(tmp_path: Path) -> None:
     )
     s = summarize_session_dir(rd, branch_tips={"agent6/r": "c" * 40})
     assert (s.status, s.reason, s.unmerged) == ("undone", "", False)
-    assert listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged) == "undone"
+    assert format.listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged) == "undone"
 
 
-def test_summary_task_is_the_manifests_operator_words(tmp_path: Path) -> None:
+def test_summary_task_is_the_manifests_operator_words(tmp_path: pathlib.Path) -> None:
     """The manifest owns the listing's task: the operator's words, never a clipped or composed copy.
 
     session.start clips user_task to 200 chars; `run --skill` and `--from` prepend blocks.
     """
-    from agent6.app.manifest import write_session_manifest
+    from agent6 import task_text
+    from agent6.app import manifest as app_manifest
     from agent6.config import Config
-    from agent6.sessions.layout import layout_of
-    from agent6.task_text import SKILLS_PREAMBLE, operator_task_text
+    from agent6.sessions import layout
 
     words = "fix the bug in the parser " * 12
-    composed = f'{SKILLS_PREAMBLE}\n<skill name="tidy">be tidy</skill>\n---\n{words}'
+    composed = f'{task_text.SKILLS_PREAMBLE}\n<skill name="tidy">be tidy</skill>\n---\n{words}'
     rd = _write_run(
         tmp_path,
         "runs",
@@ -581,13 +596,13 @@ def test_summary_task_is_the_manifests_operator_words(tmp_path: Path) -> None:
             {
                 "type": "session.start",
                 "mode": "run",
-                "user_task": operator_task_text(composed)[:200],
+                "user_task": task_text.operator_task_text(composed)[:200],
             },
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    write_session_manifest(
-        layout_of(rd),
+    app_manifest.write_session_manifest(
+        layout.layout_of(rd),
         session_id="r-long",
         user_task=composed,
         base_sha="",
@@ -600,7 +615,7 @@ def test_summary_task_is_the_manifests_operator_words(tmp_path: Path) -> None:
     assert (s.mode, s.task, s.status) == ("run", words.strip(), "passed")
 
 
-def test_summary_resume_unfinishes(tmp_path: Path) -> None:
+def test_summary_resume_unfinishes(tmp_path: pathlib.Path) -> None:
     """A detached resume appending past the first session.end reads running again."""
     rd = _write_run(
         tmp_path,
@@ -615,7 +630,7 @@ def test_summary_resume_unfinishes(tmp_path: Path) -> None:
     assert summarize_session_dir(rd).status == "running"
 
 
-def test_summary_running_and_stale(tmp_path: Path) -> None:
+def test_summary_running_and_stale(tmp_path: pathlib.Path) -> None:
     """Liveness is the worker, not log silence: a live pid file separates running from stale."""
     rd = _write_run(tmp_path, "runs", "r2", [{"type": "session.start", "mode": "plan"}])
     assert summarize_session_dir(rd).status == "running"
@@ -623,7 +638,7 @@ def test_summary_running_and_stale(tmp_path: Path) -> None:
     assert summarize_session_dir(rd).status == "stale"
 
 
-def test_summary_unanswered_approval_reads_waiting(tmp_path: Path) -> None:
+def test_summary_unanswered_approval_reads_waiting(tmp_path: pathlib.Path) -> None:
     # A live run whose LAST event is an unanswered approval (or ask_user
     # question) is blocked on the operator; "running" read as busy, and an
     # approval-parked lane sat invisible in every hub for hours.
@@ -644,7 +659,7 @@ def test_summary_unanswered_approval_reads_waiting(tmp_path: Path) -> None:
     assert summarize_session_dir(rd).status == "running"
 
 
-def test_summary_dead_worker_reads_stale_at_once(tmp_path: Path) -> None:
+def test_summary_dead_worker_reads_stale_at_once(tmp_path: pathlib.Path) -> None:
     # A killed run (worker.pid points at a dead process, no session.end) must not
     # read "running" for the whole silence window; the pid probe settles it now.
     rd = _write_run(tmp_path, "runs", "r3", [{"type": "session.start", "mode": "run"}])
@@ -652,7 +667,7 @@ def test_summary_dead_worker_reads_stale_at_once(tmp_path: Path) -> None:
     assert summarize_session_dir(rd).status == "stale"
 
 
-def test_summary_live_worker_with_a_silent_log_stays_running(tmp_path: Path) -> None:
+def test_summary_live_worker_with_a_silent_log_stays_running(tmp_path: pathlib.Path) -> None:
     # The converse: a live worker blocked in a long provider call emits no
     # events for minutes, and must not read stale for it.
     import os
@@ -662,7 +677,7 @@ def test_summary_live_worker_with_a_silent_log_stays_running(tmp_path: Path) -> 
     assert summarize_session_dir(rd).status == "running"
 
 
-def test_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
+def test_summary_carries_the_partial_cost_marker(tmp_path: pathlib.Path) -> None:
     """LogScan's sticky usd_partial reaches SessionSummary, so listings print the run page's ~$."""
     rd = _write_run(
         tmp_path,
@@ -688,7 +703,7 @@ def test_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
     assert summarize_session_dir(clean).usd_partial is False
 
 
-def test_run_is_live_finished_run_with_lingering_pid_is_not_live(tmp_path: Path) -> None:
+def test_run_is_live_finished_run_with_lingering_pid_is_not_live(tmp_path: pathlib.Path) -> None:
     """A finished run whose worker.pid survives into teardown is not live.
 
     session_is_live folds the log facts; fed empty facts it degenerated to worker_is_alive and
@@ -707,7 +722,7 @@ def test_run_is_live_finished_run_with_lingering_pid_is_not_live(tmp_path: Path)
     assert session_is_live(rd) is False
 
 
-def test_run_is_live_waiting_on_an_answer_is_live(tmp_path: Path) -> None:
+def test_run_is_live_waiting_on_an_answer_is_live(tmp_path: pathlib.Path) -> None:
     # Blocked on an unanswered approval with a live worker: the answer WILL be
     # read, so the prompt buttons and the composer stay live.
     rd = _write_run(
@@ -723,13 +738,13 @@ def test_run_is_live_waiting_on_an_answer_is_live(tmp_path: Path) -> None:
     assert session_is_live(rd) is True
 
 
-def test_run_is_live_dead_worker_is_not_live(tmp_path: Path) -> None:
+def test_run_is_live_dead_worker_is_not_live(tmp_path: pathlib.Path) -> None:
     rd = _write_run(tmp_path, "runs", "r1", [{"type": "session.start", "mode": "run"}])
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # beyond pid_max
     assert session_is_live(rd) is False
 
 
-def test_run_is_live_unstarted_dirs(tmp_path: Path) -> None:
+def test_run_is_live_unstarted_dirs(tmp_path: pathlib.Path) -> None:
     # A parked submission or fork --no-run dir: nothing polls markers -> not
     # live (resume is the offer). A launching worker (pid, no events yet) is.
     rd = tmp_path / "sessions" / "runs" / "parked"
@@ -743,7 +758,7 @@ def test_run_is_live_unstarted_dirs(tmp_path: Path) -> None:
     assert session_is_live(live) is True
 
 
-def test_summary_ask_task_comes_from_transcript(tmp_path: Path) -> None:
+def test_summary_ask_task_comes_from_transcript(tmp_path: pathlib.Path) -> None:
     rd = _write_run(
         tmp_path,
         "asks",
@@ -761,7 +776,7 @@ def test_summary_ask_task_comes_from_transcript(tmp_path: Path) -> None:
 
 
 def test_summary_ask_task_is_the_question_even_when_it_starts_with_a_hash(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """Only the leading `#` comment lines are skipped, never the question itself."""
     rd = _write_run(
@@ -782,14 +797,14 @@ def test_summary_ask_task_is_the_question_even_when_it_starts_with_a_hash(
     assert task_snippet(s.task) == "#include <stdio.h> fails to compile, why?"
 
 
-def test_summary_no_logs(tmp_path: Path) -> None:
+def test_summary_no_logs(tmp_path: pathlib.Path) -> None:
     rd = tmp_path / "sessions" / "runs" / "empty"
     rd.mkdir(parents=True)
     s = summarize_session_dir(rd)
     assert (s.status, s.task) == ("created", "(no logs)")
 
 
-def test_summary_torn_manifest_reads_unreadable_not_created(tmp_path: Path) -> None:
+def test_summary_torn_manifest_reads_unreadable_not_created(tmp_path: pathlib.Path) -> None:
     """A manifest that exists but fails to parse is damage, never the "created" word.
 
     "created" reads as "never started" and offers to resume garbage; a dir with no manifest yet
@@ -808,7 +823,7 @@ def test_summary_torn_manifest_reads_unreadable_not_created(tmp_path: Path) -> N
     assert "\n" not in s.reason and 0 < len(s.reason) <= 60
 
 
-def test_summary_plan_reads_planned_not_passed(tmp_path: Path) -> None:
+def test_summary_plan_reads_planned_not_passed(tmp_path: pathlib.Path) -> None:
     # A plan pass ends via finish_planning (its only clean exit) with
     # all_passed=True; it gates nothing, so it must read "planned", not "passed".
     rd = _write_run(
@@ -835,7 +850,7 @@ def test_summary_plan_reads_planned_not_passed(tmp_path: Path) -> None:
     assert summarize_session_dir(rd2).status == "passed"
 
 
-def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: Path) -> None:
+def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: pathlib.Path) -> None:
     # A `fork --no-run` fork has a manifest (mode + task) but no logs yet; the
     # listing must show them, not a blank "? ? (no logs)".
     rd = tmp_path / "sessions" / "runs" / "child"
@@ -847,7 +862,7 @@ def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: Path) -> None:
     assert (s.mode, s.task, s.status) == ("plan", "carry this forward", "created")
 
 
-def test_summary_launching_run_reads_starting(tmp_path: Path) -> None:
+def test_summary_launching_run_reads_starting(tmp_path: pathlib.Path) -> None:
     # A run with no verify_command spends ~80s inferring one BEFORE session.start.
     # During it the log has a role.call (the inference LLM call) but no session.start,
     # and the worker is alive -- it must read "starting" (its real mode+task from
@@ -861,7 +876,7 @@ def test_summary_launching_run_reads_starting(tmp_path: Path) -> None:
     assert (s.mode, s.task, s.status) == ("run", "refactor the loop", "starting")
 
 
-def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: Path) -> None:
+def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: pathlib.Path) -> None:
     """A worker killed during preflight reads with its own reason, not "created" or a bare "stale".
 
     Its pid file survives with preflight events and real spend; a dir with no pid file ever stays
@@ -880,14 +895,12 @@ def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: Path) ->
     assert summarize_session_dir(never_launched).status == "created"
 
 
-def test_a_forks_single_execution_is_one_execution(tmp_path: Path) -> None:
+def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> None:
     """The first execution-start of any kind begins execution 1.
 
     A fork's log opens with loop.resume.start, and the unconditional increment counted its single
     execution as two.
     """
-    from agent6.viewmodel.listing import scan_session_log
-
     rd = _write_run(
         tmp_path,
         "runs",
@@ -898,7 +911,7 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: Path) -> None:
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
     )
-    scan = scan_session_log(rd / "logs.jsonl")
+    scan = listing.scan_session_log(rd / "logs.jsonl")
     assert scan.executions == 1
     assert scan.cost_usd == 0.05
 
@@ -914,19 +927,17 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: Path) -> None:
             {"type": "budget.update", "usd_total": 0.01},
         ],
     )
-    scan2 = scan_session_log(rd2 / "logs.jsonl")
+    scan2 = listing.scan_session_log(rd2 / "logs.jsonl")
     assert scan2.executions == 2
     assert scan2.cost_usd == pytest.approx(0.06)
 
 
-def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: Path) -> None:
+def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: pathlib.Path) -> None:
     """The scan reads `mode` off loop.resume.start as off session.start.
 
     A passed fork listed `verify_ok: null`, ranked below any `true` by `sessions compare`.
     """
     import json
-
-    from agent6.viewmodel.listing import scan_session_log, summary_row
 
     rd = _write_run(
         tmp_path,
@@ -942,13 +953,13 @@ def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: Path
         json.dumps({"session_id": "fork-3", "mode": "run", "user_task": "t", "base_sha": ""}),
         encoding="utf-8",
     )
-    scan = scan_session_log(rd / "logs.jsonl")
+    scan = listing.scan_session_log(rd / "logs.jsonl")
     assert scan.mode == "run"
     assert scan.verify_verdict() is True
-    assert summary_row(summarize_session_dir(rd))["verify_ok"] is True
+    assert listing.summary_row(summarize_session_dir(rd))["verify_ok"] is True
 
 
-def test_summary_cost_sums_across_resume_executions(tmp_path: Path) -> None:
+def test_summary_cost_sums_across_resume_executions(tmp_path: pathlib.Path) -> None:
     # Each resume execution starts a fresh budget (usd_total resets to 0). The listing
     # total must be the cumulative spend across executions, not just the latest execution's.
     rd = _write_run(
@@ -970,7 +981,7 @@ def test_summary_cost_sums_across_resume_executions(tmp_path: Path) -> None:
     assert abs(s.cost_usd - 0.027) < 1e-9  # 0.02 (execution 1) + 0.007 (execution 2), not 0.007
 
 
-def test_is_run_husk(tmp_path: Path) -> None:
+def test_is_run_husk(tmp_path: pathlib.Path) -> None:
     # Neither manifest nor logs: never started, a husk.
     husk = tmp_path / "husk"
     husk.mkdir()
@@ -997,7 +1008,7 @@ def test_is_run_husk(tmp_path: Path) -> None:
     assert is_session_husk(dead)
 
 
-def test_summary_survives_a_valid_json_non_object_line(tmp_path: Path) -> None:
+def test_summary_survives_a_valid_json_non_object_line(tmp_path: pathlib.Path) -> None:
     # A valid-JSON line that isn't an object (a torn or adversarial writer) must
     # not crash the listing fold -- one bad line otherwise took down the whole
     # hub / `sessions list` / TUI home. It's skipped like an unparseable line.
@@ -1017,7 +1028,7 @@ def test_summary_survives_a_valid_json_non_object_line(tmp_path: Path) -> None:
     assert s.status == "passed"
 
 
-def test_summary_survives_a_malformed_usd_total(tmp_path: Path) -> None:
+def test_summary_survives_a_malformed_usd_total(tmp_path: pathlib.Path) -> None:
     # budget.update is agent6-written, but a torn write or hand-edited log can
     # leave usd_total non-numeric; the scan keeps the last good figure instead
     # of aborting the whole listing (same degradation the typed fold applies).
@@ -1046,7 +1057,7 @@ def test_summary_survives_a_malformed_usd_total(tmp_path: Path) -> None:
     assert s.cost_usd == 0.25  # the last good figure, not 0 and not a crash
 
 
-def test_summary_gateless_settle_reads_finished_unverified(tmp_path: Path) -> None:
+def test_summary_gateless_settle_reads_finished_unverified(tmp_path: pathlib.Path) -> None:
     # A gateless run's quiet finish committed real work but nothing verified
     # it: "finished · unverified", deliberately neither green nor "failed".
     # ("unverified", not "no verify": a command may exist via mid-run adoption
@@ -1064,7 +1075,7 @@ def test_summary_gateless_settle_reads_finished_unverified(tmp_path: Path) -> No
     assert (s.status, s.reason) == ("finished", "unverified")
 
 
-def test_summary_settle_after_a_red_gate_reads_gate_red(tmp_path: Path) -> None:
+def test_summary_settle_after_a_red_gate_reads_gate_red(tmp_path: pathlib.Path) -> None:
     """Settling after a failed reverify is a deliberate red-gated end, not an unverified one."""
     rd = _write_run(
         tmp_path,
@@ -1080,7 +1091,7 @@ def test_summary_settle_after_a_red_gate_reads_gate_red(tmp_path: Path) -> None:
     assert (s.status, s.reason, s.verify_ok) == ("finished", "gate red", False)
 
 
-def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:
+def test_summary_second_run_start_reads_running(tmp_path: pathlib.Path) -> None:
     """An ask REPL follow-up on the same log reads "running" while it streams, not "answered"."""
     rd = _write_run(
         tmp_path,
@@ -1096,13 +1107,11 @@ def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:
     assert summarize_session_dir(rd).status == "running"
 
 
-def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> None:
+def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: pathlib.Path) -> None:
     """The recency query hides a husk like every listing does.
 
     A bare `attach`, `sessions show` or `stop` targeted a phantom and could miss a live run.
     """
-    from agent6.viewmodel.listing import newest_session_dir
-
     bucket = tmp_path / "sessions" / "runs"
     bucket.mkdir(parents=True)
     real = bucket / "real-run-0001"
@@ -1116,10 +1125,10 @@ def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> Non
     husk = bucket / "zz-husk-0002"  # newer, but nothing ever ran
     husk.mkdir()
 
-    assert newest_session_dir([bucket]) == real
+    assert listing.newest_session_dir([bucket]) == real
 
 
-def test_summary_forked_execution_reads_mode_and_task_from_manifest(tmp_path: Path) -> None:
+def test_summary_forked_execution_reads_mode_and_task_from_manifest(tmp_path: pathlib.Path) -> None:
     """The manifest fallback gates on a missing mode, not on saw_start.
 
     A resumed execution's log holds only loop.resume.start, so the row blanked to "? (no logs)".
@@ -1135,10 +1144,8 @@ def test_summary_forked_execution_reads_mode_and_task_from_manifest(tmp_path: Pa
     assert (s.mode, s.task) == ("run", "carry on")
 
 
-def test_scan_counts_a_non_string_prompt_id_as_blocking(tmp_path: Path) -> None:
+def test_scan_counts_a_non_string_prompt_id_as_blocking(tmp_path: pathlib.Path) -> None:
     """The prompt side coerces ids to str like the answer side, so an int id never reads running."""
-    from agent6.viewmodel.listing import scan_session_log
-
     log = tmp_path / "logs.jsonl"
     log.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
@@ -1147,16 +1154,18 @@ def test_scan_counts_a_non_string_prompt_id_as_blocking(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    assert scan_session_log(log).operator_blocked  # the int id still registers as unanswered
+    assert listing.scan_session_log(
+        log
+    ).operator_blocked  # the int id still registers as unanswered
 
     log.write_text(
         log.read_text(encoding="utf-8") + json.dumps({"type": "approval.answer", "id": 7}) + "\n",
         encoding="utf-8",
     )
-    assert not scan_session_log(log).operator_blocked  # answered by the same int id
+    assert not listing.scan_session_log(log).operator_blocked  # answered by the same int id
 
 
-def test_a_crashed_run_reads_dead_at_once(tmp_path: Path) -> None:
+def test_a_crashed_run_reads_dead_at_once(tmp_path: pathlib.Path) -> None:
     """A loop that escaped with a fault records session.end reason=crashed, so every surface agrees.
 
     Without it the dying process cleared worker.pid and every surface showed a dead run as
@@ -1177,7 +1186,7 @@ def test_a_crashed_run_reads_dead_at_once(tmp_path: Path) -> None:
 
 
 def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """session.end's all_passed is a tri-state: an explicit null is "finished", an absent key False.
 
@@ -1209,9 +1218,7 @@ def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
 
 
 def _summary(session_id: str, *, mtime: float, coordinator: str = "", lane: int | None = None):
-    from agent6.viewmodel.listing import SessionSummary
-
-    return SessionSummary(
+    return listing.SessionSummary(
         session_id=session_id,
         mode="run",
         task="t",
@@ -1231,9 +1238,7 @@ def test_a_lane_nests_under_its_coordinator_and_an_orphan_stays_a_row() -> None:
     A lane whose coordinator is not listed has nothing to nest under; a lane that dispatched
     its own group carries its lanes one level deeper, every session once.
     """
-    from agent6.viewmodel.listing import nested_rows, row_json
-
-    rows = nested_rows(
+    rows = listing.nested_rows(
         [
             _summary("other", mtime=50.0),
             _summary("fan", mtime=10.0),
@@ -1245,9 +1250,8 @@ def test_a_lane_nests_under_its_coordinator_and_an_orphan_stays_a_row() -> None:
     )
 
     def shape(row: object) -> object:
-        from agent6.viewmodel.listing import ListingRow
 
-        assert isinstance(row, ListingRow)
+        assert isinstance(row, listing.ListingRow)
         return (row.summary.session_id, [shape(ln) for ln in row.lanes])
 
     assert [shape(r) for r in rows] == [
@@ -1256,7 +1260,7 @@ def test_a_lane_nests_under_its_coordinator_and_an_orphan_stays_a_row() -> None:
         ("fan", [("fan-l1", [("fan-l1-p1-l1", [])]), ("fan-l2", [])]),
     ]
     assert [r.mtime for r in rows] == [50.0, 40.0, 35.0]
-    fan = row_json(rows[2], winners={"fan-l2"})
+    fan = listing.row_json(rows[2], winners={"fan-l2"})
     assert fan["mtime"] == 35.0  # the group's latest activity, as the row sorts
     lanes: Any = fan["lanes"]
     assert [ln["session_id"] for ln in lanes] == ["fan-l1", "fan-l2"]
@@ -1268,16 +1272,14 @@ def test_a_lane_nests_under_its_coordinator_and_an_orphan_stays_a_row() -> None:
 
 def test_a_never_started_run_reads_at_the_parked_level() -> None:
     """A `fork --no-run` dir's word warns like "parked" does."""
-    assert status_level("created") == status_level("parked") == "warn"
+    assert format.status_level("created") == format.status_level("parked") == "warn"
 
 
-def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: Path) -> None:
+def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: pathlib.Path) -> None:
     """The scan keeps the cached input side, so a 500k-token run never reads as a few dozen tokens.
 
     Journals written before the fields existed read as None.
     """
-    from agent6.viewmodel.listing import scan_session_log
-
     logs = tmp_path / "logs.jsonl"
     logs.write_text(
         json.dumps({"type": "session.start", "session_id": "s", "mode": "run", "user_task": "t"})
@@ -1295,14 +1297,14 @@ def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: Path) -> No
         + "\n",
         encoding="utf-8",
     )
-    scan = scan_session_log(logs)
+    scan = listing.scan_session_log(logs)
     assert (scan.input_tokens, scan.output_tokens) == (18, 2194)
     assert (scan.cache_read_tokens, scan.cache_creation_tokens) == (42486, 22617)
     logs.write_text(
         json.dumps({"type": "budget.update", "input_total": 1, "output_total": 2}) + "\n",
         encoding="utf-8",
     )
-    old = scan_session_log(logs)
+    old = listing.scan_session_log(logs)
     assert (old.cache_read_tokens, old.cache_creation_tokens) == (None, None)
     # The four travel as one group: an aggregate event without the cached side
     # (a draft's summed attempts) shows none, not an earlier event's figures.
@@ -1321,12 +1323,12 @@ def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: Path) -> No
         + "\n",
         encoding="utf-8",
     )
-    aggregate = scan_session_log(logs)
+    aggregate = listing.scan_session_log(logs)
     assert (aggregate.input_tokens, aggregate.output_tokens) == (250, 50)
     assert (aggregate.cache_read_tokens, aggregate.cache_creation_tokens) == (None, None)
 
 
-def test_summary_names_the_questions_nobody_answered(tmp_path: Path) -> None:
+def test_summary_names_the_questions_nobody_answered(tmp_path: pathlib.Path) -> None:
     """A row names a question that waited unanswered in the transcript, not a bare "passed"."""
     rd = _write_run(
         tmp_path,
@@ -1353,9 +1355,8 @@ def test_summary_names_the_questions_nobody_answered(tmp_path: Path) -> None:
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    from agent6.viewmodel.listing import scan_session_log
 
     (rd / "worker.pid").unlink()
-    assert scan_session_log(rd / "logs.jsonl").unattended_questions == 1
+    assert listing.scan_session_log(rd / "logs.jsonl").unattended_questions == 1
     s = summarize_session_dir(rd)
     assert (s.status, s.reason) == ("passed", "1 question unanswered")

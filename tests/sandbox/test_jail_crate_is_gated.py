@@ -8,13 +8,13 @@ suite everyone already runs rather than through commands an operator has to reme
 
 from __future__ import annotations
 
+import pathlib
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
-_CRATE = Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail"
+_CRATE = pathlib.Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("cargo") is None, reason="no rust toolchain (the wheel build needs one)"
@@ -79,9 +79,9 @@ def test_the_binary_the_suite_runs_is_not_older_than_the_sources() -> None:
     binary; a stale bundle makes the suite exercise the previous boundary, so green must mean
     green for the code in the tree.
     """
-    from agent6.sandbox.jail import locate_jail_binary
+    from agent6.sandbox import jail
 
-    binary = locate_jail_binary()
+    binary = jail.locate_jail_binary()
     if binary is None:
         pytest.skip("no jail binary bundled or on PATH")
     sources = [*_CRATE.glob("src/*.rs"), _CRATE / "Cargo.toml"]

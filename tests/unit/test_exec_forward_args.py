@@ -10,29 +10,31 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.ipc import write_worker_pid
-from agent6.sessions.layout import SessionLayout
+from agent6 import paths
+from agent6.sessions import ipc
+from agent6.sessions import layout as sessions_layout
 from agent6.ui import cli
 
 
 @pytest.fixture
-def seen(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
+def seen(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> dict[str, Any]:
     calls: dict[str, Any] = {}
 
-    def _resolve(target: str) -> SessionLayout:
-        return SessionLayout(state_dir=tmp_path, session_id=target or "newest-run")
+    def _resolve(target: str) -> sessions_layout.SessionLayout:
+        return sessions_layout.SessionLayout(state_dir=tmp_path, session_id=target or "newest-run")
 
-    def _exec(layout: SessionLayout, cfg: Any, cwd: Path, argv: tuple[str, ...]) -> int:
+    def _exec(
+        layout: sessions_layout.SessionLayout, cfg: Any, cwd: pathlib.Path, argv: tuple[str, ...]
+    ) -> int:
         calls.update(target=layout.session_id, argv=argv)
         return 0
 
-    def _forward(layout: SessionLayout, port: int, local_port: int | None) -> int:
+    def _forward(layout: sessions_layout.SessionLayout, port: int, local_port: int | None) -> int:
         calls.update(target=layout.session_id, port=port)
         return 0
 
@@ -94,7 +96,7 @@ def test_forward_without_a_listener_is_a_refusal(
 
 
 def test_exec_refuses_a_session_network_nobody_holds(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`exec` joins a live session's network only; an ended run is refused by name.
 
@@ -109,8 +111,8 @@ def test_exec_refuses_a_session_network_nobody_holds(
 
     monkeypatch.setattr(net_cmds, "resolve_isolation", _strict)
     (tmp_path / "run").mkdir()
-    layout = SessionLayout(state_dir=tmp_path, session_id="run")
-    write_worker_pid(layout.session_dir, os.getpid())  # live, but holding no network
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run")
+    ipc.write_worker_pid(layout.session_dir, os.getpid())  # live, but holding no network
     cfg = Config.model_validate({"sandbox": {"network": "session"}})
     rc = net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
     err = capsys.readouterr().err
@@ -137,21 +139,20 @@ def test_attach_since_needs_raw(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_exec_uses_the_runs_recorded_policy_over_current_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`exec` reproduces the isolation and network the run's manifest recorded, not the config.
 
     A run with no stamp falls back to the current config with a warning.
     """
-    from types import SimpleNamespace
+    import types
 
     from agent6.config import Config
-    from agent6.sessions.layout import SessionLayout
     from agent6.ui.cli import net_cmds
 
-    layout = SessionLayout(state_dir=tmp_path / "state", session_id="r1")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="r1")
     layout.ensure()
-    write_worker_pid(layout.session_dir, os.getpid())  # exec joins a live run only
+    ipc.write_worker_pid(layout.session_dir, os.getpid())  # exec joins a live run only
     (layout.session_dir / "manifest.json").write_text(
         json.dumps(
             {
@@ -164,16 +165,18 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
     )
     captured: dict[str, Any] = {}
 
-    def fake_jail_policy(cwd: Path, cfg: Config, isolation: str, argv: Any, **kw: Any) -> Any:
+    def fake_jail_policy(
+        cwd: pathlib.Path, cfg: Config, isolation: str, argv: Any, **kw: Any
+    ) -> Any:
         captured["isolation"] = isolation
         captured["network"] = kw.get("network")
         raise RuntimeError("stop before running anything")
 
-    def _no_pid(_d: Path) -> None:
+    def _no_pid(_d: pathlib.Path) -> None:
         return None
 
     def _env() -> Any:
-        return SimpleNamespace(sandbox_available=True)
+        return types.SimpleNamespace(sandbox_available=True)
 
     def _resolve(word: str, _env_v: Any) -> str:
         return word
@@ -200,7 +203,7 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
 
 
 def test_exec_and_forward_resolve_a_session_the_way_every_other_verb_does(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`exec` and `forward` name an ambiguous prefix as ambiguous, as `attach` does."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -209,7 +212,7 @@ def test_exec_and_forward_resolve_a_session_the_way_every_other_verb_does(
     monkeypatch.chdir(repo)
 
     for name in ("ambig-one11", "ambig-two11"):
-        layout = SessionLayout(state_dir=state_dir(repo), session_id=name)
+        layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=name)
         layout.ensure()
         layout.manifest_path.write_text(
             json.dumps({"version": 3, "session_id": name, "mode": "run", "user_task": "t"}) + "\n",
@@ -227,7 +230,7 @@ def test_exec_and_forward_resolve_a_session_the_way_every_other_verb_does(
     assert err.count("is ambiguous (2 matches)") == 2, err
 
 
-def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: Path) -> None:
+def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: pathlib.Path) -> None:
     """`forward` on a finished run says so: a session network lives only while the run does.
 
     The config explanation is kept for a live run that made no network.
@@ -236,10 +239,9 @@ def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: Pa
     import json
     import os
 
-    from agent6.sessions.ipc import write_worker_pid
     from agent6.ui.cli import net_cmds
 
-    layout = SessionLayout(state_dir=tmp_path, session_id="done-run-AAAAAA")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="done-run-AAAAAA")
     layout.ensure()
     run = layout.session_dir
     (run / "logs.jsonl").write_text(
@@ -261,29 +263,30 @@ def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: Pa
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    write_worker_pid(run, os.getpid())
+    ipc.write_worker_pid(run, os.getpid())
     out = io.StringIO()
     assert net_cmds.forward(layout, 8765, 0, out=out) == 2
     assert "strict isolation" in out.getvalue()
 
 
 def test_exec_refuses_a_run_that_is_over(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`exec` on a finished run is refused: the help promises the run's own jail, which is gone."""
     import json
     import os
 
+    from agent6 import kinds
     from agent6.config import Config
-    from agent6.kinds import JailPolicy
-    from agent6.sessions.layout import SessionLayout
-    from agent6.ui.cli.net_cmds import exec_in_session
+    from agent6.ui.cli import net_cmds as cli_net_cmds
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    layout = SessionLayout(state_dir=state_dir(repo), session_id="over-run-AAAA11")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo), session_id="over-run-AAAA11"
+    )
     layout.ensure()
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
@@ -295,13 +298,13 @@ def test_exec_refuses_a_run_that_is_over(
     (layout.session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
     ran: list[tuple[str, ...]] = []
 
-    def fake_run(policy: JailPolicy, **_kw: object) -> int:
+    def fake_run(policy: kinds.JailPolicy, **_kw: object) -> int:
         ran.append(tuple(policy.argv))
         return os.EX_OK
 
     monkeypatch.setattr("agent6.ui.cli.net_cmds.run_in_jail", fake_run)
 
-    rc = exec_in_session(layout, Config(), repo, ("pwd",))
+    rc = cli_net_cmds.exec_in_session(layout, Config(), repo, ("pwd",))
 
     assert rc == 2 and ran == []
     err = capsys.readouterr().err
@@ -309,28 +312,29 @@ def test_exec_refuses_a_run_that_is_over(
 
 
 def test_exec_keeps_a_host_network_run_on_the_host_network(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`exec` under `network = "host"` stays on the host network beside a session netns.
 
     A run with one MCP server scoped to the session holds a session netns while its own commands run
     on the host network; the holder is not the answer.
     """
-    from types import SimpleNamespace
+    import types
 
+    from agent6 import kinds
     from agent6.config import Config
-    from agent6.kinds import JailPolicy
-    from agent6.sessions.ipc import write_session_netns_pid
     from agent6.ui.cli import net_cmds
 
-    layout = SessionLayout(state_dir=tmp_path / "state", session_id="live-run-AAAA11")
+    layout = sessions_layout.SessionLayout(
+        state_dir=tmp_path / "state", session_id="live-run-AAAA11"
+    )
     layout.ensure()
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    write_worker_pid(layout.session_dir, os.getpid())
-    write_session_netns_pid(layout.session_dir, os.getpid())  # the MCP server's
+    ipc.write_worker_pid(layout.session_dir, os.getpid())
+    ipc.write_session_netns_pid(layout.session_dir, os.getpid())  # the MCP server's
     layout.manifest_path.write_text(
         json.dumps(
             {
@@ -345,15 +349,17 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
     )
     seen: dict[str, Any] = {}
 
-    def fake_run(policy: JailPolicy, *, session_net: Any = None) -> Any:
+    def fake_run(policy: kinds.JailPolicy, *, session_net: Any = None) -> Any:
         seen["network"] = policy.network
         seen["borrowed"] = session_net is not None
-        return SimpleNamespace(stdout="", stderr="", returncode=0)
+        return types.SimpleNamespace(stdout="", stderr="", returncode=0)
 
     def _strict(_req: str, _env: Any) -> str:
         return "strict"
 
-    monkeypatch.setattr(net_cmds, "detect_env", lambda: SimpleNamespace(sandbox_available=True))
+    monkeypatch.setattr(
+        net_cmds, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True)
+    )
     monkeypatch.setattr(net_cmds, "resolve_isolation", _strict)
     monkeypatch.setattr(net_cmds, "run_in_jail", fake_run)
 
@@ -371,7 +377,7 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
 
 
 def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A holder that exits before `exec` opens its namespaces is refused, not a traceback.
 
@@ -380,7 +386,6 @@ def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
     import subprocess
 
     from agent6.config import Config
-    from agent6.sessions.ipc import write_session_netns_pid
     from agent6.ui.cli import net_cmds
 
     def _strict(req: str, env: Any) -> str:
@@ -388,11 +393,11 @@ def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
 
     monkeypatch.setattr(net_cmds, "resolve_isolation", _strict)
     (tmp_path / "run").mkdir()
-    layout = SessionLayout(state_dir=tmp_path, session_id="run")
-    write_worker_pid(layout.session_dir, os.getpid())
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run")
+    ipc.write_worker_pid(layout.session_dir, os.getpid())
     holder = subprocess.Popen(["sleep", "30"])
     try:
-        write_session_netns_pid(layout.session_dir, holder.pid)
+        ipc.write_session_netns_pid(layout.session_dir, holder.pid)
         real_policy = net_cmds.jail_policy
 
         def _holder_dies(*args: Any, **kwargs: Any) -> Any:
@@ -411,7 +416,7 @@ def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
 
 
 def test_forward_leaves_no_connect_timeout_on_the_bridge(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The forwarded socket's connect timeout is cleared before the pump reads it.
 
@@ -423,7 +428,6 @@ def test_forward_leaves_no_connect_timeout_on_the_bridge(
     import subprocess
     import sys
 
-    from agent6.sessions.ipc import write_session_netns_pid
     from agent6.ui.cli import net_cmds
 
     inside_server = socket.socket()
@@ -434,9 +438,9 @@ def test_forward_leaves_no_connect_timeout_on_the_bridge(
     free.bind(("127.0.0.1", 0))
     local_port = free.getsockname()[1]
     free.close()
-    layout = SessionLayout(state_dir=tmp_path, session_id="busy-run", subdir="runs")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="busy-run", subdir="runs")
     layout.session_dir.mkdir(parents=True)
-    write_session_netns_pid(layout.session_dir, os.getpid())  # a live holder: us
+    ipc.write_session_netns_pid(layout.session_dir, os.getpid())  # a live holder: us
     # The client ends the run once connected, so the next accept timeout returns the loop.
     client_script = (
         "import os, socket, time\n"
@@ -452,7 +456,7 @@ def test_forward_leaves_no_connect_timeout_on_the_bridge(
 
     read_fd, write_fd = os.pipe()
 
-    def _joined(_dir: Path) -> None:
+    def _joined(_dir: pathlib.Path) -> None:
         return None  # the netns join needs a live run; the bridge socket does not
 
     def _record(_local: socket.socket, inside: socket.socket) -> None:
@@ -477,7 +481,7 @@ def test_forward_leaves_no_connect_timeout_on_the_bridge(
 
 
 def test_forward_drops_a_connection_it_cannot_fork_for(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A failed fork() in the accept loop drops one connection and the bridge keeps accepting."""
     import errno
@@ -486,12 +490,11 @@ def test_forward_drops_a_connection_it_cannot_fork_for(
     import threading
     import time
 
-    from agent6.sessions.ipc import write_session_netns_pid
     from agent6.ui.cli import net_cmds
 
-    layout = SessionLayout(state_dir=tmp_path, session_id="fwd")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="fwd")
     layout.session_dir.mkdir(parents=True)
-    write_session_netns_pid(layout.session_dir, os.getpid())  # a live holder: us
+    ipc.write_session_netns_pid(layout.session_dir, os.getpid())  # a live holder: us
     probe = socket.socket()
     probe.bind(("127.0.0.1", 0))
     port = probe.getsockname()[1]
@@ -526,23 +529,22 @@ def test_forward_drops_a_connection_it_cannot_fork_for(
     assert "could not fork" in out.getvalue()
 
 
-def test_forward_closes_its_listener_when_the_bind_fails(tmp_path: Path) -> None:
+def test_forward_closes_its_listener_when_the_bind_fails(tmp_path: pathlib.Path) -> None:
     """A taken local port is refused with the listener closed."""
     import gc
     import io
     import socket
     import warnings
 
-    from agent6.sessions.ipc import write_session_netns_pid
     from agent6.ui.cli import net_cmds
 
-    layout = SessionLayout(state_dir=tmp_path, session_id="busy-port-AAAAAA")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="busy-port-AAAAAA")
     layout.ensure()
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    write_session_netns_pid(layout.session_dir, os.getpid())
+    ipc.write_session_netns_pid(layout.session_dir, os.getpid())
     out = io.StringIO()
     with socket.socket() as busy:
         busy.bind(("127.0.0.1", 0))
@@ -568,16 +570,17 @@ def test_exec_module_imports_without_linux_namespace_constants() -> None:
 
 
 @pytest.mark.parametrize("local_port", [-1, 65536])
-def test_forward_refuses_an_out_of_range_local_port(tmp_path: Path, local_port: int) -> None:
+def test_forward_refuses_an_out_of_range_local_port(
+    tmp_path: pathlib.Path, local_port: int
+) -> None:
     """A port outside TCP's range is refused, not an OverflowError."""
     import io
 
-    from agent6.sessions.ipc import write_session_netns_pid
     from agent6.ui.cli import net_cmds
 
-    layout = SessionLayout(state_dir=tmp_path, session_id="serving-run-AAAAAA")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="serving-run-AAAAAA")
     layout.ensure()
-    write_session_netns_pid(layout.session_dir, os.getpid())
+    ipc.write_session_netns_pid(layout.session_dir, os.getpid())
     out = io.StringIO()
     rc = net_cmds.forward(layout, 3000, local_port, out=out)
 
@@ -586,19 +589,20 @@ def test_forward_refuses_an_out_of_range_local_port(tmp_path: Path, local_port: 
 
 
 def test_forward_local_port_zero_picks_a_free_port(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`--local-port 0` asks the host for a free port and the start line names the one it got."""
     import io
 
-    from agent6.sessions.layout import SessionLayout
     from agent6.ui.cli import net_cmds
 
-    layout = SessionLayout(state_dir=tmp_path, session_id="free-port-run", subdir="runs")
+    layout = sessions_layout.SessionLayout(
+        state_dir=tmp_path, session_id="free-port-run", subdir="runs"
+    )
     layout.session_dir.mkdir(parents=True)
     probes = iter([4242])  # alive at the preflight; gone at the first accept timeout
 
-    def _probe(_dir: Path) -> int | None:
+    def _probe(_dir: pathlib.Path) -> int | None:
         return next(probes, None)
 
     monkeypatch.setattr(net_cmds, "read_session_netns_pid", _probe)

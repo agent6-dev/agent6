@@ -4,24 +4,20 @@
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
-from agent6.git_ops import tracked_files
-from agent6.harness._context import (
-    _build_repo_map,  # pyright: ignore[reportPrivateUsage]
-    load_repo_summary,
-)
-from agent6.harness._prompt_blocks import repo_priors_block
+from agent6 import git_ops
+from agent6.harness import _context, _prompt_blocks
 
 
-def _repo_map(root: Path) -> str:
-    return _build_repo_map(tracked_files(root))
+def _repo_map(root: pathlib.Path) -> str:
+    return _context._build_repo_map(git_ops.tracked_files(root))
 
 
-def _init_repo(root: Path, files: dict[str, str]) -> None:
+def _init_repo(root: pathlib.Path, files: dict[str, str]) -> None:
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=root, check=True)
@@ -33,11 +29,11 @@ def _init_repo(root: Path, files: dict[str, str]) -> None:
     subprocess.run(["git", "commit", "-qm", "init"], cwd=root, check=True)
 
 
-def test_repo_map_empty_outside_git(tmp_path: Path) -> None:
+def test_repo_map_empty_outside_git(tmp_path: pathlib.Path) -> None:
     assert _repo_map(tmp_path) == ""
 
 
-def test_repo_map_lists_directories_with_files(tmp_path: Path) -> None:
+def test_repo_map_lists_directories_with_files(tmp_path: pathlib.Path) -> None:
     _init_repo(
         tmp_path,
         {
@@ -55,7 +51,7 @@ def test_repo_map_lists_directories_with_files(tmp_path: Path) -> None:
     assert "test_a.py" in out
 
 
-def test_repo_map_truncates_long_file_lists(tmp_path: Path) -> None:
+def test_repo_map_truncates_long_file_lists(tmp_path: pathlib.Path) -> None:
     files = {f"pkg/m{i}.py": "x" for i in range(20)}
     _init_repo(tmp_path, files)
     out = _repo_map(tmp_path)
@@ -65,7 +61,7 @@ def test_repo_map_truncates_long_file_lists(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("count", [80])
-def test_repo_map_caps_total_rows(tmp_path: Path, count: int) -> None:
+def test_repo_map_caps_total_rows(tmp_path: pathlib.Path, count: int) -> None:
     files = {f"d{i:03d}/x.py": "x" for i in range(count)}
     _init_repo(tmp_path, files)
     out = _repo_map(tmp_path)
@@ -75,11 +71,11 @@ def test_repo_map_caps_total_rows(tmp_path: Path, count: int) -> None:
     assert "more directories" in rows[-1]
 
 
-def test_repo_prior_labels_the_filtered_top_level_listing(tmp_path: Path) -> None:
+def test_repo_prior_labels_the_filtered_top_level_listing(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path, {"visible.txt": "x", ".hidden": "x"})
 
-    summary = load_repo_summary(tmp_path)
-    prompt = repo_priors_block(summary)
+    summary = _context.load_repo_summary(tmp_path)
+    prompt = _prompt_blocks.repo_priors_block(summary)
 
     assert summary.top_level == ("visible.txt",)
     assert "Top-level (dot-prefixed entries omitted):" in prompt

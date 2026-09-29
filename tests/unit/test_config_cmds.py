@@ -4,11 +4,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from agent6.paths import repo_config_path
+from agent6 import paths
 from agent6.ui.cli import config_cmds as cc
 
 
@@ -21,16 +21,14 @@ def test_extra_body_value_completer_offers_routing_presets() -> None:
     # TAB after `config set providers.<name>.extra_body` suggests the routing presets by suffix.
     import argparse
 
-    from agent6.ui.cli.completers import (
-        _complete_config_values,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.ui.cli import completers as cli_completers
 
     args = argparse.Namespace(key="providers.openrouter.extra_body")
-    out = _complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
+    out = cli_completers._complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
     assert '{ provider = { sort = "throughput" } }' in out
     # a non-extra_body key is unaffected
     enum_args = argparse.Namespace(key="sandbox.isolation")
-    assert _complete_config_values("", enum_args) == [  # pyright: ignore[reportPrivateUsage]
+    assert cli_completers._complete_config_values("", enum_args) == [  # pyright: ignore[reportPrivateUsage]
         "auto",
         "strict",
         "hardened",
@@ -38,14 +36,12 @@ def test_extra_body_value_completer_offers_routing_presets() -> None:
 
 
 def test_profile_value_completer_offers_profile_names(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     # TAB after `config set preset` offers built-ins plus user [presets.*] tables.
     import argparse
 
-    from agent6.ui.cli.completers import (
-        _complete_config_values,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.ui.cli import completers as cli_completers
 
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
@@ -53,33 +49,31 @@ def test_profile_value_completer_offers_profile_names(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     monkeypatch.chdir(tmp_path)
     args = argparse.Namespace(key="preset")
-    out = _complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
+    out = cli_completers._complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
     assert "ultra" in out and "myteam" in out
-    assert _complete_config_values("ul", args) == ["ultra"]  # pyright: ignore[reportPrivateUsage]
+    assert cli_completers._complete_config_values("ul", args) == ["ultra"]  # pyright: ignore[reportPrivateUsage]
 
 
 def test_config_key_completer_offers_user_profile_paths(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     # `config set presets.<TAB>` completes user presets only; a built-in name would replace it.
-    from agent6.ui.cli.completers import (
-        _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.ui.cli import completers as cli_completers
 
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text("[presets.myteam.review]\npanel_size = 2\n")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     monkeypatch.chdir(tmp_path)
-    out = _complete_config_keys("presets.")  # pyright: ignore[reportPrivateUsage]
+    out = cli_completers._complete_config_keys("presets.")  # pyright: ignore[reportPrivateUsage]
     assert any(k.startswith("presets.myteam.review.") for k in out)
     assert not any(k.startswith("presets.ultra") for k in out)
     # the top-level `preset` leaf itself is offered alongside presets.*
-    assert "preset" in _complete_config_keys("preset")  # pyright: ignore[reportPrivateUsage]
+    assert "preset" in cli_completers._complete_config_keys("preset")  # pyright: ignore[reportPrivateUsage]
     # a bare TAB (empty prefix) is not flooded with the generated paths
     assert not any(
         k.startswith("presets.")
-        for k in _complete_config_keys("")  # pyright: ignore[reportPrivateUsage]
+        for k in cli_completers._complete_config_keys("")  # pyright: ignore[reportPrivateUsage]
     )
 
 
@@ -125,7 +119,7 @@ _BAD = (
 
 
 def test_config_set_names_the_inline_table_a_leaf_lives_in(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config set` on a leaf inside an inline table refuses naming the value that owns the leaf.
 
@@ -158,7 +152,7 @@ def test_config_set_names_the_inline_table_a_leaf_lives_in(
 
 
 def test_config_set_refuses_a_target_that_does_not_parse(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config set` refuses a target that does not parse instead of appending to it."""
     from agent6.ui.cli import cli_main
@@ -166,7 +160,7 @@ def test_config_set_refuses_a_target_that_does_not_parse(
     cfg = tmp_path / "config.toml"
     cfg.write_text("[sandbox\nprotect_git = true\n", encoding="utf-8")  # missing ]
 
-    def _global_path(*_a: object, **_k: object) -> Path:
+    def _global_path(*_a: object, **_k: object) -> pathlib.Path:
         return cfg
 
     from agent6.config import write as write_mod
@@ -182,7 +176,7 @@ def test_config_set_refuses_a_target_that_does_not_parse(
     assert cfg.read_text(encoding="utf-8") == "[sandbox\nprotect_git = true\n"
 
 
-def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: Path) -> None:
+def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: pathlib.Path) -> None:
     """The machine-file write guard refuses every key the MachineSpec validator forbids.
 
     The compensating load re-check is skipped while the file is a `machine create` draft.
@@ -204,7 +198,7 @@ def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: Path
 
 
 def test_revalidate_machine_rejects_invalid_spec_and_rolls_back(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The cwd-dependent [config]-overlay validation is stubbed out.
     monkeypatch.setattr(cc, "load_effective_with_overlay", _noop_overlay)
@@ -218,7 +212,7 @@ def test_revalidate_machine_rejects_invalid_spec_and_rolls_back(
 
 
 def test_revalidate_machine_accepts_valid_spec(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(cc, "load_effective_with_overlay", _noop_overlay)
     target = tmp_path / "m.asm.toml"
@@ -230,7 +224,7 @@ def test_revalidate_machine_accepts_valid_spec(
 
 
 def test_config_show_and_get_share_the_unknown_key_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from agent6.ui.cli import main
 
@@ -242,7 +236,7 @@ def test_config_show_and_get_share_the_unknown_key_error(
 
 
 def test_config_get_suggests_a_key_from_the_layers_it_was_given(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config get`'s did-you-mean pool comes from the layers it was given, `--config` included."""
     from agent6.ui.cli import main
@@ -258,7 +252,7 @@ def test_config_get_suggests_a_key_from_the_layers_it_was_given(
 
 
 def test_config_get_distinguishes_a_section_from_an_unknown_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from agent6.ui.cli import main
 
@@ -270,13 +264,12 @@ def test_config_get_distinguishes_a_section_from_an_unknown_key(
 
 
 def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A value a schema change left invalid never blocks an unrelated valid key; a warning names it.
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -295,7 +288,7 @@ def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
 
 
 def test_config_set_rejects_a_masked_invalid_value(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A repo overlay masks the key; an invalid value in a lower layer is still rejected.
     import subprocess
@@ -316,36 +309,34 @@ def test_config_set_rejects_a_masked_invalid_value(
 
 
 def test_config_set_rejects_a_newly_invalid_value(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # An invalid value still fails loud and reverts, whatever stale value sits elsewhere.
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
     rc = main(["config", "set", "prompt.decompose", "bogus"])
     assert rc == 2  # the write itself is invalid -> reverted + fail loud
     assert "prompt.decompose" in capsys.readouterr().err
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     assert not gpath.is_file() or "decompose" not in gpath.read_text(encoding="utf-8")
 
 
 def test_a_refused_write_still_hands_the_config_back_to_the_operator(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A refused write still hands the config back to the operator under sudo.
 
     Every write publishes a fresh root-owned inode, the rollback of a refused value included.
     """
     from agent6.config import write as write_mod
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    handed: list[Path] = []
+    handed: list[pathlib.Path] = []
     monkeypatch.setattr(write_mod, "chown_to_real_user", handed.append)
     monkeypatch.setattr(write_mod, "mkdir_for_real_user", handed.append)  # the dir handover
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[budget]\nmax_usd = 5.0\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -356,13 +347,12 @@ def test_a_refused_write_still_hands_the_config_back_to_the_operator(
 
 
 def test_config_set_keeps_a_write_on_an_already_invalid_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # On an already-broken config an invalid value is rejected, while a valid one lands and clears.
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -374,7 +364,7 @@ def test_config_set_keeps_a_write_on_an_already_invalid_config(
 
 
 def test_config_set_unknown_leaf_gets_a_did_you_mean(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A typo under a known section gets the near-miss and the show pointer, not pydantic's text.
     from agent6.ui.cli import main
@@ -389,10 +379,9 @@ def test_config_set_unknown_leaf_gets_a_did_you_mean(
 
 
 def test_config_set_unknown_section_gets_the_same_friendly_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # An unknown top-level section errors at the section loc, a parent of the written key.
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
@@ -401,28 +390,27 @@ def test_config_set_unknown_section_gets_the_same_friendly_path(
     err = capsys.readouterr().err
     assert "unknown config key 'bogus.key'" in err
     assert "merged config layers" not in err and "extra_forbidden" not in err
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     assert not gpath.is_file() or "bogus" not in gpath.read_text(encoding="utf-8")
 
 
 def test_config_set_accepts_a_profiles_write(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # [presets.*] is stripped before validation, so the unknown-key reroute does not reject it.
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
     rc = main(["config", "set", "presets.mine.review.trigger", "before_finish"])
     assert rc == 0
-    text = global_config_path().read_text(encoding="utf-8")
+    text = paths.global_config_path().read_text(encoding="utf-8")
     assert "[presets.mine.review]" in text
     assert "unknown config key" not in capsys.readouterr().err
 
 
 def test_config_set_bool_error_speaks_human(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from agent6.ui.cli import main
 
@@ -433,13 +421,12 @@ def test_config_set_bool_error_speaks_human(
 
 
 def test_config_set_global_keeps_a_valid_write_shadowed_by_a_stale_repo_layer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # prompt.decompose is stale in the repo layer; a valid global write is kept with a warning.
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    repo_cfg = repo_config_path(tmp_path)
+    repo_cfg = paths.repo_config_path(tmp_path)
     repo_cfg.parent.mkdir(parents=True, exist_ok=True)
     repo_cfg.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -448,17 +435,16 @@ def test_config_set_global_keeps_a_valid_write_shadowed_by_a_stale_repo_layer(
     captured = capsys.readouterr()
     assert rc == 0  # the valid global write is KEPT, not reverted over the repo's stale value
     assert "WARNING" in captured.err  # ...but warns the repo layer still shadows it
-    assert '"auto"' in global_config_path().read_text(encoding="utf-8")
+    assert '"auto"' in paths.global_config_path().read_text(encoding="utf-8")
 
 
 def test_config_set_sub_leaf_on_an_existing_provider(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A leaf's isolated dict lacks the union tag; the parent's error is not the written child's.
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text(
         '[providers.op]\napi_format = "openai"\nbase_url = "https://x.test/v1"\n', encoding="utf-8"
@@ -468,13 +454,12 @@ def test_config_set_sub_leaf_on_an_existing_provider(
 
 
 def test_config_set_submodel_inline_table_completed_by_a_lower_layer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An inline table a lower layer completes is accepted; the missing child is not this write's.
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text('[models.worker]\nmodel = "m"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -485,13 +470,12 @@ def test_config_set_submodel_inline_table_completed_by_a_lower_layer(
 
 
 def test_config_fix_drops_a_bad_value_and_keeps_valid_ones(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The valid budget entry beside the stale prompt.decompose survives the repair.
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[prompt]\ndecompose = true\n[budget]\nmax_usd = 5.0\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -507,11 +491,10 @@ def test_config_fix_drops_a_bad_value_and_keeps_valid_ones(
 
 
 def test_config_fix_drops_a_masked_invalid_global_value(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A repo override must not hide a stale global value from config fix."""
-    from agent6.config.layer import load_effective
-    from agent6.paths import global_config_path
+    from agent6.config import layer
     from agent6.ui.cli import main
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -519,10 +502,10 @@ def test_config_fix_drops_a_masked_invalid_global_value(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    global_path = global_config_path()
+    global_path = paths.global_config_path()
     global_path.parent.mkdir(parents=True)
     global_path.write_text('[sandbox]\nrun_commands = "bogus"\n', encoding="utf-8")
-    repo_path = repo_config_path(repo)
+    repo_path = paths.repo_config_path(repo)
     repo_path.parent.mkdir(parents=True)
     repo_path.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
 
@@ -532,14 +515,13 @@ def test_config_fix_drops_a_masked_invalid_global_value(
     assert 'run_commands = "yes"' in repo_path.read_text(encoding="utf-8")
     other_repo = tmp_path / "other"
     other_repo.mkdir()
-    assert load_effective(other_repo).config.sandbox.run_commands == "ask"
+    assert layer.load_effective(other_repo).config.sandbox.run_commands == "ask"
 
 
 def test_config_fix_keeps_a_table_whose_validator_the_repo_layer_satisfies(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config fix` keeps a table whose validator only the repo layer satisfies."""
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -547,11 +529,11 @@ def test_config_fix_keeps_a_table_whose_validator_the_repo_layer_satisfies(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    global_path = global_config_path()
+    global_path = paths.global_config_path()
     global_path.parent.mkdir(parents=True)
     global_text = '[web]\nhost = "0.0.0.0"\nport = 9123\n'
     global_path.write_text(global_text, encoding="utf-8")
-    repo_path = repo_config_path(repo)
+    repo_path = paths.repo_config_path(repo)
     repo_path.parent.mkdir(parents=True)
     repo_path.write_text("[web]\nallow_non_loopback = true\n", encoding="utf-8")
 
@@ -561,9 +543,8 @@ def test_config_fix_keeps_a_table_whose_validator_the_repo_layer_satisfies(
 
 
 def test_config_fix_accepts_a_table_completed_by_the_repo_layer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -571,10 +552,10 @@ def test_config_fix_accepts_a_table_completed_by_the_repo_layer(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    global_path = global_config_path()
+    global_path = paths.global_config_path()
     global_path.parent.mkdir(parents=True)
     global_path.write_text('[models.worker]\nmodel = "m"\n', encoding="utf-8")
-    repo_path = repo_config_path(repo)
+    repo_path = paths.repo_config_path(repo)
     repo_path.parent.mkdir(parents=True)
     repo_path.write_text(
         '[providers.p]\napi_format = "openai"\nbase_url = "https://p.example/v1"\n'
@@ -588,14 +569,13 @@ def test_config_fix_accepts_a_table_completed_by_the_repo_layer(
 
 
 def test_config_fix_drops_an_invalid_unselected_preset_leaf(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.chdir(tmp_path)
-    path = global_config_path()
+    path = paths.global_config_path()
     path.parent.mkdir(parents=True)
     path.write_text(
         '[presets.good.review]\ntrigger = "before_finish"\n'
@@ -612,9 +592,8 @@ def test_config_fix_drops_an_invalid_unselected_preset_leaf(
 
 
 def test_config_fix_drops_an_invalid_preset_leaf_masked_by_the_repo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -622,10 +601,10 @@ def test_config_fix_drops_an_invalid_preset_leaf_masked_by_the_repo(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    global_path = global_config_path()
+    global_path = paths.global_config_path()
     global_path.parent.mkdir(parents=True)
     global_path.write_text('[presets.demo.sandbox]\nnetwork = "banana"\n', encoding="utf-8")
-    repo_path = repo_config_path(repo)
+    repo_path = paths.repo_config_path(repo)
     repo_path.parent.mkdir(parents=True)
     repo_path.write_text('[presets.demo.sandbox]\nnetwork = "host"\n', encoding="utf-8")
 
@@ -638,12 +617,11 @@ def test_config_fix_drops_an_invalid_preset_leaf_masked_by_the_repo(
 
 
 def test_config_fix_drops_an_unknown_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[sandbox]\nprotct_git = true\n", encoding="utf-8")  # typo of protect_git
     monkeypatch.chdir(tmp_path)
@@ -656,12 +634,12 @@ def test_config_fix_drops_an_unknown_key(
 
 
 def test_config_fix_labels_a_repo_layer_entry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    rpath = repo_config_path(tmp_path)
+    rpath = paths.repo_config_path(tmp_path)
     rpath.parent.mkdir(parents=True, exist_ok=True)
     rpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
 
@@ -673,12 +651,11 @@ def test_config_fix_labels_a_repo_layer_entry(
 
 
 def test_config_fix_on_valid_config_reports_nothing_to_fix(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     before = "[budget]\nmax_usd = 5.0\n"
     gpath.write_text(before, encoding="utf-8")
@@ -692,16 +669,15 @@ def test_config_fix_on_valid_config_reports_nothing_to_fix(
 
 
 def test_config_fix_repairs_both_layers_and_labels_each(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    rpath = repo_config_path(tmp_path)
+    rpath = paths.repo_config_path(tmp_path)
     rpath.parent.mkdir(parents=True, exist_ok=True)
     rpath.write_text('[sandbox]\nrun_commands = "bogus"\n', encoding="utf-8")
 
@@ -715,7 +691,7 @@ def test_config_fix_repairs_both_layers_and_labels_each(
 
 
 def test_config_fix_machine_overlay_leaves_the_spec_untouched(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from agent6.ui.cli import main
 
@@ -733,7 +709,7 @@ def test_config_fix_machine_overlay_leaves_the_spec_untouched(
 
 
 def test_config_set_unknown_provider_key_speaks_human(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The standalone minimal dict cannot resolve a union member; the member models answer directly.
     from agent6.ui.cli import main
@@ -752,7 +728,7 @@ def test_config_set_unknown_provider_key_speaks_human(
 
 
 def test_config_set_invalid_provider_value_names_the_field(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from agent6.ui.cli import main
 
@@ -775,19 +751,19 @@ def test_config_set_invalid_provider_value_names_the_field(
 
 
 def test_config_fix_skips_an_entry_another_writer_already_fixed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`config fix` skips an entry another writer replaced with a valid value in between.
 
     find_invalid_entries reads unlocked and removal deletes by key name.
     """
-    from agent6.config.layer import ConfigDiagnosis, InvalidEntry
+    from agent6.config import layer
 
     cfg = tmp_path / "config.toml"
     cfg.write_text('[sandbox]\nrun_commands = "ask"\n', encoding="utf-8")
 
     # Diagnosis saw the OLD, invalid value; the file already holds the fixed one.
-    stale = InvalidEntry(
+    stale = layer.InvalidEntry(
         leaf="sandbox.run_commands",
         value="maybe",  # what the (unlocked) diagnosis read
         layer="global",
@@ -796,9 +772,9 @@ def test_config_fix_skips_an_entry_another_writer_already_fixed(
     )
     calls = {"n": 0}
 
-    def _diag(*_a: object, **_k: object) -> ConfigDiagnosis:
+    def _diag(*_a: object, **_k: object) -> layer.ConfigDiagnosis:
         calls["n"] += 1
-        return ConfigDiagnosis(removable=(stale,) if calls["n"] == 1 else (), blocked=None)
+        return layer.ConfigDiagnosis(removable=(stale,) if calls["n"] == 1 else (), blocked=None)
 
     monkeypatch.setattr(cc, "find_invalid_entries", _diag)
     cc._cmd_config_fix(machine=None)  # pyright: ignore[reportPrivateUsage]
@@ -809,16 +785,15 @@ def test_config_fix_skips_an_entry_another_writer_already_fixed(
 
 
 def test_config_fix_removes_a_nan_entry_instead_of_claiming_valid(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config fix` removes a `nan` entry instead of claiming the config valid.
 
     TOML `nan` never compares equal to itself, so an identity re-check reads it as replaced.
     """
-    from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[sandbox]\nbogus_entry = nan\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -833,17 +808,17 @@ def test_config_fix_removes_a_nan_entry_instead_of_claiming_valid(
 
 
 def test_equal_tolerating_nan_matches_nan_at_every_depth() -> None:
-    from math import nan
+    import math
 
-    assert cc._equal_tolerating_nan(nan, nan)  # pyright: ignore[reportPrivateUsage]
-    assert cc._equal_tolerating_nan({"x": nan}, {"x": nan})  # pyright: ignore[reportPrivateUsage]
-    assert cc._equal_tolerating_nan([1.0, nan], [1.0, nan])  # pyright: ignore[reportPrivateUsage]
-    assert not cc._equal_tolerating_nan({"x": nan}, {"x": 1.0})  # pyright: ignore[reportPrivateUsage]
-    assert not cc._equal_tolerating_nan([nan], [nan, nan])  # pyright: ignore[reportPrivateUsage]
+    assert cc._equal_tolerating_nan(math.nan, math.nan)  # pyright: ignore[reportPrivateUsage]
+    assert cc._equal_tolerating_nan({"x": math.nan}, {"x": math.nan})  # pyright: ignore[reportPrivateUsage]
+    assert cc._equal_tolerating_nan([1.0, math.nan], [1.0, math.nan])  # pyright: ignore[reportPrivateUsage]
+    assert not cc._equal_tolerating_nan({"x": math.nan}, {"x": 1.0})  # pyright: ignore[reportPrivateUsage]
+    assert not cc._equal_tolerating_nan([math.nan], [math.nan, math.nan])  # pyright: ignore[reportPrivateUsage]
 
 
 def test_revalidate_machine_no_lock_keeps_the_write_and_says_so(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Without the config lock the machine path keeps an invalid write and says so.
 
@@ -860,7 +835,7 @@ def test_revalidate_machine_no_lock_keeps_the_write_and_says_so(
 
 
 def test_config_set_names_the_flag_file_that_shadows_the_write(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`agent6 --config F config set` notes that F keeps overriding the key it just wrote."""
     from agent6.ui.cli import main
@@ -882,7 +857,7 @@ def test_config_set_names_the_flag_file_that_shadows_the_write(
 
 
 def test_config_show_legend_names_the_flag_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The legend reads a "flag" source back to the one path the operator typed."""
     from agent6.ui.cli import main
@@ -900,23 +875,19 @@ def test_config_show_legend_names_the_flag_file(
 
 def test_a_machine_overlay_refusal_reads_like_every_other_writer() -> None:
     """`config set --machine-file` refuses with the leaf lines every other writer prints."""
-    from agent6.ui.cli.config_cmds import (
-        _leaf_problems,  # pyright: ignore[reportPrivateUsage]
-    )
-
     raw = (
         "Config validation failed: (merged config layers + machine overlay)\n"
         "  - harness.verify_retries: Input should be greater than or equal to 0"
         " (type=greater_than_equal)"
     )
-    assert _leaf_problems(raw) == (
+    assert cc._leaf_problems(raw) == (
         "harness.verify_retries: Input should be greater than or equal to 0"
     )
-    assert _leaf_problems("machine file unreadable") == "machine file unreadable"
+    assert cc._leaf_problems("machine file unreadable") == "machine file unreadable"
 
 
 def test_config_unset_on_an_mcp_server_names_the_verb_that_removes_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config unset` on a `[mcp.servers.<name>]` table points at the verb that removes it."""
     monkeypatch.chdir(tmp_path)
@@ -935,7 +906,7 @@ def test_config_unset_on_an_mcp_server_names_the_verb_that_removes_it(
 
 
 def test_config_unset_on_an_unknown_key_matches_show_and_get(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = tmp_path / "config.toml"
@@ -953,7 +924,7 @@ def test_config_unset_on_an_unknown_key_matches_show_and_get(
 
 
 def test_config_unset_repairs_a_config_that_no_longer_loads(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config unset` repairs a config that no longer loads.
 

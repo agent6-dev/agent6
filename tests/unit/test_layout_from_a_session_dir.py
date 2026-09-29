@@ -8,44 +8,45 @@ a plan or an ask at a directory that does not exist.
 
 from __future__ import annotations
 
+import datetime
+import pathlib
 import re
-from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 
-from agent6.graph.models import TaskNode
-from agent6.graph.storage import write_node
-from agent6.sessions.layout import SessionLayout, bucket_dir, layout_of
+from agent6.graph import models, storage
+from agent6.sessions import layout as sessions_layout
 
-_TS = datetime(2026, 1, 1, tzinfo=UTC)
+_TS = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 
 
 def test_a_layout_round_trips_through_its_own_directory() -> None:
     for bucket in ("runs", "plans", "asks", "machines"):
-        original = SessionLayout(state_dir=Path("/s"), session_id="brave-oak-AAAAAA", subdir=bucket)
-        assert layout_of(original.session_dir) == original
+        original = sessions_layout.SessionLayout(
+            state_dir=pathlib.Path("/s"), session_id="brave-oak-AAAAAA", subdir=bucket
+        )
+        assert sessions_layout.layout_of(original.session_dir) == original
 
 
 def test_the_end_of_run_task_tree_renders_for_a_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The task tree reads a plan's graph from its own bucket, and a failure is reported."""
-    from agent6.ui.cli.sessions_show import _print_task_tree  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import sessions_show  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
-    session = bucket_dir(tmp_path / "state", "plans") / "brave-oak-AAAAAA"
-    layout = SessionLayout(
+    session = sessions_layout.bucket_dir(tmp_path / "state", "plans") / "brave-oak-AAAAAA"
+    layout = sessions_layout.SessionLayout(
         state_dir=tmp_path / "state", session_id="brave-oak-AAAAAA", subdir="plans"
     )
     layout.ensure()
     # Written by the real writer, so the test reads the graph's format, not the fixture's.
-    nodes: dict[str, TaskNode] = {}
+    nodes: dict[str, models.TaskNode] = {}
     for node_id, title, parent in (
         ("01AAAAAAAAAAAAAAAAAAAAAAAA", "root task", None),
         ("01BBBBBBBBBBBBBBBBBBBBBBBB", "step one", "01AAAAAAAAAAAAAAAAAAAAAAAA"),
     ):
-        node = TaskNode(
+        node = models.TaskNode(
             id=node_id,
             title=title,
             parent_id=parent,
@@ -54,9 +55,9 @@ def test_the_end_of_run_task_tree_renders_for_a_plan(
             created_by="planner",
         )
         nodes[node_id] = node
-        write_node(layout, nodes, node)
+        storage.write_node(layout, nodes, node)
 
-    _print_task_tree(session)
+    sessions_show._print_task_tree(session)
     # The subject is that the plan's graph is read at all; the layout pointed at runs/ before.
     out = capsys.readouterr().out
     assert "plan:" in out and "root task" in out
@@ -64,7 +65,7 @@ def test_the_end_of_run_task_tree_renders_for_a_plan(
 
 def test_no_new_site_builds_a_layout_without_naming_its_bucket() -> None:
     """Every rebuilt layout names its bucket; `subdir`'s runs/ default is a silent assumption."""
-    src = Path(__file__).resolve().parents[2] / "src" / "agent6"
+    src = pathlib.Path(__file__).resolve().parents[2] / "src" / "agent6"
     # Where defaulting is the point, with the reason.
     allowed = {
         # `sessions diff|merge|commits` with no id means the most recent run.
@@ -85,23 +86,23 @@ def test_no_new_site_builds_a_layout_without_naming_its_bucket() -> None:
 
 
 def test_a_task_tree_render_failure_is_not_an_empty_section(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A failure while rendering the tree reaches the CLI's reporter, never a silent exit 0."""
-    from agent6.ui.cli.sessions_show import _print_task_tree  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import sessions_show  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
-    session = bucket_dir(tmp_path / "state", "plans") / "brave-oak-BBBBBB"
-    layout = SessionLayout(
+    session = sessions_layout.bucket_dir(tmp_path / "state", "plans") / "brave-oak-BBBBBB"
+    layout = sessions_layout.SessionLayout(
         state_dir=tmp_path / "state", session_id="brave-oak-BBBBBB", subdir="plans"
     )
     layout.ensure()
-    nodes: dict[str, TaskNode] = {}
+    nodes: dict[str, models.TaskNode] = {}
     for node_id, title, parent in (
         ("01AAAAAAAAAAAAAAAAAAAAAAAA", "root task", None),
         ("01BBBBBBBBBBBBBBBBBBBBBBBB", "step one", "01AAAAAAAAAAAAAAAAAAAAAAAA"),
     ):
-        node = TaskNode(
+        node = models.TaskNode(
             id=node_id,
             title=title,
             parent_id=parent,
@@ -110,11 +111,11 @@ def test_a_task_tree_render_failure_is_not_an_empty_section(
             created_by="planner",
         )
         nodes[node_id] = node
-        write_node(layout, nodes, node)
+        storage.write_node(layout, nodes, node)
 
     def broken(*_a: object, **_k: object) -> list[str]:
         raise RuntimeError("a render defect")
 
     monkeypatch.setattr("agent6.ui.cli._task_tree.task_tree_lines", broken)
     with pytest.raises(RuntimeError, match="a render defect"):
-        _print_task_tree(session)
+        sessions_show._print_task_tree(session)

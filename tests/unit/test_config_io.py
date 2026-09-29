@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -12,13 +12,13 @@ from agent6.config import io
 
 
 def test_writers_go_through_atomic_write_and_never_truncate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = tmp_path / "config.toml"
     original = "[sandbox]\nprotect_git = true\n"
     cfg.write_text(original, encoding="utf-8")
 
-    def boom(_path: Path, _text: str) -> None:
+    def boom(_path: pathlib.Path, _text: str) -> None:
         raise RuntimeError("simulated crash during publish")
 
     # path.write_text would truncate cfg before any rename; atomic_write fails before it.
@@ -28,7 +28,7 @@ def test_writers_go_through_atomic_write_and_never_truncate(
     assert cfg.read_text(encoding="utf-8") == original  # not truncated
 
 
-def test_write_leaves_no_temp_siblings(tmp_path: Path) -> None:
+def test_write_leaves_no_temp_siblings(tmp_path: pathlib.Path) -> None:
     cfg = tmp_path / "config.toml"
     io.upsert_toml_leaf(cfg, "sandbox.network", "auto")
     io.upsert_toml_leaf(cfg, "sandbox.protect_git", False)
@@ -36,7 +36,7 @@ def test_write_leaves_no_temp_siblings(tmp_path: Path) -> None:
     assert [p.name for p in tmp_path.iterdir()] == ["config.toml"]  # tmp files cleaned up
 
 
-def test_a_quoted_leaf_key_is_the_same_leaf(tmp_path: Path) -> None:
+def test_a_quoted_leaf_key_is_the_same_leaf(tmp_path: pathlib.Path) -> None:
     """`"protect_git" = true` is valid TOML naming the same leaf, and the surgery matches it."""
     path = tmp_path / "config.toml"
     path.write_text('[sandbox]\n"protect_git" = true\nhome = "tmp"\n', encoding="utf-8")

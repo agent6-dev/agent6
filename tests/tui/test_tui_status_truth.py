@@ -16,25 +16,23 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pathlib
 import subprocess
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
 import pytest
-from textual.app import ScreenStackError
-from textual.screen import ModalScreen
-from textual.widgets import Static
+from textual import app as textual_app
+from textual import screen, widgets
 
-from agent6.ui.tui._dashboard_header import RunHeader
-from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.composer import ApprovalRow, SteerInput
-from agent6.viewmodel.state import status_facts
+from agent6.ui.tui import _dashboard_header, composer
+from agent6.ui.tui import app as tui_app
+from agent6.viewmodel import state
 from tests.tui._waits import answerable, focus_answers, wait_for
 
 
-def _mk_parked(d: Path) -> None:
+def _mk_parked(d: pathlib.Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     (d / "manifest.json").write_text(
         json.dumps(
@@ -51,7 +49,7 @@ def _mk_parked(d: Path) -> None:
     )
 
 
-def _mk_crashed(d: Path) -> None:
+def _mk_crashed(d: pathlib.Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
@@ -61,21 +59,21 @@ def _mk_crashed(d: Path) -> None:
     (d / "worker.pid").write_text("999999999", encoding="utf-8")
 
 
-def _mk_unreadable(d: Path) -> None:
+def _mk_unreadable(d: pathlib.Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     (d / "manifest.json").write_text("{not json", encoding="utf-8")
 
 
-def _screen_is(app: Agent6TUI, name: str) -> bool:
+def _screen_is(app: tui_app.Agent6TUI, name: str) -> bool:
     """`app.screen` raising on a transiently empty stack reads as "not yet", never an error."""
     try:
         current = app.screen
-    except ScreenStackError:
+    except textual_app.ScreenStackError:
         return False
     return current is getattr(app, name)
 
 
-async def _open_dash(app: Agent6TUI, pilot: Any) -> None:
+async def _open_dash(app: tui_app.Agent6TUI, pilot: Any) -> None:
     await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
     await pilot.press("ctrl+d")
     await wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
@@ -84,7 +82,7 @@ async def _open_dash(app: Agent6TUI, pilot: Any) -> None:
     await pilot.pause()
 
 
-def test_the_dashboard_title_word_is_the_sessions_mode(tmp_path: Path) -> None:
+def test_the_dashboard_title_word_is_the_sessions_mode(tmp_path: pathlib.Path) -> None:
     """The menu-bar title leads with the manifest's mode, as the web panel heading does."""
     d = tmp_path / "plan1"
     d.mkdir()
@@ -106,7 +104,7 @@ def test_the_dashboard_title_word_is_the_sessions_mode(tmp_path: Path) -> None:
     )
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             assert app.run_title().startswith("plan · lay it out")
@@ -114,7 +112,7 @@ def test_the_dashboard_title_word_is_the_sessions_mode(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_the_task_count_credits_an_obsolete_task_as_done(tmp_path: Path) -> None:
+def test_the_task_count_credits_an_obsolete_task_as_done(tmp_path: pathlib.Path) -> None:
     """The top line's `tasks: N/M` counts a retired task as done, like a skipped one."""
     d = tmp_path / "obsolete1"
     d.mkdir()
@@ -133,20 +131,20 @@ def test_the_task_count_credits_an_obsolete_task_as_done(tmp_path: Path) -> None
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             for _ in range(80):  # the reader thread folds the graph
                 if len(app.state.tasks) == 3:
                     break
                 await pilot.pause(0.05)
-            top = str(app._dash.query_one("#top", Static).render())
+            top = str(app._dash.query_one("#top", widgets.Static).render())
             assert "tasks: 2/3" in top
 
     asyncio.run(scenario())
 
 
-def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: Path) -> None:
+def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: pathlib.Path) -> None:
     """A plan's end story shows plan.md, as the CLI and the web do."""
     d = tmp_path / "plan2"
     d.mkdir()
@@ -166,10 +164,10 @@ def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: Path) -> N
     )
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
-            body = str(app._dash.query_one("#stream-body", Static).render())
+            body = str(app._dash.query_one("#stream-body", widgets.Static).render())
             assert "planned" in body
             assert "Plan seeded." in body
             assert "1. do the thing" in body
@@ -177,7 +175,7 @@ def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: Path) -> N
     asyncio.run(scenario())
 
 
-def test_a_failed_finish_attempt_is_not_the_runs_end_story(tmp_path: Path) -> None:
+def test_a_failed_finish_attempt_is_not_the_runs_end_story(tmp_path: pathlib.Path) -> None:
     """A rejected finish tool carries a proposed summary, not the run's end.
 
     When the execution later fails, the stream pane shows the failure without presenting that
@@ -207,17 +205,17 @@ def test_a_failed_finish_attempt_is_not_the_runs_end_story(tmp_path: Path) -> No
     )
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
-            body = str(app._dash.query_one("#stream-body", Static).render())
+            body = str(app._dash.query_one("#stream-body", widgets.Static).render())
             assert "failed · provider error" in body
             assert "Everything passed." not in body
 
     asyncio.run(scenario())
 
 
-def test_the_header_names_the_pins_in_force(tmp_path: Path) -> None:
+def test_the_header_names_the_pins_in_force(tmp_path: pathlib.Path) -> None:
     """The dashboard header lists the pinned instructions, as the web header does."""
     d = tmp_path / "pinned1"
     d.mkdir()
@@ -229,16 +227,16 @@ def test_the_header_names_the_pins_in_force(tmp_path: Path) -> None:
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
-            top = str(app._dash.query_one("#top", Static).render())
+            top = str(app._dash.query_one("#top", widgets.Static).render())
             assert "pins: never touch tests | keep the API stable" in top
 
     asyncio.run(scenario())
 
 
-def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: Any) -> None:
+def test_parked_run_tells_the_truth_on_every_pane(tmp_path: pathlib.Path, monkeypatch: Any) -> None:
     """A parked run's dashboard leads with the hub's words, and the composer routes to resume.
 
     The stream pane says parked, never "(waiting for the model…)".
@@ -248,7 +246,7 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
-        _cwd: Path,
+        _cwd: pathlib.Path,
         rid: str,
         *,
         steer: str = "",
@@ -263,19 +261,19 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
     _mk_parked(tmp_path / "parked1")
 
     async def scenario() -> None:
-        app = Agent6TUI(tmp_path / "parked1")
+        app = tui_app.Agent6TUI(tmp_path / "parked1")
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             assert app.session_controllable() is False  # resume is the one action
-            top = str(app._dash.query_one("#top", Static).render())
+            top = str(app._dash.query_one("#top", widgets.Static).render())
             assert "parked · checkout busy" in top
             assert "task: fix the flaky test" in top  # manifest fallback, not a blank line
-            body = str(app._dash.query_one("#stream-body", Static).render())
+            body = str(app._dash.query_one("#stream-body", widgets.Static).render())
             assert "parked" in body
             assert "waiting for the model" not in body
             assert "working…" not in body
             # Both composer bars offer the resume action, not a dead-end steer.
-            assert app._dash.query_one("#dash-input", SteerInput).border_title == (
+            assert app._dash.query_one("#dash-input", composer.SteerInput).border_title == (
                 "continue this session"
             )
             app.submit_instruction("go ahead")
@@ -285,17 +283,17 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
     asyncio.run(scenario())
 
 
-def test_an_unreadable_run_tells_the_truth_on_the_stream_pane(tmp_path: Path) -> None:
+def test_an_unreadable_run_tells_the_truth_on_the_stream_pane(tmp_path: pathlib.Path) -> None:
     """A session whose manifest will not parse reads "unreadable" on the header and the pane."""
     _mk_unreadable(tmp_path / "corrupt1")
 
     async def scenario() -> None:
-        app = Agent6TUI(tmp_path / "corrupt1")
+        app = tui_app.Agent6TUI(tmp_path / "corrupt1")
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
-            top = str(app._dash.query_one("#top", Static).render())
+            top = str(app._dash.query_one("#top", widgets.Static).render())
             assert "unreadable" in top
-            body = str(app._dash.query_one("#stream-body", Static).render())
+            body = str(app._dash.query_one("#stream-body", widgets.Static).render())
             assert "unreadable" in body
             assert "waiting for the model" not in body
             assert "working…" not in body
@@ -304,22 +302,19 @@ def test_an_unreadable_run_tells_the_truth_on_the_stream_pane(tmp_path: Path) ->
 
 
 def test_a_resume_from_the_composer_carries_the_picked_preset(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """A run that is not live shows the preset and model pickers above its composer.
 
     The picks ride the detached resume as `--preset` and `--model`; a refused spawn says why.
     """
-    from textual.widgets import Select
-
     from agent6.ui.tui import app as app_mod
-    from agent6.ui.tui.composer import ResumeOptions
 
     spawned: list[tuple[str, str, str, str]] = []
     notes: list[str] = []
 
     def _fake_resume(
-        _cwd: Path,
+        _cwd: pathlib.Path,
         rid: str,
         *,
         steer: str = "",
@@ -332,10 +327,10 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
 
     monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
 
-    def _presets(_cwd: Path, _cp: object) -> list[str]:
+    def _presets(_cwd: pathlib.Path, _cp: object) -> list[str]:
         return ["quick", "ultra"]
 
-    def _routes(_cwd: Path, _cp: object) -> list[str]:
+    def _routes(_cwd: pathlib.Path, _cp: object) -> list[str]:
         return ["o/a", "o/b"]
 
     monkeypatch.setattr(app_mod, "available_preset_names", _presets)
@@ -343,7 +338,7 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
     _mk_parked(tmp_path / "parked2")
 
     async def scenario() -> None:
-        app = Agent6TUI(tmp_path / "parked2")
+        app = tui_app.Agent6TUI(tmp_path / "parked2")
         original = app.notify
 
         def spy(message: Any, *args: Any, **kwargs: Any) -> None:
@@ -353,14 +348,14 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
         monkeypatch.setattr(app, "notify", spy)
         async with app.run_test(size=(140, 40)) as pilot:
             await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
-            row = app._conv.query_one("#conv-resume", ResumeOptions)
+            row = app._conv.query_one("#conv-resume", composer.ResumeOptions)
             await wait_for(pilot, lambda: row.display, "the resume row")
-            preset_options = row.query_one("#resume-preset", Select)._options  # pyright: ignore[reportPrivateUsage]
+            preset_options = row.query_one("#resume-preset", widgets.Select)._options  # pyright: ignore[reportPrivateUsage]
             assert [value for _label, value in preset_options] == ["", "quick", "ultra"]
-            model_options = row.query_one("#resume-model", Select)._options  # pyright: ignore[reportPrivateUsage]
+            model_options = row.query_one("#resume-model", widgets.Select)._options  # pyright: ignore[reportPrivateUsage]
             assert [value for _label, value in model_options] == ["", "o/a", "o/b"]
-            row.query_one("#resume-preset", Select).value = "quick"
-            row.query_one("#resume-model", Select).value = "o/b"
+            row.query_one("#resume-preset", widgets.Select).value = "quick"
+            row.query_one("#resume-model", widgets.Select).value = "o/b"
             await pilot.pause()
             assert (app.resume_preset, app.resume_model) == ("quick", "o/b")
             app.submit_instruction("go ahead")
@@ -377,10 +372,10 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
             assert any("under preset quick, model o/b in the background" in note for note in notes)
             # The dashboard's pickers show the same choices.
             await _open_dash(app, pilot)
-            dash_row = app._dash.query_one("#dash-resume", ResumeOptions)
+            dash_row = app._dash.query_one("#dash-resume", composer.ResumeOptions)
             await wait_for(pilot, lambda: dash_row.display, "the dashboard's row")
-            preset = dash_row.query_one("#resume-preset", Select)
-            model = dash_row.query_one("#resume-model", Select)
+            preset = dash_row.query_one("#resume-preset", widgets.Select)
+            model = dash_row.query_one("#resume-model", widgets.Select)
             assert preset.value == "quick"
             assert model.value == "o/b"
             preset.value = ""
@@ -394,28 +389,28 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
             await pilot.pause()
             assert any("the checkout is busy" in note for note in notes)
             assert dash_row.display
-            assert app._dash.query_one("#dash-input", SteerInput).mode == "resume"
+            assert app._dash.query_one("#dash-input", composer.SteerInput).mode == "resume"
 
     asyncio.run(scenario())
 
 
 def test_the_resume_rows_name_what_a_bare_resume_runs_under(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """Each resume picker's first entry names what a resume without the flag runs under."""
-    from textual.widgets import Select
     from textual.widgets._select import SelectCurrent
 
     from agent6.ui.tui import app as app_mod
-    from agent6.ui.tui.composer import ResumeOptions
 
-    def _presets(_cwd: Path, _cp: object) -> list[str]:
+    def _presets(_cwd: pathlib.Path, _cp: object) -> list[str]:
         return ["quick"]
 
-    def _routes(_cwd: Path, _cp: object) -> list[str]:
+    def _routes(_cwd: pathlib.Path, _cp: object) -> list[str]:
         return ["o/a", "o/b"]
 
-    def _defaults(_cwd: Path, _cp: object, _dir: Path, *, preset: str = "") -> tuple[str, str]:
+    def _defaults(
+        _cwd: pathlib.Path, _cp: object, _dir: pathlib.Path, *, preset: str = ""
+    ) -> tuple[str, str]:
         return "fast (as recorded)", f"o/{preset or 'a'} (config default)"
 
     monkeypatch.setattr(app_mod, "available_preset_names", _presets)
@@ -423,60 +418,60 @@ def test_the_resume_rows_name_what_a_bare_resume_runs_under(
     monkeypatch.setattr(app_mod, "resume_defaults", _defaults)
     _mk_parked(tmp_path / "parked3")
 
-    def labels(row: ResumeOptions) -> tuple[str, str]:
+    def labels(row: composer.ResumeOptions) -> tuple[str, str]:
         """Each picker's first entry, whatever is picked."""
-        pickers = (row.query_one(f"#resume-{name}", Select) for name in ("preset", "model"))
+        pickers = (row.query_one(f"#resume-{name}", widgets.Select) for name in ("preset", "model"))
         first = tuple(str(p._options[0][0]) for p in pickers)  # pyright: ignore[reportPrivateUsage]
         return first[0], first[1]
 
     async def scenario() -> None:
-        app = Agent6TUI(tmp_path / "parked3")
+        app = tui_app.Agent6TUI(tmp_path / "parked3")
         async with app.run_test(size=(140, 40)) as pilot:
             await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
-            row = app._conv.query_one("#conv-resume", ResumeOptions)
+            row = app._conv.query_one("#conv-resume", composer.ResumeOptions)
             await wait_for(pilot, lambda: row.display, "the resume row")
             await pilot.pause()
             assert labels(row) == ("fast (as recorded)", "o/a (config default)")
-            preset = row.query_one("#resume-preset", Select)
+            preset = row.query_one("#resume-preset", widgets.Select)
             assert str(preset.query_one(SelectCurrent).label) == "fast (as recorded)"
-            row.query_one("#resume-model", Select).value = "o/b"
-            row.query_one("#resume-preset", Select).value = "quick"
+            row.query_one("#resume-model", widgets.Select).value = "o/b"
+            row.query_one("#resume-preset", widgets.Select).value = "quick"
             await pilot.pause()
             await pilot.pause()
             assert labels(row) == ("fast (as recorded)", "o/quick (config default)")
             assert (app.resume_preset, app.resume_model) == ("quick", "o/b")
-            assert row.query_one("#resume-model", Select).value == "o/b"
+            assert row.query_one("#resume-model", widgets.Select).value == "o/b"
             await _open_dash(app, pilot)
-            dash_row = app._dash.query_one("#dash-resume", ResumeOptions)
+            dash_row = app._dash.query_one("#dash-resume", composer.ResumeOptions)
             await wait_for(pilot, lambda: dash_row.display, "the dashboard's row")
             await pilot.pause()
             assert labels(dash_row) == ("fast (as recorded)", "o/quick (config default)")
-            assert dash_row.query_one("#resume-model", Select).value == "o/b"
+            assert dash_row.query_one("#resume-model", widgets.Select).value == "o/b"
 
     asyncio.run(scenario())
 
 
-def test_dead_worker_leads_with_the_hub_word_stale(tmp_path: Path) -> None:
+def test_dead_worker_leads_with_the_hub_word_stale(tmp_path: pathlib.Path) -> None:
     """The top-line label for a lost worker is "stale", the hub row's word for the same probe."""
     _mk_crashed(tmp_path / "crashed1")
 
     async def scenario() -> None:
-        app = Agent6TUI(tmp_path / "crashed1")
+        app = tui_app.Agent6TUI(tmp_path / "crashed1")
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
             app._tick()
             await pilot.pause()
-            top = str(app._dash.query_one("#top", Static).render())
+            top = str(app._dash.query_one("#top", widgets.Static).render())
             assert "stale" in top
             assert "worker exited" not in top  # the label is the hub's word
-            body = str(app._dash.query_one("#stream-body", Static).render())
+            body = str(app._dash.query_one("#stream-body", widgets.Static).render())
             assert "worker exited without finishing" in body  # the detail stays
 
     asyncio.run(scenario())
 
 
-def test_dead_worker_stream_pane_drops_stale_partial_text(tmp_path: Path) -> None:
+def test_dead_worker_stream_pane_drops_stale_partial_text(tmp_path: pathlib.Path) -> None:
     """A partial response left in flight by a worker death is not live output."""
     d = tmp_path / "crashed-stream"
     _mk_crashed(d)
@@ -489,7 +484,7 @@ def test_dead_worker_stream_pane_drops_stale_partial_text(tmp_path: Path) -> Non
         )
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
@@ -500,14 +495,14 @@ def test_dead_worker_stream_pane_drops_stale_partial_text(tmp_path: Path) -> Non
             )
             app._dash.render_heartbeat()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
-            body = str(app._dash.query_one("#stream-body", Static).render())
+            body = str(app._dash.query_one("#stream-body", widgets.Static).render())
             assert "worker exited without finishing" in body
             assert "partial stale answer" not in body
 
     asyncio.run(scenario())
 
 
-def test_crash_then_resume_recovers_liveness(tmp_path: Path) -> None:
+def test_crash_then_resume_recovers_liveness(tmp_path: pathlib.Path) -> None:
     """The dead-worker state is derived, not latched: a resume in place clears it.
 
     A one-way latch kept "worker exited" painted over the live execution and dropped input.
@@ -516,7 +511,7 @@ def test_crash_then_resume_recovers_liveness(tmp_path: Path) -> None:
     _mk_crashed(d)
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
@@ -530,16 +525,20 @@ def test_crash_then_resume_recovers_liveness(tmp_path: Path) -> None:
             app._heartbeat_at = 0.0
             app._tick()
             await pilot.pause()
-            top = str(app._dash.query_one("#top", Static).render())
+            top = str(app._dash.query_one("#top", widgets.Static).render())
             assert "stale" not in top and "worker exited" not in top
             # Both bars agree on the live mode, the covered conversation's too.
-            assert "steer" in (app._dash.query_one("#dash-input", SteerInput).border_title or "")
-            assert "steer" in (app._conv.query_one("#conv-input", SteerInput).border_title or "")
+            assert "steer" in (
+                app._dash.query_one("#dash-input", composer.SteerInput).border_title or ""
+            )
+            assert "steer" in (
+                app._conv.query_one("#conv-input", composer.SteerInput).border_title or ""
+            )
 
     asyncio.run(scenario())
 
 
-def test_conversation_bar_tells_the_truth_about_a_dead_worker(tmp_path: Path) -> None:
+def test_conversation_bar_tells_the_truth_about_a_dead_worker(tmp_path: pathlib.Path) -> None:
     """The conversation view keys its composer on the host's liveness, not its own events.
 
     A worker killed without a session.end relabels the bar to resume.
@@ -548,7 +547,7 @@ def test_conversation_bar_tells_the_truth_about_a_dead_worker(tmp_path: Path) ->
     _mk_crashed(d)
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             app._heartbeat_at = 0.0
@@ -557,13 +556,13 @@ def test_conversation_bar_tells_the_truth_about_a_dead_worker(tmp_path: Path) ->
             app._heartbeat_at = 0.0
             app._tick()
             await pilot.pause()
-            bar = app._conv.query_one("#conv-input", SteerInput)
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)
             assert bar.border_title == "continue this session"
 
     asyncio.run(scenario())
 
 
-def test_a_dead_workers_open_call_settles_into_the_scrollback(tmp_path: Path) -> None:
+def test_a_dead_workers_open_call_settles_into_the_scrollback(tmp_path: pathlib.Path) -> None:
     """A worker killed mid-command settles its open call as one that never returned."""
     d = tmp_path / "convdead2"
     _mk_crashed(d)
@@ -576,7 +575,7 @@ def test_a_dead_workers_open_call_settles_into_the_scrollback(tmp_path: Path) ->
         )
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             app._heartbeat_at = 0.0
@@ -586,7 +585,7 @@ def test_a_dead_workers_open_call_settles_into_the_scrollback(tmp_path: Path) ->
             await pilot.pause()
             body = "\n".join(
                 str(w.content)
-                for w in app._conv.query(".conv-chunk").results(Static)  # pyright: ignore[reportPrivateUsage]
+                for w in app._conv.query(".conv-chunk").results(widgets.Static)  # pyright: ignore[reportPrivateUsage]
             )
             assert "→ run_command  sleep 60" in body
             assert "no result (the run died)" in body
@@ -595,7 +594,7 @@ def test_a_dead_workers_open_call_settles_into_the_scrollback(tmp_path: Path) ->
     asyncio.run(scenario())
 
 
-def test_conversation_composer_routes_through_the_host_parser(tmp_path: Path) -> None:
+def test_conversation_composer_routes_through_the_host_parser(tmp_path: pathlib.Path) -> None:
     """A composer line on the conversation view routes through the host's submit_instruction.
 
     `/compact <focus>` becomes a compaction request, not a literal steer.
@@ -615,14 +614,14 @@ def test_conversation_composer_routes_through_the_host_parser(tmp_path: Path) ->
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             app._heartbeat_at = 0.0
             app._tick()
             await pilot.pause()
-            bar = app._conv.query_one("#conv-input", SteerInput)
-            bar.post_message(SteerInput.Submitted("/compact keep the auth decisions"))
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)
+            bar.post_message(composer.SteerInput.Submitted("/compact keep the auth decisions"))
             await pilot.pause()
             await pilot.pause()
             assert (d / "compact.request").read_text(encoding="utf-8") == (
@@ -634,7 +633,7 @@ def test_conversation_composer_routes_through_the_host_parser(tmp_path: Path) ->
     asyncio.run(scenario())
 
 
-def _mk_blocked(d: Path, *, alive: bool) -> None:
+def _mk_blocked(d: pathlib.Path, *, alive: bool) -> None:
     """A run blocked on an unanswered approval, with a live or dead worker."""
     d.mkdir(parents=True, exist_ok=True)
     evs = [
@@ -645,7 +644,7 @@ def _mk_blocked(d: Path, *, alive: bool) -> None:
     (d / "worker.pid").write_text(str(os.getpid()) if alive else "999999999", encoding="utf-8")
 
 
-def test_dead_run_pops_no_approval_modal(tmp_path: Path) -> None:
+def test_dead_run_pops_no_approval_modal(tmp_path: pathlib.Path) -> None:
     """Allow/Deny is not offered over a dead worker's unanswered prompt.
 
     The fold keeps the prompt past the death, clearing only on an answer or an execution boundary.
@@ -654,22 +653,22 @@ def test_dead_run_pops_no_approval_modal(tmp_path: Path) -> None:
     _mk_blocked(d, alive=False)
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             await wait_for(pilot, lambda: bool(app.state.pending_approvals), "the prompt to fold")
             app._heartbeat_at = 0.0
             app._tick()
             await pilot.pause()
-            assert not isinstance(app.screen, ModalScreen)
+            assert not isinstance(app.screen, screen.ModalScreen)
             assert not (d / "approvals" / "ap1.answer").exists()
 
     asyncio.run(scenario())
 
 
-def _approval_ready(app: Agent6TUI) -> bool:
+def _approval_ready(app: tui_app.Agent6TUI) -> bool:
     # The conversation screen renders an approval inline, the composer keeping focus.
-    bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+    bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
     return (
         _screen_is(app, "_conv")
         and answerable(app._conv)  # pyright: ignore[reportPrivateUsage]
@@ -677,36 +676,36 @@ def _approval_ready(app: Agent6TUI) -> bool:
     )
 
 
-def test_screen_probe_tolerates_an_empty_stack(tmp_path: Path) -> None:
+def test_screen_probe_tolerates_an_empty_stack(tmp_path: pathlib.Path) -> None:
     """`app.screen` raising ScreenStackError inside a poll reads as "not yet"."""
-    app = Agent6TUI(tmp_path)  # never run: the screen stack is empty
-    with pytest.raises(ScreenStackError):
+    app = tui_app.Agent6TUI(tmp_path)  # never run: the screen stack is empty
+    with pytest.raises(textual_app.ScreenStackError):
         _ = app.screen
     assert _screen_is(app, "_conv") is False
     # The app's own probe answers None instead of raising.
     assert app._screen_or_none() is None  # pyright: ignore[reportPrivateUsage]
 
 
-def test_live_run_still_gets_the_inline_approval(tmp_path: Path) -> None:
+def test_live_run_still_gets_the_inline_approval(tmp_path: pathlib.Path) -> None:
     # The converse: gating on liveness must not cost the live run its approval row.
     d = tmp_path / "blocked1"
     _mk_blocked(d, alive=True)
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await wait_for(pilot, lambda: _approval_ready(app), "the approval row")
 
     asyncio.run(scenario())
 
 
-def test_answer_after_death_reports_instead_of_writing(tmp_path: Path) -> None:
+def test_answer_after_death_reports_instead_of_writing(tmp_path: pathlib.Path) -> None:
     """The approval row is withdrawn when the worker dies; the prompt stays visible as a fact."""
     d = tmp_path / "dies-mid-modal"
     _mk_blocked(d, alive=True)
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await wait_for(pilot, lambda: _approval_ready(app), "the approval row")
             (d / "worker.pid").write_text("999999999", encoding="utf-8")
@@ -718,20 +717,20 @@ def test_answer_after_death_reports_instead_of_writing(tmp_path: Path) -> None:
             await pilot.press("a")  # the row is gone: the key answers nothing
             await pilot.pause()
             assert not (d / "approvals" / "ap1.answer").exists()
-            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
-            item = app._conv.query_one("#conv-approval", Static)  # pyright: ignore[reportPrivateUsage]
+            assert not app._conv.query(composer.ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            item = app._conv.query_one("#conv-approval", widgets.Static)  # pyright: ignore[reportPrivateUsage]
             assert "approval pending when the run ended" in str(item.render())
 
     asyncio.run(scenario())
 
 
-def test_exit_on_end_holds_over_a_ghost_prompt_and_ctrl_q_leaves(tmp_path: Path) -> None:
+def test_exit_on_end_holds_over_a_ghost_prompt_and_ctrl_q_leaves(tmp_path: pathlib.Path) -> None:
     """A dead run's dashboard holds deliberately: the header names the state and the leave key."""
     d = tmp_path / "ghost2"
     _mk_blocked(d, alive=False)
 
     async def scenario() -> None:
-        app = Agent6TUI(d, exit_on_end=True)
+        app = tui_app.Agent6TUI(d, exit_on_end=True)
         async with app.run_test(size=(140, 40)) as pilot:
             await wait_for(pilot, lambda: app._end_hold, "the end hold")
             assert "Ctrl+Q to leave" in app.sub_title
@@ -745,18 +744,18 @@ def test_exit_on_end_holds_over_a_ghost_prompt_and_ctrl_q_leaves(tmp_path: Path)
     asyncio.run(scenario())
 
 
-def test_end_hold_header_keeps_the_shared_status_reason(tmp_path: Path) -> None:
+def test_end_hold_header_keeps_the_shared_status_reason(tmp_path: pathlib.Path) -> None:
     """The run header cannot shorten the hub's qualified status to one word."""
     d = tmp_path / "failed"
     d.mkdir()
-    app = Agent6TUI(d)
+    app = tui_app.Agent6TUI(d)
     app.dir_status = ("failed", "provider_error")
     app._end_hold = True
 
     assert "failed · provider error" in app.run_title()
 
 
-def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: Path) -> None:
+def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: pathlib.Path) -> None:
     """The dashboard holds on session.end, so the payoff stays on screen.
 
     The header says how to leave, and the composer routes a typed follow-up to resume.
@@ -770,7 +769,7 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: Path) 
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
     async def scenario() -> None:
-        app = Agent6TUI(d, exit_on_end=True)
+        app = tui_app.Agent6TUI(d, exit_on_end=True)
         async with app.run_test(size=(140, 40)) as pilot:
             await wait_for(pilot, lambda: app._end_hold, "the end hold")
             assert app.is_running
@@ -782,7 +781,7 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: Path) 
             assert "passed" in app.sub_title and "Ctrl+Q to leave" in app.sub_title
             assert "· t ·" in app.sub_title, "the live task name, not the dir fallback"
             await _open_dash(app, pilot)
-            assert app._dash.query_one("#dash-input", SteerInput).border_title == (
+            assert app._dash.query_one("#dash-input", composer.SteerInput).border_title == (
                 "what should it do next"  # finish_session over a green tree: new work only
             )
 
@@ -790,7 +789,7 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: Path) 
 
 
 def test_a_finished_log_is_folded_before_the_first_paint(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A finished run opens with its last role and end story.
 
@@ -825,7 +824,7 @@ def test_a_finished_log_is_folded_before_the_first_paint(
     reader_go = threading.Event()
     real_tail_events = app_mod.tail_events
 
-    def held_reader(path: Path, **kwargs: Any) -> Any:
+    def held_reader(path: pathlib.Path, **kwargs: Any) -> Any:
         if kwargs.get("follow"):
             reader_go.wait(timeout=5)
         yield from real_tail_events(path, **kwargs)
@@ -833,13 +832,13 @@ def test_a_finished_log_is_folded_before_the_first_paint(
     monkeypatch.setattr(app_mod, "tail_events", held_reader)
 
     async def scenario() -> None:
-        app = Agent6TUI(d, exit_on_end=True)
+        app = tui_app.Agent6TUI(d, exit_on_end=True)
         try:
             async with app.run_test(size=(140, 40)) as pilot:
                 await _open_dash(app, pilot)
-                assert status_facts(app.state).finished
-                top = str(app._dash.query_one("#top", Static).render())
-                body = str(app._dash.query_one("#stream-body", Static).render())
+                assert state.status_facts(app.state).finished
+                top = str(app._dash.query_one("#top", widgets.Static).render())
+                body = str(app._dash.query_one("#stream-body", widgets.Static).render())
                 assert "role: worker / last-model" in top
                 assert "passed" in top
                 assert "passed" in body and "All done." in body
@@ -852,7 +851,7 @@ def test_a_finished_log_is_folded_before_the_first_paint(
 
 
 def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """An execution boundary makes the prior call and finish summary historical.
 
@@ -895,11 +894,11 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
                 fh.write(json.dumps(event) + "\n")
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             assert "First execution done." in str(
-                app._dash.query_one("#stream-body", Static).render()
+                app._dash.query_one("#stream-body", widgets.Static).render()
             )
 
             (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -907,8 +906,8 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
             await wait_for(pilot, lambda: not app.state.finished, "the resumed execution")
             app._tick()
             await pilot.pause()
-            top = str(app._dash.query_one("#top", Static).render())
-            body = str(app._dash.query_one("#stream-body", Static).render())
+            top = str(app._dash.query_one("#top", widgets.Static).render())
+            body = str(app._dash.query_one("#stream-body", widgets.Static).render())
             assert "role: worker / next-model" in top
             assert "old-model" not in top
             assert "First execution done." not in body
@@ -921,8 +920,8 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
             await wait_for(pilot, lambda: app.state.finished, "the resumed execution's end")
             app._tick()
             await pilot.pause()
-            top = str(app._dash.query_one("#top", Static).render())
-            body = str(app._dash.query_one("#stream-body", Static).render())
+            top = str(app._dash.query_one("#top", widgets.Static).render())
+            body = str(app._dash.query_one("#stream-body", widgets.Static).render())
             assert "role: worker / new-model" in top
             assert "stopped" in body
             assert "First execution done." not in body
@@ -930,19 +929,19 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
     asyncio.run(scenario())
 
 
-def test_dead_pane_hints_point_at_controls_that_exist(tmp_path: Path) -> None:
+def test_dead_pane_hints_point_at_controls_that_exist(tmp_path: pathlib.Path) -> None:
     """The dead, parked and created hints point at the composer's Enter, not a removed r key."""
     d = tmp_path / "crashed-hint"
     _mk_crashed(d)
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
             app._tick()
             await pilot.pause()
-            body = str(app._dash.query_one("#stream-body", Static).render())
+            body = str(app._dash.query_one("#stream-body", widgets.Static).render())
             assert "press r" not in body
             assert "Enter resumes" in body
 
@@ -950,7 +949,7 @@ def test_dead_pane_hints_point_at_controls_that_exist(tmp_path: Path) -> None:
 
 
 def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """A live worker is not proof that a model call is running.
 
@@ -980,11 +979,11 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
                 fh.write(json.dumps(event) + "\n")
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
-            conv_live = app._conv.query_one("#conv-live", Static)
-            conv_bar = app._conv.query_one("#conv-input", SteerInput)
+            conv_live = app._conv.query_one("#conv-live", widgets.Static)
+            conv_bar = app._conv.query_one("#conv-input", composer.SteerInput)
             await wait_for(pilot, lambda: conv_bar.mode == "steer", "the starting steer bar")
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             assert not conv_live.display
@@ -1038,18 +1037,18 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
             await wait_for(pilot, lambda: app.state.finished, "the session end")
             assert conv_bar.mode == "resume"
             await _open_dash(app, pilot)
-            assert app._dash.query_one("#dash-input", SteerInput).mode == "resume"
+            assert app._dash.query_one("#dash-input", composer.SteerInput).mode == "resume"
 
     asyncio.run(scenario())
 
 
-def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
+def test_waiting_run_pane_says_waiting_not_working(tmp_path: pathlib.Path) -> None:
     """A run blocked on a prompt says it is waiting on the operator in the stream pane too."""
     d = tmp_path / "blocked-pane"
     _mk_blocked(d, alive=True)
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             # Deny writes only the bridge file; no answer event lands, so the run stays waiting.
             await wait_for(pilot, lambda: _approval_ready(app), "the approval row")
@@ -1061,7 +1060,7 @@ def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
             def pane() -> str:
                 # The fold lands in the reader thread, so the pane follows a tick later.
                 app._tick()  # pyright: ignore[reportPrivateUsage]
-                return str(app._dash.query_one("#stream-body", Static).render())  # pyright: ignore[reportPrivateUsage]
+                return str(app._dash.query_one("#stream-body", widgets.Static).render())  # pyright: ignore[reportPrivateUsage]
 
             await wait_for(pilot, lambda: "waiting · needs answer" in pane(), "the waiting pane")
             assert "working…" not in pane()
@@ -1069,7 +1068,7 @@ def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_prompt_and_answer_events_update_the_chip_immediately(tmp_path: Path) -> None:
+def test_prompt_and_answer_events_update_the_chip_immediately(tmp_path: pathlib.Path) -> None:
     """The header chip flips on the prompt/answer event itself, never a heartbeat later.
 
     Filmed on the dashboard: the log pane already showed approval.answer + verify.end while the chip
@@ -1087,7 +1086,7 @@ def test_prompt_and_answer_events_update_the_chip_immediately(tmp_path: Path) ->
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # a live worker
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             assert app.dir_status[1] != "needs answer"
@@ -1102,7 +1101,7 @@ def test_prompt_and_answer_events_update_the_chip_immediately(tmp_path: Path) ->
 
 
 def test_dashboard_header_says_where_the_changes_are(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The header carries the run's branch line, as the web header and `sessions show` do."""
     repo = tmp_path / "repo"
@@ -1128,10 +1127,10 @@ def test_dashboard_header_says_where_the_changes_are(
     (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     async def header() -> str:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
-            return str(app._dash.query_one("#top", Static).render())
+            return str(app._dash.query_one("#top", widgets.Static).render())
 
     assert "branch:" not in asyncio.run(header())  # no commit yet: no branch to name
     subprocess.run([*git, "branch", "agent6/branched"], check=True)
@@ -1145,16 +1144,16 @@ def test_dashboard_header_says_where_the_changes_are(
 
         A resume in place then commits past the stamp, and the header follows.
         """
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
-            before = str(app._dash.query_one("#top", Static).render())
+            before = str(app._dash.query_one("#top", widgets.Static).render())
             manifest["merged"] = {"into": "main", "sha": tip, "tip": tip}
             (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-            app._dash.query_one(RunHeader)._branch_recheck_at = 0.0  # pyright: ignore[reportPrivateUsage]
+            app._dash.query_one(_dashboard_header.RunHeader)._branch_recheck_at = 0.0  # pyright: ignore[reportPrivateUsage]
             app._dash.render_heartbeat()
             await pilot.pause()
-            after = str(app._dash.query_one("#top", Static).render())
+            after = str(app._dash.query_one("#top", widgets.Static).render())
             with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "loop.resume.start", "iteration": 2}) + "\n")
             subprocess.run([*git, "checkout", "-q", "agent6/branched"], check=True)
@@ -1165,7 +1164,7 @@ def test_dashboard_header_says_where_the_changes_are(
             await wait_for(pilot, lambda: not app.state.finished, "the resume to fold")
             app._dash.render_heartbeat()
             await pilot.pause()
-            return before, after, str(app._dash.query_one("#top", Static).render())
+            return before, after, str(app._dash.query_one("#top", widgets.Static).render())
 
     before, after, resumed = asyncio.run(held_header())
     assert "branch: agent6/branched → merges into main" in before
@@ -1174,12 +1173,12 @@ def test_dashboard_header_says_where_the_changes_are(
     assert "branch: agent6/branched → merges into main" in asyncio.run(header())  # a reopen agrees
 
 
-def test_dashboard_header_says_what_the_run_serves(tmp_path: Path) -> None:
+def test_dashboard_header_says_what_the_run_serves(tmp_path: pathlib.Path) -> None:
     """The header names a forwarded port and the `agent6 forward` command that reaches it."""
     import os
     import socket
 
-    from agent6.sessions.ipc import write_session_netns_pid
+    from agent6.sessions import ipc
 
     d = tmp_path / "serving"
     d.mkdir()
@@ -1189,13 +1188,13 @@ def test_dashboard_header_says_what_the_run_serves(tmp_path: Path) -> None:
         srv.bind(("127.0.0.1", 0))
         srv.listen(1)
         port = srv.getsockname()[1]
-        write_session_netns_pid(d, os.getpid())
+        ipc.write_session_netns_pid(d, os.getpid())
 
         async def header() -> str:
-            app = Agent6TUI(d)
+            app = tui_app.Agent6TUI(d)
             async with app.run_test(size=(140, 40)) as pilot:
                 await _open_dash(app, pilot)
-                return str(app._dash.query_one("#top", Static).render())
+                return str(app._dash.query_one("#top", widgets.Static).render())
 
         top = asyncio.run(header())
     # This process stands in for the network holder, so the test socket shows among the listeners.
@@ -1205,30 +1204,36 @@ def test_dashboard_header_says_what_the_run_serves(tmp_path: Path) -> None:
 
 def test_a_clipped_table_cell_says_it_was_clipped() -> None:
     """The tools table marks sliced args, so `background=True` and `preview=True` stay visible."""
-    from agent6.viewmodel.format import clip_cell
+    from agent6.viewmodel import format
 
     assert (
-        clip_cell("argv=/bin/sh -c 'echo hi', background=True", 20) == "argv=/bin/sh -c 'ec\u2026"
+        format.clip_cell("argv=/bin/sh -c 'echo hi', background=True", 20)
+        == "argv=/bin/sh -c 'ec\u2026"
     )
-    assert clip_cell("short", 20) == "short"
-    assert clip_cell("two\nlines", 20) == "two lines"
+    assert format.clip_cell("short", 20) == "short"
+    assert format.clip_cell("two\nlines", 20) == "two lines"
 
 
 def test_a_parked_sessions_empty_view_names_the_reason() -> None:
     """The parked placeholder carries the parked reason and the way forward."""
-    from agent6.ui.tui.conversation import empty_conversation_note
+    from agent6.ui.tui import conversation
 
-    note = empty_conversation_note("parked", "uncommitted changes", ended=False)
+    note = conversation.empty_conversation_note("parked", "uncommitted changes", ended=False)
     assert "parked" in note and "uncommitted changes" in note and "below" in note
-    assert empty_conversation_note("parked", "", ended=False).startswith("parked")
-    assert empty_conversation_note("", "", ended=True) == "this session made no conversation"
-    assert "appears as the session streams" in empty_conversation_note("", "", ended=False)
+    assert conversation.empty_conversation_note("parked", "", ended=False).startswith("parked")
+    assert (
+        conversation.empty_conversation_note("", "", ended=True)
+        == "this session made no conversation"
+    )
+    assert "appears as the session streams" in conversation.empty_conversation_note(
+        "", "", ended=False
+    )
     # A crashed run and one that never started are named, as on the dashboard.
-    assert "crashed or killed" in empty_conversation_note("stale", "", ended=True)
-    assert "has not started" in empty_conversation_note("created", "", ended=True)
+    assert "crashed or killed" in conversation.empty_conversation_note("stale", "", ended=True)
+    assert "has not started" in conversation.empty_conversation_note("created", "", ended=True)
 
 
-def _mk_created(d: Path) -> None:
+def _mk_created(d: pathlib.Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     (d / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": d.name, "mode": "run", "user_task": "t"}),
@@ -1237,9 +1242,9 @@ def _mk_created(d: Path) -> None:
 
 
 @pytest.mark.parametrize("make", [_mk_created, _mk_parked, _mk_crashed])
-def test_both_run_views_word_a_dead_state_the_same(tmp_path: Path, make: Any) -> None:
+def test_both_run_views_word_a_dead_state_the_same(tmp_path: pathlib.Path, make: Any) -> None:
     """One owner words a created, parked or crashed run for the dashboard and the conversation."""
-    from agent6.ui.tui.conversation import empty_conversation_note
+    from agent6.ui.tui import conversation
 
     d = tmp_path / "dead1"
     make(d)
@@ -1247,20 +1252,20 @@ def test_both_run_views_word_a_dead_state_the_same(tmp_path: Path, make: Any) ->
     status: list[tuple[str, str]] = []
 
     async def scenario() -> None:
-        app = Agent6TUI(d)
+        app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             status.append(app.dir_status)
-            out.append(str(app._dash.query_one("#stream-body", Static).render()))
+            out.append(str(app._dash.query_one("#stream-body", widgets.Static).render()))
 
     asyncio.run(scenario())
     word, detail = status[0]
     assert word in ("created", "parked", "stale")
     first = out[0].split("\n")[0].strip()
-    assert first and first in empty_conversation_note(word, detail, ended=True)
+    assert first and first in conversation.empty_conversation_note(word, detail, ended=True)
 
 
-def test_a_session_that_never_commits_shows_no_commit_pane(tmp_path: Path) -> None:
+def test_a_session_that_never_commits_shows_no_commit_pane(tmp_path: pathlib.Path) -> None:
     """An ask or a plan has no diff pane; the log pane takes the width."""
     for mode, name in (("ask", "asks"), ("run", "runs")):
         d = tmp_path / name / f"{mode}-one-AAAAAA"
@@ -1275,8 +1280,8 @@ def test_a_session_that_never_commits_shows_no_commit_pane(tmp_path: Path) -> No
         ]
         (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
-        async def scenario(d: Path = d, mode: str = mode) -> None:
-            app = Agent6TUI(d)
+        async def scenario(d: pathlib.Path = d, mode: str = mode) -> None:
+            app = tui_app.Agent6TUI(d)
             async with app.run_test(size=(140, 40)) as pilot:
                 await _open_dash(app, pilot)
                 assert app._dash.query_one("#diff").display is (mode == "run")

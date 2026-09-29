@@ -7,13 +7,13 @@ An OperatorError refuses at exit 2 with no traceback; anything else crash-report
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
+from agent6 import errors
 from agent6.config import ConfigError
-from agent6.errors import OperatorError
 from agent6.ui import cli
 from agent6.ui.cli import cli_main
 
@@ -42,7 +42,7 @@ def test_cli_main_converts_unexpected_exception_to_friendly_error(
     assert "ERROR: unexpected RuntimeError: kaboom" in err
     # Points at a saved traceback that actually exists and contains the stack.
     tb_line = next(line for line in err.splitlines() if "full traceback:" in line)
-    tb_path = Path(tb_line.split("full traceback:", 1)[1].strip())
+    tb_path = pathlib.Path(tb_line.split("full traceback:", 1)[1].strip())
     assert tb_path.is_file()
     assert "RuntimeError: kaboom" in tb_path.read_text(encoding="utf-8")
     tb_path.unlink()
@@ -54,7 +54,7 @@ def test_an_operator_error_refuses_without_a_crash_report(
     """An operator error is `ERROR:` and exit 2; everything else is a crash report."""
 
     def _bad(_argv: list[str] | None = None) -> int:
-        raise OperatorError("no such machine file: overlay.toml")
+        raise errors.OperatorError("no such machine file: overlay.toml")
 
     monkeypatch.setattr(cli, "main", _bad)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
@@ -81,7 +81,7 @@ def test_a_config_error_is_an_operator_error(
 
 
 def test_an_unreadable_config_file_refuses_end_to_end(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An unreadable config file refuses with the file name and the OS reason, end to end."""
     monkeypatch.chdir(tmp_path)
@@ -103,7 +103,7 @@ def test_an_unreadable_config_file_refuses_end_to_end(
 
 
 def test_a_bad_budget_flag_refuses_end_to_end(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`run --max-usd inf` names the flag it refuses at exit 2, not a saved traceback."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # past the git wall

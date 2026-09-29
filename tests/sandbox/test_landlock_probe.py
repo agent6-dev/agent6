@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -19,7 +19,7 @@ def test_landlock_abi_reports_the_kernel_version() -> None:
     """
     abi = landlock_abi()
     assert isinstance(abi, int)
-    lsm = Path("/sys/kernel/security/lsm")
+    lsm = pathlib.Path("/sys/kernel/security/lsm")
     if not lsm.is_file():
         pytest.skip("cannot confirm kernel Landlock support")
     if "landlock" not in lsm.read_text(encoding="utf-8"):

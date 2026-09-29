@@ -17,28 +17,30 @@ deliberate update rather than a surprise.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 from typing import Any
 
+import jsonschema
 import pytest
-from jsonschema import Draft202012Validator
 
-from agent6.ui.acp.updates import message_update, tool_call_id, updates_for
-from agent6.viewmodel.transcript import TranscriptFold, TranscriptItem
+from agent6.ui.acp import updates
+from agent6.viewmodel import transcript
 
 _SCHEMA = json.loads(
-    (Path(__file__).parent / "data" / "acp-schema.json").read_text(encoding="utf-8")
+    (pathlib.Path(__file__).parent / "data" / "acp-schema.json").read_text(encoding="utf-8")
 )
-_RECORDED = Path(__file__).parent.parent / "unit" / "data" / "golden_session_logs.jsonl"
+_RECORDED = pathlib.Path(__file__).parent.parent / "unit" / "data" / "golden_session_logs.jsonl"
 
 
-def _validator(definition: str) -> Draft202012Validator:
+def _validator(definition: str) -> jsonschema.Draft202012Validator:
     """A validator for one `$defs` entry, resolving refs against the whole doc."""
     # Only the $defs: the top-level `anyOf` applies alongside a sibling $ref in Draft 2020-12.
-    return Draft202012Validator({"$defs": _SCHEMA["$defs"], "$ref": f"#/$defs/{definition}"})
+    return jsonschema.Draft202012Validator(
+        {"$defs": _SCHEMA["$defs"], "$ref": f"#/$defs/{definition}"}
+    )
 
 
-def _errors(validator: Draft202012Validator, payload: Any) -> list[str]:
+def _errors(validator: jsonschema.Draft202012Validator, payload: Any) -> list[str]:
     return [f"{list(e.absolute_path)}: {e.message}" for e in validator.iter_errors(payload)]
 
 
@@ -48,7 +50,7 @@ def _notifications() -> list[dict[str, Any]]:
     The real journal, not hand-written events: a fabricated shape the engine
     never emits is how a surface validates green while rendering nothing.
     """
-    fold = TranscriptFold()
+    fold = transcript.TranscriptFold()
     out: list[dict[str, Any]] = []
     announced: set[str] = set()
     for line in _RECORDED.read_text(encoding="utf-8").splitlines():
@@ -59,10 +61,10 @@ def _notifications() -> list[dict[str, Any]]:
         if isinstance(event, dict):
             for item in fold.feed(event):
                 out.extend(
-                    updates_for(
+                    updates.updates_for(
                         item,
                         acp_session_id="s",
-                        wire_id=tool_call_id(item, "brave-oak-AAAAAA", 1),
+                        wire_id=updates.tool_call_id(item, "brave-oak-AAAAAA", 1),
                         announced=item.call_id in announced,
                     )
                 )
@@ -85,41 +87,45 @@ def test_the_recorded_run_produces_only_valid_session_updates() -> None:
 @pytest.mark.parametrize(
     "item",
     [
-        TranscriptItem(kind="tool", name="run_verify", arg="", ok=False, detail="exit 1"),
-        TranscriptItem(kind="tool", name="grep", arg="x", ok=None),
-        TranscriptItem(kind="tool", name="read_file", arg="a.py", ok=True, tail="4 lines"),
-        TranscriptItem(kind="tool", name="apply_edit", arg="a.py", ok=True),
-        TranscriptItem(kind="done", ok=False, name="budget", detail="stopped"),
-        TranscriptItem(kind="commit", arg="abc1234", detail="+3 -1"),
-        TranscriptItem(kind="thinking", body="hmm"),
-        TranscriptItem(kind="operator", body="do the other thing"),
+        transcript.TranscriptItem(
+            kind="tool", name="run_verify", arg="", ok=False, detail="exit 1"
+        ),
+        transcript.TranscriptItem(kind="tool", name="grep", arg="x", ok=None),
+        transcript.TranscriptItem(
+            kind="tool", name="read_file", arg="a.py", ok=True, tail="4 lines"
+        ),
+        transcript.TranscriptItem(kind="tool", name="apply_edit", arg="a.py", ok=True),
+        transcript.TranscriptItem(kind="done", ok=False, name="budget", detail="stopped"),
+        transcript.TranscriptItem(kind="commit", arg="abc1234", detail="+3 -1"),
+        transcript.TranscriptItem(kind="thinking", body="hmm"),
+        transcript.TranscriptItem(kind="operator", body="do the other thing"),
     ],
 )
-def test_each_fold_item_projects_to_a_valid_update(item: TranscriptItem) -> None:
+def test_each_fold_item_projects_to_a_valid_update(item: transcript.TranscriptItem) -> None:
     """Item kinds the recorded run does not happen to contain."""
     validator = _validator("SessionNotification")
     paths = ("a.py",) if item.name == "apply_edit" else ()
-    for body in updates_for(
+    for body in updates.updates_for(
         item,
         acp_session_id="s",
-        wire_id=tool_call_id(item, "r", 1),
-        cwd=Path("/repo"),
+        wire_id=updates.tool_call_id(item, "r", 1),
+        cwd=pathlib.Path("/repo"),
         paths=paths,
     ):
         assert not _errors(validator, body["params"]), json.dumps(body["params"])
 
 
 def test_the_harness_message_is_a_valid_update() -> None:
-    body = message_update("s", "the run could not start: boom")
+    body = updates.message_update("s", "the run could not start: boom")
     assert not _errors(_validator("SessionNotification"), body["params"])
 
 
 def test_the_handshake_answer_is_a_valid_initialize_response() -> None:
     import io
 
-    from agent6.ui.acp.server import ACPServer
+    from agent6.ui.acp import server as acp_server
 
-    server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     result = server._initialize(  # pyright: ignore[reportPrivateUsage]
         {"protocolVersion": 1, "clientCapabilities": {}}, None
     )
@@ -133,20 +139,20 @@ def test_a_permission_request_is_one_a_client_can_answer() -> None:
     """
     import io
 
-    from agent6.ui.acp.runner import Announced, RunBridge
-    from agent6.ui.acp.server import ACPServer
-    from agent6.ui.acp.session import Session
+    from agent6.ui.acp import runner
+    from agent6.ui.acp import server as acp_server
+    from agent6.ui.acp import session as acp_session
 
     sent: list[dict[str, Any]] = []
-    bridge = RunBridge(server=ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
+    bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
 
     def _capture(_method: str, params: dict[str, Any], **_kw: object) -> dict[str, Any]:
         sent.append(params)
         return {}
 
     bridge.server.request = _capture  # pyright: ignore[reportAttributeAccessIssue]
-    session = Session(acp_id="s", cwd=Path("/x"), session_id="run-x", turn=1)
-    announced = Announced(turn=1)
+    session = acp_session.Session(acp_id="s", cwd=pathlib.Path("/x"), session_id="run-x", turn=1)
+    announced = runner.Announced(turn=1)
     announced.add("run-x:1:7")
     bridge.ask(session, announced, "Allow run_command: ls", ("allow", "deny"), True, 7)
     bridge.ask(session, announced, "Theme?", ("dark", "light"), None, None)

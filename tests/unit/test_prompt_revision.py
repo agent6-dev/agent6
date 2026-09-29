@@ -4,18 +4,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest import mock
 
+from agent6 import kinds
 from agent6.config import Config, load_config
-from agent6.harness._chain import RunChain
-from agent6.harness._prompt_revision import RevisionSettings, parse_prompt_revision
-from agent6.harness._provider_call import CallSettings
-from agent6.harness.loop import Harness
-from agent6.kinds import RepoSummary
+from agent6.harness import _chain, _prompt_revision, _provider_call, loop
 from agent6.providers import ProviderResponse
-from agent6.tools.results import ExecResult, RawResult
+from agent6.tools import results
 
 _VALID_TOML = """
 [agent6]
@@ -48,14 +45,14 @@ def _silent(_msg: str) -> None:
     return None
 
 
-def _config(tmp_path: Path) -> Config:
+def _config(tmp_path: pathlib.Path) -> Config:
     path = tmp_path / "agent6.toml"
     path.write_text(_VALID_TOML, encoding="utf-8")
     return load_config(path)
 
 
-def _repo(tmp_path: Path) -> RepoSummary:
-    return RepoSummary(
+def _repo(tmp_path: pathlib.Path) -> kinds.RepoSummary:
+    return kinds.RepoSummary(
         root=tmp_path,
         branch="main",
         head_sha="0" * 40,
@@ -99,28 +96,28 @@ def _finish_resp(summary: str) -> ProviderResponse:
     )
 
 
-def _wf(tmp_path: Path, **kw: Any) -> Harness:
-    dispatcher = kw.pop("dispatcher", MagicMock())
+def _wf(tmp_path: pathlib.Path, **kw: Any) -> loop.Harness:
+    dispatcher = kw.pop("dispatcher", mock.MagicMock())
     dispatcher.available_tool_names.return_value = []
-    dispatcher.dispatch.return_value = RawResult({"acknowledged": True})
+    dispatcher.dispatch.return_value = results.RawResult({"acknowledged": True})
     # The harness certifies the finish (`verify_when = "finish"`): a green gate.
-    dispatcher.run_verify.return_value = ExecResult(
+    dispatcher.run_verify.return_value = results.ExecResult(
         returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
     )
     defaults: dict[str, Any] = {
-        "chain": RunChain(tmp_path),
+        "chain": _chain.RunChain(tmp_path),
         "config": _config(tmp_path),
-        "provider": MagicMock(),
+        "provider": mock.MagicMock(),
         "dispatcher": dispatcher,
         "logger": _silent,
-        "call": CallSettings(retry_delay_s=0.01),
+        "call": _provider_call.CallSettings(retry_delay_s=0.01),
     }
     defaults.update(kw)
-    return Harness(**defaults)
+    return loop.Harness(**defaults)
 
 
 def test_parse_prompt_revision_tagged_output() -> None:
-    parsed = parse_prompt_revision(
+    parsed = _prompt_revision.parse_prompt_revision(
         "<revised_task>Fix foo and verify with pytest.</revised_task>\n"
         "<clarifying_questions>\n- Which API version?\n- none\n</clarifying_questions>"
     )
@@ -129,7 +126,9 @@ def test_parse_prompt_revision_tagged_output() -> None:
 
 
 def test_parse_prompt_revision_falls_back_to_plain_text() -> None:
-    parsed = parse_prompt_revision("Fix the failing test with the smallest change.")
+    parsed = _prompt_revision.parse_prompt_revision(
+        "Fix the failing test with the smallest change."
+    )
     assert parsed.revised_task == "Fix the failing test with the smallest change."
     assert parsed.clarifying_questions == ()
 
@@ -138,7 +137,7 @@ def test_parse_prompt_revision_keeps_leading_digits_in_questions() -> None:
     # Only the list marker is stripped. The old charset lstrip("-*0123456789. ")
     # also ate leading digits of the question itself ("- 32-bit support
     # needed?" became "bit support needed?").
-    parsed = parse_prompt_revision(
+    parsed = _prompt_revision.parse_prompt_revision(
         "<revised_task>t</revised_task>\n"
         "<clarifying_questions>\n"
         "- 32-bit support needed?\n"
@@ -154,7 +153,7 @@ def test_parse_prompt_revision_keeps_leading_digits_in_questions() -> None:
 
 
 def test_parse_prompt_revision_unmarked_question_passes_through() -> None:
-    parsed = parse_prompt_revision(
+    parsed = _prompt_revision.parse_prompt_revision(
         "<revised_task>t</revised_task>\n"
         "<clarifying_questions>\n3rd-party deps allowed?\n* none\n</clarifying_questions>"
     )
@@ -166,17 +165,17 @@ def test_parse_prompt_revision_unmarked_question_passes_through() -> None:
 def test_parse_prompt_revision_keeps_leading_decimal_in_question() -> None:
     # A question that opens with a bare decimal ("0.5s ...") is NOT a numbered
     # list item ("0." has no trailing space); its leading digits must survive.
-    parsed = parse_prompt_revision(
+    parsed = _prompt_revision.parse_prompt_revision(
         "<revised_task>t</revised_task>\n"
         "<clarifying_questions>\n0.5s latency budget acceptable?\n</clarifying_questions>"
     )
     assert parsed.clarifying_questions == ("0.5s latency budget acceptable?",)
 
 
-def test_workflow_auto_revises_task_before_worker_call(tmp_path: Path) -> None:
-    worker = MagicMock()
+def test_workflow_auto_revises_task_before_worker_call(tmp_path: pathlib.Path) -> None:
+    worker = mock.MagicMock()
     worker.call.return_value = _finish_resp("done")
-    reviser = MagicMock()
+    reviser = mock.MagicMock()
     reviser.call.return_value = _text_resp(
         "<revised_task>Fix the bug in src/foo.py and run verify.</revised_task>\n"
         "<clarifying_questions>none</clarifying_questions>"
@@ -184,10 +183,10 @@ def test_workflow_auto_revises_task_before_worker_call(tmp_path: Path) -> None:
     wf = _wf(
         tmp_path,
         provider=worker,
-        revision=RevisionSettings(reviser=reviser, mode="auto"),
+        revision=_prompt_revision.RevisionSettings(reviser=reviser, mode="auto"),
     )
 
-    with patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
+    with mock.patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix it")
 
     assert result.reason == "finish_session"
@@ -200,17 +199,19 @@ def test_workflow_auto_revises_task_before_worker_call(tmp_path: Path) -> None:
     assert "fix it" in task_text
 
 
-def test_workflow_prompt_revision_empty_response_fails_before_worker(tmp_path: Path) -> None:
-    worker = MagicMock()
-    reviser = MagicMock()
+def test_workflow_prompt_revision_empty_response_fails_before_worker(
+    tmp_path: pathlib.Path,
+) -> None:
+    worker = mock.MagicMock()
+    reviser = mock.MagicMock()
     reviser.call.return_value = _text_resp("<revised_task>   </revised_task>")
     wf = _wf(
         tmp_path,
         provider=worker,
-        revision=RevisionSettings(reviser=reviser, mode="auto"),
+        revision=_prompt_revision.RevisionSettings(reviser=reviser, mode="auto"),
     )
 
-    with patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
+    with mock.patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix it")
 
     assert result.completed is False
@@ -218,21 +219,23 @@ def test_workflow_prompt_revision_empty_response_fails_before_worker(tmp_path: P
     assert worker.call.call_count == 0
 
 
-def test_workflow_interactive_selector_can_use_original(tmp_path: Path) -> None:
+def test_workflow_interactive_selector_can_use_original(tmp_path: pathlib.Path) -> None:
     def select_original(original: str, _revised: str, _questions: tuple[str, ...]) -> str:
         return original
 
-    worker = MagicMock()
+    worker = mock.MagicMock()
     worker.call.return_value = _finish_resp("done")
-    reviser = MagicMock()
+    reviser = mock.MagicMock()
     reviser.call.return_value = _text_resp("<revised_task>Rewrite everything.</revised_task>")
     wf = _wf(
         tmp_path,
         provider=worker,
-        revision=RevisionSettings(reviser=reviser, mode="interactive", selector=select_original),
+        revision=_prompt_revision.RevisionSettings(
+            reviser=reviser, mode="interactive", selector=select_original
+        ),
     )
 
-    with patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
+    with mock.patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("keep this exact task")
 
     assert result.reason == "finish_session"
@@ -242,25 +245,27 @@ def test_workflow_interactive_selector_can_use_original(tmp_path: Path) -> None:
     assert "Rewrite everything" not in task_text
 
 
-def test_quit_at_the_revise_choice_reads_as_an_operator_stop(tmp_path: Path) -> None:
+def test_quit_at_the_revise_choice_reads_as_an_operator_stop(tmp_path: pathlib.Path) -> None:
     """A quit at the revise choice reads as an operator stop.
 
     An operator's `q` (or Ctrl-D) at the interactive revise_prompt choice is the operator's own
     stop, not `prompt_revision_failed` ("prompt revision failed" in every listing).
     """
-    from agent6.viewmodel.listing import status_word
+    from agent6.viewmodel import listing
 
     def quit_at_the_choice(_original: str, _revised: str, _questions: tuple[str, ...]) -> None:
         return None
 
-    reviser = MagicMock()
+    reviser = mock.MagicMock()
     reviser.call.return_value = _text_resp("<revised_task>Rewrite everything.</revised_task>")
     wf = _wf(
         tmp_path,
-        revision=RevisionSettings(reviser=reviser, mode="interactive", selector=quit_at_the_choice),
+        revision=_prompt_revision.RevisionSettings(
+            reviser=reviser, mode="interactive", selector=quit_at_the_choice
+        ),
     )
-    with patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
+    with mock.patch("agent6.harness.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix the bug in src/foo.py")
     assert result.reason == "steer_abort"
-    word, _ = status_word(finished=True, all_passed=False, end_reason=result.reason)
+    word, _ = listing.status_word(finished=True, all_passed=False, end_reason=result.reason)
     assert word == "stopped"

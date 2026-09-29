@@ -13,12 +13,8 @@ from collections.abc import Iterator
 
 import pytest
 
-from agent6.ui.cli.completers import (
-    _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
-    _complete_model_routes,  # pyright: ignore[reportPrivateUsage]
-    _complete_presets,  # pyright: ignore[reportPrivateUsage]
-)
-from agent6.ui.cli.parser import build_parser
+from agent6.ui.cli import completers
+from agent6.ui.cli import parser as cli_parser
 
 
 def _subparsers(parser: argparse.ArgumentParser) -> Iterator[tuple[str, argparse.ArgumentParser]]:
@@ -56,24 +52,22 @@ def test_the_command_list_is_grouped_and_complete() -> None:
 
     Every command sits in exactly one group.
     """
-    from agent6.ui.cli.parser import COMMAND_GROUPS
-
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     action = next(
         a
         for a in parser._actions  # pyright: ignore[reportPrivateUsage]
         if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
     )
-    grouped = [name for _, names in COMMAND_GROUPS for name in names]
+    grouped = [name for _, names in cli_parser.COMMAND_GROUPS for name in names]
     assert sorted(grouped) == sorted(action.choices)
     assert len(grouped) == len(set(grouped))
     text = parser.format_help()
     assert "\ncommands:\n" in text and "positional arguments" not in text
     assert text.index("\ncommands:\n") < text.index("\noptions:\n")  # the commands lead
-    starts = [text.index(f"\n  {title}:\n") for title, _ in COMMAND_GROUPS]
+    starts = [text.index(f"\n  {title}:\n") for title, _ in cli_parser.COMMAND_GROUPS]
     assert starts == sorted(starts)
     for (_, names), start, end in zip(
-        COMMAND_GROUPS, starts, [*starts[1:], len(text)], strict=True
+        cli_parser.COMMAND_GROUPS, starts, [*starts[1:], len(text)], strict=True
     ):
         block = text[start:end]
         for name in names:
@@ -82,14 +76,14 @@ def test_the_command_list_is_grouped_and_complete() -> None:
 
 def test_every_subparser_has_a_description() -> None:
     # Each add_parser carries its whole help string as the description.
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     missing = [name for name, sub in _subparsers(parser) if not sub.description]
     assert missing == []
 
 
 def test_the_command_list_shows_one_sentence_per_command() -> None:
     """Each entry in `agent6 --help` is its command's first sentence."""
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     action = next(
         a
         for a in parser._actions  # pyright: ignore[reportPrivateUsage]
@@ -114,7 +108,7 @@ def test_bare_parent_command_error_names_subcommand_not_dest(
 ) -> None:
     # A required subcommand is named "<subcommand>", never the argparse dest.
     with pytest.raises(SystemExit):
-        build_parser().parse_args(["plan"])
+        cli_parser.build_parser().parse_args(["plan"])
     err = capsys.readouterr().err
     assert "<subcommand>" in err
     assert "plan_command" not in err
@@ -139,7 +133,7 @@ def test_global_config_without_a_value_is_an_argparse_error() -> None:
 
 
 def test_no_em_dashes_in_parser_help() -> None:
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     offenders: list[str] = []
     for _name, sub in [("agent6", parser), *_subparsers(parser)]:
         if "—" in (sub.description or ""):
@@ -152,13 +146,13 @@ def test_no_em_dashes_in_parser_help() -> None:
 
 def test_run_tui_help_does_not_claim_an_extra() -> None:
     # textual is a base dependency; there is no `tui` extra.
-    help_text = _option(_find(build_parser(), "run"), "--tui").help or ""
+    help_text = _option(_find(cli_parser.build_parser(), "run"), "--tui").help or ""
     assert "extra" not in help_text
 
 
 def test_plan_task_help_does_not_promise_omission() -> None:
     # plan always requires a task (omission is `run` behavior).
-    plan = _find(build_parser(), "plan")
+    plan = _find(cli_parser.build_parser(), "plan")
     plan_run = _find(plan, "run")
     help_text = _positional(plan_run, "task").help or ""
     assert help_text == "Task to plan, usually in quotes. Required."
@@ -167,7 +161,7 @@ def test_plan_task_help_does_not_promise_omission() -> None:
 
 def test_fork_help_covers_read_only_session_modes() -> None:
     # Fork preserves its source mode: run forks get worktrees, plan and ask forks stay read-only.
-    fork = _find(build_parser(), "fork")
+    fork = _find(cli_parser.build_parser(), "fork")
     assert (fork.description or "").startswith("Copy a session at one of its saved turns")
     assert "A run copy gets its own git worktree" in (fork.description or "")
     session_help = _positional(fork, "session_id").help or ""
@@ -179,12 +173,12 @@ def test_fork_help_covers_read_only_session_modes() -> None:
 
 def test_resume_help_covers_plans_and_asks() -> None:
     # Resume resolves all resumable buckets, including plans and asks.
-    resume = _find(build_parser(), "resume")
+    resume = _find(cli_parser.build_parser(), "resume")
     assert resume.description == "Continue a paused or interrupted session from its saved state."
 
 
 def test_run_family_help_explains_actions_in_user_terms() -> None:
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     run = _find(parser, "run")
     assert run.description == "Work on a coding task in a new session."
     assert _positional(run, "task").help == (
@@ -224,7 +218,7 @@ def test_run_family_help_explains_actions_in_user_terms() -> None:
 
 
 def test_attach_and_web_say_machine_id() -> None:
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     attach = _find(parser, "attach")
     assert (attach.description or "").startswith("Attach to a session or machine")
     assert "newest session" in (attach.description or "")
@@ -236,13 +230,13 @@ def test_attach_and_web_say_machine_id() -> None:
 
 
 def test_web_non_loopback_help_names_both_opt_ins() -> None:
-    web = _find(build_parser(), "web")
+    web = _find(cli_parser.build_parser(), "web")
     help_text = _option(web, "--allow-non-loopback").help or ""
     assert "[web].allow_non_loopback" in help_text
 
 
 def test_sessions_help_matches_each_commands_target_scope() -> None:
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     sessions = _find(parser, "sessions")
     description = sessions.description or ""
     assert description.startswith("List sessions for this repository")
@@ -277,12 +271,12 @@ def test_sessions_help_matches_each_commands_target_scope() -> None:
 
 
 def test_machine_help_covers_running() -> None:
-    machine = _find(build_parser(), "machine")
+    machine = _find(cli_parser.build_parser(), "machine")
     assert (machine.description or "").startswith("Author and run agent6 state machines")
 
 
 def test_config_and_provider_help_cover_all_supported_shapes() -> None:
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     config = _find(parser, "config")
     assert (config.description or "").startswith("Show or change agent6 settings")
     show = _find(config, "show")
@@ -304,7 +298,7 @@ def test_config_and_provider_help_cover_all_supported_shapes() -> None:
 
 
 def test_mcp_help_explains_server_setup_in_user_terms() -> None:
-    mcp = _find(build_parser(), "mcp")
+    mcp = _find(cli_parser.build_parser(), "mcp")
     connect = _find(mcp, "connect")
     assert (connect.description or "").startswith("Add an MCP server")
     assert "without testing it" in (connect.description or "")
@@ -314,7 +308,7 @@ def test_mcp_help_explains_server_setup_in_user_terms() -> None:
 
 
 def test_profile_flags_have_the_profiles_completer() -> None:
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     carriers = (
         _find(parser, "run"),
         _find(_find(parser, "plan"), "run"),
@@ -322,7 +316,7 @@ def test_profile_flags_have_the_profiles_completer() -> None:
     )
     for sub in carriers:
         action = _option(sub, "--preset")
-        assert getattr(action, "completer", None) is _complete_presets
+        assert getattr(action, "completer", None) is completers._complete_presets
 
 
 def test_the_model_flag_rides_every_session_verb_with_its_completer() -> None:
@@ -330,7 +324,7 @@ def test_the_model_flag_rides_every_session_verb_with_its_completer() -> None:
 
     Completing the routes.
     """
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     carriers = (
         _find(parser, "run"),
         _find(parser, "resume"),
@@ -340,24 +334,24 @@ def test_the_model_flag_rides_every_session_verb_with_its_completer() -> None:
     for sub in carriers:
         action = _option(sub, "--model")
         assert action.metavar == "[PROVIDER/]MODEL"
-        assert getattr(action, "completer", None) is _complete_model_routes
+        assert getattr(action, "completer", None) is completers._complete_model_routes
     assert parser.parse_args(["run", "--model", "p/m", "t"]).model == "p/m"
     assert parser.parse_args(["resume", "--model", "m", "sid"]).model == "m"
 
 
 def test_config_show_keys_complete_like_config_get() -> None:
     """`config show KEY...` completes the same pool `config get` does."""
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     action = _positional(_find(_find(parser, "config"), "show"), "keys")
     assert action.nargs == "*"
     completer = getattr(action, "completer", None)
     assert completer is not None
-    assert completer.func is _complete_config_keys
+    assert completer.func is completers._complete_config_keys
     assert completer.keywords == {"settable": False, "sections": True}
 
 
 def test_option_metavars() -> None:
-    parser = build_parser()
+    parser = cli_parser.build_parser()
     assert _option(_find(parser, "create"), "--max-attempts").metavar == "N"
     assert _option(_find(parser, "search"), "--session").metavar == "SESSION_ID"
 
@@ -373,7 +367,7 @@ def test_model_header_names_reviewer_fallback(capsys: pytest.CaptureFixture[str]
 
 def test_the_directories_epilog_offers_no_env_override() -> None:
     """The directories epilog offers no `AGENT6_*_HOME` override; `XDG_*` alone decides them."""
-    epilog = build_parser().epilog or ""
+    epilog = cli_parser.build_parser().epilog or ""
     assert "AGENT6_" not in epilog
     listed = [line.split()[0] for line in epilog.splitlines() if line.startswith("  ")]
     assert listed == ["config", "state", "data", "cache"]

@@ -5,23 +5,25 @@
 from __future__ import annotations
 
 import argparse
+import pathlib
 from collections.abc import Callable
-from pathlib import Path
 
 import pytest
 
-from agent6.app._setup import BudgetOverrides, SandboxOverrides
-from agent6.paths import state_dir
-from agent6.sessions.layout import SessionLayout
+from agent6 import paths
+from agent6.app import _setup
+from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import _session_prompt as prompt_mod
 
 
 def _seed_session(
-    repo_root: Path, monkeypatch: pytest.MonkeyPatch, session_id: str = "test-run-AAAAAA"
-) -> SessionLayout:
+    repo_root: pathlib.Path, monkeypatch: pytest.MonkeyPatch, session_id: str = "test-run-AAAAAA"
+) -> sessions_layout.SessionLayout:
     """A real run dir under repo_root's state home, so resolution reaches the tty guard."""
     monkeypatch.setenv("XDG_STATE_HOME", str(repo_root / ".state"))
-    layout = SessionLayout(state_dir=state_dir(repo_root), session_id=session_id, subdir="runs")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo_root), session_id=session_id, subdir="runs"
+    )
     layout.session_dir.mkdir(parents=True, exist_ok=True)
     (layout.session_dir / "logs.jsonl").write_text(
         '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n'
@@ -48,7 +50,7 @@ def _run_args(**overrides: object) -> argparse.Namespace:
 def _seen_resumes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
     calls: list[tuple[str, str]] = []
 
-    def fake_resume(_cfg: Path | None, session_id: str, **kw: object) -> int:
+    def fake_resume(_cfg: pathlib.Path | None, session_id: str, **kw: object) -> int:
         calls.append((session_id, str(kw.get("steer", ""))))
         return 0
 
@@ -57,7 +59,7 @@ def _seen_resumes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
 
 
 def test_follow_up_executions_run_under_the_invocations_flags(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A follow-up at "next:" carries the run's overrides, such as `--max-usd`."""
     from agent6.ui import cli
@@ -67,7 +69,7 @@ def test_follow_up_executions_run_under_the_invocations_flags(
     monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
     seen: list[dict[str, object]] = []
 
-    def fake_resume(_cfg: Path | None, session_id: str, **kw: object) -> int:
+    def fake_resume(_cfg: pathlib.Path | None, session_id: str, **kw: object) -> int:
         seen.append(dict(kw))
         return 0
 
@@ -78,8 +80,8 @@ def test_follow_up_executions_run_under_the_invocations_flags(
     assert cli._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
     (execution,) = seen
     assert execution["steer"] == "and a test"
-    assert execution["budget_overrides"] == BudgetOverrides.from_args(args)
-    assert execution["sandbox_overrides"] == SandboxOverrides.from_args(args)
+    assert execution["budget_overrides"] == _setup.BudgetOverrides.from_args(args)
+    assert execution["sandbox_overrides"] == _setup.SandboxOverrides.from_args(args)
 
 
 def test_free_text_becomes_the_next_execution_then_exit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -133,7 +135,7 @@ def test_eof_ends_like_exit(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_a_failing_execution_stops_the_loop(monkeypatch: pytest.MonkeyPatch) -> None:
     """A resume that refuses (bad config, dirty tree) returns its own code, with no re-prompt."""
 
-    def failing(_cfg: Path | None, _session_id: str, **_kw: object) -> int:
+    def failing(_cfg: pathlib.Path | None, _session_id: str, **_kw: object) -> int:
         return 2
 
     monkeypatch.setattr(prompt_mod, "_cmd_resume", failing)
@@ -148,7 +150,7 @@ def test_a_failing_execution_stops_the_loop(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_no_terminal_ends_the_session_as_before(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A headless run has nobody to type, so it ends instead of blocking on the prompt."""
     from agent6.ui.cli import _prompt_for_the_next_input  # pyright: ignore[reportPrivateUsage]
@@ -203,7 +205,7 @@ def test_a_backgrounded_run_is_not_stopped_by_the_prompt(
 
 
 def test_a_refused_runs_discarded_id_ends_quietly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A refusal discards its husk, and the follow-up prompt ends with the refusal's exit code."""
     from agent6.ui import cli
@@ -215,7 +217,7 @@ def test_a_refused_runs_discarded_id_ends_quietly(
 
 @pytest.mark.parametrize(("mode", "asks"), [("run", True), ("plan", True), ("ask", False)])
 def test_a_resumed_execution_ends_by_asking_like_a_fresh_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, asks: bool
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mode: str, asks: bool
 ) -> None:
     """A resumed run or plan asks "next:" the way a run does; a resumed ask stays a one-shot."""
     import json
@@ -248,7 +250,7 @@ def test_a_resumed_execution_ends_by_asking_like_a_fresh_one(
 
 @pytest.mark.parametrize("target", ["resumed-run", ""])
 def test_resume_prompt_stays_on_the_session_selected_at_dispatch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, target: str
 ) -> None:
     """A follow-up stays with the selected session when a concurrent session becomes newest."""
     from agent6.ui import cli
@@ -275,7 +277,7 @@ def test_resume_prompt_stays_on_the_session_selected_at_dispatch(
 
 
 def test_a_refused_execution_does_not_prompt_on_an_existing_session(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A refused run whose explicit id points at an older session gets no follow-up prompt."""
     from agent6.ui import cli
@@ -319,14 +321,14 @@ def test_a_refused_execution_does_not_prompt_on_an_existing_session(
 
 
 def test_a_execution_that_undoes_or_detaches_ends_the_asking(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A start that parked never ran; the resume line it printed is the next step, not "next:"."""
     layout = _seed_session(tmp_path, monkeypatch, session_id="undone-run-AAAAAA")
     monkeypatch.chdir(tmp_path)
     asked: list[str] = []
 
-    def fake_resume(_cfg: Path | None, _sid: str, **kw: object) -> int:
+    def fake_resume(_cfg: pathlib.Path | None, _sid: str, **kw: object) -> int:
         # The execution forks back and ends the run as undone.
         (layout.session_dir / "logs.jsonl").write_text(
             '{"type": "session.start"}\n{"type": "session.end", "reason": "undone"}\n',
@@ -347,7 +349,7 @@ def test_a_execution_that_undoes_or_detaches_ends_the_asking(
 
 
 def test_a_detached_run_is_not_followed_by_the_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """After `/detach` there is nothing to follow up on: the run continues in the background."""
     from agent6.ui import cli
@@ -370,7 +372,7 @@ def test_a_detached_run_is_not_followed_by_the_prompt(
 
 
 def test_a_parked_start_is_not_followed_by_the_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A start that parked never ran; the resume line it printed is the next step."""
     import json
@@ -404,7 +406,7 @@ def test_a_parked_start_is_not_followed_by_the_prompt(
 
 
 def test_an_undone_run_is_not_followed_by_the_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """/undo names the fork as the continuation; the undone run gets no "next:" prompt."""
     from agent6.ui import cli
@@ -480,7 +482,7 @@ def test_i_with_tui_is_refused_before_a_execution_starts(
     assert err.count("-i cannot combine with --tui") == 2
 
 
-def _plan_harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+def _plan_harness(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """A `plan` whose execution is a fake writing a finished session; returns the prompts asked."""
     import agent6.ui.cli.run as run_mod
 
@@ -489,8 +491,8 @@ def _plan_harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     asked: list[str] = []
 
     def fake_cmd_run(*_a: object, **kw: object) -> int:
-        layout = SessionLayout(
-            state_dir=state_dir(tmp_path), session_id=str(kw["session_id"]), subdir="plans"
+        layout = sessions_layout.SessionLayout(
+            state_dir=paths.state_dir(tmp_path), session_id=str(kw["session_id"]), subdir="plans"
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         (layout.session_dir / "logs.jsonl").write_text(
@@ -507,7 +509,7 @@ def _plan_harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def test_plan_tui_does_not_hand_the_terminal_back(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`plan --tui` ends where the TUI ends, as `run --tui` does."""
     from agent6.ui.cli import main

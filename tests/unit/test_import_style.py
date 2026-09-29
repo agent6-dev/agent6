@@ -8,10 +8,10 @@ everywhere; a module added without its entry would slip through.
 
 from __future__ import annotations
 
+import pathlib
 import tomllib
-from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def _banned_from() -> list[str]:

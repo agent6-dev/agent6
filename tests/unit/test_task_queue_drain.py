@@ -9,66 +9,66 @@ reaches the task and its focus banner names it.
 
 from __future__ import annotations
 
+import datetime
 import json
-from datetime import UTC, datetime
-from pathlib import Path
-from types import SimpleNamespace
+import pathlib
+import types as types_
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
-from agent6.events import EventSink
-from agent6.graph.curator import GraphCurator
-from agent6.graph.models import AddSubtaskIntent, TaskNode, TaskNodeDraft
-from agent6.harness._chain import RunChain
-from agent6.harness._dag_focus import current_task_banner
-from agent6.harness._operator import OperatorBridge
-from agent6.harness._prompt_revision import RevisionSettings
-from agent6.harness.loop import Harness, LoopState
-from agent6.providers.types import ProviderError
-from agent6.sessions.ipc import OperatorRequest, drain_requests, queue_request
-from agent6.sessions.layout import SessionLayout
+from agent6 import events
+from agent6.graph import curator as graph_curator
+from agent6.graph import models
+from agent6.harness import _chain, _dag_focus, _loop_state, _operator, _prompt_revision, loop
+from agent6.providers import types as providers_types
+from agent6.sessions import ipc
+from agent6.sessions import layout as sessions_layout
 
-_NOW = datetime(2026, 9, 16, tzinfo=UTC)
+_NOW = datetime.datetime(2026, 9, 16, tzinfo=datetime.UTC)
 SPEC = "Add a --json flag\n\nSame fields as the table, keyed by name."
 
 
-def _workflow(curator: GraphCurator, sink: EventSink) -> Harness:
+def _workflow(curator: graph_curator.GraphCurator, sink: events.EventSink) -> loop.Harness:
     """A loop with only what the drain reads wired: the graph and the journal."""
-    return Harness(
-        chain=RunChain(Path("/tmp"), ref=None, branch=None, fallback_parent=None, per_step=False),
-        config=MagicMock(),
-        provider=MagicMock(),
-        dispatcher=MagicMock(),
+    return loop.Harness(
+        chain=_chain.RunChain(
+            pathlib.Path("/tmp"), ref=None, branch=None, fallback_parent=None, per_step=False
+        ),
+        config=mock.MagicMock(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
         logger=lambda _msg: None,
         curator=curator,
         events=sink,
-        bridge=OperatorBridge(take_requests=lambda: drain_requests(sink.path.parent)),
+        bridge=_operator.OperatorBridge(take_requests=lambda: ipc.drain_requests(sink.path.parent)),
     )
 
 
-def _state(root: str) -> LoopState:
-    return LoopState(original_task="t", tool_calls=0, root_task_id=root, system="")
+def _state(root: str) -> _loop_state.LoopState:
+    return _loop_state.LoopState(original_task="t", tool_calls=0, root_task_id=root, system="")
 
 
-def _run_dir(tmp_path: Path) -> tuple[GraphCurator, EventSink, str]:
-    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
-    curator = GraphCurator(layout)
+def _run_dir(tmp_path: pathlib.Path) -> tuple[graph_curator.GraphCurator, events.EventSink, str]:
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
+    curator = graph_curator.GraphCurator(layout)
     root = curator.add_subtask(
-        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="the run", created_by="user"))
+        models.AddSubtaskIntent(
+            parent_id=None, draft=models.TaskNodeDraft(title="the run", created_by="user")
+        )
     )
-    return curator, EventSink(layout.session_dir / "logs.jsonl"), root.id
+    return curator, events.EventSink(layout.session_dir / "logs.jsonl"), root.id
 
 
-def _events(sink: EventSink) -> list[dict[str, Any]]:
+def _events(sink: events.EventSink) -> list[dict[str, Any]]:
     if not sink.path.exists():
         return []
     return [json.loads(line) for line in sink.path.read_text(encoding="utf-8").splitlines()]
 
 
-def test_a_queued_task_lands_under_the_root_whole(tmp_path: Path) -> None:
+def test_a_queued_task_lands_under_the_root_whole(tmp_path: pathlib.Path) -> None:
     curator, sink, root = _run_dir(tmp_path)
-    queue_request(sink.path.parent, "task", SPEC)
-    queue_request(sink.path.parent, "task", "second thing")
+    ipc.queue_request(sink.path.parent, "task", SPEC)
+    ipc.queue_request(sink.path.parent, "task", "second thing")
     wf = _workflow(curator, sink)
 
     wf.operator_tasks.take(root)
@@ -81,9 +81,9 @@ def test_a_queued_task_lands_under_the_root_whole(tmp_path: Path) -> None:
     assert children[1].rationale == ""
 
 
-def test_the_drain_takes_each_task_once(tmp_path: Path) -> None:
+def test_the_drain_takes_each_task_once(tmp_path: pathlib.Path) -> None:
     curator, sink, root = _run_dir(tmp_path)
-    queue_request(sink.path.parent, "task", "only once")
+    ipc.queue_request(sink.path.parent, "task", "only once")
     wf = _workflow(curator, sink)
     state = _state(root)
 
@@ -93,10 +93,10 @@ def test_the_drain_takes_each_task_once(tmp_path: Path) -> None:
     assert len(curator.get(root).children) == 1
 
 
-def test_a_queued_task_is_journalled_for_the_surfaces(tmp_path: Path) -> None:
+def test_a_queued_task_is_journalled_for_the_surfaces(tmp_path: pathlib.Path) -> None:
     """A queued task arrives as a transcript line and a graph snapshot before the model reads it."""
     curator, sink, root = _run_dir(tmp_path)
-    queue_request(sink.path.parent, "task", "note it")
+    ipc.queue_request(sink.path.parent, "task", "note it")
     wf = _workflow(curator, sink)
 
     wf.operator_tasks.take(root)
@@ -108,7 +108,7 @@ def test_a_queued_task_is_journalled_for_the_surfaces(tmp_path: Path) -> None:
     assert queued["title"] == "note it"
 
 
-def test_an_empty_queue_journals_nothing(tmp_path: Path) -> None:
+def test_an_empty_queue_journals_nothing(tmp_path: pathlib.Path) -> None:
     curator, sink, root = _run_dir(tmp_path)
     wf = _workflow(curator, sink)
 
@@ -117,7 +117,7 @@ def test_an_empty_queue_journals_nothing(tmp_path: Path) -> None:
     assert _events(sink) == []
 
 
-def _node(**kw: Any) -> TaskNode:
+def _node(**kw: Any) -> models.TaskNode:
     base: dict[str, Any] = {
         "id": "01M2M10ABAH7YRMW5YXKY4MDEX",
         "parent_id": "01M2M10AB8RER75QYT5QYHQ2JK",
@@ -126,12 +126,12 @@ def _node(**kw: Any) -> TaskNode:
         "created_at": _NOW,
         "updated_at": _NOW,
     }
-    return TaskNode(**(base | kw))
+    return models.TaskNode(**(base | kw))
 
 
-def test_the_banner_gives_an_operator_task_its_full_text(tmp_path: Path) -> None:
+def test_the_banner_gives_an_operator_task_its_full_text(tmp_path: pathlib.Path) -> None:
     del tmp_path
-    banner = current_task_banner(
+    banner = _dag_focus.current_task_banner(
         "01M2M10ABAH7YRMW5YXKY4MDEX", _node(created_by="user", rationale=SPEC)
     )
 
@@ -139,24 +139,26 @@ def test_the_banner_gives_an_operator_task_its_full_text(tmp_path: Path) -> None
     assert "The operator queued this task" in banner
 
 
-def test_the_banner_leaves_the_models_own_tasks_alone(tmp_path: Path) -> None:
+def test_the_banner_leaves_the_models_own_tasks_alone(tmp_path: pathlib.Path) -> None:
     del tmp_path
-    banner = current_task_banner("01M2M10ABAH7YRMW5YXKY4MDEX", _node(rationale="my own note"))
+    banner = _dag_focus.current_task_banner(
+        "01M2M10ABAH7YRMW5YXKY4MDEX", _node(rationale="my own note")
+    )
 
     assert "The operator queued this task" not in banner
     assert "my own note" not in banner
 
 
-def test_a_queued_task_inherits_prompt_revision(tmp_path: Path) -> None:
+def test_a_queued_task_inherits_prompt_revision(tmp_path: pathlib.Path) -> None:
     """`[prompt].revise_prompt` covers a queued task, with the operator's words authoritative."""
     curator, sink, root = _run_dir(tmp_path)
-    queue_request(sink.path.parent, "task", SPEC)
-    reviser = MagicMock()
-    reviser.call.return_value = SimpleNamespace(
+    ipc.queue_request(sink.path.parent, "task", SPEC)
+    reviser = mock.MagicMock()
+    reviser.call.return_value = types_.SimpleNamespace(
         text="<revised_task>Add --json to `stats`, same fields as the table.</revised_task>"
     )
     wf = _workflow(curator, sink)
-    wf.revision = RevisionSettings(reviser=reviser, mode="interactive")
+    wf.revision = _prompt_revision.RevisionSettings(reviser=reviser, mode="interactive")
 
     wf.operator_tasks.take(root)
 
@@ -167,14 +169,14 @@ def test_a_queued_task_inherits_prompt_revision(tmp_path: Path) -> None:
     assert SPEC in node.rationale
 
 
-def test_a_failed_revision_keeps_the_task_as_written(tmp_path: Path) -> None:
+def test_a_failed_revision_keeps_the_task_as_written(tmp_path: pathlib.Path) -> None:
     """A queued task is never lost to a reviser that could not answer."""
     curator, sink, root = _run_dir(tmp_path)
-    queue_request(sink.path.parent, "task", SPEC)
-    reviser = MagicMock()
-    reviser.call.side_effect = ProviderError("reviser down")
+    ipc.queue_request(sink.path.parent, "task", SPEC)
+    reviser = mock.MagicMock()
+    reviser.call.side_effect = providers_types.ProviderError("reviser down")
     wf = _workflow(curator, sink)
-    wf.revision = RevisionSettings(reviser=reviser, mode="auto")
+    wf.revision = _prompt_revision.RevisionSettings(reviser=reviser, mode="auto")
 
     wf.operator_tasks.take(root)
 
@@ -182,20 +184,20 @@ def test_a_failed_revision_keeps_the_task_as_written(tmp_path: Path) -> None:
     assert node.rationale == SPEC
 
 
-def test_a_parked_run_takes_a_queued_task_and_continues(tmp_path: Path) -> None:
+def test_a_parked_run_takes_a_queued_task_and_continues(tmp_path: pathlib.Path) -> None:
     """A `/task` typed into a parked interactive run wakes it instead of waiting for a steer."""
     curator, sink, root = _run_dir(tmp_path)
     wf = _workflow(curator, sink)
     taken: list[int] = []
 
-    def _take() -> list[OperatorRequest]:
+    def _take() -> list[ipc.OperatorRequest]:
         taken.append(1)
-        return [OperatorRequest("task", "add a --json flag")] if len(taken) == 1 else []
+        return [ipc.OperatorRequest("task", "add a --json flag")] if len(taken) == 1 else []
 
-    wf.bridge = OperatorBridge(take_requests=_take)
+    wf.bridge = _operator.OperatorBridge(take_requests=_take)
 
     result = wf._park_for_steer(  # pyright: ignore[reportPrivateUsage]
-        MagicMock(), _state(root), iteration=2, reason="quiet"
+        mock.MagicMock(), _state(root), iteration=2, reason="quiet"
     )
 
     assert result is None

@@ -6,15 +6,15 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.ui.cli.history_cmds import _parse_seq_window  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import history_cmds  # pyright: ignore[reportPrivateUsage]
 
 
 def test_seq_window_shapes() -> None:
-    assert _parse_seq_window("") is None
-    assert _parse_seq_window("5") == (5, 5)
-    assert _parse_seq_window("3-7") == (3, 7)
+    assert history_cmds._parse_seq_window("") is None
+    assert history_cmds._parse_seq_window("5") == (5, 5)
+    assert history_cmds._parse_seq_window("3-7") == (3, 7)
 
 
 def test_a_reversed_seq_window_is_an_error() -> None:
     with pytest.raises(ValueError, match="reversed"):
-        _parse_seq_window("9-3")
+        history_cmds._parse_seq_window("9-3")

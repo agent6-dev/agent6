@@ -12,24 +12,22 @@ exercised end to end.
 from __future__ import annotations
 
 import json
+import pathlib
 import subprocess
-from pathlib import Path
-from types import SimpleNamespace
+import types
 from typing import Any
-from unittest.mock import MagicMock
+from unittest import mock
 
-from agent6.events import EventSink
-from agent6.graph.curator import GraphCurator
-from agent6.harness._chain import RunChain
-from agent6.harness._operator import OperatorBridge
-from agent6.harness.loop import Harness
-from agent6.providers.types import ProviderResponse
-from agent6.sessions.ipc import drain_requests, queue_request
-from agent6.sessions.layout import SessionLayout
-from agent6.tools.results import RawResult
+from agent6 import events as agent6_events
+from agent6.graph import curator as graph_curator
+from agent6.harness import _chain, _operator, loop
+from agent6.providers import types as providers_types
+from agent6.sessions import ipc
+from agent6.sessions import layout as sessions_layout
+from agent6.tools import results
 
 
-def _repo(path: Path) -> str:
+def _repo(path: pathlib.Path) -> str:
     path.mkdir(parents=True, exist_ok=True)
     for args in (
         ("init", "-q", "-b", "main"),
@@ -47,9 +45,9 @@ def _repo(path: Path) -> str:
     ).stdout.strip()
 
 
-def _tool_call(name: str, args: dict[str, Any], call_id: str) -> ProviderResponse:
+def _tool_call(name: str, args: dict[str, Any], call_id: str) -> providers_types.ProviderResponse:
     block = {"type": "tool_use", "id": call_id, "name": name, "input": args}
-    return ProviderResponse(
+    return providers_types.ProviderResponse(
         text="",
         tool_uses=({"id": call_id, "name": name, "input": args},),
         stop_reason="tool_use",
@@ -61,36 +59,38 @@ def _tool_call(name: str, args: dict[str, Any], call_id: str) -> ProviderRespons
     )
 
 
-def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: Path) -> None:
+def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     head = _repo(repo)
-    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="live-run-AAAAAA")
-    curator = GraphCurator(layout)
+    layout = sessions_layout.SessionLayout(
+        state_dir=tmp_path / ".agent6", session_id="live-run-AAAAAA"
+    )
+    curator = graph_curator.GraphCurator(layout)
     session_dir = layout.session_dir
-    events = EventSink(session_dir / "logs.jsonl")
+    events = agent6_events.EventSink(session_dir / "logs.jsonl")
 
-    provider = MagicMock()
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
+    provider = mock.MagicMock()
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
-    def _turn(*_args: Any, **_kwargs: Any) -> ProviderResponse:
+    def _turn(*_args: Any, **_kwargs: Any) -> providers_types.ProviderResponse:
         """Between the turns the operator writes to all three bridges."""
         if provider.call.call_count == 1:
-            queue_request(session_dir, "task", "Add a --json flag to the stats report")
-            queue_request(session_dir, "standing", "keep the suite green")
+            ipc.queue_request(session_dir, "task", "Add a --json flag to the stats report")
+            ipc.queue_request(session_dir, "standing", "keep the suite green")
         elif provider.call.call_count == 2:
             # The task queued above is 0002, the run's second node.
-            queue_request(session_dir, "retire", "0002")
+            ipc.queue_request(session_dir, "retire", "0002")
         return _tool_call("read_file", {"path": "README.md"}, f"t{provider.call.call_count}")
 
     provider.call.side_effect = _turn
 
-    wf = Harness(
-        chain=RunChain(repo, ref="refs/agent6/bridges", fallback_parent=head),
-        config=MagicMock(
-            budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=MagicMock(system_prompt_file="", decompose="off", revise_prompt="off"),
-            harness=MagicMock(
+    wf = loop.Harness(
+        chain=_chain.RunChain(repo, ref="refs/agent6/bridges", fallback_parent=head),
+        config=mock.MagicMock(
+            budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+            prompt=mock.MagicMock(system_prompt_file="", decompose="off", revise_prompt="off"),
+            harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -99,14 +99,14 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: Pat
                 verify_when="never",
                 verify_retries=2,
             ),
-            parallel=SimpleNamespace(max_lanes=4),
+            parallel=types.SimpleNamespace(max_lanes=4),
         ),
         provider=provider,
         dispatcher=dispatcher,
         logger=lambda _m: None,
         events=events,
         curator=curator,
-        bridge=OperatorBridge(take_requests=lambda: drain_requests(session_dir)),
+        bridge=_operator.OperatorBridge(take_requests=lambda: ipc.drain_requests(session_dir)),
         max_iterations=3,
     )
 

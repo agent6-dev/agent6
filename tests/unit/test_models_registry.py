@@ -4,18 +4,18 @@
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Callable
-from pathlib import Path
 
 import pytest
 
-from agent6.app.providers import resolve_decompose
+from agent6.app import providers
 from agent6.config import Config
 from agent6.models import registry as models_registry
 
 
 @pytest.fixture
-def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     return tmp_path / "cache"
 
@@ -30,7 +30,7 @@ def _cfg(model: str, decompose: str = "auto") -> Config:
     )
 
 
-def test_context_window_bundled_and_normalized(cache_home: Path) -> None:
+def test_context_window_bundled_and_normalized(cache_home: pathlib.Path) -> None:
     # Bundled table: exact + a dated/tagged id normalised to the canonical key.
     assert models_registry.context_window("anthropic", "claude-sonnet-4-6") == 200_000
     # The 5-family's 1M default: a missing row silently fell back to the fixed
@@ -43,13 +43,13 @@ def test_context_window_bundled_and_normalized(cache_home: Path) -> None:
     assert models_registry.context_window("openrouter", "vendor/totally-unknown") is None
 
 
-def test_compaction_thresholds_explicit_override_wins(cache_home: Path) -> None:
+def test_compaction_thresholds_explicit_override_wins(cache_home: pathlib.Path) -> None:
     assert models_registry.compaction_thresholds(
         "openrouter", "moonshotai/kimi-k2.6", drop_override=111, summarise_override=222
     ) == (111, 222)
 
 
-def test_compaction_thresholds_adaptive_from_window(cache_home: Path) -> None:
+def test_compaction_thresholds_adaptive_from_window(cache_home: pathlib.Path) -> None:
     drop, summarise = models_registry.compaction_thresholds(
         "openrouter", "moonshotai/kimi-k2.6", drop_override=None, summarise_override=None
     )
@@ -70,20 +70,19 @@ def _window(tokens: int) -> Callable[[str, str], int]:
 
 
 def test_a_small_window_clamps_the_verbatim_tail_and_says_so(
-    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The config validator refuses an explicit pair whose verbatim tail alone re-triggers tier 2.
 
     A small window sizes exactly that pair from the 80,000-char default, and under it the restart
     kept NO verbatim turns at all, the freshest tool results, paraphrased away, every restart.
     """
-    from agent6.app.providers import resolve_compaction_thresholds
     from agent6.config import Config, RoleModel
 
     monkeypatch.setattr(models_registry, "context_window", _window(32_768))
     logs: list[str] = []
 
-    drop, summarise, keep = resolve_compaction_thresholds(
+    drop, summarise, keep = providers.resolve_compaction_thresholds(
         Config(), RoleModel(provider="p", model="m"), log=logs.append
     )
 
@@ -93,10 +92,13 @@ def test_a_small_window_clamps_the_verbatim_tail_and_says_so(
 
     # A window the default already fits inside keeps the operator's number.
     monkeypatch.setattr(models_registry, "context_window", _window(262_144))
-    assert resolve_compaction_thresholds(Config(), RoleModel(provider="p", model="m"))[2] == 80_000
+    assert (
+        providers.resolve_compaction_thresholds(Config(), RoleModel(provider="p", model="m"))[2]
+        == 80_000
+    )
 
 
-def test_compaction_thresholds_fixed_fallback_when_unknown(cache_home: Path) -> None:
+def test_compaction_thresholds_fixed_fallback_when_unknown(cache_home: pathlib.Path) -> None:
     # No bundled entry, empty cache -> historical 256k/768k (behaviour preserved).
     assert models_registry.compaction_thresholds(
         "openrouter", "vendor/totally-unknown", drop_override=None, summarise_override=None
@@ -120,18 +122,23 @@ def test_decompose_default_measured_families_only() -> None:
 
 def test_resolve_decompose_pins_auto_from_registry() -> None:
     win = _cfg("mistralai/mistral-small-3.2-24b-instruct")
-    assert resolve_decompose(win, win.models.resolve("worker")).prompt.decompose == "on"
+    assert providers.resolve_decompose(win, win.models.resolve("worker")).prompt.decompose == "on"
     ceiling = _cfg("claude-haiku-4-5")
-    assert resolve_decompose(ceiling, ceiling.models.resolve("worker")).prompt.decompose == "off"
+    assert (
+        providers.resolve_decompose(ceiling, ceiling.models.resolve("worker")).prompt.decompose
+        == "off"
+    )
     # Unresolvable model pins off (never leaves "auto" for the engine).
-    assert resolve_decompose(_cfg("x"), None).prompt.decompose == "off"
+    assert providers.resolve_decompose(_cfg("x"), None).prompt.decompose == "off"
 
 
 def test_resolve_decompose_explicit_setting_passes_through() -> None:
     forced_on = _cfg("claude-haiku-4-5", decompose="on")
-    assert resolve_decompose(forced_on, forced_on.models.resolve("worker")) is forced_on
+    assert providers.resolve_decompose(forced_on, forced_on.models.resolve("worker")) is forced_on
     forced_off = _cfg("mistralai/mistral-small-3.2-24b-instruct", decompose="off")
-    assert resolve_decompose(forced_off, forced_off.models.resolve("worker")) is forced_off
+    assert (
+        providers.resolve_decompose(forced_off, forced_off.models.resolve("worker")) is forced_off
+    )
 
 
 def test_with_decompose_pins_value() -> None:
@@ -139,7 +146,7 @@ def test_with_decompose_pins_value() -> None:
     assert Config().with_decompose("off").prompt.decompose == "off"
 
 
-def test_resolved_adaptive_values_reports_auto_decompose(cache_home: Path) -> None:
+def test_resolved_adaptive_values_reports_auto_decompose(cache_home: pathlib.Path) -> None:
     win = models_registry.resolved_adaptive_values(_cfg("mistralai/mistral-small-3.2-24b-instruct"))
     assert win["prompt.decompose"] == "on"
     ceiling = models_registry.resolved_adaptive_values(_cfg("claude-haiku-4-5"))

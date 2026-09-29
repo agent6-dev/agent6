@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -12,7 +12,7 @@ pytestmark = pytest.mark.needs_namespaces
 
 
 @pytest.mark.parametrize("level", ["hardened", "strict"])
-def test_a_jailed_command_cannot_create_a_device_node(tmp_path: Path, level: str) -> None:
+def test_a_jailed_command_cannot_create_a_device_node(tmp_path: pathlib.Path, level: str) -> None:
     """A jailed command cannot mknod a block device for the host disk.
 
     Under `sudo agent6` on a profile with no user namespace the child holds real CAP_MKNOD
@@ -22,11 +22,11 @@ def test_a_jailed_command_cannot_create_a_device_node(tmp_path: Path, level: str
     tell the two apart.
     """
     from agent6.config import Config
-    from agent6.sandbox.jail import run_in_jail
-    from agent6.tools.dispatch import jail_policy
+    from agent6.sandbox import jail
+    from agent6.tools import policy
 
-    res = run_in_jail(
-        jail_policy(
+    res = jail.run_in_jail(
+        policy.jail_policy(
             tmp_path,
             Config(),
             level,  # pyright: ignore[reportArgumentType]
@@ -38,7 +38,7 @@ def test_a_jailed_command_cannot_create_a_device_node(tmp_path: Path, level: str
     assert not (tmp_path / "disk").exists() and not (tmp_path / "tty").exists()
 
 
-def test_a_fifo_is_still_a_thing_a_build_can_make(tmp_path: Path) -> None:
+def test_a_fifo_is_still_a_thing_a_build_can_make(tmp_path: pathlib.Path) -> None:
     """Device nodes are blocked by mode, not by denying mknodat: a fifo still works.
 
     `mkfifo` and socket nodes go through mknodat too, and builds use them. `strict` only: on
@@ -48,11 +48,11 @@ def test_a_fifo_is_still_a_thing_a_build_can_make(tmp_path: Path) -> None:
     """
     level = "strict"
     from agent6.config import Config
-    from agent6.sandbox.jail import run_in_jail
-    from agent6.tools.dispatch import jail_policy
+    from agent6.sandbox import jail
+    from agent6.tools import policy
 
-    res = run_in_jail(
-        jail_policy(
+    res = jail.run_in_jail(
+        policy.jail_policy(
             tmp_path,
             Config(),
             level,  # pyright: ignore[reportArgumentType]
@@ -63,7 +63,7 @@ def test_a_fifo_is_still_a_thing_a_build_can_make(tmp_path: Path) -> None:
     assert "fifo-ok" in res.stdout, res.stdout + res.stderr
 
 
-def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: Path) -> None:
+def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: pathlib.Path) -> None:
     """Every mount in the jail's own mountinfo carries the nosuid/nodev/noexec floor.
 
     Enumerating what is mounted closes the class; a list of remembered paths misses the
@@ -73,8 +73,8 @@ def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: Path) -> None:
     explicit floor from an inherited one; the launcher sets the flags explicitly for that
     reason (probed on ext4, the tool_paths mount came back `ro,relatime` without them).
     """
-    from agent6.kinds import JailPolicy
-    from agent6.sandbox.jail import run_in_jail
+    from agent6 import kinds
+    from agent6.sandbox import jail
 
     probe = (
         "for l in open('/proc/self/mountinfo'):\n"
@@ -88,8 +88,8 @@ def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: Path) -> None:
     tool_dir.mkdir()
     ro_dir.mkdir()
     (ro_dir / "f.txt").write_text("x", encoding="utf-8")
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("python3", "-c", probe),
             isolation="strict",
@@ -109,7 +109,7 @@ def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: Path) -> None:
         assert "nodev" in flags, f"{mountpoint} lacks nodev: {flags}"
 
 
-def test_a_submount_inside_a_grant_carries_the_floor_too(tmp_path: Path) -> None:
+def test_a_submount_inside_a_grant_carries_the_floor_too(tmp_path: pathlib.Path) -> None:
     """The floor reaches the submounts a recursive bind carries in, not just each grant's top.
 
     `MS_REC` is silently ignored on `MS_REMOUNT`; recursive attribute changes need
@@ -199,7 +199,7 @@ def test_a_submount_inside_a_grant_carries_the_floor_too(tmp_path: Path) -> None
             assert flags.startswith("ro"), f"{mountpoint} is writable inside a RO grant: {flags}"
 
 
-def test_a_protect_path_with_its_own_submount_still_jails(tmp_path: Path) -> None:
+def test_a_protect_path_with_its_own_submount_still_jails(tmp_path: pathlib.Path) -> None:
     """A mount nested under a protect path stays visible and read-only under the protect bind.
 
     `.git/objects` on its own bind is carried in by the recursive workspace bind and then
@@ -283,7 +283,9 @@ def test_a_protect_path_with_its_own_submount_still_jails(tmp_path: Path) -> Non
     assert "ws-writable" in out, out[:400]
 
 
-def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(tmp_path: Path) -> None:
+def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(
+    tmp_path: pathlib.Path,
+) -> None:
     """A system bind whose source carries a locked flag is remounted read-only with those flags.
 
     /etc/alternatives on a noexec tmpfs is a hardened host's shape; clearing a locked flag
@@ -297,7 +299,7 @@ def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(tmp_path: 
 
     if shutil.which("unshare") is None:
         pytest.skip("needs unshare to overmount a system bind source")
-    if not Path("/etc/alternatives").is_dir():
+    if not pathlib.Path("/etc/alternatives").is_dir():
         pytest.skip("no /etc/alternatives on this host")
 
     ws = tmp_path / "ws"
@@ -354,7 +356,7 @@ def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(tmp_path: 
     assert "probe-ok" in out, f"the jail refused on a hardened system mount: {out[:400]}"
 
 
-def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: Path) -> None:
+def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: pathlib.Path) -> None:
     """umount2 is denied and syscall 22 (`pipe(2)` on x86_64) is left alone.
 
     The 64-bit table has no legacy umount; number 22 is the i386 table's, unreachable either
@@ -365,8 +367,8 @@ def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: Path) -> None:
     """
     import platform
 
-    from agent6.kinds import JailPolicy
-    from agent6.sandbox.jail import run_in_jail
+    from agent6 import kinds
+    from agent6.sandbox import jail
 
     # Numbers, not names: the point is which number the arch assigns to what.
     by_arch = {"x86_64": (166, 22), "aarch64": (39, None)}  # (umount2, pipe or none)
@@ -387,8 +389,10 @@ def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: Path) -> None:
             else ""
         )
     )
-    res = run_in_jail(
-        JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation="strict", timeout_s=20.0)
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
+            cwd=tmp_path, argv=("python3", "-c", probe), isolation="strict", timeout_s=20.0
+        )
     )
     out = res.stdout or ""
     if "umount2" not in out:
@@ -402,7 +406,7 @@ def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: Path) -> None:
 
 
 def test_the_jail_launcher_does_not_carry_the_agent_env_into_the_jail(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A jailed command cannot read the operator's provider key.
 
@@ -412,8 +416,8 @@ def test_the_jail_launcher_does_not_carry_the_agent_env_into_the_jail(
     secrets never reach the jail: the launcher reads nothing from its environment (the policy
     arrives on stdin), so it gets none.
     """
-    from agent6.kinds import JailPolicy
-    from agent6.sandbox.jail import run_in_jail
+    from agent6 import kinds
+    from agent6.sandbox import jail
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-CANARY-must-not-leak")
     probe = (
@@ -423,14 +427,16 @@ def test_the_jail_launcher_does_not_carry_the_agent_env_into_the_jail(
         "    except Exception: continue\n"
         "    if b'CANARY' in d: print('LEAK ' + p)\n"
     )
-    res = run_in_jail(
-        JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation="strict", timeout_s=20.0)
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
+            cwd=tmp_path, argv=("python3", "-c", probe), isolation="strict", timeout_s=20.0
+        )
     )
     assert "LEAK" not in (res.stdout or ""), f"the agent's env reached the jail: {res.stdout}"
 
 
 def test_a_fully_populated_policy_holds_every_invariant(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Every jail invariant at once, against a policy with every field set.
 
@@ -442,8 +448,8 @@ def test_a_fully_populated_policy_holds_every_invariant(
     nosuid,nodev, so on such a host this cannot tell an explicit floor from an inherited one;
     it bites where tmp is ext4. The leak and protect halves are deterministic everywhere.
     """
-    from agent6.kinds import JailPolicy
-    from agent6.sandbox.jail import run_in_jail
+    from agent6 import kinds
+    from agent6.sandbox import jail
 
     ws, ro, rw, tools = (tmp_path / n for n in ("ws", "ro", "rw", "tools"))
     for d in (ws, ro, rw, tools):
@@ -474,8 +480,8 @@ def test_a_fully_populated_policy_holds_every_invariant(
         "    open('.git/config','w').write('x'); print('PROTECT writable')\n"
         "except OSError: print('PROTECT refused')\n"
     )
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=ws,
             argv=("python3", "-c", probe),
             isolation="strict",
@@ -496,7 +502,7 @@ def test_a_fully_populated_policy_holds_every_invariant(
     assert "PROTECT refused" in out, f"a protect path was writable: {out}"
 
 
-def test_the_jail_root_is_per_uid_and_named_in_the_refusal(tmp_path: Path) -> None:
+def test_the_jail_root_is_per_uid_and_named_in_the_refusal(tmp_path: pathlib.Path) -> None:
     """The jail root carries the uid, and an unusable one names itself.
 
     A shared /tmp/agent6-jail-root is a cross-user denial of service: any local user can
@@ -505,16 +511,18 @@ def test_the_jail_root_is_per_uid_and_named_in_the_refusal(tmp_path: Path) -> No
     import os
     import re
 
-    crate_main = Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail" / "src" / "main.rs"
+    crate_main = (
+        pathlib.Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail" / "src" / "main.rs"
+    )
     src = crate_main.read_text(encoding="utf-8")
     assert '"/tmp/agent6-jail-root"' not in src, "the jail root must not be a shared path"
     assert re.search(r"agent6-jail-root-\{", src), "the jail root must carry the uid"
 
-    from agent6.kinds import JailPolicy
-    from agent6.sandbox.jail import run_in_jail
+    from agent6 import kinds
+    from agent6.sandbox import jail
 
-    res = run_in_jail(
-        JailPolicy(
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
             cwd=tmp_path,
             argv=("sh", "-c", "pwd; ls /tmp | head -5"),
             isolation="strict",
@@ -526,11 +534,11 @@ def test_the_jail_root_is_per_uid_and_named_in_the_refusal(tmp_path: Path) -> No
     assert str(tmp_path) in res.stdout, res.stdout + res.stderr
     # The root the run actually created carries the CALLER's uid, not the 0 the
     # user namespace maps it to -- otherwise every user collides on -0 again.
-    assert Path(f"/tmp/agent6-jail-root-{os.getuid()}").exists()
+    assert pathlib.Path(f"/tmp/agent6-jail-root-{os.getuid()}").exists()
 
 
 @pytest.mark.needs_namespaces
-def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: Path) -> None:
+def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: pathlib.Path) -> None:
     """Two launchers starting together on one uid both come up, each in its own mount namespace.
 
     The jail root is shared per uid and setup clears nothing: each launcher mounts its own
@@ -542,8 +550,8 @@ def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: Path)
     """
     import threading
 
-    from agent6.kinds import JailPolicy
-    from agent6.sandbox.jail import run_in_jail
+    from agent6 import kinds
+    from agent6.sandbox import jail
 
     probe = (
         "import os, time\nprint(os.readlink('/proc/self/ns/mnt'), flush=True)\ntime.sleep(1.5)\n"
@@ -553,8 +561,8 @@ def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: Path)
 
     def one(i: int) -> None:
         try:
-            res = run_in_jail(
-                JailPolicy(
+            res = jail.run_in_jail(
+                kinds.JailPolicy(
                     cwd=tmp_path,
                     argv=("/usr/bin/python3", "-c", probe),
                     isolation="strict",
@@ -577,7 +585,7 @@ def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: Path)
     assert len(set(namespaces)) == 4, f"children shared a mount namespace: {namespaces}"
 
 
-def test_dev_shm_is_the_jails_own_and_writable(tmp_path: Path) -> None:
+def test_dev_shm_is_the_jails_own_and_writable(tmp_path: pathlib.Path) -> None:
     """/dev/shm is mounted and granted, as the jail's own tmpfs.
 
     POSIX shared memory is ordinary for real toolchains (a headless chromium aborts without
@@ -585,12 +593,12 @@ def test_dev_shm_is_the_jails_own_and_writable(tmp_path: Path) -> None:
     the host and gone when the jail exits.
     """
     from agent6.config import Config
-    from agent6.sandbox.jail import run_in_jail
-    from agent6.tools.policy import jail_policy
+    from agent6.sandbox import jail
+    from agent6.tools import policy
 
     marker = "agent6-shm-probe"
-    res = run_in_jail(
-        jail_policy(
+    res = jail.run_in_jail(
+        policy.jail_policy(
             tmp_path,
             Config(),
             "strict",
@@ -605,11 +613,11 @@ def test_dev_shm_is_the_jails_own_and_writable(tmp_path: Path) -> None:
     assert res.returncode == 0, res.stderr[-400:]
     assert "tmpfs" in res.stdout, res.stdout
     assert marker in res.stdout, res.stdout
-    assert not Path(f"/dev/shm/{marker}").exists(), "the jail wrote the HOST's /dev/shm"
+    assert not pathlib.Path(f"/dev/shm/{marker}").exists(), "the jail wrote the HOST's /dev/shm"
 
 
 @pytest.mark.parametrize("level", ["hardened", "strict"])
-def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: Path, level: str) -> None:
+def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: pathlib.Path, level: str) -> None:
     """pidfd_getfd is EPERM at both levels; pidfd_open, the harmless handle, is not denied.
 
     pidfd_getfd steals an open fd out of another process's table, gated only by
@@ -621,8 +629,8 @@ def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: Path, level: str)
     """
     import platform
 
-    from agent6.kinds import JailPolicy
-    from agent6.sandbox.jail import run_in_jail
+    from agent6 import kinds
+    from agent6.sandbox import jail
 
     if platform.machine() not in ("x86_64", "aarch64"):
         pytest.skip(f"pidfd syscall numbers not pinned for {platform.machine()}")
@@ -639,8 +647,13 @@ def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: Path, level: str)
         # pidfd_open(-1, 0): EINVAL for the bad pid if allowed, EPERM if filtered.
         "print('open', *call(434, -1, 0))\n"
     )
-    res = run_in_jail(
-        JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation=level, timeout_s=20.0)  # pyright: ignore[reportArgumentType]
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
+            cwd=tmp_path,
+            argv=("python3", "-c", probe),
+            isolation=level,  # pyright: ignore[reportArgumentType]
+            timeout_s=20.0,
+        )
     )
     out = res.stdout or ""
     if "getfd" not in out:
@@ -655,7 +668,7 @@ def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: Path, level: str)
 
 
 @pytest.mark.parametrize("level", ["hardened", "strict"])
-def test_io_uring_and_userfaultfd_are_denied(tmp_path: Path, level: str) -> None:
+def test_io_uring_and_userfaultfd_are_denied(tmp_path: pathlib.Path, level: str) -> None:
     """io_uring_setup and userfaultfd are EPERM at both levels; memfd_create stays allowed.
 
     io_uring's ops run in kernel worker threads seccomp never sees, so denying setup is the
@@ -666,8 +679,8 @@ def test_io_uring_and_userfaultfd_are_denied(tmp_path: Path, level: str) -> None
     """
     import platform
 
-    from agent6.kinds import JailPolicy
-    from agent6.sandbox.jail import run_in_jail
+    from agent6 import kinds
+    from agent6.sandbox import jail
 
     # (io_uring_setup, userfaultfd, memfd_create) per arch.
     by_arch = {"x86_64": (425, 323, 319), "aarch64": (425, 282, 279)}
@@ -685,8 +698,13 @@ def test_io_uring_and_userfaultfd_are_denied(tmp_path: Path, level: str) -> None
         f"print('uffd', call({uffd}, 0))\n"
         f"print('memfd', call({memfd}, 0, 0))\n"  # bad name ptr -> EFAULT if allowed
     )
-    res = run_in_jail(
-        JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation=level, timeout_s=20.0)  # pyright: ignore[reportArgumentType]
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
+            cwd=tmp_path,
+            argv=("python3", "-c", probe),
+            isolation=level,  # pyright: ignore[reportArgumentType]
+            timeout_s=20.0,
+        )
     )
     out = res.stdout or ""
     if "iouring" not in out:
@@ -697,7 +715,7 @@ def test_io_uring_and_userfaultfd_are_denied(tmp_path: Path, level: str) -> None
     assert errs["memfd"] != "1", f"the jail denies memfd_create (errno {errs['memfd']})"
 
 
-def test_serve_launcher_refuses_a_request_with_an_unknown_field(tmp_path: Path) -> None:
+def test_serve_launcher_refuses_a_request_with_an_unknown_field(tmp_path: pathlib.Path) -> None:
     """The serve-mode ChildRequest refuses an unknown field, like Policy.
 
     A field this binary does not know is version skew with the Python side; dropping it
@@ -707,17 +725,16 @@ def test_serve_launcher_refuses_a_request_with_an_unknown_field(tmp_path: Path) 
     import subprocess
 
     from agent6.config import Config
-    from agent6.sandbox.jail import (
-        _policy_spec,  # pyright: ignore[reportPrivateUsage]
-        _require_jail_binary,  # pyright: ignore[reportPrivateUsage]
-    )
-    from agent6.tools.policy import jail_policy
+    from agent6.sandbox import jail
+    from agent6.tools import policy
 
-    spec = _policy_spec(jail_policy(tmp_path, Config(), "strict", ("/bin/true",), network="none"))
+    spec = jail._policy_spec(
+        policy.jail_policy(tmp_path, Config(), "strict", ("/bin/true",), network="none")
+    )
     spec["mode"] = "serve"
     req = {"kind": "background", "argv": ["/bin/true"], "a_field_from_a_newer_agent6": 1}
     proc = subprocess.run(
-        [str(_require_jail_binary())],
+        [str(jail._require_jail_binary())],
         input=(json.dumps(spec) + "\n" + json.dumps(req) + "\n").encode(),
         capture_output=True,
         timeout=30,

@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock
+import pathlib
+from unittest import mock
 
 import pytest
 
@@ -53,10 +53,10 @@ reason = "done"
 
 
 def test_machine_run_reads_the_explicit_config_layer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`machine run` resolves the top-level `--config` layer, as docs/config.md presents it."""
-    from agent6.app.machine.run import run_machine
+    from agent6.app.machine import run as machine_run
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
@@ -70,20 +70,20 @@ def test_machine_run_reads_the_explicit_config_layer(
 
     real = run_mod.load_effective_with_overlay
 
-    def spy(repo_root: Path, overlay: dict[str, object], **kw: object):
+    def spy(repo_root: pathlib.Path, overlay: dict[str, object], **kw: object):
         eff = real(repo_root, overlay, **kw)  # pyright: ignore[reportArgumentType]
         seen.append(eff.config.machine.snapshot_keep)
         return eff
 
     monkeypatch.setattr(run_mod, "load_effective_with_overlay", spy)
-    frontend = MagicMock()
-    frontend.reporter = MagicMock()
-    run_machine(mfile, frontend, config_path=explicit)
+    frontend = mock.MagicMock()
+    frontend.reporter = mock.MagicMock()
+    machine_run.run_machine(mfile, frontend, config_path=explicit)
     assert seen and seen[0] == 41, "the --config layer never reached machine run"
 
 
 def test_explicit_config_reaches_each_agent_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Child agent runs receive `--config` along with the machine-file overlay."""
     from agent6.app.machine import run as run_mod
@@ -121,8 +121,8 @@ max_iterations = 17
         return run
 
     monkeypatch.setattr(run_mod, "build_machine_agent_runner", fake_build)
-    frontend = MagicMock()
-    frontend.reporter = MagicMock()
+    frontend = mock.MagicMock()
+    frontend.reporter = mock.MagicMock()
 
     code = run_mod.run_machine(mfile, frontend, config_path=explicit)
     assert code == 0, frontend.reporter.mock_calls

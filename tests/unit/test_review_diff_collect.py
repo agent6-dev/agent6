@@ -9,16 +9,16 @@ touches the worktree").
 
 from __future__ import annotations
 
+import pathlib
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
-from agent6.ui.cli.review_cmds import _collect_review_diff  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import review_cmds  # pyright: ignore[reportPrivateUsage]
 
 
-def _git(root: Path, *args: str) -> str:
+def _git(root: pathlib.Path, *args: str) -> str:
     git = shutil.which("git")
     assert git is not None
     out = subprocess.run([git, *args], cwd=root, capture_output=True, text=True, check=True)
@@ -26,7 +26,7 @@ def _git(root: Path, *args: str) -> str:
 
 
 @pytest.fixture
-def repo(tmp_path: Path) -> Path:
+def repo(tmp_path: pathlib.Path) -> pathlib.Path:
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.email", "t@t")
     _git(tmp_path, "config", "user.name", "t")
@@ -36,13 +36,13 @@ def repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_review_diff_includes_untracked_and_restores_index(repo: Path) -> None:
+def test_review_diff_includes_untracked_and_restores_index(repo: pathlib.Path) -> None:
     git = shutil.which("git")
     assert git is not None
     (repo / "newfile.py").write_text("y = 2\n", encoding="utf-8")  # untracked
     (repo / "tracked.py").write_text("x = 99\n", encoding="utf-8")  # modified tracked
 
-    proc = _collect_review_diff(git, repo, base="", head="HEAD", paths=())
+    proc = review_cmds._collect_review_diff(git, repo, base="", head="HEAD", paths=())
     assert proc.returncode == 0
     # Both the modification and the new untracked file appear in the review diff.
     assert "tracked.py" in proc.stdout
@@ -57,11 +57,11 @@ def test_review_diff_includes_untracked_and_restores_index(repo: Path) -> None:
     assert " A newfile.py" not in status
 
 
-def test_review_diff_with_base_is_plain_diff(repo: Path) -> None:
+def test_review_diff_with_base_is_plain_diff(repo: pathlib.Path) -> None:
     git = shutil.which("git")
     assert git is not None
     (repo / "tracked.py").write_text("x = 2\n", encoding="utf-8")
     _git(repo, "commit", "-qam", "second")
-    proc = _collect_review_diff(git, repo, base="HEAD~1", head="HEAD", paths=())
+    proc = review_cmds._collect_review_diff(git, repo, base="HEAD~1", head="HEAD", paths=())
     assert proc.returncode == 0
     assert "x = 2" in proc.stdout

@@ -6,13 +6,13 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import time
-from pathlib import Path
 
 import pytest
 
-from agent6.paths import state_dir
-from agent6.sessions.ipc import write_worker_pid
+from agent6 import paths
+from agent6.sessions import ipc
 from agent6.ui.cli import main
 
 # A branch -> terminal machine: no model/jail, reaches a journaled end at once.
@@ -41,15 +41,15 @@ reason = "routed"
 """
 
 
-def _make_run(tmp_path: Path, session_id: str, events: list[dict[str, object]]) -> None:
-    runs = state_dir(tmp_path) / "sessions" / "runs" / session_id
+def _make_run(tmp_path: pathlib.Path, session_id: str, events: list[dict[str, object]]) -> None:
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs" / session_id
     runs.mkdir(parents=True)
     body = "".join(json.dumps(e) + "\n" for e in events)
     (runs / "logs.jsonl").write_text(body, encoding="utf-8")
 
 
 def test_watch_run_json_snapshot(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A target that resolves to a run id (here by exact match) yields the folded
     # SessionState as JSON -- the same wire form a web client reads.
@@ -69,7 +69,7 @@ def test_watch_run_json_snapshot(
 
 
 def test_watch_machine_json_snapshot(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A target that is not a run but names a machine instance routes to the
     # machine fold.
@@ -86,11 +86,11 @@ def test_watch_machine_json_snapshot(
 
 
 def test_attach_refuses_raw_event_tail_for_a_machine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--raw and --since reach a machine's follower, which opened its overview and ignored both."""
     monkeypatch.chdir(tmp_path)
-    machine_dir = state_dir(tmp_path) / "machines" / "tiny"
+    machine_dir = paths.state_dir(tmp_path) / "machines" / "tiny"
     machine_dir.mkdir(parents=True)
     (machine_dir / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (machine_dir / "journal.jsonl").write_text(
@@ -123,7 +123,7 @@ def test_attach_refuses_raw_event_tail_for_a_machine(
 
 
 def test_attach_since_zero_still_needs_raw(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An explicit --since 0 is honored by the conversation and TUI modes."""
     monkeypatch.chdir(tmp_path)
@@ -141,7 +141,7 @@ def test_attach_since_zero_still_needs_raw(
 
 
 def test_attach_refuses_a_negative_since_count(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A negative --since is refused; it asks for a count of prior events."""
     monkeypatch.chdir(tmp_path)
@@ -159,7 +159,7 @@ def test_attach_refuses_a_negative_since_count(
 
 
 def test_watch_unknown_target_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     assert main(["attach", "nope"]) == 2
@@ -167,11 +167,11 @@ def test_watch_unknown_target_errors(
     assert "no run or machine matches" in err
     # The search covers every session bucket and the machines: the refusal
     # names the state dir it walked, not one directory of five.
-    assert str(state_dir(tmp_path)) in err and "sessions/runs" not in err
+    assert str(paths.state_dir(tmp_path)) in err and "sessions/runs" not in err
 
 
 def test_watch_ambiguous_prefix_surfaces_disambiguation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # An ambiguous run prefix must report the ambiguity, not fall through to a
     # machine lookup and print "no run or machine matches".
@@ -185,7 +185,7 @@ def test_watch_ambiguous_prefix_surfaces_disambiguation(
 
 
 def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Attach to a crashed worker renders read-only, never prompts, and ends with the crashed line.
 
@@ -206,7 +206,7 @@ def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
         ],
     )
     monkeypatch.chdir(tmp_path)
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "dead-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "dead-run"
     (session_dir / "worker.pid").write_text("999999", encoding="utf-8")
 
     def _no_prompt(*a: object, **k: object) -> None:
@@ -228,7 +228,7 @@ def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
 
 
 def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A parked submission (the busy-checkout refusal saved it) has no log yet.
 
@@ -237,7 +237,7 @@ def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
     the state and the way out.
     """
     monkeypatch.chdir(tmp_path)
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "parked-run-77"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "parked-run-77"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(
@@ -265,14 +265,14 @@ def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
 
 
 def test_attach_to_a_launching_run_says_starting_not_resume(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A run still in preflight, with a live worker and no log, reads "starting", not resumable.
 
     Telling the operator to `resume` would refuse or fork a second worker.
     """
     monkeypatch.chdir(tmp_path)
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "launching-run-88"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "launching-run-88"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(
@@ -280,7 +280,7 @@ def test_attach_to_a_launching_run_says_starting_not_resume(
         ),
         encoding="utf-8",
     )
-    write_worker_pid(session_dir, os.getpid())  # a live worker, mid-preflight
+    ipc.write_worker_pid(session_dir, os.getpid())  # a live worker, mid-preflight
 
     assert main(["attach", "launching-run-88"]) == 0
     out = capsys.readouterr().out
@@ -289,7 +289,7 @@ def test_attach_to_a_launching_run_says_starting_not_resume(
 
 
 def test_attach_to_a_run_whose_pid_file_is_gone_does_not_follow_forever(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A worker that cleared worker.pid without a session.end reads stale to attach as to the list.
 
@@ -306,7 +306,7 @@ def test_attach_to_a_run_whose_pid_file_is_gone_does_not_follow_forever(
         ],
     )
     monkeypatch.chdir(tmp_path)
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "vanished-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "vanished-run"
     assert not (session_dir / "worker.pid").exists()
 
     result: list[int] = []
@@ -321,15 +321,15 @@ def test_attach_to_a_run_whose_pid_file_is_gone_does_not_follow_forever(
 
 
 def test_attach_returns_nonzero_when_a_live_runs_worker_dies(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A worker that dies during the follow is an attach failure, not a clean end."""
     import threading
 
     _make_run(tmp_path, "dying-run", [{"type": "session.start", "user_task": "t"}])
     monkeypatch.chdir(tmp_path)
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "dying-run"
-    write_worker_pid(session_dir, os.getpid())
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "dying-run"
+    ipc.write_worker_pid(session_dir, os.getpid())
 
     result: list[int] = []
     watcher = threading.Thread(
@@ -346,7 +346,7 @@ def test_attach_returns_nonzero_when_a_live_runs_worker_dies(
 
 
 def test_attach_to_a_finished_run_reports_its_outcome_not_a_crash(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A run that ended cleanly is not a crashed one.
 
@@ -379,7 +379,7 @@ def test_attach_to_a_finished_run_reports_its_outcome_not_a_crash(
 
 
 def test_attach_prints_the_runs_policy_line_like_the_run_did(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The replay of a finished run carries the console's header: model, isolation, policy, gate."""
     _make_run(
@@ -390,7 +390,7 @@ def test_attach_prints_the_runs_policy_line_like_the_run_did(
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
     )
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "done-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "done-run"
     (session_dir / "manifest.json").write_text(
         json.dumps(
             {
@@ -407,7 +407,7 @@ def test_attach_prints_the_runs_policy_line_like_the_run_did(
 
 
 def test_watch_json_checks_the_merged_claim_against_the_repo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`attach --json` claims merged only while the stamp still describes the branch."""
     import subprocess
@@ -427,7 +427,7 @@ def test_watch_json_checks_the_merged_claim_against_the_repo(
         [*git, "rev-parse", "agent6/stamped-run"], check=True, capture_output=True, text=True
     ).stdout.strip()
     _make_run(tmp_path, "stamped-run", [{"type": "session.start", "user_task": "t"}])
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "stamped-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "stamped-run"
     (session_dir / "manifest.json").write_text(
         json.dumps(
             {
@@ -450,7 +450,7 @@ def test_watch_json_checks_the_merged_claim_against_the_repo(
 
 
 def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The watch reads finished off the listing fold, not the journal's last line.
 
@@ -458,8 +458,6 @@ def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
     """
     import os
     import threading
-
-    from agent6.sessions.ipc import write_worker_pid
 
     _make_run(
         tmp_path,
@@ -471,8 +469,8 @@ def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
         ],
     )
     monkeypatch.chdir(tmp_path)
-    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "done-run"
-    write_worker_pid(session_dir, os.getpid())  # reads as live: the follow path
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "done-run"
+    ipc.write_worker_pid(session_dir, os.getpid())  # reads as live: the follow path
     result: list[int] = []
     t = threading.Thread(
         target=lambda: result.append(main(["attach", "done-run", "--raw", "--since", "5"])),
@@ -486,7 +484,7 @@ def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
 
 
 def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The raw tail returns on EOF when the run dir is gone, instead of polling the path forever."""
     import shutil
@@ -494,7 +492,7 @@ def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(
 
     monkeypatch.chdir(tmp_path)
     _make_run(tmp_path, "gone-run", [{"type": "session.start", "user_task": "t"}])
-    run_dir = state_dir(tmp_path) / "sessions" / "runs" / "gone-run"
+    run_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "gone-run"
     rcs: list[int] = []
     t = threading.Thread(target=lambda: rcs.append(main(["attach", "gone-run", "--raw"])))
     t.daemon = True
@@ -507,14 +505,14 @@ def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(
 
 
 def test_attach_to_a_husk_names_the_crash_not_a_missing_id(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Attach on a husk says why it refuses, naming the crash and the `sessions rm` remedy.
 
     It reported "no run or machine matches", the wording for an id that does not exist.
     """
     monkeypatch.chdir(tmp_path)
-    (state_dir(tmp_path) / "sessions" / "runs" / "husky-one-AAAAAA").mkdir(parents=True)
+    (paths.state_dir(tmp_path) / "sessions" / "runs" / "husky-one-AAAAAA").mkdir(parents=True)
     assert main(["attach", "husky-one-AAAAAA"]) == 2
     err = capsys.readouterr().err
     assert "crashed before it ever started" in err

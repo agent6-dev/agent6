@@ -5,15 +5,15 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import sys
-from pathlib import Path
 
 import pytest
 
 from agent6 import skills
 
 
-def _write_skill(root: Path, dirname: str, text: str) -> Path:
+def _write_skill(root: pathlib.Path, dirname: str, text: str) -> pathlib.Path:
     d = root / dirname
     d.mkdir(parents=True)
     (d / "SKILL.md").write_text(text, encoding="utf-8")
@@ -91,7 +91,7 @@ class TestParseFrontmatter:
 
 
 class TestDiscoverSkills:
-    def test_discovers_and_reads(self, tmp_path: Path) -> None:
+    def test_discovers_and_reads(self, tmp_path: pathlib.Path) -> None:
         _write_skill(tmp_path, "tidy", PLAIN)
         found, warnings = skills.discover_skills([tmp_path])
         assert warnings == ()
@@ -100,25 +100,25 @@ class TestDiscoverSkills:
         assert found[0].dir == tmp_path / "tidy"
         assert "Body text here." in found[0].text
 
-    def test_frontmatter_name_wins_over_dirname(self, tmp_path: Path) -> None:
+    def test_frontmatter_name_wins_over_dirname(self, tmp_path: pathlib.Path) -> None:
         _write_skill(tmp_path, "wrong-dir-name", PLAIN)
         found, warnings = skills.discover_skills([tmp_path])
         assert [s.name for s in found] == ["tidy"]
         assert any("wrong-dir-name" in w for w in warnings)
 
-    def test_missing_required_fields_skips_with_warning(self, tmp_path: Path) -> None:
+    def test_missing_required_fields_skips_with_warning(self, tmp_path: pathlib.Path) -> None:
         _write_skill(tmp_path, "broken", "---\nname: broken\n---\nno description\n")
         found, warnings = skills.discover_skills([tmp_path])
         assert found == ()
         assert any("broken" in w for w in warnings)
 
-    def test_invalid_name_skips(self, tmp_path: Path) -> None:
+    def test_invalid_name_skips(self, tmp_path: pathlib.Path) -> None:
         _write_skill(tmp_path, "bad", "---\nname: bad name!\ndescription: Use when.\n---\n")
         found, warnings = skills.discover_skills([tmp_path])
         assert found == ()
         assert any("bad name!" in w for w in warnings)
 
-    def test_first_dir_wins_duplicate_names(self, tmp_path: Path) -> None:
+    def test_first_dir_wins_duplicate_names(self, tmp_path: pathlib.Path) -> None:
         a, b = tmp_path / "a", tmp_path / "b"
         _write_skill(a, "tidy", PLAIN)
         _write_skill(b, "tidy", PLAIN.replace("terse", "verbose"))
@@ -127,14 +127,14 @@ class TestDiscoverSkills:
         assert "terse" in found[0].description  # from dir a
         assert any("duplicate" in w for w in warnings)
 
-    def test_single_skill_dir_direct(self, tmp_path: Path) -> None:
+    def test_single_skill_dir_direct(self, tmp_path: pathlib.Path) -> None:
         # extra_dirs may point AT one skill dir (SKILL.md directly inside)
         d = _write_skill(tmp_path, "tidy", PLAIN)
         found, warnings = skills.discover_skills([d])
         assert [s.name for s in found] == ["tidy"]
         assert warnings == ()
 
-    def test_dotfiles_and_plain_files_ignored(self, tmp_path: Path) -> None:
+    def test_dotfiles_and_plain_files_ignored(self, tmp_path: pathlib.Path) -> None:
         # A dotted dir holding a VALID SKILL.md is the case the dot rule exists
         # for: without it a .backup/ copy would be discovered and its
         # instructions injected into every run's system prompt. An empty
@@ -147,39 +147,39 @@ class TestDiscoverSkills:
         assert [s.name for s in found] == ["tidy"]
         assert warnings == ()  # skipped silently, not reported as broken
 
-    def test_missing_dir_is_fine(self, tmp_path: Path) -> None:
+    def test_missing_dir_is_fine(self, tmp_path: pathlib.Path) -> None:
         found, warnings = skills.discover_skills([tmp_path / "nope"])
         assert found == ()
         assert warnings == ()
 
 
 class TestResolveStates:
-    def _skills(self, tmp_path: Path) -> tuple[skills.Skill, ...]:
+    def _skills(self, tmp_path: pathlib.Path) -> tuple[skills.Skill, ...]:
         _write_skill(tmp_path, "a", PLAIN.replace("tidy", "a"))
         _write_skill(tmp_path, "b", PLAIN.replace("tidy", "b"))
         _write_skill(tmp_path, "c", PLAIN.replace("tidy", "c"))
         found, _ = skills.discover_skills([tmp_path])
         return found
 
-    def test_default_all_enabled(self, tmp_path: Path) -> None:
+    def test_default_all_enabled(self, tmp_path: pathlib.Path) -> None:
         r = skills.resolve_states(self._skills(tmp_path), {})
         assert [s.name for s in r.enabled] == ["a", "b", "c"]
         assert r.always == ()
         assert r.warnings == ()
 
-    def test_disabled_dropped_always_promoted(self, tmp_path: Path) -> None:
+    def test_disabled_dropped_always_promoted(self, tmp_path: pathlib.Path) -> None:
         r = skills.resolve_states(
             self._skills(tmp_path), {"a": "disabled", "b": "always", "c": "enabled"}
         )
         assert [s.name for s in r.enabled] == ["c"]
         assert [s.name for s in r.always] == ["b"]
 
-    def test_unknown_name_warns(self, tmp_path: Path) -> None:
+    def test_unknown_name_warns(self, tmp_path: pathlib.Path) -> None:
         r = skills.resolve_states(self._skills(tmp_path), {"ghost": "disabled"})
         assert any("ghost" in w for w in r.warnings)
 
 
-def test_unreadable_skill_dir_warns_instead_of_crashing_every_run(tmp_path: Path) -> None:
+def test_unreadable_skill_dir_warns_instead_of_crashing_every_run(tmp_path: pathlib.Path) -> None:
     """An unlistable skills dir degrades to a warning instead of killing every run.
 
     A permission-denied `iterdir()` crashed discovery before a healthy sibling skill loaded.
@@ -215,7 +215,7 @@ def test_unreadable_skill_dir_warns_instead_of_crashing_every_run(tmp_path: Path
     assert any("myskill" in w for w in warnings)
 
 
-def test_unreadable_skill_warns_instead_of_crashing_every_run(tmp_path: Path) -> None:
+def test_unreadable_skill_warns_instead_of_crashing_every_run(tmp_path: pathlib.Path) -> None:
     """A SKILL.md with a non-UTF-8 byte or an unreadable file degrades to a warning.
 
     Discovery runs at startup, so every `agent6 run` died with a bare UnicodeDecodeError naming
@@ -237,7 +237,7 @@ def test_unreadable_skill_warns_instead_of_crashing_every_run(tmp_path: Path) ->
 
 @pytest.mark.skipif(sys.version_info < (3, 13), reason="3.12's Path.is_dir raises here itself")
 def test_a_skill_dir_the_operator_cannot_search_warns_instead_of_vanishing(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """A candidate with mode 0600 under an extra dir warns instead of vanishing silently.
 

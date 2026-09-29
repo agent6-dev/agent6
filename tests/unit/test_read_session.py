@@ -5,17 +5,19 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import tracemalloc
 from collections.abc import Callable
-from pathlib import Path
 
 import pytest
 
-from agent6.sessions.layout import session_layout
-from agent6.tools.sessions import ROSTER_MAX, conversation, roster, session_briefs
+from agent6.sessions import layout as sessions_layout
+from agent6.tools import schema, sessions
 
 
-def _session(state: Path, bucket: str, sid: str, mode: str, task: str, turns: list[str]) -> Path:
+def _session(
+    state: pathlib.Path, bucket: str, sid: str, mode: str, task: str, turns: list[str]
+) -> pathlib.Path:
     d = state / "sessions" / bucket / sid
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
@@ -36,7 +38,7 @@ def _session(state: Path, bucket: str, sid: str, mode: str, task: str, turns: li
     return d
 
 
-def test_the_roster_spans_every_bucket(tmp_path: Path) -> None:
+def test_the_roster_spans_every_bucket(tmp_path: pathlib.Path) -> None:
     """The roster spans every bucket.
 
     A run, a plan and an ask are all sessions; a roster of runs alone hides exactly the quick ask
@@ -44,11 +46,11 @@ def test_the_roster_spans_every_bucket(tmp_path: Path) -> None:
     """
     _session(tmp_path, "asks", "quiet-fox-AAAAAA", "ask", "how do I convert h264", ["use ffmpeg"])
     _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "add a flag", ["done"])
-    modes = {b.id: b.mode for b in session_briefs(tmp_path)}
+    modes = {b.id: b.mode for b in sessions.session_briefs(tmp_path)}
     assert modes == {"quiet-fox-AAAAAA": "ask", "brave-elk-BBBBBB": "run"}
 
 
-def test_the_conversation_reads_oldest_first(tmp_path: Path) -> None:
+def test_the_conversation_reads_oldest_first(tmp_path: pathlib.Path) -> None:
     d = _session(
         tmp_path,
         "asks",
@@ -57,28 +59,28 @@ def test_the_conversation_reads_oldest_first(tmp_path: Path) -> None:
         "how do I convert h264",
         ["use ffmpeg", "with libx265"],
     )
-    layout = session_layout(tmp_path, "quiet-fox-AAAAAA")
+    layout = sessions_layout.session_layout(tmp_path, "quiet-fox-AAAAAA")
     assert layout is not None and layout.session_dir == d
-    text = conversation(layout, max_chars=10_000)
+    text = sessions.conversation(layout, max_chars=10_000)
     assert text.index("how do I convert") < text.index("use ffmpeg") < text.index("libx265")
     assert text.startswith("user: how do I convert")
 
 
-def test_truncation_keeps_the_tail(tmp_path: Path) -> None:
+def test_truncation_keeps_the_tail(tmp_path: pathlib.Path) -> None:
     """Truncation keeps the tail.
 
     A later session usually wants what the earlier one concluded; the head is the task the roster
     already carries.
     """
     _session(tmp_path, "runs", "long-BBBBBB", "run", "t", ["x" * 400, "THE ANSWER"])
-    layout = session_layout(tmp_path, "long-BBBBBB")
+    layout = sessions_layout.session_layout(tmp_path, "long-BBBBBB")
     assert layout is not None
-    text = conversation(layout, max_chars=200)
+    text = sessions.conversation(layout, max_chars=200)
     assert "THE ANSWER" in text
     assert "earlier characters elided" in text
 
 
-def test_a_query_finds_a_session_by_its_content(tmp_path: Path) -> None:
+def test_a_query_finds_a_session_by_its_content(tmp_path: pathlib.Path) -> None:
     """A query finds a session by its content.
 
     An id is useless to a model that does not know it; content and recency are how a session is
@@ -88,12 +90,14 @@ def test_a_query_finds_a_session_by_its_content(tmp_path: Path) -> None:
         tmp_path, "asks", "quiet-fox-AAAAAA", "ask", "video question", ["use ffmpeg -c:v libx265"]
     )
     _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "add a flag", ["unrelated"])
-    assert [b.id for b in roster(tmp_path, "libx265").briefs] == ["quiet-fox-AAAAAA"]
-    assert [b.id for b in roster(tmp_path, "add a flag").briefs] == ["brave-elk-BBBBBB"]
-    assert roster(tmp_path, "nothing here").briefs == ()
+    assert [b.id for b in sessions.roster(tmp_path, "libx265").briefs] == ["quiet-fox-AAAAAA"]
+    assert [b.id for b in sessions.roster(tmp_path, "add a flag").briefs] == ["brave-elk-BBBBBB"]
+    assert sessions.roster(tmp_path, "nothing here").briefs == ()
 
 
-def test_a_side_calls_answer_is_not_read_as_the_assistants_own_words(tmp_path: Path) -> None:
+def test_a_side_calls_answer_is_not_read_as_the_assistants_own_words(
+    tmp_path: pathlib.Path,
+) -> None:
     """A side call's answer is not read as the assistant's own words.
 
     Every side call made during a session (a review seat, the verify inferer, a squash pass, the
@@ -108,107 +112,107 @@ def test_a_side_calls_answer_is_not_read_as_the_assistants_own_words(tmp_path: P
     for role in side:
         lines.append(json.dumps({"type": "role.result", "role": role, "text": f"FROM {role}"}))
     (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    layout = session_layout(tmp_path, "brave-elk-BBBBBB")
+    layout = sessions_layout.session_layout(tmp_path, "brave-elk-BBBBBB")
     assert layout is not None
-    text = conversation(layout, max_chars=10_000)
+    text = sessions.conversation(layout, max_chars=10_000)
     assert "use ffmpeg" in text
     assert [role for role in side if f"FROM {role}" in text] == []
 
 
-def test_a_role_result_with_no_role_reads_as_the_sessions_own_words(tmp_path: Path) -> None:
+def test_a_role_result_with_no_role_reads_as_the_sessions_own_words(tmp_path: pathlib.Path) -> None:
     """Older journals carry no `role` field on `role.result`; that absence is not a side role."""
     d = _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", [])
     lines = (d / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     lines.append(json.dumps({"type": "role.result", "text": "use ffmpeg"}))
     lines.append(json.dumps({"type": "role.result", "role": "", "text": "with libx265"}))
     (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    layout = session_layout(tmp_path, "brave-elk-BBBBBB")
+    layout = sessions_layout.session_layout(tmp_path, "brave-elk-BBBBBB")
     assert layout is not None
-    text = conversation(layout, max_chars=10_000)
+    text = sessions.conversation(layout, max_chars=10_000)
     assert "use ffmpeg" in text
     assert "with libx265" in text
 
 
-def test_a_torn_journal_line_does_not_break_the_read(tmp_path: Path) -> None:
+def test_a_torn_journal_line_does_not_break_the_read(tmp_path: pathlib.Path) -> None:
     """A live session's last line can be half-written."""
     d = _session(tmp_path, "runs", "live-BBBBBB", "run", "t", ["first"])
     with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "role.res')
-    layout = session_layout(tmp_path, "live-BBBBBB")
+    layout = sessions_layout.session_layout(tmp_path, "live-BBBBBB")
     assert layout is not None
-    assert "first" in conversation(layout, max_chars=10_000)
+    assert "first" in sessions.conversation(layout, max_chars=10_000)
 
 
-def test_a_session_with_no_conversation_says_so(tmp_path: Path) -> None:
+def test_a_session_with_no_conversation_says_so(tmp_path: pathlib.Path) -> None:
     d = tmp_path / "sessions" / "runs" / "empty-BBBBBB"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "run"}), encoding="utf-8")
-    layout = session_layout(tmp_path, "empty-BBBBBB")
+    layout = sessions_layout.session_layout(tmp_path, "empty-BBBBBB")
     assert layout is not None
-    assert "no readable journal" in conversation(layout, max_chars=100)
+    assert "no readable journal" in sessions.conversation(layout, max_chars=100)
 
 
 @pytest.mark.parametrize("escape", ["../../etc", "..", "/etc/passwd", "a/../../b"])
-def test_no_path_from_the_model_reaches_the_filesystem(tmp_path: Path, escape: str) -> None:
+def test_no_path_from_the_model_reaches_the_filesystem(tmp_path: pathlib.Path, escape: str) -> None:
     """The model names a session by id, never a path.
 
     Resolution matches real directory names in the project's buckets, so traversal cannot resolve.
     """
     _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", ["x"])
-    assert session_layout(tmp_path, escape) is None
+    assert sessions_layout.session_layout(tmp_path, escape) is None
 
 
-def test_the_tool_returns_the_roster_and_refuses_an_unknown_id(tmp_path: Path) -> None:
+def test_the_tool_returns_the_roster_and_refuses_an_unknown_id(tmp_path: pathlib.Path) -> None:
     """The tool returns the roster and refuses an unknown id.
 
     At the dispatch level: the roster rides on every answer (like read_background), and an id the
     project does not have is an error, not an empty read.
     """
     from agent6.config import Config
-    from agent6.tools.dispatch import ToolDispatcher, ToolError
+    from agent6.tools import dispatch, errors
 
     _session(tmp_path, "asks", "quiet-fox-AAAAAA", "ask", "video question", ["use ffmpeg"])
-    d = ToolDispatcher(root=tmp_path, config=Config(), state_dir=tmp_path)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), state_dir=tmp_path)
     out = d.dispatch("read_session", {}).to_wire()
     assert out["sessions"] == ["[quiet-fox-AAAAAA] ask · 2026-07-31T01:00: video question"]
     assert "conversation" not in out
     got = d.dispatch("read_session", {"id": "quiet-fox-AAAAAA"}).to_wire()
     assert "use ffmpeg" in got["conversation"]
-    with pytest.raises(ToolError, match="no session"):
+    with pytest.raises(errors.ToolError, match="no session"):
         d.dispatch("read_session", {"id": "nope"})
 
 
-def test_the_tool_is_unwired_without_a_project_state_dir(tmp_path: Path) -> None:
+def test_the_tool_is_unwired_without_a_project_state_dir(tmp_path: pathlib.Path) -> None:
     from agent6.config import Config
-    from agent6.tools.dispatch import ToolDispatcher, ToolError
+    from agent6.tools import dispatch, errors
 
-    d = ToolDispatcher(root=tmp_path, config=Config())
-    with pytest.raises(ToolError, match="state dir"):
+    d = dispatch.ToolDispatcher(root=tmp_path, config=Config())
+    with pytest.raises(errors.ToolError, match="state dir"):
         d.dispatch("read_session", {})
 
 
-def test_a_project_with_many_sessions_does_not_flood_the_context(tmp_path: Path) -> None:
+def test_a_project_with_many_sessions_does_not_flood_the_context(tmp_path: pathlib.Path) -> None:
     """Every read_session call pays for the roster.
 
     At 2000 sessions the uncapped list rendered ~70k tokens, so one lookup cost more than the
     answer.
     """
-    for i in range(ROSTER_MAX + 25):
+    for i in range(schema.ROSTER_MAX + 25):
         _session(tmp_path, "runs", f"s{i:04d}-AAAAAA", "run", "t", [])
-    got = roster(tmp_path, "")
-    assert len(got.briefs) == ROSTER_MAX
+    got = sessions.roster(tmp_path, "")
+    assert len(got.briefs) == schema.ROSTER_MAX
     assert got.more
     assert "narrow with `query`" in got.lines()[-1], "a silent cut reads as the whole project"
 
 
-def test_a_query_matching_everything_is_capped_too(tmp_path: Path) -> None:
-    for i in range(ROSTER_MAX + 25):
+def test_a_query_matching_everything_is_capped_too(tmp_path: pathlib.Path) -> None:
+    for i in range(schema.ROSTER_MAX + 25):
         _session(tmp_path, "runs", f"s{i:04d}-AAAAAA", "run", "refactor the parser", [])
-    got = roster(tmp_path, "parser")
-    assert len(got.briefs) == ROSTER_MAX and got.more
+    got = sessions.roster(tmp_path, "parser")
+    assert len(got.briefs) == schema.ROSTER_MAX and got.more
 
 
-def test_a_query_reads_journals_without_holding_them_in_memory(tmp_path: Path) -> None:
+def test_a_query_reads_journals_without_holding_them_in_memory(tmp_path: pathlib.Path) -> None:
     """Journals reach megabytes; slurping each one to answer a yes/no was ~1 GB per call.
 
     The needle is planted across a chunk boundary.
@@ -219,8 +223,8 @@ def test_a_query_reads_journals_without_holding_them_in_memory(tmp_path: Path) -
         fh.write("nEeDlE")
         fh.write("y" * (4 << 20))
     size = big.stat().st_size
-    peak = _peak_bytes_reading(lambda: roster(tmp_path, "needle"))
-    assert [b.id for b in roster(tmp_path, "needle").briefs] == ["big-AAAAAA"]
+    peak = _peak_bytes_reading(lambda: sessions.roster(tmp_path, "needle"))
+    assert [b.id for b in sessions.roster(tmp_path, "needle").briefs] == ["big-AAAAAA"]
     assert peak < size // 4, f"held {peak} bytes of a {size}-byte journal"
 
 
@@ -233,7 +237,7 @@ def _peak_bytes_reading(fn: Callable[[], object]) -> int:
         tracemalloc.stop()
 
 
-def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: Path) -> None:
+def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathlib.Path) -> None:
     """Written by the real emitter, not by hand.
 
     The prose reached the journal only as `role.text_delta`, which is emitted only when streaming is
@@ -241,13 +245,12 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: Path)
     and this tool returned the task and a list of tool names. Every fixture that hand-wrote
     `{"type": "role.result", "text": ...}` passed against a shape the engine never emitted.
     """
-    from types import SimpleNamespace
-    from unittest.mock import MagicMock
+    import types
+    from unittest import mock
 
-    from agent6.app.providers import InstrumentedProvider
-    from agent6.budget import BudgetTracker
-    from agent6.events import EventSink
-    from agent6.sessions.layout import session_layout
+    from agent6 import budget
+    from agent6 import events as agent6_events
+    from agent6.app import providers
 
     d = tmp_path / "sessions" / "asks" / "quiet-fox-AAAAAA"
     d.mkdir(parents=True)
@@ -255,10 +258,10 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: Path)
         json.dumps({"version": 3, "mode": "ask", "user_task": "how do I convert h264"}),
         encoding="utf-8",
     )
-    events = EventSink(d / "logs.jsonl")
+    events = agent6_events.EventSink(d / "logs.jsonl")
     events.emit("session.start", user_task="how do I convert h264")
-    inner = MagicMock()
-    inner.call.return_value = SimpleNamespace(
+    inner = mock.MagicMock()
+    inner.call.return_value = types.SimpleNamespace(
         text="use ffmpeg -c:v libx265",
         tool_uses=(),
         refused={},
@@ -269,17 +272,17 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: Path)
         cache_creation_tokens=0,
         raw={},
     )
-    InstrumentedProvider(
+    providers.InstrumentedProvider(
         inner=inner,
         role="worker",
         model="m",
         provider_name="p",
         events=events,
-        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
     ).call(system="s", messages=[{"role": "user", "content": "q"}], tools=[], max_tokens=64)
 
-    layout = session_layout(tmp_path, "quiet-fox-AAAAAA")
+    layout = sessions_layout.session_layout(tmp_path, "quiet-fox-AAAAAA")
     assert layout is not None
-    text = conversation(layout, max_chars=10_000)
+    text = sessions.conversation(layout, max_chars=10_000)
     assert "use ffmpeg -c:v libx265" in text, "the answer the other session reached is missing"
     assert "how do I convert h264" in text

@@ -12,9 +12,9 @@ action is needed. agent6 neutralizes each by name unless `git.run_repo_filters` 
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
@@ -27,13 +27,13 @@ def _reset() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
     git_ops.set_repo_filter_policy(False)
 
 
-def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def _git(root: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", "-C", str(root), *args], capture_output=True, text=True, check=False
     )
 
 
-def _repo(tmp_path: Path) -> Path:
+def _repo(tmp_path: pathlib.Path) -> pathlib.Path:
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     _git(tmp_path, "config", "user.email", "x@y.z")
     _git(tmp_path, "config", "user.name", "x")
@@ -43,7 +43,7 @@ def _repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _poison_clean_filter(root: Path, marker: Path) -> None:
+def _poison_clean_filter(root: pathlib.Path, marker: pathlib.Path) -> None:
     cfg = root / ".git" / "config"
     cfg.write_text(
         cfg.read_text() + f'\n[filter "pwn"]\n\tclean = touch {marker}\n', encoding="utf-8"
@@ -52,7 +52,7 @@ def _poison_clean_filter(root: Path, marker: Path) -> None:
     (root / "f.txt").write_text("v2\n", encoding="utf-8")  # a change to stage
 
 
-def test_the_auto_commit_does_not_run_a_repo_clean_filter(tmp_path: Path) -> None:
+def test_the_auto_commit_does_not_run_a_repo_clean_filter(tmp_path: pathlib.Path) -> None:
     """The per-step commit's temp-index `git add` does not run a clean filter by default.
 
     The payload must not fire, and the commit still records the raw content.
@@ -67,7 +67,7 @@ def test_the_auto_commit_does_not_run_a_repo_clean_filter(tmp_path: Path) -> Non
     assert not marker.exists(), "the repo's clean filter ran a host command"
 
 
-def test_run_repo_filters_true_honors_the_driver(tmp_path: Path) -> None:
+def test_run_repo_filters_true_honors_the_driver(tmp_path: pathlib.Path) -> None:
     """The Git-LFS opt-in: with the knob on, the repo's driver runs.
 
     LFS needs it; its clean filter turns a big file into a pointer.
@@ -80,7 +80,7 @@ def test_run_repo_filters_true_honors_the_driver(tmp_path: Path) -> None:
     assert marker.exists(), "the driver was neutralized even though the operator opted in"
 
 
-def test_the_chain_merge_does_not_run_a_repo_merge_driver(tmp_path: Path) -> None:
+def test_the_chain_merge_does_not_run_a_repo_merge_driver(tmp_path: pathlib.Path) -> None:
     """`merge-tree --write-tree` runs no custom merge driver by default.
 
     A neutralized driver makes the merge report a conflict, so chain_merge returns None
@@ -109,7 +109,7 @@ def test_the_chain_merge_does_not_run_a_repo_merge_driver(tmp_path: Path) -> Non
     assert result is None, "a conflicting neutralized merge should not produce a merge commit"
 
 
-def test_a_clean_repo_commits_normally_with_filters_off(tmp_path: Path) -> None:
+def test_a_clean_repo_commits_normally_with_filters_off(tmp_path: pathlib.Path) -> None:
     """A repo that defines no drivers gets no overrides and commits exactly as before.
 
     The overrides are added per name from the repo's own config.
@@ -121,7 +121,7 @@ def test_a_clean_repo_commits_normally_with_filters_off(tmp_path: Path) -> None:
     assert sha is not None
 
 
-def test_driver_names_enumerate_and_dedup(tmp_path: Path) -> None:
+def test_driver_names_enumerate_and_dedup(tmp_path: pathlib.Path) -> None:
     """A filter with both clean and smudge is one driver, one set of overrides.
 
     Dotted subsection names survive the split.
@@ -143,7 +143,7 @@ def test_driver_names_enumerate_and_dedup(tmp_path: Path) -> None:
     assert git_ops._repo_driver_overrides(root) == ()  # pyright: ignore[reportPrivateUsage]
 
 
-def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: Path) -> None:
+def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: pathlib.Path) -> None:
     """The driver enumeration follows `[include]`, as a git op does.
 
     `git config --local` alone stops at `.git/config`, so a filter hidden behind an include
@@ -165,21 +165,19 @@ def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: Path) 
     assert not marker.exists(), "an include-hidden clean filter ran a host command"
 
 
-def test_the_review_diff_does_not_run_a_repo_clean_filter(tmp_path: Path) -> None:
+def test_the_review_diff_does_not_run_a_repo_clean_filter(tmp_path: pathlib.Path) -> None:
     """`agent6 review`'s working-tree diff carries the per-name driver overrides.
 
     It shells out to git directly; the fixed `-c` set alone would let `git diff HEAD` run the
     repo's clean filter on the host.
     """
-    from agent6.ui.cli.review_cmds import (
-        _collect_review_diff,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.ui.cli import review_cmds
 
     marker = tmp_path / "pwned"
     root = _repo(tmp_path / "r")
     _poison_clean_filter(root, marker)
     git_ops.set_repo_filter_policy(False)
 
-    proc = _collect_review_diff("git", root, base="", head="HEAD", paths=())
+    proc = review_cmds._collect_review_diff("git", root, base="", head="HEAD", paths=())
     assert "f.txt" in proc.stdout, proc.stdout
     assert not marker.exists(), "the repo's clean filter ran a host command"

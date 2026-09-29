@@ -11,25 +11,24 @@ tools still answer), never the mechanism, so they hold across a rework of it.
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
 import textwrap
-from pathlib import Path
 
 import pytest
 
+from agent6 import kinds
 from agent6.config import Config
-from agent6.kinds import JailPolicy, NetworkMode
-from agent6.tools.mcp_client import MCPManager, MCPServerSpec
-from agent6.tools.policy import jail_policy
+from agent6.tools import mcp_client, policy
 
 pytestmark = pytest.mark.needs_namespaces
 
 
 def _landlock_available() -> bool:
-    from agent6.sandbox.landlock import landlock_abi
+    from agent6.sandbox import landlock
 
     try:
-        return landlock_abi() >= 1
+        return landlock.landlock_abi() >= 1
     except Exception:
         return False
 
@@ -75,19 +74,23 @@ def _reader_server_argv() -> tuple[str, ...]:
     return ("/usr/bin/python3", "-c", script)
 
 
-def _call_cat(mgr: MCPManager, path: Path) -> str:
+def _call_cat(mgr: mcp_client.MCPManager, path: pathlib.Path) -> str:
     return str(mgr.call("mcp__reader__cat", {"path": str(path)}))
 
 
 def _policy(
-    argv: tuple[str, ...], cwd: Path, *, read: tuple[Path, ...] = (), net: NetworkMode = "none"
-) -> JailPolicy:
+    argv: tuple[str, ...],
+    cwd: pathlib.Path,
+    *,
+    read: tuple[pathlib.Path, ...] = (),
+    net: kinds.NetworkMode = "none",
+) -> kinds.JailPolicy:
     """A server policy exactly as production builds it.
 
     The same sandbox a jailed command gets, plus this server's additive grants; nothing here
     names an interpreter, which is the point of the shared base.
     """
-    return jail_policy(
+    return policy.jail_policy(
         cwd,
         Config(),
         "strict",
@@ -98,7 +101,7 @@ def _policy(
 
 
 @pytest.fixture
-def granted(tmp_path: Path) -> tuple[Path, Path, Path]:
+def granted(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
     """(workspace, granted file, ungranted file).
 
     The ungranted file lives OUTSIDE the workspace on purpose. An earlier
@@ -120,7 +123,7 @@ def granted(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 
 def test_a_confined_server_handshakes_serves_and_respects_its_grants(
-    granted: tuple[Path, Path, Path],
+    granted: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
 ) -> None:
     """The contract, whatever applies it.
 
@@ -131,9 +134,9 @@ def test_a_confined_server_handshakes_serves_and_respects_its_grants(
         pytest.skip("no Landlock on this kernel")
     ws, visible, hidden = granted
     # The interpreter and its stdlib have to be readable, or the server cannot start at all.
-    mgr = MCPManager.start(
+    mgr = mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            mcp_client.MCPServerSpec(
                 name="reader",
                 command=_reader_server_argv(),
                 startup_timeout_s=20.0,
@@ -151,7 +154,7 @@ def test_a_confined_server_handshakes_serves_and_respects_its_grants(
 
 
 def test_closing_the_manager_leaves_no_confined_server_running(
-    granted: tuple[Path, Path, Path],
+    granted: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
 ) -> None:
     """Teardown reaches through the confinement wrapper's extra process.
 
@@ -160,9 +163,9 @@ def test_closing_the_manager_leaves_no_confined_server_running(
     if not _landlock_available():
         pytest.skip("no Landlock on this kernel")
     ws, _visible, _hidden = granted
-    mgr = MCPManager.start(
+    mgr = mcp_client.MCPManager.start(
         [
-            MCPServerSpec(
+            mcp_client.MCPServerSpec(
                 name="reader",
                 command=_reader_server_argv(),
                 startup_timeout_s=20.0,
