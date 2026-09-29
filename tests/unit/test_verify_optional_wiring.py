@@ -723,7 +723,7 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: Path) -> Non
     turn = TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
     wf.gate.maybe_adopt(MagicMock(), turn)
     dispatcher.adopt_verify_command.assert_not_called()
-    assert wf.gate.command == ()
+    assert wf.gate.command(VerifyVerdict()) == ()
 
 
 def test_prompt_says_nothing_commits_under_commit_per_step_off(tmp_path: Path) -> None:

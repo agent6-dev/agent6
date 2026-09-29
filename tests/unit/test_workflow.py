@@ -6425,7 +6425,6 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
             original_task="t",
         )
     assert dispatcher.adopted is not None  # the dispatcher gates run_verify now
-    assert wf.gate.command == dispatcher.adopted
     assert provider.adoption_notices >= 1  # the gate flip was said to the model
     assert result.completed is True
     # The worker then idled without ever running the adopted verify; the
@@ -7572,7 +7571,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
     dispatcher = MagicMock()
     wf = _wf(
         root=tmp_path,
-        config=Config().with_verify_command(argv),
+        config=Config(),  # gateless: the argv below is the adopted one, not a configured gate
         provider=MagicMock(),
         dispatcher=dispatcher,
         events=MagicMock(emit=emit),
@@ -7591,7 +7590,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
             exec_failed=False,
         ),
     )
-    assert wf.gate.command == ()
+    assert wf.gate.command(st.verify) == ()
     dispatcher.drop_verify_command.assert_called_once()
     assert st.verify.adopted == () and argv in st.verify.unadoptable
     texts = [it.text for it in turn.tool_results if isinstance(it, Notice)]

@@ -206,6 +206,7 @@ from agent6.workflows._toolset import (
     tool_definitions,
 )
 from agent6.workflows._verify_gate import EXIT_TIMEOUT, VerifyGate
+from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.subrun import (
     SubrunError,
 )
@@ -446,7 +447,7 @@ class Workflow:
         instructions = initial_instructions(
             self.mode,
             self.config.sandbox.run_commands,
-            has_gate=self.gate.present(denied=False),
+            has_gate=self.gate.present(VerifyVerdict()),  # the start: nothing adopted or denied
         )
         initial_user = f"TASK:\n{effective_task}\n\n{instructions}{dag_hint}"
         conversation = Conversation()
@@ -508,7 +509,7 @@ class Workflow:
         # worker run a command nothing checks. A gate the leg dropped because
         # commands are withheld is no swap: no command can run, that one
         # included.
-        gate = tuple(self.gate.command)
+        gate = self.gate.configured  # a leg starts with nothing adopted
         withheld = (
             not gate and bool(snapshot.verify_command) and self.dispatcher.command_policy() == "no"
         )
@@ -1255,7 +1256,7 @@ class Workflow:
 
         Returns a SessionResult for the REPL hook's "stop" directive or an
         unexecutable operator metric command; None otherwise."""
-        gateless = not self.gate.present(denied=state.verify.denied)
+        gateless = not self.gate.present(state.verify)
         # A step no gate judged commits as a checkpoint: every gateless step
         # (no command, or one nobody may run), and under `verify_when =
         # "finish"` every step the model did not verify itself (the gate
@@ -1293,7 +1294,11 @@ class Workflow:
             turn.committed = bool(sha)
             # Adoption fills an ABSENT command, for a worker who may run one:
             # a configured gate nobody may run stays the operator's.
-            if sha and not self.gate.command and self.gate.may_run(denied=state.verify.denied):
+            if (
+                sha
+                and not self.gate.command(state.verify)
+                and self.gate.may_run(denied=state.verify.denied)
+            ):
                 self.gate.maybe_adopt(state, turn)
             if sha:
                 # Surface "what the worker just changed" to a live viewer
@@ -1453,8 +1458,8 @@ class Workflow:
             standing_absorb=lambda reason, iteration: self._standing_absorb(
                 state, reason=reason, iteration=iteration
             ),
-            gate_present=lambda: self.gate.present(denied=state.verify.denied),
-            verify_command=lambda: self.gate.command,
+            gate_present=lambda: self.gate.present(state.verify),
+            verify_command=lambda: self.gate.command(state.verify),
             tree_sha=self.chain.tree_sha,
             tree_green=lambda: self.gate.tree_green(state.verify),
             budget_remaining=self._budget_fraction_remaining,
@@ -2359,7 +2364,7 @@ class Workflow:
             next_iteration=next_iteration,
             root_task_id=root_task_id,
             original_task=state.original_task,
-            verify_command=self.gate.command,
+            verify_command=self.gate.command(state.verify),
             review_rejections_total=state.gates.review_total,
             verify_ever_passed=state.verify.ever_passed,
             verify_ever_failed=state.verify.ever_failed,
@@ -2569,11 +2574,11 @@ class Workflow:
 
     @cached_property
     def gate(self) -> VerifyGate:
-        """The run's verify gate; its command is the config's until a gateless
-        run adopts one."""
+        """The run's verify gate over the config's command; `gate.command`
+        reads the one in force, the config's or the adopted one."""
         wf = self.config.workflow
         return VerifyGate(
-            command=tuple(wf.verify_command),
+            configured=tuple(wf.verify_command),
             when=wf.verify_when,
             retries=wf.verify_retries,
             timeout_s=wf.verify_timeout_s,

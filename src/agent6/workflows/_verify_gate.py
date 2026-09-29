@@ -131,14 +131,15 @@ EXIT_TIMEOUT = 124
 
 @dataclass(slots=True)
 class VerifyGate:
-    """The run's verify gate: its command (configured, or adopted mid-run by
-    a gateless run that commits; `()` = gateless), when the harness runs it
-    (`[workflow].verify_when`), its retries and timeout, and the run facts
-    it reads. One owner for whether a gate is present, whether the tree is
-    green, what a verify result means for the verdict, and the harness's
-    own gate runs (the scoped re-run after a timeout included)."""
+    """The run's verify gate: the configured command, when the harness runs
+    it (`[workflow].verify_when`), its retries and timeout, and the run facts
+    it reads. The command in force is `command(verdict)`: the configured one,
+    else the one a gateless run adopted at a commit (`verdict.adopted`), else
+    `()` for gateless. One owner for whether a gate is present, whether the
+    tree is green, what a verify result means for the verdict, and the
+    harness's own gate runs (the scoped re-run after a timeout included)."""
 
-    command: tuple[str, ...]
+    configured: tuple[str, ...]
     when: Literal["finish", "step", "never"]
     retries: int
     timeout_s: float
@@ -218,7 +219,6 @@ class VerifyGate:
                 # is not "verify failed" (an on_verify_fail panel and the
                 # checkpoint logic key on it).
                 turn.verify_just_failed = False
-                self.command = ()
                 self.dispatcher.drop_verify_command()
                 self.log(f"LOOP: verify un-adopted ({why}): {cmd}")
                 self.emit(
@@ -281,7 +281,6 @@ class VerifyGate:
             # gateless; re-inferred (and re-declined) at the next commit.
             self.log(f"LOOP: verify inference declined; {inferred.argv[0]} not on the jail PATH")
             return
-        self.command = inferred.argv
         state.verify.adopted = inferred.argv
         cmd = " ".join(inferred.argv)
         self.log(f"LOOP: verify adopted from {inferred.source}: {cmd}")
@@ -306,12 +305,16 @@ class VerifyGate:
         auto-deny)."""
         return self.dispatcher.command_policy() != "no" and not denied
 
-    def present(self, *, denied: bool) -> bool:
+    def command(self, verdict: VerifyVerdict) -> tuple[str, ...]:
+        """The command in force: the configured one, else the adopted one."""
+        return self.configured or verdict.adopted
+
+    def present(self, verdict: VerifyVerdict) -> bool:
         """Whether a verify gate can judge this run's steps: a command is
         configured (or adopted) and someone may run it. The one answer behind
         the harness gate, the per-step commit, the nudges, the verdict and the
         prompt's commit rule, so none of them can disagree."""
-        return bool(self.command) and self.may_run(denied=denied)
+        return bool(self.command(verdict)) and self.may_run(denied=verdict.denied)
 
     def harness_verify(self, state: LoopState, turn: TurnState, *, ending: bool = False) -> None:
         """Run the gate the harness owes this turn (`[workflow].verify_when`):
@@ -326,7 +329,7 @@ class VerifyGate:
         `OperatorCommandUnexecutable` for the loop to end the run on."""
         why = harness_verify_due(
             when=self.when,
-            gate_present=self.mode == "run" and self.present(denied=state.verify.denied),
+            gate_present=self.mode == "run" and self.present(state.verify),
             # The verdict the run holds over the tree AS IT STANDS -- this
             # turn's own verify or a standing one nothing has edited since.
             # A red tree nothing touched is not re-judged (the finish reports
@@ -341,7 +344,7 @@ class VerifyGate:
         self.log(f"LOOP: harness verify ({why}) at iter {turn.iteration}")
         self.emit("loop.verify_harness", why=why, iteration=turn.iteration)
         try:
-            scope = self.scope_paths() if state.verify.scoped else ()
+            scope = self.scope_paths(state.verify) if state.verify.scoped else ()
             result = self.dispatcher.run_verify(extra_argv=scope)
         except ToolDenied as exc:
             state.verify.denied = True
@@ -364,12 +367,12 @@ class VerifyGate:
         )
         turn.tool_results.append(Notice(notice))
 
-    def scope_paths(self) -> tuple[str, ...]:
+    def scope_paths(self, verdict: VerifyVerdict) -> tuple[str, ...]:
         """The scoped-gate selection: tests nearest the run's cumulative diff.
         Empty unless the gate is a pytest argv naming no paths (the one shape
         that takes appended test files as its selection), or when nothing
         near the change exists to run."""
-        if not is_bare_pytest(tuple(self.command)):
+        if not is_bare_pytest(self.command(verdict)):
             return ()
         return nearest_test_paths(self.chain.root, diff_changed_paths(self.chain.diff_since_base()))
 
@@ -380,7 +383,7 @@ class VerifyGate:
         noticed like any gate run. Arms `verdict.scoped`, so later harness
         gates skip the doomed full run. None when the gate is not pytest or
         nothing near the change exists to run."""
-        scope = self.scope_paths()
+        scope = self.scope_paths(state.verify)
         if not scope:
             return None
         state.verify.scoped = True
@@ -426,7 +429,7 @@ class VerifyGate:
         leaves the run unverified, as documented. Grounds both the honest
         finish signal and the opt-in hard finish gate, so 'passed' can never
         mean 'finished over a red or stale verify'."""
-        if not self.command:
+        if not self.command(verdict):
             return None
         return verdict.green_and_untouched
 

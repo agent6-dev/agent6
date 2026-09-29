@@ -157,7 +157,7 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
         wf.config.workflow.verify_retries,
         state.verify,
         state.gates,
-        gate_present=wf.gate.present(denied=state.verify.denied),
+        gate_present=wf.gate.present(state.verify),
     )
     assert (
         finish_reason(
