@@ -330,7 +330,7 @@ def test_hide_paths_refuses_the_launcher_grant_regions(
     monkeypatch.chdir(tmp_path)
     tool_dir = pathlib.Path("/nonexistent-tools/bin")
     monkeypatch.setattr(
-        "agent6.tools.policy.operator_tool_paths", lambda: ("/usr/bin:/bin", (tool_dir,))
+        "agent6.sandbox.tool_paths.operator_tool_paths", lambda: ("/usr/bin:/bin", (tool_dir,))
     )
     r = _hide_on_hardened(tmp_path, "/tmp/secret-cache")
     assert r is not None and "/tmp" in r

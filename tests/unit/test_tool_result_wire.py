@@ -249,7 +249,7 @@ def _cmd_result(**kw: Any):
 
 def test_wire_run_verify(tmp_path: pathlib.Path) -> None:
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=_cmd_result(stdout="ok")):
+    with mock.patch("agent6.sandbox.jail.run_in_jail", return_value=_cmd_result(stdout="ok")):
         out = d.dispatch("run_verify_command", {})
     # The gate names itself: the worker never chose this command, so without
     # it a real failure and a stale gate look identical from the result.
@@ -272,7 +272,7 @@ def test_wire_run_verify_timeout_names_the_cap(tmp_path: pathlib.Path) -> None:
     p.write_text(toml, encoding="utf-8")
     d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(p))
     with mock.patch(
-        "agent6.tools.dispatch.run_in_jail",
+        "agent6.sandbox.jail.run_in_jail",
         return_value=_cmd_result(returncode=124, duration_s=240.1),
     ):
         out = d.dispatch("run_verify_command", {})
@@ -285,7 +285,7 @@ def test_wire_run_verify_timeout_names_the_cap(tmp_path: pathlib.Path) -> None:
 def test_wire_run_command(tmp_path: pathlib.Path) -> None:
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     with mock.patch(
-        "agent6.tools.dispatch.run_in_jail",
+        "agent6.sandbox.jail.run_in_jail",
         return_value=_cmd_result(returncode=3, stdout="o", stderr="e"),
     ):
         out = d.dispatch("run_command", {"argv": ["echo", "hi"]})
@@ -301,7 +301,7 @@ def test_wire_run_command_clip_names_dropped_chars(tmp_path: pathlib.Path) -> No
     """
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     big = "x" * 25_000
-    with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=_cmd_result(stdout=big)):
+    with mock.patch("agent6.sandbox.jail.run_in_jail", return_value=_cmd_result(stdout=big)):
         out = d.dispatch("run_command", {"argv": ["echo", "hi"]})
     stdout = _wire(out)["stdout"]
     assert stdout.startswith("... 5000 earlier chars clipped ...\n")
@@ -314,7 +314,7 @@ def test_wire_run_command_clip_names_dropped_chars(tmp_path: pathlib.Path) -> No
     )
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path, extra=extra))
     with mock.patch(
-        "agent6.tools.dispatch.run_in_jail", return_value=_cmd_result(stdout="CYCLES: 42")
+        "agent6.sandbox.jail.run_in_jail", return_value=_cmd_result(stdout="CYCLES: 42")
     ):
         out = d.dispatch("run_metric_command", {})
     # score is APPENDED after the exec fields, in that order.
@@ -337,7 +337,7 @@ def test_metric_score_survives_the_display_clip(tmp_path: pathlib.Path) -> None:
     p.write_text(toml, encoding="utf-8")
     d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(p))
     stdout = "CYCLES: 42\n" + "y" * 25_000
-    with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=_cmd_result(stdout=stdout)):
+    with mock.patch("agent6.sandbox.jail.run_in_jail", return_value=_cmd_result(stdout=stdout)):
         out = d.dispatch("run_metric_command", {})
     assert _wire(out)["score"] == 42.0
 

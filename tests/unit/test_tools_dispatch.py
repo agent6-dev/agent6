@@ -88,7 +88,7 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: pathlib.Path) -> None
         exec_failed=True,
     )
     with (
-        mock.patch("agent6.tools.dispatch.run_in_jail", return_value=unexecutable),
+        mock.patch("agent6.sandbox.jail.run_in_jail", return_value=unexecutable),
         pytest.raises(errors.OperatorCommandUnexecutableError),
     ):
         d.dispatch("run_verify_command", {})
@@ -98,7 +98,7 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: pathlib.Path) -> None
     ran_and_failed = kinds.CommandResult(
         argv=("true",), returncode=1, stdout="", stderr="assert", duration_s=0.1, exec_failed=False
     )
-    with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=ran_and_failed):
+    with mock.patch("agent6.sandbox.jail.run_in_jail", return_value=ran_and_failed):
         out = d.dispatch("run_verify_command", {}).to_wire()
     assert out["returncode"] == 1
 
@@ -239,7 +239,7 @@ def test_run_metric_refused_outside_run_mode(
     def fake_run_in_jail(policy: object, **_kw: object) -> None:
         fired.append(policy)
 
-    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode=mode)  # type: ignore[arg-type]
     with pytest.raises(errors.ToolError, match=f"not available in {mode} mode"):
         d.dispatch("run_metric_command", {})
@@ -1128,7 +1128,7 @@ def test_jail_env_disables_python_bytecode(tmp_path: pathlib.Path) -> None:
             duration_s=0.0,
         )
 
-    with mock.patch("agent6.tools.dispatch.run_in_jail", side_effect=fake_run):
+    with mock.patch("agent6.sandbox.jail.run_in_jail", side_effect=fake_run):
         d.dispatch("run_verify_command", {})
 
     assert captured["PYTHONDONTWRITEBYTECODE"] == "1"
@@ -1246,7 +1246,7 @@ def test_empty_input_command_tools_reject_arguments(
             argv=("true",), returncode=0, stdout="", stderr="", duration_s=0.01
         )
 
-    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
     d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(path))
     with pytest.raises(errors.ToolError, match="invalid arguments: unexpected: Extra inputs"):
         d.dispatch(name, {"unexpected": True})
@@ -1311,7 +1311,7 @@ def test_run_metric_command_invokes_jail(
             duration_s=0.01,
         )
 
-    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("run_metric_command", {}).to_wire()
     assert out["returncode"] == 0
@@ -1348,7 +1348,7 @@ def test_run_metric_command_honors_verify_timeout(
             argv=tuple(policy.argv), returncode=0, stdout="1", stderr="", duration_s=0.01
         )
 
-    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch("run_metric_command", {})
     assert captured["timeout_s"] == 7.0
@@ -1379,7 +1379,7 @@ def test_run_metric_command_score_null_on_no_match(
             duration_s=0.01,
         )
 
-    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("run_metric_command", {}).to_wire()
     assert out["score"] is None
@@ -1478,7 +1478,7 @@ def test_agent6_docs_over_the_cap_names_the_size_it_was_cut_from(
     def _stub_doc(name: str) -> str:
         return long_doc
 
-    monkeypatch.setattr("agent6.tools._fs_tools.read_agent6_doc", _stub_doc)
+    monkeypatch.setattr("agent6.tools._agent6_docs.read_agent6_doc", _stub_doc)
     doc = d.dispatch("agent6_docs", {"name": "CONFIG"}).to_wire()
     assert doc["truncated"] is True
     assert len(doc["content"]) == 60_000
@@ -1707,7 +1707,7 @@ def test_run_command_passes_extra_read_paths_to_policy(
             argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.0
         )
 
-    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch("run_command", {"argv": ["echo", "hi"]})
     assert "/opt/miniconda3" in captured["ro"]
@@ -1735,7 +1735,7 @@ def test_run_command_passes_extra_write_paths_to_policy(
             argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.0
         )
 
-    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch("run_command", {"argv": ["echo", "hi"]})
     assert "/var/cache/shared" in captured["rw"]
@@ -1879,7 +1879,7 @@ def test_git_reaches_the_jail_as_a_protect_path_only_under_strict(
             argv=("true",), returncode=0, stdout="", stderr="", duration_s=0.0
         )
 
-    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", _capture)
+    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", _capture)
     cfg = _config_with_run_commands(tmp_path, "yes")
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, isolation=isolation)
     d.dispatch("run_command", {"argv": ["true"]})

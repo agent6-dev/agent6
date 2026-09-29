@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 # One uppercase name per doc the wheel bundles into agent6/_docs/ (pyproject's force-include list).
 # A dev checkout keeps README and AGENTS at the repo root and the rest lowercase under docs/.
@@ -23,14 +23,14 @@ AGENT6_DOC_FILES = (
 )
 
 
-def agent6_docs_dirs() -> list[Path]:
+def agent6_docs_dirs() -> list[pathlib.Path]:
     """Return the directories searched for a doc: the wheel bundle, then the dev checkout."""
-    base = Path(__file__).resolve()
+    base = pathlib.Path(__file__).resolve()
     repo_root = base.parents[3]
     return [base.parents[1] / "_docs", repo_root, repo_root / "docs"]
 
 
-def _locate(fname: str) -> Path | None:
+def _locate(fname: str) -> pathlib.Path | None:
     """Return the on-disk path of a canonical doc, trying the exact name then its lowercase form."""
     for d in agent6_docs_dirs():
         for cand in (fname, fname.lower()):

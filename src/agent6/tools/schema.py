@@ -4,30 +4,30 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import cache
+import dataclasses
+import functools
 from typing import Annotated, Any, ClassVar, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+import pydantic
 
-from agent6.graph.models import NodeStatus
-from agent6.kinds import session_kind
+from agent6 import kinds
+from agent6.graph import models
 
 # Caps the tool descriptions quote, so the model and the handler read one number.
 LIST_DIR_CAP = 1_000
 ROSTER_MAX = 40
 
 # Derived from the NodeStatus Literal, in its order, so the vocabulary has one owner.
-_STATUS_PATTERN = f"^({'|'.join(get_args(NodeStatus))})$"
+_STATUS_PATTERN = f"^({'|'.join(get_args(models.NodeStatus))})$"
 
 # A task id as the graph assigns it, bounded, not fixed-width: the count outgrows the padding.
-TaskId = Annotated[str, StringConstraints(min_length=1, max_length=26)]
+TaskId = Annotated[str, pydantic.StringConstraints(min_length=1, max_length=26)]
 
 
-class _ToolInput(BaseModel):
+class _ToolInput(pydantic.BaseModel):
     """The base of every tool's arguments: strict, frozen, and named for the tool list."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     TOOL_NAME: ClassVar[str] = ""
     TOOL_DESCRIPTION: ClassVar[str] = ""
@@ -43,9 +43,9 @@ class ReadFileInput(_ToolInput):
         " range; very large files truncate (truncated: true)."
     )
 
-    path: str = Field(min_length=1)
-    start_line: int = Field(default=1, ge=1)
-    limit: int | None = Field(default=None, gt=0)
+    path: str = pydantic.Field(min_length=1)
+    start_line: int = pydantic.Field(default=1, ge=1)
+    limit: int | None = pydantic.Field(default=None, gt=0)
 
 
 class Agent6DocsInput(_ToolInput):
@@ -58,7 +58,7 @@ class Agent6DocsInput(_ToolInput):
         " docs; a name reads that one's markdown."
     )
 
-    name: str = Field(default="")
+    name: str = pydantic.Field(default="")
 
 
 class ListDirInput(_ToolInput):
@@ -73,7 +73,7 @@ class ListDirInput(_ToolInput):
         " (`truncated` says so)."
     )
 
-    path: str = Field(default=".")
+    path: str = pydantic.Field(default=".")
 
 
 class ApplyEditInput(_ToolInput):
@@ -94,15 +94,15 @@ class ApplyEditInput(_ToolInput):
         " preview=true returns the would-be diff without touching disk."
     )
 
-    path: str = Field(min_length=1)
+    path: str = pydantic.Field(min_length=1)
     # One edit at the top level (the Claude Code Edit shape); several ride `edits`.
     old_string: str = ""
     new_string: str = ""
-    kind: str = Field(default="", pattern="^(|replace|create|overwrite)$")
+    kind: str = pydantic.Field(default="", pattern="^(|replace|create|overwrite)$")
     edits: tuple[EditPair, ...] = ()
     preview: bool = False
 
-    @model_validator(mode="before")
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _one_edit_at_the_top(cls, data: Any) -> Any:
         """Fold a flat pair into `edits` as its one edit.
@@ -124,7 +124,7 @@ class ApplyEditInput(_ToolInput):
             )
         return {**{k: v for k, v in data.items() if k not in flat}, "edits": [flat]}
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _check_whole_file_edit_is_sole(self) -> ApplyEditInput:
         """Require at least one edit, and a whole-file edit to be the only one.
 
@@ -170,7 +170,7 @@ class ApplyPatchInput(_ToolInput):
     )
 
     path: str = ""
-    patch: str = Field(min_length=1)
+    patch: str = pydantic.Field(min_length=1)
     preview: bool = False
 
 
@@ -178,7 +178,7 @@ class ApplyPatchInput(_ToolInput):
 WHOLE_FILE_KINDS = frozenset({"create", "overwrite"})
 
 
-class EditPair(BaseModel):
+class EditPair(pydantic.BaseModel):
     """One edit of an apply_edit call.
 
     Attributes:
@@ -189,13 +189,13 @@ class EditPair(BaseModel):
         new_string: The replacement, or the whole file.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
-    kind: str = Field(default="", pattern="^(|replace|create|overwrite)$")
+    kind: str = pydantic.Field(default="", pattern="^(|replace|create|overwrite)$")
     old_string: str = ""
     new_string: str
 
-    @model_validator(mode="before")
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _resolve_kind(cls, data: Any) -> Any:
         """Fill an omitted `kind` from the pair's shape.
@@ -207,7 +207,7 @@ class EditPair(BaseModel):
             data = {**data, "kind": "replace" if data.get("old_string") else "create"}
         return data
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _check_shape(self) -> EditPair:
         """Refuse a replace with an empty old_string, or a whole-file kind with one.
 
@@ -264,7 +264,7 @@ class RunCommandInput(_ToolInput):
         " ends."
     )
 
-    argv: tuple[str, ...] = Field(min_length=1)
+    argv: tuple[str, ...] = pydantic.Field(min_length=1)
     background: bool = False
 
 
@@ -278,7 +278,7 @@ class FetchInput(_ToolInput):
         " truncated, and a redirect is returned, not followed."
     )
 
-    url: str = Field(min_length=1)
+    url: str = pydantic.Field(min_length=1)
 
 
 class ReadSessionInput(_ToolInput):
@@ -294,7 +294,7 @@ class ReadSessionInput(_ToolInput):
 
     id: str = ""
     query: str = ""
-    max_chars: int = Field(default=20_000, ge=500, le=200_000)
+    max_chars: int = pydantic.Field(default=20_000, ge=500, le=200_000)
 
 
 class ReadBackgroundInput(_ToolInput):
@@ -311,9 +311,9 @@ class ReadBackgroundInput(_ToolInput):
     )
 
     id: str = ""
-    tail_lines: int = Field(default=200, ge=1, le=2000)
+    tail_lines: int = pydantic.Field(default=200, ge=1, le=2000)
     # None: the configured check-in ([harness].command_checkin_s), resolved by the dispatcher.
-    wait_s: float | None = Field(default=None, ge=0.0)
+    wait_s: float | None = pydantic.Field(default=None, ge=0.0)
 
 
 class StopBackgroundInput(_ToolInput):
@@ -348,8 +348,8 @@ class FinishSessionInput(_ToolInput):
         " line). Tool calls after it are not executed."
     )
 
-    summary: str = Field(min_length=1)
-    result: dict[str, Any] | None = Field(
+    summary: str = pydantic.Field(min_length=1)
+    result: dict[str, Any] | None = pydantic.Field(
         default=None,
         description=(
             "Optional JSON object. When the task names a result schema,"
@@ -357,7 +357,7 @@ class FinishSessionInput(_ToolInput):
             " boundary."
         ),
     )
-    stale_gate: str = Field(
+    stale_gate: str = pydantic.Field(
         default="",
         description=(
             "Set only when the verify command no longer matches the task: it"
@@ -381,14 +381,14 @@ class FinishPlanningInput(_ToolInput):
     )
 
     # Per-field descriptions: models put the whole plan into `summary` and leave plan.md a stub.
-    summary: str = Field(
+    summary: str = pydantic.Field(
         min_length=1,
         description=(
             "A one-paragraph description of the plan, surfaced to the operator at "
             "exit. This is NOT the plan itself -- the full plan goes in plan_markdown."
         ),
     )
-    plan_markdown: str = Field(
+    plan_markdown: str = pydantic.Field(
         min_length=1,
         description=(
             "The FULL plan document in markdown, saved verbatim to plan.md and fed "
@@ -413,11 +413,11 @@ class DagAddTaskInput(_ToolInput):
         " that must pass first. Returns the new task's id."
     )
 
-    title: str = Field(min_length=1)
+    title: str = pydantic.Field(min_length=1)
     # None means under the run root; the length bound rejects "".
-    parent_id: str | None = Field(default=None, min_length=1, max_length=26)
+    parent_id: str | None = pydantic.Field(default=None, min_length=1, max_length=26)
     # A sibling under the same parent; the task lands right after it.
-    after: str | None = Field(default=None, min_length=1, max_length=26)
+    after: str | None = pydantic.Field(default=None, min_length=1, max_length=26)
     rationale: str = ""
     acceptance: str = ""
     relevant_paths: tuple[str, ...] = ()
@@ -438,8 +438,8 @@ class DagUpdateTaskInput(_ToolInput):
         " one stays retired; add_task records work needed after all."
     )
 
-    id: str = Field(min_length=1, max_length=26)
-    status: str | None = Field(default=None, pattern=_STATUS_PATTERN)
+    id: str = pydantic.Field(min_length=1, max_length=26)
+    status: str | None = pydantic.Field(default=None, pattern=_STATUS_PATTERN)
     note: str = ""
     depends_on: tuple[TaskId, ...] = ()
 
@@ -454,7 +454,7 @@ class DagListTasksInput(_ToolInput):
     )
 
     # The same status enum update_task uses, so a typo is a schema rejection, not an empty result.
-    status: str | None = Field(default=None, pattern=_STATUS_PATTERN)
+    status: str | None = pydantic.Field(default=None, pattern=_STATUS_PATTERN)
 
 
 class UseSkillInput(_ToolInput):
@@ -467,8 +467,8 @@ class UseSkillInput(_ToolInput):
         " instead, by its path inside the skill's directory."
     )
 
-    name: str = Field(min_length=1, max_length=100)
-    file: str | None = Field(default=None, min_length=1, max_length=300)
+    name: str = pydantic.Field(min_length=1, max_length=100)
+    file: str | None = pydantic.Field(default=None, min_length=1, max_length=300)
 
 
 class OutlineInput(_ToolInput):
@@ -480,7 +480,7 @@ class OutlineInput(_ToolInput):
         " classes, and their line numbers, without the content."
     )
 
-    path: str = Field(min_length=1)
+    path: str = pydantic.Field(min_length=1)
 
 
 class FindDefinitionInput(_ToolInput):
@@ -492,7 +492,7 @@ class FindDefinitionInput(_ToolInput):
         " comments). Returns name, kind, and file:line rows."
     )
 
-    symbol: str = Field(min_length=1)
+    symbol: str = pydantic.Field(min_length=1)
 
 
 class FindReferencesInput(_ToolInput):
@@ -504,10 +504,10 @@ class FindReferencesInput(_ToolInput):
         " strings and comments). Returns file:line rows."
     )
 
-    symbol: str = Field(min_length=1)
+    symbol: str = pydantic.Field(min_length=1)
 
 
-class UserQuestion(BaseModel):
+class UserQuestion(pydantic.BaseModel):
     """One question of an ask_user call.
 
     Attributes:
@@ -516,11 +516,11 @@ class UserQuestion(BaseModel):
         options: Up to ten labels for a choice.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
-    question: str = Field(min_length=1, max_length=2_000)
-    options: tuple[Annotated[str, StringConstraints(max_length=200)], ...] = Field(
-        default=(), max_length=10
+    question: str = pydantic.Field(min_length=1, max_length=2_000)
+    options: tuple[Annotated[str, pydantic.StringConstraints(max_length=200)], ...] = (
+        pydantic.Field(default=(), max_length=10)
     )
 
 
@@ -539,9 +539,9 @@ class AskUserInput(_ToolInput):
         " empty answers with a `note`."
     )
 
-    questions: tuple[UserQuestion, ...] = Field(min_length=1, max_length=8)
+    questions: tuple[UserQuestion, ...] = pydantic.Field(min_length=1, max_length=8)
 
-    @model_validator(mode="before")
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _accept_flat_single_question(cls, data: Any) -> Any:
         """Fold a lone question sent flat (question=..., options=...) into `questions`.
@@ -603,7 +603,7 @@ ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (Agent6DocsInput,)
 MACHINE_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (FinishSessionInput,)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ModeTools:
     """One mode's LLM tool surface.
 
@@ -632,10 +632,10 @@ _EXTRA_TOOLS: dict[str, tuple[type[_ToolInput], ...]] = {
 }
 
 
-@cache
+@functools.cache
 def mode_tools(mode: str) -> ModeTools:
     """Return the tool surface of a mode, derived from its `SessionKind`."""
-    kind = session_kind(mode)
+    kind = kinds.session_kind(mode)
     extras = _EXTRA_TOOLS.get(mode, LOOP_EXTRA_TOOLS)
     blocked: set[str] = set()
     if not kind.edits:

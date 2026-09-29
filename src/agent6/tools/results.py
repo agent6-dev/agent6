@@ -12,8 +12,8 @@ boundary, never validated back in.
 from __future__ import annotations
 
 import abc
+import dataclasses
 import shlex
-from dataclasses import dataclass
 from typing import Any
 
 
@@ -35,7 +35,7 @@ def _trunc(truncated: bool) -> str:
     return " (truncated)" if truncated else ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class DocsIndexResult(ToolResult):
     """agent6_docs with no name: the list of available docs."""
 
@@ -46,7 +46,7 @@ class DocsIndexResult(ToolResult):
         return {"available": list(self.available)}
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class DocsContentResult(ToolResult):
     """agent6_docs for a named doc.
 
@@ -72,7 +72,7 @@ class DocsContentResult(ToolResult):
         }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ReadFileResult(ToolResult):
     """read_file's content and line counts.
 
@@ -112,7 +112,7 @@ class ReadFileResult(ToolResult):
         return f"{self.size} bytes{' (truncated)' if self.truncated else ''}"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ListDirResult(ToolResult):
     """list_dir's entries.
 
@@ -142,7 +142,7 @@ class ListDirResult(ToolResult):
         return f"{len(self.entries)} entries{extra}{cut}"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class OutlineResult(ToolResult):
     """outline's symbol rows, each {name, kind, line, col}."""
 
@@ -158,7 +158,7 @@ class OutlineResult(ToolResult):
         return f"{len(self.symbols)} symbols{_trunc(self.truncated)}"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class DefinitionsResult(ToolResult):
     """find_definition's rows, each {name, kind, path, line, col}."""
 
@@ -174,7 +174,7 @@ class DefinitionsResult(ToolResult):
         return f"{len(self.definitions)} definitions{_trunc(self.truncated)}"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ReferencesResult(ToolResult):
     """find_references's rows, each {name, path, line, col}."""
 
@@ -190,7 +190,7 @@ class ReferencesResult(ToolResult):
         return f"{len(self.references)} references{_trunc(self.truncated)}"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class EditResult(ToolResult):
     """apply_edit that wrote.
 
@@ -213,7 +213,7 @@ class EditResult(ToolResult):
         return f"applied={list(self.applied)} path={self.path}"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class PatchResult(ToolResult):
     """apply_patch that wrote.
 
@@ -259,7 +259,7 @@ class PatchResult(ToolResult):
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class PreviewResult(ToolResult):
     """An edit tool's dry run.
 
@@ -305,7 +305,7 @@ class PreviewResult(ToolResult):
         return out
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class FetchResult(ToolResult):
     """fetch's response: one URL's text, with a 30x's Location since redirects are not followed."""
 
@@ -333,7 +333,7 @@ class FetchResult(ToolResult):
         return f"{self.status} · {len(self.body)} bytes"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ExecResult(ToolResult):
     """The jailed command's outcome, for run_command and run_verify_command.
 
@@ -389,7 +389,7 @@ class ExecResult(ToolResult):
         return f"exit={self.returncode} in {self.duration_s:.1f}s"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MetricResult(ToolResult):
     """run_metric_command's outcome: the exec fields plus the parsed score."""
 
@@ -445,7 +445,7 @@ class MetricResult(ToolResult):
         return f"exit={self.returncode} in {self.duration_s:.1f}s"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class FinishSessionResult(ToolResult):
     """finish_session's acknowledgement.
 
@@ -475,7 +475,7 @@ class FinishSessionResult(ToolResult):
         return wire
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class FinishPlanningResult(ToolResult):
     """finish_planning's acknowledgement."""
 
@@ -487,7 +487,7 @@ class FinishPlanningResult(ToolResult):
         return {"acknowledged": True, "summary": self.summary_text, "plan_bytes": self.plan_bytes}
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class AnswersResult(ToolResult):
     """ask_user's answers.
 
@@ -514,7 +514,7 @@ class AnswersResult(ToolResult):
         return f"{answered}/{len(self.answers)} answered"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class AddTaskResult(ToolResult):
     """add_task's new node."""
 
@@ -537,7 +537,7 @@ class AddTaskResult(ToolResult):
         return f"{self.status}: {str(self.title)[:60]}"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class UpdateTaskResult(ToolResult):
     """update_task's node after the change.
 
@@ -572,7 +572,7 @@ class UpdateTaskResult(ToolResult):
         return f"{self.status}: {str(self.title)[:60]}"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ListTasksResult(ToolResult):
     """list_tasks's rows, each {id, parent_id, title, status, acceptance, relevant_paths, ...}."""
 
@@ -588,7 +588,7 @@ class ListTasksResult(ToolResult):
         return f"{self.count} tasks"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SkillResult(ToolResult):
     """use_skill's content: one file of one skill."""
 
@@ -605,7 +605,7 @@ class SkillResult(ToolResult):
         return f"skill {self.skill}/{self.file} ({len(self.content)} chars)"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RawResult(ToolResult):
     """An MCP server's result: an opaque dict forwarded to the model unchanged."""
 
@@ -616,7 +616,7 @@ class RawResult(ToolResult):
         return self.payload
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class BackgroundResult(ToolResult):
     """A background command tool's result.
 
@@ -638,7 +638,7 @@ class BackgroundResult(ToolResult):
         return self.shells[0] if len(self.shells) == 1 else f"{len(self.shells)} background"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionsResult(ToolResult):
     """The project's sessions, and one session's conversation when asked for."""
 

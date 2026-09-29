@@ -11,19 +11,19 @@ resolution needs an LSP and is out of scope.
 
 from __future__ import annotations
 
+import dataclasses
 import os
+import pathlib
 import threading
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Final
 
-from tree_sitter import Parser, Query, QueryCursor
-from tree_sitter_language_pack import get_language
+import tree_sitter
+import tree_sitter_language_pack
 
-from agent6.tools._path_safety import Workspace, contain, read_bytes_contained
+from agent6.tools import _path_safety
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Symbol:
     """A definition site.
 
@@ -37,12 +37,12 @@ class Symbol:
 
     name: str
     kind: str
-    path: Path
+    path: pathlib.Path
     line: int
     col: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Reference:
     """An identifier occurrence, the definition site included.
 
@@ -54,7 +54,7 @@ class Reference:
     """
 
     name: str
-    path: Path
+    path: pathlib.Path
     line: int
     col: int
 
@@ -287,7 +287,7 @@ class SymbolIndex:
 
     def __init__(
         self,
-        ws: Workspace,
+        ws: _path_safety.Workspace,
         *,
         excludes: tuple[str, ...] = _DEFAULT_EXCLUDES,
     ) -> None:
@@ -295,23 +295,25 @@ class SymbolIndex:
         self._root = ws.root.resolve()
         self._excludes = excludes
         # Keyed by absolute, resolved path.
-        self._symbols: dict[Path, list[Symbol]] = {}
-        self._refs: dict[Path, list[Reference]] = {}
+        self._symbols: dict[pathlib.Path, list[Symbol]] = {}
+        self._refs: dict[pathlib.Path, list[Reference]] = {}
         self._scanned = False
-        self._dirty: set[Path] = set()
+        self._dirty: set[pathlib.Path] = set()
         # (st_mtime_ns, st_size) at parse time, so an out-of-band change (a formatter, rm) is seen.
-        self._stamps: dict[Path, tuple[int, int]] = {}
+        self._stamps: dict[pathlib.Path, tuple[int, int]] = {}
         # lang_name -> (parser, def_query, ref_query), built on first use.
-        self._parsers: dict[str, tuple[Parser, Query, Query]] = {}
+        self._parsers: dict[
+            str, tuple[tree_sitter.Parser, tree_sitter.Query, tree_sitter.Query]
+        ] = {}
         # Shared across the concurrent review seats; re-entrant because queries call each other.
         self._lock = threading.RLock()
 
-    def mark_changed(self, path: Path) -> None:
+    def mark_changed(self, path: pathlib.Path) -> None:
         """Record that the path was created or modified; it is re-parsed on the next query."""
         with self._lock:
             self._dirty.add(path.resolve())
 
-    def mark_deleted(self, path: Path) -> None:
+    def mark_deleted(self, path: pathlib.Path) -> None:
         """Drop a path from the index immediately."""
         with self._lock:
             p = path.resolve()
@@ -320,7 +322,7 @@ class SymbolIndex:
             self._stamps.pop(p, None)
             self._dirty.discard(p)
 
-    def outline(self, path: Path) -> list[Symbol]:
+    def outline(self, path: pathlib.Path) -> list[Symbol]:
         """Return the top-level and nested definitions in one file, in source order."""
         with self._lock:
             self._ensure_fresh()
@@ -392,10 +394,10 @@ class SymbolIndex:
         for dirpath, dirnames, filenames in os.walk(self._root):
             dirnames[:] = [d for d in dirnames if d not in self._excludes]
             for name in filenames:
-                if Path(name).suffix in _LANG_TABLE:
-                    self._reparse(Path(dirpath, name))
+                if pathlib.Path(name).suffix in _LANG_TABLE:
+                    self._reparse(pathlib.Path(dirpath, name))
 
-    def _reparse(self, path: Path) -> None:
+    def _reparse(self, path: pathlib.Path) -> None:
         """Parse one file into its symbols and references, or evict it."""
         p = path.resolve()
         rel = self._included_rel(p)
@@ -412,7 +414,7 @@ class SymbolIndex:
             return
         parser, def_query, ref_query = bits
         try:
-            src = read_bytes_contained(contain(self._root, rel))
+            src = _path_safety.read_bytes_contained(_path_safety.contain(self._root, rel))
         except OSError:
             self._symbols.pop(p, None)
             self._refs.pop(p, None)
@@ -428,7 +430,7 @@ class SymbolIndex:
             return
         root = tree.root_node
         syms: list[Symbol] = []
-        for kind, nodes in QueryCursor(def_query).captures(root).items():
+        for kind, nodes in tree_sitter.QueryCursor(def_query).captures(root).items():
             for n in nodes:
                 try:
                     name = src[n.start_byte : n.end_byte].decode("utf-8")
@@ -444,7 +446,7 @@ class SymbolIndex:
                     )
                 )
         refs: list[Reference] = []
-        for _, nodes in QueryCursor(ref_query).captures(root).items():
+        for _, nodes in tree_sitter.QueryCursor(ref_query).captures(root).items():
             for n in nodes:
                 try:
                     name = src[n.start_byte : n.end_byte].decode("utf-8")
@@ -462,7 +464,7 @@ class SymbolIndex:
         self._refs[p] = refs
         self._record_stamp(p)
 
-    def _record_stamp(self, p: Path) -> None:
+    def _record_stamp(self, p: pathlib.Path) -> None:
         """Record (mtime_ns, size) so the stat sweep treats the path as processed."""
         try:
             st = p.stat()
@@ -470,15 +472,15 @@ class SymbolIndex:
         except OSError:
             self._stamps.pop(p, None)
 
-    def language_of(self, path: Path) -> str | None:
+    def language_of(self, path: pathlib.Path) -> str | None:
         """Return the grammar that parses the path, by suffix, or None."""
         return self._lang_for(path)
 
-    def indexes(self, path: Path) -> bool:
+    def indexes(self, path: pathlib.Path) -> bool:
         """Return whether the path is inside the indexed workspace."""
         return self._included_rel(path.resolve()) is not None
 
-    def _included_rel(self, p: Path) -> Path | None:
+    def _included_rel(self, p: pathlib.Path) -> pathlib.Path | None:
         """Return the path relative to the root, or None when it is out of scope.
 
         Out of scope: outside the root, under an excluded directory, or hidden by the workspace
@@ -495,12 +497,14 @@ class SymbolIndex:
             return None
         return rel
 
-    def _lang_for(self, path: Path) -> str | None:
+    def _lang_for(self, path: pathlib.Path) -> str | None:
         """Return the tree-sitter language name for the path's suffix, or None."""
         info = _LANG_TABLE.get(path.suffix)
         return info[0] if info else None
 
-    def _parser_for(self, lang_name: str) -> tuple[Parser, Query, Query] | None:
+    def _parser_for(
+        self, lang_name: str
+    ) -> tuple[tree_sitter.Parser, tree_sitter.Query, tree_sitter.Query] | None:
         """Return the language's parser and queries, built on first use, or None if unknown."""
         cached = self._parsers.get(lang_name)
         if cached is not None:
@@ -513,12 +517,12 @@ class SymbolIndex:
         if def_src is None:
             return None
         try:
-            lang = get_language(lang_name)  # pyright: ignore[reportArgumentType]
+            lang = tree_sitter_language_pack.get_language(lang_name)  # pyright: ignore[reportArgumentType]
         except Exception:  # unknown lang name -> skip
             return None
-        parser = Parser(lang)
-        def_query = Query(lang, def_src)
-        ref_query = Query(lang, _REF_QUERIES.get(lang_name, "(identifier) @id"))
+        parser = tree_sitter.Parser(lang)
+        def_query = tree_sitter.Query(lang, def_src)
+        ref_query = tree_sitter.Query(lang, _REF_QUERIES.get(lang_name, "(identifier) @id"))
         self._parsers[lang_name] = (parser, def_query, ref_query)
         return self._parsers[lang_name]
 

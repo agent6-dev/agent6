@@ -103,9 +103,7 @@ def test_a_dir_owned_by_someone_else_refuses(
     home = paths.jail_cache_home()
     home.mkdir(parents=True)
     me = paths.effective_user()
-    monkeypatch.setattr(
-        policy_module, "effective_user", lambda: dataclasses.replace(me, uid=me.uid + 1)
-    )
+    monkeypatch.setattr(paths, "effective_user", lambda: dataclasses.replace(me, uid=me.uid + 1))
     msg = confine.config_refusal(Config(), "hardened", tmp_path)
     assert msg is not None
     assert str(home) in msg and f"uid {me.uid}" in msg

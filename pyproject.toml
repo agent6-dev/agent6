@@ -491,7 +491,6 @@ banned-from = [
 "src/agent6/providers/**" = ["ICN003"]
 "src/agent6/sandbox/**" = ["ICN003"]
 "src/agent6/sessions/**" = ["ICN003"]
-"src/agent6/tools/**" = ["ICN003"]
 "src/agent6/ui/{__init__,btw,directives,keymap,mcp_server,notify,spawn,steer}.py" = ["ICN003"]
 "src/agent6/ui/acp/**" = ["ICN003"]
 "src/agent6/ui/cli/**" = ["ICN003"]

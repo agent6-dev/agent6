@@ -482,7 +482,7 @@ def test_a_command_that_failed_to_start_is_not_listed_as_running(
     def refuses(*_a: object, **_k: object) -> jail.BackgroundJob:
         raise jail.JailUnavailableError("no launcher today")
 
-    monkeypatch.setattr(bg, "start_in_jail", refuses)
+    monkeypatch.setattr(jail, "start_in_jail", refuses)
     root = tmp_path / "shells"
     shells = background.BackgroundShells(root)
 

@@ -73,7 +73,7 @@ def test_start_stops_a_command_when_its_metadata_cannot_be_recorded(
     def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
         return job
 
-    monkeypatch.setattr(background, "start_in_jail", start_in_jail)
+    monkeypatch.setattr(jail, "start_in_jail", start_in_jail)
     _fail_metadata(monkeypatch)
     shells = background.BackgroundShells(tmp_path / "shells")
 
@@ -93,7 +93,7 @@ def test_a_command_is_still_reachable_when_registration_and_its_stop_fail(
     def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
         return job
 
-    monkeypatch.setattr(background, "start_in_jail", start_in_jail)
+    monkeypatch.setattr(jail, "start_in_jail", start_in_jail)
     _fail_metadata(monkeypatch)
     shells = background.BackgroundShells(tmp_path / "shells")
 
@@ -114,7 +114,7 @@ def test_stop_all_closes_every_log_descriptor(
     def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
         return job
 
-    monkeypatch.setattr(background, "start_in_jail", start_in_jail)
+    monkeypatch.setattr(jail, "start_in_jail", start_in_jail)
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
     log_fd = shells._get(view.id).log_fd  # pyright: ignore[reportPrivateUsage]
@@ -136,7 +136,7 @@ def test_read_names_the_size_when_the_byte_cap_cuts_the_output(
     def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
         return job
 
-    monkeypatch.setattr(background, "start_in_jail", start_in_jail)
+    monkeypatch.setattr(jail, "start_in_jail", start_in_jail)
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
     log = tmp_path / "shells" / "logs" / view.id / "out.log"
@@ -157,7 +157,7 @@ def test_read_drops_the_line_the_byte_cap_cut_through(
     def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
         return job
 
-    monkeypatch.setattr(background, "start_in_jail", start_in_jail)
+    monkeypatch.setattr(jail, "start_in_jail", start_in_jail)
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
     log = tmp_path / "shells" / "logs" / view.id / "out.log"

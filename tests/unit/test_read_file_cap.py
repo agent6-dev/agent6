@@ -16,7 +16,7 @@ import pytest
 
 from agent6.config import Config
 from agent6.tools import _fs_tools as tools__fs_tools
-from agent6.tools import dispatch
+from agent6.tools import _path_safety, dispatch
 
 
 def _read(root: pathlib.Path, **args: object) -> dict[str, object]:
@@ -35,17 +35,17 @@ def test_read_file_passes_a_bounded_limit_to_read_contained(
     A spy pins it so an unbounded read (limit_chars=None) fails here even though the output cap
     would still look right.
     """
-    from agent6.tools import _fs_tools, _path_safety
+    from agent6.tools import _path_safety
 
     seen: list[int | None] = []
-    real = _fs_tools.read_contained
+    real = _path_safety.read_contained
 
     def spy(sp: _path_safety.SafePath, *, limit_chars: int | None = None) -> str:
         seen.append(limit_chars)
         return real(sp, limit_chars=limit_chars)
 
     (tmp_path / "f.txt").write_text("a" * (tools__fs_tools.MAX_READ_CHARS + 5000), encoding="utf-8")
-    monkeypatch.setattr(_fs_tools, "read_contained", spy)
+    monkeypatch.setattr(_path_safety, "read_contained", spy)
     _read(tmp_path)
     assert seen and seen[0] is not None and seen[0] <= tools__fs_tools.MAX_READ_CHARS + 1
 

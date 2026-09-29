@@ -10,23 +10,23 @@ under its base. The fs handlers, the navigation handlers and the symbol index sh
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import errno
 import os
+import pathlib
 import stat
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.tools.errors import ToolError
+from agent6.tools import errors as tools_errors
 
 
-class NotRegularFileError(ToolError):
+class NotRegularFileError(tools_errors.ToolError):
     """The leaf is inside the boundary but is a directory, a FIFO or a device.
 
     Its own type because callers word it differently from a containment refusal.
     """
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SafePath:
     """A path that passed containment.
 
@@ -36,12 +36,12 @@ class SafePath:
         abs_path: The base joined with the relative path.
     """
 
-    base: Path
-    rel_path: Path
-    abs_path: Path
+    base: pathlib.Path
+    rel_path: pathlib.Path
+    abs_path: pathlib.Path
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ContainedEntry:
     """One entry of a contained listing.
 
@@ -68,13 +68,13 @@ def fold_name(name: str) -> str:
     return name.lower()
 
 
-def path_within(target: Path, prefix: Path) -> bool:
+def path_within(target: pathlib.Path, prefix: pathlib.Path) -> bool:
     """Return whether the target is the prefix or lies under it, matched by whole components."""
     folded = [fold_name(p) for p in prefix.parts]
     return [fold_name(p) for p in target.parts][: len(folded)] == folded
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Workspace:
     """The file boundary for everything agent6 does in-process.
 
@@ -96,14 +96,14 @@ class Workspace:
             is model-writable by design; an exempt path still needs a grant to be reachable.
     """
 
-    root: Path
-    denied: tuple[Path, ...] = ()
-    read_roots: tuple[Path, ...] = ()
-    write_roots: tuple[Path, ...] = ()
-    read_only: tuple[Path, ...] = ()
-    exempt: tuple[Path, ...] = ()
+    root: pathlib.Path
+    denied: tuple[pathlib.Path, ...] = ()
+    read_roots: tuple[pathlib.Path, ...] = ()
+    write_roots: tuple[pathlib.Path, ...] = ()
+    read_only: tuple[pathlib.Path, ...] = ()
+    exempt: tuple[pathlib.Path, ...] = ()
 
-    def _denying(self, abs_path: Path) -> Path | None:
+    def _denying(self, abs_path: pathlib.Path) -> pathlib.Path | None:
         """Return the denied root covering the path, or None; the one owner of the verdict."""
         if any(path_within(abs_path, e) for e in self.exempt):
             return None
@@ -112,7 +112,7 @@ class Workspace:
                 return d
         return None
 
-    def is_denied(self, abs_path: Path) -> bool:
+    def is_denied(self, abs_path: pathlib.Path) -> bool:
         """Return whether the path lies under a denied root and no exemption."""
         return self._denying(abs_path) is not None
 
@@ -145,10 +145,10 @@ class Workspace:
         """
         sp = self._resolve(candidate, (self.root, *self.write_roots))
         if sp.abs_path in self.read_only:
-            raise ToolError(f"Path is harness-owned and read-only: {candidate!r}")
+            raise tools_errors.ToolError(f"Path is harness-owned and read-only: {candidate!r}")
         return sp
 
-    def _resolve(self, candidate: str, bases: tuple[Path, ...]) -> SafePath:
+    def _resolve(self, candidate: str, bases: tuple[pathlib.Path, ...]) -> SafePath:
         sp = (
             self._in_grant(candidate, bases)
             if candidate.startswith("/")
@@ -157,7 +157,7 @@ class Workspace:
         self._refuse_denied(sp, candidate)
         return sp
 
-    def _in_grant(self, candidate: str, bases: tuple[Path, ...]) -> SafePath:
+    def _in_grant(self, candidate: str, bases: tuple[pathlib.Path, ...]) -> SafePath:
         """Contain an absolute path against the deepest grant holding it.
 
         Returns:
@@ -166,20 +166,22 @@ class Workspace:
         Raises:
             ToolError: No grant holds the path.
         """
-        target = Path(candidate).resolve()
+        target = pathlib.Path(candidate).resolve()
         for base in sorted(bases, key=lambda b: len(b.parts), reverse=True):
             if path_within(target, base):
                 return SafePath(base=base, rel_path=target.relative_to(base), abs_path=target)
-        raise ToolError(f"Absolute paths are only allowed inside a granted path: {candidate!r}")
+        raise tools_errors.ToolError(
+            f"Absolute paths are only allowed inside a granted path: {candidate!r}"
+        )
 
     def _refuse_denied(self, sp: SafePath, candidate: str) -> None:
         # Refused, not answered empty: a tool result can carry an error where a jail mask cannot.
         d = self._denying(sp.abs_path)
         if d is not None:
-            raise ToolError(f"Path is hidden from this run: {candidate!r} (under {d})")
+            raise tools_errors.ToolError(f"Path is hidden from this run: {candidate!r} (under {d})")
 
 
-def contain(base: Path, candidate: str | Path) -> SafePath:
+def contain(base: pathlib.Path, candidate: str | pathlib.Path) -> SafePath:
     """Contain a path under a base the caller chose, without resolving symlinks.
 
     For a skill's own directory or the bundled docs; the descriptor walk in `open_contained`
@@ -195,15 +197,15 @@ def contain(base: Path, candidate: str | Path) -> SafePath:
     Raises:
         ToolError: The path is absolute or contains `..`.
     """
-    rel = Path(candidate)
+    rel = pathlib.Path(candidate)
     if rel.is_absolute():
-        raise ToolError(f"Absolute paths not allowed: {str(candidate)!r}")
+        raise tools_errors.ToolError(f"Absolute paths not allowed: {str(candidate)!r}")
     if ".." in rel.parts:
-        raise ToolError(f"Path contains '..': {str(candidate)!r}")
+        raise tools_errors.ToolError(f"Path contains '..': {str(candidate)!r}")
     return SafePath(base=base, rel_path=rel, abs_path=base / rel)
 
 
-def resolve_in_root(root: Path, candidate: str) -> SafePath:
+def resolve_in_root(root: pathlib.Path, candidate: str) -> SafePath:
     """Resolve a path relative to a root and require it to stay inside.
 
     Args:
@@ -217,15 +219,15 @@ def resolve_in_root(root: Path, candidate: str) -> SafePath:
         ToolError: The path is absolute, contains `..`, or resolves outside the root.
     """
     if candidate.startswith("/"):
-        raise ToolError(f"Absolute paths not allowed: {candidate!r}")
-    parts = Path(candidate).parts
+        raise tools_errors.ToolError(f"Absolute paths not allowed: {candidate!r}")
+    parts = pathlib.Path(candidate).parts
     if ".." in parts:
-        raise ToolError(f"Path contains '..': {candidate!r}")
+        raise tools_errors.ToolError(f"Path contains '..': {candidate!r}")
     abs_path = (root / candidate).resolve()
     try:
         rel = abs_path.relative_to(root.resolve())
     except ValueError as exc:
-        raise ToolError(f"Path escapes repo root: {candidate!r}") from exc
+        raise tools_errors.ToolError(f"Path escapes repo root: {candidate!r}") from exc
     return SafePath(base=root, rel_path=rel, abs_path=abs_path)
 
 
@@ -274,9 +276,9 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
     """
     rel_path = sp.rel_path
     if rel_path.is_absolute():
-        raise ToolError(f"Path is not relative to the workspace: {rel_path}")
+        raise tools_errors.ToolError(f"Path is not relative to the workspace: {rel_path}")
     if ".." in rel_path.parts:
-        raise ToolError(f"Path contains '..': {rel_path}")
+        raise tools_errors.ToolError(f"Path contains '..': {rel_path}")
     dir_fd = os.open(sp.base, os.O_PATH | os.O_DIRECTORY)
     at = "."  # the component the walk is on, for the error path below
     try:
@@ -301,13 +303,15 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
         # O_NOFOLLOW|O_DIRECTORY on a symlink is ENOTDIR on Linux, not ELOOP; one lstat names it.
         with contextlib.suppress(OSError):
             if stat.S_ISLNK(os.lstat(at, dir_fd=dir_fd).st_mode):
-                raise ToolError(
+                raise tools_errors.ToolError(
                     f"Path became a symlink while it was being used: {rel_path}"
                 ) from exc
-        raise ToolError(f"Path component is not a directory: {rel_path}") from exc
+        raise tools_errors.ToolError(f"Path component is not a directory: {rel_path}") from exc
     except OSError as exc:
         if exc.errno == errno.ELOOP:
-            raise ToolError(f"Path became a symlink while it was being used: {rel_path}") from exc
+            raise tools_errors.ToolError(
+                f"Path became a symlink while it was being used: {rel_path}"
+            ) from exc
         if exc.errno == errno.ENXIO:
             # O_WRONLY|O_NONBLOCK on a reader-less FIFO: the open itself rejects the leaf.
             raise NotRegularFileError(f"Not a regular file: {rel_path}") from exc
@@ -368,7 +372,7 @@ def unlink_contained(sp: SafePath) -> None:
         ToolError: The path names the base itself, or a component is not a directory.
     """
     if not sp.rel_path.name:
-        raise ToolError(f"Not a file: {sp.rel_path}")
+        raise tools_errors.ToolError(f"Not a file: {sp.rel_path}")
     parent = SafePath(sp.base, sp.rel_path.parent, sp.abs_path.parent)
     fd = open_contained(parent, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -410,7 +414,7 @@ def write_contained(sp: SafePath, content: str) -> int:
         The number of bytes written.
     """
     like = None
-    with contextlib.suppress(OSError, ToolError):
+    with contextlib.suppress(OSError, tools_errors.ToolError):
         like = read_bytes_contained(sp)
     data = disk_bytes(content, like=like)
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC

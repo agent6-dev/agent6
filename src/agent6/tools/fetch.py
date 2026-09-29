@@ -15,15 +15,15 @@ allow-list or asked about, and an absent operator is a no.
 
 from __future__ import annotations
 
+import dataclasses
 import ipaddress
 import socket
 import time
-from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib import parse
 
 import httpx2
 
-from agent6.tools.http_body import BodyRefusedError, read_capped
+from agent6.tools import http_body
 
 # Beyond the cap the read is refused, never silently truncated.
 MAX_BYTES = 1 << 20
@@ -38,7 +38,7 @@ class FetchRefusedError(Exception):
     """The URL was not fetched, and why."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Fetched:
     """One URL's response.
 
@@ -83,7 +83,7 @@ def host_allowed(host: str, allowed: tuple[str, ...]) -> bool:
     return False
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Checked:
     """A vetted URL that has not touched the network: the gate's input.
 
@@ -102,7 +102,7 @@ class Checked:
         would name. A GET carries data out in its query string, so clipping the path or dropping
         the query is consent to an exfiltration the operator never saw.
         """
-        parts = urlsplit(self.url)
+        parts = parse.urlsplit(self.url)
         tail = parts.path or "/"
         if parts.query:
             tail += f"?{parts.query}"
@@ -130,7 +130,7 @@ def check_url(url: str) -> Checked:
             or names a literal address that is not public.
     """
     try:
-        parts = urlsplit(url)
+        parts = parse.urlsplit(url)
         _ = parts.port  # a port outside 0-65535 raises here, before the approval
     except ValueError as exc:
         # A malformed literal ("http://[::1") or a bad port reads like every other refusal.
@@ -178,7 +178,7 @@ def fetch(checked: Checked) -> Fetched:
             response is not text, the body is compressed, too large or too slow, or the request
             fails.
     """
-    parts = urlsplit(checked.url)
+    parts = parse.urlsplit(checked.url)
     port = 443 if parts.port is None else parts.port
     try:
         infos = socket.getaddrinfo(checked.host, port, proto=socket.IPPROTO_TCP)
@@ -211,7 +211,9 @@ def fetch(checked: Checked) -> Fetched:
             if not content_type.startswith(_TEXTUAL):
                 raise FetchRefusedError(f"not a text response: content-type {content_type!r}")
             deadline = time.monotonic() + TIMEOUT_S
-            body = read_capped(response, cap=MAX_BYTES, deadline=deadline, timeout_s=TIMEOUT_S)
+            body = http_body.read_capped(
+                response, cap=MAX_BYTES, deadline=deadline, timeout_s=TIMEOUT_S
+            )
             return Fetched(
                 url=checked.url,
                 status=response.status_code,
@@ -219,7 +221,7 @@ def fetch(checked: Checked) -> Fetched:
                 body=body.decode(response.encoding or "utf-8", errors="replace"),
                 location=response.headers.get("location", ""),
             )
-    except BodyRefusedError as exc:
+    except http_body.BodyRefusedError as exc:
         raise FetchRefusedError(str(exc)) from exc
     except httpx2.HTTPError as exc:
         raise FetchRefusedError(f"could not fetch {checked.url}: {exc}") from exc

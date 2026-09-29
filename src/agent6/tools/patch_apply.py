@@ -16,11 +16,11 @@ validated.
 
 from __future__ import annotations
 
+import dataclasses
 import re
-from dataclasses import dataclass
 from typing import Literal
 
-from agent6.tools._edit_diag import closest_on_disk_region
+from agent6.tools import _edit_diag
 
 _HUNK_RE = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
@@ -33,7 +33,7 @@ class PatchError(ValueError):
     """The patch could not be parsed or could not be applied cleanly."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _Hunk:
     """One hunk of a unified diff.
 
@@ -56,7 +56,7 @@ class _Hunk:
     new_no_newline: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ParsedPatch:
     """A parsed single-file unified diff.
 
@@ -515,7 +515,7 @@ def _match_failure_detail(lines: list[str], expected: list[str]) -> str:
         f"{indent} uniform-indent matches.\n"
         f"Expected lines:\n{_render_lines(expected)}"
     )
-    nearest = closest_on_disk_region("\n".join(lines), "\n".join(expected))
+    nearest = _edit_diag.closest_on_disk_region("\n".join(lines), "\n".join(expected))
     # apply_edit's similarity floor: a dissimilar block is a wrong anchor to copy.
     if nearest is None or nearest[2] < 0.5:
         return head

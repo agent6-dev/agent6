@@ -9,127 +9,53 @@ per-command `run_in_jail`. The `run_commands` gate ("no", "ask", "yes") is enfor
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import json
 import os
+import pathlib
 import re
 import shlex
 import shutil
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import replace
-from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import ValidationError
+import pydantic
 
+from agent6 import events as agent6_events
+from agent6 import kinds, memory, paths, skills
 from agent6.config import Config
-from agent6.events import EventSink
-from agent6.graph.curator import GraphCurator
-from agent6.kinds import (
-    BackgroundHandoff,
-    CommandResult,
-    IsolationLevel,
-    JailPolicy,
-    session_kind,
+from agent6.graph import curator as graph_curator
+from agent6.sandbox import jail, tool_paths
+from agent6.sessions import ipc
+from agent6.sessions import layout as sessions_layout
+from agent6.tools import (
+    _control_tools,
+    _dag_tools,
+    _fs_tools,
+    _nav_tools,
+    _result_format,
+    _skill_tools,
+    background,
+    fetch,
+    index,
+    mcp_client,
+    operator_prompts,
+    results,
+    schema,
+    sessions,
 )
-from agent6.memory import memory_dir
-from agent6.paths import data_dir, mkdir_for_real_user
-from agent6.sandbox.jail import (
-    JailSession,
-    JailUnavailableError,
-    SessionNetwork,
-    run_in_jail,
-    survivors_message,
-)
-from agent6.sandbox.tool_paths import jail_search_path
-from agent6.sessions.ipc import (
-    COMMAND_SCOPE,
-    MCP_SCOPE_PREFIX,
-    effective_run_commands,
-    session_deny_set,
-    steer_answer_is_abort,
-    stop_request_pending,
-)
-from agent6.sessions.layout import session_layout
-from agent6.skills import (
-    ResolvedSkills,
-    operator_skills,
-)
-from agent6.tools._control_tools import finish_planning, finish_session
-from agent6.tools._dag_tools import add_task, list_tasks, update_task
-from agent6.tools._fs_tools import agent6_docs, apply_edit, apply_patch, list_dir, read_file
-from agent6.tools._nav_tools import (
-    find_definition,
-    find_references,
-    outline,
-)
-from agent6.tools._result_format import (
-    parse_metric_score,
-    truncate_args,
-)
-from agent6.tools._skill_tools import use_skill
-from agent6.tools.background import SHELLS_DIR, BackgroundError, BackgroundShells
-from agent6.tools.errors import OperatorCommandUnexecutableError, ToolDeniedError, ToolError
-from agent6.tools.fetch import FetchRefusedError, check_url, fetch, host_allowed
-from agent6.tools.index import SymbolIndex
-from agent6.tools.mcp_client import (
-    MCP_TOOL_PREFIX,
-    MCPError,
-    MCPManager,
-    MCPToolDescriptor,
-    split_tool_name,
-)
-from agent6.tools.operator_prompts import OperatorPrompts, unanswered_note
-from agent6.tools.policy import jail_policy, resolve_network, workspace_for
-from agent6.tools.results import (
-    AnswersResult,
-    BackgroundResult,
-    EditResult,
-    ExecResult,
-    FetchResult,
-    MetricResult,
-    PatchResult,
-    RawResult,
-    ReadFileResult,
-    SessionsResult,
-    ToolResult,
-)
-from agent6.tools.schema import (
-    ALL_TOOLS,
-    Agent6DocsInput,
-    ApplyEditInput,
-    ApplyPatchInput,
-    AskUserInput,
-    DagAddTaskInput,
-    DagListTasksInput,
-    DagUpdateTaskInput,
-    FetchInput,
-    FindDefinitionInput,
-    FindReferencesInput,
-    FinishPlanningInput,
-    FinishSessionInput,
-    ListDirInput,
-    OutlineInput,
-    ReadBackgroundInput,
-    ReadFileInput,
-    ReadSessionInput,
-    RunCommandInput,
-    RunMetricInput,
-    RunVerifyInput,
-    StopBackgroundInput,
-    UseSkillInput,
-    mode_tools,
-)
-from agent6.tools.sessions import conversation, roster
+from agent6.tools import errors as tools_errors
+from agent6.tools import policy as tools_policy
 
 # A backslash JSON defines no escape for: a regex the model typed inside a JSON string.
 _LONE_BACKSLASH = re.compile(r'\\(?!["\\/bfnrtu])')
 
 
 def _coerce_stringified_args(
-    raw_input: dict[str, Any], exc: ValidationError
+    raw_input: dict[str, Any], exc: pydantic.ValidationError
 ) -> dict[str, Any] | None:
     """Recover a tool call whose array or object argument arrived as a JSON string.
 
@@ -180,7 +106,7 @@ _JSON_WORDS = {
 }
 
 
-def invalid_arguments(exc: ValidationError) -> str:
+def invalid_arguments(exc: pydantic.ValidationError) -> str:
     """Return one line per real argument problem, for the model and the log.
 
     Each line is the dotted field and the message without pydantic's "Value error, " lead and
@@ -206,7 +132,7 @@ def invalid_arguments(exc: ValidationError) -> str:
 
 
 # Tools whose tool.result event carries a capped output tail, so logs.jsonl shows the output.
-_EXEC_OUTPUT_TOOLS = frozenset({RunCommandInput.TOOL_NAME, RunMetricInput.TOOL_NAME})
+_EXEC_OUTPUT_TOOLS = frozenset({schema.RunCommandInput.TOOL_NAME, schema.RunMetricInput.TOOL_NAME})
 _TOOL_OUTPUT_TAIL = 2000  # chars, matching verify.end's stdout_tail/stderr_tail
 
 
@@ -218,24 +144,24 @@ _READ_HEAD_LINES = 6
 _READ_HEAD_CHARS = 300
 
 
-def _output_tails(name: str, result: ToolResult) -> dict[str, Any]:
+def _output_tails(name: str, result: results.ToolResult) -> dict[str, Any]:
     """Return the excerpts a tool's result carries into its tool.result event, else {}.
 
     A command gets its output tails; read_file a head preview and the line count; an edit or
     patch the paths it wrote, so a resume can tell the run's own untracked files from the
     operator's.
     """
-    if isinstance(result, EditResult):
+    if isinstance(result, results.EditResult):
         return {"paths": [result.path]}
-    if isinstance(result, PatchResult):
+    if isinstance(result, results.PatchResult):
         written = [p for p, _ in result.files] or [result.path]
         return {"paths": [p for p in written if p not in result.deleted]}
-    if isinstance(result, ExecResult | MetricResult) and name in _EXEC_OUTPUT_TOOLS:
+    if isinstance(result, results.ExecResult | results.MetricResult) and name in _EXEC_OUTPUT_TOOLS:
         return {
             "stdout_tail": result.stdout[-_TOOL_OUTPUT_TAIL:],
             "stderr_tail": result.stderr[-_TOOL_OUTPUT_TAIL:],
         }
-    if isinstance(result, ReadFileResult):
+    if isinstance(result, results.ReadFileResult):
         head = "\n".join(result.content.splitlines()[:_READ_HEAD_LINES])
         return {
             "head_tail": head[:_READ_HEAD_CHARS],
@@ -251,9 +177,9 @@ def _clip_tail(text: str, limit: int = 20_000) -> str:
     return f"... {len(text) - limit} earlier chars clipped ...\n" + text[-limit:]
 
 
-def _exec_result(res: CommandResult, *, timeout_s: float = 0.0) -> ExecResult:
+def _exec_result(res: kinds.CommandResult, *, timeout_s: float = 0.0) -> results.ExecResult:
     """Return the model's view of a finished command: the tails of both streams."""
-    return ExecResult(
+    return results.ExecResult(
         returncode=res.returncode,
         stdout=_clip_tail(res.stdout),
         stderr=_clip_tail(res.stderr),
@@ -267,10 +193,10 @@ def _exec_result(res: CommandResult, *, timeout_s: float = 0.0) -> ExecResult:
 # verify and metric commands are inferred from or run at the model's asking in the same sandbox.
 _COMMAND_TOOLS = frozenset(
     {
-        RunCommandInput.TOOL_NAME,
-        RunVerifyInput.TOOL_NAME,
-        RunMetricInput.TOOL_NAME,
-        StopBackgroundInput.TOOL_NAME,
+        schema.RunCommandInput.TOOL_NAME,
+        schema.RunVerifyInput.TOOL_NAME,
+        schema.RunMetricInput.TOOL_NAME,
+        schema.StopBackgroundInput.TOOL_NAME,
     }
 )
 
@@ -279,15 +205,15 @@ _COMMAND_TOOLS = frozenset(
 _SYMBOL_TOOL_ARMS: dict[str, frozenset[str]] = {
     "none": frozenset(
         {
-            OutlineInput.TOOL_NAME,
-            FindDefinitionInput.TOOL_NAME,
-            FindReferencesInput.TOOL_NAME,
+            schema.OutlineInput.TOOL_NAME,
+            schema.FindDefinitionInput.TOOL_NAME,
+            schema.FindReferencesInput.TOOL_NAME,
         }
     ),
 }
 
 
-def _roster(shells: BackgroundShells) -> tuple[str, ...]:
+def _roster(shells: background.BackgroundShells) -> tuple[str, ...]:
     """Return the background roster as lines."""
     return tuple(v.line() for v in shells.roster())
 
@@ -318,38 +244,40 @@ class ToolDispatcher:
     def __init__(
         self,
         *,
-        root: Path,
+        root: pathlib.Path,
         config: Config,
-        isolation: IsolationLevel = "strict",
-        prompts: OperatorPrompts | None = None,
-        events: EventSink | None = None,
-        curator: GraphCurator | None = None,
+        isolation: kinds.IsolationLevel = "strict",
+        prompts: operator_prompts.OperatorPrompts | None = None,
+        events: agent6_events.EventSink | None = None,
+        curator: graph_curator.GraphCurator | None = None,
         run_root_node_id: str | None = None,
-        mcp_manager: MCPManager | None = None,
-        extra_protect_paths: tuple[Path, ...] = (),
-        worktree_git_dir: Path | None = None,
+        mcp_manager: mcp_client.MCPManager | None = None,
+        extra_protect_paths: tuple[pathlib.Path, ...] = (),
+        worktree_git_dir: pathlib.Path | None = None,
         mode: Literal["run", "plan", "ask", "machine"] = "run",
-        state_dir: Path | None = None,
-        session_dir: Path | None = None,
+        state_dir: pathlib.Path | None = None,
+        session_dir: pathlib.Path | None = None,
         use_jail_session: bool = False,
-        session_net: SessionNetwork | None = None,
+        session_net: jail.SessionNetwork | None = None,
     ) -> None:
         self._root = root.resolve()
         self._config = config
         # Memory files are read and edited with the ordinary tools, in-process only.
-        mem = memory_dir(state_dir) if state_dir is not None else None
+        mem = memory.memory_dir(state_dir) if state_dir is not None else None
         if mem is not None:
             # The grant's target must exist: the model cannot mkdir outside the jail.
-            mkdir_for_real_user(mem)
-        self._ws = workspace_for(config, self._root, memory_dir=mem)
-        self.isolation: IsolationLevel = isolation
+            paths.mkdir_for_real_user(mem)
+        self._ws = tools_policy.workspace_for(config, self._root, memory_dir=mem)
+        self.isolation: kinds.IsolationLevel = isolation
         self._mode: Literal["run", "plan", "ask", "machine"] = mode
         # next() is atomic under the GIL, so seats on a shared dispatcher need no lock.
         self._call_seq = itertools.count(1)
         self.extra_protect_paths = extra_protect_paths
         self._worktree_git_dir = worktree_git_dir
         self._events = events
-        self._prompts = prompts or OperatorPrompts(journal=self._emit, session_dir=session_dir)
+        self._prompts = prompts or operator_prompts.OperatorPrompts(
+            journal=self._emit, session_dir=session_dir
+        )
         # The call being dispatched, per thread: concurrent review seats share one dispatcher.
         self._gating = threading.local()
         # Seconds blocked on the operator; the loop subtracts them from its wall clock.
@@ -362,56 +290,66 @@ class ToolDispatcher:
         self._state_dir = state_dir
         # Background commands live under the run dir so they die with the run.
         self._shells = (
-            BackgroundShells(session_dir / SHELLS_DIR) if session_dir is not None else None
+            background.BackgroundShells(session_dir / background.SHELLS_DIR)
+            if session_dir is not None
+            else None
         )
         # One jail process per run, so its commands share a netns, a PID namespace and a /tmp.
         self._use_session = use_jail_session
         self._session_net = session_net
-        self._own_session_net: SessionNetwork | None = None
-        self._session: JailSession | None = None
+        self._own_session_net: jail.SessionNetwork | None = None
+        self._session: jail.JailSession | None = None
         self._session_failed = False
         # Two threads racing the lazy open would leak a jail process and its namespaces.
         self._session_lock = threading.Lock()
         self._session_dir = session_dir
-        self._handlers: dict[str, Callable[[dict[str, Any]], ToolResult]] = {
-            Agent6DocsInput.TOOL_NAME: agent6_docs,
-            ReadFileInput.TOOL_NAME: lambda raw: read_file(self._ws, raw),
-            ListDirInput.TOOL_NAME: lambda raw: list_dir(self._ws, raw),
-            OutlineInput.TOOL_NAME: lambda raw: outline(self._ws, self.symbol_index, raw),
-            FindDefinitionInput.TOOL_NAME: lambda raw: find_definition(
+        self._handlers: dict[str, Callable[[dict[str, Any]], results.ToolResult]] = {
+            schema.Agent6DocsInput.TOOL_NAME: _fs_tools.agent6_docs,
+            schema.ReadFileInput.TOOL_NAME: lambda raw: _fs_tools.read_file(self._ws, raw),
+            schema.ListDirInput.TOOL_NAME: lambda raw: _fs_tools.list_dir(self._ws, raw),
+            schema.OutlineInput.TOOL_NAME: lambda raw: _nav_tools.outline(
                 self._ws, self.symbol_index, raw
             ),
-            FindReferencesInput.TOOL_NAME: lambda raw: find_references(
+            schema.FindDefinitionInput.TOOL_NAME: lambda raw: _nav_tools.find_definition(
                 self._ws, self.symbol_index, raw
             ),
-            ApplyEditInput.TOOL_NAME: lambda raw: apply_edit(
+            schema.FindReferencesInput.TOOL_NAME: lambda raw: _nav_tools.find_references(
+                self._ws, self.symbol_index, raw
+            ),
+            schema.ApplyEditInput.TOOL_NAME: lambda raw: _fs_tools.apply_edit(
                 self._ws, self._config, self.extra_protect_paths, self._index, raw
             ),
-            ApplyPatchInput.TOOL_NAME: lambda raw: apply_patch(
+            schema.ApplyPatchInput.TOOL_NAME: lambda raw: _fs_tools.apply_patch(
                 self._ws, self._config, self.extra_protect_paths, self._index, raw
             ),
-            RunVerifyInput.TOOL_NAME: self._run_verify,
-            RunCommandInput.TOOL_NAME: self._run_command,
-            ReadSessionInput.TOOL_NAME: self._read_session,
-            FetchInput.TOOL_NAME: self._fetch,
-            ReadBackgroundInput.TOOL_NAME: self._read_background,
-            StopBackgroundInput.TOOL_NAME: self._stop_background,
-            RunMetricInput.TOOL_NAME: self._run_metric,
-            FinishSessionInput.TOOL_NAME: finish_session,
-            FinishPlanningInput.TOOL_NAME: finish_planning,
-            AskUserInput.TOOL_NAME: self._ask_user,
-            DagAddTaskInput.TOOL_NAME: lambda raw: add_task(
+            schema.RunVerifyInput.TOOL_NAME: self._run_verify,
+            schema.RunCommandInput.TOOL_NAME: self._run_command,
+            schema.ReadSessionInput.TOOL_NAME: self._read_session,
+            schema.FetchInput.TOOL_NAME: self._fetch,
+            schema.ReadBackgroundInput.TOOL_NAME: self._read_background,
+            schema.StopBackgroundInput.TOOL_NAME: self._stop_background,
+            schema.RunMetricInput.TOOL_NAME: self._run_metric,
+            schema.FinishSessionInput.TOOL_NAME: _control_tools.finish_session,
+            schema.FinishPlanningInput.TOOL_NAME: _control_tools.finish_planning,
+            schema.AskUserInput.TOOL_NAME: self._ask_user,
+            schema.DagAddTaskInput.TOOL_NAME: lambda raw: _dag_tools.add_task(
                 self._curator, self._run_root_node_id, raw
             ),
-            DagUpdateTaskInput.TOOL_NAME: lambda raw: update_task(self._curator, raw),
-            DagListTasksInput.TOOL_NAME: lambda raw: list_tasks(self._curator, raw),
-            UseSkillInput.TOOL_NAME: lambda raw: use_skill(self.resolved_skills, raw),
+            schema.DagUpdateTaskInput.TOOL_NAME: lambda raw: _dag_tools.update_task(
+                self._curator, raw
+            ),
+            schema.DagListTasksInput.TOOL_NAME: lambda raw: _dag_tools.list_tasks(
+                self._curator, raw
+            ),
+            schema.UseSkillInput.TOOL_NAME: lambda raw: _skill_tools.use_skill(
+                self.resolved_skills, raw
+            ),
         }
-        self._index: SymbolIndex | None = None
+        self._index: index.SymbolIndex | None = None
         # Concurrent review seats must not double-build the index.
         self._index_lock = threading.Lock()
         # Resolved once on first use, a disk scan of the configured skill dirs.
-        self._skills_cache: ResolvedSkills | None = None
+        self._skills_cache: skills.ResolvedSkills | None = None
 
     def set_run_root_node_id(self, node_id: str | None) -> None:
         """Set the parent `add_task` falls back to, once the harness has seeded the root task."""
@@ -426,7 +364,7 @@ class ToolDispatcher:
         configured = self._config.sandbox.run_commands
         if self._session_dir is None:
             return configured
-        return effective_run_commands(configured, self._session_dir)
+        return ipc.effective_run_commands(configured, self._session_dir)
 
     def metric_configured(self) -> bool:
         """Return whether `[harness.metric]` gives `run_metric_command` anything to run."""
@@ -441,20 +379,28 @@ class ToolDispatcher:
         if self.tool_is_withheld(name):
             return "not available (run_commands = 'no')"
         # `fetch` is redundant when a jailed command already has the network.
-        if name == FetchInput.TOOL_NAME and resolve_network(self._config, self.isolation) == "host":
+        if (
+            name == schema.FetchInput.TOOL_NAME
+            and tools_policy.resolve_network(self._config, self.isolation) == "host"
+        ):
             return "not available (a jailed command has the network)"
         if name in _SYMBOL_TOOL_ARMS.get(os.environ.get("AGENT6_SYMBOL_TOOLS", ""), frozenset()):
             return "not available (AGENT6_SYMBOL_TOOLS)"
-        if os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1" and name == ApplyEditInput.TOOL_NAME:
+        if (
+            os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1"
+            and name == schema.ApplyEditInput.TOOL_NAME
+        ):
             return f"{name} is disabled (AGENT6_DISABLE_APPLY_EDIT=1); use apply_patch instead"
         return None
 
     def available_tool_names(self) -> tuple[str, ...]:
         """Return the base tools on offer right now, MCP tools included, sorted."""
-        names = [cls.TOOL_NAME for cls in ALL_TOOLS if self._tool_refusal(cls.TOOL_NAME) is None]
+        names = [
+            cls.TOOL_NAME for cls in schema.ALL_TOOLS if self._tool_refusal(cls.TOOL_NAME) is None
+        ]
         # A gateless run hides run_verify_command rather than offer a tool that would error.
         if not self._config.harness.verify_command:
-            names = [n for n in names if n != RunVerifyInput.TOOL_NAME]
+            names = [n for n in names if n != schema.RunVerifyInput.TOOL_NAME]
         names.extend(d.qualified_name for d in self.mcp_descriptors())
         return tuple(sorted(names))
 
@@ -466,9 +412,9 @@ class ToolDispatcher:
         """
         if self._session_dir is None:
             return False
-        return session_deny_set(self._session_dir, f"{MCP_SCOPE_PREFIX}{server}")
+        return ipc.session_deny_set(self._session_dir, f"{ipc.MCP_SCOPE_PREFIX}{server}")
 
-    def mcp_descriptors(self) -> tuple[MCPToolDescriptor, ...]:
+    def mcp_descriptors(self) -> tuple[mcp_client.MCPToolDescriptor, ...]:
         """Return the MCP tools on offer right now, minus any server denied for the session."""
         if self._mcp_manager is None:
             return ()
@@ -476,7 +422,7 @@ class ToolDispatcher:
             d for d in self._mcp_manager.descriptors() if not self.mcp_denied(d.server_name)
         )
 
-    def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+    def dispatch(self, name: str, raw_input: dict[str, Any]) -> results.ToolResult:
         """Execute one tool call, journaling a `tool.call` and `tool.result` pair around it.
 
         The pair is emitted here, before any guard and outside the model's reach, so a
@@ -496,7 +442,7 @@ class ToolDispatcher:
         """
         # The finish tools' `summary` is the human end-of-run statement: kept whole.
         max_chars = 2000 if name in ("finish_session", "finish_planning") else 200
-        preview = truncate_args(raw_input, max_value_chars=max_chars)
+        preview = _result_format.truncate_args(raw_input, max_value_chars=max_chars)
         # Concurrent review seats interleave events, and name-based pairing cross-stamps calls.
         cid = next(self._call_seq)
         self._emit("tool.call", name=name, args=preview, call_id=cid)
@@ -504,19 +450,19 @@ class ToolDispatcher:
         self._gating.call_id = cid
         try:
             result = self._dispatch_inner(name, raw_input)
-        except ToolError as exc:
+        except tools_errors.ToolError as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise
-        except OperatorCommandUnexecutableError as exc:
+        except tools_errors.OperatorCommandUnexecutableError as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise
-        except ValidationError as exc:
+        except pydantic.ValidationError as exc:
             message = invalid_arguments(exc)
             self._emit("tool.result", name=name, ok=False, summary=message, call_id=cid)
-            raise ToolError(message) from exc
+            raise tools_errors.ToolError(message) from exc
         except Exception as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
-            raise ToolError(f"failed: {exc}") from exc
+            raise tools_errors.ToolError(f"failed: {exc}") from exc
         finally:
             self._gating.call_id = outer
         self._emit(
@@ -529,7 +475,7 @@ class ToolDispatcher:
         )
         return result
 
-    def _dispatch_inner(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+    def _dispatch_inner(self, name: str, raw_input: dict[str, Any]) -> results.ToolResult:
         """Resolve and execute a tool; `dispatch` owns the events around it.
 
         Returns:
@@ -538,27 +484,27 @@ class ToolDispatcher:
         Raises:
             ToolError: The tool is unknown, withheld, outside the mode's surface, or failed.
         """
-        if name.startswith(MCP_TOOL_PREFIX):
-            if not session_kind(self._mode).edits:
+        if name.startswith(mcp_client.MCP_TOOL_PREFIX):
+            if not kinds.session_kind(self._mode).edits:
                 # An MCP tool cannot be classified as read-only, so every non-run mode refuses it.
-                raise ToolError(f"not available in {self._mode} mode (run mode only)")
+                raise tools_errors.ToolError(f"not available in {self._mode} mode (run mode only)")
             if self._mcp_manager is None:
-                raise ToolError("MCP is not configured")
+                raise tools_errors.ToolError("MCP is not configured")
             self._approve_mcp_call(name, raw_input)
             try:
-                return RawResult(self._mcp_manager.call(name, raw_input))
-            except MCPError as exc:
-                raise ToolError(str(exc)) from exc
+                return results.RawResult(self._mcp_manager.call(name, raw_input))
+            except mcp_client.MCPError as exc:
+                raise tools_errors.ToolError(str(exc)) from exc
         if name not in self._handlers:
-            raise ToolError(f"Unknown tool: {name}")
+            raise tools_errors.ToolError(f"Unknown tool: {name}")
         if (refusal := self._tool_refusal(name)) is not None:
-            raise ToolError(refusal)
-        if name not in mode_tools(self._mode).permitted:
+            raise tools_errors.ToolError(refusal)
+        if name not in schema.mode_tools(self._mode).permitted:
             # The backstop: a hallucinated name must not mutate the repo from a read-only mode.
-            raise ToolError(f"not available in {self._mode} mode")
+            raise tools_errors.ToolError(f"not available in {self._mode} mode")
         return self._run_handler(name, raw_input)
 
-    def _run_handler(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+    def _run_handler(self, name: str, raw_input: dict[str, Any]) -> results.ToolResult:
         """Execute the handler, retrying once with stringified JSON arguments coerced.
 
         Returns:
@@ -574,7 +520,7 @@ class ToolDispatcher:
             raw_len = len(raw) if isinstance(raw, str) else 0
             if raw_len > 20_000:
                 # The arguments ran away to the output-token ceiling; "resend" would repeat that.
-                raise ToolError(
+                raise tools_errors.ToolError(
                     "the arguments were cut off mid-generation"
                     f" ({raw_len // 1000} KB, truncated before the JSON closed)."
                     " Do NOT resend the same call. Emit a much smaller call:"
@@ -582,19 +528,19 @@ class ToolDispatcher:
                     " under a couple hundred characters), and split broad work"
                     " into several small calls."
                 )
-            raise ToolError(
+            raise tools_errors.ToolError(
                 "the arguments were not a JSON object. Resend the call with a"
                 " single valid JSON object of arguments."
             )
         try:
             return self._handlers[name](raw_input)
-        except ValidationError as exc:
+        except pydantic.ValidationError as exc:
             coerced = _coerce_stringified_args(raw_input, exc)
             if coerced is None:
                 raise
             try:
                 return self._handlers[name](coerced)
-            except ValidationError:
+            except pydantic.ValidationError:
                 # The coercion guessed wrong; the original error is the honest one.
                 raise exc from None
 
@@ -607,12 +553,12 @@ class ToolDispatcher:
         """Return the call this thread is dispatching, or None outside a dispatch."""
         return getattr(self._gating, "call_id", None)
 
-    def symbol_index(self) -> SymbolIndex:
+    def symbol_index(self) -> index.SymbolIndex:
         """Return the dispatcher's shared symbol index, built once."""
         if self._index is None:
             with self._index_lock:
                 if self._index is None:
-                    self._index = SymbolIndex(self._ws)
+                    self._index = index.SymbolIndex(self._ws)
         return self._index
 
     def settle_background(self) -> None:
@@ -632,7 +578,7 @@ class ToolDispatcher:
                 survivors = self._session.close()
                 self._session = None
                 if survivors:
-                    self._emit("jail.degraded", detail=survivors_message(survivors))
+                    self._emit("jail.degraded", detail=jail.survivors_message(survivors))
         if self._own_session_net is not None:  # never the run's; that is its own to close
             self._own_session_net.close()
             self._own_session_net = None
@@ -653,7 +599,7 @@ class ToolDispatcher:
         if self.command_policy() == "no":
             return False
         exe = argv[0]
-        if "/" not in exe and shutil.which(exe, path=jail_search_path()) is None:
+        if "/" not in exe and shutil.which(exe, path=tool_paths.jail_search_path()) is None:
             return False
         self._config = self._config.with_verify_command(argv)
         return True
@@ -675,12 +621,12 @@ class ToolDispatcher:
                 chooses tool names), or was denied for the session.
             ToolDeniedError: The operator did not approve.
         """
-        server, _tool = split_tool_name(name)
+        server, _tool = mcp_client.split_tool_name(name)
         entry = self._config.mcp.servers.get(server)
         if entry is None:
-            raise ToolError(f"unknown MCP server in {name!r}")
+            raise tools_errors.ToolError(f"unknown MCP server in {name!r}")
         if self.mcp_denied(server):
-            raise ToolError(f"not available ({server!r} was denied for this session)")
+            raise tools_errors.ToolError(f"not available ({server!r} was denied for this session)")
         if entry.approve == "yes":
             return
         args = json.dumps(raw_input, ensure_ascii=False, sort_keys=True)
@@ -693,8 +639,8 @@ class ToolDispatcher:
                 f"{args[:_APPROVAL_PROMPT_MAX_CHARS]}"
                 f" ...[{len(args)} chars total; full payload: {full}]"
             )
-        if not self._approve(f"Allow {name}: {args}", scope=f"{MCP_SCOPE_PREFIX}{server}"):
-            raise ToolDeniedError(
+        if not self._approve(f"Allow {name}: {args}", scope=f"{ipc.MCP_SCOPE_PREFIX}{server}"):
+            raise tools_errors.ToolDeniedError(
                 f"{name} not approved (set [mcp.servers.{server}].approve = 'yes' to stop asking)"
             )
 
@@ -706,24 +652,24 @@ class ToolDispatcher:
         finally:
             self.operator_wait_s += time.monotonic() - started
 
-    def _not_approved(self, name: str) -> ToolDeniedError:
+    def _not_approved(self, name: str) -> tools_errors.ToolDeniedError:
         """Return the refusal for an unapproved command.
 
         The gate cannot tell a human "no" from an unattended run's auto-deny, so the message
         names the knob; a stop requested while the approval waited is the one cause it can name.
         """
-        if self._session_dir is not None and stop_request_pending(self._session_dir):
-            return ToolDeniedError(
+        if self._session_dir is not None and ipc.stop_request_pending(self._session_dir):
+            return tools_errors.ToolDeniedError(
                 f"{name} not run: the run was asked to stop while awaiting approval"
             )
-        return ToolDeniedError(f"{name} not approved (sandbox.run_commands='ask')")
+        return tools_errors.ToolDeniedError(f"{name} not approved (sandbox.run_commands='ask')")
 
-    def _run_verify(self, raw: dict[str, Any]) -> ExecResult:
+    def _run_verify(self, raw: dict[str, Any]) -> results.ExecResult:
         """Return the gate's outcome, run at the model's asking."""
-        RunVerifyInput.model_validate(raw)
+        schema.RunVerifyInput.model_validate(raw)
         return self.run_verify()
 
-    def run_verify(self, extra_argv: tuple[str, ...] = ()) -> ExecResult:
+    def run_verify(self, extra_argv: tuple[str, ...] = ()) -> results.ExecResult:
         """Run the gate; the model's `run_verify_command` and the harness share this path.
 
         Args:
@@ -743,7 +689,7 @@ class ToolDispatcher:
         timeout_s = self._config.harness.verify_timeout_s
         self._emit("verify.start", cmd=list(argv), timeout_s=timeout_s)
         res = self._run_argv_in_jail(argv, label="verify_command", timeout_s=timeout_s)
-        res = replace(res, command=argv)
+        res = dataclasses.replace(res, command=argv)
         self._emit(
             "verify.end",
             cmd=list(argv),
@@ -754,7 +700,7 @@ class ToolDispatcher:
             stderr_tail=res.stderr[-2000:],
         )
         if res.exec_failed:
-            raise OperatorCommandUnexecutableError(
+            raise tools_errors.OperatorCommandUnexecutableError(
                 f"verify_command {list(argv)} could not be executed in the sandbox: "
                 f"{res.stderr}. The jail PATH is /usr/bin:/bin plus the standard bin "
                 "dirs that exist (/usr/local/bin, /usr/local/sbin, ~/.local/bin, "
@@ -773,19 +719,19 @@ class ToolDispatcher:
             ToolDeniedError: The policy is "ask" and the operator did not approve.
         """
         if self.command_policy() == "ask" and not self._approve(
-            f"Allow {name}: {shlex.join(argv)}", scope=COMMAND_SCOPE
+            f"Allow {name}: {shlex.join(argv)}", scope=ipc.COMMAND_SCOPE
         ):
             raise self._not_approved(name)
 
-    def _run_command(self, raw: dict[str, Any]) -> ExecResult:
+    def _run_command(self, raw: dict[str, Any]) -> results.ExecResult:
         """Return the outcome of a command the model chose, or its handle when detached."""
-        args = RunCommandInput.model_validate(raw)
+        args = schema.RunCommandInput.model_validate(raw)
         self._approve_command("run_command", args.argv)
         if args.background:
             return self._start_detached(args.argv)
         return self._run_model_command(args.argv)
 
-    def _start_detached(self, argv: tuple[str, ...]) -> ExecResult:
+    def _start_detached(self, argv: tuple[str, ...]) -> results.ExecResult:
         """Start a command detached: the same hand-back as a check-in, at zero seconds.
 
         Only a session that edits owns a background command's lifetime, derived from the same
@@ -797,8 +743,8 @@ class ToolDispatcher:
         Raises:
             ToolError: The mode cannot read a hand-back, or the command could not start.
         """
-        if ReadBackgroundInput.TOOL_NAME not in mode_tools(self._mode).permitted:
-            raise ToolError(
+        if schema.ReadBackgroundInput.TOOL_NAME not in schema.mode_tools(self._mode).permitted:
+            raise tools_errors.ToolError(
                 f"background commands are not available in {self._mode} mode:"
                 " nothing there could read or stop one before the run ends"
             )
@@ -809,9 +755,9 @@ class ToolDispatcher:
                 lambda a, rw: self._jail_policy(a, extra_rw_paths=rw),
                 session=self._run_session(),
             )
-        except BackgroundError as exc:
-            raise ToolError(str(exc)) from exc
-        return ExecResult(
+        except background.BackgroundError as exc:
+            raise tools_errors.ToolError(str(exc)) from exc
+        return results.ExecResult(
             returncode=None,
             stdout="",
             stderr="",
@@ -820,7 +766,7 @@ class ToolDispatcher:
             background_id=view.id,
         )
 
-    def _run_model_command(self, argv: tuple[str, ...]) -> ExecResult:
+    def _run_model_command(self, argv: tuple[str, ...]) -> results.ExecResult:
         """Run a command the model chose, handing it back at the check-in where the mode can.
 
         The check-in needs a jail session to own the running command, a background roster to
@@ -840,7 +786,7 @@ class ToolDispatcher:
             session is None
             or shells is None
             or checkin <= 0
-            or ReadBackgroundInput.TOOL_NAME not in mode_tools(self._mode).permitted
+            or schema.ReadBackgroundInput.TOOL_NAME not in schema.mode_tools(self._mode).permitted
         ):
             return self._run_argv_in_jail(argv, label="run_command")
         try:
@@ -854,13 +800,13 @@ class ToolDispatcher:
                 # A Stop mid-command asks for the hand-back now.
                 interrupted=self._operator_wants_out,
             )
-        except JailUnavailableError as exc:
-            raise ToolError(f"jail unavailable: {exc}") from exc
-        if isinstance(outcome, CommandResult):
+        except jail.JailUnavailableError as exc:
+            raise tools_errors.ToolError(f"jail unavailable: {exc}") from exc
+        if isinstance(outcome, kinds.CommandResult):
             return _exec_result(outcome)
         view = shells.adopt(outcome, session=session)
         self._emit("command.backgrounded", id=view.id, pid=outcome.pid, seconds=outcome.duration_s)
-        return ExecResult(
+        return results.ExecResult(
             returncode=None,
             stdout=_clip_tail(outcome.stdout),
             stderr=_clip_tail(outcome.stderr),
@@ -876,19 +822,21 @@ class ToolDispatcher:
         """
         if self._session_dir is None:
             return False
-        return stop_request_pending(self._session_dir) or steer_answer_is_abort(self._session_dir)
+        return ipc.stop_request_pending(self._session_dir) or ipc.steer_answer_is_abort(
+            self._session_dir
+        )
 
-    def _background(self) -> BackgroundShells:
+    def _background(self) -> background.BackgroundShells:
         """Return the background roster.
 
         Raises:
             ToolError: No run directory was wired.
         """
         if self._shells is None:
-            raise ToolError("background commands need a run directory; none was wired")
+            raise tools_errors.ToolError("background commands need a run directory; none was wired")
         return self._shells
 
-    def _fetch(self, raw: dict[str, Any]) -> FetchResult:
+    def _fetch(self, raw: dict[str, Any]) -> results.FetchResult:
         """Fetch one URL: an allow-listed host reads, any other asks.
 
         Returns:
@@ -898,24 +846,24 @@ class ToolDispatcher:
             ToolError: The URL or the response was refused.
             ToolDeniedError: The host is off the list and the operator did not approve.
         """
-        args = FetchInput.model_validate(raw)
+        args = schema.FetchInput.model_validate(raw)
         try:
-            checked = check_url(args.url)
-        except FetchRefusedError as exc:
-            raise ToolError(str(exc)) from exc
+            checked = fetch.check_url(args.url)
+        except fetch.FetchRefusedError as exc:
+            raise tools_errors.ToolError(str(exc)) from exc
         # The list is the standing approval; a GET can carry data out, so an unnamed host is the
         # operator's call. Nothing has resolved yet: the DNS query itself carries the name out.
-        if not host_allowed(checked.host, self._config.sandbox.fetch_hosts) and not self._approve(
-            f"Allow fetch: {checked.prompt()}"
-        ):
-            raise ToolDeniedError(
+        if not fetch.host_allowed(
+            checked.host, self._config.sandbox.fetch_hosts
+        ) and not self._approve(f"Allow fetch: {checked.prompt()}"):
+            raise tools_errors.ToolDeniedError(
                 f"fetch not approved for {checked.host} (add it to sandbox.fetch_hosts to allow it)"
             )
         try:
-            got = fetch(checked)
-        except FetchRefusedError as exc:
-            raise ToolError(str(exc)) from exc
-        return FetchResult(
+            got = fetch.fetch(checked)
+        except fetch.FetchRefusedError as exc:
+            raise tools_errors.ToolError(str(exc)) from exc
+        return results.FetchResult(
             url=got.url,
             status=got.status,
             content_type=got.content_type,
@@ -923,7 +871,7 @@ class ToolDispatcher:
             location=got.location,
         )
 
-    def _read_session(self, raw: dict[str, Any]) -> SessionsResult:
+    def _read_session(self, raw: dict[str, Any]) -> results.SessionsResult:
         """List the project's sessions, and read one's conversation when asked.
 
         Returns:
@@ -932,20 +880,20 @@ class ToolDispatcher:
         Raises:
             ToolError: No state dir was wired, or the session does not exist.
         """
-        args = ReadSessionInput.model_validate(raw)
+        args = schema.ReadSessionInput.model_validate(raw)
         if self._state_dir is None:
-            raise ToolError("read_session needs the project state dir; none was wired")
-        lines = roster(self._state_dir, args.query).lines()
+            raise tools_errors.ToolError("read_session needs the project state dir; none was wired")
+        lines = sessions.roster(self._state_dir, args.query).lines()
         if not args.id:
-            return SessionsResult(sessions=lines)
-        layout = session_layout(self._state_dir, args.id)
+            return results.SessionsResult(sessions=lines)
+        layout = sessions_layout.session_layout(self._state_dir, args.id)
         if layout is None:
-            raise ToolError(f"no session {args.id!r} in this project")
-        return SessionsResult(
-            sessions=lines, conversation=conversation(layout, max_chars=args.max_chars)
+            raise tools_errors.ToolError(f"no session {args.id!r} in this project")
+        return results.SessionsResult(
+            sessions=lines, conversation=sessions.conversation(layout, max_chars=args.max_chars)
         )
 
-    def _read_background(self, raw: dict[str, Any]) -> BackgroundResult:
+    def _read_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
         """Read a background command's output, or the roster when no id is given.
 
         Returns:
@@ -954,10 +902,10 @@ class ToolDispatcher:
         Raises:
             ToolError: No run directory was wired, or the id is unknown.
         """
-        args = ReadBackgroundInput.model_validate(raw)
+        args = schema.ReadBackgroundInput.model_validate(raw)
         shells = self._background()
         if not args.id:
-            return BackgroundResult(shells=_roster(shells))
+            return results.BackgroundResult(shells=_roster(shells))
         wait_s = self._config.harness.command_checkin_s if args.wait_s is None else args.wait_s
         try:
             _view, output = shells.read(
@@ -966,11 +914,11 @@ class ToolDispatcher:
                 wait_s=wait_s,
                 interrupted=self._operator_wants_out,
             )
-        except BackgroundError as exc:
-            raise ToolError(str(exc)) from exc
-        return BackgroundResult(shells=_roster(shells), output=output)
+        except background.BackgroundError as exc:
+            raise tools_errors.ToolError(str(exc)) from exc
+        return results.BackgroundResult(shells=_roster(shells), output=output)
 
-    def _stop_background(self, raw: dict[str, Any]) -> BackgroundResult:
+    def _stop_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
         """Stop a background command.
 
         Returns:
@@ -979,40 +927,40 @@ class ToolDispatcher:
         Raises:
             ToolError: No run directory was wired, or the id is unknown.
         """
-        args = StopBackgroundInput.model_validate(raw)
+        args = schema.StopBackgroundInput.model_validate(raw)
         shells = self._background()
         try:
             shells.stop(args.id)
-        except BackgroundError as exc:
-            raise ToolError(str(exc)) from exc
-        return BackgroundResult(shells=_roster(shells))
+        except background.BackgroundError as exc:
+            raise tools_errors.ToolError(str(exc)) from exc
+        return results.BackgroundResult(shells=_roster(shells))
 
-    def _ask_user(self, raw: dict[str, Any]) -> ToolResult:
+    def _ask_user(self, raw: dict[str, Any]) -> results.ToolResult:
         """Return the operator's answers to the model's questions, counting the wait as theirs."""
-        args = AskUserInput.model_validate(raw)
+        args = schema.AskUserInput.model_validate(raw)
         started = time.monotonic()
         try:
             answer = self._prompts.ask(args.questions, call_id=self._gating_call_id())
         finally:
             self.operator_wait_s += time.monotonic() - started
-        return AnswersResult(
+        return results.AnswersResult(
             answers=answer.answers,
-            note=unanswered_note(answer),
+            note=operator_prompts.unanswered_note(answer),
             asked=tuple(q.question for q in args.questions),
         )
 
-    def resolved_skills(self) -> ResolvedSkills:
+    def resolved_skills(self) -> skills.ResolvedSkills:
         """Return the operator's skills, resolved once per dispatcher.
 
         The same source as the system prompt's index: `[skills].extra_dirs`, then the installed
         dir under the user data dir. An off switch resolves to nothing.
         """
         if self._skills_cache is None:
-            self._skills_cache = operator_skills(
+            self._skills_cache = skills.operator_skills(
                 self._config.skills.enabled,
                 self._config.skills.extra_dirs,
                 self._config.skills.state,
-                data_dir() / "skills",
+                paths.data_dir() / "skills",
             )
         return self._skills_cache
 
@@ -1021,7 +969,7 @@ class ToolDispatcher:
         resolved = self.resolved_skills()
         return bool(resolved.enabled or resolved.always)
 
-    def _run_metric(self, raw: dict[str, Any]) -> MetricResult:
+    def _run_metric(self, raw: dict[str, Any]) -> results.MetricResult:
         """Run the configured metric command in the jail and parse its score.
 
         Returns:
@@ -1033,10 +981,10 @@ class ToolDispatcher:
             ToolDeniedError: The operator did not approve.
             OperatorCommandUnexecutableError: The command cannot run in the jail.
         """
-        RunMetricInput.model_validate(raw)
+        schema.RunMetricInput.model_validate(raw)
         metric_cfg = self._config.harness.metric
         if metric_cfg is None:
-            raise ToolError("no [harness.metric] configured")
+            raise tools_errors.ToolError("no [harness.metric] configured")
         argv = metric_cfg.command
         self._approve_command("run_metric_command", argv)
         self._emit("metric.start", cmd=list(argv))
@@ -1044,7 +992,7 @@ class ToolDispatcher:
             argv, label="metric_command", timeout_s=self._config.harness.verify_timeout_s
         )
         if outcome.exec_failed:
-            raise OperatorCommandUnexecutableError(
+            raise tools_errors.OperatorCommandUnexecutableError(
                 f"metric_command {list(argv)} could not be executed in the sandbox: "
                 f"{outcome.stderr}. See run_verify_command's note: PATH is /usr/bin:/bin "
                 "plus the standard bin dirs; install the tool into one of those on the "
@@ -1052,7 +1000,9 @@ class ToolDispatcher:
                 "via sandbox.extra_read_paths."
             )
         # Scored from the unclipped outcome: the display clip's marker matches a loose pattern.
-        score = parse_metric_score(outcome.stdout, outcome.stderr, pattern=metric_cfg.pattern)
+        score = _result_format.parse_metric_score(
+            outcome.stdout, outcome.stderr, pattern=metric_cfg.pattern
+        )
         res = _exec_result(outcome, timeout_s=timeout_s)
         self._emit(
             "metric.end",
@@ -1063,17 +1013,17 @@ class ToolDispatcher:
             stderr_tail=res.stderr[-2000:],
             score=score,
         )
-        return MetricResult.from_exec(res, score)
+        return results.MetricResult.from_exec(res, score)
 
     def _jail_policy(
         self,
         argv: tuple[str, ...],
         *,
         timeout_s: float | None = None,
-        extra_rw_paths: tuple[Path, ...] = (),
-    ) -> JailPolicy:
+        extra_rw_paths: tuple[pathlib.Path, ...] = (),
+    ) -> kinds.JailPolicy:
         """Return the jail policy for an argv, with this dispatcher's protect paths and git dir."""
-        return jail_policy(
+        return tools_policy.jail_policy(
             self._root,
             self._config,
             self.isolation,
@@ -1084,7 +1034,7 @@ class ToolDispatcher:
             worktree_git_dir=self._worktree_git_dir,
         )
 
-    def _net(self) -> SessionNetwork | None:
+    def _net(self) -> jail.SessionNetwork | None:
         """Return the session network this dispatcher's commands join.
 
         The run owns one when there is a run, shared with its MCP servers. A dispatcher built
@@ -1093,10 +1043,10 @@ class ToolDispatcher:
         if self._session_net is not None:
             return self._session_net
         if self._own_session_net is None:
-            self._own_session_net = SessionNetwork.open()
+            self._own_session_net = jail.SessionNetwork.open()
         return self._own_session_net
 
-    def _run_session(self) -> JailSession | None:
+    def _run_session(self) -> jail.JailSession | None:
         """Return the run's jail process, or None to give each command its own.
 
         Every isolation level uses it, `none` included: the launcher owns output capture and the
@@ -1113,11 +1063,11 @@ class ToolDispatcher:
                 try:
                     policy = self._jail_policy(("true",), extra_rw_paths=rw)
                     net = self._net() if policy.network == "session" else None
-                    self._session = JailSession.open(policy, session_net=net)
+                    self._session = jail.JailSession.open(policy, session_net=net)
                     if self._session.startup_stderr:
                         # A degraded jail (rootless podman refusing /proc) is said once, here.
                         self._emit("jail.degraded", detail=self._session.startup_stderr)
-                except (JailUnavailableError, OSError):
+                except (jail.JailUnavailableError, OSError):
                     self._session_failed = True
             return self._session
 
@@ -1127,7 +1077,7 @@ class ToolDispatcher:
         *,
         label: str,
         timeout_s: float | None = None,
-    ) -> tuple[CommandResult, float]:
+    ) -> tuple[kinds.CommandResult, float]:
         """Run an argv in the jail without a check-in.
 
         Args:
@@ -1149,14 +1099,18 @@ class ToolDispatcher:
             outcome = (
                 session.run(argv, env=policy.env, timeout_s=policy.timeout_s)
                 if session is not None
-                else run_in_jail(
+                else jail.run_in_jail(
                     policy, session_net=self._net() if policy.network == "session" else None
                 )
             )
-        except JailUnavailableError as exc:
-            raise ToolError(f"{label}: jail unavailable: {exc}") from exc
-        if isinstance(outcome, BackgroundHandoff):  # pragma: no cover - no check-in was asked for
-            raise ToolError(f"{label}: the jail handed back a command that was never detachable")
+        except jail.JailUnavailableError as exc:
+            raise tools_errors.ToolError(f"{label}: jail unavailable: {exc}") from exc
+        if isinstance(
+            outcome, kinds.BackgroundHandoff
+        ):  # pragma: no cover - no check-in was asked for
+            raise tools_errors.ToolError(
+                f"{label}: the jail handed back a command that was never detachable"
+            )
         return outcome, policy.timeout_s
 
     def _run_argv_in_jail(
@@ -1165,7 +1119,7 @@ class ToolDispatcher:
         *,
         label: str,
         timeout_s: float | None = None,
-    ) -> ExecResult:
+    ) -> results.ExecResult:
         """Return the model's view of an argv run in the jail."""
         outcome, timeout = self._run_argv_raw(argv, label=label, timeout_s=timeout_s)
         return _exec_result(outcome, timeout_s=timeout)

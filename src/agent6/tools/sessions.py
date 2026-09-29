@@ -10,14 +10,14 @@ filesystem. The journals hold conversations, not credentials.
 
 from __future__ import annotations
 
+import dataclasses
 import json
-from dataclasses import dataclass
-from pathlib import Path
+import pathlib
 
-from agent6.kinds import is_side_role
-from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout, bucket_dir
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.tools.schema import ROSTER_MAX
+from agent6 import kinds
+from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest
+from agent6.tools import schema
 
 # Who said what, from which field; settled events only (deltas repeat them), and every steer.
 _SPEAKER = {
@@ -27,7 +27,7 @@ _SPEAKER = {
 }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Roster:
     """The sessions `read_session` lists, newest first.
 
@@ -49,7 +49,7 @@ class Roster:
         return (*shown, f"(only the {len(shown)} newest are shown; narrow with `query`)")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionBrief:
     """One session as the roster shows it.
 
@@ -73,19 +73,19 @@ class SessionBrief:
         return f"[{self.id}] {self.mode}{when}: {self.task}"
 
 
-def session_briefs(state_dir: Path) -> list[SessionBrief]:
+def session_briefs(state_dir: pathlib.Path) -> list[SessionBrief]:
     """Return every session in this project, newest first."""
     found: list[tuple[float, SessionBrief]] = []
-    for bucket in SESSION_BUCKETS:
-        root = bucket_dir(state_dir, bucket)
+    for bucket in sessions_layout.SESSION_BUCKETS:
+        root = sessions_layout.bucket_dir(state_dir, bucket)
         if not root.is_dir():
             continue
         for d in root.iterdir():
             if not d.is_dir():
                 continue
             try:
-                m = read_manifest(d)
-            except ManifestError:
+                m = manifest.read_manifest(d)
+            except manifest.ManifestError:
                 continue
             found.append(
                 (
@@ -102,7 +102,7 @@ def session_briefs(state_dir: Path) -> list[SessionBrief]:
     return [brief for _mtime, brief in sorted(found, key=lambda pair: -pair[0])]
 
 
-def conversation(layout: SessionLayout, *, max_chars: int) -> str:
+def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> str:
     """Return a session's conversation as plain text, oldest first.
 
     Truncation keeps the tail: the conclusion is what a later session wants, and the head is
@@ -134,7 +134,7 @@ def conversation(layout: SessionLayout, *, max_chars: int) -> str:
             if etype == "tool.call":
                 lines.append(f"[tool] {event.get('name', '')}")
             continue
-        if etype == "role.result" and is_side_role(str(event.get("role", ""))):
+        if etype == "role.result" and kinds.is_side_role(str(event.get("role", ""))):
             continue  # a side call's answer, not this session's own
         speaker, field = said
         body = str(event.get(field, "")).strip()
@@ -149,7 +149,7 @@ def conversation(layout: SessionLayout, *, max_chars: int) -> str:
     return text or "(this session recorded no conversation)"
 
 
-def roster(state_dir: Path, query: str) -> Roster:
+def roster(state_dir: pathlib.Path, query: str) -> Roster:
     """Return the sessions to show, newest first: every one, or those matching a query.
 
     Args:
@@ -161,20 +161,25 @@ def roster(state_dir: Path, query: str) -> Roster:
     """
     briefs = session_briefs(state_dir)
     if not query:
-        return Roster(briefs=tuple(briefs[:ROSTER_MAX]), more=len(briefs) > ROSTER_MAX)
+        return Roster(
+            briefs=tuple(briefs[: schema.ROSTER_MAX]), more=len(briefs) > schema.ROSTER_MAX
+        )
     needle = query.lower()
     hits: list[SessionBrief] = []
     for brief in briefs:
-        if len(hits) > ROSTER_MAX:
+        if len(hits) > schema.ROSTER_MAX:
             break  # one past the cap: enough to know there are more
         if needle in brief.task.lower() or _file_contains(
-            bucket_dir(state_dir, brief.bucket) / brief.id / LOGS_NAME, needle
+            sessions_layout.bucket_dir(state_dir, brief.bucket)
+            / brief.id
+            / sessions_layout.LOGS_NAME,
+            needle,
         ):
             hits.append(brief)
-    return Roster(briefs=tuple(hits[:ROSTER_MAX]), more=len(hits) > ROSTER_MAX)
+    return Roster(briefs=tuple(hits[: schema.ROSTER_MAX]), more=len(hits) > schema.ROSTER_MAX)
 
 
-def _file_contains(path: Path, needle: str) -> bool:
+def _file_contains(path: pathlib.Path, needle: str) -> bool:
     """Return whether the file contains the needle, reading in chunks.
 
     A journal reaches megabytes; reading whole ones costs about 1 GB per query over a few

@@ -14,25 +14,17 @@ when the caller passes `wait_s`, and nothing else waits at all.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import os
+import pathlib
 import shlex
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.kinds import BackgroundHandoff, JailPolicy
-from agent6.paths import mkdir_for_real_user
-from agent6.sandbox.jail import (
-    BackgroundJob,
-    JailSession,
-    JailUnavailableError,
-    LocalJob,
-    SessionJob,
-    start_in_jail,
-)
-from agent6.sessions.ipc import ProcessIdentity, process_identity, process_is_alive
+from agent6 import kinds, paths
+from agent6.sandbox import jail
+from agent6.sessions import ipc
 
 # Every log lives under one root the run's jail session grants read-write when it opens, so a
 # run's background commands can write each other's logs; the launcher's result and each
@@ -51,14 +43,14 @@ _REDIRECT = f'exec >"$0/{_LOG_NAME}" 2>&1; exec "$@"'
 
 
 # (argv, extra read-write paths) -> the sandbox policy; the dispatcher owns policy construction.
-PolicyFor = Callable[[tuple[str, ...], tuple[Path, ...]], JailPolicy]
+PolicyFor = Callable[[tuple[str, ...], tuple[pathlib.Path, ...]], kinds.JailPolicy]
 
 
 class BackgroundError(Exception):
     """A background command could not be started, or its id is unknown."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ShellView:
     """One background command as a caller sees it.
 
@@ -83,12 +75,12 @@ class ShellView:
         return f"[{self.id}] {self.state}{code}: {self.command}{detail}"
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class _Shell:
     id: str
     command: str
-    dir: Path
-    job: BackgroundJob | LocalJob | SessionJob
+    dir: pathlib.Path
+    job: jail.BackgroundJob | jail.LocalJob | jail.SessionJob
     # Opened before the command could exist: the one handle no jailed process can redirect.
     log_fd: int
     stopped: bool = False
@@ -101,7 +93,7 @@ def _seq_of(name: str) -> int:
     return int(name[2:]) if name.startswith("bg") and name[2:].isdigit() else 0
 
 
-def _highest_shell_seq(root: Path) -> int:
+def _highest_shell_seq(root: pathlib.Path) -> int:
     """Return the largest `bg<N>` already recorded under the root, or 0.
 
     Both `<root>/bg<N>` and `<root>/logs/bg<N>` are scanned: an execution that died between
@@ -122,17 +114,21 @@ class BackgroundShells:
         root: The shells dir under the session dir.
     """
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: pathlib.Path) -> None:
         self._root = root
         self._shells: dict[str, _Shell] = {}
         # A resumed run reuses the session dir, and two commands never share a log.
         self._seq = _highest_shell_seq(root)
         # The run's jail session grants this path when it opens, so it must exist by then.
         self.log_root = root / _LOG_ROOT
-        mkdir_for_real_user(self.log_root)
+        paths.mkdir_for_real_user(self.log_root)
 
     def start(
-        self, argv: tuple[str, ...], policy_for: PolicyFor, *, session: JailSession | None = None
+        self,
+        argv: tuple[str, ...],
+        policy_for: PolicyFor,
+        *,
+        session: jail.JailSession | None = None,
     ) -> ShellView:
         """Start a command detached.
 
@@ -152,31 +148,31 @@ class BackgroundShells:
         shell_id = f"bg{self._seq}"
         shell_dir = self._root / shell_id
         log_dir = self.log_root / shell_id
-        mkdir_for_real_user(shell_dir)
+        paths.mkdir_for_real_user(shell_dir)
         log_fd = self._open_log(shell_id)
         wrapped = ("/bin/sh", "-c", _REDIRECT, str(log_dir), *argv)
-        job: BackgroundJob | LocalJob | SessionJob
+        job: jail.BackgroundJob | jail.LocalJob | jail.SessionJob
         try:
             policy = policy_for(wrapped, (log_dir,))
             if session is None:
-                job = start_in_jail(policy, outcome_dir=shell_dir)
+                job = jail.start_in_jail(policy, outcome_dir=shell_dir)
             else:
                 # The session is already confined; only the env comes from the policy.
                 # The baseline precedes the start: a sibling's reparented daemon is not this one's.
                 before = session.child_snapshot()
-                job = SessionJob(
+                job = jail.SessionJob(
                     session,
                     session.start_background(wrapped, env=policy.env),
                     shell_dir,
                     before=before,
                 )
-        except (JailUnavailableError, OSError) as exc:
+        except (jail.JailUnavailableError, OSError) as exc:
             os.close(log_fd)
             raise BackgroundError(f"could not start a background command: {exc}") from exc
         shell = _Shell(id=shell_id, command=shlex.join(argv), dir=shell_dir, job=job, log_fd=log_fd)
         return self._register(shell)
 
-    def adopt(self, handoff: BackgroundHandoff, *, session: JailSession) -> ShellView:
+    def adopt(self, handoff: kinds.BackgroundHandoff, *, session: jail.JailSession) -> ShellView:
         """Register a running command the launcher handed back, log and all.
 
         A run_command that outlived its check-in becomes an ordinary background job here.
@@ -195,8 +191,8 @@ class BackgroundShells:
         self._seq += 1
         shell_id = f"bg{self._seq}"
         shell_dir = self._root / shell_id
-        mkdir_for_real_user(shell_dir)
-        job = SessionJob(session, handoff.pid, shell_dir, before=handoff.before)
+        paths.mkdir_for_real_user(shell_dir)
+        job = jail.SessionJob(session, handoff.pid, shell_dir, before=handoff.before)
         command = shlex.join(handoff.argv)
         # The launcher created the log with O_EXCL|O_NOFOLLOW; this side never resolves it again.
         try:
@@ -235,8 +231,8 @@ class BackgroundShells:
             # Written after the start: this file is the whole roster for another process.
             # The host pid serves a stop from another process; a session command has none.
             host = (
-                process_identity(shell.job.pid)
-                if isinstance(shell.job, (LocalJob, BackgroundJob))
+                ipc.process_identity(shell.job.pid)
+                if isinstance(shell.job, (jail.LocalJob, jail.BackgroundJob))
                 else None
             )
             meta.write_text(
@@ -449,12 +445,12 @@ class BackgroundShells:
         return ShellView(shell.id, shell.command, "exited", status.returncode, "")
 
 
-def shells_text(session_dir: Path) -> str:
+def shells_text(session_dir: pathlib.Path) -> str:
     """Return the roster as one block for a text view, or a line saying there is none."""
     return "\n".join(roster_from_dir(session_dir / SHELLS_DIR)) or "no background commands this run"
 
 
-def shell_host_processes(root: Path) -> list[ProcessIdentity]:
+def shell_host_processes(root: pathlib.Path) -> list[ipc.ProcessIdentity]:
     """Return the live host processes the run's background commands recorded.
 
     A command inside the session's namespaces records no host identity and dies with the
@@ -462,7 +458,7 @@ def shell_host_processes(root: Path) -> list[ProcessIdentity]:
     """
     if not root.is_dir():
         return []
-    processes: list[ProcessIdentity] = []
+    processes: list[ipc.ProcessIdentity] = []
     try:
         directories = sorted(root.iterdir())
     except OSError:
@@ -476,12 +472,12 @@ def shell_host_processes(root: Path) -> list[ProcessIdentity]:
         started = meta.get("pid_start") if isinstance(meta, dict) else None
         if type(pid) is int and pid > 0 and isinstance(started, str):
             identity = (pid, started)
-            if process_is_alive(identity):
+            if ipc.process_is_alive(identity):
                 processes.append(identity)
     return processes
 
 
-def roster_from_dir(root: Path) -> list[str]:
+def roster_from_dir(root: pathlib.Path) -> list[str]:
     """Return the run's background commands as lines, read off disk.
 
     For surfaces in another process: liveness needs the owning process, so this reports what

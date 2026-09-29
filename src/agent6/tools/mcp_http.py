@@ -12,15 +12,15 @@ compression, a streamed cap, a total deadline) plus the stdio reader's id check.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import time
-from dataclasses import dataclass
 from typing import Any
 
 import httpx2
 
-from agent6.tools.http_body import BodyRefusedError, read_capped
+from agent6.tools import http_body
 
 # The stdio reader's bound, applied while the body arrives: `response.content` materializes
 # first, so a 400 MiB body reaches 849 MiB of RSS before any check and a 1 MiB gzip bomb 2 GiB.
@@ -59,7 +59,7 @@ class MCPSessionExpiredError(MCPHttpError):
     """
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class HttpTransport:
     """A connection to one operator-run MCP server.
 
@@ -154,10 +154,10 @@ class HttpTransport:
                     )
                 deadline = time.monotonic() + timeout_s
                 try:
-                    body = read_capped(
+                    body = http_body.read_capped(
                         response, cap=MAX_BODY_BYTES, deadline=deadline, timeout_s=timeout_s
                     )
-                except BodyRefusedError as exc:
+                except http_body.BodyRefusedError as exc:
                     raise MCPHttpError(f"server {self.name!r}: {exc}") from exc
                 if not 200 <= response.status_code < 300:
                     # A 3xx is no JSON-RPC answer either; the body's own words are kept, bounded.

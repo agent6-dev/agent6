@@ -10,14 +10,14 @@ answered; it never journals.
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
+import pathlib
 import sys
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from agent6.sessions.ipc import clear_answer, clear_question_answers, session_allow_set
-from agent6.tools.schema import UserQuestion
+from agent6.sessions import ipc
+from agent6.tools import schema
 
 # Who answered, as the answer events journal it: the CLI's terminal ("stdin"), a live TUI, web
 # or attach ("frontend"), a park until one attached ("await-frontend"), the detach choice
@@ -41,7 +41,7 @@ UNANSWERED_NOTE = (
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ApprovalRequest:
     """One approval put to the operator, as journaled in `approval.prompt`.
 
@@ -60,7 +60,7 @@ class ApprovalRequest:
     call_id: int | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class QuestionRequest:
     """One `ask_user` (or a pre-run question), as journaled in `question.prompt`.
 
@@ -71,11 +71,11 @@ class QuestionRequest:
     """
 
     id: str
-    questions: tuple[UserQuestion, ...]
+    questions: tuple[schema.UserQuestion, ...]
     call_id: int | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ApprovalAnswer:
     """One approval's answer and who gave it."""
 
@@ -83,7 +83,7 @@ class ApprovalAnswer:
     source: Source
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class QuestionAnswer:
     """One question set's answers and who gave them.
 
@@ -173,7 +173,7 @@ class OperatorPrompts:
         approver: Approver | None = None,
         questioner: Questioner | None = None,
         journal: Journal = unjournaled,
-        session_dir: Path | None = None,
+        session_dir: pathlib.Path | None = None,
     ) -> None:
         self._approver: Approver = approver or _default_approver
         self._questioner: Questioner = questioner or _default_questioner
@@ -200,11 +200,15 @@ class OperatorPrompts:
         request = ApprovalRequest(
             id=f"approval-{next(self._approvals)}", prompt=prompt, scope=scope, call_id=call_id
         )
-        if scope and self._session_dir is not None and session_allow_set(self._session_dir, scope):
+        if (
+            scope
+            and self._session_dir is not None
+            and ipc.session_allow_set(self._session_dir, scope)
+        ):
             self._journal("approval.answer", id=request.id, approved=True, source="session")
             return True
         if self._session_dir is not None:
-            clear_answer(self._session_dir, request.id)
+            ipc.clear_answer(self._session_dir, request.id)
         self._journal(
             "approval.prompt",
             id=request.id,
@@ -219,7 +223,7 @@ class OperatorPrompts:
         return answer.approved
 
     def ask(
-        self, questions: tuple[UserQuestion, ...], *, call_id: int | None = None
+        self, questions: tuple[schema.UserQuestion, ...], *, call_id: int | None = None
     ) -> QuestionAnswer:
         """Put questions to the operator.
 
@@ -238,7 +242,7 @@ class OperatorPrompts:
             id=f"question-{next(self._questions)}", questions=questions, call_id=call_id
         )
         if self._session_dir is not None:
-            clear_question_answers(self._session_dir, request.id)
+            ipc.clear_question_answers(self._session_dir, request.id)
         self._journal(
             "question.prompt",
             id=request.id,

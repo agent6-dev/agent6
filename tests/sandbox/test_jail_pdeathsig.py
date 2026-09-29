@@ -39,7 +39,7 @@ def test_sigkilled_agent_takes_its_jailed_command_down(tmp_path: pathlib.Path) -
 
         from agent6.config import Config
         from agent6.sandbox.jail import run_in_jail
-        from agent6.tools.dispatch import jail_policy
+        from agent6.tools.policy import jail_policy
 
         run_in_jail(
             jail_policy(

@@ -123,7 +123,7 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(
             argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.01
         )
 
-    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", _ran)
+    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", _ran)
     assert d.dispatch("run_command", {"argv": ["true"]}).to_wire()["returncode"] == 0
     assert d.command_policy() == "ask"
     assert not ipc.session_deny_set(tmp_path, ipc.COMMAND_SCOPE)

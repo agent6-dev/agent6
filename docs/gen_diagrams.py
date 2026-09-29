@@ -267,13 +267,11 @@ def _handler_names() -> list[str]:
         ):
             continue
         for key in node.value.keys:
-            if (
-                isinstance(key, ast.Attribute)
-                and key.attr == "TOOL_NAME"
-                and isinstance(key.value, ast.Name)
-                and key.value.id in constants
-            ):
-                names.append(constants[key.value.id])
+            # `schema.<Input>.TOOL_NAME`: the class sits behind the module the table imports
+            cls = key.value if isinstance(key, ast.Attribute) and key.attr == "TOOL_NAME" else None
+            cls_name = cls.id if isinstance(cls, ast.Name) else getattr(cls, "attr", None)
+            if cls_name in constants:
+                names.append(constants[cls_name])
             else:
                 raise SystemExit(
                     f"handler table key is not a known <Input>.TOOL_NAME: {ast.dump(key)}"

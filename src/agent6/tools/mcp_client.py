@@ -18,28 +18,20 @@ the dispatcher turns into a failed tool result.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import pathlib
 import re
 import subprocess
 import threading
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
-from agent6 import __version__
-from agent6.child_env import curated_env
-from agent6.kinds import JailPolicy
-from agent6.portable import drain_stderr, stderr_tail
-from agent6.sandbox.jail import (
-    JailedProcess,
-    JailUnavailableError,
-    SessionNetwork,
-    spawn_in_jail,
-)
-from agent6.tools.mcp_http import HttpTransport, MCPHttpError, MCPSessionExpiredError
+from agent6 import __version__, child_env, kinds, portable
+from agent6.sandbox import jail
+from agent6.tools import mcp_http
 
 # Negotiated in `initialize`; whatever the server answers is accepted.
 _MCP_PROTOCOL_VERSION = "2024-11-05"
@@ -129,7 +121,7 @@ class MCPRestarted(MCPError):  # noqa: N818  # a signal, not an error
     """A request cut short because another caller's timeout replaced the server."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MCPToolDescriptor:
     """One tool advertised by one MCP server.
 
@@ -151,7 +143,7 @@ class MCPToolDescriptor:
         return f"{MCP_TOOL_PREFIX}{self.server_name}__{self.tool_name}"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MCPStartFailure:
     """A configured server that did not start.
 
@@ -164,10 +156,10 @@ class MCPStartFailure:
 
 def _spawn_server(
     command: tuple[str, ...],
-    policy: JailPolicy | None,
+    policy: kinds.JailPolicy | None,
     pass_env: tuple[str, ...],
-    session_net: SessionNetwork | None = None,
-) -> JailedProcess:
+    session_net: jail.SessionNetwork | None = None,
+) -> jail.JailedProcess:
     """Start one stdio server through the jail, or at the `none` level when opted out.
 
     Both paths are `spawn_in_jail`, the launcher and policy a jailed command gets; a second
@@ -189,7 +181,7 @@ def _spawn_server(
         OSError: The command could not be started.
     """
     if policy is not None:
-        return spawn_in_jail(
+        return jail.spawn_in_jail(
             policy,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -198,13 +190,13 @@ def _spawn_server(
         )
     # The opt-out is the same spawner's `none` level: its own session, tied to the agent by
     # PDEATHSIG, registered so a sibling's sweep spares it. A curated env keeps provider keys out.
-    unconfined = JailPolicy(
-        cwd=Path.cwd(),
+    unconfined = kinds.JailPolicy(
+        cwd=pathlib.Path.cwd(),
         argv=command,
         isolation="none",
-        env=tuple(sorted(curated_env(passthrough=pass_env, desktop=True).items())),
+        env=tuple(sorted(child_env.curated_env(passthrough=pass_env, desktop=True).items())),
     )
-    return spawn_in_jail(
+    return jail.spawn_in_jail(
         unconfined, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
 
@@ -241,7 +233,7 @@ def _result_of(
     return response.get("result")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MCPServerSpec:
     """What starting one MCP server needs: the config's shape, at the boundary.
 
@@ -261,11 +253,11 @@ class MCPServerSpec:
     startup_timeout_s: float
     call_timeout_s: float
     pass_env: tuple[str, ...] = ()
-    http: HttpTransport | None = None
-    policy: JailPolicy | None = None
+    http: mcp_http.HttpTransport | None = None
+    policy: kinds.JailPolicy | None = None
 
 
-@dataclass
+@dataclasses.dataclass
 class _MCPServer:
     """One running MCP server: its process, an id counter and a reader thread.
 
@@ -286,30 +278,30 @@ class _MCPServer:
     startup_timeout_s: float
     call_timeout_s: float
     pass_env: tuple[str, ...] = ()
-    policy: JailPolicy | None = None
-    session_net: SessionNetwork | None = None
-    http: HttpTransport | None = None
-    _proc: JailedProcess | None = None
+    policy: kinds.JailPolicy | None = None
+    session_net: jail.SessionNetwork | None = None
+    http: mcp_http.HttpTransport | None = None
+    _proc: jail.JailedProcess | None = None
     # The tail of stderr, drained by a thread and read only to explain a failure.
-    _errors: list[bytes] = field(default_factory=list)
+    _errors: list[bytes] = dataclasses.field(default_factory=list)
     # Pids the sweep of each close could not kill, handed to the manager with the last close's.
-    _survivors: set[int] = field(default_factory=set)
+    _survivors: set[int] = dataclasses.field(default_factory=set)
     _next_id: int = 1
-    _id_lock: threading.Lock = field(default_factory=threading.Lock)
+    _id_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     # Concurrent tools/call threads would interleave pipe writes larger than PIPE_BUF.
-    _stdin_lock: threading.Lock = field(default_factory=threading.Lock)
+    _stdin_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     # One slot per in-flight request, registered before the write and filled only while
     # registered, so a late or unsolicited reply is dropped and the map stays bounded.
-    _pending: dict[int, dict[str, Any] | None] = field(default_factory=dict)
-    _pending_cv: threading.Condition = field(default_factory=threading.Condition)
+    _pending: dict[int, dict[str, Any] | None] = dataclasses.field(default_factory=dict)
+    _pending_cv: threading.Condition = dataclasses.field(default_factory=threading.Condition)
     _reader: threading.Thread | None = None
     _stderr_reader: threading.Thread | None = None
-    _reader_stop: threading.Event = field(default_factory=threading.Event)
+    _reader_stop: threading.Event = dataclasses.field(default_factory=threading.Event)
     _tools: tuple[MCPToolDescriptor, ...] = ()
     # Bumped under `_restart_lock` by the caller whose timed-out call replaces the process: a
     # request in flight under another caller ends as MCPRestarted the moment it changes.
     _generation: int = 0
-    _restart_lock: threading.Lock = field(default_factory=threading.Lock)
+    _restart_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     # Releases the keeper thread a restart spawned the process from; set by `close`.
     _keeper_release: threading.Event | None = None
 
@@ -332,7 +324,7 @@ class _MCPServer:
         """Return the redacted tail of stderr, after a short join of its drainer when asked."""
         if settle and self._stderr_reader is not None:
             self._stderr_reader.join(timeout=0.1)
-        return self._redact_secrets(stderr_tail(self._errors))
+        return self._redact_secrets(portable.stderr_tail(self._errors))
 
     def start(self) -> None:
         """Spawn the process, or connect over HTTP, and run the handshake.
@@ -350,11 +342,11 @@ class _MCPServer:
             self._proc = _spawn_server(
                 self.command, self.policy, self.pass_env, session_net=self.session_net
             )
-        except (OSError, FileNotFoundError, JailUnavailableError) as exc:
+        except (OSError, FileNotFoundError, jail.JailUnavailableError) as exc:
             raise MCPError(f"could not spawn MCP server {self.name!r}: {exc}") from exc
         if self._proc.stderr is not None:
             self._stderr_reader = threading.Thread(
-                target=drain_stderr,
+                target=portable.drain_stderr,
                 args=(self._proc.stderr, self._errors),
                 name=f"mcp-stderr[{self.name}]",
                 daemon=True,
@@ -635,14 +627,14 @@ class _MCPServer:
             # HTTP pairs request and response itself: no pending slot, no reader thread.
             try:
                 response = self.http.send(payload, timeout_s=timeout_s)
-            except MCPSessionExpiredError:
+            except mcp_http.MCPSessionExpiredError:
                 # Retried once; the re-initialize carries no session id, so it cannot loop back.
                 self._reinitialize()
                 try:
                     response = self.http.send(payload, timeout_s=timeout_s)
-                except MCPHttpError as exc:
+                except mcp_http.MCPHttpError as exc:
                     raise self._http_error(exc) from exc
-            except MCPHttpError as exc:
+            except mcp_http.MCPHttpError as exc:
                 raise self._http_error(exc) from exc
             if response is None:
                 raise MCPError(f"server {self.name!r} sent no response to {method}")
@@ -701,12 +693,12 @@ class _MCPServer:
         if self.http is not None:
             try:
                 self.http.send(payload, timeout_s=self.startup_timeout_s)
-            except MCPHttpError as exc:
+            except mcp_http.MCPHttpError as exc:
                 raise self._http_error(exc) from exc
             return
         self._write_line(payload)
 
-    def _http_error(self, exc: MCPHttpError) -> MCPError:
+    def _http_error(self, exc: mcp_http.MCPHttpError) -> MCPError:
         """Return a transport failure as the MCPError every caller handles, its text redacted."""
         return MCPError(self._redact_secrets(str(exc)))
 
@@ -766,7 +758,7 @@ class _MCPServer:
                         self._pending_cv.notify_all()
 
 
-@dataclass
+@dataclasses.dataclass
 class MCPManager:
     """The MCP servers of one run, closed by the lifecycle that built it.
 
@@ -776,11 +768,11 @@ class MCPManager:
             `unconfined`, or `remote (not jailed)` for a `url` server.
     """
 
-    _servers: dict[str, _MCPServer] = field(default_factory=dict)
+    _servers: dict[str, _MCPServer] = dataclasses.field(default_factory=dict)
     # A failed start's survivors, handed back by the next close.
-    _survivors: set[int] = field(default_factory=set)
+    _survivors: set[int] = dataclasses.field(default_factory=set)
     failures: tuple[MCPStartFailure, ...] = ()
-    networks: dict[str, str] = field(default_factory=dict)
+    networks: dict[str, str] = dataclasses.field(default_factory=dict)
 
     @classmethod
     def start(
@@ -788,7 +780,7 @@ class MCPManager:
         configs: Iterable[MCPServerSpec],
         *,
         logger: Callable[[str], None] | None = None,
-        session_net: SessionNetwork | None = None,
+        session_net: jail.SessionNetwork | None = None,
     ) -> MCPManager:
         """Start every configured server, recording the ones that fail.
 

@@ -143,7 +143,6 @@ def test_a_host_the_operator_never_named_is_asked_about(tmp_path: pathlib.Path) 
 def test_an_allowed_host_is_never_prompted_for(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.tools import dispatch as dispatch_mod
 
     def _loud(_request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
         return pytest.fail("an allowed host must not prompt")
@@ -151,7 +150,7 @@ def test_an_allowed_host_is_never_prompted_for(
     def _fetched(checked: fetch.Checked) -> fetch.Fetched:
         return fetch.Fetched(url=checked.url, status=200, content_type="text/plain", body="hello")
 
-    monkeypatch.setattr(dispatch_mod, "fetch", _fetched)
+    monkeypatch.setattr(fetch, "fetch", _fetched)
     cfg = Config.model_validate({"sandbox": {"fetch_hosts": ["example.com"]}})
     d = dispatch.ToolDispatcher(
         root=tmp_path, config=cfg, prompts=operator_prompts.OperatorPrompts(approver=_loud)

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import difflib
 
-from agent6.tools.results import PreviewResult
+from agent6.tools import results
 
 
 def preview_result(
@@ -23,7 +23,7 @@ def preview_result(
     applied: list[str] | None = None,
     deleting: bool = False,
     healed: tuple[str, ...] = (),
-) -> PreviewResult:
+) -> results.PreviewResult:
     """Build the dry-run response for an edit tool called with `preview=true`.
 
     Nothing is written. The diff is capped at 8000 characters so a preview of a large rewrite
@@ -56,7 +56,7 @@ def preview_result(
     if len(diff) > max_diff_chars:
         diff = diff[:max_diff_chars] + f"\n... <truncated {len(diff) - max_diff_chars} chars>\n"
         truncated = True
-    return PreviewResult(
+    return results.PreviewResult(
         path=path,
         diff=diff or "(no changes)",
         hunks=hunks,

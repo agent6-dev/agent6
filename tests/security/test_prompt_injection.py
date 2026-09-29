@@ -16,7 +16,7 @@ import pathlib
 import pytest
 
 from agent6.config import Config, load_config
-from agent6.tools import dispatch, errors
+from agent6.tools import _path_safety, dispatch, errors
 
 _VALID_TOML = """
 [agent6]
@@ -187,7 +187,7 @@ def test_a_parent_swapped_after_the_check_creates_nothing_outside(
     directories and a file among them before the containment check ran. The swap is injected
     into the window it needs: between the containment check and the write.
     """
-    from agent6.tools import _fs_tools, _path_safety
+    from agent6.tools import _fs_tools
 
     root = tmp_path / "ws"
     (root / "sub").mkdir(parents=True)
@@ -231,8 +231,6 @@ def test_a_parent_swapped_before_the_write_truncates_no_host_file(
     the write never happened. The swap is injected into the window it needs: after the edit
     tools read the current text, before they write it back.
     """
-    from agent6.tools import _fs_tools
-
     root = tmp_path / "ws"
     (root / "sub").mkdir(parents=True)
     (root / "sub" / "keep.txt").write_text("in-repo", encoding="utf-8")
@@ -240,14 +238,14 @@ def test_a_parent_swapped_before_the_write_truncates_no_host_file(
     outside.mkdir()
     (outside / "keep.txt").write_text("HOST-CONTENT", encoding="utf-8")
 
-    real_read = _fs_tools.read_contained
+    real_read = _path_safety.read_contained
 
     def swap_after_the_read(*args: object, **kwargs: object) -> str:
         text = real_read(*args, **kwargs)  # pyright: ignore[reportCallIssue,reportArgumentType]
         _swap_parent_for_a_link_out(root, outside)
         return text
 
-    monkeypatch.setattr(_fs_tools, "read_contained", swap_after_the_read)
+    monkeypatch.setattr(_path_safety, "read_contained", swap_after_the_read)
     d = _dispatcher(root)
     with pytest.raises(errors.ToolError):
         d.dispatch(
