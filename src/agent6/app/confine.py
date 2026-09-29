@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Warnings and cross-checks for what an isolation level does NOT confine.
+"""Warn about, or refuse, what an isolation level does not confine.
 
-The agent process itself is never confined, at any isolation level: every
-boundary is the jail's, and the levels differ only in
-which jail features the launcher enables (docs/security.md owns the model
-and the rationale). Nothing bounds the agent's own filesystem or egress; a
-partial block on a trusted process reads as a guarantee it cannot keep, so
-these checks warn or refuse instead of pretending.
+The agent process itself is never confined: every boundary is the jail's, and the levels
+differ only in which jail features the launcher enables (docs/security.md owns the model).
+A partial block reads as a guarantee it cannot keep, so these checks warn or refuse instead.
 """
 
 from __future__ import annotations
@@ -41,48 +38,25 @@ def warn_sandbox_gaps(
     worktree_git_dir: Path | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
-    """Print a prominent warning when the isolation confines less than it promises.
+    """Warn once per run about each way the isolation confines less than it promises.
 
-    `none` is reached on a host with no confinement mechanism at all
-    (non-Linux, or a Linux kernel offering neither userns nor Landlock), or
-    when the operator EXPLICITLY sets `isolation = "none"` (the unsandboxed
-    opt-out, intended for inside a container). Either way commands run as
-    plain subprocesses with no agent6 confinement, so say so loudly.
+    Every warning here is a degrade: a default the host cannot honor, or an explicit widening
+    (root, a persistent HOME). An explicit setting the host cannot honor refuses earlier and
+    never reaches here. The warnings are once per run rather than per spawn, since a stderr
+    line in every tool result would prompt the model to fight the sandbox.
 
-    `strict` needs only userns; on a kernel without Landlock the jail's
-    best-effort ruleset enforces nothing (`restrict_self` returns NotEnforced)
-    while namespaces + the pivoted read-only rootfs + seccomp still confine.
-    That is a documented layer going missing, so it is loud too: once per run
-    rather than in the launcher, since a per-spawn stderr warning would land in
-    every tool result and prompt the model to fight the sandbox.
-
-    `network = "auto"` DEGRADES on a netns-less isolation: with no network
-    namespace there is no session network to give, so a jailed run_command
-    shares the host's, and we say so once per run. Explicit `session` never
-    reaches here (check_network_support refused it on hardened).
-
-    Landlock below ABI 3 (Linux 6.2) does not confine file truncation, so on
-    `hardened` there a jailed command can truncate files OUTSIDE its write
-    grants; we warn once per run. Explicit `hardened` never reaches here
-    (resolve_isolation refused it below ABI 3).
-
-    `protect_git` degrades the same way: strict-only, because it is a read-only
-    bind. An explicitly-set one refuses (check_protect_git_support).
-
-    The persistent HOME is named once per run: an explicit widening under
-    `strict` (`home = "cache"`), the level's own shape under `hardened`. `none`
-    has no jail, and the unsandboxed warning covers it.
-
-    Running as ROOT is the operator's explicit widening, so it warns rather
-    than refuses. On `hardened` it also says what the widening costs: file
-    permissions stop narrowing the granted system set there.
+    Args:
+        isolation: The resolved isolation level.
+        env: The detected host environment.
+        cfg: The resolved config.
+        root: The workspace.
+        worktree_git_dir: The linked worktree's git dir, when the run is in one.
+        reporter: Where the warnings go.
     """
     if cfg.sandbox.isolation == "auto":
         reason = degrade_reason(env)
         if reason is not None:
-            # The degrade ITSELF, not just its consequences below: 'auto'
-            # landing under strict never happens silently, and the why is the
-            # same line check sandbox / check config print (one owner).
+            # 'auto' landing under strict is never silent; the same line `check sandbox` prints.
             reporter.warn(f"'auto' selected '{isolation}', not 'strict': {reason}.")
     if isolation == "none":
         origin = (
@@ -109,11 +83,7 @@ def warn_sandbox_gaps(
             "defense-in-depth is absent."
         )
     if isolation == "hardened" and is_root():
-        # The root banner names running as root; this names what it COSTS at
-        # this level, which is where the operator would otherwise find out
-        # afterwards. Not a blocklist of sensitive files: the grant is the
-        # documented read-only system set, and root stops file permissions
-        # from narrowing it.
+        # The root banner names running as root; this names what it costs at this level.
         reporter.warn(
             "running as root under 'hardened': file permissions "
             "no longer narrow what a jailed command reads, so it can read the "
@@ -182,20 +152,17 @@ def warn_sandbox_gaps(
                 " so it will not run inside sandboxed commands. Move the target"
                 " into its own subdirectory."
             )
-        # notes.exposes_home_dir is NOT warned per run: on a normal machine
-        # every uv-installed tool in ~/.local/bin points into ~/.local/share,
-        # so it would fire a dozen times a run and bury the messages that
-        # matter. It is the ordinary state of a dev box, and `agent6 check`
-        # lists it, where someone is asking.
+        # notes.exposes_home_dir is the ordinary state of a dev box; `agent6 check` lists it.
 
 
 def warn_cleartext_credential_endpoints(
     cfg: Config, *, reporter: Reporter = STDIO_REPORTER
 ) -> None:
-    """Once per run: an endpoint sending its credential over plaintext http to
-    a non-loopback host is explicit-but-discouraged config, so it runs with a
-    loud warning naming the cost, never a refusal (an internal-network or VPN
-    endpoint is a real case)."""
+    """Warn once per endpoint sending its credential over plaintext http to a non-loopback host.
+
+    An explicit but discouraged config: it runs with the cost named, never a refusal, since an
+    internal-network or VPN endpoint is a real case.
+    """
     for label in cfg.cleartext_credential_endpoints():
         reporter.warn(
             f"{label} sends its credential over plaintext http"
@@ -205,15 +172,10 @@ def warn_cleartext_credential_endpoints(
 
 
 def check_workspace_outside_private_dirs(root: Path) -> str | None:
-    """A refusal message when the workspace and one of agent6's own private dirs
-    (config, state base) OVERLAP in either direction, else None.
+    """Return the refusal when the workspace and a private dir overlap either way, else None.
 
-    Workspace inside a private dir: the dir is denied to every in-process tool,
-    so the run could not read or write its own files. Private dir inside the
-    workspace (a state base relocated into it): its transcripts and keys become
-    readable by jailed commands whose cwd is the workspace, and the auto-commit
-    stages them into the run's commits. Wrong everywhere, not an isolation-level
-    question.
+    A workspace inside a private dir cannot read its own files; a private dir inside the
+    workspace has its transcripts and keys readable by jailed commands and staged into commits.
     """
     resolved = root.resolve()
     for private in private_dirs():
@@ -238,20 +200,12 @@ def check_workspace_outside_private_dirs(root: Path) -> str | None:
 def check_protect_git_support(
     cfg: Config, isolation: IsolationLevel, *, explicitly_set: bool
 ) -> str | None:
-    """A refusal message when `protect_git` was EXPLICITLY asked for and this
-    isolation cannot provide it, else None.
+    """Return the refusal when an explicit `protect_git` cannot be honored here, else None.
 
-    `protect_git` is strict-only. Strict re-binds `.git` read-only, which needs
-    a mount namespace. On hardened there is none, so the only tool is Landlock,
-    which has no deny rules: protecting `.git` means NOT granting the workspace
-    root itself, and a Landlock grant is recursive, so granting the root its
-    own create/remove rights would grant them over `.git` too. Carving it out
-    therefore costs every top-level write: `touch newfile`, `mkdir build` and
-    `mkfifo` all fail at the workspace root, which is too much to pay.
-
-    The default DEGRADES with a warning (see `warn_sandbox_gaps`); an explicit
-    `protect_git = true` refuses, naming what is unsupported and the fix. The
-    in-process edit tools still refuse writes into `.git` at every level.
+    The read-only bind of `.git` needs a mount namespace, which only strict has. Landlock has
+    no deny rules and its grants are recursive, so carving `.git` out under hardened would cost
+    every write at the workspace root. The default degrades with a warning; the in-process
+    edit tools refuse writes into `.git` at every level.
     """
     if isolation != "hardened" or not (cfg.sandbox.protect_git and explicitly_set):
         return None
@@ -264,14 +218,11 @@ def check_protect_git_support(
 
 
 def check_jail_home(cfg: Config, isolation: IsolationLevel, *, explicitly_set: bool) -> str | None:
-    """A refusal when the jail's HOME cannot be what the config says, else
-    None.
+    """Return the refusal when the jail's HOME cannot be what the config says, else None.
 
-    `home = "tmp"` is a private tmpfs, which only `strict` has: the default
-    degrades to the cache dir with a warning (`warn_sandbox_gaps`), an explicit
-    one refuses (the `protect_git` rule). The persistent dir is created by the
-    policy builder; this refuses what the builder could not make agent6's own
-    (`jail_home_refusal`), without creating anything.
+    `home = "tmp"` is a private tmpfs, which only strict has: the default degrades to the cache
+    dir with a warning, an explicit one refuses. A persistent dir the policy builder could not
+    make agent6's own refuses too, without creating anything.
     """
     if isolation != "strict" and explicitly_set and cfg.sandbox.home == "tmp":
         return (
@@ -287,12 +238,11 @@ def check_jail_home(cfg: Config, isolation: IsolationLevel, *, explicitly_set: b
 def _hardened_grant_regions(
     cfg: Config, root: Path, worktree_git_dir: Path | None = None
 ) -> tuple[tuple[Path, str], ...]:
-    """Every region the hardened launcher grants a command, labeled by its
-    source. Derived from the SAME builders the run uses (`jail_policy` for the
-    command surface, `mcp_server_policy` per enabled server) so preflight and
-    enforcement cannot drift; the fixed sets mirror the launcher's hardened
-    ruleset (jail/src/main.rs): /tmp is granted RW, the system roots
-    read+exec."""
+    """Return every region the hardened launcher grants a command, labeled by its source.
+
+    Derived from the builders the run uses, so preflight and enforcement cannot drift; the
+    fixed sets mirror the launcher's hardened ruleset in jail/src/main.rs.
+    """
     policy = jail_policy(root, cfg, "hardened", ("true",), worktree_git_dir=worktree_git_dir)
     regions: list[tuple[Path, str]] = [
         (root, "the workspace"),
@@ -329,15 +279,11 @@ def _hardened_grant_regions(
 def unmaskable_exposures(
     cfg: Config, isolation: IsolationLevel, root: Path, worktree_git_dir: Path | None = None
 ) -> tuple[tuple[Path, Path, str], ...]:
-    """`(hidden path, granted region, region source)` triples this isolation
-    cannot mask, hidden-path first. Empty on strict (it masks) and on `none`
-    (no jail at all; the blanket unsandboxed warning covers that).
+    """Return the (hidden path, granted region, region source) triples the isolation cannot mask.
 
-    On `hardened` there is no mount namespace and Landlock has no deny rules,
-    so a hidden path OVERLAPPING any granted region is exposed in both
-    directions: hidden-inside-grant leaves the whole path readable, and a
-    grant INSIDE the hidden tree leaves that part readable. Paths are
-    resolved before containment so a `..` spelling cannot dodge the check.
+    Empty on strict, which masks, and on `none`, which has no jail. Under hardened a hidden
+    path overlapping a granted region is exposed in both directions. Paths are resolved
+    before containment so a `..` spelling cannot dodge the check.
     """
     if isolation != "hardened":
         return ()
@@ -356,16 +302,10 @@ def unmaskable_exposures(
 def check_hide_paths_support(
     cfg: Config, isolation: IsolationLevel, root: Path, worktree_git_dir: Path | None = None
 ) -> str | None:
-    """A refusal message when an EXPLICIT `[sandbox].hide_paths` entry cannot
-    be honored here, else None.
+    """Return the refusal when a `[sandbox].hide_paths` entry cannot be masked here, else None.
 
-    The same rule the other knobs follow: a default degrades with a warning,
-    a value the operator wrote down refuses rather than being silently
-    ineffective. `hide_paths` is only ever explicit, so an entry hardened
-    cannot mask refuses. The always-hidden private dirs are NOT this: the
-    operator granting a region that contains them is a choice they may mean
-    (writes stay confined and seccomp still applies), so that is a loud warning
-    instead (`warn_sandbox_gaps`).
+    `hide_paths` is only ever explicit, so an entry hardened cannot mask refuses. The
+    always-hidden private dirs warn instead: granting a region holding them may be meant.
     """
     if isolation != "hardened":
         return None  # before reading config: every other level masks
@@ -382,15 +322,11 @@ def check_hide_paths_support(
 
 
 def mcp_network_refusal(name: str, srv: MCPServerEntry, isolation: IsolationLevel) -> str | None:
-    """A refusal when *srv* EXPLICITLY named a network this host cannot give
-    it, else None.
+    """Return the refusal when the server named a network this host cannot give it, else None.
 
-    Same rule and same vocabulary as `[sandbox].network`, and therefore the
-    same guard: a network namespace needs user namespaces, which only `strict`
-    has, so `none` and `session` refuse on `hardened` while the `auto` default
-    degrades with a warning. Under `none` nothing is confined at all and the
-    blanket unsandboxed warning covers it. One owner: the run's preflight
-    (`check_mcp_network_support`) and `agent6 check` both ask here.
+    The `[sandbox].network` rule: `none` and `session` need a network namespace, which only
+    strict has, so they refuse on hardened while `auto` degrades with a warning. The run's
+    preflight and `agent6 check` both ask here.
     """
     if isolation != "hardened" or not srv.enabled:
         return None
@@ -405,7 +341,7 @@ def mcp_network_refusal(name: str, srv: MCPServerEntry, isolation: IsolationLeve
 
 
 def check_mcp_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
-    """The first server's `mcp_network_refusal`, else None."""
+    """Return the first server's network refusal, else None."""
     for name, srv in sorted(cfg.mcp.servers.items()):
         if (refusal := mcp_network_refusal(name, srv, isolation)) is not None:
             return refusal
@@ -420,18 +356,23 @@ def config_refusal(
     explicit_leaves: frozenset[str] = frozenset(),
     worktree_git_dir: Path | None = None,
 ) -> str | None:
-    """The first refusal for a config this host cannot honor, else None.
+    """Return the first refusal for a config this host cannot honor, else None.
 
-    The one list every lifecycle runs (`run`/`resume`/`ask` through
-    select_isolation, `machine run` after its interactive network fix), so a
-    check added here cannot land in one lifecycle and not the other. The
-    NETWORK checks stay per-lifecycle: machines route theirs through
-    `resolve_network_fix` and allow per-state opt-ins.
+    The one list every lifecycle runs, so a check cannot land in one and not another. The
+    network checks stay per lifecycle: machines route theirs through `resolve_network_fix`.
+
+    Args:
+        cfg: The resolved config.
+        isolation: The resolved isolation level.
+        workspace: The workspace.
+        explicit_leaves: The config leaves the operator wrote, which refuse rather than degrade.
+        worktree_git_dir: The linked worktree's git dir, when the run is in one.
+
+    Returns:
+        The refusal, or None when every check passes.
     """
     checks: tuple[Callable[[], str | None], ...] = (
-        # First, and one at a time: `check_hide_paths_support` builds the run's
-        # policy under hardened, which creates the jail's HOME and raises for
-        # one it cannot make. Refusing that here keeps it a message.
+        # The HOME check first: `check_hide_paths_support` builds the policy, which creates HOME.
         lambda: check_jail_home(cfg, isolation, explicitly_set="sandbox.home" in explicit_leaves),
         lambda: check_mcp_network_support(cfg, isolation),
         lambda: check_hide_paths_support(cfg, isolation, workspace, worktree_git_dir),
@@ -451,16 +392,10 @@ def config_refusal(
 
 
 def check_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
-    """A refusal message if the network config EXPLICITLY enforces something
-    this isolation cannot provide, else None.
+    """Return the refusal when the network config needs what the isolation cannot give, else None.
 
-    Only jailed commands have a network boundary. `network =
-    "only_explicit_states"` (singling one tool out) and `"session"` (the
-    run's own network, with no route off the box) both need a network
-    namespace, which only `strict` provides. On `hardened` we refuse rather than silently
-    under-confine, naming what is unsupported and the fix; `"auto"` is the
-    secure default that DEGRADES with a warning instead. On `none` the
-    unsandboxed warning already covers it.
+    `only_explicit_states` and `session` both need a network namespace, which only strict has;
+    `auto` degrades with a warning instead.
     """
     if isolation != "hardened":
         return None
@@ -482,12 +417,11 @@ def check_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
 
 
 def resolved_config_values(cfg: Config) -> dict[str, object]:
-    """Every config leaf whose effective value differs from its raw one, for a
-    config view: the adaptive model settings (`resolved_adaptive_values`) and
-    the two `auto` sandbox knobs as this host resolves them, so a surface
-    prints `auto` beside the level and network a run here would get. With no
-    jail binary to probe, the two stay `auto` (a run here refuses, naming
-    the binary)."""
+    """Return every config leaf whose effective value differs from its raw one.
+
+    The adaptive model settings and the two `auto` sandbox knobs as this host resolves them.
+    With no jail binary to probe, the two stay `auto`.
+    """
     out = resolved_adaptive_values(cfg)
     if cfg.sandbox.isolation == "auto" or cfg.sandbox.network == "auto":
         try:

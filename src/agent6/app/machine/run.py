@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 machine run`: compose the engine and drive a machine to completion.
+"""Compose the engine and drive a machine to completion, for `agent6 machine run`.
 
-The engine (`agent6.machine`) is a host-netns supervisor; this module resolves
-the sandbox isolation, egress viability, provider keys, budget-price and git
-identity preflight, builds the per-`agent`-state runner and the `LiveWorld`, and
-calls `drive`. Output routes through the injected `MachineFrontend.reporter`; a
-hard tool-network refusal is handed to `frontend.resolve_network_fix` (the one
-interactive step, held cli-side).
+Resolves the isolation, egress, provider-key, budget and git-identity preflight, builds the
+per-`agent`-state runner and the `LiveWorld`, and calls `drive`. A tool-network refusal is
+handed to `frontend.resolve_network_fix`, the one interactive step.
 """
 
 from __future__ import annotations
@@ -92,7 +89,7 @@ from agent6.viewmodel.machine_state import machine_spend, wait_line
 
 
 def _fail(reporter: Reporter, path: Path, problems: list[str], label: str = "") -> int:
-    """Print a FAIL header + problem bullets to stderr; always returns 1."""
+    """Return the exit code 1 after printing a FAIL header and the problems."""
     suffix = f" ({label})" if label else ""
     reporter.err(f"FAIL: {path}{suffix}")
     for problem in problems:
@@ -101,37 +98,31 @@ def _fail(reporter: Reporter, path: Path, problems: list[str], label: str = "") 
 
 
 def _transitions(n: int) -> str:
+    """Return the transition count with its noun."""
     return f"{n} transition{'' if n == 1 else 's'}"
 
 
 def uncommitted_refusal(path: Path, cwd: Path) -> str | None:
-    """A refusal message if the machine's bundle (`.asm.toml` + `scripts/`)
-    has uncommitted changes, else None.
+    """Return the refusal when the machine's bundle has uncommitted changes, else None.
 
-    `machine run` only accepts a committed bundle (docs state-machines.md
-    §7.1/§9; the `machine create` hint promises it): a tool/agent executes it
-    as trusted logic, so an untracked or dirty piece is unreviewed. One rule
-    for both pieces; `machine test` is the ungated iteration loop. Skipped
-    outside a git repo (nothing to commit against) and for pieces that resolve
-    outside the repo tree."""
+    A tool or agent executes the bundle as trusted logic, so an uncommitted piece is
+    unreviewed; `machine test` is the ungated iteration loop. Skipped outside a git repo and
+    for pieces that resolve outside the repo tree.
+    """
     if not is_git_repo(cwd):
         return None
     scripts = path.parent / "scripts"
     pieces = [(path, "machine")] + ([(scripts, "scripts bundle")] if scripts.exists() else [])
     for piece, label in pieces:
         try:
-            # Resolve the directory but keep the entry itself: resolving the
-            # entry would turn a dirty retargeted symlink into its clean
-            # destination and authorize an uncommitted machine.
+            # Resolving the entry itself would turn a retargeted symlink into its clean target.
             rel = (piece.parent.resolve() / piece.name).relative_to(cwd.resolve()).as_posix()
         except ValueError:
             continue
         try:
             dirty = paths_dirty(cwd, (rel,))
         except GitError as exc:
-            # Fail-open (this is a review-discipline gate, not a security
-            # boundary), but never SILENTLY: a broken-git environment that
-            # can't be probed must be visible, not read as "clean".
+            # A review-discipline gate, not a security boundary: fail open, never silently.
             print(
                 f"[agent6] WARNING: could not check {rel} for uncommitted changes: {exc}",
                 file=sys.stderr,
@@ -148,17 +139,30 @@ def uncommitted_refusal(path: Path, cwd: Path) -> str | None:
 def machine_tool_runner(
     cwd: Path, machine_id: str, clone_root: Path
 ) -> Callable[[JailPolicy], CommandResult]:
-    """A jail runner that executes each tool policy in the machine's own tree.
+    """Return a jail runner that executes each tool policy in a fresh clone at the chain tip.
 
-    Run states commit to the machine chain and never touch the checkout the
-    policy was built against, so a tool state jailed there cannot see their
-    work; each call runs in a fresh clone at the chain tip instead (the same
-    tree a run state starts from). Tree writes are scratch, discarded with the
-    clone: the durable channels stay the blackboard and
-    `$AGENT6_MACHINE_DATA_DIR`. Bundle protect paths under *cwd* are remapped to
-    the clone's own copy, like a run state's."""
+    Run states commit to the machine chain and never touch the checkout, so a tool state
+    jailed there could not see their work. Tree writes are scratch, discarded with the clone;
+    the durable channels are the blackboard and `$AGENT6_MACHINE_DATA_DIR`.
+
+    Args:
+        cwd: The repository.
+        machine_id: The machine whose chain the clones start from.
+        clone_root: Where the per-call clones are made.
+
+    Returns:
+        The runner.
+    """
 
     def run(policy: JailPolicy) -> CommandResult:
+        """Run the policy in a fresh clone, with the protect paths remapped into it.
+
+        Returns:
+            The command's result.
+
+        Raises:
+            JailUnavailableError: The clone could not be made.
+        """
         dest = clone_root / f"tool-{uuid.uuid4().hex[:12]}"
         try:
             clone_at_machine_chain(cwd, dest, machine_chain_ref_for(machine_id))
@@ -190,25 +194,33 @@ def machine_tool_policy_factory(
     protect_paths: tuple[Path, ...],
     data_dir: Path | None,
 ) -> ToolPolicyFactory:
-    """Per-call tool-jail policies for a machine, through the ONE shared
-    builder (`jail_policy`) plus the machine deltas: the bundle's protect
-    paths and the data dir's RW grant + `$AGENT6_MACHINE_DATA_DIR`. Operator
-    grants, `protect_git`, hidden paths, env, and tool mounts therefore hold
-    in machine tool jails exactly as in run commands."""
+    """Return the per-call tool-jail policy builder for a machine.
+
+    The one shared `jail_policy` plus the machine deltas (the bundle's protect paths, the data
+    dir's grant and `$AGENT6_MACHINE_DATA_DIR`), so operator grants, `protect_git`, hidden
+    paths, env and tool mounts hold in machine tool jails as in run commands.
+
+    Args:
+        cfg: The resolved config.
+        cwd: The repository.
+        isolation: The isolation level.
+        protect_paths: The bundle's read-only paths.
+        data_dir: The machine's writable scratch, when it has one.
+
+    Returns:
+        The builder.
+    """
     env_base = passthrough_env()
     extra_rw: tuple[Path, ...] = ()
     if data_dir is not None:
-        # Exported to match where the jail mounts the dir: extra_rw_paths mount
-        # at their real locations on every isolation level.
+        # extra_rw_paths mount at their real locations on every isolation level.
         env_base["AGENT6_MACHINE_DATA_DIR"] = str(data_dir)
         extra_rw = (data_dir,)
 
     def build(
         argv: tuple[str, ...], timeout_s: float, network: NetworkMode, pass_env: tuple[str, ...]
     ) -> JailPolicy:
-        # The state's declared names, copied from the operator's environment
-        # when set there: the run's startup refused any the operator has not
-        # allowed (`machine_pass_env_refusal`).
+        """Return one call's policy; the pass_env names were allowed at startup."""
         env = {**env_base, **{k: os.environ[k] for k in pass_env if k in os.environ}}
         return jail_policy(
             cwd,
@@ -225,7 +237,7 @@ def machine_tool_policy_factory(
     return build
 
 
-def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecycle's refusals, one per surface, in order
+def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one per surface, in order
     path: Path,
     frontend: MachineFrontend,
     *,
@@ -235,61 +247,53 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
     auto_approve: bool = False,
     no_commands: bool = False,
 ) -> int:
+    """Run a machine to its end, wait or stop.
+
+    Args:
+        path: The `.asm.toml`.
+        frontend: The reporter and the interactive network fix.
+        config_path: An explicit config file, else the effective one.
+        exit_on_wait: Return at the first wait state instead of blocking through it.
+        disable_sandbox: Run unconfined.
+        auto_approve: Approve every run_command in the agent states.
+        no_commands: Withhold the command tools from the agent states.
+
+    Returns:
+        The exit code: 0 when the machine ended ok, waits or stopped, 1 on a failure, 2 on a
+        refusal.
+    """
     reporter = frontend.reporter
+    # The three flags reach each agent subprocess through the env, which the LLM cannot reach.
     if disable_sandbox:
-        # Set the env setter so this supervisor's resolve_isolation resolves to
-        # none; it then passes that isolation to each agent subprocess in its
-        # request (the subprocess takes req.isolation as given, re-checking
-        # only that this host supports it).
-        # Using the env (vs mutating cfg) is the simplest single knob; the env
-        # is operator-controlled and the LLM cannot reach it.
         os.environ["AGENT6_DANGEROUSLY_DISABLE_SANDBOX"] = "1"
     if auto_approve:
-        # The operator's per-invocation run_command grant, reaching each agent
-        # subprocess the same way the sandbox setter does (env, operator-only,
-        # structurally LLM-unreachable). The subprocess applies it through
-        # `with_sandbox_overrides`, which upgrades ask -> yes but never
-        # resurrects a withheld "no".
         os.environ["AGENT6_AUTO_APPROVE"] = "1"
     if no_commands:
-        # The tightening counterpart, carried the same way: each agent state's
-        # subprocess withholds every command tool, as `run --no-commands` does.
         os.environ["AGENT6_NO_COMMANDS"] = "1"
     try:
         spec = load_machine(path)
     except MachineError as exc:
         return _fail(reporter, path, list(exc.problems))
-    # Re-validate the script bundle before executing anything: `load_machine`
-    # does not, and on an isolation level that cannot RO-bind the bundle a `scripts/`
-    # symlink escaping it (which `machine check` rejects) would otherwise be read
-    # by a tool. Security boundary, so run enforces it too, not just check.
+    # A security boundary: `load_machine` does not validate the bundle, so run does, like check.
     bundle_problems = validate_bundle(spec, path)
     if bundle_problems:
         return _fail(reporter, path, bundle_problems, "bundle")
     cwd = Path.cwd()
-    # Machines are operator artifacts: refuse an uncommitted file before running
-    # anything (docs §7.1/§9), so a tool/agent never executes unreviewed logic.
     uncommitted = uncommitted_refusal(path, cwd)
     if uncommitted is not None:
         reporter.refuse(uncommitted)
         return 2
     states = list(spec.states.values())
     has_agent_state = any(getattr(s, "kind", None) == "agent" for s in states)
-    # mode="run" agent states edit + commit; they need a resolved git identity.
+    # mode="run" agent states edit and commit; they need a resolved git identity.
     has_run_agent = any(isinstance(s, AgentState) and s.mode == "run" for s in states)
     tool_states = [s for s in states if isinstance(s, ToolState)]
     agent_runner: Callable[[AgentRequest, Path | None], AgentExecResult] | None = None
-    # Default isolation for confinement-free machines: resolve from the host.
     env = detect_env()
     isolation: IsolationLevel = env.detected_isolation
-    # The running machine's own file + scripts bundle are read-only in every
-    # run jail, so a tool/agent can't rewrite its own logic or bundled scripts.
+    # The machine's own file and scripts are read-only in every jail: no state rewrites them.
     protect_paths = machine_protect_paths(path, cwd)
-    # Load the effective config (machine [config] overlay included) for EVERY
-    # machine: a pure wait/branch machine still reads [machine] snapshot_keep from
-    # it, and validating the overlay up front means a bad overlay or an ignored
-    # snapshot_keep never slips through to a pure machine. The agent/tool block
-    # below adds the provider/sandbox checks only those state kinds need.
+    # Every machine loads the overlay: a pure wait/branch machine still reads snapshot_keep.
     try:
         eff = load_effective_with_overlay(cwd, spec.config, explicit_path=config_path)
         cfg = eff.config
@@ -298,10 +302,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
         return 2
     cfg = cfg.with_sandbox_overrides(auto_approve=auto_approve, no_commands=no_commands)
     if has_run_agent and cfg.sandbox.run_commands == "ask":
-        # Say the dead-end up front: an unattended machine auto-denies every
-        # run_command under 'ask' (machine bridges deny when no front-end is
-        # attached), so a mode='run' state that shells out burns its budget
-        # against denials.
+        # An unattended machine auto-denies every run_command under 'ask'.
         reporter.note(
             "this machine has mode='run' agent state(s) and"
             " sandbox.run_commands='ask'; an unattended machine auto-denies"
@@ -311,8 +312,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
             " run_command's gate, so an unattended execution ends unverified."
         )
     snapshot_keep = cfg.machine.snapshot_keep
-    # One clone base for every state of a machine that writes: the agent
-    # states' per-state clones and the tool states' per-call trees.
+    # One clone base for the agent states' per-state clones and the tool states' per-call trees.
     clone_root = subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
     agent_states = [s for s in spec.states.values() if isinstance(s, AgentState)]
     if has_agent_state or tool_states:
@@ -334,8 +334,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
             isolation = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
         except SessionRefusedError as refusal:
             return refusal.rc
-        # Its fix is an allowlist entry, never a network change: refused
-        # outright, ahead of the network-fix flow below.
+        # Its fix is an allowlist entry, never a network change: ahead of the network-fix flow.
         if (denied := machine_pass_env_refusal(cfg, spec.states)) is not None:
             reporter.refuse(denied)
             return 2
@@ -348,15 +347,13 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
             )
             if isinstance(outcome, int):
                 return outcome
-            cfg, isolation = outcome  # fix applied + re-validated clear; continue
+            cfg, isolation = outcome  # the fix applied and re-validated clear
         cfg_err = config_refusal(cfg, isolation, cwd, explicit_leaves=eff.explicit_leaves)
         if cfg_err is not None:
             reporter.refuse(cfg_err)
             return 2
         if has_agent_state:
-            # The machine's statically reachable routes include every agent
-            # state's provider/model pins; discovering a dead route only when
-            # that state fires wastes the run up to it.
+            # Every agent state's pin is checked now: a dead route found later wastes the run.
             routes = []
             for state in agent_states:
                 state_cfg = cfg.with_machine_agent_overrides(
@@ -371,15 +368,12 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
             if missing is not None:
                 reporter.err(missing)
                 return 2
-            # After check_provider_keys so the price cache has been refreshed.
+            # After check_provider_keys, which refreshed the price cache.
             budget_err = budget_preflight(cfg, extra_routes=routes, reporter=reporter)
             if budget_err is not None:
                 reporter.refuse(budget_err)
                 return 2
-            # Resolve the commit identity HERE on the host, where global git
-            # config is visible, so a mode="run" state's confined agent (which
-            # can't read ~/.gitconfig under Landlock) still commits cleanly. A
-            # missing identity fails loudly up front, not as mid-loop noise.
+            # Resolved on the host: a confined agent cannot read ~/.gitconfig.
             commit_identity: CommitIdentity | None = None
             if has_run_agent:
                 base = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
@@ -390,11 +384,8 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
                     return 2
                 commit_identity = CommitIdentity(name=name, email=email)
             root = machines_root(state_dir(cwd)) / spec.machine
-            # The engine is a host-netns supervisor; each agent state runs in
-            # its own subprocess. Carry the complete effective config because
-            # that child cannot rediscover the invocation's --config layer.
-            # Omitting values equal to defaults would also lose an explicit
-            # reset when the child reloads a non-default global layer.
+            # The complete effective config: the child cannot rediscover the --config layer, and
+            # omitting values equal to defaults loses an explicit reset over a non-default global.
             agent_overlay = cfg.model_dump(mode="json")
             agent_overlay.pop("preset", None)  # an overlay cannot select a preset
             agent_runner = build_machine_agent_runner(
@@ -404,35 +395,25 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
                 root / "agent_transcripts",
                 protect_paths,
                 commit_identity,
-                # A machine that writes never touches the checkout: every
-                # agent state works a fresh clone at the machine chain's tip,
-                # and each mode="run" state lands both the chain (next
-                # state's continuation) and the visible agent6/machine-<id>
-                # branch (the operator's handle) back per state, through the
-                # lane mechanism run sequentially.
+                # A machine that writes never touches the checkout: each state works a fresh clone.
                 machine_id=spec.machine if has_run_agent else None,
                 clone_root=clone_root if has_run_agent else None,
             )
     try:
         warn_sandbox_gaps(isolation, env, cfg, root=cwd, reporter=reporter)
     except JailUnavailableError as exc:
-        # The hardened exposure scan builds the run's policy, which creates the
-        # jail's HOME and refuses one it cannot make.
+        # The hardened exposure scan builds the run's policy, which creates the jail's HOME.
         reporter.refuse(str(exc))
         return 2
     warn_cleartext_credential_endpoints(cfg, reporter=reporter)
     root = machines_root(state_dir(cwd)) / spec.machine
     journal = MachineJournal(root, snapshot_keep=snapshot_keep)
-    # Persistent, writable scratch for tool scripts (see LiveWorld.data_dir).
     data_dir = root / "data"
     try:
         with machine_lock(root):
             journal.ensure_dirs()
-            # Refuse a rerun of an ended instance BEFORE any worker.pid stamp: a
-            # terminal journal (last event a MachineEnd) can only be replayed,
-            # not advanced. Stamping the pid here would trip spawn_and_confirm's
-            # started() (false "started"), and the dead child's zombie pid would
-            # then read "running" forever in `machine status`.
+            # Refused before any worker.pid stamp: a stamped pid would read "started" and then
+            # "running" forever in `machine status`.
             events = journal.read()
             if events and isinstance(events[-1], MachineEnd):
                 end = events[-1]
@@ -444,9 +425,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
                 )
                 return 2
             if journal.exists():
-                # A live instance runs the bundle it recorded: continuation
-                # holds the working bundle to those bytes, so an edit can
-                # never execute under the old instance's identity.
+                # A live instance runs the bundle it recorded.
                 drift = bundle_drift(root, path)
                 if drift is not None:
                     reporter.refuse(
@@ -456,24 +435,13 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
                     )
                     return 2
             mkdir_for_real_user(data_dir)
-            # A leftover stop marker from a prior invocation would park this
-            # one at its first boundary; starting the machine is the answer to
-            # any stale request (mirrors the session-side stale-marker clear).
+            # A leftover stop marker would park this invocation at its first boundary.
             clear_stop_request(root)
-            # A crash mid-agent-state left its metered spend only in the
-            # per-state log; book it into the journal before the drive re-runs
-            # the state (which would start a fresh log over it).
+            # Before the drive re-runs the state, which starts a fresh log over the crashed one.
             book_crashed_attempt(journal, root)
-            # A hub-spawned machine (web/TUI: AGENT6_DETACHED_AWAY=wait) parks
-            # its approvals/questions for the front-end instead of the headless
-            # deny, the same detach semantics a spawned run gets.
             apply_spawned_away_default(root, approval_scopes(cfg))
             if not journal.exists():
-                # A fresh instance must not silently continue a dead one's
-                # tree: the chain ref outlives an archived instance dir, and
-                # its tip is the OLD instance's work, not this repo's HEAD.
-                # Once that work is in HEAD the chain is spent, and a chain
-                # with no ref starts from HEAD (`clone_at_machine_chain`).
+                # The chain ref outlives an archived instance dir; its tip is that instance's work.
                 ref = machine_chain_ref_for(spec.machine)
                 branch = machine_branch_for(spec.machine)
                 tip = chain_tip(cwd, ref) if has_run_agent else None
@@ -493,16 +461,11 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
                     )
                     return 2
                 write_bundle(root, path)
-            # Operator argv fired on machine.notify/machine.end, on the host
-            # outside the jail (None when [machine.notify].on_event is unset).
             operator_hook = build_machine_notify_hook(cfg, spec.machine, root)
 
             def surface_notify(kind: str, state: str, message: str, level: str) -> None:
-                # The foreground run is its own watcher: a notify message that
-                # is journal-only never reaches the operator sitting right here.
-                # Presentation must never affect control flow (engine contract),
-                # so a dead stderr (EPIPE, full disk on a detached spawn's log)
-                # is swallowed rather than killing the machine un-journaled.
+                """Show a notify here, where the foreground run is its own watcher, then hook."""
+                # Presentation never affects control flow: a dead stderr is swallowed.
                 if kind == "notify":
                     with contextlib.suppress(OSError):
                         reporter.note(f"notify [{level}] {state!r}: {message}")
@@ -510,8 +473,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
                     operator_hook(kind, state, message, level)
 
             def say_where_it_parked() -> None:
-                # The wait blocks in-process with nothing on the terminal
-                # otherwise, which reads as a hang for the whole interval.
+                """Print the wait line; a silent in-process wait reads as a hang."""
                 pending = journal.read_pending_wait()
                 if pending is not None:
                     reporter.note(wait_line(spec.machine, pending.state, pending.wake_at))
@@ -529,22 +491,16 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
                     machine_tool_runner(cwd, spec.machine, clone_root) if has_run_agent else None
                 ),
                 data_dir=data_dir,
-                # Each agent state writes its own watchable logs.jsonl here, so a
-                # running machine is followable like a run (pruned to keep recent).
                 state_log_root=root / "states",
                 state_log_keep=cfg.machine.state_log_keep,
                 notify_hook=surface_notify,
                 on_wait=say_where_it_parked,
             )
-            # Stamp liveness only after every refusal which can still return
-            # from preflight. From here the finally always clears it.
+            # Stamped after the last refusal; the finally always clears it.
             write_worker_pid(root, os.getpid())
             try:
                 result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
             finally:
-                # The worker is done with the machine on every exit (ended,
-                # waiting, stopped, error): a stale pid file would read
-                # "running" wherever the pid number stays alive.
                 clear_worker_pid(root)
     except (JournalError, EngineError) as exc:
         reporter.error(str(exc))
@@ -567,9 +523,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecyc
             f" after {_transitions(result.transitions)} ({result.reason});"
             f" spent {format_usd(spend.usd, partial=spend.partial)}"
         )
-    # A machine with run states commits to its own branch and never touches the
-    # checkout, so the ending names the branch and how to merge it: the same
-    # three lines a run ends on.
+    # A machine with run states commits to its own branch: the ending names it, as a run's does.
     branch = machine_branch_for(spec.machine)
     if has_run_agent and branch_exists(cwd, branch) and not is_ancestor(cwd, branch, "HEAD"):
         reporter.out(f"\nchanges are on {branch}")

@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Host-side preflight for `machine run`/`create`.
+"""Check a machine on the host before `machine run` or `create` drives it.
 
-Before the engine composition drives a machine, these checks refuse a run whose
-tool-network need the isolation cannot enforce (`machine_network_refusal`), and
-resolve the machine's own read-only protect paths (`machine_protect_paths`) and
-the operator notify hook (`build_machine_notify_hook`). Pure computations; the
-hook itself runs through `app/finalize.run_notify_hook`, the one runner both
-notify hooks share.
+Refuses a run whose tool-network need the isolation cannot enforce, resolves the machine's
+read-only protect paths, and builds the operator notify hook. The hook runs through
+`finalize.run_notify_hook`, the one runner both notify hooks share.
 """
 
 from __future__ import annotations
@@ -25,10 +22,10 @@ from agent6.machine import StateSpec, ToolState
 
 
 def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> str | None:
-    """A refusal message naming every tool state that asks for an environment
-    variable the operator's `[machine].pass_env` does not allow, else None.
-    The allowlist lives in the global or repo config, never in the machine's
-    own file."""
+    """Return the refusal naming every tool state asking for a disallowed variable, else None.
+
+    The allowlist is `[machine].pass_env` in the global or repo config, never the machine's file.
+    """
     allowed = set(cfg.machine.pass_env)
     asks = [
         f"[states.{name}] asks for {', '.join(n for n in state.pass_env if n not in allowed)}"
@@ -46,9 +43,13 @@ def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> st
 
 @dataclass(frozen=True, slots=True)
 class NetworkRefusal:
-    """A run this host cannot honor: the operator's message and the config
-    leaves that clear it, empty when only a different isolation can. Applied in
-    order, so sequential `config set` writes never trip the combo validator."""
+    """Describe a run this host cannot honor.
+
+    Attributes:
+        message: The refusal the operator reads.
+        fix: The config leaves that clear it, in an order sequential `config set` writes accept;
+            empty when only a different isolation can.
+    """
 
     message: str
     fix: tuple[tuple[str, str], ...] = ()
@@ -57,23 +58,24 @@ class NetworkRefusal:
 def machine_network_refusal(
     cfg: Config, isolation: IsolationLevel, tool_states: list[ToolState]
 ) -> NetworkRefusal | None:
-    """The refusal if this machine's tool-network needs can't be honored.
+    """Return the refusal when the machine's tool-network needs cannot be honored, else None.
 
-    Layers machine-specific rules on top of `check_network_support` (which
-    handles network=only_explicit_states / session on `hardened`). On
-    `hardened` per-tool isolation is impossible, so we refuse, rather than
-    silently mis-confine, whenever isolation is *required*: by the operator
-    (`network = "session"`) or by a state (`network = "none"`). A
-    networked state under `network` in {"session", "auto"} (both keep the
-    tool off the host network) is a config conflict, refused on any isolation.
-    Each refusal carries the fix its own message names. Returns None when fine.
+    Layers the machine rules over `check_network_support`. `hardened` cannot isolate one
+    tool's network, so a state that requires isolation is refused rather than mis-confined.
+    A networked state under `network` in {"session", "auto"} is a config conflict on any
+    isolation. Each refusal carries the fix its message names.
+
+    Args:
+        cfg: The resolved config.
+        isolation: The isolation level the run resolved.
+        tool_states: The machine's tool states.
+
+    Returns:
+        The refusal, or None when the host can honor the machine.
     """
     has_allow = any(s.network == "host" for s in tool_states)
     has_block = any(s.network == "none" for s in tool_states)
-    # Every branch reached through `hardened_fix` is hardened-only: a state
-    # that REQUIRES no network needs strict's per-tool netns, which no config
-    # leaf conjures, and only a state that ASKED for the network justifies
-    # widening past the 'auto' that degrades with a warning.
+    # No config leaf gives hardened a per-tool netns; only an asking state justifies 'host'.
     hardened_fix: tuple[tuple[str, str], ...] = (
         () if has_block else (("sandbox.network", "host" if has_allow else "auto"),)
     )
@@ -83,8 +85,6 @@ def machine_network_refusal(
     tn = cfg.sandbox.network
     no_tool_net = tn in ("session", "auto")  # both keep the tool off the host network
     if has_allow and no_tool_net:
-        # Name the resolved value: a hardcoded one misstates the config on a
-        # refusal surface.
         if isolation == "hardened":
             return NetworkRefusal(
                 'a tool state sets network = "host" but sandbox.network ='
@@ -110,9 +110,11 @@ def machine_network_refusal(
 
 
 def machine_protect_paths(machine_path: Path, cwd: Path) -> tuple[Path, ...]:
-    """The machine's own `.asm.toml` + `scripts/` bundle, to mark read-only
-    in run jails. Only paths under the jail-mounted cwd are enforceable (a path
-    outside cwd isn't in the child's view, so it can't edit it anyway)."""
+    """Return the machine file and its `scripts/` bundle, to mark read-only in run jails.
+
+    Only paths under the jail-mounted cwd are listed: a path outside it is not in the child's
+    view.
+    """
     cwd_r = cwd.resolve()
     out: list[Path] = []
     for p in (machine_path, machine_path.parent / "scripts"):
@@ -123,18 +125,16 @@ def machine_protect_paths(machine_path: Path, cwd: Path) -> tuple[Path, ...]:
 
 
 def _stderr_note(message: str) -> None:
-    """A machine's own notices go to stderr: its stdout is the operator's
-    run output."""
+    """Write a notice to stderr; the machine's stdout is the operator's run output."""
     print(f"[agent6] {message}", file=sys.stderr)
 
 
 def build_machine_notify_hook(
     cfg: Config, machine_id: str, root: Path
 ) -> Callable[[str, str, str, str], None] | None:
-    """The operator notify hook fired on `machine.notify`/`machine.end`, or None.
+    """Return the operator hook fired on `machine.notify` and `machine.end`, or None.
 
-    The argv comes from `[machine.notify].on_event`, the mirror of
-    `[notify].on_complete`; see `run_notify_hook` for how it runs.
+    The argv is `[machine.notify].on_event`, the mirror of `[notify].on_complete`.
     """
     notify = cfg.machine.notify
     if not notify.on_event:

@@ -1,25 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Validate the helper scripts `machine create` generates so a committed bundle
-is production-ready: lint-clean, typed, and proven to *simulate* offline.
+"""Validate the scripts `machine create` generates: lint-clean, typed, and simulated offline.
 
-Two layers, matching their risk:
+Two layers, matching their risk. `lint_and_typecheck` is static analysis (ruff and ty read
+the files, never run them), so it shells out with a fixed argv; ruff runs on the real files
+under its own config discovery, ty checks a private temp copy. `run_offline_tests` executes
+each `*_test.py`, model-authored code, so it goes through `run_in_jail` with no network.
 
-* :func:`lint_and_typecheck`, STATIC analysis only (ruff + ty read the files,
-  they never run them), so it shells out directly with a fixed argv. ruff runs
-  on the real files, so its own config discovery applies: the nearest config
-  above the machine file (the bundle's own pyproject.toml/ruff.toml, else the
-  repo's) pins the lint rules. ty has no config-isolation flag, so it checks a
-  private temp copy; mock-heavy `*_test.py` files trip it on `unittest.mock`
-  internals, so they are gated by *execution* instead.
-* :func:`run_offline_tests`, EXECUTES each `*_test.py`. Because that runs
-  model-authored code, it goes through :func:`run_in_jail` (no network, the same
-  confinement a tool state gets), never a bare subprocess.
-
-A missing ruff/ty is skipped silently (a stripped install still produces a
-bundle). An unavailable jail is different: it surfaces a diagnostic rather than
-silently dropping the offline-test gate, except on isolation `none`, where
-there is no jail to run model-authored code in and execution is skipped.
+A missing ruff or ty is skipped silently, so a stripped install still produces a bundle. An
+unavailable jail surfaces a diagnostic, except on isolation `none`, where execution is skipped.
 """
 
 from __future__ import annotations
@@ -44,11 +33,10 @@ _MAX_DIAG_LINES = 30
 
 
 def _resolve_tool(name: str) -> list[str] | None:
-    """Locate a bundled dev tool (`ruff` / `ty`) as an argv prefix.
+    """Return the argv prefix that runs a dev tool (`ruff`, `ty`), or None when it is absent.
 
-    Prefer the console script installed next to the running interpreter (the
-    runtime dependency), then anything on `PATH`, then a self-contained
-    `uvx <name>`. `None` if the tool can't be found at all (skip it)."""
+    The console script beside the running interpreter wins, then `PATH`, then `uvx <name>`.
+    """
     local = Path(sys.executable).parent / name
     if local.is_file():
         return [str(local)]
@@ -62,11 +50,12 @@ def _resolve_tool(name: str) -> list[str] | None:
 
 
 def available_tools() -> list[str]:
-    """Which of ruff/ty resolve in this environment (for a 'skipped' note)."""
+    """Return which of ruff and ty resolve in this environment."""
     return [name for name in ("ruff", "ty") if _resolve_tool(name) is not None]
 
 
 def _trim(text: str) -> str:
+    """Return the text cut to the diagnostic line cap, with a count of what was dropped."""
     lines = text.splitlines()
     if len(lines) <= _MAX_DIAG_LINES:
         return text.strip()
@@ -75,11 +64,17 @@ def _trim(text: str) -> str:
 
 
 def _run_static(argv: list[str], cwd: Path, label: str, *, strip: Path | None = None) -> str | None:
-    """Run a static checker; return a problem string on failure, else None.
-    Diagnostics lose the *strip* prefix (default *cwd*) so they read as bundle
-    paths."""
-    # Fixed argv (an operator-installed tool + flags); the only LLM-derived input
-    # is the *files* it statically reads, it never executes them. See AGENTS.md.
+    """Run a static checker and return its problems, or None when it passed.
+
+    Args:
+        argv: The checker's fixed argv; the model-authored files are only read, never run.
+        cwd: Where the checker runs.
+        label: The checker's name in the problem text.
+        strip: The path prefix diagnostics lose so they read as bundle paths; defaults to cwd.
+
+    Returns:
+        The problem text, or None on a clean pass.
+    """
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     try:
@@ -91,18 +86,17 @@ def _run_static(argv: list[str], cwd: Path, label: str, *, strip: Path | None = 
     if res.returncode == 0:
         return None
     out = (res.stdout + ("\n" + res.stderr if res.stderr else "")).strip()
-    # Diagnostics name the private temp copy; relativize so they read as bundle
-    # paths (scripts/...), mirroring the run_offline_tests cleanup.
     base = strip or cwd
     out = out.replace(str(base.resolve()) + "/", "").replace(str(base) + "/", "")
     return f"{label} found problems:\n{_trim(out)}"
 
 
 def _nearest_ruff_config(start: Path) -> Path | None:
-    """The ruff config governing *start*: the nearest `.ruff.toml`, `ruff.toml`,
-    or `pyproject.toml` with a `[tool.ruff]` table, walking up. Mirrors ruff's
-    own discovery, for the one caller whose files live outside the tree their
-    config governs (machine create's scratch bundle)."""
+    """Return the ruff config governing a path, walking up as ruff's own discovery does.
+
+    For the one caller whose files live outside the tree their config governs: the scratch
+    bundle of `machine create`.
+    """
     base = start.resolve()
     for directory in (base, *base.parents):
         for name in (".ruff.toml", "ruff.toml", "pyproject.toml"):
@@ -123,13 +117,21 @@ def _nearest_ruff_config(start: Path) -> Path | None:
 def _ruff_invocation(
     ruff: list[str], scripts_dir: Path, ruff_config_from: Path | None, *, fix: bool
 ) -> tuple[list[str], Path]:
-    """ruff's argv and cwd. Native discovery runs from the bundle dir. A config
-    resolved from *ruff_config_from* runs from that config's own directory on
-    the absolute scripts path: `--config` anchors a relative pattern
-    (per-file-ignores, extend-exclude) to the cwd, where discovery anchors it
-    to the config's directory, so a pattern reads here as it does under
-    `machine check`. A pattern keyed to the bundle's published location still
-    matches nothing under the draft's path."""
+    """Return ruff's argv and cwd.
+
+    Native discovery runs from the bundle dir. A config resolved from the publish destination
+    runs from that config's own directory on the absolute scripts path: `--config` anchors a
+    relative pattern to the cwd, where discovery anchors it to the config's directory.
+
+    Args:
+        ruff: The argv prefix that runs ruff.
+        scripts_dir: The bundle's scripts directory.
+        ruff_config_from: Where to resolve the config from, else native discovery.
+        fix: Apply ruff's safe fixes.
+
+    Returns:
+        The argv and the directory to run it from.
+    """
     argv = [*ruff, "check", "--no-cache", "--output-format", "concise"]
     cwd, target = scripts_dir.resolve().parent, scripts_dir.name
     if ruff_config_from is not None:
@@ -147,25 +149,20 @@ def _ruff_invocation(
 def lint_and_typecheck(
     scripts_dir: Path, *, fix: bool = False, ruff_config_from: Path | None = None
 ) -> list[str]:
-    """Lint (ruff) and type-check (ty) the bundle's Python scripts, no execution.
+    """Lint and type-check the bundle's Python scripts without running them.
 
-    Returns human-readable problems (empty = clean / tools absent).
-    `*_test.py` files are linted but not type-checked.
+    `*_test.py` files are linted, not type-checked. `--no-cache` keeps the operator-facing
+    verbs write-free.
 
-    ruff runs on the real files with its own config discovery, so the nearest
-    config above the machine file pins the rules: the bundle's own
-    pyproject.toml/ruff.toml, else the repo's, else ruff's defaults.
-    `ruff_config_from` (machine create only) resolves that config from the
-    publish destination instead: the scratch bundle lives under the state dir,
-    where discovery would find nothing, and the draft gate must agree with the
-    `machine check` the published bundle faces. `--no-cache` keeps the
-    operator-facing verbs write-free (no `.ruff_cache`).
+    Args:
+        scripts_dir: The bundle's scripts directory.
+        fix: Apply ruff's safe fixes in place; only `machine create` does, on its own bundle.
+        ruff_config_from: Resolve the ruff config from the publish destination, so the draft
+            gate agrees with the `machine check` the published bundle faces.
 
-    `fix=True` (machine create only, on its OWN generated bundle) applies
-    ruff's safe fixes in place and reports only what remains: a whole
-    authoring attempt burned on fixable lint otherwise. Operator-facing verbs
-    (`machine check`/`test`) never fix: a check must not mutate the operator's
-    files."""
+    Returns:
+        The problems found; empty when clean or the tools are absent.
+    """
     if not scripts_dir.is_dir() or not any(scripts_dir.rglob("*.py")):
         return []
     problems: list[str] = []
@@ -179,9 +176,7 @@ def lint_and_typecheck(
     if ty := _resolve_tool("ty"):
         real = sorted(p for p in scripts_dir.rglob("*.py") if not p.name.endswith(_TEST_SUFFIX))
         if real:
-            # ty has no config-isolation flag and walks up from the checked
-            # files to the nearest pyproject.toml, which could pull in a stray
-            # config, so it checks a private temp copy.
+            # ty walks up to the nearest pyproject.toml and has no isolation flag: a temp copy.
             work = Path(tempfile.mkdtemp(prefix="agent6-scriptcheck-"))
             try:
                 dst = work / "scripts"
@@ -199,10 +194,15 @@ def lint_and_typecheck(
 
 @dataclass(frozen=True, slots=True)
 class OfflineTestOutcome:
-    """`run_offline_tests`' verdict: failures, plus what could NOT run.
+    """Record the offline tests' failures and what could not run.
 
-    `skipped`/`skip_reason` ride to the caller's own verdict surface: a skip
-    buried in stderr while the verdict reads OK reads as tests running green."""
+    A skip rides to the caller's verdict surface: buried in stderr it reads as tests green.
+
+    Attributes:
+        problems: One entry per failed test.
+        skipped: How many tests could not run.
+        skip_reason: Why they could not.
+    """
 
     problems: tuple[str, ...] = ()
     skipped: int = 0
@@ -212,33 +212,30 @@ class OfflineTestOutcome:
 def run_offline_tests(
     bundle_dir: Path, isolation: IsolationLevel, *, timeout_s: float = 30.0
 ) -> OfflineTestOutcome:
-    """Execute every `scripts/**/*_test.py` in a no-network jail (the bundle's
-    offline simulation).
+    """Execute every `scripts/**/*_test.py` in a no-network jail.
 
-    Requires the strict isolation: it is the only one whose network namespace can
-    enforce the no-network contract on model-authored code. On `none` (no jail
-    at all) and `hardened` (a jail, but no network namespace, so
-    `network="none"` cannot be honored and the scripts would reach the host
-    network) the tests are counted as skipped with the reason, for the caller
-    to render on its verdict; the static checks still apply. Each test gets a
-    fresh writable `$AGENT6_MACHINE_DATA_DIR` so record-style scripts can be
-    exercised. Tests run under the default `JailPolicy` memory cap (these are
-    offline mocks; the operator's `[sandbox].memory_limit_mb` is not
-    consulted)."""
+    Only the strict isolation has the network namespace that enforces the no-network contract
+    on model-authored code; on `none` and `hardened` the tests count as skipped. Each test gets
+    a fresh writable `$AGENT6_MACHINE_DATA_DIR`, under the default `JailPolicy` memory cap.
+
+    Args:
+        bundle_dir: The bundle holding `scripts/`.
+        isolation: The isolation level the run resolved.
+        timeout_s: The bound on each test.
+
+    Returns:
+        The failures and what could not run.
+    """
     scripts_dir = bundle_dir / "scripts"
     if not scripts_dir.is_dir():
         return OfflineTestOutcome()
     if not sorted(scripts_dir.rglob(f"*{_TEST_SUFFIX}")):
         return OfflineTestOutcome()
-    # Run against a private temp COPY, like lint_and_typecheck: the real
-    # bundle lives under the per-repo state dir, which the jail masks as a
-    # private path, so tests run in place see an empty tree (python3: can't
-    # open file) or the launcher fails rootfs setup outright.
+    # A temp copy: the jail masks the state dir the real bundle lives under.
     workdir = Path(tempfile.mkdtemp(prefix="agent6-scripttest-"))
     try:
         bundle_copy = workdir / "bundle"
-        # The tests need the bundle, not its history: a drafting workspace is a
-        # git repo, and copying `.git` per attempt copies every draft it holds.
+        # A drafting workspace is a git repo; `.git` holds every draft and the tests need none.
         shutil.copytree(
             bundle_dir, bundle_copy, symlinks=True, ignore=shutil.ignore_patterns(".git")
         )
@@ -250,22 +247,18 @@ def run_offline_tests(
 def _run_offline_tests_in(
     bundle_dir: Path, isolation: IsolationLevel, *, timeout_s: float
 ) -> OfflineTestOutcome:
+    """Return the outcome of the tests of a bundle copy, one jail each."""
     scripts_dir = bundle_dir / "scripts"
     tests = sorted(scripts_dir.rglob(f"*{_TEST_SUFFIX}"))
     if isolation != "strict":
-        # none: no jail to confine model-authored code in. hardened: a jail, but
-        # no network namespace, so network="none" cannot be honored and the
-        # scripts would run with the host network: exfil or pull-and-exec of
-        # model-authored code during `machine create`. Only strict can honor
-        # the no-network contract; skipping is the only safe option on the rest.
+        # hardened has no network namespace: model-authored code would reach the host network.
         reason = "no sandbox" if isolation == "none" else "no network isolation (hardened)"
         return OfflineTestOutcome(skipped=len(tests), skip_reason=reason)
     data_dir = bundle_dir / ".scriptcheck_data"
     problems: list[str] = []
     try:
         for test in tests:
-            # Fresh per test: state a record-style script leaves behind must
-            # not leak into the next test's run.
+            # Fresh per test: a record-style script's state must not reach the next test.
             shutil.rmtree(data_dir, ignore_errors=True)
             data_dir.mkdir(parents=True)
             rel = test.relative_to(bundle_dir).as_posix()
@@ -284,8 +277,6 @@ def _run_offline_tests_in(
             try:
                 res = run_in_jail(policy)
             except JailUnavailableError as exc:
-                # The jail is a prerequisite for ANY test here, so fail fast on
-                # the first unavailability rather than repeating it per test.
                 return OfflineTestOutcome(
                     problems=(
                         f"could not run offline tests in a jail ({exc});"
@@ -294,9 +285,7 @@ def _run_offline_tests_in(
                 )
             if res.returncode != 0:
                 detail = (res.stderr or res.stdout or "").strip()
-                # Tracebacks name the absolute bundle dir. Relativize so the
-                # diagnostic (which is fed back into the authoring prompt and
-                # journaled) stays short and free of host paths.
+                # The diagnostic feeds the authoring prompt and the journal: no host paths.
                 detail = detail.replace(str(bundle_dir.resolve()) + "/", "").replace(
                     str(bundle_dir) + "/", ""
                 )

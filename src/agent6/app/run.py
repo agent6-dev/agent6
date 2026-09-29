@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `agent6 run` lifecycle (and its plan/ask modes): preflight, branch cut,
-manifest, loop construction, finalize. `ui/cli/run.py` adapts argv, builds the
-:class:`SessionFrontend` seam, and calls :func:`run_task`; everything that touches
-the terminal is injected through that seam so this module never imports
-`agent6.ui` (mirrors `LaneRuntime` in `app.parallel`)."""
+"""The `agent6 run` lifecycle and its plan and ask modes.
+
+Preflight, branch cut, manifest, loop construction, finalize. Everything that
+touches the terminal is injected through `SessionFrontend`, so this module never
+imports `agent6.ui`.
+"""
 
 from __future__ import annotations
 
@@ -103,10 +104,7 @@ from agent6.viewmodel.listing import finished_needs_new_work
 
 
 def discard_husk_dir(session_dir: Path) -> None:
-    """Remove a run dir a preflight refused before any real content was written
-    (no manifest, no logs). Otherwise a refused start (e.g. dirty worktree)
-    leaves an empty husk that `agent6 sessions` lists as '(no logs)' forever. Guarded
-    on the manifest/logs check so a real run's dir is never removed."""
+    """Remove a session dir a preflight refused before a manifest or log was written."""
     if session_has_record(session_dir):
         return
     with contextlib.suppress(OSError):
@@ -132,48 +130,47 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     pins: Sequence[str] = (),
     preset_stamp: tuple[str, bool] | None = None,
     model: str | ModelRoute | None = None,
-    # Which config leaves the operator actually WROTE, as dotted paths. A
-    # default that this host cannot honour degrades with a warning; a value
-    # they wrote down refuses, because they asked for something specific.
     explicit_leaves: frozenset[str] = frozenset(),
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
-    """Single-loop agent: one provider, one LLM driving via tool
-    calls over the fixed tool surface, deterministic harness (jail +
-    budget + verify timeout + DAG curator for persistence/resume).
-    Sole `agent6 run` path; returns the process exit code.
+    """Run one session from preflight to finalize; the sole `agent6 run` path.
 
-    `initial_steer` queues an operator follow-up for the loop's first
-    boundary, seeded AFTER this function's own stale-state clear: the
-    parked-resume delegation passes `resume --steer` through it, and a
-    pre-seeded bridge file would be wiped by that clear and silently lost.
-    *started_at* is the instant this execution began: the clear keeps what was
-    written since (an ACP turn's start precedes this call by its queue wait).
+    The front-end has built the config, resolved the task, checked the git-repo wall
+    and the runnable roles, and routed `--parallel` away. Plan mode drives the same
+    harness with the planning prompt, no edit tools, `finish_planning` and no
+    auto-commit; its markdown lands at `<session-dir>/plan.md`.
 
-    The CLI (`ui/cli/run.py`) has already built *cfg* (config + overrides),
-    resolved the task text, checked the git-repo wall and the runnable roles,
-    and routed `--parallel` away. The ACP bridge hands its prompt here whole. *budget_overrides* /
-    *sandbox_overrides* are passed through for the flags the lifecycle re-reads
-    (`--max-usd` enforcement, lane dispatch).
+    Args:
+        cfg: The run's config, overrides applied.
+        task: The task text.
+        frontend: The surface's seam: console, confirms, approvals, questions.
+        started_at: The instant this execution began; the stale-state clear keeps
+            bridge markers written since.
+        session_id: An explicit id; empty allocates one.
+        source_session_id: The plan session a `run --from` came from.
+        interactive: Whether the ask REPL drives the session.
+        tui: Whether `--tui` was asked for.
+        mode: The session mode.
+        standing_goal: The standing goal, when set.
+        budget_overrides: The budget flags the lifecycle re-reads.
+        sandbox_overrides: The sandbox flags the lifecycle re-reads.
+        preset: The `--preset` flag's value.
+        initial_steer: An operator follow-up queued for the loop's first boundary,
+            seeded after the stale-state clear so it survives it.
+        pins: The pinned paths.
+        preset_stamp: `(name, from_flag)` to stamp in place of deriving from `preset`,
+            so a parked resume replays the original submission's precedence.
+        model: The `--model` value that set the driving role.
+        explicit_leaves: The config leaves the operator wrote, as dotted paths; a
+            default this host cannot honour degrades, a written value refuses.
+        reporter: Receives every refusal and note.
 
-    *preset_stamp* `(name, from_flag)` overrides the manifest's stamped
-    preset instead of deriving it from *preset*. A parked resume has no
-    `--preset` flag but must record the ORIGINAL submission's stamp so a
-    later resume/fork replays the same precedence (fork carries it likewise);
-    deriving it from the empty *preset* would drop the stamp, and the flag's
-    veto with it, on the next execution.
-
-    When `mode="plan"` the same harness drives a planning
-    pass instead of an execution pass: planning system prompt,
-    edit-tools filtered out, `finish_planning` instead of
-    `finish_session`, no auto-commit. The plan markdown lands at
-    `<run-dir>/plan.md` and is consumed by `agent6 run --from`.
-    The `planner` model role drives plan mode (falls back to `worker`).
+    Returns:
+        The process exit code.
     """
     role = session_kind(mode).role
     cwd = Path.cwd()
-    # A first prompt is a task, not a composer line: without this the command
-    # would become the literal task text the model works on.
+    # A first prompt is a task, not a composer line.
     if (problem := steer_problem(task)) is not None:
         reporter.error(problem)
         return 2
@@ -184,23 +181,14 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             reporter.error(str(exc))
             return 2
 
-    # Before anything reads a knob (see session_config): an interactive session
-    # (ask / plan) never runs a command unwatched, whether it is starting here
-    # or resuming, unless the operator granted this invocation, which lands
-    # after the clamp.
+    # The clamp comes before anything reads a knob; the invocation's grant lands after it.
     cfg = session_config(cfg, mode, sandbox_overrides)
-    # Refuse an unanswerable run BEFORE anything is created: refusing after
-    # the session dir and its manifest exist would leave a never-started run
-    # listed forever and poison its id (`--session-id` retries answer "already
-    # exists, use resume", and resume finds no snapshot). Everything this needs
-    # is known here; the clamp above is the last thing that can change
-    # `run_commands`.
+    # Refuse an unanswerable run before anything is created, so its id stays free.
     tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
     refusal = headless_approval_refusal(
         cfg,
         tui_enabled=tui_enabled,
-        # A fresh run has no dir yet, so the env is the only away answer there
-        # is (`effective_away` is resume's, where a recorded one exists).
+        # A fresh run has no dir yet, so the env is the only away answer.
         away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
         can_ask=frontend.capabilities.can_ask,
         clamped=session_kind(mode).clamps_commands,
@@ -216,8 +204,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     )
     if parking is not None:
         reporter.note(parking)
-    # Before isolation: its budget preflight prices the model from the listing
-    # the key check refreshes.
+    # Before isolation: its budget preflight prices the model from the refreshed listing.
     if not route_preflight(cfg, role, reporter=reporter, model_flag=route_text(model)):
         return 2
     try:
@@ -243,12 +230,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         return refusal.rc
     base_sha, base_branch = git.base_sha, git.base_branch
 
-    # Layout: standard run-dir scaffolding for transcripts + logs. ask sessions
-    # live under the per-repo state dir (asks subdir) to stay separate from real runs.
     state = state_dir(cwd)
     bucket = session_bucket(mode)
-    # Same-bucket reuse is the resume/park flow below; another bucket's id is
-    # a collision every surface would see as ambiguous.
+    # Same-bucket reuse is the resume or park flow below; another bucket's id is a collision.
     if session_id and (held := session_id_bucket(state, session_id)) not in (None, bucket):
         reporter.error(
             f"--session-id {session_id!r} already names a session under {held}/;"
@@ -261,13 +245,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         session_id=effective_session_id,
         subdir=bucket,
     )
-    # An explicit --session-id that already has a session is a resume, not a fresh start:
-    # reusing the dir would write a new manifest + loop_state beside the old run's
-    # graph/checkpoints/transcripts (mixed state). Refuse and point at resume.
-    # (ask sessions are transient Q&A, so reusing their dir is fine.) The one
-    # reusable dir is a PARKED run (manifest carries parked_task, nothing else
-    # ever ran): starting it IS its fresh start, and the execution's start un-parks
-    # it.
+    # An existing session under the id is a resume, not a fresh start; a parked run and an
+    # ask are the reusable dirs.
     if session_id and mode != "ask" and layout.manifest_path.exists():
         try:
             parked = read_manifest(layout.session_dir).parked_task
@@ -289,17 +268,14 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             reporter.error(f"run {session_id!r} already exists.{next_step}")
             return 2
     layout.ensure()
-    # One authoritative writer per run dir. Acquire BEFORE touching any shared
-    # run state (clearing answers, the worker pid, the curator) so a second
-    # process refuses cleanly instead of clobbering the live run.
+    # One writer per session dir, taken before any shared state is touched.
     worker_lock_fd = acquire_single_writer(layout.session_dir)
     if worker_lock_fd is None:
         reporter.err(SINGLE_WRITER_BUSY.format(rid=effective_session_id))
         return 2
     repo_lock_fd: int | None = None
     stashed = False
-    # Apply the stash back at run end (onto a clean tree, else the apply line
-    # is printed): [git].auto_stash_pop, or "stash" chosen at the start question.
+    # Whether the stash is applied back at run end: config, or "stash" chosen at the start.
     stash_pop = cfg.git.auto_stash_pop
     untracked_at_start: frozenset[str] = frozenset()
     run_branch: str | None = None
@@ -312,26 +288,17 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         return undo_fork(None, effective_session_id, cwd=cwd, reporter=reporter)
 
     try:
-        # A reused dir (an ask under its id again, a parked run) carries the
-        # previous execution's bridge state; a marker written since this execution began
-        # is this run's (an editor's cancel while it came up).
+        # A reused dir carries the previous execution's bridge state.
         clear_pending_answers(layout.session_dir, started_at=started_at)
         if initial_steer.strip() and not submit_steer(layout.session_dir, initial_steer.strip()):
             reporter.error("could not write the initial steer request")
             return 2
         settle_away_mode(layout.session_dir, cfg)
-        # A visible branch named after the run id is 1:1 with the run (find it
-        # from any run id, `agent6 sessions diff <id>`, or delete the branch to
-        # drop the pointer). The name is the unique run id. Only real `run`
-        # mode branches: `plan`/`ask` make no commits. The ref itself is
-        # advanced by the first chain commit; nothing is cut or checked out.
+        # The branch is advanced by the first chain commit; nothing is cut or checked out.
         if cfg.git.branch_per_run and mode == "run" and cfg.git.control != "model":
             run_branch = run_branch_for(effective_session_id)
 
-        # The operator's uncommitted changes to tracked files. Untracked files
-        # are not in question: they stay out of the run (`untracked_at_start`).
-        # A run that would have to ask about them but cannot refuses BEFORE
-        # anything is created (see the approval refusal above).
+        # A run that would have to ask about tracked changes but cannot refuses here.
         modified = modified_paths(cwd) if mode == "run" else []
         must_ask = bool(modified) and cfg.git.dirty_tree == "ask"
         answerable = frontend.capabilities.can_ask or away_mode(layout.session_dir) == "wait"
@@ -349,8 +316,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
-        # The execution's one gate to the operator: every prompt journals and takes
-        # its id here, whichever front-end answers.
+        # The execution's one gate to the operator, whichever front-end answers.
         prompts = OperatorPrompts(
             approver=frontend.build_approver(layout.session_dir),
             questioner=frontend.build_questioner(layout.session_dir),
@@ -362,15 +328,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         for line in agents_md_notices(cwd):
             reporter.note(line)
 
-        # Write the run manifest. This is the canonical record of where the
-        # run started (base_sha + base_branch), which model+provider drove
-        # it, and the user_task it was given. `agent6 sessions diff <run-id>` and
-        # any future tooling that wants to reproduce a run reads from here.
-        # Written before the gates below, which PARK rather than refuse: a
-        # parked run keeps its dir and manifest, and `agent6 resume <id>` starts
-        # it fresh. The rewrite keeps the park, which the execution's start clears
-        # (`unpark` in run_execution): a start that fails before the loop leaves the
-        # run parked, its verbatim task still saved.
+        # Written before the gates below, which park rather than refuse; the rewrite keeps
+        # the park, which the execution's start clears.
         parked = parked_stamp(layout.session_dir)
         write_session_manifest(
             layout,
@@ -391,8 +350,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             stamp_parked(layout.session_dir, task=parked[0], reason=parked[1])
 
         def _park(reason: str, detail: str, *, hint: str = "") -> int:
-            # *reason* is the short cause every listing shows beside "parked";
-            # *detail* is the sentence the operator reads now.
+            # `reason` is the short cause listings show; `detail` is the sentence read now.
             stamp_parked(layout.session_dir, task=task, reason=reason)
             reporter.err(
                 f"PARKED: {detail}. Your task is saved as run {effective_session_id!r}:\n"
@@ -401,19 +359,11 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             )
             return 2
 
-        # This process is a live worker from here: the pid is what every surface
-        # gates on, and both the run's dirty-tree question and an ask's first
-        # question are asked below it, so a session parked on its own start
-        # question reads as live and `agent6 answer` reaches it. The teardown
-        # clears it on every exit path, so a park or a later refusal leaves
-        # none behind.
+        # A live worker from here, so the start questions below reach `agent6 answer`.
         write_worker_pid(layout.session_dir, os.getpid())
 
         if mode == "run":
-            # One live run-mode worker per CHECKOUT, not just per run dir: two
-            # runs share one worktree, so each would commit the other's
-            # in-flight edits into its own chain. Taken BEFORE any tree mutation
-            # (auto-stash, branch cut). plan/ask are read-only and skip it.
+            # One run-mode worker per checkout, taken before any tree mutation.
             repo_lock_fd = acquire_repo_writer(layout.state_dir, cwd, effective_session_id)
             if repo_lock_fd is None:
                 holder = repo_writer_holder(layout.state_dir, cwd) or "another run"
@@ -426,9 +376,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                         f" {holder!r} with:\n    /parallel 1 <the same task>"
                     ),
                 )
-            # Settle the operator's uncommitted changes BEFORE the run's first
-            # commit can sweep them up: config decides when it can, else the
-            # operator is asked over the same channel as `ask_user`.
+            # Settle the operator's uncommitted changes before the first commit can sweep them up.
             if modified:
                 choice: DirtyTreeChoice
                 if cfg.git.dirty_tree == "stash":
@@ -460,17 +408,12 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                         return _park(
                             "stash failed", f"stashing the working tree's changes failed: {exc}"
                         )
-            # The files that are the operator's: untracked at this moment, after
-            # any stash. Every chain commit and dirty check leaves them out.
+            # The operator's files, untracked after any stash; every commit leaves them out.
             untracked_at_start = untracked_paths(cwd)
             write_untracked_at_start(layout.session_dir, untracked_at_start)
 
         def _gate(cfg: Config, budget: BudgetTracker) -> Config:
-            # Verify is optional: if unset, infer one for this run (AGENTS.md
-            # -> repo signals -> a cheap LLM call) and inject it in-memory.
-            # Never persisted. The drop comes LAST so nothing hands the gate
-            # back: an execution that cannot run a command is gateless, whatever
-            # inference found.
+            # Infer an unset gate, then drop it last when commands are withheld.
             configured_gate = bool(cfg.harness.verify_command)
             cfg = infer_verify_if_unset(
                 cfg,
@@ -482,14 +425,11 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 reporter=reporter,
             )
             cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
-            # After resolution, never before: preflight can DROP the gate (a
-            # run that cannot run commands), and an empty gate with an origin
-            # of "configured" is a self-contradiction the next execution reads back.
+            # The origin follows the resolved gate, never the configured one.
             gate_origin = ""
             if cfg.harness.verify_command:
                 gate_origin = "configured" if configured_gate else "inferred"
-            # Pin it: from here the run is judged by THIS gate, whatever the
-            # file it was inferred from says later.
+            # From here the run is judged by this gate, whatever its source says later.
             pin_gate(
                 layout.session_dir,
                 cfg.harness.verify_command,
@@ -523,7 +463,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 resume_state_path=layout.session_dir / "loop_state.json",
                 undo_forker=_undo_forker,
                 prompts=prompts,
-                # The REPL already printed + saved each turn.
+                # The REPL prints and saves each turn itself.
                 ask_transcript_task=None if interactive else task,
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
@@ -540,31 +480,19 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         detach_requested = end.detach_requested
         return end.rc
     finally:
-        # Single owner of worker.pid, both writer locks, and auto-stash
-        # finalization, for EVERY exit path: preflight refusals, Ctrl-C during
-        # verify inference, and setup-window crashes included. worker.pid and
-        # the stash pop happen UNDER the locks, so the releases come after, and
-        # nested so they survive a teardown raise: the ACP front-end calls
-        # run_task in-process, where a leaked flock refuses every later run on
-        # the session until the server restarts.
+        # The one owner of worker.pid, both locks and the stash, on every exit path; the
+        # releases come last and survive a teardown raise (ACP runs this in-process).
         try:
             try:
-                frontend.close_console_view()  # stop the heartbeat, clear any spinner line
+                frontend.close_console_view()  # stops the heartbeat, clears the spinner
             finally:
                 if not detach_requested:
-                    # A detach keeps it: this process owns the run until the
-                    # background `resume` claims it, and `detach_to_background`
-                    # clears the pid if that spawn fails.
+                    # A detach keeps the pid until the background `resume` claims it.
                     clear_worker_pid(layout.session_dir)
                 if stashed:
                     if detach_requested:
-                        # The run is NOT over: popping the stash now would feed the
-                        # user's pre-run files into the detached continuation's
-                        # auto-commits. Leave the stash and say so.
-                        # By sha, never by position: this hint has the longest window
-                        # of any, since the operator reads it now and runs it after a
-                        # background run that may take hours, by which point a
-                        # positional pop restores whatever else was stashed meanwhile.
+                        # A pop now would feed pre-run files into the continuation's commits;
+                        # the hint names the stash by sha, since a positional pop rots.
                         hint = stash_recovery_hint(
                             cwd, session_id=effective_session_id, base_branch=base_branch
                         )
@@ -591,7 +519,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             release_single_writer(repo_lock_fd)
             release_single_writer(worker_lock_fd)
         if detach_requested:
-            # The worker lock is released now, so the detached `resume` acquires it.
+            # The worker lock is released, so the detached `resume` can acquire it.
             detach_to_background(
                 frontend=frontend,
                 cfg=cfg,

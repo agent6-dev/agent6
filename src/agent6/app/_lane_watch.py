@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Watching started lanes until they land, and saying what they wait on.
+"""Watch started lanes until they land, and say what they wait on.
 
-The fan-out's await loop and the single-lane await and drain behind
-`run_lane_to_completion`, the live symlink a lane gets under the origin's
-runs dir while it runs, and the pending-prompt probe the status line uses.
-The types a lane is described with (`LaneSpec`, `LaneResult`) are
-`harness/subrun`'s; `app/parallel.py`, the orchestrator this serves, drives
-the lanes.
+The fan-out's await loop, the single-lane await and drain behind `run_lane_to_completion`,
+the live symlink a lane gets under the origin's runs dir, and the pending-prompt probe the
+status line uses. `app/parallel.py` drives the lanes.
 """
 
 from __future__ import annotations
@@ -30,21 +27,16 @@ from agent6.viewmodel.format import format_usd
 # How often the await loop polls lane liveness.
 POLL_INTERVAL_S = 2.0
 
-
-# How long Ctrl+C waits for a stop-requested lane to finish its in-flight step
-# before giving up on it.
+# How long a stop waits for a lane to finish its in-flight step before giving up on it.
 STOP_GRACE_S = 30.0
 
 
 def lane_terminal(session_dir: Path, status: str, worker_is_alive: Callable[[Path], bool]) -> bool:
-    """Terminal gate for an awaited lane: the fold left "running" AND the worker
-    pid is cleared/dead. session.end lands in logs.jsonl before the lane's teardown
-    clears worker.pid, so status alone races the teardown, and importing inside
-    that window would misread a finished lane as still running. A lane that dies
-    WITHOUT a session.end cannot hang this gate: the fold flips a dead recorded pid
-    to "stale" at once, a pid-less silent lane to "stale" after its bounded
-    silence window, and a lane that never wrote logs reads "?" (see
-    `summarize_session_dir`)."""
+    """Return whether an awaited lane is terminal: the fold left "running" and the worker is gone.
+
+    `session.end` lands before the teardown clears `worker.pid`, so status alone races it. A
+    lane that dies without a `session.end` cannot hang the gate: the fold reads it "stale".
+    """
     return status != "running" and not worker_is_alive(session_dir)
 
 
@@ -54,11 +46,16 @@ def await_lane(
     poll_interval_s: float = POLL_INTERVAL_S,
     should_stop: Callable[[], bool] | None = None,
 ) -> bool:
-    """Block until *res*'s lane is terminal (True), awaited on its REAL run
-    dir, or until *should_stop* goes true first (False): the coordinator's
-    abort channel must be able to interrupt a group await that otherwise
-    blocks until every lane ends. Same gate as the fan-out's `await_lanes`,
-    for a single lane."""
+    """Block until the lane is terminal, or until the stop check goes true first.
+
+    Args:
+        res: The started lane, awaited on its real run dir.
+        poll_interval_s: How often to poll.
+        should_stop: The coordinator's abort channel, read between polls.
+
+    Returns:
+        True when the lane ended, False when the stop check ended the wait.
+    """
     while True:
         summary = summarize_session_dir(res.session_dir)
         if lane_terminal(res.session_dir, summary.status, worker_is_alive):
@@ -71,10 +68,16 @@ def await_lane(
 def drain_lane(
     res: LaneResult, *, poll_interval_s: float, hard_stop: threading.Event | None
 ) -> bool:
-    """Bounded post-stop grace (mirrors the fan-out's stop_and_drain): True when
-    the lane lands terminal in time, so its finished work still imports; False
-    to leave it running un-imported. A hard stop (process teardown) skips the
-    wait."""
+    """Wait a bounded grace after a stop for the lane to land, so its work still imports.
+
+    Args:
+        res: The stopped lane.
+        poll_interval_s: How often to poll.
+        hard_stop: A process teardown, which skips the wait.
+
+    Returns:
+        True when the lane landed in time, False to leave it running un-imported.
+    """
     deadline = time.monotonic() + STOP_GRACE_S
     while time.monotonic() < deadline:
         if hard_stop is not None and hard_stop.is_set():
@@ -91,12 +94,15 @@ def drain_lane(
 
 
 def lane_link(origin_state: Path, session_id: str) -> Path:
+    """Return where a lane's live symlink sits under the origin's runs dir."""
     return bucket_dir(origin_state, "runs") / session_id
 
 
 def symlink_lane(origin_state: Path, res: LaneResult) -> None:
-    """Symlink a located lane's (clone-side) run dir into the origin's `runs/` so
-    `agent6 sessions`/hub shows it live. Replaced by the real imported dir at import."""
+    """Symlink a lane's clone-side run dir into the origin's `runs/` so the hub shows it live.
+
+    The import replaces the link with the real dir.
+    """
     link = lane_link(origin_state, res.spec.session_id)
     mkdir_for_real_user(link.parent)
     with contextlib.suppress(FileNotFoundError):
@@ -112,27 +118,27 @@ def await_lanes(
     should_stop: Callable[[], bool] | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> bool:
-    """Poll every started lane's REAL run dir (in the clone's state; the origin
-    symlink is a view for the hub, never the source of truth) until it is
-    terminal (`lane_terminal`), printing one line per lane on a status/cost
-    change. Returns True if interrupted (Ctrl+C): request a clean stop on each
-    still-running lane, wait a bounded grace for them to finish their in-flight
-    step, then return so the caller imports what landed.
+    """Poll every started lane's real run dir until it is terminal, printing status changes.
 
-    `already_interrupted=True` (a Ctrl+C the spawn loop caught before the await
-    even began) skips the normal poll and goes straight into that same stop-grace
-    path, so a mid-spawn interrupt stops the already-started lanes identically.
-    *should_stop* (the coordinator's own stop request, read between polls) ends
-    the wait the same way."""
+    An interrupt requests a clean stop on each running lane and waits a bounded grace for
+    their in-flight steps, so the caller imports what landed.
+
+    Args:
+        started: The started lanes.
+        already_interrupted: A Ctrl+C landed before the await began; go straight to the stop.
+        should_stop: The coordinator's own stop request, read between polls.
+        reporter: Where the status lines go.
+
+    Returns:
+        True when interrupted, False when every lane ended.
+    """
     pending = {r.spec.session_id: r for r in started}
     seen: dict[str, tuple[str, str, float]] = {}
 
     def poll_once() -> None:
         for rid, res in list(pending.items()):
             summary = summarize_session_dir(res.session_dir)
-            # A "waiting" lane is blocked on an approval/question no detached
-            # lane can answer; point the operator at the hub. pending_prompt
-            # supplies only the approval-vs-question wording.
+            # A "waiting" lane is blocked on a prompt no detached lane can answer.
             waiting = pending_prompt(res.session_dir) if summary.status == "waiting" else ""
             key = (summary.status, waiting, round(summary.cost_usd, 4))
             if seen.get(rid) != key:
@@ -172,27 +178,30 @@ def await_lanes(
         return True
 
 
-# The two prompt/answer event pairs a lane can block on, for `pending_prompt`.
+# The two prompt/answer event pairs a lane can block on.
 _PROMPT_KIND = {"approval.prompt": "approval", "question.prompt": "a question"}
-
-
 _ANSWER_EVENTS = frozenset({"approval.answer", "question.answer"})
 
 
 def pending_prompt(session_dir: Path) -> str:
-    """ "approval" / "a question" if the lane is blocked on an unanswered prompt,
-    else "". The worker emits `approval.prompt`/`question.prompt` then BLOCKS on
-    its `*.answer` while its away-mode is `wait`, so the LAST prompt/answer event
-    in logs.jsonl decides it: a trailing scan, since no `*.request` marker exists
-    for approvals/questions. The fan-out status line needs only this one bit, so
-    it skips the SessionState fold."""
+    """Return "approval" or "a question" when the lane is blocked on an unanswered prompt.
+
+    The last prompt or answer event in the log decides it: the worker blocks on its answer
+    while its away mode is `wait`, and no request marker exists for prompts.
+
+    Args:
+        session_dir: The lane's run dir.
+
+    Returns:
+        The prompt kind, or "" when nothing is pending.
+    """
     try:
         lines = (session_dir / LOGS_NAME).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return ""
     for raw in reversed(lines):
         if "approval." not in raw and "question." not in raw:
-            continue  # fast reject before json.loads
+            continue  # a fast reject before json.loads
         try:
             ev = json.loads(raw)
         except ValueError:
@@ -213,6 +222,7 @@ def print_lane_status(
     waiting: str = "",
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
+    """Print one lane's status line."""
     model = f" ({spec.route.spec})" if spec.route else ""
     cost_s = f"  {format_usd(cost)}" if cost > 0 else ""
     state = (

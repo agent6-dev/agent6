@@ -1,26 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The two sides of a machine `agent` state: the host-side launcher that
-spawns the subprocess, and the runner inside it.
+"""The two sides of a machine `agent` state: the host-side launcher and the runner.
 
-A machine run's engine is a thin supervisor that stays in the host network
-namespace and makes no network calls itself. Each `agent` state runs in its own
-fresh process (`ui/cli/machine_agent` is the `python -m` entry), independent of
-the engine and of sibling `tool` states; like every agent process it runs
-unconfined, and the jail bounds the commands it dispatches.
-
-`build_machine_agent_runner` (host side) builds the callable an `agent` state
-fires: it spawns the subprocess with a fixed argv, hands it the request via a
-temp file, and enforces the timeout by killing the process group. `run_one`
-(subprocess side) reads that request, validates its isolation and hide-path
-needs while still single-threaded, runs the agent loop to completion, and
-writes the result.
-`MachineAgentRequest` (here) owns the `request.json` file shape and
-`AgentExecResult` (machine/engine.py) owns `result.json`: both sides
-serialize/validate through the models, per the IPC rule
-(`tests/unit/test_machine_agent_ipc.py` pins the bytes). The live conversation
-view is the one presentation piece: `ui/cli` injects `attach_console` so this
-module never imports `agent6.ui`.
+The machine engine is a supervisor that makes no network calls itself. Each
+`agent` state runs the loop in its own process (`ui/cli/machine_agent` is the
+`python -m` entry), unconfined like every agent process, with the jail bounding
+the commands it dispatches. `build_machine_agent_runner` spawns that process with
+a fixed argv, hands it the request through a temp file and enforces the timeout
+by killing the process group; `run_one` reads the request, validates it, runs the
+loop and writes the result. `MachineAgentRequest` owns the `request.json` shape
+and `AgentExecResult` owns `result.json`. The live view is injected as
+`attach_console`, so this module never imports `agent6.ui`.
 """
 
 from __future__ import annotations
@@ -101,49 +91,51 @@ from agent6.viewmodel.machine_state import Spend, read_budget_totals
 
 
 def _no_console(_events: EventSink) -> None:
-    """The headless default when no front-end injects a live view."""
+    """Attach no live view: the headless default."""
 
 
 class MachineAgentRequest(BaseModel):
     """The `request.json` envelope of the machine-agent subprocess IPC.
 
-    The host runner (`build_machine_agent_runner`) serializes it into the temp
-    file the fixed argv (``python -m agent6.ui.cli.machine_agent <request.json>
-    <result.json>``) names; the subprocess validates it back and hands it to
-    `run_one`. One owner of the file shape per the IPC rule; `result.json` is
-    owned the same way by `AgentExecResult`. The files are transient
-    per-invocation (both sides are always the same install), and the bytes are
-    pinned by `tests/unit/test_machine_agent_ipc.py`.
+    Both sides are the same install, and the bytes are pinned by
+    `tests/unit/test_machine_agent_ipc.py`.
+
+    Attributes:
+        cwd: The operator's checkout; config layers and cross-run memory resolve from it.
+        root: Where the harness, the dispatcher and the jail work: the clone for a
+            `mode="run"` state, else `cwd`.
+        overlay: The machine's `[config]` overlay, applied over the effective config.
+        isolation: The isolation level the engine validated.
+        transcript_dir: Where the subprocess records transcripts.
+        events_log: Where the subprocess writes a watchable event log, when set.
+        protect_paths: The bundle paths the state may not rewrite.
+        commit_identity: The host-resolved git identity for a `mode="run"` state, since
+            the confined subprocess cannot read `~/.gitconfig`; None for read-only states.
+        request: The state's request.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    # The operator's checkout: config layers and cross-run memory resolve
-    # from it (keyed by the repo's own path), whatever `root` is.
     cwd: Path
-    # Where the harness, the dispatcher and the jail work: the clone for a
-    # mode="run" state, else `cwd`.
     root: Path
-    # The machine's `[config]` overlay, applied over the effective config.
     overlay: dict[str, Any]
     isolation: IsolationLevel
     transcript_dir: Path
-    # When set, the subprocess writes a watchable logs.jsonl here (role.*_delta
-    # + tool.* events), so `machine create` and live `agent` states are
-    # followable in the TUI/web dashboard exactly like a run.
     events_log: Path | None = None
     protect_paths: tuple[Path, ...] = ()
-    # Resolved on the host (pre-Landlock, so it sees global git config); the
-    # confined subprocess can't read ~/.gitconfig, so its mode="run" commits
-    # would otherwise fail with "Author identity unknown". None for read-only
-    # (mode="agent"/"machine") states.
     commit_identity: CommitIdentity | None = None
     request: AgentRequest
 
 
 def _machine_head_sha(root: Path) -> str | None:
-    """HEAD at state start, the chain's first parent; None when unreadable
-    (an unborn repo roots the chain)."""
+    """Read HEAD at state start, the chain's first parent; None when unreadable.
+
+    Args:
+        root: The working tree.
+
+    Returns:
+        The sha, or None for an unborn or unreadable repo.
+    """
     try:
         return git_status(root).head_sha or None
     except (GitError, OSError):
@@ -151,9 +143,14 @@ def _machine_head_sha(root: Path) -> str | None:
 
 
 def _finish_validator(r: AgentRequest) -> Callable[[dict[str, Any] | None], list[str]] | None:
-    """The state's finish contract as a loop-injectable check: the same
-    validator the engine judges the recorded fact with, over the schemas the
-    request carried."""
+    """Build the finish-payload check for a state that declares an output schema.
+
+    Args:
+        r: The state's request.
+
+    Returns:
+        The check the engine also judges the recorded fact with, or None.
+    """
     name = r.output_schema
     if name is None:
         return None
@@ -165,9 +162,14 @@ def _finish_validator(r: AgentRequest) -> Callable[[dict[str, Any] | None], list
 
 
 def _task_with_contract(r: AgentRequest) -> str:
-    """The task the execution runs: the state prompt, plus the finish contract when
-    the state declares one, rendered as field: type lines (nested records
-    included) so the model needs no guess about the accepted shape."""
+    """Render the state prompt plus its finish contract as `field: type` lines.
+
+    Args:
+        r: The state's request.
+
+    Returns:
+        The task text the execution runs.
+    """
     if r.output_schema is None:
         return r.prompt
     lines = [
@@ -198,6 +200,16 @@ def _task_with_contract(r: AgentRequest) -> str:
 def _result(
     reason: str, payload: dict[str, Any] | None, budget: BudgetTracker | None
 ) -> AgentExecResult:
+    """Build the state's result.
+
+    Args:
+        reason: The end reason.
+        payload: The finish payload, when the state finished with one.
+        budget: The tracker whose spend the result carries; None books zero.
+
+    Returns:
+        The result.
+    """
     usd = 0.0
     partial = False
     inp = out = 0
@@ -216,12 +228,16 @@ def _result(
 
 
 def _apply_operator_env_grants(cfg: Config) -> Config:
-    """The supervisor's `machine run --auto-approve` / `--no-commands` choices,
-    carried by env like the sandbox setter (operator-only, structurally
-    LLM-unreachable; a machine [config] overlay must not and cannot set
-    sandbox.*). Upgrades run_commands ask -> yes, never a withheld no, and
-    withholds every command tool when the operator asked for that
-    (`with_sandbox_overrides`)."""
+    """Apply the supervisor's `--auto-approve` and `--no-commands` choices from the env.
+
+    The env is operator-only; a machine `[config]` overlay cannot set `sandbox.*`.
+
+    Args:
+        cfg: The state's config.
+
+    Returns:
+        The config with the overrides applied.
+    """
     return cfg.with_sandbox_overrides(
         auto_approve=os.environ.get("AGENT6_AUTO_APPROVE") == "1",
         no_commands=os.environ.get("AGENT6_NO_COMMANDS") == "1",
@@ -232,10 +248,14 @@ def _apply_operator_env_grants(cfg: Config) -> Config:
 class _MachineBridges:
     """The interactivity bridges for one machine `agent` state.
 
-    Answers are read from the per-state dir, but a front-end registers
-    a `frontends/` claim on the instance dir, so the liveness gate probes the instance
-    dir (`live_dir`). Prompt/answer events go to the per-state log the front-end
-    already tails, so its SessionState fold surfaces them like a run's.
+    Answers are read from the per-state dir; the liveness gate probes the instance
+    dir, where a front-end registers its claim.
+
+    Attributes:
+        prompts: The approval and question gate.
+        steer_requested: Whether a steer request is pending.
+        steer_clear: Clears the steer request and its answer.
+        steer_prompt: Reads the steer answer, or None.
     """
 
     prompts: OperatorPrompts
@@ -247,18 +267,21 @@ class _MachineBridges:
 def _build_machine_bridges(
     instance_dir: Path, agent_state: Path, events: EventSink
 ) -> _MachineBridges:
-    """Wire run-level approval/question/steer bridges to a machine agent state.
+    """Wire the approval, question and steer bridges to a machine agent state.
 
-    A live front-end (a `frontends/` claim on the instance dir) is asked in its
-    own UI. Otherwise the instance's away-mode governs, exactly as for a
-    detached run: a hub-spawned machine carries "wait" (park for the front-end,
-    so the claim's timing never decides), and a pure headless machine keeps the
-    safe default: deny an approval, answer a question with "", no steer.
+    A live front-end is asked in its own UI; otherwise the instance's away-mode
+    governs as for a detached run, and a headless machine denies an approval,
+    answers a question with "" and takes no steer.
+
+    Args:
+        instance_dir: The instance dir, where a front-end registers its claim.
+        agent_state: The per-state dir the answers land in.
+        events: The per-state log the prompt events go to.
+
+    Returns:
+        The bridges.
     """
-    # Crash recovery re-executes the same `<seq>-<state>` dir and its prompt-id
-    # counters restart at 1, so an answer file left by the aborted attempt would
-    # satisfy this execution's first prompt unseen. Drop the stale bridge state
-    # first (front-end claims live on the instance dir, so this touches none).
+    # Crash recovery reuses the state dir and its prompt ids, so stale answers go first.
     clear_pending_answers(agent_state, started_at=time.time())
 
     def approve(request: ApprovalRequest, /) -> ApprovalAnswer:
@@ -275,7 +298,7 @@ def _build_machine_bridges(
             )
             approved = reply is not None and record_answer(agent_state, reply, request.scope)
             return ApprovalAnswer(approved, "await-frontend")
-        return ApprovalAnswer(False, "headless")  # no operator to ask: deny safely
+        return ApprovalAnswer(False, "headless")  # no operator to ask
 
     def ask(request: QuestionRequest, /) -> QuestionAnswer:
         empty = tuple("" for _ in request.questions)
@@ -284,7 +307,7 @@ def _build_machine_bridges(
             if answers is not None:
                 return QuestionAnswer(answers, "frontend")
         if away_mode(instance_dir) == "wait":
-            # Hub-spawned: park for the front-end rather than inventing "".
+            # Park for the front-end rather than inventing "".
             reply = await_frontend_reply(
                 instance_dir,
                 lambda: read_question_answers(
@@ -326,16 +349,20 @@ def _build_agent_providers(
     budget: BudgetTracker,
     attach_console: Callable[[EventSink], None],
 ) -> tuple[InstrumentedProvider, Provider, EventSink | None]:
-    """The agent state's worker provider (instrumented), its reviewer-role
-    summariser, and the optional event sink.
+    """Build the state's worker provider, its summariser and its event sink.
 
-    One TranscriptSink for both (its seq counter is per-instance), each seat
-    stamped. An EventSink only when the caller passes events_log; the console
-    attach is injected so this module never imports `agent6.ui`.
+    The worker always streams: machine agents run headless and generate long, and
+    a gateway's SSE heartbeats corrupt a non-streaming body mid-read.
 
-    ALWAYS streams: machine agents run headless and generate long, and
-    OpenRouter-style gateways' SSE heartbeats corrupt a non-streaming body
-    mid-read. Streaming also feeds the role.*_delta events."""
+    Args:
+        cfg: The state's config.
+        req: The state's request envelope.
+        budget: The tracker both providers bill.
+        attach_console: Given the event sink, attaches the live view.
+
+    Returns:
+        The instrumented worker, the summariser, and the sink or None without a log.
+    """
     transcript_sink = TranscriptSink(req.transcript_dir)
     inner_provider = build_role_provider(
         cfg, "worker", transcript_sink=transcript_sink, budget=budget
@@ -365,13 +392,19 @@ def run_one(
     attach_console: Callable[[EventSink], None] = _no_console,
     reporter: Reporter = STDIO_REPORTER,
 ) -> AgentExecResult:
+    """Run one machine `agent` state to completion inside its subprocess.
+
+    Args:
+        req: The request envelope.
+        attach_console: Given the event sink, attaches the live view.
+        reporter: Receives the refusals and the loop's log lines.
+
+    Returns:
+        The state's result; a config or isolation refusal is an error result.
+    """
     isolation = req.isolation
     r = req.request
-    # Config load + per-state overrides run FIRST, and can raise (a bad overlay,
-    # or an override naming a provider that isn't configured). Salvage that into
-    # a clean AgentExecResult the subprocess writes to result.json: otherwise
-    # the exception escapes to a pydantic traceback + a non-zero exit, and the
-    # host runner only recovers it via its missing-result fallback.
+    # A config error becomes an error result, not a traceback the host must salvage.
     try:
         cfg = load_effective_with_overlay(req.cwd, req.overlay).config.with_machine_agent_overrides(
             provider=r.provider,
@@ -386,16 +419,13 @@ def run_one(
         reporter.refuse(f"machine agent config error: {exc}")
         return _result("error", None, None)
     apply_git_ops_policy(cfg)
-    # A mode="run" state commits its work, but this confined process can't read
-    # ~/.gitconfig (not a Landlock read root): export the host-resolved identity
-    # so git uses it regardless of where the config lives.
+    # The confined process cannot read ~/.gitconfig, so the host-resolved identity is exported.
     if req.commit_identity is not None:
         if name := req.commit_identity.name:
             os.environ["GIT_AUTHOR_NAME"] = os.environ["GIT_COMMITTER_NAME"] = name
         if email := req.commit_identity.email:
             os.environ["GIT_AUTHOR_EMAIL"] = os.environ["GIT_COMMITTER_EMAIL"] = email
-    # The engine already validated the isolation against the config; re-check
-    # defensively and fail closed.
+    # The engine validated the isolation already; re-check and fail closed.
     net_err = check_network_support(cfg, isolation)
     if net_err is not None:
         reporter.refuse(net_err)
@@ -408,21 +438,13 @@ def run_one(
     provider, summariser_provider, events_sink = _build_agent_providers(
         cfg, req, budget=budget, attach_console=attach_console
     )
-    # Re-confirm the cwd-containment invariant at the subprocess boundary
-    # (defense in depth, the engine already filtered these).
+    # Re-confirm the containment invariant at the subprocess boundary.
     root_r = req.root.resolve()
     protect = tuple(rp for p in req.protect_paths if (rp := p.resolve()).is_relative_to(root_r))
-    # "machine" (the `machine create` authoring agent) and "agent" (a
-    # running machine's `agent` state, unless it opted into mode="run") are
-    # read-only structured-output loops: the dispatcher refuses edits AND
-    # run_command/run_verify (defense in depth alongside the read-only tool
-    # list) and the loop uses a finish_session-focused prompt.
+    # "machine" and "agent" are read-only loops: the dispatcher refuses edits and commands.
     mode = r.mode
     read_only = mode in ("machine", "agent")
-    # Bridge run-level interactivity (approve/ask_user/steer) to a front-end
-    # watching this machine: answers land in the per-state dir, the liveness
-    # gate probes the instance dir where the front-end registers its claim.
-    # Needs a per-state log (events_sink) for the front-end to see the prompt.
+    # The bridges need a per-state log for the front-end to see the prompt.
     bridges: _MachineBridges | None = None
     if events_sink is not None and req.events_log is not None:
         agent_state = req.events_log.parent
@@ -439,11 +461,7 @@ def run_one(
         mcp_manager=None,
         extra_protect_paths=protect,
         mode="machine" if read_only else "run",
-        # The REPO's state dir (not this state's per-state dir above): a
-        # mode="run" agent state participates in cross-run memory like any
-        # other run; for read-only states the dispatcher mode guard and
-        # the machine/agent prompt assembly keep it inert. Keyed on `cwd`,
-        # the checkout: a clone has no memory of its own.
+        # The repo's state dir, keyed on the checkout: a clone has no memory of its own.
         state_dir=state_dir(req.cwd),
     )
     rm = cfg.models.resolve("worker")
@@ -452,9 +470,7 @@ def run_one(
     )
     cfg = resolve_decompose(cfg, rm, log=reporter.err)
     wf = Harness(
-        # A mode="run" state commits on its own chain like any run; the
-        # instance dir name is its session-unique id. Read-only states never
-        # commit (mode gate), so the refs stay None there.
+        # A run-mode state commits on its own chain, named by the instance dir.
         chain=RunChain(
             req.root,
             ref=machine_chain_ref_for(req.transcript_dir.parent.name) if not read_only else None,
@@ -508,51 +524,38 @@ def build_machine_agent_runner(
     machine_id: str | None = None,
     clone_root: Path | None = None,
 ) -> Callable[[AgentRequest, Path | None], AgentExecResult]:
-    """Build the host-side runner an `agent` state uses to drive a confined loop.
+    """Build the host-side runner an `agent` state fires.
 
-    The machine engine is a host-netns supervisor; each `agent` state runs in
-    its OWN subprocess (`agent6.ui.cli.machine_agent`) driving the loop
-    (`run_one` above), independently of the engine and of sibling `tool`
-    states. Like every agent process it runs unconfined; the jail bounds the
-    commands it dispatches. The subprocess is
-    spawned with a fixed argv (no LLM-derived content) and handed the request via
-    a temp file; the operator-authored prompt travels in that file, never on the
-    command line. `timeout_secs` is enforced by killing the subprocess's whole
-    process group (true mid-call cancellation, and the per-agent session-network
-    holder dies with it).
+    The runner spawns the subprocess with a fixed argv, hands it the request through
+    a temp file (the prompt never rides the command line) and enforces the timeout
+    by killing the whole process group. With `machine_id` and `clone_root` set,
+    every state executes in a fresh clone checked out at the machine chain's tip,
+    and a run-mode state's commits land back on the chain ref and the visible
+    machine branch; the operator's checkout is never touched.
 
-    `events_log` is per CALL: the live World passes each agent-state execution
-    its own `<instance>/states/<seq>-<state>/logs.jsonl` and `machine create`
-    passes the draft log, so the subprocess writes a watchable event stream there.
+    Args:
+        overlay: The machine's `[config]` overlay.
+        cwd: The operator's checkout.
+        isolation: The isolation level the engine validated.
+        transcript_dir: Where the subprocess records transcripts.
+        protect_paths: The bundle paths a state may not rewrite.
+        commit_identity: The host-resolved git identity for run-mode states.
+        machine_id: The machine's id, when its states run in clones.
+        clone_root: Where the per-state clones live, when they do.
 
-    `machine_id` + `clone_root` (set together by `machine run` for a machine
-    with `mode="run"` states): EVERY agent state then executes in a fresh
-    clone under `<clone_root>/state-<seq>`, checked out at the machine
-    chain's tip (the origin's HEAD before the first landing), so a read-only
-    judge sees the machine's work too. A run-mode state's commits land back
-    per state: the chain ref for the next state's continuation, and the
-    visible `agent6/machine-<id>` branch at the same tip for the operator, who
-    merges it as they would a run's. A read-only state commits nothing, so its
-    landing is a no-op cleanup. The operator's checkout is never touched.
-    Without them (`machine create`, a machine with no run states) requests run
-    in *cwd*.
+    Returns:
+        The runner: given a request and an optional per-call event log, the result.
     """
 
     def run_agent(request: AgentRequest, events_log: Path | None = None) -> AgentExecResult:
-        # The salvage below must see only THIS call's events: machine create
-        # shares one draft log across attempts, and an attempt that died before
-        # its first budget.update would otherwise salvage the PRIOR attempt's
-        # cumulative totals and double-book them. (Per-state logs are fresh per
-        # execution, so the offset is 0 there.)
+        # The salvage reads this call's events only: `machine create` shares one draft log.
         start_offset = 0
         if events_log is not None:
             with contextlib.suppress(OSError):
                 start_offset = events_log.stat().st_size
 
         def salvaged(reason: str) -> AgentExecResult:
-            # No result.json (killed/timed-out/crashed): recover the loop's
-            # running budget.update totals from the state's own event log, else a
-            # timed-out state books $0 and the budget guard never trips.
+            # Without a result file the spend comes from the event log, so the guard trips.
             spend = (
                 read_budget_totals(events_log, from_offset=start_offset)
                 if events_log is not None
@@ -577,18 +580,14 @@ def build_machine_agent_runner(
                 return salvaged(f"error: clone for machine {machine_id!r} failed: {exc}")
         workdir = clone or cwd
         payload = MachineAgentRequest(
-            # `cwd` stays the checkout in a clone: the subprocess reloads its
-            # config and memory from it; `root` is where it works.
+            # `cwd` stays the checkout: config and memory load from it; `root` is the work.
             cwd=cwd,
             root=workdir,
             overlay=overlay,
             isolation=isolation,
             transcript_dir=transcript_dir,
             events_log=events_log,
-            # Protect the clone's own copy of the bundle: the origin copy is
-            # what executes (and what M2's recorded-bundle compare holds), but
-            # the letter of "a state cannot rewrite its machine logic" covers
-            # the copy it can reach too.
+            # The clone's copy of the bundle is protected too, though the origin's executes.
             protect_paths=tuple(
                 workdir / p.relative_to(cwd) if clone is not None and p.is_relative_to(cwd) else p
                 for p in protect_paths
@@ -602,25 +601,15 @@ def build_machine_agent_runner(
             req_file.write_text(payload.model_dump_json(), encoding="utf-8")
             argv = [
                 sys.executable,
-                # -P keeps cwd (the workspace) off sys.path: a model-planted
-                # `agent6/` must not shadow the installed package on the host.
+                # -P keeps the workspace off sys.path, so a planted `agent6/` cannot shadow.
                 "-P",
                 "-m",
                 "agent6.ui.cli.machine_agent",
                 str(req_file),
                 str(out_file),
             ]
-            # Own session/process group so the timeout kill takes the agent
-            # subprocess AND its jail children with it; PDEATHSIG so the
-            # whole tree dies with the supervisor instead of running on,
-            # spending and committing, after a SIGTERM/SIGKILL nobody waits
-            # out (an own-session child otherwise has no tie to its parent's
-            # life).
-            # PLW1509 (fork-with-threads hazard): the hook is written for it,
-            # async-signal-minimal: libc preloaded at import, then only
-            # prctl/getppid/_exit, no allocation or locks.
-            # AGENT6_SUBRUN: a machine state is subordinate work and must
-            # not itself fan out (the same depth-1 flag every lane carries).
+            # An own process group so the timeout kill takes the jail children too; PDEATHSIG
+            # so the tree dies with the supervisor. The preexec hook is async-signal-minimal.
             try:
                 proc = subprocess.Popen(
                     argv,
@@ -635,10 +624,7 @@ def build_machine_agent_runner(
                     proc.wait(timeout=request.timeout_s)
                 except subprocess.TimeoutExpired:
                     with contextlib.suppress(ProcessLookupError):
-                        # By pid: start_new_session made it the group leader, and an
-                        # unreaped child's pgid cannot have been recycled. Looking
-                        # it up first would leave a window where, under sudo, an
-                        # unrelated group could be killed as root.
+                        # By pid: the unreaped leader's pgid cannot have been recycled.
                         os.killpg(proc.pid, signal.SIGKILL)
                     proc.wait()
                     result = salvaged("timeout")
@@ -649,8 +635,7 @@ def build_machine_agent_runner(
                         try:
                             result = AgentExecResult.model_validate_json(out_file.read_bytes())
                         except (OSError, ValidationError):
-                            # A malformed result.json is treated like a missing
-                            # one: the spend salvage keeps the budget honest.
+                            # A malformed result file counts as missing.
                             result = salvaged("error")
         if clone is not None and chain is not None and machine_id is not None:
             result = _land_machine_clone(cwd, clone, chain, machine_branch_for(machine_id), result)
@@ -660,12 +645,20 @@ def build_machine_agent_runner(
 
 
 def clone_at_machine_chain(origin: Path, dest: Path, chain_ref: str) -> None:
-    """Fresh clone checked out at the machine chain's tip.
+    """Make a fresh clone checked out at the machine chain's tip.
 
-    A clone copies branches, not `refs/agent6/*`, so the chain ref is fetched
-    in and the worktree detached onto its tip: state N+1 starts from state N's
-    full tree. No chain yet (first run state, or the operator archived it): the
-    clone's own HEAD is the continuation-from-merged-state start."""
+    A clone copies branches, not `refs/agent6/*`, so the chain ref is fetched in;
+    with no chain yet the clone's own HEAD is the start.
+
+    Args:
+        origin: The repository to clone.
+        dest: Where the clone goes; an existing one is replaced.
+        chain_ref: The machine's chain ref.
+
+    Raises:
+        SubrunError: The clone failed.
+        GitError: The fetch or checkout failed.
+    """
     if dest.exists():
         shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -679,15 +672,21 @@ def clone_at_machine_chain(origin: Path, dest: Path, chain_ref: str) -> None:
 def _land_machine_clone(
     origin: Path, clone: Path, chain_ref: str, branch: str, result: AgentExecResult
 ) -> AgentExecResult:
-    """Land the state's work back in the origin and drop the clone.
+    """Land the state's work back in the origin on every outcome, and drop the clone.
 
-    The chain ref carries the next state's continuation; the visible branch is
-    the operator's handle on the same commits. Runs on EVERY outcome: a
-    timed-out or failed state's real commits still land (the outcome label
-    routes the machine; work is never stranded). Serial states (the instance
-    lock) make both updates fast-forwards. An import
-    failure keeps the clone (the only copy; the prune sweep proves that and
-    keeps it) and routes the state as failed with no captured payload."""
+    Serial states make both ref updates fast-forwards. An import failure keeps the
+    clone, the only copy, and routes the state as failed with no payload.
+
+    Args:
+        origin: The repository the work lands in.
+        clone: The state's clone.
+        chain_ref: The machine's chain ref.
+        branch: The visible machine branch.
+        result: The state's result.
+
+    Returns:
+        The result, or a failed one when the import failed.
+    """
     advanced = chain_tip(clone, chain_ref)
     if advanced is None or advanced == chain_tip(origin, chain_ref):
         shutil.rmtree(clone, ignore_errors=True)

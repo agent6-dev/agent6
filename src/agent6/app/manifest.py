@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Build + write the canonical manifest.json a run starts with (run/fork). The
-reader and the on-disk shape (:class:`SessionManifest`) live in `sessions.manifest`."""
+"""Write the manifest.json a run starts with, and every stamp that rewrites it.
+
+The reader and the on-disk shape (`SessionManifest`) live in `sessions.manifest`.
+"""
 
 from __future__ import annotations
 
@@ -36,9 +38,7 @@ from agent6.task_text import operator_task_text
 
 
 def _policy_stamp(cfg: Config, isolation: str) -> PolicyStamp:
-    """The policy an execution runs under. `isolation` is what the run RESOLVED to,
-    not the knob: `auto` degrades, and a surface printing "auto" says nothing
-    about whether the run was confined."""
+    """Return the policy stamp; `isolation` is the resolved level, since `auto` degrades."""
     return PolicyStamp(
         run_commands=cfg.sandbox.run_commands,
         isolation=isolation or str(cfg.sandbox.isolation),
@@ -48,25 +48,24 @@ def _policy_stamp(cfg: Config, isolation: str) -> PolicyStamp:
 
 
 def _model_brief(rm: Any) -> ModelBrief | None:
-    """A `ModelBrief` for a resolved role, or None when unset."""
+    """Return the brief for a resolved role, or None when unset."""
     if rm is None:
         return None
     return ModelBrief(provider=rm.provider, model=rm.model)
 
 
 def write_manifest(path: Path, m: SessionManifest) -> None:
-    """Serialize *m* to *path* (indent=2 + trailing newline), atomically.
+    """Serialize the manifest to disk atomically; the one place one reaches disk.
 
-    The one place a SessionManifest reaches disk: the initial write below and the
-    stamp rewrites (merge / lineage / compare) all route through here, so the
-    format lives in one spot. Durable temp+replace: the TUI hub and `sessions show`
-    poll this file on live runs, and resume/fork need it after a crash.
+    An older manifest is upgraded to the shape written; a newer one is refused, since
+    `extra="ignore"` would drop the keys this binary does not know.
 
-    Refuses to rewrite a NEWER manifest (`ManifestError`): reading one is
-    lenient so every run dir keeps rendering, but `extra="ignore"` drops the
-    keys this binary doesn't know, so a stamp would silently downgrade the
-    record it was only meant to annotate. An OLDER manifest carries nothing to
-    lose, so it is upgraded to the shape actually written.
+    Args:
+        path: The manifest file.
+        m: The manifest to write.
+
+    Raises:
+        ManifestError: The manifest on disk is newer than this agent6 understands.
     """
     if m.version > MANIFEST_VERSION:
         raise ManifestError(
@@ -101,26 +100,32 @@ def write_session_manifest(
     worktree_git_dir: Path | None = None,
     fanout: FanoutStamp | None = None,
 ) -> None:
-    """Write the canonical manifest.json for a run.
+    """Write the manifest.json a new run or fork starts with.
 
-    Format is JSON for the same reason logs.jsonl is JSON: trivially grep-able
-    from a shell and easy to consume from any language. The on-disk shape is
-    *liquid* until 1.0 - bump `SessionManifest.version` only when the new shape
-    genuinely improves a downstream consumer.
-
-    `source_session_id` records the session whose context `--from` seeded into
-    this one. `parent_session_id` / `forked_from_turn` / `forked_from_sha` / `gate` are
-    set only for a run created by `agent6 fork`; they record the lineage
-    (source run + the turn forked from + the workspace sha at that turn + the
-    gate the source was judged by). A non-forked run leaves them null.
-    *worktree* is the fork's own checkout and *worktree_git_dir* the repository
-    git dir it points into (see `SessionManifest.worktree`). *fanout* is a
-    `run --parallel` coordinator's own record.
+    Args:
+        layout: The session's directory layout.
+        session_id: The new session's id.
+        source_session_id: The session whose context `--from` seeded into this one.
+        user_task: The operator's task.
+        base_sha: The commit the run started from.
+        base_branch: The branch the run started from.
+        run_branch: The branch the start cut, when one was.
+        cfg: The resolved config.
+        mode: run, plan or ask.
+        effective_preset: The preset the run uses.
+        preset_from_flag: The preset came from `--preset`, so a resume replays it.
+        driver_from_flag: The driver model came from `--model`.
+        gate: A fork's pin of the source's (verify command, origin).
+        isolation: The resolved isolation level.
+        parent_session_id: A fork's source run.
+        forked_from_turn: The turn a fork was cut at.
+        forked_from_sha: The workspace sha at that turn.
+        worktree: A fork's own checkout.
+        worktree_git_dir: The repository git dir the worktree points into.
+        fanout: A `run --parallel` coordinator's own record.
     """
     lineage = _parallel_lineage()
-    # A fork passes the source's pin; a fresh run carries the configured gate
-    # as such (a parked run keeps this stamp, no execution having run) until
-    # `pin_gate` stamps the pair the execution resolved.
+    # A fresh run carries the configured gate until `pin_gate` stamps the pair it resolved.
     verify_command, verify_origin = gate or (
         cfg.harness.verify_command,
         "configured" if cfg.harness.verify_command else "",
@@ -128,23 +133,17 @@ def write_session_manifest(
     m = SessionManifest(
         agent6_version=__version__,
         session_id=session_id,
-        # run | plan | ask. `fork` and `resume` act on session_mode(), never on
-        # this string: a damaged manifest must not silently escalate a
-        # read-only session to the privileged write tools.
+        # `fork` and `resume` act on session_mode(), never on this string.
         mode=mode,
         start_ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
-        # The display twin of the OPERATOR's words (a seed digest or skill
-        # block `run --from`/`--skill` prepends is context, not the task),
-        # clipped; every listing reads it. SessionSnapshot.original_task
-        # carries the verbatim engine copy, and nothing here feeds the engine.
+        # The display twin of the operator's words; the verbatim engine copy is in the snapshot.
         user_task=operator_task_text(user_task)[:4000],
         base_sha=base_sha,
         base_branch=base_branch,
         run_branch=run_branch,
         git_control=cfg.git.control,
         models=ModelsBrief(
-            # The role that drives this mode: recording the worker for a plan
-            # run makes `sessions show` name a model that never ran.
+            # The role that drives this mode: a plan run's worker never ran.
             driver=_model_brief(cfg.models.resolve(session_kind(mode).role)),
             reviewer=_model_brief(cfg.models.resolve("reviewer")),
             driver_from_flag=driver_from_flag,
@@ -152,9 +151,6 @@ def write_session_manifest(
         harness=HarnessStamp(
             review_trigger=cfg.review.trigger,
             revise_prompt=cfg.prompt.revise_prompt,
-            # The preset the run actually used (--preset flag or top-level
-            # `preset`), with how it was chosen: only a flag-selected one is
-            # replayed as an override on resume (see HarnessStamp.replay_preset).
             preset=effective_preset,
             preset_from_flag=preset_from_flag,
             verify_command=tuple(verify_command),
@@ -174,13 +170,11 @@ def write_session_manifest(
 
 
 def _parallel_lineage() -> ParallelLineage | None:
-    """The fan-out lineage the spawner stamped into this lane's environment
-    (`AGENT6_PARALLEL_LINEAGE=<coordinator>:<group>:<lane>`), or None for an
-    ordinary run.
+    """Return the fan-out lineage the spawner stamped into this lane's environment, or None.
 
-    Read here, in the manifest's one writer, so the lane is self-describing
-    from birth: the grouping survives a coordinator death instead of waiting
-    on a post-import stamp only a live coordinator could write."""
+    `AGENT6_PARALLEL_LINEAGE=<coordinator>:<group>:<lane>`. Read at the manifest's write so the
+    grouping survives a coordinator death.
+    """
     raw = os.environ.get("AGENT6_PARALLEL_LINEAGE", "")
     coordinator, _, rest = raw.partition(":")
     group, sep, lane = rest.rpartition(":")
@@ -190,9 +184,13 @@ def _parallel_lineage() -> ParallelLineage | None:
 
 
 def stamp_parked(session_dir: Path, *, task: str, reason: str) -> None:
-    """Record that this run was submitted and never started: the verbatim
-    task (resume starts it fresh), why it waits, and no run branch (none was
-    cut). The execution's start (`unpark`) replaces all three."""
+    """Record that the run was submitted and never started; `unpark` replaces the stamp.
+
+    Args:
+        session_dir: The run.
+        task: The verbatim task a resume starts fresh.
+        reason: Why the run waits.
+    """
     m = read_manifest(session_dir)
     write_manifest(
         session_dir / MANIFEST_NAME,
@@ -201,8 +199,7 @@ def stamp_parked(session_dir: Path, *, task: str, reason: str) -> None:
 
 
 def parked_stamp(session_dir: Path) -> tuple[str, str] | None:
-    """The (task, reason) of a parked submission; None for no manifest, or one
-    carrying no park."""
+    """Return a parked submission's (task, reason), or None without a manifest or a park."""
     try:
         m = read_manifest(session_dir)
     except ManifestError:
@@ -211,9 +208,10 @@ def parked_stamp(session_dir: Path) -> tuple[str, str] | None:
 
 
 def unpark(session_dir: Path, *, run_branch: str | None) -> None:
-    """The execution is starting: the park is over and *run_branch* (the branch the
-    start cut) is the run's. A manifest carrying no park (or none readable, an
-    embedder that wrote no manifest) is left alone."""
+    """End the park at the execution's start and record the branch the start cut.
+
+    A manifest carrying no park, or none readable, is left alone.
+    """
     try:
         m = read_manifest(session_dir)
     except ManifestError:
@@ -227,11 +225,10 @@ def unpark(session_dir: Path, *, run_branch: str | None) -> None:
 
 
 def stamp_execution(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None:
-    """Re-stamp the facts a EXECUTION owns: the models driving it and the policy it
-    runs under.
+    """Re-stamp what an execution owns: the models driving it and the policy it runs under.
 
-    `agent6 exec` joins the recorded policy's jail and `sessions show` reads
-    the recorded model, so both must describe the execution that is live."""
+    `agent6 exec` joins the recorded policy's jail and `sessions show` reads the recorded model.
+    """
     m = read_manifest(session_dir)
     harness = m.harness
     if not harness.preset_from_flag:
@@ -253,18 +250,14 @@ def stamp_execution(session_dir: Path, cfg: Config, mode: str, isolation: str) -
 
 
 def stamp_preset(session_dir: Path, name: str) -> None:
-    """Record the preset a resumed execution was started under with `--preset`: from
-    here the run runs under it, and a later resume without a flag replays it
-    (`HarnessStamp.replay_preset`)."""
+    """Record the preset `--preset` set on a resume; a later resume without the flag replays it."""
     m = read_manifest(session_dir)
     harness = m.harness.model_copy(update={"preset": name, "preset_from_flag": True})
     write_manifest(session_dir / MANIFEST_NAME, m.model_copy(update={"harness": harness}))
 
 
 def stamp_model(session_dir: Path, route: ModelRoute) -> None:
-    """Record the route a resumed execution's `--model` set as the run's driver:
-    from here the run runs on it, and a later resume without the flag
-    replays it."""
+    """Record the route `--model` set on a resume; a later resume without the flag replays it."""
     m = read_manifest(session_dir)
     models = m.models.model_copy(
         update={
@@ -276,19 +269,11 @@ def stamp_model(session_dir: Path, route: ModelRoute) -> None:
 
 
 def stamp_fork_task(session_dir: Path, steer: str, *, source_dir: Path) -> None:
-    """Record the steer that sent a fork somewhere else as the fork's own task.
+    """Record the first steer that sends a fork elsewhere as the fork's own task.
 
-    A fork starts life with its source's `user_task`, which is the truth until
-    the operator sends it elsewhere; that first steer is then what the fork's
-    listing row shows and what its squashed merge is titled. Later steers are
-    follow-ups WITHIN that task, exactly as they are for a run of its own, so
-    the stamp fires only while the task is still the source's. The source task
-    stays reachable through `parent_session_id`.
-
-    A manifest this binary may not rewrite (a newer version) leaves the task as
-    it stands rather than failing a resume that is otherwise fine. A source
-    that is gone (pruned) cannot answer "still the source's task", so the fork
-    keeps what it has and says so.
+    A fork starts with its source's task; later steers are follow-ups within the task, so the
+    stamp fires only while the task is still the source's. A newer manifest, or a pruned
+    source, leaves the task as it stands rather than failing the resume.
     """
     m = read_manifest(session_dir)
     if m.parent_session_id is None:
@@ -304,14 +289,13 @@ def stamp_fork_task(session_dir: Path, steer: str, *, source_dir: Path) -> None:
 
 
 def stamp_task(session_dir: Path, steer: str) -> None:
-    """Record *steer* as the run's task: what its listing row shows and what
-    its squashed merge is titled. A manifest this binary may not rewrite (a
-    newer version) keeps the task it has rather than failing the resume."""
+    """Record the steer as the run's task; a newer manifest keeps its task rather than fail."""
     with contextlib.suppress(ManifestError, OSError):
         _write_task(session_dir, read_manifest(session_dir), steer)
 
 
 def _write_task(session_dir: Path, m: SessionManifest, steer: str) -> None:
+    """Write the steer as the manifest's task, clipped like the first write."""
     write_manifest(
         session_dir / MANIFEST_NAME,
         m.model_copy(update={"user_task": operator_task_text(steer)[:4000]}),
@@ -319,11 +303,9 @@ def _write_task(session_dir: Path, m: SessionManifest, steer: str) -> None:
 
 
 def stamp_verify_gate(session_dir: Path, argv: Sequence[str], origin: str) -> None:
-    """Pin the gate this run is judged by, and where it came from.
+    """Pin the gate the run is judged by and where it came from.
 
-    Written after resolution rather than at run start because inference runs
-    later; from here on the pair is the run's, so a mid-run edit to AGENTS.md
-    cannot move the gate under it, on this execution or a resumed one.
+    From here on the pair is the run's, so a mid-run edit to AGENTS.md cannot move the gate.
     """
     m = read_manifest(session_dir)
     harness = m.harness.model_copy(update={"verify_command": tuple(argv), "verify_origin": origin})
@@ -338,13 +320,17 @@ def pin_gate(
     events: EventSink,
     reporter: Reporter,
 ) -> None:
-    """Pin this execution's gate and KEEP it pinned when the loop adopts one mid-run.
+    """Pin the execution's gate, and re-pin it when the loop adopts one mid-run.
 
-    Every lifecycle that starts an execution calls this, so an execution that adopts a gate
-    mid-run never leaves a manifest reading gateless. A failure is reported
-    rather than raised (an execution is still worth running) and never swallowed: the
-    manifest is what every viewer, the baseline and the next execution read the gate
-    from.
+    A failed stamp is reported, never raised or swallowed: the execution is still worth
+    running, and the manifest is where every viewer and the next execution read the gate.
+
+    Args:
+        session_dir: The run.
+        argv: The gate command.
+        origin: Where the gate came from.
+        events: The run's event sink, watched for an adopted gate.
+        reporter: Where a failed stamp is reported.
     """
 
     def _stamp(gate: Sequence[str], why: str) -> None:
@@ -356,10 +342,10 @@ def pin_gate(
     _stamp(argv, origin)
 
     def _repin_adopted_gate(event: dict[str, Any]) -> None:
+        """Re-pin on a `loop.verify_inferred` event that adopted a gate."""
         if event.get("type") == "loop.verify_inferred" and event.get("adopted_at") is not None:
             command = tuple(event.get("command", ()))
             _stamp(command, "adopted" if command else "unadopted")
 
-    # EventSink swallows a listener's exceptions so a UI consumer cannot break
-    # the run; _stamp reports for itself rather than relying on that.
+    # EventSink swallows a listener's exceptions; _stamp reports for itself.
     events.subscribe(_repin_adopted_gate)

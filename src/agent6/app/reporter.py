@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The two output channels the app pipelines write through instead of calling
-`print` directly.
+"""Define the two output channels the app pipelines write through.
 
-`out` is stdout (a piped result the operator captures); `err` is stderr (status,
-warnings, refusals). `ui/cli` is the composition root that owns the real streams
-(`STDIO_REPORTER`); a test or an alternate front-end injects a capturing pair.
-Each channel takes one already-formatted line and writes it as the matching
-`print` would."""
+`ui/cli` owns the real streams (`STDIO_REPORTER`); a test or another front-end injects a
+capturing pair. Each channel takes one formatted line and writes it as `print` would.
+"""
 
 from __future__ import annotations
 
@@ -18,28 +15,36 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class Reporter:
+    """Write status and results through two channels with one wording per kind.
+
+    Attributes:
+        out: Stdout, the piped result the operator captures.
+        err: Stderr, for status, warnings and refusals.
+        receipt: Where the cost receipt goes when a live view renders it; None means `out`.
+    """
+
     out: Callable[[str], None]
     err: Callable[[str], None]
-    # The cost receipt (`BudgetTracker.format_summary`): the one end-of-run
-    # block a live view also renders on its done line, so a front-end whose
-    # live view carries it routes the receipt to its log. None means `out`.
     receipt: Callable[[str], None] | None = None
 
     def cost(self, msg: str) -> None:
+        """Write the cost receipt."""
         (self.receipt or self.out)(msg)
 
-    # The stderr conventions, owned here so every lifecycle words them the
-    # same. A refusal means the run does not start (exit 2).
     def refuse(self, msg: str) -> None:
+        """Write a refusal; the run does not start (exit 2)."""
         self.err(f"REFUSING: {msg}")
 
     def error(self, msg: str) -> None:
+        """Write an error line."""
         self.err(f"ERROR: {msg}")
 
     def warn(self, msg: str) -> None:
+        """Write a warning line."""
         self.err(f"[agent6] WARNING: {msg}")
 
     def note(self, msg: str) -> None:
+        """Write a status line."""
         self.err(f"[agent6] {msg}")
 
 
@@ -51,5 +56,5 @@ def _print_err(msg: str) -> None:
     print(msg, file=sys.stderr)
 
 
-# The default the app entry points fall back to and `ui/cli` relies on.
+# The default the app entry points fall back to.
 STDIO_REPORTER = Reporter(out=_print_out, err=_print_err)

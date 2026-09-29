@@ -1,15 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `/undo` rewind: take back a session's last message by cloning its
-state as of the checkpoint before it (:func:`agent6.app.fork.create_fork`)
-into a fork that keeps the undone session's checkout, then putting that
-checkout back to the checkpoint's tree.
+"""Rewind a session for `/undo`: fork it at the checkpoint before its last message.
 
-Nothing is lost: the tree as it stands (the session's in-flight edits, every
-file that appeared since it started) is committed onto the undone session's
-ref first, so the later commits and that one stay there; the session's
-untracked-at-start files (the operator's) are left alone, and so are HEAD
-and the index.
+The fork keeps the undone session's checkout, which is put back to the checkpoint's tree.
+Nothing is lost: the tree as it stands is committed onto the undone session's ref first, so
+the later commits stay there. The operator's untracked-at-start files, HEAD and the index are
+left alone.
 """
 
 from __future__ import annotations
@@ -60,7 +56,7 @@ _STEER_NOTICE = "OPERATOR STEERING"
 
 
 def _text_of(content: object) -> str:
-    """The plain text of an anthropic-shaped message content (str or blocks)."""
+    """Return the plain text of a message content, a string or content blocks."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -74,9 +70,10 @@ def _text_of(content: object) -> str:
 
 
 def _operator_messages(messages: list[dict[str, Any]]) -> list[str]:
-    """The operator's words in a restored conversation: the opening task, then
-    every steer notice with its wrapper line stripped. Tool results and other
-    harness notices stay out."""
+    """Return the operator's words in a restored conversation: the task, then each steer.
+
+    A steer loses its notice line; tool results and other harness notices stay out.
+    """
     out: list[str] = []
     for i, message in enumerate(messages):
         if message.get("role") != "user":
@@ -94,11 +91,14 @@ def _operator_messages(messages: list[dict[str, Any]]) -> list[str]:
 
 @dataclass(frozen=True, slots=True)
 class _Checkpoint:
-    """A checkpoint of *session_id*: the file it sits in (`at_turn`, what
-    `fork --at-turn` addresses) and the turn its conversation stands before
-    (`turn`, the snapshot's `next_iteration`, the number every surface
-    prints). The two differ for a fork's seed, file 0 holding its source's
-    turn N."""
+    """Locate a checkpoint.
+
+    Attributes:
+        session_id: The session holding it.
+        at_turn: The file it sits in, what `fork --at-turn` addresses.
+        turn: The turn its conversation stands before, the number every surface prints; a
+            fork's seed differs, file 0 holding its source's turn N.
+    """
 
     session_id: str
     at_turn: int
@@ -107,10 +107,15 @@ class _Checkpoint:
 
 @dataclass(frozen=True, slots=True)
 class UndoTarget:
-    """Where `/undo` forks *session*: *source*'s checkpoint at *at_turn* (the
-    session itself, or an ancestor up its fork lineage), the turn that
-    checkpoint stands before (see :class:`_Checkpoint`), and the message it
-    takes back (composer-refill text)."""
+    """Say where `/undo` forks a session.
+
+    Attributes:
+        session: The session being undone.
+        source_session_id: The session holding the checkpoint: itself or a fork ancestor.
+        at_turn: The checkpoint file.
+        turn: The turn the checkpoint stands before.
+        undone_text: The message taken back, refilled into the composer.
+    """
 
     session: SessionLayout
     source_session_id: str
@@ -120,7 +125,7 @@ class UndoTarget:
 
 
 def _snapshot_at(layout: SessionLayout, at_turn: int) -> SessionSnapshot | None:
-    """The checkpoint in file *at_turn*, None if unreadable."""
+    """Return the checkpoint in the file, or None when it is unreadable."""
     try:
         return load_session_snapshot(layout.checkpoint_path(at_turn))
     except (OSError, ValueError):
@@ -130,11 +135,19 @@ def _snapshot_at(layout: SessionLayout, at_turn: int) -> SessionSnapshot | None:
 def undo_target(  # noqa: PLR0911 - each refusal names its own reason
     state_dir: Path, session_id: str, *, reporter: Reporter = STDIO_REPORTER
 ) -> UndoTarget | None:
-    """Resolve `/undo` for *session_id*: the newest checkpoint -- in this
-    session or up its fork lineage -- whose restored conversation ends before
-    the session's last operator message. With only the opening task, the
-    earliest checkpoint (start over, task back in the composer). None, with
-    the reason printed, when nothing qualifies."""
+    """Resolve the checkpoint `/undo` forks a session at.
+
+    The newest checkpoint, in the session or up its fork lineage, whose conversation ends
+    before the last operator message. With only the opening task, the earliest checkpoint.
+
+    Args:
+        state_dir: The repo's state directory.
+        session_id: The session to undo.
+        reporter: Where a refusal is printed.
+
+    Returns:
+        The target, or None with the reason printed.
+    """
     src = resolve_source(state_dir, session_id, reporter=reporter)
     if src is None:
         return None
@@ -150,8 +163,6 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
         return None
     ops = _operator_messages(snap.messages)
     if len(ops) <= 1:
-        # Only the opening task: /undo means start over from the first
-        # checkpoint, with the task back in the composer to edit.
         if len(turns) < 2:
             reporter.err(f"nothing to undo: {src.session_id} is at its opening message.")
             return None
@@ -178,19 +189,21 @@ def _newest_checkpoint_below(
     *,
     seen: frozenset[str] = frozenset(),
 ) -> _Checkpoint | None:
-    """The checkpoint before *last_message* first appeared in *layout*, or,
-    following fork lineage, in an ancestor.
+    """Return the checkpoint before the last message first appeared, following fork lineage.
 
-    Checkpoint conversations can shrink at context compaction, so their total
-    operator-message count is not monotonic. The append transition for the
-    last message remains in the full checkpoint history; use it before the
-    count fallback for snapshots that predate steering markers. A fork carries
-    one seed checkpoint, so walking back past it means resolving in the parent.
+    Compaction shrinks conversations, so the operator-message count is not monotonic: the
+    append transition decides first, the count second. A fork carries one seed checkpoint, so
+    walking past it resolves in the parent.
 
-    *seen* stops a cyclic lineage: forks always point at an OLDER run, so a
-    cycle only exists in a corrupt or hand-edited manifest, and following one
-    would recurse until the stack blows. A revisited id ends the walk (no
-    resolvable ancestor) instead of crashing."""
+    Args:
+        layout: The session to search.
+        current_ops: The operator-message count at the newest checkpoint.
+        last_message: The message being taken back.
+        seen: The sessions already walked; a revisited id (a corrupt lineage) ends the walk.
+
+    Returns:
+        The checkpoint, or None when no ancestor holds one.
+    """
     snapshots = [
         (at_turn, snap, _operator_messages(snap.messages))
         for at_turn in sorted(list_checkpoint_turns(layout))
@@ -219,12 +232,20 @@ def _newest_checkpoint_below(
 
 
 def _rewind_checkout(checkout: Path, *, tip: str, sha: str, exclude: frozenset[str]) -> list[str]:
-    """Put *checkout* back to *sha*'s tree for every tracked path whose
-    content differs from it (minus *exclude*, the session's untracked-at-start
-    files); HEAD and the shared index stay untouched. Returns the paths put
-    back. The current content is staged as a tree first (seeded on *tip*, the
-    chain commit that holds it), so the two-tree sync moves exactly the paths
-    that differ and nothing identical is rewritten."""
+    """Put the checkout back to a commit's tree for every tracked path that differs.
+
+    The current content is staged as a tree first, so the two-tree sync moves only the paths
+    that differ. HEAD and the shared index stay untouched.
+
+    Args:
+        checkout: The checkout to rewind.
+        tip: The chain commit holding the current content.
+        sha: The commit to rewind to.
+        exclude: The session's untracked-at-start files, left alone.
+
+    Returns:
+        The paths put back.
+    """
     current = worktree_tree(checkout, tip, exclude)
     paths = tree_diff_paths(checkout, sha, current)
     if paths:
@@ -235,12 +256,20 @@ def _rewind_checkout(checkout: Path, *, tip: str, sha: str, exclude: frozenset[s
 def _checkout_writer_lock(
     state: Path, checkout: Path, undone: SessionLayout
 ) -> tuple[int | None, str]:
-    """The checkout's writer lock for /undo's commit and rewind (a held fd,
-    ""), or nothing held and the refusal to print: *undone*'s own live
-    worker (checked directly: a plan or ask worker takes no writer lock,
-    since it makes no chain commits), else another session's live hold. A
-    None fd with "" is this process being *undone*'s worker (the loop's own
-    /undo), whose lock is no obstacle."""
+    """Take the checkout's writer lock for the commit and the rewind.
+
+    The undone session's own live worker is checked directly: a plan or ask worker takes no
+    writer lock.
+
+    Args:
+        state: The repo's state directory.
+        checkout: The checkout to lock.
+        undone: The session being undone.
+
+    Returns:
+        The held fd and "", or None and the refusal; None and "" when this process is the
+        undone session's worker, whose lock is no obstacle.
+    """
     if read_worker_pid(undone.session_dir) == os.getpid():
         return None, ""
     if worker_is_alive(undone.session_dir):
@@ -267,17 +296,21 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     cwd: Path,
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[str, str] | None:
-    """`/undo`: commit the tree as it stands onto *session_id*'s ref, fork the
-    session at its undo target (unstarted, in the session's own checkout), and
-    put that checkout back to the target's tree. Returns `(child_id,
-    undone_text)`: the text goes back in the composer to edit and resend. None
-    with the reason already printed.
+    """Commit the tree as it stands, fork the session at its undo target, and rewind the checkout.
 
-    *cwd* is the repository (the state dir's anchor); the checkout rewound is
-    the session's worktree when it has one, else *cwd*. The checkout's writer
-    lock is held across the commit and the rewind, unless this process is the
-    session's live worker (the loop's own `/undo`, which holds it already):
-    any other live run driving the checkout refuses."""
+    The fork is unstarted, in the session's own checkout: its worktree when it has one, else
+    the repository. The writer lock is held across the commit and the rewind unless this
+    process is the session's live worker; any other live run driving the checkout refuses.
+
+    Args:
+        config_path: An explicit config file, else the effective one.
+        session_id: The session to undo.
+        cwd: The repository.
+        reporter: Where refusals and the notice go.
+
+    Returns:
+        The fork's id and the text taken back, or None with the reason printed.
+    """
     state = state_dir(cwd)
     target = undo_target(state, session_id, reporter=reporter)
     if target is None:
@@ -290,8 +323,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         return None
     refusal = model_git_refusal(manifest, "undo")
     if refusal is not None:
-        # Before the commit below: a model-controlled run has no agent6 chain,
-        # and a chain ref written here is one auto_merge would land.
+        # A model-controlled run has no chain; a chain ref written here is one auto_merge lands.
         reporter.error(refusal)
         return None
     checkout = manifest.worktree or cwd
@@ -373,8 +405,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
 def _report_rewind(
     reporter: Reporter, paths: list[str], *, turn: str, kept: str | None, where: str
 ) -> None:
-    """The undo notice: the paths put back (HEAD and the index stay), and
-    where the tree as it stood and the later commits live."""
+    """Print the undo notice: the paths put back and where the earlier tree and commits live."""
     if paths:
         shown = ", ".join(paths[:10]) + (f", +{len(paths) - 10} more" if len(paths) > 10 else "")
         reporter.note(

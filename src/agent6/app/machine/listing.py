@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The machines listing: one row per machine, an instance (its status and
-current state) joined with the authored `.asm.toml` that declares it (its
-spec validity), then the authored files no instance has run. `agent6
-machine` and the TUI machines page render these rows."""
+"""Build the machines listing `agent6 machine` and the TUI machines page render.
+
+One row per machine: an instance joined with the authored `.asm.toml` that declares it, then
+the authored files no instance has run.
+"""
 
 from __future__ import annotations
 
@@ -16,20 +17,42 @@ from agent6.viewmodel import machine_files, machine_instance_dirs, summarize_mac
 
 @dataclass(frozen=True, slots=True)
 class MachineRow:
-    name: str  # the machine's name ("-" for an unparsable file with no instance)
-    file: Path | None  # the authored file, when one declares it
-    states: str  # the file's state count, or "-"
-    spec: str  # the file's validity ("valid", "N issue(s)", "invalid"), or "-" without a file
-    status: str  # the instance's status word; "" for a file no instance ran
-    reason: str  # a failed instance's reason, else ""
-    current: str  # the instance's current state; "" without an instance
-    mtime: float  # the instance's last activity; 0.0 without one
+    """One listing row: an instance, an authored file, or both.
+
+    Attributes:
+        name: The machine's name ("-" for an unparsable file with no instance).
+        file: The authored file, when one declares it.
+        states: The file's state count, or "-".
+        spec: The file's validity ("valid", "N issue(s)", "invalid"), or "-" without a file.
+        status: The instance's status word; "" for a file no instance ran.
+        reason: A failed instance's reason, else "".
+        current: The instance's current state; "" without an instance.
+        mtime: The instance's last activity; 0.0 without one.
+    """
+
+    name: str
+    file: Path | None
+    states: str
+    spec: str
+    status: str
+    reason: str
+    current: str
+    mtime: float
 
 
 def machine_rows(cwd: Path, state_dir: Path) -> list[MachineRow]:
-    """Instances newest first, each joined with the first authored file
-    declaring its name (a second file with the same name, or an unparsable
-    one named "-", keeps its own row), then the files no instance ran."""
+    """List instances newest first, then the authored files no instance ran.
+
+    An instance joins the first authored file declaring its name; a second file with the same
+    name, or an unparsable one named "-", keeps its own row.
+
+    Args:
+        cwd: The repository the authored files are found under.
+        state_dir: The repo's state directory holding the instances.
+
+    Returns:
+        The rows in listing order.
+    """
     files = [(p, summarize_machine_file(p)) for p in machine_files(cwd)]
     rows: list[MachineRow] = []
     joined: set[Path] = set()

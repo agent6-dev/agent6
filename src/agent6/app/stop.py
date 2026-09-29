@@ -1,20 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Stopping a session: the one function behind `agent6 stop`, the TUI's Stop
-entries, the web's Stop buttons, `/stop` in a composer and an ACP cancel.
+"""Stop a session, for `agent6 stop`, the TUI and web Stop entries, `/stop` and an ACP cancel.
 
-A stop now writes both bridges the loop reads (the abort steer, which cuts a
-model call in flight, and the stop marker, which breaks a command or approval
-wait), then waits for the run to end. A worker that has not ended by then is
-not reading requests (parked on a prompt, wedged on a stream): it and the
-background commands it started on the host get SIGTERM, then SIGKILL after a
-grace; the jail's children die with it. The run then reads stale and resume
-continues it. A stop after the step writes the marker alone: the finished
-step's tool results and auto-commit land first.
+A stop now writes both bridges the loop reads (the abort steer cuts a model call in flight,
+the stop marker breaks a command or approval wait), then waits for the run to end. A worker
+that has not ended by then is not reading requests: it and the background commands it started
+on the host get SIGTERM, then SIGKILL after a grace, and the jail's children die with it. The
+run then reads stale and resume continues it. A stop after the step writes the marker alone,
+so the finished step's tool results and auto-commit land first.
 
-A fan-out's stop ends its live lanes first, the same way, then stops the
-coordinator, which imports and ranks what the lanes landed before it ends;
-that drain gets its own, longer wait.
+A fan-out's stop ends its live lanes first, then the coordinator, which imports and ranks what
+the lanes landed before it ends; that drain gets a longer wait.
 """
 
 from __future__ import annotations
@@ -48,11 +44,16 @@ _POLL_S = 0.1
 
 @dataclass(frozen=True, slots=True)
 class StopOutcome:
-    """What a stop did: *how* is `after_step`, `stopped`, `killed`, `stale` (the
-    run did not answer and nothing of it was left to signal), `not_live`
-    (nothing to stop) or `failed` (a request could not be written); *message*
-    is the line every surface shows; *resumable* says `agent6 resume` continues
-    it (a fan-out has no loop to resume)."""
+    """Record what a stop did.
+
+    Attributes:
+        session_id: The stopped session.
+        ok: Whether the stop took.
+        how: `after_step`, `stopped`, `killed`, `stale` (no answer and nothing left to signal),
+            `not_live` (nothing to stop) or `failed` (a request could not be written).
+        message: The line every surface shows.
+        resumable: `agent6 resume` continues it (a fan-out has no loop to resume).
+    """
 
     session_id: str
     ok: bool
@@ -68,8 +69,17 @@ def stop_session(
     wait_s: float | None = None,
     grace_s: float | None = None,
 ) -> StopOutcome:
-    """Stop the session in *session_dir* (see the module docstring). *wait_s*
-    and *grace_s* default to the module's constants at call time."""
+    """Stop the session, as the module docstring describes.
+
+    Args:
+        session_dir: The session to stop.
+        after_step: Let the current step finish first.
+        wait_s: How long to wait for the run to end; None takes `STOP_WAIT_S`.
+        grace_s: SIGTERM to SIGKILL; None takes `KILL_GRACE_S`.
+
+    Returns:
+        What the stop did.
+    """
     rid = session_dir.name
     wait_s = STOP_WAIT_S if wait_s is None else wait_s
     grace_s = KILL_GRACE_S if grace_s is None else grace_s
@@ -111,8 +121,7 @@ def _ended(
     fanout: bool,
     with_lanes: str,
 ) -> StopOutcome:
-    """The outcome once both bridges are written: the run ended within *wait_s*,
-    or what the kill after it signalled."""
+    """Return the outcome once both bridges are written: ended in time, or what the kill did."""
     rid = session_dir.name
     if _ended_within(session_dir, worker, wait_s):
         landed = "; what they landed is imported and ranked" if with_lanes else ""
@@ -144,6 +153,7 @@ def _ended(
 
 
 def _not_live_state(session_dir: Path) -> str:
+    """Return the phrase for a session that is not running."""
     summary = summarize_session_dir(session_dir)
     if summary.status == "parked":
         return "is parked and has not started"
@@ -153,13 +163,14 @@ def _not_live_state(session_dir: Path) -> str:
 
 
 def _is_fanout(session_dir: Path) -> bool:
+    """Return whether the session is a fan-out coordinator."""
     with contextlib.suppress(ManifestError):
         return read_manifest(session_dir).fanout is not None
     return False
 
 
 def _live_lanes(session_dir: Path) -> list[Path]:
-    """A fan-out's live lanes, in lane order."""
+    """Return a fan-out's live lanes, in lane order."""
     state = layout_of(session_dir).state_dir
     return [
         lane_dir
@@ -169,6 +180,7 @@ def _live_lanes(session_dir: Path) -> list[Path]:
 
 
 def _ended_within(session_dir: Path, worker: ProcessIdentity | None, wait_s: float) -> bool:
+    """Return whether the run ended, or its worker changed, within the wait."""
     deadline = time.monotonic() + wait_s
     while session_is_live(session_dir):
         if read_live_worker_identity(session_dir) != worker:
@@ -180,11 +192,18 @@ def _ended_within(session_dir: Path, worker: ProcessIdentity | None, wait_s: flo
 
 
 def _kill(session_dir: Path, worker: ProcessIdentity | None, grace_s: float) -> tuple[bool, int]:
-    """SIGTERM the worker and its host-side background commands that are still
-    alive, SIGKILL what remains after *grace_s*. Returns whether the worker was
-    signalled and how many commands were. Never this process: a front-end that
-    is the worker (an ACP agent, a test) asks itself to stop through the
-    bridges alone."""
+    """SIGTERM the live worker and its host-side background commands, then SIGKILL the rest.
+
+    Never this process: a front-end that is the worker stops through the bridges alone.
+
+    Args:
+        session_dir: The session being stopped.
+        worker: The worker's identity, when one was read.
+        grace_s: SIGTERM to SIGKILL.
+
+    Returns:
+        Whether the worker was signalled, and how many commands were.
+    """
     me = os.getpid()
     targets: list[ProcessIdentity] = []
     worker_live = worker is not None and worker[0] != me and process_is_alive(worker)

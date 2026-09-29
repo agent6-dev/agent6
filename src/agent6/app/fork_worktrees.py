@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A fork's linked git worktree after the fork: the dirt check before one is
-removed, the sessions that still own one, and the sweep `sessions prune` runs
-to remove the worktrees of forks whose tips landed.
+"""Manage a fork's linked git worktree after the fork.
+
+The dirt check before one is removed, the sessions that still own one, and the sweep
+`sessions prune` runs over the worktrees of forks whose tips landed.
 """
 
 from __future__ import annotations
@@ -34,16 +35,19 @@ from agent6.viewmodel import session_dirs
 
 
 def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> tuple[bool, str]:
-    """Delete a fork's worktree (only a linked worktree of *repo*, see
-    `git_ops.remove_worktree`) and the checkout lock its executions took, unless it
-    holds work none of *tips* (the commits its sessions landed) has. Returns
-    `(removed, note)`: removed is False when *worktree* is not one, could not
-    be deleted, or holds such work, and the note then says which; "" on
-    success.
+    """Delete a fork's worktree and its checkout lock unless it holds unlanded work.
 
-    The dirty check is git's own rule for `worktree remove`: prune and rm land
-    on a merged fork, and the tree can still carry an uncommitted edit or a
-    file that was never added, which `rmtree` would take with no way back."""
+    The dirt check is git's own rule for `worktree remove`: a merged fork's tree can still
+    carry an uncommitted edit or a file never added, which `rmtree` would take with no way back.
+
+    Args:
+        repo: The repository the worktree is linked to.
+        worktree: The worktree to remove.
+        tips: The commits its sessions landed.
+
+    Returns:
+        Whether it was removed, and the reason when not ("" on success).
+    """
     dirt = uncommitted_in_worktree(worktree, tips)
     if dirt:
         return False, dirt
@@ -58,14 +62,19 @@ def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> t
 
 
 def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:
-    """What *worktree* holds that none of *tips* does, as one phrase for a keep
-    line; "" when a tip covers it or it is unreadable (a missing dir is not
-    dirt).
+    """Return what the worktree holds that none of the tips does, as one phrase.
 
-    A fork's worktree stays detached at its fork point while its run commits to
-    the chain, so `git status` there reports the whole run as dirt: the
-    comparison is against the run's own tips (HEAD when it has none, a run
-    whose commits the model makes itself)."""
+    A fork's worktree stays detached at its fork point while its run commits to the chain,
+    so `git status` there reports the whole run as dirt: the comparison is against the run's
+    own tips (HEAD when it has none).
+
+    Args:
+        worktree: The worktree to inspect.
+        tips: The commits its sessions landed.
+
+    Returns:
+        The keep-line phrase, or "" when a tip covers it or it is unreadable.
+    """
     if not worktree.is_dir():
         return ""
     tips = tips or ("HEAD",)
@@ -75,9 +84,7 @@ def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:
                 return ""
         held = chain_dirty_paths(worktree, tips[-1], None, 5)
     except (GitError, OSError):
-        # git runs WITH cwd=worktree, so a directory that vanished between the
-        # check above and here is an OSError, not a GitError: unreadable is not
-        # dirt.
+        # git runs with cwd=worktree, so a directory that vanished is an OSError: not dirt.
         return ""
     if not held:
         return ""
@@ -86,10 +93,11 @@ def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:
 
 
 def worktree_owners(state_dir: Path) -> dict[Path, list[tuple[Path, SessionManifest]]]:
-    """Every worktree a session manifest names, with the sessions naming it
-    (an `/undo` fork shares its source's). The manifests are the only record
-    of which directories are agent6's: a path no manifest names is never
-    touched, wherever it sits."""
+    """Return every worktree a session manifest names, with the sessions naming it.
+
+    The manifests are the only record of which directories are agent6's: a path no manifest
+    names is never touched. An `/undo` fork shares its source's worktree.
+    """
     owners: dict[Path, list[tuple[Path, SessionManifest]]] = {}
     for session_dir in session_dirs(state_dir):
         with contextlib.suppress(ManifestError):
@@ -100,10 +108,10 @@ def worktree_owners(state_dir: Path) -> dict[Path, list[tuple[Path, SessionManif
 
 
 def _still_needs_worktree(repo: Path, session_dir: Path, manifest: SessionManifest) -> str:
-    """Why *session_dir* still needs its worktree ("live", "unmerged"), or ""
-    when its work has landed: the merge stamp is the prune's own test of
-    "merged" (`merge_stamp_holds`: the branch still points where the merge
-    left it)."""
+    """Return why the session still needs its worktree ("live", "unmerged"), or "".
+
+    The merge stamp is the test of "merged": the branch still points where the merge left it.
+    """
     if worker_is_alive(session_dir):
         return "live"
     merged = manifest.merged is not None and merge_stamp_holds(
@@ -113,9 +121,10 @@ def _still_needs_worktree(repo: Path, session_dir: Path, manifest: SessionManife
 
 
 def _landed_tips(repo: Path, sessions: Sequence[tuple[Path, SessionManifest]]) -> tuple[str, ...]:
-    """The commits *sessions* landed their work on: each one's chain tip, else
-    the tip its merge stamp recorded (`--delete-squashed` deletes the ref in
-    the same sweep, and the commit outlives it)."""
+    """Return the commits the sessions landed: each chain tip, else its merge stamp's tip.
+
+    `--delete-squashed` deletes the ref in the same sweep, and the commit outlives it.
+    """
     tips = (
         chain_tip(repo, chain_ref_for(d.name)) or (m.merged.tip if m.merged else "")
         for d, m in sessions
@@ -124,10 +133,15 @@ def _landed_tips(repo: Path, sessions: Sequence[tuple[Path, SessionManifest]]) -
 
 
 def sweep_fork_worktrees(repo: Path, state: Path) -> tuple[list[str], list[tuple[str, str]]]:
-    """Remove every fork worktree whose sessions have all landed their work
-    (merged, none live), and keep the rest. Returns `([removed id], [(kept
-    id, why)])`; a session sharing a kept worktree is kept for the session
-    that needs it."""
+    """Remove every fork worktree whose sessions all landed their work; keep the rest.
+
+    Args:
+        repo: The repository the worktrees are linked to.
+        state: The repo's state directory.
+
+    Returns:
+        The removed session ids, and (kept id, why) per kept session.
+    """
     removed: list[str] = []
     kept: list[tuple[str, str]] = []
     for worktree, sessions in worktree_owners(state).items():
@@ -142,8 +156,6 @@ def sweep_fork_worktrees(repo: Path, state: Path) -> tuple[list[str], list[tuple
         if gone:
             removed.extend(d.name for d, _ in sessions)
         elif note:
-            # Merged, but the tree carries work no commit has, or would not
-            # delete: keeping it is the only safe answer, and the operator
-            # has to see why.
+            # Merged, but the tree holds work no commit has or would not delete: keep it, say why.
             kept.extend((d.name, note) for d, _ in sessions)
     return removed, kept

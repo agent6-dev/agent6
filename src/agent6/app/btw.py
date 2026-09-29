@@ -1,20 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`/btw`: a question asked beside a run, without interrupting it.
+"""Answer `/btw`, a question asked beside a run without interrupting it.
 
-A btw is a real ask session seeded with the run's context. It opens at once and
-runs in parallel: the run never waits for it, and its answer is printed into the
-conversation view between a header and a footer, never inserted into the run's
-own transcript. Copying anything useful across is the operator's move.
+A btw is an ask session seeded with the run's context. The run never waits for it; its answer
+prints into the conversation view between a header and a footer, never into the run's own
+transcript. It has no follow-up thread: the operator resumes it like any other ask.
 
-One-off by construction: a btw has no follow-up thread. It is an ask like any
-other, so the operator can resume it later from another agent6 instance to go
-deeper.
-
-Not in-process (two loops sharing one dispatcher would race on tools) and not a
-plain subprocess under `strict` (it would inherit the run's empty netns and have
-no provider egress). It is spawned the way a `/parallel` lane is: through the
-host launcher when the run is netns-isolated, else directly.
+It is not in-process (two loops sharing one dispatcher would race on tools) and not a plain
+subprocess under `strict` (it would inherit the run's empty netns). It spawns the way a
+`/parallel` lane does: through the host launcher when the run is netns-isolated, else directly.
 """
 
 from __future__ import annotations
@@ -29,19 +23,22 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.viewmodel import summarize_session_dir
 from agent6.viewmodel.format import status_label
 
-# How a btw is started: (cwd, agent6 argv without the exe, env extras) -> ""
-# or an error. The front-end injects it (ui/cli passes direct_launch), so a
-# btw spawns exactly as a `/parallel` lane would.
+# Starts a btw: (cwd, agent6 argv without the exe, env extras) -> "" or an error.
 BtwLaunch = Callable[[Path, list[str], dict[str, str]], str]
 
-# How long to wait for the spawned ask's session dir to appear. Generous: the
-# child pays a cold Python start plus config load before it writes anything.
+# The child pays a cold Python start plus config load before its session dir appears.
 _START_TIMEOUT_S = 30.0
 
 
 @dataclass(frozen=True, slots=True)
 class BtwSession:
-    """A btw that was started. `answer` fills in once it finishes."""
+    """Identify a started btw.
+
+    Attributes:
+        id: The ask session's id.
+        dir: The ask session's directory.
+        question: The question as asked.
+    """
 
     id: str
     dir: Path
@@ -56,20 +53,24 @@ def start_btw(
     launch: BtwLaunch,
     list_asks: Callable[[], list[Path]],
 ) -> tuple[BtwSession | None, str]:
-    """Open the btw and return as soon as it exists. Never waits for an answer.
+    """Open the btw and return as soon as its session dir exists.
 
-    Returns (session, error). The new session is found by diffing the ask dirs,
-    the same way a `/parallel` lane's run dir is located: the launcher is
-    fire-and-forget, so the dir appearing IS the confirmation it started.
+    The launcher is fire-and-forget, so the new dir appearing is the confirmation it started.
+
+    Args:
+        question: The question to ask.
+        parent_id: The run whose context seeds the ask.
+        cwd: The repository the ask runs in.
+        launch: The spawn callable the front-end injects.
+        list_asks: Lists the ask session dirs.
+
+    Returns:
+        The started session and "", or None and the error.
     """
     if not question:
         return None, "ask something: `/btw <question>`"
     before = {d.name for d in list_asks()}
-    # `--no-commands`: a btw answers from what it can read, and never runs
-    # anything. It has no terminal of its own and the parent is mid-run, so
-    # there is nobody to approve, and denying each call would only burn the
-    # model's turns. A question that needs to run something is a question for a
-    # full ask, which this session already is: resume it and it has the tools.
+    # `--no-commands`: nobody can approve a command for a btw; resuming the ask has the tools.
     err = launch(
         cwd,
         ["ask", "--no-commands", "--from", parent_id, "--", question],
@@ -79,9 +80,7 @@ def start_btw(
         return None, err
     deadline = time.monotonic() + _START_TIMEOUT_S
     while time.monotonic() < deadline:
-        # Newest, not first-seen: another ask starting in the same window would
-        # otherwise be adopted as this btw, and the operator would read a
-        # stranger's answer as their own.
+        # Newest, not first-seen: another ask starting in the same window is not this btw.
         fresh = sorted(
             (d for d in list_asks() if d.name not in before),
             key=lambda d: d.stat().st_mtime,
@@ -98,17 +97,18 @@ def start_btw(
 
 
 def btw_answer(session: BtwSession) -> str | None:
-    """The btw's answer once it has finished, else None (still thinking).
+    """Return the btw's answer once it has finished, else None.
 
-    An ask ends by emitting its final prose AS the answer (a silent finish, no
-    finish_session), so the last assistant message is the answer. A session that
-    ended without one says so rather than rendering blank.
+    An ask ends with its final prose as the answer, so the last assistant message is the
+    answer. A session that ended without one says so rather than rendering blank.
+
+    Args:
+        session: The started btw.
+
+    Returns:
+        The answer text, or None while the btw is still running.
     """
-    # "created" is the window between the child making its dir (what `start_btw`
-    # waits for) and writing its worker pid. Reading it as an ending would
-    # declare a btw dead on the watcher's first poll and stop the watcher
-    # looking, leaving a completed session's answer uncollected. (A DEAD pid in
-    # that window reads "stale - died launching", a real ending.)
+    # "created" spans the dir appearing and the worker pid landing; it is not an ending.
     summary = summarize_session_dir(session.dir)
     if summary.status in {"created", "running", "starting", "waiting"}:
         return None
@@ -117,7 +117,7 @@ def btw_answer(session: BtwSession) -> str | None:
 
 
 def _final_prose(session_dir: Path) -> str:
-    """The last assistant message in *session_dir*'s journal."""
+    """Return the last assistant message in the session's journal, "" without one."""
     try:
         raw = (session_dir / LOGS_NAME).read_text(errors="replace")
     except OSError:
@@ -134,8 +134,7 @@ def _final_prose(session_dir: Path) -> str:
 
 
 def render_btw(session: BtwSession, answer: str) -> str:
-    """The inline block. Fenced top and bottom so it can never be misread as
-    the run's own output, and labelled with the id so it can be resumed."""
+    """Return the inline block, fenced so it never reads as the run's own output."""
     return (
         f"\n--- btw: {session.question}\n"
         f"{answer.strip()}\n"

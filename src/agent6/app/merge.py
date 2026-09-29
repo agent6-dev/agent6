@@ -1,13 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The merge engine shared by `sessions merge` and `git.auto_merge`.
+"""Land a run's branch, for `sessions merge` and `git.auto_merge`.
 
-`cli.sessions_merge` validates + resolves a run, then calls `execute_merge`; the run
-finalizer (`app.finalize.finalize_auto_merge`) calls it directly with the run
-context it already holds. Landing is pure ref plumbing (`git_ops.plumb_merge`):
-no checkout, no clean-tree requirement, so the worktree carrying the run's own
-work is never an obstacle. One place to mutate means both honor the same
-strategy dispatch and manifest record."""
+Landing is ref plumbing (`git_ops.plumb_merge`): no checkout and no clean-tree requirement,
+so the worktree carrying the run's own work is never an obstacle. Both callers share the
+strategy dispatch and the manifest record.
+"""
 
 from __future__ import annotations
 
@@ -50,27 +48,28 @@ from agent6.sessions.manifest import (
 
 @dataclass(frozen=True, slots=True)
 class MergeOutcome:
-    """Result of execute_merge. `status` is merged / noop / conflict / error; the
-    other fields carry that status's detail.
+    """Record what `execute_merge` did.
 
-    `noop` is a branch the target already holds the content of: git stages
-    nothing and leaves the target where it was, so `merged_sha` is the
-    target's own tip. A run whose merge is a noop is merged all the same
-    (its content is on the target), and `recorded` says this call stamped
-    the manifest so, with NO_MERGE_COMMIT for the sha: a first merge, or one
-    covering commits the earlier record does not (a resumed run's, on the
-    target by another route). A noop over the tip already recorded leaves
-    the record of the merge that did happen alone."""
+    A noop is a branch whose content the target already holds: the target stays where it was
+    and the run is merged all the same. A noop over the tip already recorded leaves the record
+    of the merge that did happen alone.
+
+    Attributes:
+        status: merged, noop, conflict or error.
+        merged_sha: The target's tip after the merge; on a noop, its own tip.
+        conflicts: The conflicting paths.
+        error: Why the merge did not happen.
+        stamp_error: Why the manifest stamp did not land; the merge happened either way.
+        recorded: This call stamped a noop as merged, with NO_MERGE_COMMIT for the sha.
+        left_behind: Paths the checkout kept its own version of (`left_behind_line`).
+    """
 
     status: Literal["merged", "noop", "conflict", "error"]
     merged_sha: str = ""
     conflicts: tuple[str, ...] = ()
     error: str = ""
-    # Why the manifest stamp did not land, "" when it did. The merge happened
-    # either way; without this, `prune` calls the branch unmerged.
     stamp_error: str = ""
     recorded: bool = False
-    # Paths the checkout kept its own version of (`left_behind_line`).
     left_behind: tuple[str, ...] = ()
 
 
@@ -82,16 +81,21 @@ def record_merge_in_manifest(
     merged_tip: str = "",
     into_tip: str = "",
 ) -> str:
-    """Record a successful merge in the run manifest so later tooling can tell a
-    merged run branch from an unmerged one. *merged_tip* is the run-branch tip
-    that was merged: `sessions prune --delete-squashed` force-deletes only a branch
-    still pointing there. *into_tip* is the base's tip a merge that added nothing
-    saw, the commit that already held the content. Best-effort: a missing/corrupt
-    manifest must not fail a merge that already happened.
+    """Stamp the merge into the run manifest, so `prune` can tell a merged branch.
 
-    Returns "" when the stamp landed, else why it did not: silence would make
-    `prune` call a merged branch "unmerged" and leave `--delete-squashed`
-    unable to clean it up."""
+    A missing or corrupt manifest must not fail a merge that already happened.
+
+    Args:
+        layout: The run's directory layout.
+        merged_into: The target branch.
+        merged_sha: The merge commit, or NO_MERGE_COMMIT.
+        merged_tip: The run-branch tip merged; `prune --delete-squashed` deletes only a branch
+            still pointing there.
+        into_tip: The target's tip a merge that added nothing saw.
+
+    Returns:
+        "" when the stamp landed, else why it did not.
+    """
     try:
         m = read_manifest(layout.session_dir)
     except ManifestError as exc:
@@ -107,8 +111,7 @@ def record_merge_in_manifest(
             )
         }
     )
-    # Also ManifestError: a manifest newer than this binary can rewrite is left
-    # alone rather than downgraded, and the merge it records already happened.
+    # ManifestError: a manifest newer than this binary is left alone rather than downgraded.
     try:
         write_manifest(layout.manifest_path, stamped)
     except (OSError, ManifestError) as exc:
@@ -133,9 +136,30 @@ def dispatch_merge(
     warn: Callable[[str], None] = lambda _m: None,
     merge_base: str | None = None,
 ) -> MergeResult:
-    """Run the chosen strategy on *target* via plumb_merge. squash builds its
-    message per `[git.commit.squash].message` (the trailer is identity's);
-    an operator *message* overrides any style."""
+    """Run the strategy on the target through `plumb_merge`.
+
+    A squash builds its message per `[git.commit.squash].message`; an operator message
+    overrides any style.
+
+    Args:
+        cwd: The repository.
+        strategy: ff, merge or squash.
+        target: The branch to land on.
+        run_branch: The run's branch or chain ref.
+        base_sha: The commit the run started from.
+        manifest: The run's manifest.
+        message: The operator's message, else the style's.
+        cfg: The resolved config.
+        identity: The committer.
+        transcript_dir: Where a model-written message's call is transcribed.
+        budget: The run's tracker, when the merge runs inside one.
+        events: The run's event sink, when the merge runs inside one.
+        warn: Where a degraded message is reported.
+        merge_base: The base to merge from, when git's own does not serve.
+
+    Returns:
+        The plumbing's result.
+    """
     if strategy == "squash" and message is None:
         message = _squash_message(
             cwd,
@@ -164,15 +188,22 @@ def dispatch_merge(
 def landed_base(
     cwd: Path, layout: SessionLayout, manifest: SessionManifest, target: str, tip: str
 ) -> str | None:
-    """The merge base for a run whose chain *target* already holds as a squash,
-    from its own stamp (a resumed execution merging again) or an ancestor's (a fork),
-    or None where git's own base serves.
+    """Return the merge base for a run the target already holds as a squash, else None.
 
-    A squash commit is content git cannot relate to the chain it came from, so
-    git's own base reads every commit before it as new work against the
-    squash that holds the same lines. The base is the merged tip when the chain
-    continues past it, else the point a fork left its ancestor's chain (the
-    merged tip holds that point's content)."""
+    Git cannot relate a squash to the chain it came from, so its own base reads every earlier
+    commit as new work. The base is the merged tip when the chain continues past it, else the
+    point a fork left its ancestor's chain.
+
+    Args:
+        cwd: The repository.
+        layout: The run's directory layout.
+        manifest: The run's manifest; its stamp, or an ancestor's, names the merged tip.
+        target: The branch to land on.
+        tip: The run's chain tip.
+
+    Returns:
+        The base, or None where git's own serves.
+    """
     node, fork_point = manifest, ""
     for _ in range(64):  # a lineage deeper than this is not a fork chain
         stamp = node.merged
@@ -206,13 +237,11 @@ def _squash_message(
     events: EventSink | None,
     warn: Callable[[str], None],
 ) -> str | None:
-    """The squash commit's message per `[git.commit.squash].message`; None
-    means let git combine (its own SQUASH_MSG)."""
+    """Return the squash message per `[git.commit.squash].message`; None lets git combine."""
     style = cfg.git.commit.squash.message
     rows = list_run_commits(cwd, base_sha, run_branch)
     if style == "combine":
-        # Git's own SQUASH_MSG shape, synthesized (the plumbing merge never
-        # runs `merge --squash`, so git never writes one).
+        # Git's own SQUASH_MSG shape; the plumbing merge never runs `merge --squash`.
         parts = ["Squashed commit of the following:\n"]
         parts += [
             f"commit {r.sha}\n\n    {r.message.rstrip().replace(chr(10), chr(10) + '    ')}"
@@ -256,13 +285,24 @@ def _model_squash_message(
     events: EventSink | None,
     warn: Callable[[str], None] = lambda _m: None,
 ) -> str | None:
-    """One provider call writing the squash message from git facts only; None
-    on any failure (the caller degrades to the agent6 style).
+    """Write the squash message with one provider call from git facts only.
 
-    *budget* is the RUN's tracker when auto_merge runs inside a run: the call
-    spends the run's remainder, not a fresh full cap. `sessions merge` is its
-    own invocation and passes None (per-invocation ceiling, as everywhere).
-    With *events* the call is instrumented, so its spend reaches the log."""
+    Args:
+        cwd: The repository.
+        cfg: The resolved config.
+        rows: The run's commits.
+        base_sha: The commit the run started from.
+        run_branch: The run's branch or chain ref.
+        task: The run's task.
+        transcript_dir: Where the call is transcribed; None skips the call.
+        budget: The run's tracker when auto_merge runs inside a run, so the call spends the
+            run's remainder; None takes a fresh per-invocation cap.
+        events: The run's event sink; with it the call's spend reaches the log.
+        warn: Where a failure is reported.
+
+    Returns:
+        The message, or None on any failure (the caller degrades to the agent6 style).
+    """
     if transcript_dir is None:
         return None
     try:
@@ -308,9 +348,7 @@ def _model_squash_message(
         ProviderError,
         SecretsError,
     ) as exc:
-        # Every fault the draft's setup and call can raise, each degraded with
-        # its reason: the draft is best-effort, and auto_merge runs it in a
-        # finished run's teardown, which must not crash on it.
+        # auto_merge runs the draft in a finished run's teardown, which must not crash on it.
         warn(f"model squash message failed ({exc}); using the agent6 style")
         return None
     if not msg:
@@ -337,16 +375,31 @@ def execute_merge(
     events: EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
 ) -> MergeOutcome:
-    """Land *run_branch* (a branch name or the run's chain ref) on *target*
-    with *strategy* and record the merge. Ref plumbing only: the checkout is
-    never switched and the worktree is never required clean. The caller
-    validates first; this mutates."""
+    """Land the run's branch on the target and record the merge.
+
+    Ref plumbing only: the checkout is never switched and the worktree is never required
+    clean. The caller validates first; this mutates.
+
+    Args:
+        cwd: The repository.
+        layout: The run's directory layout.
+        manifest: The run's manifest.
+        run_branch: The run's branch or chain ref.
+        target: The branch to land on.
+        base_sha: The commit the run started from.
+        strategy: ff, merge or squash.
+        message: The operator's message, else the style's.
+        cfg: The resolved config.
+        identity: The committer.
+        budget: The run's tracker, when the merge runs inside one.
+        events: The run's event sink, when the merge runs inside one.
+        warn: Where a degraded squash message is reported.
+
+    Returns:
+        What the merge did.
+    """
     apply_git_ops_policy(cfg)
-    # The squash message and the conventional summary read the run's commits
-    # from base_sha (without it `git log ..<branch>` counts from HEAD, a wrong
-    # list with a clean exit); the target must exist (auto_merge relies on
-    # this guard when the base was deleted mid-run; sessions merge pre-checks
-    # it for a nicer message).
+    # Without base_sha `git log ..<branch>` counts from HEAD: a wrong list with a clean exit.
     refusal = (
         NO_BASE_SHA
         if not base_sha
@@ -361,10 +414,7 @@ def execute_merge(
         and not is_ancestor(cwd, target, run_branch)
         and not is_ancestor(cwd, run_branch, target)
     ):
-        # Pre-check the fast-forward so the refusal names the agent6 remedy
-        # (auto_merge with an ff config would otherwise fail raw on a moved
-        # base). A run the target already CONTAINS is not refused: that is a
-        # clean no-op below.
+        # A run the target already contains is not refused: that is a clean noop below.
         return MergeOutcome(
             "error",
             error=(
@@ -373,9 +423,7 @@ def execute_merge(
                 " squash instead"
             ),
         )
-    # Where the target stood before the merge touched it. Every strategy that merges
-    # something moves it (squash commits, merge commits, a fast-forward), so an
-    # unmoved target means there was nothing to merge.
+    # Every strategy that merges something moves the target; unmoved means nothing to merge.
     target_tip_before = branch_tip_sha(cwd, target) or ""
     try:
         merge_base = landed_base(cwd, layout, manifest, target, chain_tip(cwd, run_branch) or "")
@@ -399,17 +447,12 @@ def execute_merge(
         return MergeOutcome("error", error=f"merge failed: {exc}")
     if result.conflicted:
         return MergeOutcome("conflict", conflicts=result.conflicts)
-    # Nothing merged when the target did not move: it already holds the
-    # branch's content.
     noop = bool(result.merged_sha) and result.merged_sha == target_tip_before
     merged_tip = chain_tip(cwd, run_branch) or ""
     if noop and manifest.merged is not None and manifest.merged.tip == merged_tip:
-        # The record already covers this tip: stamping the target's own tip
-        # over it would credit the run with whatever was committed there since
-        # and destroy the record of the merge that did happen.
+        # Stamping the target's tip over the record would credit the run with later commits.
         return MergeOutcome("noop", merged_sha=result.merged_sha)
-    # A merge that added nothing still records the run as merged up to this
-    # tip: the target holds its content, so prune and the listings treat it so.
+    # A merge that added nothing still records the run as merged up to this tip.
     stamp_error = record_merge_in_manifest(
         layout,
         merged_into=target,
@@ -427,14 +470,12 @@ def execute_merge(
 
 
 def left_behind_line(target: str, outcome: MergeOutcome) -> str:
-    """The one line for merged files the checkout keeps its own version of, on
-    every surface; "" when it holds everything the merge landed.
+    """Return the line for merged files the checkout keeps its own version of, or "".
 
-    The merge is ref plumbing: it moves the branch and brings the checkout
-    forward only where a file still matches what the branch held, so an edit
-    of the operator's (or another run's work sitting in the tree) is never
-    overwritten. This line says so, since the tree the operator then tests,
-    and commits, holds the older content."""
+    The plumbing brings the checkout forward only where a file still matches what the branch
+    held, so an operator's edit is never overwritten; the tree they then test holds the older
+    content.
+    """
     if not outcome.left_behind:
         return ""
     named = ", ".join(outcome.left_behind[:4]) + (", ..." if len(outcome.left_behind) > 4 else "")
@@ -442,9 +483,7 @@ def left_behind_line(target: str, outcome: MergeOutcome) -> str:
 
 
 def noop_merge_line(run_branch: str, target: str, outcome: MergeOutcome) -> str:
-    """The one line for a merge that added nothing, on every surface: what
-    this call recorded, or that the record already stood (a stamp error is
-    the caller's note)."""
+    """Return the line for a merge that added nothing; a stamp error is the caller's note."""
     if outcome.recorded or outcome.stamp_error:
         recorded = f"; recorded as merged into {target}" if outcome.recorded else ""
         return f"nothing to add from {run_branch}: {target} already has its content{recorded}"

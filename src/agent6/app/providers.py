@@ -42,17 +42,21 @@ from agent6.secrets import resolve_api_key
 def resolve_compaction_thresholds(
     cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
 ) -> tuple[int, int, int]:
-    """Effective `(drop_at_chars, summarise_at_chars, keep_recent_chars)` for the
-    model *rm* drives the loop with: the explicit config values if set, else
-    sized from the model's context window (bundled table + live model cache),
-    else the fixed defaults. Logs the choice when adaptive so the operator can
-    see what was picked. `rm is None` (model unresolved) falls through to
-    explicit-or-fixed-default.
+    """Resolve the compaction thresholds the loop runs under.
 
-    An adaptive tier-2 threshold clamps the verbatim tail to half of itself:
-    the config validator refuses an explicit pair whose tail is at or above the
-    threshold, and a small window (a 32k model against the 80,000-char default)
-    sizes exactly that; a restart under it would keep no verbatim turn at all."""
+    Explicit config values win; otherwise the thresholds are sized from the model's
+    context window, or fall back to the fixed defaults when the window is unknown.
+    An adaptive tier-2 threshold clamps the verbatim tail to half of itself, since a
+    small window against the default tail would keep no verbatim turn at all.
+
+    Args:
+        cfg: The run's config.
+        rm: The model driving the loop, or None when unresolved.
+        log: Receives one line per adaptive choice.
+
+    Returns:
+        The `(drop_at_chars, summarise_at_chars, keep_recent_chars)` triple.
+    """
     drop_override = cfg.context.drop_at_chars
     summarise_override = cfg.context.summarise_at_chars
     provider = rm.provider if rm is not None else ""
@@ -70,8 +74,7 @@ def resolve_compaction_thresholds(
             if ctx
             else "fixed default (context window unknown)"
         )
-        # These are the thresholds compaction WILL fire at, not a compaction
-        # that happened; say "at" or a fresh run reads as a 1.3M-char event.
+        # Thresholds compaction will fire at, not a compaction that happened.
         log(f"compaction thresholds: drop at {drop:,} chars, summarise at {summarise:,} [{src}]")
     keep = cfg.context.keep_recent_chars
     if summarise_override is None and keep > summarise // 2:
@@ -88,12 +91,19 @@ def resolve_compaction_thresholds(
 def resolve_decompose(
     cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
 ) -> Config:
-    """Pin `prompt.decompose = "auto"` to on/off for this run.
+    """Pin `prompt.decompose = "auto"` to on or off for this run.
 
-    On only when the worker model *rm* has a measured decompose win in the
-    capability registry; explicit on/off (config or `--decompose`) passes
-    through untouched. The engine treats any value other than "on" as off,
-    so this resolution is what makes "auto" real."""
+    Auto turns on only when the model has a measured decompose win in the capability
+    registry; an explicit on or off passes through untouched.
+
+    Args:
+        cfg: The run's config.
+        rm: The worker model, or None when unresolved.
+        log: Receives one line when auto turns on.
+
+    Returns:
+        The config with `prompt.decompose` pinned.
+    """
     if cfg.prompt.decompose != "auto":
         return cfg
     on = rm is not None and models_registry.decompose_default(rm.model)
@@ -110,14 +120,23 @@ def build_role_provider(
     budget: BudgetTracker,
     seat: str = "",
 ) -> Provider:
-    """Construct the configured provider for `role`. *seat* is the transcript
-    seat stamp when the caller is a distinct actor sharing the role's route
-    (a review seat, the summariser, ...); default = the role itself.
+    """Construct the configured provider for a role.
 
-    Resolves the API key via `agent6.secrets.resolve_api_key` (env var named
-    by `api_key_env` first, then `secrets.toml`). The role's `effort` level
-    is wired to the provider's default reasoning effort. Callers should have
-    validated routing via `cfg.require_runnable(role)` first.
+    The caller validates the route with `cfg.require_runnable(role)` first.
+
+    Args:
+        cfg: The run's config.
+        role: The role whose route to build.
+        transcript_sink: The recorder the provider's round-trips go to.
+        budget: The tracker the provider bills.
+        seat: The transcript seat stamp for an actor sharing the role's route; the role
+            itself when empty.
+
+    Returns:
+        The provider, with the role's effort as its default reasoning effort.
+
+    Raises:
+        ProviderError: The role has no model or its provider entry is missing.
     """
     rm = cfg.models.resolve(role)
     if rm is None:  # pragma: no cover - blocked by require_runnable
@@ -133,9 +152,7 @@ def build_role_provider(
         entry,
         model,
         rm.effort,
-        # Stamp the seat on this provider's transcripts: the conversation fold
-        # keeps the worker's round-trips and skips compaction's side-calls,
-        # whose one-message requests otherwise read as a restart.
+        # The conversation fold keeps the worker's seat and skips the side-calls' seats.
         transcript_sink=transcript_sink.for_seat(seat or role),
         budget=budget,
     )
@@ -150,9 +167,22 @@ def _provider_from_entry(
     transcript_sink: TranscriptRecorder,
     budget: BudgetTracker,
 ) -> Provider:
-    """Build a Provider for an explicit `[providers.<provider_name>]` entry +
-    model + effort. Shared by `build_role_provider` (role routing) and the
-    review panel's explicit per-seat `provider/model` routing."""
+    """Build the provider for one `[providers.<name>]` entry, model and effort.
+
+    Args:
+        provider_name: The entry's name.
+        entry: The parsed entry.
+        model: The model id.
+        effort: The default reasoning effort, or None.
+        transcript_sink: The recorder the provider's round-trips go to.
+        budget: The tracker the provider bills.
+
+    Returns:
+        The provider.
+
+    Raises:
+        ProviderError: The entry lacks a credential, or the effort has no equivalent.
+    """
     budget.note_route(model, provider_name)
     if isinstance(entry, ClaudeCodeProviderEntry):
         if effort == "off":
@@ -200,8 +230,7 @@ def _provider_from_entry(
         else None
     )
     if isinstance(entry, AnthropicProviderEntry):
-        # Anthropic requires explicit auth (a missing key is a 401, not a local
-        # endpoint); a token_command credential or `auth_style = "none"` satisfies it.
+        # Anthropic needs a key, a token_command credential or `auth_style = "none"`.
         if not key and credential is None and entry.auth_style != "none":
             raise ProviderError(
                 f"No API key for provider {provider_name!r}. Run `agent6 connect`"
@@ -241,25 +270,31 @@ def _provider_from_entry(
 
 
 def close_provider(provider: Provider) -> None:
-    """Release what a provider holds: a `claude_code` session's child process.
-    The HTTP providers hold nothing and have no `close`."""
+    """Release what a provider holds; the HTTP providers hold nothing and have no `close`."""
     close = getattr(provider, "close", None)
     if callable(close):
         close()
 
 
 def role_temperature(cfg: Config, role: RoleName) -> float | None:
-    """The configured sampling temperature for *role* (worker fallback)."""
+    """Return the configured sampling temperature for a role, or None."""
     rm = cfg.models.resolve(role)
     return rm.temperature if rm is not None else None
 
 
 @dataclass(frozen=True, slots=True)
 class InstrumentedProvider:
-    """Wraps any Provider with role.call / role.result / budget.update emission.
+    """Wrap a provider with `role.call`, `role.result` and `budget.update` emission.
 
-    Pure decoration; the inner provider is unchanged. `events` None (a caller
-    with no log to feed) emits nothing.
+    Attributes:
+        inner: The wrapped provider, unchanged.
+        role: The role name the events carry.
+        model: The model id the events carry.
+        provider_name: The provider entry name the events carry.
+        events: The sink the events go to; None emits nothing.
+        budget: The tracker whose snapshot `budget.update` carries.
+        stream_text: Whether to fan text and reasoning deltas out as events without a
+            caller callback.
     """
 
     inner: Provider
@@ -284,6 +319,26 @@ class InstrumentedProvider:
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
     ) -> ProviderResponse:
+        """Call the inner provider and emit the role and budget events around it.
+
+        Args:
+            system: The system prompt.
+            messages: The conversation so far.
+            tools: The tool definitions offered.
+            max_tokens: The response cap.
+            temperature: The sampling temperature, or the provider's default.
+            reasoning_effort: The reasoning effort, or the provider's default.
+            text_delta_callback: Receives each visible text piece as it streams.
+            thinking_delta_callback: Receives each reasoning piece as it streams.
+            should_abort: Polled to abort the call.
+            should_interrupt: Polled to interrupt the call.
+
+        Returns:
+            The inner provider's response.
+
+        Raises:
+            ProviderError: The inner call failed; the provider name is filled in.
+        """
         if self.events is not None:
             self.events.emit(
                 "role.call",
@@ -291,10 +346,7 @@ class InstrumentedProvider:
                 model=self.model,
                 provider=self.provider_name,
             )
-        # When the inner provider streams, fan visible text + reasoning deltas
-        # out as `role.text_delta` / `role.thinking_delta` events. Every live
-        # view (TUI, `watch`, the CLI ConsoleView) subscribes to these; any
-        # caller-passed callback is chained through unchanged.
+        # Every live view subscribes to the delta events; a caller callback chains through.
         role_for_event = self.role
         events = self.events
 
@@ -342,11 +394,7 @@ class InstrumentedProvider:
                 "role.result",
                 role=self.role,
                 ok=True,
-                # The turn's settled prose. The deltas are the same text
-                # arriving in pieces and are emitted only when streaming is
-                # on, so without this a headless run (CI, a redirected stdout,
-                # every spawned ask) journals no assistant text at all, and
-                # every reader of it (`read_session`, `/btw`) finds nothing.
+                # The settled prose: a headless run streams no deltas, so this is its only text.
                 text=resp.text,
                 tokens_in=resp.input_tokens,
                 tokens_out=resp.output_tokens,
@@ -358,18 +406,15 @@ class InstrumentedProvider:
         return resp
 
     def close(self) -> None:
+        """Release what the inner provider holds."""
         close_provider(self.inner)
 
     def _emit_budget(self) -> None:
-        """Cumulative spend after a call, whether it returned or RAISED.
+        """Emit the cumulative spend after a call, whether it returned or raised.
 
-        A stream cut after the provider reported usage is still billed, and the
-        providers record it. These events are the only path that spend takes to
-        a surface: the live cost meters fold them, and a machine's spend ledger
-        (`app.machine._spend`) reconstructs a state's cost from the last one in
-        its log. Emitting only on success would leave a failed call's real
-        dollars out of every one of them, and out of the journal for good: the
-        end-of-run summary prints to the terminal and is never journalled.
+        A stream cut after the provider reported usage is still billed, and these
+        events are the only path spend takes to the cost meters and the machine's
+        spend ledger.
         """
         if self.events is None:
             return
@@ -391,10 +436,7 @@ class InstrumentedProvider:
             plan_consumed=snap.plan_consumed,
             plan_cap=snap.max_percent,
             plan_resets_at=plan.resets_at if plan else 0.0,
-            # Every window the backend reported plus the purchased-credit
-            # family, raw: the derived fields above cannot show a second
-            # (e.g. 5-hour) window existing, and hiding tracked state from
-            # the journal blinds the operator to it.
+            # Every reported window, raw: the derived fields cannot show a second window.
             plan_windows=[
                 {
                     "name": w.name,
@@ -418,10 +460,18 @@ def reviewer_seat_provider(
     budget: BudgetTracker,
     events: EventSink | None,
 ) -> Provider:
-    """The reviewer role routed under *seat*'s label, instrumented: a panel
-    seat, the prompt reviser, or the tier-2 context summariser (always
-    available, since compaction can fire on any run, and cheaper than the
-    worker model)."""
+    """Build the reviewer route under a seat's label, instrumented.
+
+    Args:
+        cfg: The run's config.
+        seat: The seat stamp: a panel seat, the prompt reviser or the summariser.
+        transcript_sink: The recorder the provider's round-trips go to.
+        budget: The tracker the provider bills.
+        events: The sink the role and budget events go to.
+
+    Returns:
+        The instrumented provider.
+    """
     inner = build_role_provider(
         cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat=seat
     )
@@ -437,8 +487,7 @@ def reviewer_seat_provider(
     )
 
 
-# The simple-form panel roster: adversarial lenses cycled when no explicit
-# seats are configured.
+# The lenses cycled when no explicit seats are configured.
 _DEFAULT_PERSONAS = ("security", "correctness", "tests", "over-engineering", "edge-cases")
 
 
@@ -451,18 +500,27 @@ def build_review_seats(
     personas: tuple[str, ...] = (),
     events: EventSink | None = None,
 ) -> list[ReviewSeat]:
-    """Build the review-panel seats, one per roster entry. An entry is
-    `persona[@provider/model]`: with a provider and model the seat is pinned
-    to them, and a bare persona routes via `[models.reviewer]` (which a
-    `review --model` may have re-routed). `cfg.review.seats` names
-    the roster outright; otherwise `n` seats cycle *personas* (the
-    `--personas` flag, else a built-in set), so both surfaces speak one
-    grammar.
+    """Build the review-panel seats, one per roster entry.
 
-    With *events*, each seat is instrumented: only InstrumentedProvider emits
-    `budget.update`, so a bare seat provider's real spend reaches no surface
-    (the tracker enforces it; the log never hears). `agent6 review` passes
-    None: it has no session log."""
+    An entry is `persona[@provider/model]`: a pinned seat uses that route, a bare
+    persona routes via `[models.reviewer]`. `cfg.review.seats` names the roster
+    outright; otherwise `n` seats cycle the personas.
+
+    Args:
+        cfg: The run's config.
+        transcript_sink: The recorder the seats' round-trips go to.
+        budget: The tracker the seats bill.
+        n: The seat count when the config names no roster.
+        personas: The personas to cycle; the built-in set when empty.
+        events: The sink each seat's events go to; None leaves the seats uninstrumented,
+            so their spend reaches no surface.
+
+    Returns:
+        The seats in roster order.
+
+    Raises:
+        ProviderError: An entry does not parse or names a missing provider.
+    """
 
     def _instrumented(provider: Provider, persona: str, model: str, provider_name: str) -> Provider:
         if events is None:
@@ -495,8 +553,7 @@ def build_review_seats(
             )
         parsed_specs.append((persona, provider_name, model))
 
-    # The reviewer route serves the seats that pin no model; a fully pinned
-    # panel needs none.
+    # A fully pinned panel needs no reviewer route.
     if any(not (provider_name and model) for _, provider_name, model in parsed_specs):
         cfg.require_runnable("reviewer")
     rm = cfg.models.resolve("reviewer")
@@ -510,9 +567,7 @@ def build_review_seats(
                 entry,
                 seat_model,
                 None,
-                # Stamp the seat like build_role_provider does: an unstamped
-                # sink records seat="", which the conversation fold reads as
-                # the driving seat and renders as worker turns.
+                # An unstamped sink records seat="", which the fold renders as worker turns.
                 transcript_sink=transcript_sink.for_seat(f"review:{persona}"),
                 budget=budget,
             )
@@ -544,7 +599,17 @@ def build_prompt_reviser_provider(
     budget: BudgetTracker,
     events: EventSink,
 ) -> Provider | None:
-    """Route the reviewer role as a one-shot prompt reviser."""
+    """Route the reviewer role as a one-shot prompt reviser.
+
+    Args:
+        cfg: The run's config.
+        transcript_sink: The recorder the reviser's round-trips go to.
+        budget: The tracker the reviser bills.
+        events: The sink the role and budget events go to.
+
+    Returns:
+        The instrumented provider, or None when `prompt.revise_prompt` is off.
+    """
     if cfg.prompt.revise_prompt == "off":
         return None
     return reviewer_seat_provider(

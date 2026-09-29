@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The presentation seam a front-end injects into the run/resume lifecycle
-(`SessionFrontend` + its capability and steer contracts), and the away-mode
-policy applied when a launcher spawns a run detached."""
+"""Define the seam a front-end injects into the run and resume lifecycles.
+
+`SessionFrontend` with its capability and steer contracts, and the away-mode policy applied
+when a launcher spawns a run detached.
+"""
 
 from __future__ import annotations
 
@@ -37,23 +39,30 @@ from agent6.tools.operator_prompts import Approver, Questioner
 
 @dataclass(frozen=True, slots=True)
 class SessionFacts:
-    """The live facts the CLI pause banner shows, so an operator deciding
-    whether to interrupt can see what this run is doing without the widgets a
-    TUI/web viewer has. Built by the lifecycle (which holds the tracker and the
-    resolved config) and rendered by the front-end; read inside a signal
-    handler, so every field is already in memory (no file read, no fold)."""
+    """Hold the live facts the CLI pause banner shows.
+
+    Read inside a signal handler, so every field is already in memory.
+
+    Attributes:
+        spend_usd: The run's spend so far.
+        spend_partial: The spend is a lower bound (a model with no price data contributed).
+        model: The model in use.
+        run_commands: The run-commands policy word.
+        isolation: The isolation level word.
+    """
 
     spend_usd: float
-    spend_partial: bool  # a model with no price data contributed: a lower bound
+    spend_partial: bool
     model: str
     run_commands: str
     isolation: str
 
 
 class SteerHooks(Protocol):
-    """What the lifecycle needs of the front-end's steer state (the SIGINT
-    pause menu or the file-bridge steer); `ui/cli/_steer.SteerState` satisfies
-    it structurally."""
+    """Declare what the lifecycle needs of the front-end's steer state.
+
+    `ui/cli/_steer.SteerState` satisfies it structurally.
+    """
 
     requested: Callable[[], bool]
     clear: Callable[[], None]
@@ -65,10 +74,11 @@ class SteerHooks(Protocol):
 
 
 def approval_scopes(cfg: Config) -> tuple[str, ...]:
-    """Every scope this run can be asked about: the command tools, plus one per
-    live MCP server. "Approve everything while I am away" has to name them all:
-    a grant is per scope, so a run left with only the command scope granted
-    would still block on the first MCP call with nobody there to answer."""
+    """Return every scope this run can be asked about: the commands, plus one per MCP server.
+
+    A grant is per scope, so an approve-all with only the command scope granted would block
+    on the first MCP call.
+    """
     servers = (
         tuple(f"{MCP_SCOPE_PREFIX}{name}" for name, s in cfg.mcp.servers.items() if s.enabled)
         if cfg.mcp.enabled
@@ -78,10 +88,11 @@ def approval_scopes(cfg: Config) -> tuple[str, ...]:
 
 
 def settle_away_mode(session_dir: Path, cfg: Config) -> None:
-    """At an execution's start: a foreground start (a controlling terminal) drops a
-    stale detach answer and every approve-all grant, since the operator is
-    back to answer; a spawned start honours the away marker the front-end or
-    detach set (`apply_spawned_away_default`)."""
+    """Settle the away mode at an execution's start.
+
+    A foreground start drops a stale detach answer and every approve-all grant, since the
+    operator is back to answer; a spawned start honours the away marker the launcher set.
+    """
     if has_controlling_tty():
         clear_away_mode(session_dir)
         clear_session_grants(session_dir)
@@ -90,22 +101,17 @@ def settle_away_mode(session_dir: Path, cfg: Config) -> None:
 
 
 def apply_spawned_away_default(session_dir: Path, scopes: tuple[str, ...]) -> None:
-    """Honor AGENT6_DETACHED_AWAY, set by a front-end launcher (web/TUI hub) that
-    spawns a run detached and drives it over the bridge. Without it a spawned run
-    with no terminal fabricates empty ask_user answers when no viewer is live;
-    'wait' makes approvals and questions block for a front-end. A pure headless
-    run (no launcher) sets no env, so this is a no-op and it keeps its default.
+    """Honor AGENT6_DETACHED_AWAY, set by a launcher that spawns a run detached.
 
-    A default: an away mode already on the run dir is the operator's own detach
-    answer, and the resume this spawns carries 'wait' regardless. Overwriting it
-    would upgrade a chosen 'deny' to 'wait', blocking the run on an approval
-    nobody is there to give instead of denying and carrying on."""
+    Without it a spawned run with no terminal fabricates empty ask_user answers when no viewer
+    is live. An away mode already on the run dir is the operator's own detach answer and wins:
+    overwriting a chosen 'deny' with 'wait' would block the run on an approval nobody answers.
+    """
     away = os.environ.get("AGENT6_DETACHED_AWAY", "")
     if not away or away_mode(session_dir):
         return
     if away == "approve":
-        # approve is never stored in away.mode (deny|wait): like the interactive
-        # detach prompt, approve-all sets an allow marker per scope in play.
+        # approve is never stored in away.mode (deny|wait): it is an allow marker per scope.
         for scope in scopes:
             set_session_allow(session_dir, scope)
     elif away in AWAY_MODES:
@@ -114,68 +120,74 @@ def apply_spawned_away_default(session_dir: Path, scopes: tuple[str, ...]) -> No
 
 @dataclass(frozen=True, slots=True)
 class FrontendCapabilities:
-    """What this surface can do, declared once at wiring, so a headless run
-    with no away-mode denies rather than fabricating an empty `ask_user`
-    answer.
+    """Declare what a surface can do, so a headless run denies rather than fabricates answers.
+
+    Attributes:
+        can_ask: Approvals and ask_user reach a human; `ui/cli` sets it from `isatty()`.
     """
 
-    # Approvals and ask_user reach a human. False for a surface with no way to
-    # ask (`ui/cli` sets it from `sys.stdin.isatty()`); `headless_approval_refusal`
-    # reads it alongside the away-mode.
     can_ask: bool = True
 
 
 @dataclass(frozen=True, slots=True)
 class SessionFrontend:
-    """The presentation + process-spawn callables `ui/cli` injects into the
-    run/resume lifecycle: the live console view (held cli-side; the lifecycle
-    only signals attach/close), the interactive prompts, and the REPLs. The
-    lifecycle owns the run-dir bridge (`sessions.ipc`); only the exe-spawn
-    primitives it can't reach stay injected.
-    One value serves both `run_task` and `resume_task`; resume never calls the
-    run-only fields."""
+    """Hold the presentation and process-spawn callables `ui/cli` injects into the lifecycles.
 
-    # What this surface can do at all, read before offering something.
+    The console view lives cli-side and the lifecycle only signals attach and close; the
+    lifecycle owns the run-dir bridge. One value serves both `run_task` and `resume_task`;
+    resume never calls the run-only fields.
+
+    Attributes:
+        capabilities: What this surface can do at all.
+        should_spawn_tui: Whether to open the TUI for this invocation.
+        stream_modes: The (stream, live view) pair for a verbosity.
+        attach_console_view: Attaches the console view to the event sink.
+        close_console_view: Closes the console view.
+        loop_logger: Builds the loop's logger for a run id.
+        tui_session: The context a TUI-backed run runs inside.
+        build_approver: Answers the approvals the gate journals on the run dir's bridge.
+        build_questioner: Answers the questions the gate journals on the run dir's bridge.
+        make_steer_state: Builds the steer state over the sink, the run dir and the facts.
+        confirm_unconfined_autorun: Confirms running commands unconfined.
+        confirm_run_on_run_branch: Confirms starting on a run branch.
+        confirm_replay_after_crash: (iteration, tool names) -> replay a turn whose tools may
+            have partially applied; interactive fronts prompt, headless warns and proceeds.
+        prompt_detach_away_mode: Asks the away mode when the run detaches.
+        select_revised_prompt: Runs the revise choice; None when the surface cannot, and the
+            execution then skips revision instead of reading a selector's None as a quit.
+        build_repl_hook: Builds the `run -i` / `ask -i` hook.
+        run_ask_repl: Runs the ask REPL.
+        save_ask_transcript: Saves an ask's transcript.
+        build_coordinator_spawner: Builds the `/parallel` dispatch spawner, or None.
+        agent6_exe: The agent6 executable to spawn.
+        spawn_detached_resume: (cwd, session_id, flags) -> spawns the detached execution under
+            this invocation's overrides as CLI options (see `_setup.override_flags`).
+    """
+
     capabilities: FrontendCapabilities
-    # live view: the console-view instance lives cli-side; builders that need it
-    # (approver/questioner/steer/logger) close over it there.
     should_spawn_tui: Callable[[bool, bool, str], bool]
     stream_modes: Callable[[bool], tuple[bool, bool]]
     attach_console_view: Callable[[EventSink], None]
     close_console_view: Callable[[], None]
     loop_logger: Callable[[str], Callable[[str], None]]
     tui_session: Callable[[Path, bool], AbstractContextManager[None]]
-    # operator interaction: the callables that ANSWER a prompt the gate
-    # (`tools.operator_prompts`) has journaled, keyed on the run dir's bridge.
     build_approver: Callable[[Path], Approver]
     build_questioner: Callable[[Path], Questioner]
     make_steer_state: Callable[[EventSink, Path, Callable[[], SessionFacts]], SteerHooks]
     confirm_unconfined_autorun: Callable[[IsolationLevel, Config], bool]
     confirm_run_on_run_branch: Callable[[str], bool]
-    # Resume found a mid-turn-crash marker matching the turn about to re-run:
-    # its tools may have partially applied. (iteration, tool names) -> replay?
-    # Interactive fronts prompt (default no); headless warns and proceeds.
     confirm_replay_after_crash: Callable[[int, tuple[str, ...]], bool]
     prompt_detach_away_mode: Callable[[Path, tuple[str, ...]], None]
-    # None when this surface cannot run the interactive revise choice; the execution
-    # then skips revision instead of reading a selector's None as a quit.
     select_revised_prompt: Callable[[str, str, tuple[str, ...]], str | None] | None
-    # `run -i` / `ask -i`
     build_repl_hook: Callable[
         [Path, BudgetTracker, str, MCPManager | None],
         Callable[[int, str], AutoCommitDirective],
     ]
     run_ask_repl: Callable[[Harness, BudgetTracker, SessionLayout, str], SessionResult]
     save_ask_transcript: Callable[[SessionLayout, str, str], None]
-    # `/parallel` coordinator dispatch (the cli builds LaneRuntime + spawner).
     build_coordinator_spawner: Callable[
         [Config, Path, Path, str, str, float | None, bool],
         GroupLaneSpawner | None,
     ]
-    # process-spawn primitives the front-end owns (`ui.spawn`, mirroring
-    # LaneRuntime's injected spawner).
     agent6_exe: Callable[[], str]
-    # (cwd, session_id, flags): the flags are this invocation's overrides as
-    # CLI options, so the detached execution runs under them (see
-    # `_setup.override_flags`).
     spawn_detached_resume: Callable[[Path, str, Sequence[str]], str]

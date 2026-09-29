@@ -1,16 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Application pipelines that compose the engine but are not a front-end.
+"""Compose the engine into the run, resume, fork and machine lifecycles.
 
-`agent6.app` sits beside `ui/` in the layering: it drives the run/resume
-lifecycle (`run`, `resume`, with their `preflight`/`manifest`/`merge`/
-`finalize`/`providers` pieces) and multi-run orchestration (the `--parallel`
-fan-out and the coordinator's `/parallel` dispatch, `parallel`/`compare`) over
-`harness`, `git_ops`, `sessions`, and the headless `viewmodel`, and never imports
-`agent6.ui`. What it cannot do itself (own a terminal, render a live view,
-spawn a detached `agent6` process, drive the run-dir bridge) is injected by the
-front-end (`ui/cli`) as frozen values of callables (`frontend.SessionFrontend`,
-`parallel.LaneRuntime`). Output goes through the injected two-channel
+`agent6.app` sits below `ui/` and never imports it: the lifecycles (`run`, `resume`, `fork`,
+`machine`) and the `--parallel` fan-out (`parallel`, `compare`) drive `harness`, `git_ops`,
+`sessions` and the headless `viewmodel`. What needs a terminal, a live view, a detached
+`agent6` process or the run-dir bridge is injected by `ui/cli` as frozen values of callables
+(`frontend.SessionFrontend`, `parallel.LaneRuntime`). Output goes through the injected
 `reporter.Reporter` (default `STDIO_REPORTER`), never a direct `print`.
 """
 

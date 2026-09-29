@@ -1,15 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The one execution body a fresh run and a resumed execution share.
+"""Drive the one execution body a fresh run and a resumed execution share.
 
-From the provider session to the end block: prompt revision, providers, the
-gate step (per lifecycle: a fresh execution infers, a resumed one reuses the
-snapshot's), steer state, the session network and MCP servers, the tool set,
-the Harness, its teardown, the auto-merge, and the end report. `app/run.py`
-and `app/resume.py` keep only what differs before it (id, manifest, dirty
-tree, snapshot, guards) and after it (the stash, the locks) and hand the execution
-its `ExecutionInputs`. One body, so a knob wired into one lifecycle cannot be
-missing from the other.
+From the provider session to the end block: prompt revision, providers, the gate step, steer
+state, the session network and MCP servers, the tool set, the Harness, its teardown, the
+auto-merge and the end report. `run.py` and `resume.py` keep what differs before and after it
+and hand the body its `ExecutionInputs`, so a knob wired into one lifecycle cannot be missing
+from the other.
 """
 
 from __future__ import annotations
@@ -81,8 +78,35 @@ from agent6.tools.operator_prompts import OperatorPrompts
 
 @dataclass(frozen=True, slots=True)
 class ExecutionInputs:
-    """What a fresh execution and a resumed one hand the execution body differently.
-    Everything else the body derives itself."""
+    """Hold what a fresh execution and a resumed one hand the body differently.
+
+    Attributes:
+        session_id: The session's id.
+        mode: The session mode.
+        role: The role driving it.
+        isolation: The resolved isolation level.
+        tui_enabled: Whether the TUI owns the terminal.
+        interactive: Whether an operator is at the terminal.
+        task: The task a fresh execution runs; None resumes the snapshot.
+        gate: The gate step: a fresh execution infers one, a resumed one reuses the snapshot's;
+            both drop an unrunnable gate and pin the result. Runs once the budget exists.
+        chain_branch: The chain the execution's commits advance.
+        base_sha: The base the review panel and an unborn chain start from; "" without a head.
+        untracked_at_start: The operator's untracked files, left out of every commit.
+        resume_state_path: Where the snapshot is written.
+        undo_forker: Forks back before the last message and rewinds the checkout.
+        prompts: The one gate to the operator, so a question asked before the loop and the
+            dispatcher's approvals share one journal and one id sequence.
+        ask_transcript_task: The question a one-shot ask records its answer under; None when
+            the REPL saved each turn.
+        budget_overrides: The `--max-*` flags a `/parallel` lane inherits.
+        sandbox_overrides: The `--auto-approve` a `/parallel` lane inherits.
+        standing_goal: The standing goal.
+        pins: The pinned notes.
+        resuming: Whether this is a resumed execution.
+        worktree_git_dir: A fork's repository git dir, the one grant its jail makes beyond the
+            workspace.
+    """
 
     session_id: str
     mode: ResumableMode
@@ -90,45 +114,32 @@ class ExecutionInputs:
     isolation: IsolationLevel
     tui_enabled: bool
     interactive: bool
-    # A fresh execution drives `wf.run(task)` (or the ask REPL); a resumed execution,
-    # `task=None`, drives `wf.resume()`.
     task: str | None
-    # The gate step, per lifecycle: a fresh execution infers one from the repo, a
-    # resumed one reuses the snapshot's; both drop an unrunnable gate and pin
-    # the result. Runs once the budget exists (inference may call a model).
     gate: Callable[[Config, BudgetTracker], Config]
-    # The chain the execution's commits advance, and the base the review panel and
-    # an unborn chain start from ("" when the repo had no head).
     chain_branch: str | None
     base_sha: str
     untracked_at_start: frozenset[str]
     resume_state_path: Path
-    # `/undo` from the composer or the pause menu: forks back before the last
-    # message and rewinds the checkout; the execution body records the outcome for
-    # its end block.
     undo_forker: Callable[[], tuple[str, str] | None]
-    # The execution's one gate to the operator: built by the lifecycle, so a question
-    # it asks before the loop (the dirty-tree start question) and the
-    # dispatcher's approvals share one journal and one id sequence.
     prompts: OperatorPrompts
-    # A one-shot ask records its answer under this question; None when the
-    # REPL already saved each turn.
     ask_transcript_task: str | None
-    # The `--max-usd` / `--auto-approve` a `/parallel` lane inherits.
     budget_overrides: BudgetOverrides | None = None
     sandbox_overrides: SandboxOverrides | None = None
     standing_goal: str = ""
     pins: tuple[str, ...] = ()
     resuming: bool = False
-    # A fork execution's checkout is a linked worktree: the repository git dir agent6
-    # recorded for it, the one grant its jail makes beyond the workspace.
     worktree_git_dir: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class ExecutionEnd:
-    """How the execution ended: the process exit code, and whether the operator
-    detached (the caller then releases its locks and spawns the continuation)."""
+    """Record how the execution ended.
+
+    Attributes:
+        rc: The process exit code.
+        detach_requested: The operator detached; the caller releases its locks and spawns the
+            continuation.
+    """
 
     rc: int
     detach_requested: bool = False
@@ -143,20 +154,26 @@ def detach_to_background(
     flags: Sequence[str],
     reporter: Reporter,
 ) -> None:
-    """Hand a detached execution to a background `resume` under this invocation's
-    *flags*, once the caller has released the run's locks: first ask how
-    approvals are answered while nothing watches (`run_commands = "ask"` with
-    no session-wide grant), then spawn, then print the reattach line, so
-    "continues in the background" is said only of a spawn that happened."""
+    """Hand a detached execution to a background `resume` under this invocation's flags.
+
+    Called once the caller has released the run's locks. Asks how approvals are answered while
+    nothing watches, spawns, then prints the reattach line only for a spawn that happened.
+
+    Args:
+        frontend: The injected front-end.
+        cfg: The resolved config.
+        layout: The session's directory layout.
+        cwd: The workspace.
+        flags: This invocation's overrides as CLI options.
+        reporter: Where the reattach line goes.
+    """
     if cfg.sandbox.run_commands == "ask" and not session_allow_set(
         layout.session_dir, COMMAND_SCOPE
     ):
         frontend.prompt_detach_away_mode(layout.session_dir, approval_scopes(cfg))
     err = frontend.spawn_detached_resume(cwd, layout.session_id, flags)
     if err:
-        # The handoff failed, so this process really was the last worker: the
-        # pid it kept through the spawn (so the run never read "crashed or
-        # killed" mid-handoff) goes now.
+        # The handoff failed, so the pid this process kept through the spawn goes now.
         clear_worker_pid(layout.session_dir)
         reporter.note(err)
         return
@@ -165,20 +182,31 @@ def detach_to_background(
 
 
 def _escape_reason(exc: BaseException) -> SessionEndReason:
+    """Return the end reason an escaping exception stands for."""
     return "interrupted" if isinstance(exc, KeyboardInterrupt) else "crashed"
 
 
 def _journal_escape(events: EventSink, exc: BaseException, *, iterations: int) -> SessionEndReason:
-    """The end an escape leaves in the journal, and its reason: without one
-    every surface reads the dead run as running until the silence window
-    expires. A dead journal must not mask the exit code."""
+    """Journal the end an escape leaves.
+
+    Without one every surface reads the dead run as running until the silence window expires;
+    a dead journal must not mask the exit code.
+
+    Args:
+        events: The run's event sink.
+        exc: The escaping exception.
+        iterations: The turns reached.
+
+    Returns:
+        The reason journaled.
+    """
     reason = _escape_reason(exc)
     with contextlib.suppress(EventWriteError):
         events.emit("session.end", reason=reason, iterations=iterations, all_passed=False)
     return reason
 
 
-def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body, one return per ending  # an execution's setup, run and teardown in reading order
+def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and teardown in reading order
     cfg: Config,
     layout: SessionLayout,
     inputs: ExecutionInputs,
@@ -190,15 +218,32 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
     cwd: Path,
     state_dir: Path,
 ) -> ExecutionEnd:
-    """Drive one execution to its end block. See the module docstring."""
+    """Drive one execution to its end block.
+
+    Args:
+        cfg: The resolved config.
+        layout: The session's directory layout.
+        inputs: What the lifecycle hands the body.
+        frontend: The injected front-end.
+        reporter: The output channels.
+        events: The run's event sink.
+        transcript_sink: Where every provider call is transcribed.
+        cwd: The workspace.
+        state_dir: The repo's state directory.
+
+    Returns:
+        The exit code, and whether the operator detached.
+
+    Raises:
+        KeyboardInterrupt: An interrupt before the loop, journaled and re-raised.
+        Exception: A crash before or after the loop, journaled and re-raised.
+    """
     mode, role = inputs.mode, inputs.role
     label = "resume" if inputs.resuming else "run"
     session: SessionProviders | None = None
     prompt_reviser_provider: Provider | None = None
     try:
-        # The interactive revision prompt reads the terminal; with the TUI owning
-        # it the prompt would land invisibly in the console log and contend for
-        # stdin. Skip revision for this execution instead.
+        # The interactive revision prompt reads the terminal, which the TUI may own.
         effective_revise_prompt = cfg.prompt.revise_prompt
         if effective_revise_prompt == "interactive" and (
             inputs.tui_enabled or frontend.select_revised_prompt is None
@@ -226,9 +271,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
         )
         cfg = inputs.gate(cfg, budget)
 
-        # Steering (mid-run Ctrl-C -> the pause menu) needs the terminal; the
-        # console view's heartbeat spinner is suspended for the prompt so its
-        # line-erase cannot wipe the pause-menu line.
         steer_state = frontend.make_steer_state(
             events,
             layout.session_dir,
@@ -237,9 +279,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
             ),
         )
     except (KeyboardInterrupt, Exception) as exc:
-        # A parked run whose start crashes here never ran (unpark is past this
-        # block): it stays parked, so no session.end is journaled and it does
-        # not read "crashed". Every other start is a real execution and journals one.
+        # A parked run whose start crashes here never ran: it stays parked with no session.end.
         if parked_stamp(layout.session_dir) is not None:
             reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
         else:
@@ -257,21 +297,15 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
     escape_handled = False
     undo_outcome: list[tuple[str, str]] = []
     dispatcher: ToolDispatcher | None = None
-    # Spawned inside the try so the finally below tears it down even if a
-    # spawn (MCP) fails.
     mcp_manager = None
     session_net: SessionNetwork | None = None
     try:
         reporter.note(f"{'resume ' if inputs.resuming else ''}session id: {inputs.session_id}")
 
-        # Spawn any configured MCP servers BEFORE the harness starts so their
-        # tools are visible from iteration 1. The manager owns its subprocesses;
-        # the finally block below closes it. The run's session network, before
-        # its first member: the commands and any server that joins it share it.
+        # The session network before its first member; the MCP servers before the harness.
         if wants_session_network(cfg, inputs.isolation):
             session_net = SessionNetwork.open()
-            # Published so `agent6 exec`/`forward` can join it: a separate
-            # process names a namespace only through a live /proc entry.
+            # Published so `agent6 exec` can join it: a namespace is named through a /proc entry.
             write_session_netns_pid(layout.session_dir, session_net.holder_pid)
         mcp_manager = start_mcp_manager_if_enabled(
             cfg, cwd, inputs.isolation, reporter=reporter, events=events, session_net=session_net
@@ -298,6 +332,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
         cfg = tools.cfg
 
         def _undo_forker() -> tuple[str, str] | None:
+            """Return the `/undo` fork's outcome, kept for the end block."""
             got = inputs.undo_forker()
             if got is not None:
                 undo_outcome.append(got)
@@ -311,8 +346,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
         wf = Harness(
             chain=RunChain(
                 cwd,
-                # `git.control = "model"` suspends the whole shadow chain: the
-                # model's own commits are the record.
+                # `git.control = "model"` suspends the chain: the model's commits are the record.
                 ref=chain_ref_for(inputs.session_id)
                 if mode == "run" and cfg.git.control != "model"
                 else None,
@@ -341,8 +375,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
                 steer_clear=steer_state.clear,
                 steer_prompt=steer_state.prompt,
                 steer_reset=steer_state.reset_stage,
-                # "Compact now" from a front-end: the same file-bridge pattern
-                # as steer, honored at the next pre-call boundary.
                 compact_requested=lambda: read_compact_request(layout.session_dir),
                 compact_clear=lambda: clear_compact_request(layout.session_dir),
                 stop_requested=lambda: stop_request_pending(layout.session_dir),
@@ -352,8 +384,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
                 take_requests=lambda: drain_requests(layout.session_dir),
                 after_auto_commit=after_auto_commit,
                 undo_forker=_undo_forker,
-                # `/parallel` steer dispatch: the coordinator's group spawner
-                # (None in plan/ask, and inside a lane -- depth 1).
+                # None in plan and ask, and inside a lane.
                 lane_spawner=frontend.build_coordinator_spawner(
                     cfg,
                     cwd,
@@ -370,7 +401,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
             ),
             budget=budget,
             state_dir=state_dir,
-            # Written for every mode: `agent6 resume` reaches an ask too.
             resume_state_path=inputs.resume_state_path,
             mode=mode,
             plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
@@ -407,7 +437,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
             ),
         )
         if inputs.task is not None:
-            # The execution begins: a parked submission is a run from here.
             unpark(layout.session_dir, run_branch=inputs.chain_branch)
         try:
             with frontend.tui_session(layout.session_dir, inputs.tui_enabled):
@@ -418,19 +447,10 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
                         result = frontend.run_ask_repl(wf, budget, layout, inputs.task)
                     else:
                         result = wf.run(inputs.task)
-                    # A background command that ended after the last turn is
-                    # written down now, not at teardown: a viewer left open
-                    # reads `/shells` meanwhile.
+                    # Settled now, not at teardown: a viewer left open reads `/shells` meanwhile.
                     dispatcher.settle_background()
                 except (KeyboardInterrupt, Exception) as exc:
-                    # Every escape (a resume refused before the loop starts, an
-                    # interrupt mid-step, a broken stdout pipe from `| head`)
-                    # leaves the loop without a session.end, and the caller's
-                    # finally then clears worker.pid, the only immediate
-                    # liveness evidence, so every surface would read the dead
-                    # run as running until the silence window expires. The end
-                    # is journaled here, inside the TUI scope: its exit waits
-                    # on a dashboard that leaves only on an end it can see.
+                    # Journaled inside the TUI scope: the dashboard leaves only on an end it sees.
                     escape_handled = True
                     if result is None:
                         _journal_escape(events, exc, iterations=wf.iterations_reached)
@@ -441,18 +461,13 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
             return ExecutionEnd(1)
         except KeyboardInterrupt:
             if result is not None:
-                # After the run's own end an interrupt cuts only the
-                # background settle: the result stands.
+                # After the run's own end an interrupt cuts only the background settle.
                 reporter.err(f"\n[agent6] {label} had ended; its result stands")
             else:
                 interrupted = True
                 reporter.err(f"\n[agent6] {label} interrupted")
     except (KeyboardInterrupt, Exception) as exc:
-        # The loop's own handler journaled its escape; one before the loop
-        # is journaled here; one from the dashboard scope after the run
-        # ended is the execution's failure, not the run's, so the run's end stays
-        # its last. A parked start that failed before the loop stays parked:
-        # nothing ran. Every escape prints its one line here.
+        # An escape after the run ended is the execution's failure: the run's end stays its last.
         if not escape_handled and result is None and parked_stamp(layout.session_dir) is None:
             _journal_escape(events, exc, iterations=wf.iterations_reached if wf else 0)
         reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
@@ -460,21 +475,17 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
     finally:
 
         def _close_mcp() -> None:
+            """Close the MCP servers and journal any that survived."""
             if mcp_manager is not None and (survivors := mcp_manager.close()):
                 with contextlib.suppress(EventWriteError):  # a dead journal must not skip cleanup
                     events.emit("jail.degraded", detail=survivors_message(survivors))
 
-        # Registered in reverse teardown order. ExitStack runs every close
-        # even when an earlier one raises, so a provider close cannot strand a
-        # command, MCP server or network namespace; a raising close still
-        # re-raises after them, so no merge lands on an execution whose teardown
-        # failed.
+        # ExitStack runs every close even when one raises, and re-raises after: no merge lands
+        # on an execution whose teardown failed.
         try:
             with contextlib.ExitStack() as cleanup:
                 if session_net is not None:
                     cleanup.callback(clear_session_netns_pid, layout.session_dir)
-                    # The last handles on the run's network: closing them is what
-                    # lets the kernel reclaim it.
                     cleanup.callback(session_net.close)
                 cleanup.callback(_close_mcp)
                 if dispatcher is not None:
@@ -483,8 +494,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
                     cleanup.callback(close_provider, prompt_reviser_provider)
                 cleanup.callback(session.close)
                 cleanup.callback(steer_state.restore)
-                # A stop that landed mid-call and was never read at a boundary
-                # (the execution ended first) would stop the next execution at its first.
+                # A stop never read at a boundary would stop the next execution at its first.
                 cleanup.callback(clear_stop_request, layout.session_dir)
             if (
                 not interrupted
@@ -496,8 +506,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
                     cwd, layout=layout, cfg=cfg, reporter=reporter, budget=budget, events=events
                 )
         finally:
-            # Never leave root-owned run state in the user's repo (sudo case):
-            # after every write above, whatever raised.
+            # Never leave root-owned run state in the user's repo (the sudo case).
             chown_to_real_user(state_dir)
 
     if interrupted:
@@ -506,23 +515,18 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body
     if result is None:
         return ExecutionEnd(1)
 
-    # The operator's own ends come first: `/undo` and `/detach` at the pause
-    # menu end an ask execution as they end a run.
+    # The operator's own ends come first: `/undo` and `/detach` end an ask as they end a run.
     if result.reason == "undone" and undo_outcome:
         new_id, undone_text = undo_outcome[-1]
         reporter.out(f"\n[agent6] undone: continue as {new_id} with your message back to edit:")
         reporter.out(f"    agent6 resume {new_id} --steer {undone_text!r}")
         return ExecutionEnd(0)
     if result.reason == "detached":
-        # Keep going in the background: the caller releases this run's worker
-        # lock, then hands the run to `detach_to_background`.
+        # The caller releases the worker lock, then hands the run to `detach_to_background`.
         return ExecutionEnd(0, detach_requested=True)
 
     if mode == "ask":
-        # The answer IS result.summary (kept whole in ask mode). stdout gets
-        # just the answer (clean for piping); cost + saved-path go to stderr.
-        # The REPL already printed + saved each turn, so only the one-shot path
-        # prints/saves here.
+        # stdout gets the answer alone; the REPL already printed and saved each turn.
         if inputs.ask_transcript_task is not None:
             reporter.out(result.summary)
             frontend.save_ask_transcript(layout, inputs.ask_transcript_task, result.summary)

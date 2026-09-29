@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Run/resume lifecycle setup shared by the front-end adapters: sandbox env
-detection, provider-key preflight, per-invocation budget/sandbox override
-values, and MCP server startup."""
+"""Set up what the run and resume lifecycles share.
+
+Sandbox environment detection, the provider-key preflight, the per-invocation budget and
+sandbox overrides, and MCP server startup.
+"""
 
 from __future__ import annotations
 
@@ -43,23 +45,18 @@ from agent6.tools.policy import jail_policy
 
 
 def detect_env() -> Environment:
-    """`detect()` with an authoritative strict re-check via the jail binary.
+    """Detect the host environment, with the jail binary settling whether strict works.
 
-    `detect.probe_userns_supported` runs `unshare -U -r true`, which answers a
-    narrower question than "can the jail set up a strict sandbox", and is wrong
-    in BOTH directions:
+    The `unshare -U -r true` probe is wrong in both directions: an AppArmor profile can grant
+    the jail binary userns but not `unshare`, and Docker with a relaxed seccomp profile lets
+    `unshare` succeed while AppArmor denies the jail's `mount`. One jail spawn at startup,
+    cached for the process, settles it; a binary the kernel cannot execute raises out of it.
 
-    - It under-reports on an AppArmor-restricted host (Ubuntu 24.04+) where a
-      profile grants the *agent6-jail* binary userns but not `/usr/bin/unshare`.
-    - It over-reports inside Docker with a relaxed seccomp profile, where
-      `unshare` succeeds and the default AppArmor profile then denies the jail's
-      `mount`. Measured: every command died with a raw "namespace setup failed:
-      EACCES" instead of the run degrading to `hardened`.
+    Returns:
+        The environment, with `userns_supported` as the jail binary found it.
 
-    So the real jail binary settles it either way. It costs one short jail spawn
-    at startup, cached for the process lifetime. A binary the kernel cannot
-    execute raises JailBinaryError out of the probe: the callers refuse with
-    it, and `auto` never resolves to `hardened` over it.
+    Raises:
+        JailBinaryError: The jail binary cannot be executed on this host.
     """
     env = detect()
     if not env.sandbox_available:
@@ -71,7 +68,7 @@ def detect_env() -> Environment:
 
 
 def budget_tracker(cfg: Config, *, max_usd: float | None = None) -> BudgetTracker:
-    """A run's meter from `[budget]`, *max_usd* (a flag) overriding the cap."""
+    """Return a run's meter from `[budget]`; a `--max-usd` flag overrides the cap."""
     return BudgetTracker(
         max_usd=cfg.budget.max_usd if max_usd is None else max_usd,
         max_percent=cfg.budget.max_percent,
@@ -82,7 +79,13 @@ def budget_tracker(cfg: Config, *, max_usd: float | None = None) -> BudgetTracke
 
 @dataclass(frozen=True, slots=True)
 class BudgetOverrides:
-    """Per-run budget overrides parsed from `--max-*` flags."""
+    """Hold the per-run budget overrides the `--max-*` flags set.
+
+    Attributes:
+        max_usd: The dollar cap.
+        max_tokens_fallback: The token cap for an unpriced model.
+        max_percent: The plan-window cap.
+    """
 
     max_usd: float | None = None
     max_tokens_fallback: int | None = None
@@ -90,6 +93,7 @@ class BudgetOverrides:
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> BudgetOverrides:
+        """Return the overrides a parsed argv sets."""
         return cls(
             max_usd=getattr(args, "max_usd", None),
             max_tokens_fallback=getattr(args, "max_tokens_fallback", None),
@@ -97,6 +101,11 @@ class BudgetOverrides:
         )
 
     def apply(self, cfg: Config) -> Config:
+        """Return the config with these overrides applied.
+
+        Raises:
+            ConfigError: A flag's value fails validation, named by the flag the operator typed.
+        """
         try:
             return cfg.with_budget_overrides(
                 max_usd=self.max_usd,
@@ -104,14 +113,10 @@ class BudgetOverrides:
                 max_percent=self.max_percent,
             )
         except ValidationError as exc:
-            # The schema speaks in config keys; the operator typed a flag. Name
-            # what they typed, and refuse the way `config set` refuses rather
-            # than escaping to the crash reporter.
             raise ConfigError(self._flag_error(exc)) from exc
 
     def argv(self) -> list[str]:
-        """These overrides as the flags that set them, for a continuation
-        this invocation spawns (a detached resume)."""
+        """Return these overrides as the flags that set them, for a detached resume to carry."""
         out: list[str] = []
         if self.max_usd is not None:
             out += ["--max-usd", str(self.max_usd)]
@@ -122,6 +127,7 @@ class BudgetOverrides:
         return out
 
     def _flag_error(self, exc: ValidationError) -> str:
+        """Return the validation errors worded by flag."""
         flags = {
             "max_usd": "--max-usd",
             "max_tokens_fallback": "--max-tokens-fallback",
@@ -137,9 +143,7 @@ class BudgetOverrides:
 def override_flags(
     budget: BudgetOverrides | None, sandbox: SandboxOverrides | None, route: ModelRoute | None
 ) -> list[str]:
-    """The CLI flags a continuation this invocation spawns (a detached resume)
-    carries so it runs under the same overrides; *route* is the pair a
-    `--model` resolved to, spelled `provider/model`."""
+    """Return the flags a detached resume carries so it runs under this invocation's overrides."""
     return [
         *(budget.argv() if budget else []),
         *(sandbox.argv() if sandbox else []),
@@ -148,14 +152,12 @@ def override_flags(
 
 
 def route_text(model: str | ModelRoute | None) -> str:
-    """A `--model` as its operator typed it, or a recorded pair as
-    `provider/model`, for a refusal to quote; "" for no flag."""
+    """Return a `--model` as typed, or a recorded pair as `provider/model`; "" for no flag."""
     return model.spec if isinstance(model, ModelRoute) else (model or "")
 
 
 def flag_route(cfg: Config, mode: str, model: str | ModelRoute | None) -> ModelRoute | None:
-    """The pair *cfg* runs the mode's role on when a `--model` set it
-    (`load_session_config` applied it), else None."""
+    """Return the pair the mode's role runs on when a `--model` set it, else None."""
     if not model:
         return None
     rm = cfg.models.resolve(session_kind(mode).role)
@@ -164,14 +166,16 @@ def flag_route(cfg: Config, mode: str, model: str | ModelRoute | None) -> ModelR
 
 @dataclass(frozen=True, slots=True)
 class SandboxOverrides:
-    """Per-invocation sandbox/approval overrides from CLI flags.
+    """Hold the per-invocation sandbox and approval overrides the flags set.
 
-    `--dangerously-disable-sandbox` runs unconfined; `--auto-approve`
-    auto-approves every jailed command; `--no-commands` withholds them
-    entirely (what `/btw` spawns its side question with). The env setter for the sandbox is read in
-    `detect.resolve_isolation` (so it also reaches machine subprocesses), so
-    `from_args` reads only the flags. Flags and env are structurally
-    LLM-unreachable."""
+    The sandbox env setter is read in `detect.resolve_isolation`, where it also reaches machine
+    subprocesses, so `from_args` reads only the flags. Flags and env are LLM-unreachable.
+
+    Attributes:
+        disable_sandbox: `--dangerously-disable-sandbox`, run unconfined.
+        auto_approve: `--auto-approve`, approve every jailed command.
+        no_commands: `--no-commands`, withhold the command tools.
+    """
 
     disable_sandbox: bool = False
     auto_approve: bool = False
@@ -179,6 +183,7 @@ class SandboxOverrides:
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> SandboxOverrides:
+        """Return the overrides a parsed argv sets."""
         return cls(
             disable_sandbox=bool(getattr(args, "dangerously_disable_sandbox", False)),
             auto_approve=bool(getattr(args, "auto_approve", False)),
@@ -186,7 +191,7 @@ class SandboxOverrides:
         )
 
     def argv(self) -> list[str]:
-        """These overrides as the flags that set them (see BudgetOverrides.argv)."""
+        """Return these overrides as the flags that set them."""
         flags = (
             ("--dangerously-disable-sandbox", self.disable_sandbox),
             ("--auto-approve", self.auto_approve),
@@ -195,6 +200,7 @@ class SandboxOverrides:
         return [flag for flag, on in flags if on]
 
     def apply(self, cfg: Config) -> Config:
+        """Return the config with these overrides applied."""
         return cfg.with_sandbox_overrides(
             disable_sandbox=self.disable_sandbox,
             auto_approve=self.auto_approve,
@@ -203,18 +209,11 @@ class SandboxOverrides:
 
 
 def apply_git_ops_policy(cfg: Config) -> None:
-    """Set how agent6's OWN git ops (run outside the jail) treat repo-controlled
-    host code and provider secrets, from the run's config. One call per entry
-    point (run, resume, merge, machine), so the policy is set the same way
-    everywhere; git_ops itself stays config-free.
+    """Set how agent6's own git ops treat repo-controlled host code and provider secrets.
 
-    - Repo `.git/hooks/*` fire only under `git.run_repo_hooks` (default off): a
-      hook is repo-controlled host code, an RCE vector on an untrusted repo.
-    - Repo content drivers (`filter.*`, `merge.*.driver`) run only under
-      `git.run_repo_filters` (default off) -- same threat, the Git-LFS opt-in.
-    - The configured provider-key env vars are stripped from git's environment:
-      git never needs a provider key, and a git subprocess (a credential
-      helper, a content driver we could not neutralize) should not inherit one.
+    One call per entry point, so git_ops itself stays config-free. Repo hooks and content
+    drivers are repo-controlled host code, off by default; the provider-key env vars are
+    stripped from git's environment, since a credential helper must not inherit one.
     """
     set_repo_hook_policy(cfg.git.run_repo_hooks)
     set_repo_filter_policy(cfg.git.run_repo_filters)
@@ -226,20 +225,11 @@ def apply_git_ops_policy(cfg: Config) -> None:
 
 
 def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = None) -> Config:
-    """The effective config for a session of *mode*.
+    """Return the effective config for a session of the mode.
 
-    Both lifecycles call this before anything reads a knob, so a fresh session
-    and a resumed one are governed identically. It is the interactive-mode clamp
-    (ask, plan); anything else mode-dependent belongs here rather than at one
-    call site.
-
-    *overrides* are the operator's per-invocation flags, and they land LAST:
-    the most specific layer, and the one the LLM cannot reach. The clamp exists
-    to catch a STANDING `run_commands = "yes"` that nobody is watching, not an
-    explicit `--auto-approve` on this invocation: clamping that makes the flag
-    inert and refuses every headless `ask --auto-approve`. Tightening still wins
-    outright: `--no-commands` pins "no", and `--auto-approve` never resurrects a
-    withheld one.
+    The interactive-mode clamp catches a standing `run_commands = "yes"` nobody is watching;
+    the operator's flags land last, so an explicit `--auto-approve` stays in force and
+    `--no-commands` still pins "no".
     """
     clamped = cfg.with_run_commands_clamped() if session_kind(mode).clamps_commands else cfg
     return clamped if overrides is None else overrides.apply(clamped)
@@ -255,14 +245,23 @@ def load_session_config(
     sandbox_overrides: SandboxOverrides | None = None,
     model: str | ModelRoute | None = None,
 ) -> EffectiveConfig:
-    """The config a session of *mode* starts or resumes under, built the same
-    way at every entry point (`agent6 run`, `resume`, an editor's ACP turn):
-    the effective layers for *preset*, the git policy set from them, the
-    budget flags, the `--model` route for the mode's role (a typed
-    `[provider/]model` parsed here, once, or a recorded pair applied as is),
-    `session_config` (the interactive clamp with the sandbox flags landing
-    last), checked runnable for the mode's role. Raises ConfigError like
-    `load_effective`."""
+    """Load the config a session starts or resumes under, the same way at every entry point.
+
+    Args:
+        cwd: The workspace.
+        config_path: An explicit config file, else the effective one.
+        mode: The session mode.
+        preset: The preset to apply.
+        budget_overrides: The `--max-*` flags.
+        sandbox_overrides: The sandbox and approval flags, landing last.
+        model: A typed `[provider/]model`, parsed once here, or a recorded pair applied as is.
+
+    Returns:
+        The effective config, checked runnable for the mode's role.
+
+    Raises:
+        ConfigError: The layers do not load, a flag fails validation, or the role cannot run.
+    """
     effective = load_effective(cwd, config_path, preset=preset)
     cfg = effective.config
     apply_git_ops_policy(cfg)
@@ -278,16 +277,18 @@ def load_session_config(
 
 
 def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str | None:
-    """Return an error message if any referenced provider has no resolvable key.
+    """Return why a provider the run can reach cannot run, else None.
 
-    A key may come from the env var named by `api_key_env` or from
-    `secrets.toml` (via `agent6 connect`). Checked over every provider the
-    run can STATICALLY reach: the configured `[models.<role>]` entries, any
-    provider a `[review].seats` spec pins, and *extra_providers* (a machine's
-    per-state pins), so a route discovered only mid-run cannot fail after
-    state exists and spend has started. OpenAI-compat providers with no key
-    configured at all are skipped (unauthenticated local endpoints like
-    Ollama).
+    Every provider the run can statically reach is checked: the configured roles, the review
+    seats, and a machine's per-state pins, so a route found mid-run cannot fail after spend has
+    started.
+
+    Args:
+        cfg: The resolved config.
+        extra_providers: A machine's per-state pins.
+
+    Returns:
+        The refusal, or None when every provider can run.
     """
     try:
         secrets = load_secrets()
@@ -314,24 +315,18 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
         and not plan_metered(cfg.providers.get(rm.provider))
         for rm in cfg.models.configured().values()
     ):
-        # Bare claude-* ids price through the OpenRouter catalog (pricing's
-        # alias); with no openrouter provider configured nothing above
-        # fetched it, and the $ cap would run honestly-but-needlessly
-        # unpriced on a cold cache. A plan-metered route is an authoritative
-        # $0 and needs no price.
+        # Bare claude-* ids price through the OpenRouter catalog, which nothing above fetched.
         refresh_pricing_catalog()
     return None
 
 
 def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, str]) -> str | None:
-    """Why one routed provider cannot run, or None: a claude_code binary that is
-    not signed in, a chatgpt block with no stored sign-in, an Anthropic block
-    with no key. A keyed or local endpoint passes, refreshing its model listing
-    on the way (TTL-gated, ~1.5s, never raises): that cache is what feeds model
-    completion, context-window sizing, and the PRICES the budget meters with."""
+    """Return why one routed provider cannot run, or None.
+
+    A keyed or local endpoint passes and refreshes its model listing on the way (TTL-gated,
+    about 1.5 s): that cache feeds completion, context sizing and the prices the budget meters.
+    """
     if isinstance(entry, ClaudeCodeProviderEntry):
-        # No key: the binary carries the operator's own login; check it is
-        # signed in before any state exists.
         err = login_status(entry.binary)
         return f"[providers.{name}]: {err}" if err is not None else None
     if isinstance(entry, ChatGPTProviderEntry):
@@ -352,17 +347,15 @@ def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, str]) 
             f"no API key for [providers.{name}] (Anthropic). Run"
             f" `agent6 connect` or set the {entry.api_key_env or 'API key'} env var."
         )
-    # Minted by a command (checked at call time), not required, or an
-    # OpenAI-compatible endpoint (local ones legitimately need no key).
+    # Minted by a command, not required, or a local OpenAI-compatible endpoint.
     return None
 
 
 def wants_session_network(cfg: Config, isolation: IsolationLevel) -> bool:
-    """Whether this run needs its own network: any child that would join one.
+    """Return whether the run needs its own network: any child would join one.
 
-    Asked once, before anything spawns, because the network has to exist before
-    its first member. Only strict can provide one; elsewhere every child shares
-    the host's (preflight has already warned or refused).
+    Asked once before anything spawns, since the network exists before its first member. Only
+    strict can provide one.
     """
     if isolation != "strict":
         return False
@@ -381,29 +374,27 @@ def mcp_server_policy(
     *,
     readonly: bool = False,
 ) -> JailPolicy | None:
-    """The sandbox for one spawned server, or None when the operator opted it
-    out with `unconfined = true`.
+    """Return the sandbox for one spawned server, or None when it opted out as unconfined.
 
-    The same `jail_policy` a jailed command gets, plus this server's additive
-    grants, so the block names only what is extra and never has to describe the
-    interpreter, the tool dirs, or a writable HOME. `readonly` binds the
-    workspace read-only on top (the re-bind `.git` gets, applied to the
-    root): a diagnostic's probe, which must not write the repository.
+    The `jail_policy` a command gets plus the server's additive grants. Its env is the curated
+    set, never the desktop addresses: the session bus reaches an unconfined `systemd --user`.
 
-    Its env is the CURATED set rather than a command's passthrough: a server
-    is third-party code that may log or forward what it was given, so it gets
-    the base plus the variables named in `pass_env`, and never the desktop
-    addresses (the session bus reaches an unconfined `systemd --user` that
-    runs commands on request, which walks straight out of any sandbox).
+    Args:
+        cfg: The resolved config.
+        root: The workspace.
+        isolation: The isolation level.
+        srv: The server's config block.
+        readonly: Bind the workspace read-only, for a probe that must not write it.
+
+    Returns:
+        The policy, or None for an unconfined server.
     """
     sandbox = srv.sandbox
     if sandbox is not None and sandbox.unconfined:
         return None
     read_paths = sandbox.read_paths if sandbox else ()
     write_paths = sandbox.write_paths if sandbox else ()
-    # auto and none both mean "a network of its own"; they differ only in what
-    # happens when the host cannot provide one (warn vs refuse, which preflight
-    # owns). `session` is the run's shared one; `host` is the machine's.
+    # auto and none both mean a network of its own; preflight owns the warn-or-refuse difference.
     configured = srv.effective_network
     network: NetworkMode = "none" if configured == "auto" else configured
     return jail_policy(
@@ -428,10 +419,19 @@ def mcp_server_spec(
     *,
     readonly: bool = False,
 ) -> MCPServerSpec:
-    """What starting *srv* as *name* takes. One builder for a run, `agent6
-    check` and `agent6 mcp connect`, so every surface spawns the server the
-    same way: the same workspace root, sandbox and network. The two probes
-    (`check mcp`, `mcp connect`) pass `readonly` (see `mcp_server_policy`)."""
+    """Return what starting the server takes; every surface spawns it the same way.
+
+    Args:
+        cfg: The resolved config.
+        root: The workspace.
+        isolation: The isolation level.
+        name: The server's name.
+        srv: The server's config block.
+        readonly: Bind the workspace read-only, for the `check mcp` and `mcp connect` probes.
+
+    Returns:
+        The spec the manager starts the server from.
+    """
     return MCPServerSpec(
         name=name,
         command=srv.command,
@@ -456,8 +456,7 @@ def mcp_server_spec(
 
 
 def no_jail_cause(cfg: Config, env: Environment) -> str:
-    """Why this host resolved to isolation `none`: the env override, the
-    config leaf, or what the host lacks (`degrade_reason`)."""
+    """Return why this host resolved to isolation `none`."""
     if sandbox_disabled_by_env():
         return "AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1 is set"
     if cfg.sandbox.isolation == "none":
@@ -474,15 +473,19 @@ def start_mcp_manager_if_enabled(
     events: EventSink | None = None,
     session_net: SessionNetwork | None = None,
 ) -> MCPManager | None:
-    """Spawn all enabled MCP servers from `cfg.mcp`. Returns None when
-    MCP is disabled or no servers are configured (so callers can skip
-    teardown entirely). One bad server doesn't poison the run: it is skipped,
-    and the run does not see its tools.
+    """Spawn every enabled MCP server; a server that fails is skipped and its tools absent.
 
-    A skipped server also becomes an `mcp.server_unavailable` journal event
-    when *events* is given. Stderr is only visible from a terminal: under an
-    editor it is a log pane, and the operator sees a run quietly missing the
-    tools they configured.
+    Args:
+        cfg: The resolved config.
+        root: The workspace.
+        isolation: The isolation level.
+        reporter: Where a failed server is logged.
+        events: The run's event sink; a skipped server becomes an `mcp.server_unavailable`
+            event there, since stderr is a log pane under an editor.
+        session_net: The session's network namespace, when one exists.
+
+    Returns:
+        The manager, or None when MCP is disabled or no server is configured.
     """
     if not cfg.mcp.enabled or not cfg.mcp.servers:
         return None
@@ -504,10 +507,10 @@ def start_mcp_manager_if_enabled(
 def _warn_servers_that_keep_the_network(
     cfg: Config, isolation: IsolationLevel, *, reporter: Reporter
 ) -> None:
-    """`network = "auto"` is the secure default and cannot be honoured without
-    a network namespace, so where it degrades it says so, per server, where the
-    operator is already being told about their servers. An explicit `none` or
-    `session` refused long before this (check_mcp_network_support)."""
+    """Warn per server whose `network = "auto"` degrades to the host's network.
+
+    An explicit `none` or `session` refused before this.
+    """
     if isolation == "strict":
         return
     for name, srv in sorted(cfg.mcp.servers.items()):

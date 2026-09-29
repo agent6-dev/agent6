@@ -1,15 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Candidate-ranking core shared by `--parallel`'s auto-compare (`app.parallel`)
-and the standalone `sessions compare` (`ui/cli/sessions_cmds.py`): rank candidates (judge
-via the reviewer model when one is built, else the deterministic mechanical
-fallback) and print the ranked table. One implementation so the two callers can
-never drift.
+"""Rank candidates and print the ranked table.
 
-The reviewer-provider wiring and the `judging...` in-flight status are injected
-by the caller (ui/cli supplies the console spinner + the role-provider builder),
-so `app` never imports `ui`. A caller that shows nothing passes
-`contextlib.nullcontext` as *judging_status*.
+Shared by the `--parallel` auto-compare and `sessions compare`. The judge is the reviewer model
+when one resolves, else the mechanical ranking. The caller injects the provider builder and
+the in-flight status (`contextlib.nullcontext` shows nothing), so `app` never imports `ui`.
 """
 
 from __future__ import annotations
@@ -29,27 +24,22 @@ from agent6.providers import Provider, ProviderError, TranscriptSink
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel.format import format_usd
 
-# The reviewer provider the judge call uses, built by the caller from the
-# configured `reviewer` role (ui/cli wires it via `build_role_provider`).
+# Builds the reviewer provider the judge call uses.
 BuildProvider = Callable[[Config, TranscriptSink, BudgetTracker], Provider]
-# A no-arg context manager shown around the (~50-60s, otherwise silent) judge
-# call. ui/cli supplies the console spinner; `nullcontext` shows nothing.
+# Shown around the judge call, which is silent for 50 to 60 seconds.
 JudgingStatus = Callable[[], AbstractContextManager[None]]
 
 
 @dataclass(frozen=True, slots=True)
 class RankOutcome:
-    """`rank()`'s result: candidates best-first, plus which path produced them.
+    """Hold a ranking and which path produced it.
 
-    `ranked_by` is `"judge"` only when the reviewer model produced the order,
-    else `"mechanical"`; the compare stamp records it
-    (`CompareStamp.ranked_by`, which stays a lenient `str` for reads of
-    history). `rationale` is empty on the mechanical path.
-    `judge_cost_usd` is the judge call's estimated spend, real money even
-    when a failed judge fell back to the mechanical ranking; it is 0.0 only
-    when no judge call was made. `judge_cost_partial` marks it a lower bound (the
-    reviewer model is unpriced and reported no cost), the same flag
-    `format_usd` renders as `~`.
+    Attributes:
+        ranking: The candidate ids, best first.
+        rationale: The judge's reasoning; empty on the mechanical path.
+        ranked_by: "judge" when the reviewer model ordered them, else "mechanical".
+        judge_cost_usd: The judge call's spend, billed even when it failed; 0.0 without a call.
+        judge_cost_partial: The spend is a lower bound (the reviewer model is unpriced).
     """
 
     ranking: tuple[str, ...]
@@ -60,7 +50,7 @@ class RankOutcome:
 
 
 def manifest_task(session_dir: Path, fallback: str) -> str:
-    """The run's own recorded `user_task`, else *fallback*."""
+    """Return the run's recorded `user_task`, else the fallback."""
     try:
         manifest = read_manifest(session_dir)
     except ManifestError:
@@ -78,13 +68,23 @@ def rank(
     max_usd: float | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> RankOutcome:
-    """Rank candidates best-first. Use the configured reviewer model as the
-    compare judge when one resolves; fall back to the deterministic mechanical
-    ranking when it is unset, there is only one candidate, or the judge call
-    fails (see `RankOutcome.ranked_by`).
+    """Rank candidates best first.
 
-    *max_usd* caps the judge like one more lane (the fan-out advertises
-    "$X/lane x N + judge"); None falls back to the config budget."""
+    The reviewer model judges when it resolves; the mechanical ranking applies when it is
+    unset, there is one candidate, or the judge call fails.
+
+    Args:
+        cfg: The resolved config.
+        candidates: The candidates to rank.
+        transcript_dir: Where the judge call's transcript is written.
+        build_provider: Builds the reviewer provider.
+        judging_status: Shown around the judge call.
+        max_usd: Caps the judge like one more lane; None uses the config budget.
+        reporter: Where a failed judge is reported.
+
+    Returns:
+        The ranking and which path produced it.
+    """
     reviewer = cfg.models.resolve("reviewer")
     if len(candidates) > 1 and reviewer is not None:
         sink = TranscriptSink(transcript_dir)
@@ -96,9 +96,7 @@ def rank(
             spent, unknown = budget.estimate_usd()
             return RankOutcome(verdict.ranking, verdict.rationale, "judge", spent, unknown)
         except (ProviderError, JudgeError) as exc:
-            # A configured reviewer that fails must not degrade to the mechanical
-            # table silently: say so, so the report isn't mistaken for a judged one.
-            # Failed judge attempts still bill; carry and report what they spent.
+            # A failed judge is reported, with its spend: the table must not read as judged.
             detail = str(exc).splitlines()[0] if str(exc).strip() else exc.__class__.__name__
             spent, unknown = budget.estimate_usd()
             spent_s = (
@@ -112,7 +110,7 @@ def rank(
 
 
 def verify_word(verify_ok: bool | None) -> str:
-    """A candidate's gate verdict as the report and the journal word it."""
+    """Return a candidate's gate verdict as the report and the journal word it."""
     return "passed" if verify_ok else "failed" if verify_ok is False else "no-verify"
 
 
@@ -123,10 +121,16 @@ def print_ranked_candidates(
     merged_into: Mapping[str, str] | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
-    """Print the ranked table (best first) + a `sessions merge` line per candidate
-    (or where it is already merged, per *merged_into*), a total-spend line
-    (candidate costs plus any judge cost), then the judge's rationale if there
-    is one. Prints nothing when the ranking is empty."""
+    """Print the ranked table, the total spend and the judge's rationale.
+
+    Prints nothing when the ranking is empty.
+
+    Args:
+        candidates: The ranked candidates.
+        outcome: The ranking.
+        merged_into: Where a candidate is already merged, by session id.
+        reporter: The output channels.
+    """
     if not outcome.ranking:
         return
     by_id = {c.session_id: c for c in candidates}

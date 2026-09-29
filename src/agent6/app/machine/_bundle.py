@@ -1,14 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Machine script-bundle validation (security-critical).
+"""Validate a machine's script bundle: the `.asm.toml` plus its sibling `scripts/`.
 
-A machine is a `.asm.toml` plus a sibling `scripts/` directory. Every entry
-under `scripts/` must resolve to a path INSIDE the bundle (rejects symlinks
-that escape via `..`/absolute), and every static tool-command element that
-references a bundled script must exist and stay inside the bundle. `machine
-check`/`test` run this offline; `machine run`/`create` run it again before
-any execution, so a `scripts/` symlink escaping the bundle can never be read
-by a tool on an isolation level that cannot RO-bind the bundle.
+Security boundary: every entry under `scripts/` resolves inside the bundle, and every static
+tool-command element naming a bundled script exists there. `machine check` and `test` run it
+offline; `machine run` and `create` run it again before any execution, so a symlink escaping
+the bundle is never read by a tool on an isolation level that cannot read-only bind the bundle.
 """
 
 from __future__ import annotations
@@ -22,9 +19,8 @@ from agent6.machine import MachineError, MachineSpec, ToolState, load_machine, v
 def _bundle_script_ref(element: str) -> str | None:
     """Return the relative script path a static command element names, else None.
 
-    A bundle script reference is a relative path whose first component is
-    `scripts` (e.g. `scripts/fetch.sh` or `./scripts/fetch.sh`). Absolute
-    paths (`/usr/bin/bash`) are interpreter/binary paths, not bundle refs.
+    A reference is a relative path whose first component is `scripts` (`scripts/fetch.sh`,
+    `./scripts/fetch.sh`); an absolute path names an interpreter or binary.
     """
     cleaned = element[2:] if element.startswith("./") else element
     if not cleaned or cleaned.startswith("/"):
@@ -36,7 +32,7 @@ def _bundle_script_ref(element: str) -> str | None:
 
 
 def _check_scripts_dir(scripts_dir: Path, bundle: Path) -> list[str]:
-    """Every entry under `scripts/` must resolve to a path inside the bundle."""
+    """Return a problem per entry under `scripts/` that does not resolve inside the bundle."""
     if not scripts_dir.is_dir():
         return ["bundle 'scripts' exists but is not a directory"]
     problems: list[str] = []
@@ -44,12 +40,9 @@ def _check_scripts_dir(scripts_dir: Path, bundle: Path) -> list[str]:
         rel = entry.relative_to(scripts_dir)
         try:
             resolved = entry.resolve()
-            # Python 3.14's resolve() does not raise on a symlink loop (it
-            # returns the path); stat(), which follows links, raises ELOOP, so
-            # a circular or broken symlink is reported rather than accepted as
-            # an in-bundle path.
+            # Python 3.14's resolve() returns a symlink loop; stat() raises ELOOP on it.
             entry.stat()
-        except (OSError, RuntimeError) as exc:  # RuntimeError: circular symlink (<3.14)
+        except (OSError, RuntimeError) as exc:  # RuntimeError: a symlink loop before 3.14
             problems.append(f"scripts/{rel}: {exc}")
             continue
         if not resolved.is_relative_to(bundle):
@@ -58,11 +51,11 @@ def _check_scripts_dir(scripts_dir: Path, bundle: Path) -> list[str]:
 
 
 def _check_command_scripts(name: str, state: ToolState, bundle: Path) -> list[str]:
-    """Static tool-command script references must exist and stay in the bundle."""
+    """Return a problem per static command element whose script is missing or escapes."""
     problems: list[str] = []
     for element in state.command:
         if "{{" in element:
-            continue  # templated; cannot resolve statically
+            continue  # templated: resolves only against a blackboard
         ref = _bundle_script_ref(element)
         if ref is None:
             continue
@@ -80,13 +73,14 @@ def _check_command_scripts(name: str, state: ToolState, bundle: Path) -> list[st
 
 
 def validate_bundle(spec: MachineSpec, machine_path: Path) -> list[str]:
-    """Validate a machine's script bundle (the `.asm.toml` + a sibling `scripts/`).
+    """Validate the script bundle beside a machine file.
 
-    Security-critical: every entry under `scripts/` must resolve to a path
-    INSIDE the bundle (rejects symlinks that escape via `..`/absolute), and
-    every static tool-command element that references a bundled script must
-    exist and stay inside the bundle. Dynamic (templated) command elements are
-    skipped, they cannot be resolved without a blackboard.
+    Args:
+        spec: The parsed machine.
+        machine_path: The `.asm.toml`; the bundle is its directory.
+
+    Returns:
+        The problems found, empty when the bundle checks out.
     """
     try:
         bundle = machine_path.parent.resolve()
@@ -104,18 +98,31 @@ def validate_bundle(spec: MachineSpec, machine_path: Path) -> list[str]:
 
 @dataclass(frozen=True, slots=True)
 class MachineFileSummary:
-    """One authored-file row for a machines listing."""
+    """Hold one authored file's columns for a machines listing.
 
-    name: str  # the declared `machine` name; "-" when the file does not parse
-    states: str  # the state count; "-" when the file does not parse
-    spec: str  # "valid", "N issue(s)", or "invalid" (does not parse)
+    Attributes:
+        name: The declared `machine` name; "-" when the file does not parse.
+        states: The state count; "-" when the file does not parse.
+        spec: "valid", "N issue(s)", or "invalid" (does not parse).
+    """
+
+    name: str
+    states: str
+    spec: str
 
 
 def summarize_machine_file(path: Path) -> MachineFileSummary:
-    """Whether the FILE checks out ("valid", never "ok": that word is a
-    machine-run terminal status): parsed, then semantics + bundle, exactly what
-    `machine check`/`run` refuse. A file that does not parse has no name to
-    show (its declared `machine` is unknown), so the row keeps its path only."""
+    """Summarize whether a machine file checks out, as `machine check` and `run` judge it.
+
+    The verdict word is "valid", never "ok" (a machine run's terminal status). A file that does
+    not parse has no name to show.
+
+    Args:
+        path: The `.asm.toml`.
+
+    Returns:
+        The file's listing columns.
+    """
     try:
         spec = load_machine(path)
     except (MachineError, OSError):

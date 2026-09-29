@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Pre-loop guards shared by `agent6 run`/`resume`: refusals, startup
-warnings, branch-base resolution, and per-run verify-command resolution.
-The interactive confirm prompts stay in `ui/cli/_preflight` (they own the
-terminal) and are injected by the front-end."""
+"""Pre-loop guards shared by `agent6 run` and `resume`.
+
+Refusals, startup warnings, branch-base resolution and per-run verify-command
+resolution. The interactive confirm prompts live in `ui/cli/_preflight` and are
+injected by the front-end.
+"""
 
 from __future__ import annotations
 
@@ -53,8 +55,11 @@ from agent6.viewmodel.listing import session_dirs
 
 
 class SessionRefusedError(Exception):
-    """A preflight refusal already reported through the Reporter; the caller
-    returns `rc` as the process exit code."""
+    """A preflight refusal already reported; the caller exits with `rc`.
+
+    Attributes:
+        rc: The process exit code.
+    """
 
     def __init__(self, rc: int) -> None:
         super().__init__(f"session refused (exit {rc})")
@@ -67,17 +72,22 @@ def budget_preflight(
     *,
     reporter: Reporter = STDIO_REPORTER,
 ) -> str | None:
-    """Budget refusals + notices over every statically reachable model,
-    before any spend: the resolved role models, any model a `[review].seats`
-    spec pins, and *extra_routes* (a machine's per-state `(provider, model)`
-    pins; an unknown provider rides as "" and is judged by price data alone).
+    """Judge the budget config against every statically reachable model, before any spend.
 
-    `max_tokens_fallback = 0` refuses when a reachable model cannot be
-    metered (zero unmetered tokens allowed); `max_usd = 0` refuses when one
-    CAN be (a run-nothing-metered rig). Otherwise an unpriced model gets a
-    one-line notice naming the fallback bound that covers it. Models chosen
-    later (a `/parallel` lane spec) are caught by the tracker's runtime
-    backstop instead."""
+    A zero `max_tokens_fallback` refuses an unpriced model, a zero `max_usd` refuses a
+    priced one, a zero `max_percent` refuses a plan-metered one; otherwise each unpriced
+    or plan-metered model gets a notice naming the bound that covers it. A model chosen
+    later (a `/parallel` lane spec) is caught by the tracker's runtime backstop.
+
+    Args:
+        cfg: The run's config.
+        extra_routes: Further `(provider, model)` pins, such as a machine's per-state
+            routes; an unknown provider rides as "".
+        reporter: Receives the notices.
+
+    Returns:
+        The refusal, or None when the budget admits every route.
+    """
     routes = {(rm.provider, rm.model) for rm in cfg.models.configured().values()}
     for spec in cfg.review.seats:
         _persona, seat_provider, seat_model = parse_seat_spec(spec)
@@ -85,9 +95,7 @@ def budget_preflight(
             routes.add((seat_provider, seat_model))
     routes.update((prov, m) for prov, m in extra_routes if m)
 
-    # Plan-metered routes (a ChatGPT or Claude subscription) live in the
-    # percent ledger: they are never "unpriced fallback" spend, and their own
-    # zero-refusal mirrors the siblings below.
+    # Plan-metered routes live in the percent ledger, never in the fallback spend.
     plan_models = sorted({m for prov, m in routes if plan_metered(cfg.providers.get(prov))})
     metered = {(prov, m) for prov, m in routes if not plan_metered(cfg.providers.get(prov))}
     if cfg.budget.max_percent == 0.0 and plan_models:
@@ -137,24 +145,27 @@ def budget_preflight(
 
 
 def warn_if_prompt_override_incomplete(cfg: Config, *, reporter: Reporter = STDIO_REPORTER) -> None:
-    """Warn when a custom `prompt.system_prompt_file` omits the core tool
-    contracts the worker needs: `finish_session` is the only clean exit, and an
-    edit primitive (`apply_edit`/`apply_patch`) is needed to do work. The
-    override is advanced and operator-owned, so this flags the likely-broken
-    case loudly and points at `agent6 prompt show` rather than blocking."""
+    """Warn when a custom `prompt.system_prompt_file` omits a core tool contract.
+
+    `finish_session` is the only clean exit and an edit primitive is needed to do
+    work; the override is operator-owned, so this warns rather than blocks.
+
+    Args:
+        cfg: The run's config.
+        reporter: Receives the warning.
+    """
     path = cfg.prompt.system_prompt_file
     if not path:
         return
     try:
         text = Path(path).expanduser().read_text(encoding="utf-8")
     except OSError:
-        return  # config validation already enforces existence; nothing to add
+        return  # config validation enforces existence
     missing = [t for t in ("finish_session",) if t not in text]
     if "apply_edit" not in text and "apply_patch" not in text:
         missing.append("apply_edit/apply_patch")
     if missing:
-        # Name every capability that is actually absent, not just one of them, so
-        # a prompt missing both finish_session AND an edit primitive reads correctly.
+        # Name every absent capability, not the first one.
         actions = []
         if "finish_session" in missing:
             actions.append("terminate")
@@ -171,8 +182,12 @@ def warn_if_prompt_override_incomplete(cfg: Config, *, reporter: Reporter = STDI
 
 @dataclass(frozen=True, slots=True)
 class GitPreflight:
-    """Where the run starts: HEAD + branch at submission (empty for ask, which
-    is read-only and may run outside a repo)."""
+    """Where the run starts.
+
+    Attributes:
+        base_sha: HEAD at submission; empty for ask.
+        base_branch: The checked-out branch at submission; empty for ask.
+    """
 
     base_sha: str
     base_branch: str
@@ -186,34 +201,37 @@ def git_preflight(
     confirm_run_on_run_branch: Callable[[str], bool],
     reporter: Reporter,
 ) -> GitPreflight:
-    """The git checks a session needs before it creates anything, raising
-    :class:`SessionRefusedError` on each already-reported refusal.
+    """Run the git checks a session needs before it creates anything.
 
-    The auto-commit-on-verify-pass behaviour requires a clean working tree, so
-    the same git assumptions apply; skipping these leaves a first-time run
-    crashing on a dirty-tree or missing-identity error deep into a paid run.
-    The egress policy is applied by the lifecycle's own config, not whichever
-    front-end got here, so a repo that opted into its own hooks gets them on
-    every surface.
+    The git ops policy is applied from the lifecycle's own config, so a repo that
+    opted into its own hooks gets them on every surface.
+
+    Args:
+        cwd: The workspace.
+        cfg: The run's config.
+        mode: The session mode; ask skips the commit-oriented checks.
+        confirm_run_on_run_branch: Asked whether to start on another run's branch.
+        reporter: Receives each refusal.
+
+    Returns:
+        The base commit and branch.
+
+    Raises:
+        SessionRefusedError: A check refused; the refusal is already reported.
     """
     apply_git_ops_policy(cfg)
     identity = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
-    # ask is read-only and may run outside a git repo (e.g. agent6 self-help),
-    # so it skips the commit-oriented git pre-flight entirely.
+    # ask is read-only and may run outside a git repo.
     if mode == "ask":
         return GitPreflight(base_sha="", base_branch="")
     try:
         verify_git_identity(cwd, identity)
-        # Captured BEFORE a run branch exists, so `agent6 sessions diff <id>`
-        # knows where the run started.
+        # Captured before a run branch exists: `sessions diff` needs the start point.
         pre_status = git_status(cwd)
     except GitError as exc:
         reporter.error(str(exc))
         raise SessionRefusedError(2) from exc
-    # Starting a run while checked out on ANOTHER run's branch (agent6/<id>) is
-    # usually a slip (the operator forgot to merge or switch back), so the new
-    # run would pile on top of an unmerged one. Confirm; they may instead intend
-    # to continue that line with a fresh session, in which case proceed.
+    # A run started on another run's branch piles onto unmerged work: confirm first.
     if (
         mode == "run"
         and pre_status.branch.startswith("agent6/")
@@ -226,9 +244,7 @@ def git_preflight(
     return GitPreflight(base_sha=pre_status.head_sha, base_branch=pre_status.branch)
 
 
-# What a run does with the operator's uncommitted changes to tracked files.
-# Untracked files are never in question: the run leaves them out of its
-# commits and dirty checks (`untracked_at_start`).
+# What a run does with uncommitted changes to tracked files; untracked files stay out.
 DirtyTreeChoice = Literal["stash", "include", "cancel"]
 DIRTY_TREE_OPTIONS: tuple[str, ...] = ("stash", "include", "cancel")
 
@@ -236,13 +252,21 @@ DIRTY_TREE_OPTIONS: tuple[str, ...] = ("stash", "include", "cancel")
 def unmerged_run_holding_the_tree(
     cwd: Path, state_dir: Path, *, except_id: str, modified: Sequence[str]
 ) -> str:
-    """The id of the newest earlier unmerged run whose chain tip holds exactly
-    the working tree's content of the *modified* files, else "". A run's
-    edits sit uncommitted on the checkout until its branch is merged, so the
-    next run's dirty-tree question would otherwise call agent6's own last
-    work "uncommitted changes" as if the operator had left them; naming the
-    run points at the merge instead. Compared per file, so a commit that
-    landed on the base since (any other file) does not hide the match."""
+    """Find the unmerged run whose chain tip holds the working tree's modified files.
+
+    A run's edits sit uncommitted on the checkout until its branch is merged; naming
+    that run points the dirty-tree question at the merge. The match is per file, so a
+    commit that landed on the base since does not hide it.
+
+    Args:
+        cwd: The workspace.
+        state_dir: The repo's state directory.
+        except_id: The session id to skip.
+        modified: The modified tracked paths.
+
+    Returns:
+        The newest such run's id, or "".
+    """
     if not modified:
         return ""
     for d in session_dirs(state_dir, buckets=("runs",))[:10]:
@@ -263,8 +287,7 @@ def unmerged_run_holding_the_tree(
 
 
 def _dirty_tree_listing(paths: Sequence[str], *, cap: int = 10, unmerged_run: str = "") -> str:
-    # No leading indentation: a modal's text pane drops it, so a listing that
-    # depends on it reads differently per surface.
+    # No leading indentation: a modal's text pane drops it.
     n = len(paths)
     head = f"{n} tracked {'file has' if n == 1 else 'files have'} uncommitted changes"
     head += (
@@ -279,10 +302,15 @@ def _dirty_tree_listing(paths: Sequence[str], *, cap: int = 10, unmerged_run: st
 
 
 def dirty_tree_question(paths: Sequence[str], *, unmerged_run: str = "") -> UserQuestion:
-    """The start question a run with uncommitted tracked changes asks the
-    operator (over the same channel as `ask_user`); the answer's first word is
-    the choice, anything else cancels. *unmerged_run* names the earlier run
-    whose branch holds exactly these changes, when one does."""
+    """Build the start question a run with uncommitted tracked changes asks.
+
+    Args:
+        paths: The modified tracked paths.
+        unmerged_run: The earlier run whose branch holds these changes, when one does.
+
+    Returns:
+        The question; the answer's first word is the choice, anything else cancels.
+    """
     merge_hint = (
         f"cancel: park the run; `agent6 sessions merge {unmerged_run}` lands them, then resume it"
         if unmerged_run
@@ -302,6 +330,14 @@ def dirty_tree_question(paths: Sequence[str], *, unmerged_run: str = "") -> User
 
 
 def dirty_tree_choice(answer: str) -> DirtyTreeChoice:
+    """Read the choice from an answer's first word.
+
+    Args:
+        answer: The operator's answer.
+
+    Returns:
+        The choice; anything unrecognised cancels.
+    """
     word = answer.strip().split(maxsplit=1)[0].rstrip(":").lower() if answer.strip() else ""
     if word == "stash":
         return "stash"
@@ -311,7 +347,15 @@ def dirty_tree_choice(answer: str) -> DirtyTreeChoice:
 
 
 def dirty_tree_refusal(paths: Sequence[str], *, unmerged_run: str = "") -> str:
-    """The refusal when nobody can answer :func:`dirty_tree_question`."""
+    """Build the refusal for when nobody can answer the dirty-tree question.
+
+    Args:
+        paths: The modified tracked paths.
+        unmerged_run: The earlier run whose branch holds these changes, when one does.
+
+    Returns:
+        The refusal text.
+    """
     settle = (
         f" `agent6 sessions merge {unmerged_run}` lands them; or"
         if unmerged_run
@@ -328,24 +372,17 @@ def dirty_tree_refusal(paths: Sequence[str], *, unmerged_run: str = "") -> str:
 def git_repo_refusal(cwd: Path) -> str | None:
     """Refuse a workspace that is not a git repository, naming the fix.
 
-    A clean early exit instead of the misleading "Git identity not configured"
-    error (when there's no global identity) or an ugly failure deeper in the
-    run. agent6 needs git to branch, commit per step, and let the user
-    review/revert what the agent did.
+    This is also the wall on the model's workspace: the run's directory is what the
+    jail mounts writable, so every front-end passes its choice through here.
 
-    This is also the WALL on what becomes the model's workspace: whatever
-    directory a run starts in is what the jail mounts writable. Every front-end
-    that chooses one has to pass it through here -- `agent6 acp` takes that
-    directory from the editor over the wire, and without this a client could
-    point a run at any absolute path.
+    Args:
+        cwd: The workspace.
 
-    Returns the message, or None when *cwd* is usable.
+    Returns:
+        The refusal, or None when the workspace is usable.
     """
     if not cwd.is_dir():
-        # Asked git first, `subprocess` cannot chdir into a missing directory
-        # and the FileNotFoundError surfaces as an opaque internal error. A
-        # stale workspace path is the ordinary editor mistake, and it deserves
-        # the same named refusal as a wrong one.
+        # git cannot chdir into a missing directory; the error would read as internal.
         return f"{cwd} is not a directory."
     if is_git_repo(cwd):
         return None
@@ -359,7 +396,15 @@ def git_repo_refusal(cwd: Path) -> str | None:
 
 
 def require_git_repo(cwd: Path, *, reporter: Reporter = STDIO_REPORTER) -> bool:
-    """:func:`git_repo_refusal` for a front-end that prints and branches."""
+    """Report the git-repository refusal, if any.
+
+    Args:
+        cwd: The workspace.
+        reporter: Receives the refusal.
+
+    Returns:
+        Whether the workspace is usable.
+    """
     refusal = git_repo_refusal(cwd)
     if refusal is None:
         return True
@@ -370,27 +415,23 @@ def require_git_repo(cwd: Path, *, reporter: Reporter = STDIO_REPORTER) -> bool:
 def headless_approval_refusal(
     cfg: Config, *, tui_enabled: bool, away: str, can_ask: bool, clamped: bool = False
 ) -> str | None:
-    """Refuse a run that would block forever waiting to be approved.
+    """Refuse a run whose first command approval would wait forever.
 
-    `run_commands = "ask"` needs someone to answer. With no TUI, no way for the
-    front-end to ask, and no away-mode telling us what an absent operator meant,
-    the first command PAUSES indefinitely. The verify gate is a command too, so
-    nearly every run hits this, every `/parallel` lane included.
-    Refuse with the fix rather than hang: a run that cannot ask should not start.
+    `run_commands = "ask"` needs someone to answer, and the verify gate is a command
+    too. An away value outside `AWAY_MODES` names no intent, so it refuses on every
+    surface.
 
-    *can_ask* is the front-end's own declaration. Testing the tty here instead
-    would make this the CLI's question rather than the surface's, refusing every
-    `agent6 acp` run before it starts: its stdin is the protocol pipe, and it
-    asks over `session/request_permission`.
+    Args:
+        cfg: The run's config.
+        tui_enabled: Whether a TUI can answer.
+        away: The `AGENT6_DETACHED_AWAY` value.
+        can_ask: The front-end's own declaration that it can ask; the tty is not tested
+            here, since `agent6 acp` asks over its protocol pipe.
+        clamped: Whether this session kind clamps a standing `yes` to `ask`, so the
+            remedy names the flag rather than the config value.
 
-    An *away* value outside `AWAY_MODES` is a typo, and a typo names no intent:
-    it refuses on every surface rather than reading as one.
-
-    *clamped* says this session kind clamps a standing `run_commands = "yes"`
-    to `ask` (plan and ask do), so the remedy names the flag, not the config
-    value that is already set.
-
-    Returns the message, or None when approval is answerable.
+    Returns:
+        The refusal, or None when approval is answerable.
     """
     if away and away not in AWAY_MODES:
         return (
@@ -420,13 +461,20 @@ def headless_approval_refusal(
 def headless_parking_note(
     cfg: Config, *, tui_enabled: bool, away: str, can_ask: bool
 ) -> str | None:
-    """The note for a run :func:`headless_approval_refusal` lets start with no
-    one to answer: commands are settled (`yes` or `no`), but a fetch outside
-    `sandbox.fetch_hosts` or an MCP call still asks, and with no terminal, no
-    front-end and no away-mode that approval parks the run until a front-end
-    attaches. Say so at the start, with the away-mode that auto-denies.
+    """Note that a fetch or MCP approval would park a run nobody can answer.
 
-    Returns None when the run can be asked or an away-mode decides.
+    Commands are settled by `yes` or `no`, but a fetch outside `sandbox.fetch_hosts`
+    or an MCP call still asks, and that approval parks the run until a front-end
+    attaches.
+
+    Args:
+        cfg: The run's config.
+        tui_enabled: Whether a TUI can answer.
+        away: The `AGENT6_DETACHED_AWAY` value.
+        can_ask: The front-end's own declaration that it can ask.
+
+    Returns:
+        The note, or None when the run can be asked or an away-mode decides.
     """
     if cfg.sandbox.run_commands == "ask" or tui_enabled or can_ask or away:
         return None
@@ -440,15 +488,22 @@ def headless_parking_note(
 def route_preflight(
     cfg: Config, role: RoleName, *, reporter: Reporter, model_flag: str = ""
 ) -> bool:
-    """Whether the run's model route can run, decided before any state exists:
-    every provider the run can reach has its key or sign-in (each refreshes
-    its model listing on the way), then the configured model against that
-    listing, so a typo refuses here with a did-you-mean instead of echoing
-    the first provider call's 400. A model the cached listing lacks whose
-    live re-check failed (offline) warns and proceeds: the first call is the
-    arbiter. False = refused, said through *reporter*. *model_flag* is the
-    `--model` value that set the role, so the refusal names the flag rather
-    than the config entry the operator never wrote."""
+    """Check the run's model route before any state exists.
+
+    Every reachable provider needs its key or sign-in, and the configured model is
+    checked against the provider's listing so a typo refuses with a did-you-mean.
+    A model the listing lacks whose live re-check failed warns and proceeds.
+
+    Args:
+        cfg: The run's config.
+        role: The role whose route to check.
+        reporter: Receives the refusal or warning.
+        model_flag: The `--model` value that set the role, so the refusal names the
+            flag rather than a config entry the operator never wrote.
+
+    Returns:
+        Whether the route can run.
+    """
     missing = check_provider_keys(cfg)
     if missing is not None:
         reporter.err(missing)
@@ -458,8 +513,7 @@ def route_preflight(
         if model_flag:
             reporter.refuse(flag_model_refusal(verdict, cfg, role, model_flag))
             return False
-        # Name the entry the operator wrote: a plan whose planner fell back to
-        # the worker model says models.worker.model.
+        # Name the entry the operator wrote, not the role that fell back to it.
         reporter.refuse(configured_model_refusal(verdict, cfg.models.source_role(role)))
         return False
     if verdict.warned:
@@ -472,24 +526,33 @@ GATE_TEXT_WIDTH = 120
 
 
 def gate_text(argv: tuple[str, ...]) -> str:
-    """A verify command for one console line, clipped; "none" for no gate."""
+    """Render a verify command for one console line.
+
+    Args:
+        argv: The command; empty for no gate.
+
+    Returns:
+        The clipped command line, or "none".
+    """
     return clip_cell(" ".join(argv), GATE_TEXT_WIDTH) or "none"
 
 
 def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporter) -> Config:
-    """Empty the verify command when this EXECUTION cannot run one.
+    """Empty the verify command when this execution cannot run one.
 
-    Every command tool is withheld when the effective policy is `no` (the
-    operator's configured value, a session deny, or an away-mode of deny), and
-    the gate is a command. Keeping it makes the execution unwinnable: nothing can go
-    green, so nothing commits, and it finishes red over work that may be fine.
+    Every command tool is withheld when the effective policy is `no`, and the gate is
+    a command; keeping it would make the execution unwinnable. Decided once per
+    execution, last at its start, because the system prompt is frozen from the same
+    config; a deny that lands mid-execution withdraws the tools without unmaking a
+    gate that already ran.
 
-    Decided ONCE per execution, by whichever lifecycle starts it, because the system
-    prompt is frozen from the same config. Runs LAST at execution start (after
-    snapshot reuse and inference) so nothing hands the gate back. A deny that
-    lands MID-execution withdraws the tools (the dispatcher's own filter) but must
-    not retroactively make a gate that already ran red look like a run that
-    never had one.
+    Args:
+        cfg: The execution's config.
+        session_dir: The session directory holding any session deny.
+        reporter: Receives the gateless note.
+
+    Returns:
+        The config, gateless when commands are withheld.
     """
     if effective_run_commands(cfg.sandbox.run_commands, session_dir) != "no":
         return cfg
@@ -512,23 +575,29 @@ def infer_verify_if_unset(
     budget: BudgetTracker,
     reporter: Reporter = STDIO_REPORTER,
 ) -> Config:
-    """When `harness.verify_command` is unset for a run/plan, infer one and
-    inject it IN-MEMORY (never persisted: runs do not mutate config).
+    """Infer a verify command for a run or plan whose config sets none.
 
-    Layered cheapest-first (AGENTS.md -> repo signals -> a reviewer-role LLM
-    call over the manifests, skipped when there are none to read); see
-    `agent6.verify_infer`. Emits `loop.verify_inferred` and
-    prints what was picked + that it is per-run. If nothing can be inferred the
-    run proceeds GATELESS (no verify gate; the loop commits each editing step).
+    The inferred command lives in memory only; runs never mutate config. Inference
+    is layered cheapest first (AGENTS.md, repo signals, then a reviewer-role call
+    over the manifests), see `agent6.verify_infer`; nothing inferred means gateless.
+    `drop_gate_if_unrunnable` runs after this and has the last word.
 
-    `drop_gate_if_unrunnable` runs AFTER this and has the last word: an execution
-    that cannot run commands ends gateless, whatever was inferred.
+    Args:
+        cfg: The run's config.
+        cwd: The workspace.
+        mode: The session mode; only run and plan infer.
+        events: Receives `loop.verify_inferred`.
+        transcript_sink: The recorder the inference call goes to.
+        budget: The tracker the inference call bills.
+        reporter: Receives the note naming what was picked.
+
+    Returns:
+        The config with the verify command set, or unchanged.
     """
     if mode not in ("run", "plan") or cfg.harness.verify_command:
         return cfg
     if not cfg.harness.verify_infer:
-        # Pinned gateless: the operator said no gate, so no tier runs and the
-        # mid-run adoption stays off too (the loop reads the same knob).
+        # Pinned gateless: mid-run adoption reads the same knob and stays off too.
         events.emit("loop.verify_inferred", command=[], source="disabled")
         if mode == "run":
             reporter.note(

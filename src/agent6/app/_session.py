@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""One owner for the session assembly `run_task` and `resume_task` share: the
-isolation preflight and the provider/dispatcher/tools build. The lifecycles
-keep their own workspace steps (branch cut + manifest vs snapshot guards) and
-their Harness wiring."""
+"""Assemble the session pieces `run_task` and `resume_task` share.
+
+The isolation preflight and the provider, dispatcher and tools build. The lifecycles keep
+their own workspace steps and their Harness wiring.
+"""
 
 from __future__ import annotations
 
@@ -54,9 +55,21 @@ from agent6.tools.operator_prompts import OperatorPrompts
 def resolve_isolation_or_refuse(
     cfg: Config, env: Environment, *, reporter: Reporter
 ) -> IsolationLevel:
-    """The isolation level *cfg* resolves to on this host, or a REFUSING line
-    and :class:`SessionRefusedError` when an explicit level is unavailable here (an
-    `auto` degrades inside `resolve_isolation`)."""
+    """Return the isolation level the config resolves to on this host.
+
+    An `auto` degrades inside `resolve_isolation`.
+
+    Args:
+        cfg: The resolved config.
+        env: The detected host environment.
+        reporter: Where the refusal goes.
+
+    Returns:
+        The isolation level.
+
+    Raises:
+        SessionRefusedError: An explicit level is unavailable on this host.
+    """
     try:
         return resolve_isolation(cfg.sandbox.isolation, env)
     except IsolationUnavailableError as exc:
@@ -65,10 +78,11 @@ def resolve_isolation_or_refuse(
 
 
 def tool_result_cap_bytes(cfg: Config, role: RoleName) -> int:
-    """The size bound, in bytes of UTF-8, for one tool result entering the
-    conversation of the provider driving *role*: the loop's default, or the
-    tighter bound of a provider that hands the model less (Claude Code
-    persists a result above its threshold and serves a preview)."""
+    """Return the byte bound on one tool result entering the conversation of the role's provider.
+
+    Claude Code persists a result above its threshold and serves a preview, so its bound is
+    tighter than the loop's default.
+    """
     rm = cfg.models.resolve(role)
     entry = cfg.providers.get(rm.provider) if rm is not None else None
     if isinstance(entry, ClaudeCodeProviderEntry):
@@ -85,15 +99,29 @@ def select_isolation(
     explicit_leaves: frozenset[str] = frozenset(),
     worktree_git_dir: Path | None = None,
 ) -> IsolationLevel:
-    """The isolation preflight: pick the sandbox isolation for this environment,
-    confirm an unconfined autorun, and refuse configs the isolation cannot honor
-    (network mode, strict egress, budget) or a workspace no tool could read.
-    Raises :class:`SessionRefusedError`."""
+    """Pick the sandbox isolation and refuse what it cannot honor.
+
+    Confirms an unconfined autorun; refuses a network mode, egress or budget the isolation
+    cannot honor, or a workspace no tool could read.
+
+    Args:
+        cfg: The resolved config.
+        cwd: The workspace.
+        confirm_unconfined: Confirms an unconfined autorun with the operator.
+        reporter: Where the refusals go.
+        explicit_leaves: The config leaves the operator wrote, which refuse rather than degrade.
+        worktree_git_dir: The linked worktree's git dir, when the run is in one.
+
+    Returns:
+        The isolation level.
+
+    Raises:
+        SessionRefusedError: The host, the config or the operator refused the run.
+    """
     try:
         env = detect_env()
     except JailUnavailableError as exc:
-        # The strict probe could not run the jail binary itself: no isolation
-        # can be selected over a binary no command will run.
+        # The strict probe could not run the jail binary; no command will run under it either.
         reporter.refuse(str(exc))
         raise SessionRefusedError(2) from exc
     selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
@@ -102,8 +130,7 @@ def select_isolation(
             selected, env, cfg, root=cwd, worktree_git_dir=worktree_git_dir, reporter=reporter
         )
     except JailUnavailableError as exc:
-        # The hardened exposure scan builds the run's policy, which creates the
-        # jail's HOME and refuses one it cannot make.
+        # The hardened exposure scan builds the run's policy, which creates the jail's HOME.
         reporter.refuse(str(exc))
         raise SessionRefusedError(2) from exc
     warn_cleartext_credential_endpoints(cfg, reporter=reporter)
@@ -114,8 +141,7 @@ def select_isolation(
     if net_err is not None:
         reporter.refuse(net_err)
         raise SessionRefusedError(2)
-    # The shared list (`config_refusal`): a default this host cannot honour
-    # degraded with a warning above; a value the operator wrote down refuses.
+    # A default this host cannot honour degraded with a warning above; a written value refuses.
     cfg_err = config_refusal(
         cfg, selected, cwd, explicit_leaves=explicit_leaves, worktree_git_dir=worktree_git_dir
     )
@@ -130,18 +156,17 @@ def select_isolation(
 
 
 def install_inside_workspace(cwd: Path) -> Path | None:
-    """agent6's own install root when it sits inside *cwd*, else None.
+    """Return agent6's install root when it sits inside the workspace, else None.
 
-    An in-tree install (pip into the project's venv) is inside the jail's
-    writable workspace, so a jailed command can rewrite the running agent.
+    An in-tree install is inside the jail's writable workspace, so a jailed command can
+    rewrite the running agent.
     """
     root = Path(agent6.__file__).resolve().parent
     return root if root.is_relative_to(cwd.resolve()) else None
 
 
 def warn_install_inside_workspace(cwd: Path, *, reporter: Reporter) -> None:
-    """Warn when agent6 is installed inside the workspace a jailed command can
-    write (never refuse it: agent6 developing agent6 is exactly that shape)."""
+    """Warn when agent6 is installed inside the workspace; agent6 developing agent6 is that."""
     if (root := install_inside_workspace(cwd)) is not None:
         reporter.warn(
             f"agent6 is installed inside this workspace ({root});"
@@ -152,8 +177,15 @@ def warn_install_inside_workspace(cwd: Path, *, reporter: Reporter) -> None:
 
 @dataclass(frozen=True, slots=True)
 class SessionProviders:
-    """The per-run provider battery: the driving role's instrumented provider
-    plus the summariser and review seats, all metering into one tracker."""
+    """Hold the run's providers, all metering into one tracker.
+
+    Attributes:
+        budget: The run's tracker.
+        rm_role: The driving role's resolved model.
+        provider: The driving role's instrumented provider.
+        summariser_provider: The summariser seat, when one is configured.
+        review_seats: The in-loop review panel.
+    """
 
     budget: BudgetTracker
     rm_role: RoleModel
@@ -179,6 +211,19 @@ def build_session_providers(
     stream_text: bool,
     reporter: Reporter = STDIO_REPORTER,
 ) -> SessionProviders:
+    """Build the driving role's provider and the summariser and review seats.
+
+    Args:
+        cfg: The resolved config.
+        role: The driving role.
+        events: The run's event sink.
+        transcript_sink: Where every provider call is transcribed.
+        stream_text: Whether the provider streams text into the sink.
+        reporter: Where the prompt-override warning goes.
+
+    Returns:
+        The providers, metering into one tracker.
+    """
     budget = budget_tracker(cfg)
     inner = build_role_provider(cfg, role, transcript_sink=transcript_sink, budget=budget)
     rm_role = cfg.models.resolve(role)
@@ -196,8 +241,7 @@ def build_session_providers(
     summariser_provider = reviewer_seat_provider(
         cfg, "summariser", transcript_sink=transcript_sink, budget=budget, events=events
     )
-    # The panel is THE in-loop review: trigger on with no seats builds the
-    # simple one-seat roster on the reviewer model.
+    # The panel is the in-loop review: a trigger with no seats builds one seat on the reviewer.
     review_seats = (
         build_review_seats(cfg, transcript_sink=transcript_sink, budget=budget, n=1, events=events)
         if cfg.review.trigger != "off"
@@ -214,8 +258,16 @@ def build_session_providers(
 
 @dataclass(frozen=True, slots=True)
 class SessionTools:
-    """The curator + dispatcher pair and the model-derived loop knobs.
-    `cfg` is the decompose-resolved config the Harness must be built with."""
+    """Hold the curator and dispatcher pair and the model-derived loop knobs.
+
+    Attributes:
+        curator: The run's DAG curator.
+        dispatcher: The run's tool dispatcher.
+        compact_drop_at_chars: The compactor's drop threshold.
+        compact_summarise_at_chars: The compactor's summarise threshold.
+        keep_recent_chars: How much recent context the compactor keeps.
+        cfg: The decompose-resolved config the Harness is built with.
+    """
 
     curator: GraphCurator
     dispatcher: ToolDispatcher
@@ -241,8 +293,27 @@ def build_session_tools(
     session_net: SessionNetwork | None = None,
     worktree_git_dir: Path | None = None,
 ) -> SessionTools:
-    # The DAG curator runs in-process: the run's worker.lock already makes
-    # this the sole writer, so no subprocess or socket is needed.
+    """Build the curator, the dispatcher and the model-derived loop knobs.
+
+    Args:
+        cfg: The resolved config.
+        cwd: The workspace.
+        state_dir: The repo's state directory.
+        layout: The session's directory layout.
+        isolation: The isolation level.
+        mode: The run mode.
+        events: The run's event sink.
+        prompts: The operator prompt gate.
+        loop_log: The loop's logger.
+        mcp_manager: The MCP servers, when enabled.
+        rm_role: The driving role's resolved model.
+        session_net: The session's network namespace, when one exists.
+        worktree_git_dir: The linked worktree's git dir, when the run is in one.
+
+    Returns:
+        The tools and the decompose-resolved config.
+    """
+    # The curator runs in-process: the run's worker.lock already makes this the sole writer.
     curator = GraphCurator(layout)
     dispatcher = ToolDispatcher(
         root=cwd,
@@ -257,7 +328,6 @@ def build_session_tools(
         mode=mode,
         state_dir=state_dir,
         session_dir=layout.session_dir,
-        # One jail process for this run's commands.
         use_jail_session=True,
         session_net=session_net,
     )
@@ -278,8 +348,7 @@ def build_session_tools(
 def session_facts_provider(
     budget: BudgetTracker, model: str, run_commands: str, isolation: str
 ) -> Callable[[], SessionFacts]:
-    """The live-facts thunk the front-end's pause banner reads. The fixed
-    fields bind now (they never change for the execution); spend reads live."""
+    """Return the live-facts thunk the pause banner reads; spend reads live, the rest binds."""
 
     def facts() -> SessionFacts:
         spend, partial = budget.estimate_usd()
