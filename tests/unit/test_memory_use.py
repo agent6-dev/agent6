@@ -173,6 +173,14 @@ def test_a_resumed_leg_starts_its_own_count_with_the_nudge_flags_carried() -> No
     restore_completion_state(state, snap)
     assert (state.memory.written, state.memory.flip_nudged) == (True, True)
     assert (state.memory.wrote, state.memory.read) == ([], {})
+    # The shape itself: the snapshot carries the three flags and nothing
+    # else of the memory bookkeeping, so no restore can bring a leg's
+    # touched facts into the next one.
+    assert {f for f in SessionSnapshot.model_fields if f.startswith("memory_")} == {
+        "memory_written",
+        "memory_flip_nudged",
+        "memory_finish_nudged",
+    }
 
 
 def test_finish_records_the_use(tmp_path: Path) -> None:
@@ -185,3 +193,38 @@ def test_finish_records_the_use(tmp_path: Path) -> None:
     result = wf._finish(state, end, iteration=3)  # pyright: ignore[reportPrivateUsage]
     assert result.completed is True
     assert read_use(tmp_path)["quirk"].reads == 1
+
+
+def test_a_record_that_cannot_be_written_logs_and_lets_the_end_stand(tmp_path: Path) -> None:
+    """A read-only state dir must not turn a finished run into a crash: the
+    end stands and the log names the fault."""
+    import os
+    import stat
+
+    import pytest
+
+    if os.geteuid() == 0:
+        pytest.skip("root writes anywhere")
+    logs: list[str] = []
+    events = MagicMock()
+    events.path = Path("/x/sessions/runs/run-a/logs.jsonl")
+    wf = Workflow(
+        chain=RunChain(Path("/tmp")),
+        config=Config.model_validate({}),
+        provider=MagicMock(),
+        dispatcher=MagicMock(),
+        logger=logs.append,
+        state_dir=tmp_path,
+        events=events,
+    )
+    state = _state()
+    state.memory = MemoryState(read={"quirk": 1})
+    tmp_path.chmod(stat.S_IRUSR | stat.S_IXUSR)
+    try:
+        end = End(reason="finish_session", summary="done", completed=True, verdict="passed")
+        result = wf._finish(state, end, iteration=1)  # pyright: ignore[reportPrivateUsage]
+    finally:
+        tmp_path.chmod(stat.S_IRWXU)
+    assert result.completed is True
+    assert any("memory use record failed" in line for line in logs)
+    assert not use_path(tmp_path).exists()
