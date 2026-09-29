@@ -30,7 +30,7 @@ from agent6.app._setup import SandboxOverrides
 from agent6.git_ops import chain_ref_for
 from agent6.graph.storage import list_checkpoint_turns, load_graph
 from agent6.harness._chain import RunChain
-from agent6.harness._session_state import SNAPSHOT_VERSION, load_session_snapshot
+from agent6.harness._snapshot import SNAPSHOT_VERSION, load_session_snapshot
 from agent6.harness.loop import (
     Harness,
     LoopState,

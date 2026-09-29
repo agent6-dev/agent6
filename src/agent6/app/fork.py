@@ -69,7 +69,7 @@ from agent6.graph.storage import (
     write_cursor,
     write_node,
 )
-from agent6.harness._session_state import load_session_snapshot
+from agent6.harness._snapshot import load_session_snapshot
 from agent6.paths import state_dir
 from agent6.portable import atomic_write
 from agent6.sandbox.detect import resolve_isolation

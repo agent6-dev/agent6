@@ -95,7 +95,7 @@ CONTRACTS: tuple[Contract, ...] = (
     ),
     Contract(
         title="SessionSnapshot",
-        module="agent6.harness._session_state",
+        module="agent6.harness._snapshot",
         primary=("SessionSnapshot",),
         writers=("harness/loop.py",),
         pins=("tests/unit/data/golden_loop_wire.json",),

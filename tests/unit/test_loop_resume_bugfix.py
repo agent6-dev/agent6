@@ -26,7 +26,7 @@ from agent6.harness._conversation import Conversation
 from agent6.harness._metric import MetricGuard
 from agent6.harness._metric import MetricSample as _MetricSample
 from agent6.harness._provider_call import CallSettings
-from agent6.harness._session_state import (
+from agent6.harness._snapshot import (
     SNAPSHOT_VERSION,
     SessionSnapshot,
     load_session_snapshot,
@@ -195,7 +195,7 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path)
     on tool turns, so a stop after a prose answer left loop_state.json at the
     PRE-call snapshot: resume re-paid the provider call and the nudge never
     existed in the resumed history."""
-    from agent6.harness._session_state import SessionResult
+    from agent6.harness._snapshot import SessionResult
     from agent6.providers import ProviderResponse
 
     repo = tmp_path / "repo"
@@ -540,7 +540,7 @@ def test_resume_start_carries_the_execution_identity(tmp_path: Path) -> None:
     mode like session.start so the execution's log identifies itself (the manifest owns
     the task). An identity-less execution log left every fold empty and each consumer
     patching its own copy."""
-    from agent6.harness._session_state import SessionSnapshot as _Snap
+    from agent6.harness._snapshot import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
@@ -1197,7 +1197,7 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(tmp_path: 
     verify command between executions swaps what judges the work while the
     instructions still name the old gate, so the worker runs one command and is
     graded on another. Silence there is the worst case: it looks like it worked."""
-    from agent6.harness._session_state import SessionSnapshot as _Snap
+    from agent6.harness._snapshot import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
@@ -1273,7 +1273,7 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: Path) -> None
     """A gateless run adopts a verify command at its first commit; a resumed
     execution started with nothing adopted, so the swap notice named the gate as
     lost and the run re-adopted it one commit later."""
-    from agent6.harness._session_state import SessionSnapshot as _Snap
+    from agent6.harness._snapshot import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
@@ -1358,7 +1358,7 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Pat
 
     from agent6.git_ops import chain_commit, chain_tip
     from agent6.git_ops import status as git_status
-    from agent6.harness._session_state import SessionSnapshot
+    from agent6.harness._snapshot import SessionSnapshot
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -1412,7 +1412,7 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(tmp_path: 
     config, and the resume told the worker the gate "changed between executions ...
     now `none`" over a gate the execution withheld, not swapped. No notice and no
     swap event: no command can run, that one included."""
-    from agent6.harness._session_state import SessionSnapshot as _Snap
+    from agent6.harness._snapshot import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)

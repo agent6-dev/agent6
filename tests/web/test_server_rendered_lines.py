@@ -23,8 +23,8 @@ from agent6.ui.cli import main
 from agent6.ui.web.page import PAGE_HTML
 from agent6.viewmodel.format import budget_usd_text
 from agent6.viewmodel.listing import summarize_session_dir, summary_row
-from agent6.viewmodel.snapshot import machine_snapshot, session_snapshot
 from agent6.viewmodel.state import task_tree_views
+from agent6.viewmodel.wire import machine_snapshot, session_snapshot
 
 ROUTER = """
 machine = "router"

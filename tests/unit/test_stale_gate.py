@@ -10,7 +10,7 @@ from contextlib import redirect_stdout
 import pytest
 
 from agent6.app.reporter import STDIO_REPORTER
-from agent6.harness._session_state import SessionResult
+from agent6.harness._snapshot import SessionResult
 from agent6.tools.results import FinishSessionResult
 from agent6.viewmodel.listing import status_word
 

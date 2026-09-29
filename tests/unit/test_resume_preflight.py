@@ -18,7 +18,7 @@ import agent6.app._session as session_mod
 import agent6.app._setup as setup_mod
 import agent6.app.preflight as preflight_mod
 import agent6.app.resume as resume_mod
-from agent6.harness._session_state import SNAPSHOT_VERSION
+from agent6.harness._snapshot import SNAPSHOT_VERSION
 from agent6.paths import state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
@@ -419,7 +419,7 @@ def test_a_resume_startup_failure_keeps_the_crash_replay_marker(
     failure made the next attempt replay the crashed turn's tools without warning."""
     from unittest.mock import MagicMock
 
-    from agent6.harness._session_state import (
+    from agent6.harness._snapshot import (
         TURN_IN_FLIGHT_NAME,
         read_turn_marker,
         write_turn_marker,

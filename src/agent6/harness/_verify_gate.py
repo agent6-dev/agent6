@@ -32,7 +32,7 @@ from agent6.harness._nudges import (
     verify_did_not_run,
     verify_failure_signature,
 )
-from agent6.harness._session_state import Verification
+from agent6.harness._snapshot import Verification
 from agent6.harness._verify_verdict import VerifyVerdict
 from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
 from agent6.tools.results import ExecResult

@@ -24,7 +24,7 @@ from agent6.app.frontend import FrontendCapabilities
 from agent6.app.reporter import Reporter
 from agent6.config import Config
 from agent6.events import EventSink
-from agent6.harness._session_state import SNAPSHOT_VERSION
+from agent6.harness._snapshot import SNAPSHOT_VERSION
 from agent6.harness.loop import SessionResult
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.acp.frontend import acp_frontend

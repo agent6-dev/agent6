@@ -69,7 +69,7 @@ from agent6.git_ops import (
     verify_git_identity,
 )
 from agent6.harness._context import agents_md_notices
-from agent6.harness._session_state import (
+from agent6.harness._snapshot import (
     TURN_IN_FLIGHT_NAME,
     clear_turn_marker,
     load_session_snapshot,

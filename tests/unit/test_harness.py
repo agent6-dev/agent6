@@ -38,7 +38,7 @@ from agent6.harness._provider_call import (
 )
 from agent6.harness._quiet_turns import QuietGuard
 from agent6.harness._review import Reviewer, ReviewSettings
-from agent6.harness._session_state import SNAPSHOT_VERSION, End
+from agent6.harness._snapshot import SNAPSHOT_VERSION, End
 from agent6.harness._steer import OperatorBridge
 from agent6.harness._verify_verdict import VerifyVerdict
 from agent6.harness.loop import Harness, LoopState, TurnState
@@ -1331,7 +1331,7 @@ class _OneShotSteer:
 
 
 def _resume_snapshot(**kw: Any) -> Any:
-    from agent6.harness._session_state import SessionSnapshot
+    from agent6.harness._snapshot import SessionSnapshot
 
     defaults: dict[str, Any] = {
         "system": "system",
@@ -5164,7 +5164,7 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     """The snapshot stores the run's resolved verify_command so resume reuses it
     rather than re-inferring (which could diverge from the frozen prompt). A
     gateless run stores [] and loads back as ()."""
-    from agent6.harness._session_state import load_session_snapshot
+    from agent6.harness._snapshot import load_session_snapshot
 
     snap = tmp_path / "loop_state.json"
     config = SimpleNamespace(
@@ -5257,7 +5257,7 @@ def test_run_result_docstring_enumerates_every_loop_reason() -> None:
 
     import agent6.harness._guards as guardsmod
     import agent6.harness.loop as loopmod
-    from agent6.harness._session_state import SessionResult
+    from agent6.harness._snapshot import SessionResult
 
     reasons: set[str] = set()
     source = inspect.getsource(loopmod) + inspect.getsource(guardsmod)
@@ -7596,7 +7596,7 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: Pat
     the dispatch->snapshot window leaves it at the re-run iteration for resume
     to ask about) and gone once the after-tools snapshot advanced (a clean
     turn leaves nothing; a later resume never falsely prompts)."""
-    from agent6.harness._session_state import TURN_IN_FLIGHT_NAME, read_turn_marker
+    from agent6.harness._snapshot import TURN_IN_FLIGHT_NAME, read_turn_marker
 
     marker = tmp_path / TURN_IN_FLIGHT_NAME
     seen: list[tuple[int, tuple[str, ...]] | None] = []
@@ -7665,7 +7665,7 @@ def test_the_old_crash_marker_survives_the_replayed_provider_call(tmp_path: Path
     marker; nothing clears it earlier. Cleared before the provider call, a crash
     inside that call made the next resume replay the turn silently, and the
     original turn's tool effects may already stand."""
-    from agent6.harness._session_state import (
+    from agent6.harness._snapshot import (
         TURN_IN_FLIGHT_NAME,
         SessionSnapshot,
         read_turn_marker,
@@ -7710,7 +7710,7 @@ def test_turn_replay_allowed_marker_semantics(tmp_path: Path) -> None:
     preflight refusal replayed the turn on the next attempt with no warning,
     and its tools' side effects happened twice."""
     from agent6.app.resume import turn_replay_allowed
-    from agent6.harness._session_state import TURN_IN_FLIGHT_NAME, write_turn_marker
+    from agent6.harness._snapshot import TURN_IN_FLIGHT_NAME, write_turn_marker
 
     marker = tmp_path / TURN_IN_FLIGHT_NAME
     asked: list[tuple[int, tuple[str, ...]]] = []

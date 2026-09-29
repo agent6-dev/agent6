@@ -29,7 +29,7 @@ from agent6.harness._guards import (
 )
 from agent6.harness._metric import MetricGuard, MetricSample
 from agent6.harness._quiet_turns import QuietGuard
-from agent6.harness._session_state import SessionSnapshot
+from agent6.harness._snapshot import SessionSnapshot
 from agent6.harness._spiral_guards import SpiralGuard
 from agent6.harness._verify_verdict import VerifyVerdict
 from agent6.providers import ProviderResponse

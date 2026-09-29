@@ -20,7 +20,7 @@ from agent6.app.finalize import print_interrupt_end, print_session_end
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.git_ops import GitStatus
-from agent6.harness._session_state import SessionResult
+from agent6.harness._snapshot import SessionResult
 from agent6.sessions.layout import SessionLayout
 
 

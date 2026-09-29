@@ -146,7 +146,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
 
     from agent6.app import finalize
     from agent6.budget import BudgetTracker
-    from agent6.harness._session_state import SessionResult
+    from agent6.harness._snapshot import SessionResult
 
     rd = tmp_path / "sessions" / "runs" / "r1"
     rd.mkdir(parents=True)

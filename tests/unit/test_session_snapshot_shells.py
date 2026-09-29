@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent6.viewmodel.snapshot import session_snapshot
+from agent6.viewmodel.wire import session_snapshot
 
 
 def test_session_snapshot_carries_the_shell_roster(tmp_path: Path) -> None:

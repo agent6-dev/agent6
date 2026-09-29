@@ -15,7 +15,7 @@ from agent6.config import Config
 from agent6.harness._chain import RunChain
 from agent6.harness._conversation import AssistantTurn
 from agent6.harness._guards import MemoryState
-from agent6.harness._session_state import End
+from agent6.harness._snapshot import End
 from agent6.harness.loop import Harness, LoopState, TurnState
 from agent6.memory import memory_dir, read_use, record_use, use_path
 from agent6.tools.results import EditResult, PatchResult, ReadFileResult
@@ -229,7 +229,7 @@ def test_a_resumed_execution_starts_its_own_count_with_the_nudge_flags_carried()
     """The nudge flags are run-lifetime (the snapshot); the touched facts are
     execution-local: a resumed execution records only what it touches itself."""
     from agent6.harness._loop_state import restore_completion_state
-    from agent6.harness._session_state import SessionSnapshot
+    from agent6.harness._snapshot import SessionSnapshot
 
     snap = SessionSnapshot(
         system="s",

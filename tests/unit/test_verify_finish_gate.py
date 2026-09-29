@@ -21,7 +21,7 @@ from agent6.harness._finish_gates import (
     red_gate_returns,
     verify_finish,
 )
-from agent6.harness._session_state import End
+from agent6.harness._snapshot import End
 from agent6.harness._verify_verdict import VerifyVerdict
 from agent6.harness.loop import (
     Harness,
@@ -276,7 +276,7 @@ def _git_seed(tmp_path: Path) -> str:
 
 
 def _snap(**kw: Any) -> Any:
-    from agent6.harness._session_state import SessionSnapshot
+    from agent6.harness._snapshot import SessionSnapshot
 
     base: dict[str, Any] = {
         "system": "s",

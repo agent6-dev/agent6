@@ -72,7 +72,7 @@ from agent6.viewmodel.format import (
     winner_id,
 )
 from agent6.viewmodel.listing import ListingRow, nested_rows, row_json
-from agent6.viewmodel.snapshot import commits_ref
+from agent6.viewmodel.wire import commits_ref
 
 
 def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:

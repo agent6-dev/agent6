@@ -16,7 +16,7 @@ Layout:
     transcript_render.py fold + Markdown render of the per-call provider transcripts.
     listing.py           run-dir scan -> SessionSummary rows (sessions list / pickers).
     log_line.py          one-line renderings of an event for the log views.
-    snapshot.py          the one-object wire snapshots (a session's, a machine's).
+    wire.py              the one-object wire snapshots (a session's, a machine's).
     policy.py            a session's policy facts, folded from its dir.
     format.py            shared glyphs + cost/status formatting.
     config_view.py       effective-config tree -> the `config show` view.
@@ -80,14 +80,6 @@ from agent6.viewmodel.machine_state import (
     verb_answer,
 )
 from agent6.viewmodel.policy import session_policy
-from agent6.viewmodel.snapshot import (
-    UnknownStepError,
-    existing_run_branch,
-    machine_snapshot,
-    manifest_branches,
-    manifest_header,
-    session_snapshot,
-)
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     ApprovalPrompt,
@@ -117,6 +109,14 @@ from agent6.viewmodel.transcript import (
     restate,
     salient_arg,
     worker_models,
+)
+from agent6.viewmodel.wire import (
+    UnknownStepError,
+    existing_run_branch,
+    machine_snapshot,
+    manifest_branches,
+    manifest_header,
+    session_snapshot,
 )
 
 __all__ = [

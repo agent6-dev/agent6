@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from agent6.harness._advice import Gate, Refusal, TurnContext
 from agent6.harness._metric import metric_early_finish
 from agent6.harness._nudges import MEMORY_FINISH_NUDGE, TASK_FINISH_PATIENCE
-from agent6.harness._session_state import SessionEndReason
+from agent6.harness._snapshot import SessionEndReason
 from agent6.harness._verify_gate import finish_red_notice
 from agent6.harness._verify_verdict import VerifyVerdict
 from agent6.tools.schema import FinishPlanningInput, FinishSessionInput

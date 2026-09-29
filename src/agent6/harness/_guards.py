@@ -60,7 +60,7 @@ from agent6.harness._nudges import (
     loop_guard_words,
     unreachable_tool_notice,
 )
-from agent6.harness._session_state import End
+from agent6.harness._snapshot import End
 from agent6.tools.results import ExecResult, ToolResult
 
 if TYPE_CHECKING:

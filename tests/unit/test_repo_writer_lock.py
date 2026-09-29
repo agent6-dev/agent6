@@ -505,7 +505,7 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     in-process editor server; later runs must not wait for a process restart."""
     from agent6.app import resume as resume_mod
     from agent6.app._execution import ExecutionEnd
-    from agent6.harness._session_state import SessionSnapshot
+    from agent6.harness._snapshot import SessionSnapshot
 
     state = state_dir(repo)
     layout = SessionLayout(state_dir=state, session_id="run-RTD")
@@ -677,7 +677,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     from agent6.app import _execution as execution_mod
     from agent6.app import resume as resume_mod
     from agent6.app._execution import ExecutionInputs, ExecutionEnd
-    from agent6.harness._session_state import SessionSnapshot
+    from agent6.harness._snapshot import SessionSnapshot
     from agent6.secrets import save_secret
     from agent6.sessions.layout import read_untracked_at_start
 

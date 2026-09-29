@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.graph.models import TaskNode, owner_note
 from agent6.graph.order import OPEN_STATUSES
-from agent6.harness._session_state import End
+from agent6.harness._snapshot import End
 
 if TYPE_CHECKING:
     from agent6.harness._loop_state import LoopState, TurnState

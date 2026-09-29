@@ -37,7 +37,7 @@ from agent6.git_ops import (
 from agent6.graph.storage import (
     list_checkpoint_turns,
 )
-from agent6.harness._session_state import SessionSnapshot, load_session_snapshot
+from agent6.harness._snapshot import SessionSnapshot, load_session_snapshot
 from agent6.paths import state_dir
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import (

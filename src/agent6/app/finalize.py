@@ -42,7 +42,7 @@ from agent6.sessions.manifest import ManifestError, SessionManifest, read_manife
 from agent6.verify_infer import line_to_argv
 from agent6.viewmodel import scan_session_log, summarize_session_dir, tail_events, worker_models
 from agent6.viewmodel.format import format_usd, status_label
-from agent6.viewmodel.snapshot import commits_ref
+from agent6.viewmodel.wire import commits_ref
 
 # Distinct exit code for a budget-exhausted run so automation can tell "raise
 # the cap and `agent6 resume`" apart from a genuine failure. Documented in
