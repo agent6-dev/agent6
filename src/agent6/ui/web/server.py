@@ -1,17 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `agent6 web` server: a stdlib HTTP front-end over the shared read-side.
+"""Serve the web page and its JSON and SSE endpoints from a stdlib threading server.
 
-Serves web.page to a browser, fed by:
-  - plain GET JSON endpoints (the same wire form as `agent6 attach --json`), and
-  - SSE (`text/event-stream`) streams that re-fold logs.jsonl / the machine
-    journal on each change and push a fresh snapshot.
-
-Uses the stdlib `http.server.ThreadingHTTPServer`. Binds loopback by default; a
-non-loopback bind is opt-in (see the `[web]` config section) and widens the
-inbound network surface. The server only ever renders folded read-state and
-drives the typed `agent6.sessions.ipc` contracts; it never serves secrets and
-never executes arbitrary input.
+The GET endpoints return the wire form `agent6 attach --json` prints; the SSE streams
+push a fresh snapshot on each change. The server binds loopback by default (a
+non-loopback bind is opt-in under `[web]`), renders folded read state, drives the
+`agent6.sessions.ipc` contracts, serves no secret and executes no arbitrary input.
 """
 
 from __future__ import annotations
@@ -54,20 +48,19 @@ from agent6.viewmodel import (
     session_snapshot,
 )
 
-# POST body cap. The typed bodies are a few strings (a task, an answer, a config
-# value); 1 MiB is generous. An uncapped Content-Length would let one request
-# buffer arbitrary bytes in this process.
+# The typed bodies are a few strings; an uncapped Content-Length would buffer arbitrary bytes.
 _MAX_BODY_BYTES = 1 << 20
 
 
-# Typed POST bodies (pydantic only at this HTTP trust boundary; extra keys are
-# rejected so a malformed request fails loudly rather than silently ignoring a
-# misspelled field).
 class _Body(BaseModel):
+    """A typed POST body; an extra key is refused so a misspelled field fails loudly."""
+
     model_config = ConfigDict(extra="forbid")
 
 
 class NewWorkBody(_Body):
+    """The `/api/new` body: a session of `mode` on `task`, under a preset and a model."""
+
     mode: str
     task: str
     preset: str = ""
@@ -75,67 +68,88 @@ class NewWorkBody(_Body):
 
 
 class SteerBody(_Body):
+    """A steer body.
+
+    Attributes:
+        text: The instruction.
+        state: For a machine, the state dir the prompt was rendered from; "" is the newest.
+    """
+
     text: str = ""
-    # For a machine: the per-state dir name the prompt was rendered from, so the
-    # answer routes to that state even if the machine has since advanced. Empty
-    # (the default, and always for a run) routes to the newest state.
     state: str = ""
 
 
 class ApproveBody(_Body):
+    """An approval answer.
+
+    Attributes:
+        id: The prompt's id.
+        answer: The operator's literal choice; what a session answer grants is the
+            asking side's to decide.
+        state: For a machine, the state dir the prompt was rendered from; "" is the newest.
+    """
+
     id: str
-    # The operator's literal choice; what a session answer GRANTS is the asking
-    # side's to decide (agent6.sessions.ipc.record_answer), not this endpoint's.
     answer: Literal["yes", "no", "session", "session-deny"]
     state: str = ""
 
 
 class AnswerBody(_Body):
+    """An `ask_user` answer: one entry per question, by index."""
+
     id: str
-    answers: list[str]  # one per question in the ask_user prompt, by index
+    answers: list[str]
     state: str = ""
 
 
 class MergeBody(_Body):
+    """A merge body; an empty strategy takes the config's."""
+
     strategy: str = ""
 
 
 class PruneBody(_Body):
-    # The CLI's `--delete-squashed`: force-delete a branch the manifest
-    # confirms was squash-merged (the default strategy, so without it a
-    # merged run's branch stays).
+    """A prune body; `delete_squashed` is the CLI's own opt-in flag."""
+
     delete_squashed: bool = False
 
 
 class StopBody(_Body):
-    # True: let the current step finish (its tool results and auto-commit land) first.
+    """A stop body; `after_step` lets the current step's results and auto-commit land."""
+
     after_step: StrictBool = False
 
 
 class ResumeBody(_Body):
-    # The follow-up instruction a finished run is resumed with; empty = plain resume.
+    """A resume body; each empty field means as the run recorded."""
+
     text: str = ""
-    # The config preset and the model the execution continues under; empty = as the
-    # run recorded.
     preset: str = ""
     model: str = ""
 
 
 class MachineCreateBody(_Body):
+    """A `machine create` body."""
+
     task: str
 
 
 class MachineRunBody(_Body):
+    """A `machine run` body naming a listed machine file."""
+
     file: str
 
 
 class MachinePokeBody(_Body):
-    # A JSON `data` payload wins over a `message` string; neither = a bare wake.
+    """A poke body; a JSON `data` payload wins over a `message` string."""
+
     message: str = ""
     data: Any = None
 
 
 class ProviderBody(_Body):
+    """The add-provider form's fields."""
+
     name: str
     api_format: str
     deployment: str = ""
@@ -145,15 +159,16 @@ class ProviderBody(_Body):
 
 
 class ConfigSetBody(_Body):
+    """A config write; `unset` removes the key from the target layer instead."""
+
     key: str
-    value: str = ""  # unused (and unrequired) when unset=True
+    value: str = ""
     repo: bool = False
-    unset: bool = False  # remove the key from the target layer instead of setting it
+    unset: bool = False
 
 
 def _validation_message(exc: ValidationError) -> str:
-    """The failed fields as one line (`task: field required`), not the repr of
-    pydantic's error list."""
+    """Return the failed fields as one line (`task: field required`)."""
     clauses: list[str] = []
     for err in exc.errors():
         field = ".".join(str(part) for part in err["loc"]) or "body"
@@ -163,10 +178,11 @@ def _validation_message(exc: ValidationError) -> str:
 
 
 class WebServer(ThreadingHTTPServer):
-    """A ThreadingHTTPServer that carries the repo cwd its handlers read from,
-    and tracks which runs a browser is actively watching so it can register this
-    process as an answering front-end (a frontends/ claim) only while someone
-    is looking."""
+    """The threading server, carrying the repo its handlers read from.
+
+    It counts the browsers watching each run so the process registers as an
+    answering front-end only while someone is looking.
+    """
 
     daemon_threads = True
     allow_reuse_address = True
@@ -182,19 +198,17 @@ class WebServer(ThreadingHTTPServer):
         self._watch_counts: dict[str, int] = {}
 
     def handle_error(self, request: Any, client_address: Any) -> None:
-        # A client vanishing mid-request (navigate-away, reload, an abandoned
-        # body) raises at the request-line read, outside every handler try;
-        # the stdlib default prints a traceback for each. Real errors keep it.
+        """Keep the stdlib traceback for every error but a client vanishing mid-request."""
         exc = sys.exc_info()[1]
         if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
             return
         super().handle_error(request, client_address)
 
     def claim_session(self, session_dir: Path) -> None:
-        """A browser opened this run's stream: register as an answer front-end
-        so its approval/question/steer prompts bridge here. Reference-counted
-        across concurrent viewers; the claim file is per-process, so other
-        front-ends (TUI, attach) are never displaced."""
+        """Register as the run's answer front-end on its first viewer.
+
+        The claim file is per process, so other front-ends are never displaced.
+        """
         key = str(session_dir)
         with self._pid_lock:
             n = self._watch_counts.get(key, 0)
@@ -203,10 +217,11 @@ class WebServer(ThreadingHTTPServer):
             self._watch_counts[key] = n + 1
 
     def release_session(self, session_dir: Path) -> None:
-        """The last browser watching this run went away: drop our own claim so
-        the run falls back to its headless behaviour instead of blocking on
-        answers no one gives. The count transition and the claim change share
-        the lock so a concurrent claim_session cannot interleave."""
+        """Drop the claim when the run's last viewer leaves.
+
+        The count and the claim change under one lock, so a concurrent claim cannot
+        interleave.
+        """
         key = str(session_dir)
         with self._pid_lock:
             n = self._watch_counts.get(key, 1) - 1
@@ -218,11 +233,13 @@ class WebServer(ThreadingHTTPServer):
 
 
 class _IPv6WebServer(WebServer):
+    """The server bound to an IPv6 literal."""
+
     address_family = socket.AF_INET6
 
 
 def _bind_host(host: str) -> str:
-    """Normalize URL-style bracketed IPv6 literals to socket bind addresses."""
+    """Return the socket bind address for a host, unbracketing an IPv6 literal."""
     stripped = host.strip()
     if stripped.startswith("[") and stripped.endswith("]"):
         return stripped[1:-1]
@@ -230,6 +247,7 @@ def _bind_host(host: str) -> str:
 
 
 def _is_ipv6_literal(host: str) -> bool:
+    """Return whether the host is an IPv6 literal."""
     try:
         return ip_address(_bind_host(host)).version == 6
     except ValueError:
@@ -237,7 +255,8 @@ def _is_ipv6_literal(host: str) -> bool:
 
 
 def _display_host(host: str) -> str:
-    if host == "0.0.0.0":  # noqa: S104 - display only
+    """Return the host as a browser can open it; a wildcard bind shows loopback."""
+    if host == "0.0.0.0":  # noqa: S104  # display only
         return "127.0.0.1"
     if host == "::":
         return "[::1]"
@@ -247,36 +266,44 @@ def _display_host(host: str) -> str:
 def _create_web_server(
     host: str, port: int, cwd: Path, target: str, config_path: Path | None = None
 ) -> WebServer:
+    """Return a server bound to the host and port, IPv6 when the host is an IPv6 literal."""
     bind_host = _bind_host(host)
     server_cls: type[WebServer] = _IPv6WebServer if _is_ipv6_literal(bind_host) else WebServer
     return server_cls((bind_host, port), cwd, target, config_path)
 
 
 class _Handler(BaseHTTPRequestHandler):
+    """One request's handler."""
+
     _streaming = False  # the SSE headers went out; an error is a frame now
     _body_length = 0  # this request's Content-Length, parsed once per request
     protocol_version = "HTTP/1.1"
     server: WebServer  # type: ignore[assignment]
 
-    def log_message(self, format: str, *args: Any) -> None:  # match the stdlib signature
-        pass  # quiet; this is not a logging server
+    def log_message(self, format: str, *args: Any) -> None:
+        """Log nothing; the signature is the stdlib's."""
 
     @property
     def cwd(self) -> Path:
+        """The repository the server reads."""
         return self.server.cwd
 
     @property
     def config_path(self) -> Path | None:
+        """The explicit config file, or None."""
         return self.server.config_path
 
     # -- routing --------------------------------------------------------------
 
     def _parse_body_length(self) -> bool:
-        """Parse this request's one Content-Length into `_body_length`, or send
-        400 and close the connection. Two values, or one that is not a plain
-        decimal (`1_0`, `+2`, non-ASCII digits all pass `int()`), leave the
-        framing ambiguous: a body read under one reading parses under another
-        as the next request."""
+        """Parse the request's one Content-Length, or send 400 and close the connection.
+
+        Two values, or one that is not a plain decimal (`1_0`, `+2` and non-ASCII
+        digits pass `int()`), leave the framing ambiguous.
+
+        Returns:
+            Whether the header parsed.
+        """
         lengths = self.headers.get_all("Content-Length", [])
         raw = "0" if not lengths else (lengths[0].strip() if len(lengths) == 1 else "")
         if not (raw.isascii() and raw.isdigit()):
@@ -286,13 +313,13 @@ class _Handler(BaseHTTPRequestHandler):
         self._body_length = int(raw)
         return True
 
-    def do_GET(self) -> None:  # BaseHTTPRequestHandler dispatch contract (method name fixed)
+    def do_GET(self) -> None:
+        """Route a GET; the method name is the stdlib's dispatch contract."""
         path = unquote(urlsplit(self.path).path)
         if not self._parse_body_length():
             return
         if self._body_length:
-            # A GET body is never read, so on a keep-alive connection it would
-            # parse as the next request.
+            # A GET body is never read; on keep-alive it would parse as the next request.
             self.close_connection = True
             self._send_json({"error": "a GET carries no body"}, status=400)
             return
@@ -300,31 +327,28 @@ class _Handler(BaseHTTPRequestHandler):
             self._route(path)
         except (BrokenPipeError, ConnectionResetError):
             pass  # client went away mid-response
-        except Exception as exc:  # never take the whole server down for one bad request
+        except Exception as exc:  # one bad request never takes the server down
             if self._streaming:
-                # The 200 and the event-stream headers are on the wire: a second
-                # status line would land inside the event body.
+                # The status line went out; a second one would land inside the event body.
                 self._sse_send({"type": "error", "error": str(exc)})
             else:
                 self._send_json({"error": str(exc)}, status=500)
 
-    def do_POST(self) -> None:  # BaseHTTPRequestHandler dispatch contract (method name fixed)
+    def do_POST(self) -> None:
+        """Route a POST; the method name is the stdlib's dispatch contract."""
         path = unquote(urlsplit(self.path).path)
-        # Parsed first: the CSRF check and the body reader read this value, so
-        # a bad header meets one refusal before anything is read.
+        # Parsed first: a bad header meets one refusal before anything is read.
         if not self._parse_body_length():
             return
         try:
             csrf_err = self._csrf_refusal()
             if csrf_err is not None:
-                # Close the connection rather than drain an unread body under
-                # HTTP/1.1 keep-alive (a partial read would desync framing).
+                # Closing beats draining an unread body: a partial read desyncs the framing.
                 self.close_connection = True
                 self._send_json({"error": csrf_err}, status=403)
                 return
             if self.headers.get("Transfer-Encoding"):
-                # Only Content-Length bodies are read; a chunked body would sit
-                # unread on the connection like the early-error cases below.
+                # Only Content-Length bodies are read; a chunked one would sit unread.
                 self.close_connection = True
                 self._send_json({"error": "chunked bodies are not supported"}, status=411)
                 return
@@ -336,42 +360,27 @@ class _Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
         except ValidationError as exc:
-            # The body was read (validation runs on the parsed body), so the
-            # connection framing is intact and may stay open.
+            # The body was read, so the framing is intact and the connection may stay open.
             self._send_json({"error": _validation_message(exc)}, status=400)
         except ValueError as exc:
-            # A body that is not JSON, or not an object: `_read_body` consumed
-            # it, so the connection may stay open too.
+            # Not JSON or not an object; the body was consumed, so the connection may stay open.
             self._send_json({"error": f"bad request: {exc}"}, status=400)
-        except Exception as exc:  # never take the whole server down for one bad request
-            # The body may not have been read; a keep-alive reuse would parse the
-            # leftover bytes as the next request line. Close instead.
+        except Exception as exc:  # one bad request never takes the server down
+            # The body may be unread; a keep-alive reuse would parse it as the next request.
             self.close_connection = True
             self._send_json({"error": str(exc)}, status=500)
 
     def _csrf_refusal(self) -> str | None:
-        """Reason to refuse this state-changing POST as cross-site, or None.
+        """Return the reason to refuse this POST as cross-site, or None.
 
-        The web UI has no app-level auth: on the default loopback bind the
-        machine is the trust boundary (any local process/user reaches
-        127.0.0.1, so a shared box is not confined here), behind `tailscale
-        serve` the tailnet is. Neither stops a page on another origin in the
-        operator's browser from POSTing here (classic CSRF). Two standard,
-        deployment-agnostic checks close it:
-
-        - Require `Content-Type: application/json` for a body. A cross-site
-          `fetch` with that type is not a CORS "simple request", so the
-          browser sends a preflight we never answer and the POST is blocked.
-          This shuts the hole where a JSON body rides in as `text/plain`.
-        - If an `Origin` is present, its host:port must equal `Host`. Our own
-          page matches; a cross-site page (Origin: https://evil.example) does
-          not. A missing Origin (curl, the CLI) is allowed: not browser-driven,
-          so not a CSRF vector.
-
-        Residual: DNS rebinding (an attacker page rebinds its own hostname to
-        127.0.0.1 so its request is same-origin) is not covered here; a Host
-        allow-list would break the tailnet-hostname `tailscale serve` path, so
-        that vector is left to the network layer."""
+        The UI has no app-level auth: the machine (loopback) or the tailnet is the
+        trust boundary, and neither stops a page on another origin from POSTing
+        here. Two checks close it: a body must be `application/json` (a cross-site
+        fetch with that type needs a preflight this server never answers), and a
+        present `Origin` must match `Host` (a missing one is not browser-driven).
+        DNS rebinding is left to the network layer: a Host allow-list would break
+        `tailscale serve`.
+        """
         if self._body_length > 0:
             ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
             if ctype != "application/json":
@@ -384,6 +393,14 @@ class _Handler(BaseHTTPRequestHandler):
         return None
 
     def _read_body(self) -> dict[str, Any]:
+        """Read the request body as a JSON object.
+
+        Returns:
+            The object; empty for an empty body.
+
+        Raises:
+            ValueError: The body is not a JSON object.
+        """
         n = self._body_length
         raw = self.rfile.read(n) if n > 0 else b""
         if not raw:
@@ -394,8 +411,8 @@ class _Handler(BaseHTTPRequestHandler):
         return obj
 
     def _route_post(self, path: str) -> None:  # noqa: PLR0911
+        """Dispatch a POST by path."""
         parts = path.strip("/").split("/")
-        # /api/new  /api/sessions/prune  /api/config  /api/machine/create  /api/machine/run
         if path == "/api/new":
             body = NewWorkBody.model_validate(self._read_body())
             session_dir, err = spawn_new_work(
@@ -410,7 +427,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._ok_or_err(session_id is not None, {"session_id": session_id}, err)
             return
         if path == "/api/sessions/rm_asks":
-            self._read_body()  # drain the `{}` body (keep-alive framing)
+            self._read_body()  # drains the body for keep-alive framing
             ok, msg = actions.remove_asks(self.cwd, self.config_path)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
@@ -456,25 +473,23 @@ class _Handler(BaseHTTPRequestHandler):
             ok, msg = actions.spawn_machine_run(self.cwd, body.file, self.config_path)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
-        # /api/session/<id>/<verb>
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "session":
             self._route_session_post(parts[2], parts[3])
             return
-        # /api/machine/<name>/<verb>
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "machine":
             self._route_machine_post(parts[2], parts[3])
             return
         self._post_not_found(f"not found: {path}")
 
     def _post_not_found(self, message: str) -> None:
-        """404 for a POST whose body was never read: close the connection so the
-        unread body cannot be parsed as the next request on keep-alive."""
+        """Send 404 for a POST whose body was never read, closing the connection."""
         self.close_connection = True
         self._send_json({"error": message}, status=404)
 
     def _route_session_post(self, session_id: str, verb: str) -> None:
+        """Dispatch `/api/session/<id>/<verb>`."""
         if model.session_dir_for(self.cwd, session_id) is None:
-            self._post_not_found(f"no session {session_id!r}")  # as its GET answers
+            self._post_not_found(f"no session {session_id!r}")
             return
         if verb == "steer":
             body = SteerBody.model_validate(self._read_body())
@@ -491,7 +506,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self.cwd, session_id, mb.strategy, config_path=self.config_path
             )
         elif verb in ("undo", "fork"):
-            self._read_body()  # no parameters; drain the (empty) body
+            self._read_body()
             payload, err = (
                 actions.undo_session(self.cwd, session_id)
                 if verb == "undo"
@@ -513,13 +528,13 @@ class _Handler(BaseHTTPRequestHandler):
             sb = StopBody.model_validate(self._read_body())
             ok, msg = actions.stop_run(self.cwd, session_id, after_step=sb.after_step)
         elif verb == "compact":
-            self._read_body()  # drain the `{}` body (keep-alive framing)
+            self._read_body()
             ok, msg = actions.compact_run(self.cwd, session_id)
         elif verb == "rm":
-            self._read_body()  # drain the `{}` body (keep-alive framing)
+            self._read_body()
             ok, msg = actions.remove_session(self.cwd, session_id, self.config_path)
         elif verb in ("run_plan", "review"):
-            self._read_body()  # drain the `{}` body (keep-alive framing)
+            self._read_body()
             act = actions.run_plan if verb == "run_plan" else actions.review_run
             payload, err = act(self.cwd, session_id, self.config_path)
             self._ok_or_err(payload is not None, payload or {}, err)
@@ -530,14 +545,15 @@ class _Handler(BaseHTTPRequestHandler):
         self._ok_or_err(ok, {"message": msg}, msg)
 
     def _route_machine_post(self, name: str, verb: str) -> None:
+        """Dispatch `/api/machine/<name>/<verb>`."""
         if model.machine_dir_for(self.cwd, name) is None:
-            self._post_not_found(f"no machine {name!r}")  # as its GET answers
+            self._post_not_found(f"no machine {name!r}")
             return
         if verb == "poke":
             pb = MachinePokeBody.model_validate(self._read_body())
             ok, msg = actions.machine_poke(self.cwd, name, data=pb.data, message=pb.message)
         elif verb == "stop":
-            self._read_body()  # drain the `{}` body (keep-alive framing)
+            self._read_body()
             ok, msg = actions.machine_stop(self.cwd, name)
         elif verb == "steer":
             body = SteerBody.model_validate(self._read_body())
@@ -554,14 +570,14 @@ class _Handler(BaseHTTPRequestHandler):
         self._ok_or_err(ok, {"message": msg}, msg)
 
     def _ok_or_err(self, ok: bool, payload: dict[str, Any], err: str) -> None:
+        """Send the payload under `ok`, or the error as 422."""
         if ok:
             self._send_json({"ok": True, **payload})
         else:
             self._send_json({"ok": False, "error": err}, status=422)
 
     def _send_routes(self) -> None:
-        """`/api/routes?mode=&preset=`: the composer's model box (see
-        `model.routes_payload`); a mode no operator starts is refused."""
+        """Send `/api/routes?mode=&preset=`, the composer's model box; an unknown mode is 422."""
         q = parse_qs(urlsplit(self.path).query)
         mode = (q.get("mode") or ["run"])[0]
         if mode not in OPERATOR_MODES:
@@ -574,6 +590,7 @@ class _Handler(BaseHTTPRequestHandler):
         )
 
     def _route(self, path: str) -> None:  # noqa: PLR0911, PLR0912
+        """Dispatch a GET by path."""
         if path == "/":
             self._send_bytes(PAGE_HTML.encode("utf-8"), "text/html; charset=utf-8")
             return
@@ -605,8 +622,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_routes()
             return
         if path in ("/api/config", "/api/config/provider_choices"):
-            # The add-provider form's fixed choices and name presets come from
-            # the schema the TUI form reads.
+            # The add-provider form's choices come from the schema the TUI form reads.
             self._send_json(
                 model.config_payload(self.cwd, self.config_path)
                 if path == "/api/config"
@@ -618,24 +634,23 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"values": model.config_suggestions(self.cwd, key, self.config_path)})
             return
         parts = path.strip("/").split("/")
-        # /api/session/<id>[/conversation|/restate|/diff|/resume_defaults|/events]
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "session":
             self._route_session(parts[2], parts[3] if len(parts) > 3 else "")
             return
-        # /api/machine/<name>[/reasoning|/conversation|/events]
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "machine":
             self._route_machine(parts[2], parts[3] if len(parts) > 3 else "")
             return
-        # /api/draft/<name>[/events]: a `machine create` draft, watched as a run.
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "draft":
             self._route_draft(parts[2], parts[3] if len(parts) > 3 else "")
             return
         self._send_json({"error": f"not found: {path}"}, status=404)
 
     def _target_kind(self) -> str:
-        """Which view the CLI-given target deep-links to (session / draft / machine),
-        or "" when there is no target or it matches nothing. Resolved per request,
-        so a target that appears after startup still resolves."""
+        """Return the view the CLI target deep-links to, resolved per request.
+
+        Returns:
+            "session", "draft" or "machine", or "" with no target or no match.
+        """
         t = self.server.target
         if not t:
             return ""
@@ -648,6 +663,7 @@ class _Handler(BaseHTTPRequestHandler):
         return ""
 
     def _route_draft(self, name: str, sub: str) -> None:
+        """Dispatch `/api/draft/<name>[/<sub>]`, a `machine create` draft watched as a run."""
         draft_dir = model.draft_dir_for(self.cwd, name)
         if draft_dir is None:
             self._send_json({"error": f"no draft {name!r}"}, status=404)
@@ -661,7 +677,6 @@ class _Handler(BaseHTTPRequestHandler):
         elif sub == "conversation":
             self._send_json(model.conversation_payload(draft_dir))
         elif sub == "diff":
-            # The draft's commits live in its drafting workspace, not the repo.
             q = parse_qs(urlsplit(self.path).query)
             workspace = model.draft_workspace(self.cwd, name, self.config_path)
             if workspace is None:
@@ -683,6 +698,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"error": f"not found: draft/{name}/{sub}"}, status=404)
 
     def _route_session(self, session_id: str, sub: str) -> None:
+        """Dispatch `/api/session/<id>[/<sub>]`."""
         session_dir = model.session_dir_for(self.cwd, session_id)
         if session_dir is None:
             self._send_json({"error": f"no session {session_id!r}"}, status=404)
@@ -722,6 +738,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"error": f"not found: /api/session/{session_id}/{sub}"}, status=404)
 
     def _route_machine(self, name: str, sub: str) -> None:
+        """Dispatch `/api/machine/<name>[/<sub>]`."""
         machine_dir = model.machine_dir_for(self.cwd, name)
         if machine_dir is None:
             self._send_json({"error": f"no machine {name!r}"}, status=404)
@@ -743,18 +760,19 @@ class _Handler(BaseHTTPRequestHandler):
     # -- plain responses ------------------------------------------------------
 
     def _send_json(self, payload: Any, *, status: int = 200) -> None:
+        """Send a JSON response."""
         self._send_bytes(
             json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8", status=status
         )
 
     def _send_bytes(self, body: bytes, ctype: str, *, status: int = 200) -> None:
+        """Send one uncached response."""
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         if self.close_connection:
-            # Announce the close (CSRF refusal, unread POST body): without the
-            # header a keep-alive client reuses the socket this handler is about to shut.
+            # Without the header a keep-alive client reuses the socket about to shut.
             self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
@@ -762,21 +780,22 @@ class _Handler(BaseHTTPRequestHandler):
     # -- SSE ------------------------------------------------------------------
 
     def _begin_sse(self) -> None:
-        # Close-framed, not keep-alive: an SSE body has no Content-Length, so the
-        # socket closing is what tells the client the stream ended (and lets a
-        # finished run's EventSource stop). close_connection makes the handler
-        # close the socket when the stream loop returns.
+        """Send the event-stream headers; the socket closing is what ends the stream."""
         self.close_connection = True
         self._streaming = True
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "close")
-        self.send_header("X-Accel-Buffering", "no")  # tell any proxy not to buffer SSE
+        self.send_header("X-Accel-Buffering", "no")  # a proxy must not buffer the stream
         self.end_headers()
 
     def _sse_send(self, obj: Any) -> bool:
-        """Write one SSE data frame. Returns False if the client has gone away."""
+        """Write one data frame.
+
+        Returns:
+            False once the client has gone.
+        """
         try:
             self.wfile.write(f"data: {json.dumps(obj)}\n\n".encode())
             self.wfile.flush()
@@ -785,6 +804,11 @@ class _Handler(BaseHTTPRequestHandler):
         return True
 
     def _sse_ping(self) -> bool:
+        """Write a heartbeat comment.
+
+        Returns:
+            False once the client has gone.
+        """
         try:
             self.wfile.write(b": ping\n\n")
             self.wfile.flush()
@@ -793,9 +817,7 @@ class _Handler(BaseHTTPRequestHandler):
         return True
 
     def _sse_session(self, session_dir: Path) -> None:
-        """Stream a run (see `_sse.stream_session`). While connected we register
-        as the run's answer front-end so its approval/steer prompts bridge to
-        the browser."""
+        """Stream a run, registered as its answer front-end while connected."""
         self._begin_sse()
         self.server.claim_session(session_dir)
         try:
@@ -804,11 +826,11 @@ class _Handler(BaseHTTPRequestHandler):
             self.server.release_session(session_dir)
 
     def _sse_machine(self, machine_dir: Path) -> None:
-        """Stream a machine (see `_sse.stream_machine`). While connected we
-        register as the answer front-end on the INSTANCE dir, so a machine
-        agent state's approval/question/steer prompts bridge to the browser
-        (the state's answer files live in its per-state dir; the liveness gate
-        probes this instance dir)."""
+        """Stream a machine, registered as the answer front-end on its instance dir.
+
+        A state's answer files live in its per-state dir; the liveness gate probes
+        the instance dir.
+        """
         self._begin_sse()
         self.server.claim_session(machine_dir)
         try:
@@ -817,6 +839,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.server.release_session(machine_dir)
 
     def _channel(self) -> SseChannel:
+        """Return this handler's socket writes as a channel."""
         return SseChannel(send=self._sse_send, ping=self._sse_ping)
 
 
@@ -828,9 +851,18 @@ def run_web(
     cwd: Path | None = None,
     config_path: Path | None = None,
 ) -> int:
-    """Serve the web UI on host:port until interrupted. `target` deep-links the
-    page to a run id, a machine name or a `machine create` draft on load
-    (empty opens the hub)."""
+    """Serve the web UI until interrupted.
+
+    Args:
+        target: A run id, machine name or draft the page opens on; "" opens the hub.
+        host: The bind host.
+        port: The bind port.
+        cwd: The repository; None is the process cwd.
+        config_path: An explicit config file, or None.
+
+    Returns:
+        The exit code: 2 when the bind failed.
+    """
     workdir = cwd or Path.cwd()
     bind_host = _bind_host(host)
     try:

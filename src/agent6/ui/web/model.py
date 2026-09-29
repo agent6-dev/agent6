@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Pure JSON payload builders for the web UI.
+"""Build the web UI's JSON payloads.
 
-The web server is a thin renderer: every payload it serves is built here from the
-shared read-side (viewmodel folds, config_layer, transcript_render, the machine
-spec/journal). Pure functions, no HTTP or threads, so the run/machine snapshots
-are exactly `session_state_as_dict` / `machine_state_as_dict` (identical to
-`agent6 attach --json`).
+Every payload comes from the shared read side (the viewmodel folds, the config
+layer, the machine spec and journal), with no HTTP or threads, so the run and
+machine snapshots are the same dicts `agent6 attach --json` prints.
 """
 
 from __future__ import annotations
@@ -66,12 +64,17 @@ from agent6.viewmodel.transcript_style import item_lines
 
 
 def session_dir_for(cwd: Path, session_id: str) -> Path | None:
-    """Locate a session dir by exact id across the hub buckets (no prefix match: the
-    web client always sends the full id from the hub payload). Rejects a session_id
-    that is not a single safe path component. Husks are skipped so an orphaned
-    dir in runs/ cannot shadow a real ask of the same id. An id in two buckets
-    is ambiguous, so it resolves to None rather than silently showing one of
-    two sessions; the CLI resolver names the ambiguity."""
+    """Locate a session dir by its exact id across the hub buckets.
+
+    Husks are skipped so an orphaned dir cannot shadow a real session of the same id.
+
+    Args:
+        cwd: The repository.
+        session_id: The full id from the hub payload.
+
+    Returns:
+        The session dir, or None for an unsafe id, a missing session or an id in two buckets.
+    """
     if not is_safe_session_id(session_id):
         return None
     found: Path | None = None
@@ -85,6 +88,7 @@ def session_dir_for(cwd: Path, session_id: str) -> Path | None:
 
 
 def machine_dir_for(cwd: Path, name: str) -> Path | None:
+    """Return a machine instance's dir by name, or None for an unsafe or unknown name."""
     if not is_safe_session_id(name):
         return None
     d = machines_root(state_dir(cwd)) / name
@@ -92,8 +96,11 @@ def machine_dir_for(cwd: Path, name: str) -> Path | None:
 
 
 def draft_dir_for(cwd: Path, name: str) -> Path | None:
-    """A `machine create` draft dir by name. Its logs.jsonl is a run-style log of
-    the authoring agent, so it is watched through the run endpoints."""
+    """Return a `machine create` draft's dir by name, or None when there is none.
+
+    The draft's logs.jsonl is the authoring agent's run-style log, watched through
+    the run endpoints.
+    """
     if not is_safe_session_id(name):
         return None
     d = bucket_dir(state_dir(cwd), "machines") / name
@@ -101,9 +108,11 @@ def draft_dir_for(cwd: Path, name: str) -> Path | None:
 
 
 def draft_workspace(cwd: Path, name: str, config_path: Path | None) -> Path | None:
-    """Where a `machine create` draft's commits live: its drafting workspace, a
-    repo of its own beside the other subordinate working trees. None once it
-    is gone (a published draft's workspace is removed with it)."""
+    """Return the workspace a `machine create` draft commits in, or None once it is gone.
+
+    The workspace is a repository of its own beside the other subordinate working
+    trees; publishing the draft removes it.
+    """
     try:
         cfg = load_effective(cwd, config_path).config
     except ConfigError:
@@ -115,9 +124,18 @@ def draft_workspace(cwd: Path, name: str, config_path: Path | None) -> Path | No
 def draft_step_diff_payload(
     workspace: Path, sha: str, *, cumulative: bool
 ) -> tuple[dict[str, Any] | None, str]:
-    """The patch one step of a draft introduced, or the whole bundle as of that
-    step (from the empty tree: a draft starts from nothing) when *cumulative*.
-    (payload, "") or (None, why)."""
+    """Return the patch one draft step introduced, or the whole bundle as of that step.
+
+    A draft starts from the empty tree, so the cumulative patch is the bundle so far.
+
+    Args:
+        workspace: The draft's workspace.
+        sha: The step's commit.
+        cumulative: Whole bundle instead of the one step.
+
+    Returns:
+        The payload and "", or None and the reason.
+    """
     return _diff_payload(
         workspace, sha, base=EMPTY_TREE, cumulative=cumulative, miss="not a commit of this draft"
     )
@@ -126,8 +144,18 @@ def draft_step_diff_payload(
 def _diff_payload(
     repo: Path, sha: str, *, base: str, cumulative: bool, miss: str
 ) -> tuple[dict[str, Any] | None, str]:
-    """One step's patch, or the whole chain `base..sha` when *cumulative* and a
-    base is known; the payload says which it returned."""
+    """Return one step's patch, or the chain `base..sha` when cumulative and a base is known.
+
+    Args:
+        repo: The repository.
+        sha: The step's commit.
+        base: The chain's base; "" when unknown.
+        cumulative: The chain instead of the one step.
+        miss: The reason to give when the sha has no diff.
+
+    Returns:
+        The payload (saying which it holds) and "", or None and the reason.
+    """
     if not re.fullmatch(r"[0-9a-f]{7,40}", sha):
         return None, f"not a commit sha: {sha!r}"
     whole = cumulative and bool(base)
@@ -138,7 +166,7 @@ def _diff_payload(
 
 
 def draft_dir_paths(cwd: Path) -> list[Path]:
-    """Every machine-create draft directory (where `machine create` writes)."""
+    """Return every `machine create` draft directory."""
     d = bucket_dir(state_dir(cwd), "machines")
     return [p for p in d.iterdir() if p.is_dir()] if d.is_dir() else []
 
@@ -147,8 +175,7 @@ def draft_dir_paths(cwd: Path) -> list[Path]:
 
 
 def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
-    """Every session a hub lists, summarized, newest first (`session_dirs`),
-    a fan-out's lanes nested under its row (`nested_rows`)."""
+    """Return every session the hub lists, newest first, a fan-out's lanes under its row."""
     tips = run_ref_tips(cwd)
     dirs = session_dirs(state_dir(cwd))
     winners = {p.name for p in dirs if is_winner(p)}
@@ -157,7 +184,7 @@ def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
 
 
 def _machine_row(s: MachineSummary) -> dict[str, Any]:
-    """One machine-instance row for the hub, from the shared fold."""
+    """Return one machine-instance row for the hub."""
     entry: dict[str, Any] = {
         "name": s.name,
         "mtime": s.mtime,
@@ -169,24 +196,19 @@ def _machine_row(s: MachineSummary) -> dict[str, Any]:
         entry["machine"] = s.machine
         entry["current"] = s.current
     if s.reason:
-        # The shared cell, like every other surface: `reason` is also set for a
-        # live machine blocked on an operator prompt, whose label sends the
-        # operator to answer it.
+        # A live machine blocked on an operator prompt carries a reason too.
         entry["label"] = status_label(s.status, s.reason)
     return entry
 
 
 def _list_machines(cwd: Path) -> list[dict[str, Any]]:
-    """Machine instances, newest first (`viewmodel.machine_instance_dirs`), each
-    a watchable run of an authored machine, summarized by the shared fold."""
+    """Return the machine instances, newest first, summarized by the shared fold."""
     dirs = machine_instance_dirs(state_dir(cwd))
     return [_machine_row(summarize_machine_dir(d)) for d in dirs]
 
 
 def _list_drafts(cwd: Path) -> list[dict[str, Any]]:
-    """`machine create` drafts summarized like runs (their logs.jsonl is a
-    run-style authoring log), newest first, so the machines page can link to
-    the #/draft/<name> view."""
+    """Return the `machine create` drafts summarized like runs, newest first."""
     summaries: list[dict[str, Any]] = [
         summary_row(summarize_session_dir(p, branch_tips={}), winner=is_winner(p))
         for p in draft_dir_paths(cwd)
@@ -197,17 +219,24 @@ def _list_drafts(cwd: Path) -> list[dict[str, Any]]:
 
 
 def list_machine_files(cwd: Path) -> list[dict[str, str]]:
-    """The hub's machine-file rows (`viewmodel.machine_files`)."""
+    """Return the hub's machine-file rows."""
     return [{"path": str(p), "name": p.name} for p in machine_files(cwd)]
 
 
 def routes_payload(
     cwd: Path, config_path: Path | None, *, mode: str, preset: str
 ) -> dict[str, Any]:
-    """The new-work composer's model picker: every `provider/model` the
-    config can run, and the label of its no-flag entry, naming the route a
-    session of *mode* under *preset* runs by default (what the TUI picker
-    shows)."""
+    """Return the new-work composer's model picker.
+
+    Args:
+        cwd: The repository.
+        config_path: An explicit config file, or None.
+        mode: The session mode the default route is for.
+        preset: The preset the default route is under.
+
+    Returns:
+        Every `provider/model` the config can run, and the label of the no-flag entry.
+    """
     return {
         "routes": available_routes(cwd, config_path),
         "default_label": default_label(default_route(cwd, config_path, mode, preset)),
@@ -217,17 +246,13 @@ def routes_payload(
 def resume_defaults_payload(
     cwd: Path, config_path: Path | None, session_dir: Path, *, preset: str
 ) -> dict[str, str]:
-    """The resume row's no-flag labels, the model's under a picked *preset*
-    (`models.choices.resume_defaults`)."""
+    """Return the resume row's no-flag preset and model labels under a picked preset."""
     preset_label, model_label = resume_defaults(cwd, config_path, session_dir, preset=preset)
     return {"preset_label": preset_label, "model_label": model_label}
 
 
 def hub_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:
-    """The hub: every run, machine instance, and machine-create draft, plus the
-    authored machine files (to run or create from), summarized for the listing,
-    and the presets the new-work composer offers (the same list `--preset`
-    resolves against) with the label of its no-flag entry."""
+    """Return the hub: sessions, machines, drafts, machine files and the preset choices."""
     return {
         "sessions": _list_sessions(cwd),
         "machines": _list_machines(cwd),
@@ -244,14 +269,18 @@ def hub_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:
 def conversation_items(
     events: list[dict[str, Any]], *, worker_dead: bool = False
 ) -> list[dict[str, Any]]:
-    """The events folded into rendered conversation items, one entry per
-    `TranscriptItem`: its `kind`, the collapsed `lines` (lists of
-    `[text, style]` spans from the shared `item_lines` renderer, the same
-    fold the CLI stream and the TUI conversation view draw), and `full` (the
-    expanded rendering) only when it differs, so the page can offer per-item
-    expansion without re-implementing any clipping client-side. A dead
-    worker's calls still open settle as never returned (the fold's rule,
-    applied here because only a dir reader can probe the worker)."""
+    """Fold events into rendered conversation items.
+
+    Each item carries its `kind`, the collapsed `lines` as `[text, style]` spans from
+    the shared renderer, and `full` only when the expanded rendering differs.
+
+    Args:
+        events: The session's events.
+        worker_dead: Settle the calls still open as never returned.
+
+    Returns:
+        One entry per transcript item.
+    """
     out: list[dict[str, Any]] = []
     for item in fold_transcript(events, worker_dead=worker_dead):
         collapsed = item_lines(item, detail="collapsed")
@@ -264,9 +293,7 @@ def conversation_items(
 
 
 def conversation_payload(session_dir: Path) -> dict[str, Any]:
-    """A run's conversation, folded from its event log, plus the operator's
-    own past inputs (the task, then every steer) for the composer's Ctrl-R
-    history search. One read serves both keys."""
+    """Return a run's conversation and the operator's past inputs, from one read of the log."""
     events = list(tail_events(session_dir / LOGS_NAME, follow=False))
     return {
         "items": conversation_items(events, worker_dead=not worker_is_alive(session_dir)),
@@ -275,15 +302,13 @@ def conversation_payload(session_dir: Path) -> dict[str, Any]:
 
 
 def restate_payload(session_dir: Path) -> dict[str, Any]:
-    """`/restate` for the web composer: the same fold-side renderer the CLI
-    pause menu prints, over the session's whole journal."""
+    """Return `/restate` for the web composer, over the session's whole journal."""
     events = list(tail_events(session_dir / LOGS_NAME, follow=False))
     return {"text": restate(events, worker_dead=not worker_is_alive(session_dir))}
 
 
 def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
-    """The conversation of the machine's most recent agent-state execution,
-    empty when no agent state has produced a log yet."""
+    """Return the conversation of the machine's newest agent-state execution, or no items."""
     log = newest_state_log(machine_dir)
     if log is None:
         return {"items": []}
@@ -299,21 +324,18 @@ def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
 def machine_reasoning_snapshot(
     machine_dir: Path, *, fold: NewestExecutionFold | None = None
 ) -> dict[str, Any]:
-    """The SessionState of the machine's most recent agent-state execution: the live
-    reasoning + tool calls inside the state the machine is running. Empty when no
-    agent state has produced a log yet.
+    """Return the session state of the machine's newest agent-state execution.
 
-    Carries `state_dir` (the per-state dir name, e.g. `0001-work`) so a
-    client echoes it back when answering a prompt: prompt ids reset per state
-    (`approval-1` in every state), so routing an answer to whichever state is
-    newest at post time would misdeliver it if the machine advanced meanwhile.
+    The snapshot carries `state_dir` so a client echoes it when answering a prompt
+    (prompt ids reset per state), and `last_event_ep` rather than an age so the
+    payload changes only when something happened.
 
-    Also carries `last_event_ep`, the epoch of the newest folded event, which
-    is what the stream turns into the age the client's "working… Ns" timer
-    anchors to. The epoch rides in the payload rather than the age because the
-    machine stream only sends a frame when the payload changes: an age would
-    differ on every poll and send one every time, while the epoch moves only
-    when something actually happened.
+    Args:
+        machine_dir: The machine instance's directory.
+        fold: A fold to refresh, or None to fold the newest log afresh.
+
+    Returns:
+        The wire form plus the two keys, or empty before any agent state has a log.
     """
     if fold is not None:
         log, state = fold.refresh(machine_dir), fold.state
@@ -333,12 +355,11 @@ def machine_reasoning_snapshot(
 
 
 def config_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:
-    """The effective config as a per-leaf view (value/effective/default/source/
-    modified/adaptive/type/choices), keyed by dotted key, plus each value's
-    round-trippable editor input. The shared fields are the same structure
-    `agent6 config show --json` prints. Adaptive leaves (the compaction
-    thresholds, `prompt.decompose = auto`) resolve from the worker model the
-    same way. The payload never includes secrets."""
+    """Return the effective config per leaf, keyed by dotted key.
+
+    The shared fields are what `agent6 config show --json` prints; `input` is each
+    value's round-trippable editor text. No secret is included.
+    """
     eff = load_effective(cwd, config_path)
     resolved = resolved_config_values(eff.config)
     payload: dict[str, Any] = json.loads(render_show(eff, as_json=True, resolved=resolved))
@@ -351,12 +372,11 @@ def config_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]
 
 
 def config_suggestions(cwd: Path, key: str, config_path: Path | None = None) -> list[str]:
-    """Value suggestions for one open-text config leaf: `preset` offers the
-    preset names, everything else what `models.choices.config_value_choices`
-    offers (a role's provider's model ids; the `/parallel` autocomplete's
-    `provider/model` routes under the pseudo-key `parallel.models`). Enum leaves already carry
-    their choices in the config payload; any error suggests nothing, since
-    suggestions are best-effort, never a failure."""
+    """Return value suggestions for one open-text config leaf.
+
+    `preset` offers the preset names; every other key what `config_value_choices`
+    offers. A config error suggests nothing.
+    """
     if key == "preset":
         return available_preset_names(cwd, config_path)
     try:
@@ -369,9 +389,17 @@ def config_suggestions(cwd: Path, key: str, config_path: Path | None = None) -> 
 def step_diff_payload(
     repo: Path, session_dir: Path, sha: str, *, cumulative: bool
 ) -> tuple[dict[str, Any] | None, str]:
-    """The patch one step of the run introduced (`sha^..sha`), or the whole
-    chain up to it (`base..sha`) when *cumulative*. (payload, "") or (None,
-    why): a model-controlled run has no chain to select from."""
+    """Return the patch one run step introduced, or the whole chain up to it.
+
+    Args:
+        repo: The repository the run worked in.
+        session_dir: The run's directory.
+        sha: The step's commit.
+        cumulative: The chain `base..sha` instead of the one step.
+
+    Returns:
+        The payload and "", or None and the reason; a model-controlled run has no chain.
+    """
     try:
         m = read_manifest(session_dir)
     except ManifestError as exc:

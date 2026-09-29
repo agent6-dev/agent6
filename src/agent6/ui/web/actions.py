@@ -1,14 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The web write side: drive a run/machine through the shared frontend bridge.
+"""Drive a run or a machine from the browser.
 
-Every mutation the browser can make goes through here, and every one is either
-the typed answer-file contract (`agent6.sessions.ipc`) or spawning / running
-the same `agent6` CLI a user would (`agent6.ui.spawn`). Nothing here
-executes arbitrary input: new-work spawns fixed argv with the task as a single
-argv element, answers are written to the run's own answer files, and the quick
-ops (merge / prune / config set) shell the fixed agent6 subcommands. The browser
-is trusted exactly as far as the operator behind the loopback/tailnet bind.
+Every mutation is either the answer-file contract (`agent6.sessions.ipc`) or the
+same `agent6` CLI a user would run (`agent6.ui.spawn`) with fixed argv: the task
+is one argv element, the quick ops shell fixed subcommands, nothing executes
+arbitrary input. The browser is trusted as far as the operator behind the bind.
 """
 
 from __future__ import annotations
@@ -67,8 +64,16 @@ from agent6.viewmodel.machine_state import MachineVerb, verb_answer
 def spawn_machine_create(
     cwd: Path, task: str, config_path: Path | None = None
 ) -> tuple[str | None, str]:
-    """Spawn `agent6 machine create <task>` detached and return the draft dir name
-    to watch (its logs.jsonl carries the authoring agent's reasoning), or None."""
+    """Spawn `agent6 machine create <task>` detached.
+
+    Args:
+        cwd: The repository.
+        task: What the machine is for.
+        config_path: An explicit config file, or None.
+
+    Returns:
+        The draft dir name to watch and "", or None and the reason.
+    """
     if not task.strip():
         return None, "empty task"
     draft, err = spawn_and_locate(
@@ -83,15 +88,19 @@ def spawn_machine_create(
 def spawn_machine_run(
     cwd: Path, machine_file: str, config_path: Path | None = None
 ) -> tuple[bool, str]:
-    """Spawn `agent6 machine run <file>` detached. `machine_file` is one of the
-    authored files the hub listed, by its path or its listed name (validated
-    against list_machine_files so the browser cannot point it at an arbitrary
-    path).
+    """Spawn `agent6 machine run <file>` detached.
 
-    Started = the child wrote its own pid as the instance worker.pid (it does so
-    right after taking the machine lock), so a refusal (lock held, network
-    refusal, bad bundle: nonzero exit before that) surfaces its stderr in the
-    toast instead of a false "started"."""
+    Started means the child wrote its pid as the instance's worker.pid, so a refusal
+    before that surfaces its stderr instead of a false "started".
+
+    Args:
+        cwd: The repository.
+        machine_file: A listed machine file, by path or listed name (never an arbitrary path).
+        config_path: An explicit config file, or None.
+
+    Returns:
+        Whether it started, and the note or the refusal.
+    """
     listed = model.list_machine_files(cwd)
     by_name = {mf["name"]: mf["path"] for mf in listed}
     paths = {mf["path"] for mf in listed}
@@ -116,12 +125,11 @@ def spawn_machine_run(
 
 
 def _live_session_dir(cwd: Path, session_id: str) -> Path | tuple[bool, str]:
-    """The session dir a verb acts on, or its refusal. A dead run is refused
-    whatever the page still offers: an approval box outlives the worker (it
-    clears on the answer event a dead run never emits), a crashed run folds as
-    unfinished so the composer still offers steer, and nothing would consume
-    the answer or the marker (the next resume drops them); a session grant
-    would be just as stranded."""
+    """Return the session dir a verb acts on, or its refusal.
+
+    A dead run is refused whatever the page still offers: nothing would consume the
+    answer or the marker, and the next resume drops them.
+    """
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return False, f"no session {session_id!r}"
@@ -131,8 +139,11 @@ def _live_session_dir(cwd: Path, session_id: str) -> Path | tuple[bool, str]:
 
 
 def approve(cwd: Path, session_id: str, prompt_id: str, answer: str) -> tuple[bool, str]:
-    """Answer a pending approval prompt (the run's `approval.prompt`) with the
-    operator's literal choice."""
+    """Answer a pending approval prompt with the operator's literal choice.
+
+    Returns:
+        Whether the answer landed, and the note or the refusal.
+    """
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
@@ -147,7 +158,11 @@ def approve(cwd: Path, session_id: str, prompt_id: str, answer: str) -> tuple[bo
 def answer_question(
     cwd: Path, session_id: str, question_id: str, answers: list[str]
 ) -> tuple[bool, str]:
-    """Answer a pending `ask_user` prompt (one answer per question, by index)."""
+    """Answer a pending `ask_user` prompt, one answer per question by index.
+
+    Returns:
+        Whether the answers landed, and the note or the refusal.
+    """
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
@@ -155,9 +170,7 @@ def answer_question(
     if prompt is None or prompt.id != question_id:
         return False, "that question is no longer open"
     if len(answers) != len(prompt.questions):
-        # Answers align to the prompt's questions by index, and the asking side
-        # raises on a mismatch after consuming the file: the operator's text
-        # would be gone and the model would get an error instead.
+        # The asking side raises on a mismatch after consuming the file, losing the text.
         return False, f"that prompt has {len(prompt.questions)} question(s)"
     if not write_question_answers(session_dir, question_id, answers):
         return False, ANSWERED_ELSEWHERE
@@ -165,9 +178,16 @@ def answer_question(
 
 
 def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
-    """Steer a live run: pre-place the answer, then drop the request marker the
-    run picks up at its next safe boundary. `text` is a free instruction; "" means
-    continue, "abort" stops the run (the same contract the TUI steer modal uses)."""
+    """Steer a live run at its next safe boundary.
+
+    Args:
+        cwd: The repository.
+        session_id: The run.
+        text: A free instruction; "" continues, "abort" stops the run.
+
+    Returns:
+        Whether the request landed, and the note or the refusal.
+    """
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
@@ -177,10 +197,11 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
 def fork_run(
     cwd: Path, session_id: str, config_path: Path | None = None
 ) -> tuple[dict[str, str] | None, str]:
-    """Fork a run at its latest checkpoint into a new run, unstarted (the CLI's
-    `agent6 fork --no-run`, the TUI's Run > Fork): the new session's composer
-    starts it with its instruction. Returns ({new_session_id}, "") or (None,
-    why)."""
+    """Fork a run at its latest checkpoint into a new, unstarted run.
+
+    Returns:
+        The new session id in a dict and "", or None and the reason.
+    """
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return None, f"no session {session_id!r}"
@@ -193,9 +214,13 @@ def fork_run(
 
 
 def undo_session(cwd: Path, session_id: str) -> tuple[dict[str, str] | None, str]:
-    """`/undo` on a finished run: fork it at the state before its last operator
-    message, unstarted. Returns ({new_session_id, undone_text}, "") or
-    (None, why). A live run is refused: stop it first, then undo."""
+    """Fork a finished run at the state before its last operator message, unstarted.
+
+    A live run is refused: its `/undo` rides the steer channel.
+
+    Returns:
+        The new session id and the undone text in a dict and "", or None and the reason.
+    """
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return None, f"no session {session_id!r}"
@@ -219,21 +244,26 @@ def resume_run(
     route: str = "",
     config_path: Path | None = None,
 ) -> tuple[bool, str]:
-    """Resume a finished/stopped run detached, optionally seeding *text* as the
-    first steering instruction (the composer's Enter on a finished run) and
-    continuing under *preset* and the `[provider/]model` *route* (`resume
-    --preset`, `--model`; "" = as recorded). Refused while the run's worker is
-    alive: a live run is steered, not resumed."""
+    """Resume a finished or stopped run detached.
+
+    Args:
+        cwd: The repository.
+        session_id: The run.
+        text: The first steering instruction, or "".
+        preset: The preset to continue under; "" as recorded.
+        route: The `[provider/]model` to continue on; "" as recorded.
+        config_path: An explicit config file, or None.
+
+    Returns:
+        Whether it started, and the note or the refusal; a live run is refused.
+    """
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return False, f"no session {session_id!r}"
     if session_is_live(session_dir):
         return False, "the session is still live; steer it instead"
     if not text.strip() and finished_needs_new_work(session_dir):
-        # The spawn is detached, so the same refusal from `agent6 resume` would
-        # land on a process nobody is reading and the composer would report
-        # "resuming" for a run that never started. The remedy here is the
-        # composer, not the CLI line the shared refusal quotes.
+        # The CLI's own refusal would land on a detached process nobody reads.
         return False, (
             f"run {session_id!r} already finished (the agent called finish_session);"
             " type what to do next (Enter resumes it with the instruction)"
@@ -247,9 +277,13 @@ def resume_run(
 def run_plan(
     cwd: Path, session_id: str, config_path: Path | None = None
 ) -> tuple[dict[str, str] | None, str]:
-    """Execute a finished plan: spawn `agent6 run --from <id>` detached and
-    return {"run_id": ...} to open, or (None, why). The plan session itself is
-    untouched, so revising it (the composer) keeps working."""
+    """Execute a finished plan by spawning `agent6 run --from <id>` detached.
+
+    The plan session is untouched, so revising it keeps working.
+
+    Returns:
+        The new run id in a dict and "", or None and the reason.
+    """
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return None, f"no session {session_id!r}"
@@ -280,8 +314,11 @@ def run_plan(
 
 
 def stop_run(cwd: Path, session_id: str, *, after_step: bool) -> tuple[bool, str]:
-    """The one stop every surface uses (`stop_session`): now by default, after
-    the current step's tool results and auto-commit with *after_step*."""
+    """Stop a run now, or after the current step's tool results and auto-commit.
+
+    Returns:
+        Whether the stop landed, and the message.
+    """
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return False, f"no session {session_id!r}"
@@ -290,7 +327,11 @@ def stop_run(cwd: Path, session_id: str, *, after_step: bool) -> tuple[bool, str
 
 
 def compact_run(cwd: Path, session_id: str) -> tuple[bool, str]:
-    """Ask a live run to compact its context at the next safe boundary."""
+    """Ask a live run to compact its context at the next safe boundary.
+
+    Returns:
+        Whether the request landed, and the note or the refusal.
+    """
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
@@ -300,15 +341,16 @@ def compact_run(cwd: Path, session_id: str) -> tuple[bool, str]:
 
 
 def _machine_state_dir(cwd: Path, name: str, state: str = "") -> Path | None:
-    """The per-state dir an answer belongs in (where its answer files live), or
-    None when the machine name is unknown or no agent state is active.
+    """Return the per-state dir an answer belongs in.
 
-    When *state* is given (the dir name the client rendered the prompt from,
-    e.g. `0001-work`) route to exactly that state, so an answer lands in the
-    state it was shown for even if the machine has since advanced to another
-    state that reuses the same prompt id. Falls back to the newest state when
-    *state* is absent (a bare CLI/older client). *state* is validated as a
-    single existing path component so a request body cannot traverse out.
+    Args:
+        cwd: The repository.
+        name: The machine instance.
+        state: The state dir the client rendered the prompt from (`0001-work`), or ""
+            for the newest state; validated as one existing path component.
+
+    Returns:
+        The state dir, or None for an unknown machine or no active agent state.
     """
     machine_dir = model.machine_dir_for(cwd, name)
     if machine_dir is None:
@@ -323,15 +365,16 @@ def _machine_state_dir(cwd: Path, name: str, state: str = "") -> Path | None:
 
 
 def _machine_dir_or_missing(cwd: Path, name: str) -> Path:
-    """The instance dir the verb refusal reads: a missing one is still a Path,
-    so `machine_verb_refusal` names an unknown machine as unknown."""
+    """Return the instance dir the verb refusal reads; a missing one names the machine unknown."""
     return model.machine_dir_for(cwd, name) or machines_root(state_dir(cwd)) / name
 
 
 def machine_stop(cwd: Path, name: str) -> tuple[bool, str]:
-    """Write the durable stop marker for a running machine (parks at its next
-    transition boundary; resumable). Nothing to stop is the note and success,
-    no marker; a journal that cannot be read is the refusal."""
+    """Write the stop marker for a running machine; it parks at its next transition.
+
+    Returns:
+        Whether it succeeded, and the note or the refusal; nothing to stop is a note.
+    """
     machine_dir = _machine_dir_or_missing(cwd, name)
     ok, answer = verb_answer(machine_dir, name, "stop")
     if not ok or answer:
@@ -341,8 +384,17 @@ def machine_stop(cwd: Path, name: str) -> tuple[bool, str]:
 
 
 def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -> tuple[bool, str]:
-    """Poke a waiting machine, optionally carrying a payload the next tool reads.
-    `data` (any JSON) wins over `message` (a string); neither is a bare wake."""
+    """Poke a waiting machine, optionally with a payload the next tool reads.
+
+    Args:
+        cwd: The repository.
+        name: The machine instance.
+        data: Any JSON payload; wins over the message.
+        message: A string payload.
+
+    Returns:
+        Whether the poke landed, and the note or the refusal.
+    """
     machine_dir = _machine_dir_or_missing(cwd, name)
     ok, refusal = verb_answer(machine_dir, name, "poke")
     if not ok or refusal:
@@ -358,10 +410,17 @@ def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -
 def _state_dir_for_verb(
     cwd: Path, name: str, verb: MachineVerb, state: str
 ) -> Path | tuple[bool, str]:
-    """The agent-state dir a prompt answer or a steer lands in, or the refusal.
-    *state* names the execution the client rendered; an execution the machine has left reads
-    nothing, and its prompt ids repeat in the next execution, so it is refused rather
-    than rerouted."""
+    """Return the agent-state dir a prompt answer or a steer lands in, or the refusal.
+
+    A state the machine has left reads nothing and its prompt ids repeat in the next,
+    so it is refused rather than rerouted.
+
+    Args:
+        cwd: The repository.
+        name: The machine instance.
+        verb: The verb, for the refusal.
+        state: The state dir the client rendered, or "" for the newest.
+    """
     machine_dir = _machine_dir_or_missing(cwd, name)
     ok, refusal = verb_answer(machine_dir, name, verb)
     if not ok or refusal:
@@ -381,8 +440,11 @@ def _state_dir_for_verb(
 def machine_approve(
     cwd: Path, name: str, prompt_id: str, answer: str, *, state: str = ""
 ) -> tuple[bool, str]:
-    """Answer a pending approval in the agent state the prompt was rendered from
-    (`state`; newest when absent)."""
+    """Answer a pending approval in the agent state the prompt was rendered from.
+
+    Returns:
+        Whether the answer landed, and the note or the refusal.
+    """
     target = _state_dir_for_verb(cwd, name, "answer", state)
     if not isinstance(target, Path):
         return target
@@ -397,8 +459,11 @@ def machine_approve(
 def machine_answer(
     cwd: Path, name: str, question_id: str, answers: list[str], *, state: str = ""
 ) -> tuple[bool, str]:
-    """Answer a pending `ask_user` prompt in the agent state the prompt was rendered
-    from (`state`; newest when absent). One answer per question, by index."""
+    """Answer a pending `ask_user` prompt in the agent state it was rendered from.
+
+    Returns:
+        Whether the answers landed, and the note or the refusal.
+    """
     target = _state_dir_for_verb(cwd, name, "answer", state)
     if not isinstance(target, Path):
         return target
@@ -413,8 +478,11 @@ def machine_answer(
 
 
 def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[bool, str]:
-    """Steer the agent state the operator is viewing (`state`; newest when
-    absent). Same contract as a run steer."""
+    """Steer the agent state the operator is viewing, under the run steer's contract.
+
+    Returns:
+        Whether the request landed, and the note or the refusal.
+    """
     target = _state_dir_for_verb(cwd, name, "steer", state)
     if not isinstance(target, Path):
         return target
@@ -426,8 +494,11 @@ def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[
 def merge_run(
     cwd: Path, session_id: str, strategy: str = "", config_path: Path | None = None
 ) -> tuple[bool, str]:
-    """Merge a run's branch: `agent6 sessions merge <id> [--strategy S]`. `--` before
-    the client-supplied run id so a dashy value cannot be read as a flag."""
+    """Merge a run's branch through `agent6 sessions merge`.
+
+    Returns:
+        Whether the CLI succeeded, and its message.
+    """
     argv = [*agent6_argv(config_path), "sessions", "merge"]
     if strategy:
         argv += ["--strategy", strategy]
@@ -438,9 +509,11 @@ def merge_run(
 def review_run(
     cwd: Path, session_id: str, config_path: Path | None = None
 ) -> tuple[dict[str, str] | None, str]:
-    """Review a finished run's record: `agent6 sessions review <id>`, a model
-    call that can take minutes. Returns ({review}, "") with the markdown, or
-    (None, why) when the CLI refuses (a live run, no reviewer route)."""
+    """Review a finished run's record through `agent6 sessions review`, a call of minutes.
+
+    Returns:
+        The review markdown in a dict and "", or None and the CLI's refusal.
+    """
     ok, text = run_cli_output(
         [*agent6_argv(config_path), "sessions", "review", "--", session_id], cwd, timeout_s=900.0
     )
@@ -450,11 +523,15 @@ def review_run(
 def prune_sessions(
     cwd: Path, *, delete_squashed: bool = False, config_path: Path | None = None
 ) -> tuple[bool, str]:
-    """Prune merged/obsolete run branches: `agent6 sessions prune`.
+    """Prune merged run branches through `agent6 sessions prune`.
 
-    *delete_squashed* passes the CLI's own opt-in flag, without which the
-    default `squash` merge strategy leaves every merged run's branch behind
-    (unreachable, so `git branch -d` refuses it).
+    Args:
+        cwd: The repository.
+        delete_squashed: Pass `--delete-squashed`, without which a squash-merged branch stays.
+        config_path: An explicit config file, or None.
+
+    Returns:
+        Whether the CLI succeeded, and its message.
     """
     argv = [*agent6_argv(config_path), "sessions", "prune"]
     if delete_squashed:
@@ -463,25 +540,31 @@ def prune_sessions(
 
 
 def remove_session(cwd: Path, session_id: str, config_path: Path | None = None) -> tuple[bool, str]:
-    """Delete one run's history: `agent6 sessions rm <id>`. History only: the run
-    branch is git's, and `sessions prune` is the branch verb. The CLI refuses a live
-    run, so this surface inherits that."""
+    """Delete one run's history through `agent6 sessions rm`; the branch is prune's.
+
+    Returns:
+        Whether the CLI succeeded, and its message; a live run is refused.
+    """
     return run_cli_capture([*agent6_argv(config_path), "sessions", "rm", "--", session_id], cwd)
 
 
 def remove_asks(cwd: Path, config_path: Path | None = None) -> tuple[bool, str]:
-    """Clear every saved ask: `agent6 sessions rm --asks`. The bucket that
-    accumulates, since an ask runs in any directory."""
+    """Clear every saved ask through `agent6 sessions rm --asks`.
+
+    Returns:
+        Whether the CLI succeeded, and its message.
+    """
     return run_cli_capture([*agent6_argv(config_path), "sessions", "rm", "--asks"], cwd)
 
 
 def set_config(
     cwd: Path, key: str, value: str, *, repo: bool = False, config_path: Path | None = None
 ) -> tuple[bool, str]:
-    """Set one config leaf: `agent6 config set <key> <value> [--repo]`. The CLI
-    validates the key and value; the write lands in the global config by default.
-    `--` before the body-derived key/value so a dashy value cannot be read as a
-    flag."""
+    """Set one config leaf through `agent6 config set`, which validates key and value.
+
+    Returns:
+        Whether the CLI succeeded, and its message.
+    """
     argv = [*agent6_argv(config_path), "config", "set"]
     if repo:
         argv.append("--repo")
@@ -499,11 +582,14 @@ def add_provider(
     api_key_env: str = "",
     repo: bool = False,
 ) -> tuple[bool, str]:
-    """Add or update `[providers.<name>]`, the TUI's add-provider form over the
-    same writer (`set_config_leaves`: an existing block keeps its other keys;
-    revalidates, rolls back on failure). Blank optional fields are omitted:
-    base_url and auth default from the format and deployment, the key from
-    secrets.toml by provider name."""
+    """Add or update `[providers.<name>]` through the shared config writer.
+
+    An existing block keeps its other keys; a blank optional field is omitted and
+    defaults from the format and deployment.
+
+    Returns:
+        Whether the write landed, and the note or the refusal.
+    """
     name = name.strip()
     if not name:
         return False, "a provider name is required"
@@ -526,9 +612,11 @@ def add_provider(
 def unset_config(
     cwd: Path, key: str, *, repo: bool = False, config_path: Path | None = None
 ) -> tuple[bool, str]:
-    """Unset one config leaf: `agent6 config unset <key> [--repo]`, reverting it
-    to the next-lower layer / built-in default. Same fixed-argv CLI bridge as
-    set_config (`--` guards a dashy key)."""
+    """Unset one config leaf through `agent6 config unset`.
+
+    Returns:
+        Whether the CLI succeeded, and its message.
+    """
     argv = [*agent6_argv(config_path), "config", "unset"]
     if repo:
         argv.append("--repo")

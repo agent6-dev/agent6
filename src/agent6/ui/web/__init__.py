@@ -1,24 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The agent6 web UI: the browser front-end.
+"""Serve the browser front-end.
 
-`agent6 web [target]` serves a single page (web.page) from a stdlib
-`http.server` (web.server), fed by JSON + SSE endpoints that fold the same
-`<run>/logs.jsonl` and machine journals every other front-end reads (via
-`agent6.viewmodel`) and driven by the same contracts the CLI and TUI use: the
-detached spawn (`agent6.ui.spawn`) and the approval / steer answer files
-(`agent6.sessions.ipc`). It is a thin renderer of shared state.
+`agent6 web [target]` serves one page from a stdlib `http.server`, fed by JSON and
+SSE endpoints over the same folds (`agent6.viewmodel`), spawn (`agent6.ui.spawn`)
+and answer files (`agent6.sessions.ipc`) every other front-end uses.
 
 Layout:
-    model.py   pure JSON payload builders (hub / run / machine / conversation / config).
+    model.py   the JSON payload builders (hub, run, machine, conversation, config).
     actions.py the write side: answers, steers, spawns, the fixed-argv CLI bridge.
-    server.py  ThreadingHTTPServer + routing + POST bodies (`run_web`).
+    server.py  the threading server, routing and POST bodies (`run_web`).
     _sse.py    the run and machine server-sent-event streams.
-    page.py    the HTML/CSS/JS single-page app.
+    page.py    the HTML, CSS and JS single-page app.
 
-Secure by default: binds loopback; a non-loopback bind is opt-in via `[web]`
-config and remote access is expected behind `tailscale serve` (the tailnet
-identity is the access control). No secrets are ever served.
+The server binds loopback; a non-loopback bind is opt-in under `[web]`, with remote
+access expected behind `tailscale serve`. No secret is ever served.
 """
 
 from __future__ import annotations

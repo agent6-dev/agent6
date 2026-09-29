@@ -1,15 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The web-UI page: HTML + CSS + vanilla JS, served as one string.
+"""Hold the web page: HTML, CSS and vanilla JS, served as one string at `GET /`.
 
-Served verbatim by web.server at `GET /`. It renders the wire form the JSON / SSE
-endpoints emit (the same shape as `agent6 attach --json`); it is a thin renderer,
-so all domain logic stays in the Python read-side.
-
-The `client*.js` files and `styles.css` are real static assets living alongside
-this module; read once via `importlib.resources` at import time and spliced in
-verbatim, so `PAGE_HTML` stays a module-level constant the server serves
-straight from memory and tests can assert against directly.
+The page renders the wire form the JSON and SSE endpoints emit; the domain logic
+stays in the Python read side. The `client*.js` files and `styles.css` beside this
+module are read once at import time and spliced in, so `PAGE_HTML` is a constant
+the server serves from memory and tests assert against.
 """
 
 from __future__ import annotations
@@ -17,17 +13,12 @@ from __future__ import annotations
 from importlib import resources
 
 _ASSETS = resources.files(__package__)
-# One script block from the page-family files, concatenated in declaration
-# order: the shared core + hub, the run dashboard, the machine watch, config.
+# One script block, concatenated in declaration order: core and hub, run, machine, config.
 _CLIENT_FILES = ("client.js", "client_run.js", "client_machine.js", "client_config.js")
 CLIENT_JS = "".join(_ASSETS.joinpath(name).read_text(encoding="utf-8") for name in _CLIENT_FILES)
 STYLES_CSS = _ASSETS.joinpath("styles.css").read_text(encoding="utf-8")
 
-# The page is a hash-routed SPA: #/ hub, #/session/<id>, #/machine/<name>,
-# #/machines, #/draft/<name>, #/config. Live views open an EventSource against the
-# matching /events endpoint; static views fetch a snapshot. Writes are small JSON
-# POSTs (new work / steer / approve / answer / merge / prune / config set /
-# machine create+run) to the typed endpoints, never arbitrary execution.
+# A hash-routed page: live views open an EventSource, static views fetch a snapshot.
 PAGE_HTML = (
     r"""<!doctype html>
 <html lang="en">
@@ -83,9 +74,7 @@ PAGE_HTML = (
 )
 
 
-# The PWA manifest: makes the page installable (phone home-screen, desktop app).
-# start_url "." keeps it relative to wherever the server is mounted (behind
-# `tailscale serve` the path prefix may differ).
+# The PWA manifest; start_url "." keeps it relative to the mount (a served path prefix differs).
 MANIFEST_JSON = r"""{
   "name": "agent6",
   "short_name": "agent6",
@@ -100,17 +89,13 @@ MANIFEST_JSON = r"""{
 }
 """
 
-# A minimal service worker: required (with the manifest) for installability. It is
-# a network passthrough, no caching, no Web Push / VAPID (OS notifications are the
-# foreground Notification API only, fired from the page).
+# Required with the manifest for installability; a network passthrough, no caching, no push.
 SERVICE_WORKER_JS = r"""self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', () => {});
 """
 
-# The browser-tab favicon: docs/assets/favicon.svg verbatim (keep in sync), so
-# the tab shows the same full-bleed glyph as the docs site. The padded ICON_SVG
-# below is only for the PWA surfaces, where the safe-area inset is required.
+# docs/assets/favicon.svg verbatim (kept in sync), so the tab matches the docs site.
 FAVICON_SVG = r"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="agent6">
   <defs><linearGradient id="g" x1="6" y1="4" x2="42" y2="44" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7aa2f7"/><stop offset="1" stop-color="#06f5f3"/></linearGradient></defs>
   <path d="M24 3.5 41.7 13.75 V34.25 L24 44.5 6.3 34.25 V13.75 Z" fill="#161618"/>
@@ -138,9 +123,7 @@ FAVICON_SVG = r"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" ro
 </svg>
 """
 
-# The PWA app icon (manifest + apple-touch): the same snowflake centred on a
-# full-bleed dark backdrop so it stays "maskable"-safe. Self-contained SVG, no
-# raster asset to ship.
+# The PWA icon: the same glyph inside the safe-area inset a maskable icon needs.
 ICON_SVG = r"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs><linearGradient id="g" x1="6" y1="4" x2="42" y2="44" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7aa2f7"/><stop offset="1" stop-color="#06f5f3"/></linearGradient></defs>
   <rect width="512" height="512" rx="96" fill="#0e1116"/>
