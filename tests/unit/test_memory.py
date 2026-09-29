@@ -14,19 +14,24 @@ import pytest
 from agent6.memory import (
     MemoryMerge,
     MemoryStoreError,
+    MemoryUse,
     add,
     decisions_path,
+    index_name,
     index_path,
     index_text,
     memory_dir,
     merge_decisions,
     merge_memory,
+    read_use,
     record_decision,
+    record_use,
     remove,
     seed_digests,
     seed_path,
     seed_store,
     show,
+    use_path,
 )
 
 
@@ -508,3 +513,60 @@ def test_an_index_rewrite_cannot_erase_a_concurrent_add(
 
     assert not remover.is_alive() and not adder.is_alive()
     assert "- new: New fact." in index_text(tmp_path)
+
+
+def test_record_use_keeps_who_wrote_and_who_read(tmp_path: Path) -> None:
+    """The use record: the first writer stays as `created`, the latest as
+    `updated`, reads accumulate with the last reader."""
+    record_use(tmp_path, session="run-a", wrote=("fact",), read={}, when=0.0)
+    record_use(tmp_path, session="run-b", wrote=("fact",), read={"fact": 2}, when=3600.0)
+    record_use(tmp_path, session="run-c", wrote=(), read={"fact": 1, "other": 1}, when=7200.0)
+    use = read_use(tmp_path)
+    assert use["fact"] == MemoryUse(
+        created_by="run-a",
+        created_at="1970-01-01 00:00Z",
+        updated_by="run-b",
+        updated_at="1970-01-01 01:00Z",
+        reads=3,
+        read_by="run-c",
+        read_at="1970-01-01 02:00Z",
+    )
+    # A read of a fact nobody recorded writing (hand-written, or older than
+    # the record) still counts, with no writer named.
+    assert use["other"] == MemoryUse(
+        created_by="",
+        created_at="",
+        updated_by="",
+        updated_at="",
+        reads=1,
+        read_by="run-c",
+        read_at="1970-01-01 02:00Z",
+    )
+    assert use_path(tmp_path) == tmp_path / "memory-use.json"
+
+
+def test_operator_add_and_rm_keep_the_use_record_in_step(tmp_path: Path) -> None:
+    add(tmp_path, "quirk", "The build needs FOO=1.")
+    use = read_use(tmp_path)
+    assert use["quirk"].created_by == "operator"
+    assert use["quirk"].updated_by == "operator"
+    assert use["quirk"].reads == 0
+    remove(tmp_path, "quirk")
+    assert "quirk" not in read_use(tmp_path)
+
+
+def test_read_use_tolerates_a_missing_or_misshapen_record(tmp_path: Path) -> None:
+    assert read_use(tmp_path) == {}
+    use_path(tmp_path).write_text("[1, 2]", encoding="utf-8")
+    assert read_use(tmp_path) == {}
+    use_path(tmp_path).write_text(
+        '{"fact": {"reads": "many"}, "ok": {"reads": 2}}', encoding="utf-8"
+    )
+    assert list(read_use(tmp_path)) == ["ok"]
+
+
+def test_index_name_reads_the_entry_a_line_names() -> None:
+    assert index_name("- build-quirk: Needs FOO=1.") == "build-quirk"
+    assert index_name("* other-fact : x") == "other-fact"
+    assert index_name("not an entry") is None
+    assert index_name("- Bad Name: x") is None

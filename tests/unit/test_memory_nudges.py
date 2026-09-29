@@ -16,7 +16,7 @@ from agent6.tools.results import EditResult, ExecResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import AssistantTurn, Notice
 from agent6.workflows._finish_gates import memory_finish
-from agent6.workflows._guards import MemoryNudges, memory_flip
+from agent6.workflows._guards import MemoryState, memory_flip
 from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
@@ -102,7 +102,7 @@ def test_flip_advisory_needs_a_prior_red_verify() -> None:
 def test_flip_advisory_suppressed_without_store_write_or_run_mode() -> None:
     for wf, state_kw in (
         (_wf(state_dir=None), {}),
-        (_wf(), {"memory": MemoryNudges(written=True)}),
+        (_wf(), {"memory": MemoryState(written=True)}),
         (_wf(mode="ask"), {}),
     ):
         state = _state(**state_kw, verify=VerifyVerdict(last_ok=False, ever_failed=True))
@@ -240,7 +240,7 @@ def test_finish_gate_quiet_without_a_recovery_or_after_a_write() -> None:
         (
             wf,
             _state(
-                memory=MemoryNudges(written=True),
+                memory=MemoryState(written=True),
                 verify=VerifyVerdict(ever_failed=True, last_ok=True),
             ),
         ),

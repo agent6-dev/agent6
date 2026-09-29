@@ -20,7 +20,7 @@ from agent6.workflows._finish_gates import FinishGates
 from agent6.workflows._guards import (
     BudgetNudges,
     FocusGuard,
-    MemoryNudges,
+    MemoryState,
     NoProgressGuard,
     ReachabilityGuard,
     SettledGuard,
@@ -79,7 +79,7 @@ class LoopState:
     metric: MetricGuard = field(default_factory=MetricGuard)
     quiet: QuietGuard = field(default_factory=QuietGuard)
     stagnation: StagnationGuard = field(default_factory=StagnationGuard)
-    memory: MemoryNudges = field(default_factory=MemoryNudges)
+    memory: MemoryState = field(default_factory=MemoryState)
     standing: StandingGoal = field(default_factory=StandingGoal)
     reach: ReachabilityGuard = field(default_factory=ReachabilityGuard)
     focus: FocusGuard = field(default_factory=FocusGuard)

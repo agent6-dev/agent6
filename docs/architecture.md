@@ -197,6 +197,7 @@ A finish-time check reports any ruling missing from the file.
 - run mode writes; plan and ask read; machine modes see none
 - models never write unprompted, so the loop nudges twice: an advisory when verify first recovers green, and a once-deferred `finish_session` after such a recovery with nothing recorded
 - `agent6 memory add/list/show/rm` is the operator surface over the same files
+- `<state-dir>/memory-use.json`, harness-written at each leg's end: per fact, the session that first wrote it, the last that wrote it, and its reads (count, last reader); `memory list` prints it under each entry, so a stale or never-read fact is visible where it is pruned
 
 **Skills** resolve at run start from `<data-dir>/skills/` plus `[skills].extra_dirs`, through one resolution: the `<skills>` index and what `use_skill` serves cannot diverge.
 

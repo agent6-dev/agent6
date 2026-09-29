@@ -39,7 +39,15 @@ from agent6.graph.models import (
     UpdateStatusIntent,
 )
 from agent6.graph.order import OPEN_STATUSES
-from agent6.memory import decisions_path, decisions_text, memory_dir, record_decision
+from agent6.memory import (
+    DECISIONS_NAME,
+    INDEX_NAME,
+    decisions_path,
+    decisions_text,
+    memory_dir,
+    record_decision,
+    record_use,
+)
 from agent6.memory import index_text as memory_index_text
 from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write
@@ -1044,16 +1052,15 @@ class Workflow:
             )
             if turn.verify_just_passed:
                 turn.metric_plateau_finish = self._plateau_finish(state.metric.history)
-        if name in ("apply_edit", "apply_patch"):
-            if isinstance(result, PreviewResult):
-                return  # a dry run writes nothing: no memory write, no tree edit
+        if name in ("apply_edit", "apply_patch") and isinstance(result, PreviewResult):
+            return  # a dry run writes nothing: no memory write, no tree edit
+        if self._note_memory_touch(state, name, tool_input):
             # An edit under the memory dir is a memory write, not workspace
             # work: both memory nudges stay quiet for the rest of the run and
             # none of the tree bookkeeping below applies (the gate's tree is
             # untouched).
-            if self._edits_the_memory_store(name, tool_input):
-                state.memory.written = True
-                return
+            return
+        if name in ("apply_edit", "apply_patch"):
             turn.edited = True
             state.ever_edited = True
             # Invalidate a same-turn earlier verify pass: the commit
@@ -1071,26 +1078,71 @@ class Workflow:
         if name in DAG_MUTATING_TOOLS:
             turn.dag_mutated = True  # snapshot once after the turn
 
-    def _edits_the_memory_store(self, name: str, tool_input: Any) -> bool:
-        """Whether an edit tool's call addressed the memory store. Judged on the
-        MODEL'S input paths: the store sits outside the workspace root, so only
-        an absolute path reaches it (a result's path is store-relative, and
-        matching on it never fires). `apply_patch` normally carries no `path`
-        and names its files in the headers; every one must be under the store
-        (a patch over the store and the workspace together is workspace work)."""
-        if self.state_dir is None or not isinstance(tool_input, dict):
+    def _note_memory_touch(self, state: LoopState, name: str, tool_input: Any) -> bool:
+        """Count a `read_file` of a fact in the memory store, or record an
+        edit tool's write there (the facts it named, and `written` for the
+        nudges). True for a write: the store sits outside the workspace, so
+        it is not workspace work."""
+        facts = self._memory_store_facts(name, tool_input)
+        if facts is None:
             return False
+        if name == "read_file":
+            for fact in facts:
+                state.memory.read[fact] = state.memory.read.get(fact, 0) + 1
+            return False
+        if name in ("apply_edit", "apply_patch"):
+            state.memory.written = True
+            state.memory.wrote.extend(f for f in facts if f not in state.memory.wrote)
+            return True
+        return False
+
+    def _memory_store_facts(self, name: str, tool_input: Any) -> tuple[str, ...] | None:
+        """The facts a tool call addressed in the memory store, None when the
+        call was not (wholly) about the store. Judged on the MODEL'S input
+        paths: the store sits outside the workspace root, so only an absolute
+        path reaches it (a result's path is store-relative, and matching on it
+        never fires). `apply_patch` normally carries no `path` and names its
+        files in the headers; every one must be under the store (a patch over
+        the store and the workspace together is workspace work). The index and
+        the rulings are not facts: a call about them alone answers ()."""
+        if self.state_dir is None or not isinstance(tool_input, dict):
+            return None
         paths = [str(tool_input["path"])] if tool_input.get("path") else []
         if not paths and name == "apply_patch":
             try:
                 sections = split_patch_files(str(tool_input.get("patch", "")))
                 paths = [patch_target_path(section) for section in sections]
             except PatchError:
-                return False
+                return None
+        if not paths or not all(p.startswith("/") for p in paths):
+            return None
         store = memory_dir(self.state_dir)
-        return bool(paths) and all(
-            p.startswith("/") and Path(p).resolve().is_relative_to(store) for p in paths
+        resolved = [Path(p).resolve() for p in paths]
+        if not all(p.is_relative_to(store) for p in resolved):
+            return None
+        return tuple(
+            p.stem
+            for p in resolved
+            if p.parent == store
+            and p.suffix == ".md"
+            and p.name not in (INDEX_NAME, DECISIONS_NAME)
         )
+
+    def _record_memory_use(self, state: LoopState) -> None:
+        """Persist the facts this leg wrote and read (`memory list` shows them);
+        a write fault must not break the end."""
+        if self.state_dir is None or not (state.memory.wrote or state.memory.read):
+            return
+        session_id = self.events.path.parent.name if self.events is not None else ""
+        try:
+            record_use(
+                self.state_dir,
+                session=session_id or "?",
+                wrote=tuple(state.memory.wrote),
+                read=dict(state.memory.read),
+            )
+        except OSError as exc:
+            self._log(f"LOOP: memory use record failed: {exc}")
 
     def _capture_finish(self, turn: TurnState, name: str, tool_input: Any) -> None:
         """Capture a finish_session / finish_planning call's summary + payload on
@@ -2179,6 +2231,7 @@ class Workflow:
                 all_passed=self.gate.tree_green(state.verify) if grounded else True,
                 scoped=state.verify.scoped if grounded else end.scoped,
             )
+        self._record_memory_use(state)
         return SessionResult(
             completed=end.completed,
             verified=self.gate.verification(state.verify),

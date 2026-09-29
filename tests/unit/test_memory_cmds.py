@@ -76,3 +76,22 @@ def test_rm_keeps_the_index_bytes_it_does_not_touch(tmp_path: Path) -> None:
     remove(tmp_path, "one")
     assert idx.read_bytes() == b"# Memory index\n\n- two: second\nnote: caf\xe9 build\n"
     assert not (idx.parent / "one.md").exists()
+
+
+def test_list_shows_who_wrote_and_read_each_fact(
+    env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The use record prints under its entry: an operator-added fact reads
+    `written ... by operator, never read`; a run's reads follow."""
+    from agent6.memory import record_use
+
+    assert _cmd_memory_add("build-quirk", "Needs FOO=1.") == 0
+    state = state_dir(Path.cwd())
+    record_use(state, session="run-a", wrote=(), read={"build-quirk": 3}, when=86400.0)
+    capsys.readouterr()
+    assert _cmd_memory_list() == 0
+    out = capsys.readouterr().out
+    assert "- build-quirk: Needs FOO=1.\n" in out
+    assert "    written " in out
+    assert "by operator" in out
+    assert "read 3 times, last 1970-01-02 by run-a" in out

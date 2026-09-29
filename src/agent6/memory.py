@@ -16,11 +16,11 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Generator
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 from agent6.errors import OperatorError
 from agent6.paths import mkdir_for_real_user
@@ -39,6 +39,10 @@ INDEX_INJECT_CAP = 4_096
 # Beside a lane's store: the sha256 of every file `seed_store` copied in, by
 # name, so the import can tell an untouched copy from a lane's edit.
 SEED_NAME = "memory-seed.json"
+# Beside the store, harness-written: per fact, who wrote it and which runs
+# read it (`record_use`), the record `agent6 memory list` prints. Outside the
+# model's write grant, so it says what the harness saw.
+USE_NAME = "memory-use.json"
 
 _NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 
@@ -69,6 +73,114 @@ def seed_digests(state_dir: Path) -> dict[str, str]:
 
 def seed_path(state_dir: Path) -> Path:
     return state_dir / SEED_NAME
+
+
+def use_path(state_dir: Path) -> Path:
+    return state_dir / USE_NAME
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryUse:
+    """One fact's provenance and use: the session that first wrote it, the
+    one that last wrote it, and its reads (empty strings when unknown, as for
+    a fact written by hand or before the record existed)."""
+
+    created_by: str = ""
+    created_at: str = ""
+    updated_by: str = ""
+    updated_at: str = ""
+    reads: int = 0
+    read_by: str = ""
+    read_at: str = ""
+
+
+def read_use(state_dir: Path) -> dict[str, MemoryUse]:
+    """The use record by fact name; a missing, unreadable or misshapen file
+    reads as empty, and a misshapen entry is dropped (the record is a
+    surface, never a gate)."""
+    try:
+        raw: Any = json.loads(use_path(state_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, MemoryUse] = {}
+    for name, entry in cast("dict[Any, Any]", raw).items():
+        if not isinstance(name, str) or not isinstance(entry, dict):
+            continue
+        fields: dict[str, Any] = {
+            k: v for k, v in cast("dict[Any, Any]", entry).items() if k in _USE_FIELDS
+        }
+        if all(isinstance(v, int if k == "reads" else str) for k, v in fields.items()):
+            out[name] = MemoryUse(**fields)
+    return out
+
+
+_USE_FIELDS = frozenset(MemoryUse.__dataclass_fields__)
+
+
+def record_use(
+    state_dir: Path,
+    *,
+    session: str,
+    wrote: Sequence[str],
+    read: Mapping[str, int],
+    when: float | None = None,
+) -> None:
+    """Fold one session's memory writes and reads into the use record: a
+    first write creates the entry, every write updates it, reads accumulate
+    with the last reader. Nothing to record leaves the file alone."""
+    if not wrote and not read:
+        return
+    with _locked_memory(state_dir):
+        _record_use_unlocked(state_dir, session=session, wrote=wrote, read=read, when=when)
+
+
+def _record_use_unlocked(
+    state_dir: Path,
+    *,
+    session: str,
+    wrote: Sequence[str],
+    read: Mapping[str, int],
+    when: float | None = None,
+) -> None:
+    stamp = time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(when))
+    use = read_use(state_dir)
+    for name in wrote:
+        prior = use.get(name, MemoryUse())
+        use[name] = MemoryUse(
+            created_by=prior.created_by or session,
+            created_at=prior.created_at or stamp,
+            updated_by=session,
+            updated_at=stamp,
+            reads=prior.reads,
+            read_by=prior.read_by,
+            read_at=prior.read_at,
+        )
+    for name, count in read.items():
+        prior = use.get(name, MemoryUse())
+        use[name] = MemoryUse(
+            created_by=prior.created_by,
+            created_at=prior.created_at,
+            updated_by=prior.updated_by,
+            updated_at=prior.updated_at,
+            reads=prior.reads + count,
+            read_by=session,
+            read_at=stamp,
+        )
+    _write_use(state_dir, use)
+
+
+def _write_use(state_dir: Path, use: Mapping[str, MemoryUse]) -> None:
+    body = {name: asdict(entry) for name, entry in sorted(use.items())}
+    atomic_write(use_path(state_dir), (json.dumps(body, indent=1) + "\n").encode("utf-8"))
+
+
+def _drop_use(state_dir: Path, name: str) -> None:
+    use = read_use(state_dir)
+    if name in use:
+        del use[name]
+        _write_use(state_dir, use)
 
 
 def decisions_path(state_dir: Path) -> Path:
@@ -339,6 +451,15 @@ def _index_has(state_dir: Path, name: str) -> bool:
     return any(pattern.match(ln) for ln in index_text(state_dir).splitlines())
 
 
+_INDEX_LINE_RE = re.compile(r"^\s*[-*]\s*([a-z0-9][a-z0-9-]{0,63})\s*:")
+
+
+def index_name(line: str) -> str | None:
+    """The fact an index line names, None for a line that is not an entry."""
+    match = _INDEX_LINE_RE.match(line)
+    return None if match is None else match.group(1)
+
+
 def _index_hook(index_lines: list[str], name: str) -> str | None:
     """The hook text an index line carries for *name*, None when it has none."""
     pattern = re.compile(rf"^\s*[-*]\s*{re.escape(name)}\s*:")
@@ -415,6 +536,7 @@ def add(state_dir: Path, name: str, body: str) -> Path:
             )
         atomic_write(path, body + "\n")
         _append_index_line(state_dir, name, body.splitlines()[0][:120])
+        _record_use_unlocked(state_dir, session="operator", wrote=(name,), read={})
     return path
 
 
@@ -436,6 +558,7 @@ def remove(state_dir: Path, name: str) -> None:
             _drop_index_line(state_dir, name)
         if path.is_file():
             path.unlink()
+        _drop_use(state_dir, name)
 
 
 def show(state_dir: Path, name: str) -> str:

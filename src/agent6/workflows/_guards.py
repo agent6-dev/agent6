@@ -373,15 +373,20 @@ def stagnation(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | N
 
 
 @dataclass(slots=True)
-class MemoryNudges:
-    """The two memory write nudges (run mode, a memory store wired): one flip
-    advisory when verify first goes green after failing, one deferred
-    finish_session as the backstop; both silent once the worker recorded
-    anything. Run-lifetime: all three persist in the snapshot."""
+class MemoryState:
+    """The run's memory bookkeeping. The two write nudges (run mode, a
+    memory store wired): one flip advisory when verify first goes green after
+    failing, one deferred finish_session as the backstop; both silent once the
+    worker recorded anything (`written`, any edit under the store). Those
+    three are run-lifetime and persist in the snapshot. `wrote` and `read`
+    name the facts this LEG touched, for the use record its end persists
+    (`memory.record_use`); leg-local, each leg records its own."""
 
     written: bool = False
     flip_nudged: bool = False
     finish_nudged: bool = False
+    wrote: list[str] = field(default_factory=list)
+    read: dict[str, int] = field(default_factory=dict)
 
 
 def memory_flip(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | None:
