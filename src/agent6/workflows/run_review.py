@@ -197,9 +197,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     else:
         verify = "not gated"
     use = read_use(layout.state_dir)
-    wrote = tuple(
-        sorted(n for n, u in use.items() if layout.session_id in (u.created_by, u.updated_by))
-    )
+    wrote = tuple(sorted(n for n, u in use.items() if layout.session_id in u.writers))
     dropped = {
         "steers": max(0, len(steers) - _STEERS_MAX),
         "decisions": max(0, len(decisions) - _DECISIONS_MAX),

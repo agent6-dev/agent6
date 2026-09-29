@@ -135,6 +135,17 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: Path) -> None:
         assert heading in text
 
 
+def test_every_writer_of_a_fact_is_credited_not_only_the_first_and_last(repo: Path) -> None:
+    """A creates a fact, B edits it, C edits it: reviewing B credited B with
+    no memory write, because the record kept only the first and the last
+    writer."""
+    layout = _write_session(repo)
+    record_use(layout.state_dir, session="run-A", wrote=("fact",), read={})
+    record_use(layout.state_dir, session="run-AAAA11", wrote=("fact",), read={})
+    record_use(layout.state_dir, session="run-C", wrote=("fact",), read={})
+    assert run_digest(layout).memory_wrote == ("fact",)
+
+
 def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: Path) -> None:
     red = [
         e

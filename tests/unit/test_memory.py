@@ -521,12 +521,14 @@ def test_record_use_keeps_who_wrote_and_who_read(tmp_path: Path) -> None:
     record_use(tmp_path, session="run-a", wrote=("fact",), read={}, when=0.0)
     record_use(tmp_path, session="run-b", wrote=("fact",), read={"fact": 2}, when=3600.0)
     record_use(tmp_path, session="run-c", wrote=(), read={"fact": 1, "other": 1}, when=7200.0)
+    record_use(tmp_path, session="run-b", wrote=("fact",), read={}, when=10800.0)
     use = read_use(tmp_path)
     assert use["fact"] == MemoryUse(
         created_by="run-a",
         created_at="1970-01-01 00:00Z",
         updated_by="run-b",
-        updated_at="1970-01-01 01:00Z",
+        updated_at="1970-01-01 03:00Z",
+        writers=("run-a", "run-b"),
         reads=3,
         read_by="run-c",
         read_at="1970-01-01 02:00Z",
@@ -538,6 +540,7 @@ def test_record_use_keeps_who_wrote_and_who_read(tmp_path: Path) -> None:
         created_at="",
         updated_by="",
         updated_at="",
+        writers=(),
         reads=1,
         read_by="run-c",
         read_at="1970-01-01 02:00Z",
@@ -560,9 +563,12 @@ def test_read_use_tolerates_a_missing_or_misshapen_record(tmp_path: Path) -> Non
     use_path(tmp_path).write_text("[1, 2]", encoding="utf-8")
     assert read_use(tmp_path) == {}
     use_path(tmp_path).write_text(
-        '{"fact": {"reads": "many"}, "ok": {"reads": 2}}', encoding="utf-8"
+        '{"fact": {"reads": "many"}, "ok": {"reads": 2}, "w": {"writers": "run-a"},'
+        ' "v": {"writers": ["run-a", 1]}, "u": {"writers": ["run-a"]}}',
+        encoding="utf-8",
     )
-    assert list(read_use(tmp_path)) == ["ok"]
+    assert list(read_use(tmp_path)) == ["ok", "u"]
+    assert read_use(tmp_path)["u"].writers == ("run-a",)
 
 
 def test_index_name_reads_the_entry_a_line_names() -> None:

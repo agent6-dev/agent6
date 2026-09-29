@@ -82,13 +82,15 @@ def use_path(state_dir: Path) -> Path:
 @dataclass(frozen=True, slots=True)
 class MemoryUse:
     """One fact's provenance and use: the session that first wrote it, the
-    one that last wrote it, and its reads (empty strings when unknown, as for
-    a fact written by hand or before the record existed)."""
+    one that last wrote it, every distinct writer in order, and its reads
+    (empty when unknown, as for a fact written by hand or before the record
+    existed)."""
 
     created_by: str = ""
     created_at: str = ""
     updated_by: str = ""
     updated_at: str = ""
+    writers: tuple[str, ...] = ()
     reads: int = 0
     read_by: str = ""
     read_at: str = ""
@@ -111,7 +113,17 @@ def read_use(state_dir: Path) -> dict[str, MemoryUse]:
         fields: dict[str, Any] = {
             k: v for k, v in cast("dict[Any, Any]", entry).items() if k in _USE_FIELDS
         }
-        if all(isinstance(v, int if k == "reads" else str) for k, v in fields.items()):
+        if "writers" in fields:
+            writers = fields["writers"]
+            if not isinstance(writers, list) or not all(
+                isinstance(w, str) for w in cast("list[Any]", writers)
+            ):
+                continue
+            fields["writers"] = tuple(cast("list[str]", writers))
+        if all(
+            isinstance(v, int if k == "reads" else (tuple if k == "writers" else str))
+            for k, v in fields.items()
+        ):
             out[name] = MemoryUse(**fields)
     return out
 
@@ -148,11 +160,13 @@ def _record_use_unlocked(
     use = read_use(state_dir)
     for name in wrote:
         prior = use.get(name, MemoryUse())
+        writers = prior.writers if session in prior.writers else (*prior.writers, session)
         use[name] = MemoryUse(
             created_by=prior.created_by or session,
             created_at=prior.created_at or stamp,
             updated_by=session,
             updated_at=stamp,
+            writers=writers,
             reads=prior.reads,
             read_by=prior.read_by,
             read_at=prior.read_at,
@@ -164,6 +178,7 @@ def _record_use_unlocked(
             created_at=prior.created_at,
             updated_by=prior.updated_by,
             updated_at=prior.updated_at,
+            writers=prior.writers,
             reads=prior.reads + count,
             read_by=session,
             read_at=stamp,
@@ -172,7 +187,10 @@ def _record_use_unlocked(
 
 
 def _write_use(state_dir: Path, use: Mapping[str, MemoryUse]) -> None:
-    body = {name: asdict(entry) for name, entry in sorted(use.items())}
+    body = {
+        name: {**asdict(entry), "writers": list(entry.writers)}
+        for name, entry in sorted(use.items())
+    }
     atomic_write(use_path(state_dir), (json.dumps(body, indent=1) + "\n").encode("utf-8"))
 
 
