@@ -261,7 +261,7 @@ def test_the_caps_are_named_not_silent(repo: Path) -> None:
     layout = _write_session(repo, events=many)
     d = run_digest(layout)
     assert len(d.steers) == 20
-    assert d.dropped == {"steers": 5}
+    assert d.steers_total == 25
     assert "operator steers (20, 5 more not shown):" in d.render()
 
 

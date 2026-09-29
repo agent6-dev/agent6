@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from dataclasses import dataclass, field
+from collections.abc import Sized
+from dataclasses import dataclass
+from typing import Literal
 
 from agent6.memory import clipped_index, index_text, read_use
 from agent6.prompts.review import RUN_REVIEW_SYSTEM_PROMPT
@@ -55,6 +57,12 @@ class RunReviewError(Exception):
     """The run-review call failed to produce a response."""
 
 
+# The gate word, `LogScan.verify_verdict`'s rule in words: a plan, an ask or
+# an end nothing gated; a green final tree; this leg's own red verify; and
+# everything else, a journal with no end included.
+VerifyWord = Literal["not gated", "passed", "failed", "unverified"]
+
+
 @dataclass(frozen=True, slots=True)
 class VerifyRun:
     exit_code: int
@@ -71,7 +79,7 @@ class RunDigest:
     task: str
     status: str
     end_reason: str
-    verify: str  # passed | failed | unverified | not gated
+    verify: VerifyWord
     iterations: int | None
     tool_calls: int
     tool_errors: int
@@ -85,7 +93,10 @@ class RunDigest:
     memory_wrote: tuple[str, ...] = ()
     memory_index: str = ""  # the repo's MEMORY.md index, what every run is shown
     conversation: str = ""
-    dropped: dict[str, int] = field(default_factory=dict)  # what the caps left out, by kind
+    # The journal's own counts; a list above shows at most its cap of them.
+    steers_total: int = 0
+    decisions_total: int = 0
+    verify_total: int = 0
 
     def render(self) -> str:
         """The digest as the text the reviewer is given."""
@@ -96,13 +107,13 @@ class RunDigest:
             f" {self.tool_calls} tool calls ({self.tool_errors} failed), ${self.cost_usd:.2f}",
         ]
         if self.steers:
-            lines.append(f"\noperator steers ({len(self.steers)}{self._more('steers')}):")
+            lines.append(f"\noperator steers ({_shown(self.steers, self.steers_total)}):")
             lines.extend(f"- {s}" for s in self.steers)
         if self.decisions:
-            lines.append(f"\nrulings recorded ({len(self.decisions)}{self._more('decisions')}):")
+            lines.append(f"\nrulings recorded ({_shown(self.decisions, self.decisions_total)}):")
             lines.extend(f"- Q: {q}\n  A: {a}" for q, a in self.decisions)
         if self.verify_runs:
-            lines.append(f"\nverify runs ({len(self.verify_runs)}{self._more('verify')}):")
+            lines.append(f"\nverify runs ({_shown(self.verify_runs, self.verify_total)}):")
             lines.extend(
                 f"- exit {v.exit_code} ({v.duration_s:.1f}s): {v.tail}"
                 if v.tail
@@ -124,9 +135,11 @@ class RunDigest:
         lines.append(f"\nconversation (tail):\n{self.conversation}")
         return "\n".join(lines)
 
-    def _more(self, kind: str) -> str:
-        left = self.dropped.get(kind, 0)
-        return f", {left} more not shown" if left else ""
+
+def _shown(shown: Sized, total: int) -> str:
+    """`N` or `N, M more not shown`: the cap named, never silent."""
+    left = total - len(shown)
+    return f"{len(shown)}, {left} more not shown" if left > 0 else str(len(shown))
 
 
 def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
@@ -207,11 +220,6 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         verify = "unverified"
     use = read_use(layout.state_dir)
     wrote = tuple(sorted(n for n, u in use.items() if layout.session_id in u.writers))
-    dropped = {
-        "steers": max(0, len(steers) - _STEERS_MAX),
-        "decisions": max(0, len(decisions) - _DECISIONS_MAX),
-        "verify": max(0, len(verify_runs) - _VERIFY_SHOWN),
-    }
     return RunDigest(
         session_id=layout.session_id,
         mode=summary.mode,
@@ -232,7 +240,9 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         memory_wrote=wrote,
         memory_index=clipped_index(index_text(layout.state_dir)),
         conversation=conversation(layout, max_chars=max_chars),
-        dropped={k: v for k, v in dropped.items() if v},
+        steers_total=len(steers),
+        decisions_total=len(decisions),
+        verify_total=len(verify_runs),
     )
 
 
