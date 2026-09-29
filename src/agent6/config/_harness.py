@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The loop-behaviour models: `[harness]` (+ its metric), `[review]`,
-`[context]`, `[prompt]`, and `[budget]`."""
+"""The loop-behaviour models.
+
+`[harness]` with its metric, `[review]`, `[context]`, `[prompt]` and `[budget]`.
+"""
 
 from __future__ import annotations
 
@@ -15,14 +17,22 @@ from agent6.config._base import MODEL_CONFIG, Argv, StrTuple
 
 
 def parse_seat_spec(spec: str) -> tuple[str, str, str]:
-    """A review seat, `persona[@provider/model]`, as `(persona, provider,
-    model)`: `"security@openrouter/moonshotai/kimi-k2"` ->
-    `("security", "openrouter", "moonshotai/kimi-k2")` (the model may itself
-    contain `/`; only the first `/` after `@` splits provider from model),
-    `"security"` -> `("security", "", "")` (routed via the reviewer role),
-    `"@anthropic/claude-opus-4-8"` -> `("", "anthropic", "claude-opus-4-8")`.
-    An `@` form must name both a provider and a model, so a typo cannot
-    degrade to the reviewer route in silence; it raises ValueError."""
+    """Split a review seat spec, `persona[@provider/model]`, into its three parts.
+
+    Only the first `/` after `@` splits provider from model, so the model may contain `/`.
+    `"security"` gives `("security", "", "")`, routed via the reviewer role;
+    `"@anthropic/claude-opus-4-8"` gives `("", "anthropic", "claude-opus-4-8")`.
+
+    Args:
+        spec: The seat spec.
+
+    Returns:
+        `(persona, provider, model)`, each stripped, the route parts empty without an `@`.
+
+    Raises:
+        ValueError: An `@` form names no provider or no model (a typo must not degrade to the
+            reviewer route in silence).
+    """
     persona, sep, route = spec.partition("@")
     if not sep:
         return (spec.strip(), "", "")
@@ -34,22 +44,16 @@ def parse_seat_spec(spec: str) -> tuple[str, str, str]:
     return (persona.strip(), provider.strip(), model.strip())
 
 
-# The review-seat depth (`[review].tier`); ReviewSeat.tier mirrors this, so the
-# vocabulary has one owner.
+# The review-seat depth; ReviewSeat.tier mirrors this, so the vocabulary has one owner.
 ReviewTier = Literal["diff", "explore"]
 
 
 class MetricConfig(BaseModel):
-    """Optional continuous-score metric for tasks that have a measurable goal
-    (cycles, wall time, kB, bench score) distinct from binary verify pass/fail.
+    """The `[harness.metric]` table: a continuous score beside the pass/fail gate.
 
-    When configured, `run_metric_command` (the metric tool) runs `command`
-    in the jail (same env as `verify_command`) and parses `pattern`'s
-    first capture group as a number. `goal = "minimize"` for things like
-    cycles/time; `"maximize"` for bench scores. `pattern` is a Python
-    regex; the first capture group must be a base-10 integer or float. If
-    the pattern does not match in the command's combined stdout+stderr the
-    metric is treated as missing.
+    `run_metric_command` runs `command` in the jail with `verify_command`'s environment and
+    parses `pattern`'s first capture group as a base-10 number; no match in the combined
+    stdout and stderr reads as a missing metric.
     """
 
     model_config = MODEL_CONFIG
@@ -77,13 +81,11 @@ class MetricConfig(BaseModel):
 
 
 class HarnessConfig(BaseModel):
+    """The `[harness]` table."""
+
     model_config = MODEL_CONFIG
 
-    # The command agent6 runs to decide whether a step "succeeded". This is
-    # inherently repo-specific, so it has no useful global default and defaults
-    # to empty. Optional: `agent6 run`/`plan` infer one per run when it is unset
-    # (AGENTS.md -> repo signals -> a cheap LLM call; see agent6.verify_infer),
-    # falling back to a gateless run. `agent6 init` can pin one.
+    # Repo-specific, so no global default; the inference lives in agent6.verify_infer.
     verify_command: Argv = Field(
         default=(),
         description=(
@@ -95,8 +97,6 @@ class HarnessConfig(BaseModel):
             "gate a recognizable project created mid-run yields."
         ),
     )
-    # False pins gatelessness for a run with no verify_command: neither the
-    # preflight inference nor the mid-run adoption arms a gate.
     verify_infer: bool = Field(
         default=True,
         description=(
@@ -107,12 +107,7 @@ class HarnessConfig(BaseModel):
             "stays gateless, no inference and no adoption; a set `verify_command` is unaffected."
         ),
     )
-    # Per-call timeout for verify_command (and metric_command) in seconds.
-    # Defaults to the jail's general 600s; lower it far for benches whose
-    # verify is a fast correctness test (where the tests run in ~2s, a 30s cap
-    # detects infinite-loop or quadratic edits 20x faster than the 600s
-    # default). Too low for slow legitimate tests causes false-positive
-    # failures, so leave it at 600 unless the verify is reliably fast.
+    # Matches the jail's general 600s; a bench with a 2s gate detects a runaway edit sooner at 30.
     verify_timeout_s: float = Field(
         gt=0.0,
         default=600.0,
@@ -125,8 +120,7 @@ class HarnessConfig(BaseModel):
             "model-chosen `run_command` is not bounded (see `command_checkin_s`)."
         ),
     )
-    # Bounds one execution: a resume gets a fresh allowance (numbering continues),
-    # so a standing run is not capped by the sum of its executions.
+    # Per execution: a standing run is not capped by the sum of its executions.
     max_iterations: int = Field(
         default=200,
         description=(
@@ -138,13 +132,22 @@ class HarnessConfig(BaseModel):
     @field_validator("max_iterations")
     @classmethod
     def _iterations_unlimited_is_exactly_minus_one(cls, v: int) -> int:
+        """Refuse a cap that is neither positive nor exactly -1.
+
+        Args:
+            v: The configured cap.
+
+        Returns:
+            The cap unchanged.
+
+        Raises:
+            ValueError: The cap is 0 or below -1.
+        """
         if v == 0 or v < -1:
             raise ValueError("max_iterations is >= 1, or exactly -1 for unlimited")
         return v
 
-    # The loop's guards. An empty turn (no text, no tool call) is answered
-    # with a harness notice and re-asked; the same (tool, args) call repeated
-    # ends the run; a long silence with no edit and no verify draws one notice.
+    # The loop's guards: the empty turn, the repeated call, the long silence.
     went_quiet_max_nudges: int = Field(
         default=4,
         ge=0,
@@ -171,12 +174,7 @@ class HarnessConfig(BaseModel):
         ),
     )
 
-    # How long a run_command may run before the model is handed it back as a
-    # background job. Not a timeout: nothing is killed, the command keeps
-    # running and the model decides whether to wait, poll or stop it. 0 disables
-    # the hand-back (wait while it lives), which is right when a human is
-    # watching and can interrupt. 900 because the hand-back is non-destructive:
-    # handing back early costs one poll cycle of tokens.
+    # 900 because the hand-back is non-destructive: handing back early costs one poll cycle.
     command_checkin_s: float = Field(
         ge=0.0,
         default=900.0,
@@ -198,9 +196,6 @@ class HarnessConfig(BaseModel):
             "honoured. A round that lands work resets the streak."
         ),
     )
-    # The harness-run gate. `finish` certifies the tree the run ends on;
-    # `never` leaves every gate run to the model's own run_verify_command
-    # calls (the measured model-driven shape); `step` is the expensive end.
     verify_when: Literal["finish", "step", "never"] = Field(
         default="finish",
         description=(
@@ -237,25 +232,7 @@ class ContextConfig(BaseModel):
 
     model_config = MODEL_CONFIG
 
-    # Tiered context-compaction thresholds (approximate chars; tokens ~=
-    # chars/4). When cumulative *tool_result* content grows past
-    # `drop_at_chars` the oldest tool_results are replaced by a
-    # short placeholder (the worker can re-call the tool to refetch). When the
-    # *whole* context (text + tool_use inputs + surviving tool_results) grows
-    # past `summarise_at_chars` (which must be > drop, so tier-2 escalates
-    # above tier-1) the conversation is summarized and restarted
-    # (the durable task DAG survives; the restart notice points the worker at
-    # `list_tasks` to recover task-level state).
-    # `summary_max_tokens` caps the summarizer's output.
-    #
-    # Default `None` is adaptive: agent6 sizes both thresholds from the worker
-    # model's context window (tier-1 at ~45% of it, tier-2 at the window
-    # minus a 16k-token reserve), resolving
-    # the window from a bundled table of tested models + the live model cache
-    # (see `models.registry.compaction_thresholds`). Pin them by setting both
-    # explicitly (e.g. a self-hosted model agent6 can't size); leave both unset
-    # to stay adaptive. When the window is unknown, fixed 256k/768k
-    # defaults apply.
+    # Unset thresholds are sized in models.registry.compaction_thresholds.
     drop_at_chars: int | None = Field(
         default=None,
         gt=0,
@@ -302,12 +279,8 @@ class ContextConfig(BaseModel):
             "smaller cap, and the chatgpt backend takes no cap."
         ),
     )
-    # Tier-1 gist elision: a large read_file result about to be elided decays
-    # to a placeholder carrying a model-written gist of the file first (one
-    # batched reviewer-model call per drop event), then to the bare marker
-    # under continued pressure. Measured on the longhorizon bench: bare
-    # elision of reference docs halves a retention task's score under a small
-    # window. False = straight to bare markers (no distiller calls).
+    # One batched reviewer-model call per drop event.
+    # Measured on the longhorizon bench: bare elision halves a retention score under a small window.
     elision_gists: bool = Field(
         default=True,
         description=(
@@ -319,6 +292,15 @@ class ContextConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_compaction_thresholds(self) -> ContextConfig:
+        """Refuse thresholds that are half set or do not escalate.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: One threshold set without the other, tier 2 at or below tier 1, or tier 2
+                at or below the verbatim tail.
+        """
         drop, summarise = self.drop_at_chars, self.summarise_at_chars
         if (drop is None) != (summarise is None):
             raise ValueError(
@@ -345,18 +327,10 @@ class ContextConfig(BaseModel):
 
 
 class PromptConfig(BaseModel):
-    """`[prompt]` section: system-prompt override, task-prompt revision, and
-    decomposition."""
+    """The `[prompt]` table: the system-prompt override, task revision and decomposition."""
 
     model_config = MODEL_CONFIG
 
-    # Advanced: replace run-mode's static base system prompt (role + edit/tool-use/
-    # dag/scope rules) with the contents of this file. The dynamic blocks (verify,
-    # metric, budget, repo-priors + AGENTS.md) still append, so repo context and
-    # the budget cap are preserved. Empty = the built-in default. You own keeping
-    # the tool contracts intact (apply_edit/apply_patch, run_verify_command,
-    # finish_session); run startup warns if the override omits them. Inspect the
-    # assembled result with `agent6 prompt show`.
     system_prompt_file: str = Field(
         default="",
         description=(
@@ -366,10 +340,7 @@ class PromptConfig(BaseModel):
             "show` prints the assembled prompt, the tool definitions, and the first message."
         ),
     )
-    # one-shot task prompt revision before the worker loop starts.
-    # Reuses the reviewer model, takes no tools, and is budget-tracked like
-    # any other provider call. Default off: crisp prompts and frontier models
-    # do not need revision.
+    # The revision call takes no tools and counts against the budget like any provider call.
     revise_prompt: Literal["off", "auto", "interactive"] = Field(
         default="off",
         description=(
@@ -380,18 +351,7 @@ class PromptConfig(BaseModel):
             "live run (`/task`) gets the same pass, revised as `auto` does."
         ),
     )
-    # Front-load task decomposition (run mode). When on the worker's system
-    # prompt swaps the "DAG is optional" guidance for a "decompose first"
-    # directive: lay the task out as ordered subtasks before editing, then work
-    # one focused subtask at a time (the existing surface-current-task and
-    # finish-gate machinery walks the frontier). Helps small/open models that
-    # lose track of multi-part tasks; a capable model decomposes implicitly and
-    # only pays the 2-4x turn overhead. "auto" (default) enables it only for
-    # worker models with a measured win in the capability registry
-    # (models.registry.decompose_default); the CLI pins auto to on/off at run
-    # start via `with_decompose`, and the engine treats any value other than
-    # "on" as off. No effect on plan/ask/machine/agent modes. See
-    # docs/config.md for the measured per-model effect.
+    # `auto` resolves per model in models.registry.decompose_default; the engine reads only `on`.
     decompose: Literal["auto", "on", "off"] = Field(
         default="auto",
         description=(
@@ -406,8 +366,14 @@ class PromptConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_system_prompt_file(self) -> PromptConfig:
-        # Fail loud at config time if the override path is set but missing, rather
-        # than silently falling back to the default prompt at run start.
+        """Refuse an override path that is not a file, at config time rather than at run start.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: `system_prompt_file` is set and is not a readable file.
+        """
         if self.system_prompt_file:
             p = Path(self.system_prompt_file).expanduser()
             if not p.is_file():
@@ -416,19 +382,11 @@ class PromptConfig(BaseModel):
 
 
 class ReviewConfig(BaseModel):
-    """`[review]` section: the in-loop review panel and its trigger."""
+    """The `[review]` table: the in-loop review panel and its trigger."""
 
     model_config = MODEL_CONFIG
 
-    # When != "off", Harness runs the review panel at the chosen trigger and
-    # injects its findings as a user message the worker sees next turn. With no
-    # `seats`, the panel is one seat on `[models.reviewer]` (same route
-    # `agent6 review` uses).
-    #   off              - never (default).
-    #   on_verify_fail   - after every verify failure.
-    #   before_finish    - intercept `finish_session`; a gating `decision`
-    #                      rejects the finish while the panel is unsatisfied.
-    #   periodic         - every `period` iterations.
+    # The findings reach the model as a user message on its next turn.
     trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = Field(
         default="off",
         description=(
@@ -444,12 +402,6 @@ class ReviewConfig(BaseModel):
         default=10,
         description='Iterations between panels when `trigger = "periodic"`.',
     )
-    # `seats` is the roster: flat "persona[@provider/model]" strings (e.g.
-    # "security" routes via [models.reviewer];
-    # "security@openrouter/moonshotai/kimi-k2" pins a model). The `agent6 review
-    # --reviewers N`/`--personas` flags synthesize an in-memory equivalent.
-    # `decision` gates in-loop only; "advisory" (default) injects findings as
-    # guidance and never blocks.
     decision: Literal["advisory", "veto", "quorum", "all"] = Field(
         default="advisory",
         description=(
@@ -467,8 +419,6 @@ class ReviewConfig(BaseModel):
             "seats on one model count once, so a same-model panel cannot reach it)."
         ),
     )
-    # Per-run cap on total panel blocks before the gate auto-downgrades to
-    # advisory for the rest of the run (so a gating panel can never stall forever).
     max_total_rejections: int = Field(
         ge=1,
         default=4,
@@ -477,9 +427,6 @@ class ReviewConfig(BaseModel):
             "for the rest of the run, so a panel can never stall a run forever."
         ),
     )
-    # Budget floor: the in-loop review panel is skipped (approve-and-proceed)
-    # once the run's remaining token budget falls below this fraction. Default
-    # 0.25 = skip the panel in the last quarter of the budget.
     budget_fraction: float = Field(
         gt=0.0,
         le=1.0,
@@ -501,8 +448,6 @@ class ReviewConfig(BaseModel):
             "roster for a one-off review."
         ),
     )
-    # Seat concurrency for the in-loop panel (1 = sequential). The post-hoc
-    # `agent6 review` runs all seats in parallel regardless (fast one-shot).
     concurrency: int = Field(
         ge=1,
         default=1,
@@ -511,9 +456,6 @@ class ReviewConfig(BaseModel):
             "latency is its slowest seat). `agent6 review` always runs every seat in parallel."
         ),
     )
-    # Reviewer tier: "diff" (one grounded call over the diff) or "explore" (a
-    # read-only tool-using mini-loop that reads the broader repo first to catch
-    # cross-file impact). explore is more thorough but costs several calls/seat.
     tier: ReviewTier = Field(
         default="diff",
         description=(
@@ -526,9 +468,14 @@ class ReviewConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_review_seats(self) -> ReviewConfig:
-        # Each seats entry is "persona", "persona@provider/model", or
-        # "@provider/model"; an "@" form must name both a provider and a model so
-        # a typo doesn't silently degrade to the reviewer route.
+        """Refuse a seat entry that is empty or does not parse.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: A seat is blank, or its `@` form names no provider or no model.
+        """
         for spec in self.seats:
             if not spec.strip():
                 raise ValueError("review.seats entries must be non-empty")
@@ -540,6 +487,14 @@ class ReviewConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_review_quorum(self) -> ReviewConfig:
+        """Refuse a quorum the roster's distinct models can never reach.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: `decision = "quorum"` with fewer distinct seat models than `quorum`.
+        """
         if self.decision == "quorum" and self.quorum > 1:
             models = {f"{p}/{m}" if p else "" for _, p, m in map(parse_seat_spec, self.seats)}
             if len(models) < self.quorum:
@@ -553,19 +508,12 @@ class ReviewConfig(BaseModel):
 
 
 class BudgetConfig(BaseModel):
-    """`[budget]`: every provider call is bounded in exactly one currency.
+    """The `[budget]` table: every provider call is bounded in exactly one currency.
 
-    A call the runtime can meter (provider-reported cost, else price x tokens
-    at the model's fetched rates, cache-aware) counts against `max_usd`; a
-    subscription call carrying a plan-usage reading counts consumed
-    percentage points against `max_percent`; a call with neither counts its
-    input+output tokens against `max_tokens_fallback`. The fields share one
-    rule: `-1` = unlimited,
-    `0` = refuse calls in that ledger up front (`max_tokens_fallback = 0`
-    means never run an unmeterable model), `> 0` = the cap. Hitting a cap
-    ends the run resumably (`budget_exhausted`); each resumed execution gets a
-    fresh budget. The `--max-usd` / `--max-tokens-fallback` flags override
-    per run."""
+    A meterable call counts against `max_usd`, a plan-metered call against `max_percent`, and
+    a call with neither against `max_tokens_fallback`. Each cap reads `-1` as unlimited and
+    `0` as refuse up front.
+    """
 
     model_config = MODEL_CONFIG
 
@@ -602,9 +550,7 @@ class BudgetConfig(BaseModel):
         ),
     )
 
-    # Purchased Codex credits and Claude extra usage are real money after the
-    # included window; a plan-metered call that would draw on them refuses
-    # unless this is set.
+    # Purchased credits and extra usage are real money after the included window.
     allow_paid_credits: bool = Field(
         default=False,
         description=(
@@ -624,8 +570,20 @@ class BudgetConfig(BaseModel):
     @field_validator("max_usd", "max_percent")
     @classmethod
     def _usd_unlimited_is_exactly_minus_one(cls, v: float) -> float:
-        # Non-finite never binds (nan fails every comparison; inf exceeds any
-        # spend), which would silently disable the hard budget.
+        """Refuse a cap that is non-finite or negative other than exactly -1.
+
+        A non-finite cap never binds (nan fails every comparison), which would silently disable
+        the hard budget.
+
+        Args:
+            v: The configured cap.
+
+        Returns:
+            The cap unchanged.
+
+        Raises:
+            ValueError: The cap is nan, infinite, or negative and not -1.
+        """
         if not math.isfinite(v) or (v < 0 and v != -1):
             raise ValueError("a budget cap is finite and >= 0, or exactly -1 for unlimited")
         return v

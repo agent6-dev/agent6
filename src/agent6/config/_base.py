@@ -8,26 +8,30 @@ from typing import Annotated
 
 from pydantic import AfterValidator, ConfigDict, Field
 
-# strict: a config typo must not coerce ("true" is not a bool, "5" is not an
-# int, a bool is not a number); TOML already delivers native types.
-# allow_inf_nan=False: an infinite timeout or budget is never a real setting,
-# and inf raises a raw OverflowError downstream. Deliberate conversions stay as
-# explicit mode="before" validators on their own fields.
+# strict: TOML delivers native types, so a typo must not coerce ("5" is not an int).
+# allow_inf_nan=False: an infinite timeout or budget raises a raw OverflowError downstream.
 MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
 
-# TOML arrays arrive as Python lists; converting to the frozen tuple is the only
-# container conversion strict mode keeps. Items still validate without scalar
-# coercion (an int in a string array stays refused).
+# The list-to-tuple conversion is the only one strict mode keeps; items stay uncoerced.
 StrTuple = Annotated[tuple[str, ...], Field(strict=False)]
 
 
 def _argv_elements(v: tuple[str, ...]) -> tuple[str, ...]:
+    """Refuse an empty argv element.
+
+    Args:
+        v: The argv.
+
+    Returns:
+        The argv unchanged.
+
+    Raises:
+        ValueError: An element is empty or whitespace.
+    """
     if any(not arg.strip() for arg in v):
         raise ValueError("argv elements must be non-empty strings")
     return v
 
 
-# Command argv fields (`verify_command`, `metric.command`, notify hooks, MCP
-# `command`, `token_command`). An empty element is always a typo; an empty tuple
-# stays valid where the field means "unset".
+# Command argv fields: an empty element is a typo; an empty tuple means "unset".
 Argv = Annotated[StrTuple, AfterValidator(_argv_elements)]

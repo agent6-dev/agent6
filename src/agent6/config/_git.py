@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `[git]` model: worktree policy, the run's detached chain, merge and
-message styles."""
+"""The `[git]` model.
+
+Worktree policy, the run's detached chain, merge and message styles.
+"""
 
 from __future__ import annotations
 
@@ -48,12 +50,10 @@ class GitCommitSquashConfig(BaseModel):
 
 
 class GitCommitConfig(BaseModel):
-    """Overrides for the author/committer identity on agent6 commits, the
-    provenance trailer, and the per-kind message styles.
+    """The commit identity, the provenance trailer and the per-kind message styles.
 
-    `name`/`email` default to None = the project's own `git config` identity;
-    `agent6 run` refuses at startup when neither an override nor a resolvable
-    identity exists, rather than committing as `(no author) <(none)>`.
+    `name` and `email` unset mean the project's own `git config` identity; a run with
+    neither an override nor a resolvable identity refuses at startup.
     """
 
     model_config = MODEL_CONFIG
@@ -87,6 +87,17 @@ class GitCommitConfig(BaseModel):
     @field_validator("trailer")
     @classmethod
     def _trailer_is_a_trailer_line(cls, v: str) -> str:
+        """Refuse a trailer that is not a `Key: value` line with only `{model}` as a placeholder.
+
+        Args:
+            v: The trailer template.
+
+        Returns:
+            The template unchanged.
+
+        Raises:
+            ValueError: An unknown placeholder, or the rendered line is not a trailer.
+        """
         if not v:
             return v
         fields = {f for _, f, _, _ in string.Formatter().parse(v) if f is not None}
@@ -105,11 +116,11 @@ class GitCommitConfig(BaseModel):
 
 
 class GitConfig(BaseModel):
+    """The `[git]` table."""
+
     model_config = MODEL_CONFIG
 
-    # Untracked files are never in question: a run records the ones present
-    # at its start (`untracked-at-start`) and leaves them out of every commit
-    # and dirty check.
+    # A run records the untracked files present at its start and never commits them.
     dirty_tree: Literal["ask", "stash", "include"] = Field(
         default="ask",
         description=(
@@ -123,12 +134,7 @@ class GitConfig(BaseModel):
             "refuses under `ask`."
         ),
     )
-    # When `dirty_tree = "stash"` stashed pre-run changes, restore them at run end. Default
-    # off (safe): the run-end reporter always prints how to pop the stash; with
-    # this on, agent6 also pops it for you when it can do so cleanly (a clean
-    # tree: a run that edited leaves its unmerged work in the tree, so this
-    # fires after auto_merge or a no-edit run), and otherwise leaves the stash
-    # with a message rather than risk a conflicted auto-apply.
+    # A run that edited leaves its work in the tree: this fires after auto_merge or a no-edit run.
     auto_stash_pop: bool = Field(
         default=False,
         description=(
@@ -137,11 +143,7 @@ class GitConfig(BaseModel):
             '`reset --hard`. Requires `dirty_tree = "stash"`.'
         ),
     )
-    # Per-step commits land on the run's own detached chain
-    # (refs/agent6/<session>/head), parented on HEAD at run start; HEAD never
-    # moves. branch_per_run additionally advances a visible agent6/<slug>
-    # branch ref to the chain tip (off = the hidden ref only). Forced on for
-    # --parallel lanes (work is imported by branch).
+    # The chain is refs/agent6/<session>/head, parented on HEAD at run start.
     control: Literal["agent6", "model"] = Field(
         default="agent6",
         description=(
@@ -160,9 +162,7 @@ class GitConfig(BaseModel):
             "(their work is imported by branch)."
         ),
     )
-    # Off = no per-step commits at all: sessions diff/commits/merge, fork
-    # rollback, and the compare judge honestly degrade to "no step history";
-    # resume still works from snapshots.
+    # Off, resume still works from snapshots; the step-history surfaces degrade.
     commit_per_step: bool = Field(
         default=True,
         description=(
@@ -181,8 +181,7 @@ class GitConfig(BaseModel):
             "Consolidation only; per-step commits always land on the run's chain."
         ),
     )
-    # With auto_stash_pop the merge lands first, then the stashed pre-run
-    # changes go back on top.
+    # With auto_stash_pop the merge lands first, then the stash goes back on top.
     auto_merge: bool = Field(
         default=False,
         description=(
@@ -191,8 +190,7 @@ class GitConfig(BaseModel):
             "the hidden chain ref. On a conflict nothing moves and the instructions are printed."
         ),
     )
-    # With branch_per_run off there is no branch to delete, and the hidden chain
-    # ref stays as the run's record until `sessions rm`.
+    # The hidden chain ref stays as the run's record until `sessions rm`.
     auto_prune: bool = Field(
         default=False,
         description=(
@@ -201,14 +199,8 @@ class GitConfig(BaseModel):
             "force-deleted. Requires `auto_merge`; nothing to do without a run branch."
         ),
     )
-    # Governs the repo's own git hooks (`.git/hooks/*`) during agent6's own git
-    # operations, the per-step auto-commit above all. Default false: a hook is
-    # repo-controlled code that would execute on the host, outside the jail,
-    # when agent6 commits (a host-RCE vector for an adversarial repo), and a
-    # slow pre-commit hook would re-run on every micro-commit. The
-    # verify_command is agent6's success gate. Either way `core.fsmonitor` and
-    # `diff.external` stay neutralized: they fire on status/diff and have no
-    # legitimate use here.
+    # A hook runs on the host outside the jail: host RCE for an adversarial repo.
+    # `core.fsmonitor` and `diff.external` fire on status/diff and have no legitimate use here.
     run_repo_hooks: bool = Field(
         default=False,
         description=(
@@ -217,13 +209,7 @@ class GitConfig(BaseModel):
             "`core.fsmonitor` and `diff.external` are always neutralized."
         ),
     )
-    # Governs the repo's own content drivers (`filter.<name>.clean/smudge/process`,
-    # `merge.<name>.driver`) during agent6's own git operations. Default false:
-    # like a hook, a driver defined in `.git/config` is repo-controlled code that
-    # executes on the host, outside the jail, when agent6 stages or merges (a
-    # host-RCE vector for a repo cloned with a poisoned `.git/config`). agent6
-    # neutralizes each repo-defined driver by name. True is what a Git-LFS repo
-    # needs: LFS's clean/smudge filters are these drivers.
+    # A driver in a poisoned `.git/config` runs on the host at every stage or merge.
     run_repo_filters: bool = Field(
         default=False,
         description=(
@@ -238,6 +224,15 @@ class GitConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_auto_merge(self) -> GitConfig:
+        """Refuse the stash and prune settings without the setting each depends on.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: `auto_stash_pop` without `dirty_tree = "stash"`, or `auto_prune` without
+                `auto_merge`.
+        """
         if self.auto_stash_pop and self.dirty_tree != "stash":
             raise ValueError(
                 'git.auto_stash_pop requires git.dirty_tree = "stash": with nothing stashed '

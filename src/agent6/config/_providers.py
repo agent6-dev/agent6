@@ -18,17 +18,21 @@ AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 
 
 def validate_base_url(url: str, field: str = "base_url") -> None:
-    """Reject a `[providers.*].base_url` that is not an http(s) URL with a host.
+    """Refuse a provider URL that is not an http(s) URL with a host and a valid port.
 
-    A provider's `base_url` is the host+path prefix the HTTP client posts to
-    (the deployment profile appends `/chat/completions`, `/messages`, etc.), so
-    it must carry an explicit `http://` / `https://` scheme and a host. The
-    common paste error it catches is an API key (or a bare host) dropped into
-    the field, which would otherwise fail much later as an opaque HTTP error.
+    The usual paste error is an API key or a bare host in the field, which would otherwise
+    fail much later as an opaque HTTP error.
+
+    Args:
+        url: The configured URL.
+        field: The field name for the message.
+
+    Raises:
+        ValueError: No http(s) scheme, no host, or an out-of-range port.
     """
     try:
         parts = urlsplit(url)
-        port = parts.port  # urlsplit raises ValueError on an out-of-range port
+        port = parts.port  # raises ValueError on an out-of-range port
     except ValueError as exc:
         raise ValueError(f"invalid {field} {url!r}: {exc}") from exc
     if parts.scheme not in ("http", "https"):
@@ -45,10 +49,15 @@ _CHATGPT_DEFAULT_BASE_URL = "https://chatgpt.com/backend-api/codex"
 
 
 def _default_base_url(api_format: str, deployment: str) -> str | None:
-    """Default `base_url` for a (format, deployment), or None if required.
+    """Return the default `base_url` for a format and deployment.
 
-    Only the `direct` deployment has a fixed endpoint; vertex and azure carry
-    project/resource/region in the URL, so the operator must supply `base_url`.
+    Args:
+        api_format: The wire format.
+        deployment: The deployment profile.
+
+    Returns:
+        The fixed endpoint of a `direct` deployment; None for vertex and azure, whose URL
+        carries the project, resource or region and must be configured.
     """
     if deployment != "direct":
         return None
@@ -58,7 +67,15 @@ def _default_base_url(api_format: str, deployment: str) -> str | None:
 
 
 def _default_auth_style(api_format: str, deployment: str) -> str:
-    """Default `auth_style` for a (format, deployment)."""
+    """Return the default `auth_style` for a format and deployment.
+
+    Args:
+        api_format: The wire format.
+        deployment: The deployment profile.
+
+    Returns:
+        The auth style name.
+    """
     if deployment == "azure":
         return "api_key_header"
     if deployment == "vertex":
@@ -75,7 +92,15 @@ _API_FORMAT_DESCRIPTION = (
 
 
 def _require_json_shaped(value: Any, path: str) -> None:
-    """Refuse any value JSON cannot carry (TOML also parses dates/times)."""
+    """Refuse a value JSON cannot carry, recursively.
+
+    Args:
+        value: The parsed TOML value.
+        path: The value's dotted path under `extra_body`, for the message.
+
+    Raises:
+        ValueError: The value or a nested item is not JSON-shaped (a TOML date or time).
+    """
     if value is None or isinstance(value, (str, int, float, bool)):
         return
     if isinstance(value, list):
@@ -93,25 +118,16 @@ def _require_json_shaped(value: Any, path: str) -> None:
 
 
 class _ProviderBase(BaseModel):
-    """Transport + auth fields shared by every provider, independent of format.
+    """The transport and auth fields every HTTP provider shares.
 
-    Three orthogonal concerns: `api_format` (the discriminator) selects the
-    wire dialect; `deployment` selects the URL / model-placement profile; and
-    the auth fields (`auth_style` plus a static `api_key_env` or a refreshable
-    `token_command`) select the credential. They compose freely: Claude-on-Vertex
-    and Gemini-on-Vertex differ only in `api_format` (both
-    `deployment = "vertex"`). `base_url` and `auth_style` default from
-    (api_format, deployment) in `_fill_defaults`, so a minimal entry (just
-    `api_format`) is usable. Each block is one endpoint; configure as many as
-    you like under any names and reference them from `[models.*]`.
+    `api_format` selects the wire dialect, `deployment` the URL profile, and the auth fields
+    the credential; the three compose freely. `base_url` and `auth_style` default from the
+    first two in `_fill_defaults`, so an entry naming only `api_format` is usable.
     """
 
     model_config = MODEL_CONFIG
 
-    # Declared on the base only to fix the field order: a redeclared field
-    # keeps its base position, so api_format leads every subclass's
-    # model_fields (the docs table and `config show` print that order). Each
-    # subclass narrows it to its own literal, which is what discriminates.
+    # Declared here so api_format leads every subclass's model_fields; each subclass narrows it.
     api_format: ApiFormat
     deployment: Deployment = Field(
         default="direct",
@@ -120,8 +136,7 @@ class _ProviderBase(BaseModel):
             "only): the URL shape and where the model name and API version go."
         ),
     )
-    # Resolved by _fill_defaults from (api_format, deployment) when omitted;
-    # never empty post-validation. The host also feeds the egress allow-list.
+    # Never empty after validation; the host also feeds the egress allow-list.
     base_url: str = Field(
         default="",
         description=(
@@ -130,7 +145,6 @@ class _ProviderBase(BaseModel):
             "its fixed OAuth authority."
         ),
     )
-    # Auth header style; defaults from (api_format, deployment) in _fill_defaults.
     auth_style: AuthStyle = Field(
         default="bearer",
         description=(
@@ -139,8 +153,7 @@ class _ProviderBase(BaseModel):
             "endpoint). `agent6 connect` sets it."
         ),
     )
-    # Static key: env var name (falls back to secrets.toml by provider name).
-    # Secrets live here, never in base_url/extra_headers/extra_query.
+    # Secrets live here and in token_command, never in base_url, extra_headers or extra_query.
     api_key_env: str | None = Field(
         default=None,
         min_length=1,
@@ -182,10 +195,7 @@ class _ProviderBase(BaseModel):
         default_factory=dict,
         description="Extra URL query parameters on every request (Azure's `api-version`).",
     )
-    # Per-HTTP-call read/write budget in seconds; the connect phase is bounded
-    # separately (providers._transport.CONNECT_TIMEOUT_S) so a blackholed
-    # connect fails in seconds, not this. Default 600s streams a long response;
-    # lower it on benches that should fail fast.
+    # The connect phase is bounded by providers._transport.CONNECT_TIMEOUT_S instead.
     http_timeout_s: float = Field(
         gt=0.0,
         default=600.0,
@@ -197,6 +207,18 @@ class _ProviderBase(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _fill_defaults(cls, data: Any) -> Any:
+        """Fill `base_url` and `auth_style` from the format and deployment, refusing bad pairs.
+
+        Args:
+            data: The raw table.
+
+        Returns:
+            The table with the defaults filled in; a non-dict value unchanged.
+
+        Raises:
+            ValueError: Anthropic on azure, chatgpt off `direct`, a deployment with no default
+                `base_url` and none configured, or azure without `extra_query["api-version"]`.
+        """
         if not isinstance(data, dict):
             return data
         fmt = data.get("api_format")
@@ -219,6 +241,17 @@ class _ProviderBase(BaseModel):
     @field_validator("base_url")
     @classmethod
     def _check_base_url(cls, v: str) -> str:
+        """Validate a configured `base_url`.
+
+        Args:
+            v: The URL, or "" before `_fill_defaults` ran.
+
+        Returns:
+            The URL unchanged.
+
+        Raises:
+            ValueError: The URL fails `validate_base_url`.
+        """
         if v:
             validate_base_url(v)
         return v
@@ -226,17 +259,31 @@ class _ProviderBase(BaseModel):
     @field_validator("extra_body")
     @classmethod
     def _check_extra_body_json_shaped(cls, v: dict[str, Any]) -> dict[str, Any]:
-        """TOML also parses dates and times, which JSON cannot carry: caught
-        here, at load, instead of a serialization crash mid-request."""
+        """Refuse an `extra_body` value JSON cannot carry, at load instead of mid-request.
+
+        Args:
+            v: The table.
+
+        Returns:
+            The table unchanged.
+
+        Raises:
+            ValueError: A value is a TOML date or time, or another non-JSON type.
+        """
         for key, value in v.items():
             _require_json_shaped(value, f".{key}")
         return v
 
     @model_validator(mode="after")
     def _none_auth_takes_no_credential(self) -> _ProviderBase:
-        """`auth_style = "none"` sends no auth header, so a credential source
-        named beside it is dead config that reads as authenticated; refuse
-        rather than silently ignore the key."""
+        """Refuse a credential source beside `auth_style = "none"`, which sends no header.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: `api_key_env` or `token_command` is set with `auth_style = "none"`.
+        """
         if self.auth_style == "none" and (self.api_key_env or self.token_command):
             named = "api_key_env" if self.api_key_env else "token_command"
             raise ValueError(
@@ -247,15 +294,13 @@ class _ProviderBase(BaseModel):
 
 
 class AnthropicProviderEntry(_ProviderBase):
-    """`api_format = "anthropic"`: the Anthropic Messages wire format.
+    """The Anthropic Messages wire format.
 
-    `deployment = "direct"` (default) hits api.anthropic.com; `"vertex"`
-    is Claude-on-Vertex (model id in the URL, `anthropic_version` in the body,
-    a Google-OAuth bearer via `token_command`).
+    `direct` dials api.anthropic.com; `vertex` is Claude on Vertex (the model id in the URL,
+    `anthropic_version` in the body, a Google OAuth bearer via `token_command`).
     """
 
-    # The narrowing override is sound: the model is frozen, so the attribute
-    # can never be written back through the wider base type.
+    # The narrowing override is sound: the model is frozen, so nothing writes the wider type.
     api_format: Literal["anthropic"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
         Field(description=_API_FORMAT_DESCRIPTION)
     )
@@ -269,13 +314,11 @@ class AnthropicProviderEntry(_ProviderBase):
 
 
 class OpenAIProviderEntry(_ProviderBase):
-    """`api_format = "openai"`: any OpenAI Chat Completions wire format.
+    """The OpenAI Chat Completions wire format.
 
-    `deployment = "direct"` works against OpenAI, OpenRouter, Ollama, vLLM,
-    LM Studio, llama.cpp, Gemini's OpenAI-compatible endpoint, GitHub Copilot,
-    etc.; `"vertex"` is Gemini's Vertex OpenAPI endpoint; `"azure"` is Azure
-    OpenAI (deployment-name in the URL, api-version query param, `api-key`
-    header).
+    `direct` serves OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp and Gemini's
+    OpenAI endpoint; `vertex` is Gemini's Vertex OpenAPI endpoint; `azure` is Azure OpenAI
+    (the deployment name in the URL, the api-version query, the `api-key` header).
     """
 
     api_format: Literal["openai"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -284,13 +327,11 @@ class OpenAIProviderEntry(_ProviderBase):
 
 
 class ChatGPTProviderEntry(_ProviderBase):
-    """`api_format = "chatgpt"`: the ChatGPT-subscription Codex backend.
+    """The ChatGPT-subscription Codex backend.
 
-    The Responses wire format at `chatgpt.com/backend-api/codex`, authorized
-    by the OAuth tokens `agent6 connect <name>` stores in `secrets.toml`
-    (no API key). Usage draws on the account's ChatGPT plan limits.
-    This provider dials only `base_url` and OpenAI's fixed OAuth authority
-    (the issuer and client id are constants, not config).
+    The Responses wire format, authorized by the OAuth tokens `agent6 connect <name>` stores
+    in `secrets.toml`; usage draws on the account's plan limits. The provider dials only
+    `base_url` and OpenAI's fixed OAuth authority (the issuer and client id are constants).
     """
 
     api_format: Literal["chatgpt"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -300,9 +341,17 @@ class ChatGPTProviderEntry(_ProviderBase):
     @field_validator("base_url")
     @classmethod
     def _chatgpt_base_url_is_https(cls, v: str) -> str:
-        # The bearer and account id ride every request; unlike a generic
-        # base_url (where plain http serves LAN Ollama), cleartext for this
-        # backend is never right off-loopback.
+        """Refuse a cleartext URL off loopback: the bearer and account id ride every request.
+
+        Args:
+            v: The URL.
+
+        Returns:
+            The URL unchanged.
+
+        Raises:
+            ValueError: The URL is plain http to a host other than loopback.
+        """
         if is_cleartext_url(v) and not is_loopback_url(v):
             raise ValueError(
                 "a chatgpt base_url must use https (plain http is allowed only"
@@ -313,9 +362,18 @@ class ChatGPTProviderEntry(_ProviderBase):
     @field_validator("extra_headers")
     @classmethod
     def _reserved_headers_stay_structural(cls, v: dict[str, str]) -> dict[str, str]:
-        # authorization / chatgpt-account-id / originator / session-id are the
-        # authentication structure; an overlay replacing them would silently
-        # re-route or mislabel every call.
+        """Refuse an override of the auth headers, which would re-route or mislabel every call.
+
+        Args:
+            v: The extra headers.
+
+        Returns:
+            The headers unchanged.
+
+        Raises:
+            ValueError: A header names authorization, chatgpt-account-id, originator or
+                session-id in any case.
+        """
         reserved = {"authorization", "chatgpt-account-id", "originator", "session-id"}
         clash = sorted(k for k in v if k.lower() in reserved)
         if clash:
@@ -326,8 +384,14 @@ class ChatGPTProviderEntry(_ProviderBase):
 
     @model_validator(mode="after")
     def _oauth_takes_no_key_source(self) -> ChatGPTProviderEntry:
-        """The chatgpt format authenticates with the connect-stored OAuth
-        tokens; a static key source beside them is dead config."""
+        """Refuse a key source or a non-bearer auth style beside the stored OAuth tokens.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: `api_key_env` or `token_command` is set, or `auth_style` is not `bearer`.
+        """
         if self.api_key_env or self.token_command:
             named = "api_key_env" if self.api_key_env else "token_command"
             raise ValueError(
@@ -345,12 +409,11 @@ class ChatGPTProviderEntry(_ProviderBase):
 
 
 class ClaudeCodeProviderEntry(BaseModel):
-    """`api_format = "claude_code"`: the operator's installed Claude Code binary.
+    """The operator's installed Claude Code binary.
 
-    Not a `_ProviderBase`: it dials no endpoint and holds no credential, so the
-    transport and auth fields do not exist on it (`extra="forbid"` refuses each
-    by name). The binary carries the operator's own Claude login; usage draws
-    on that subscription's plan windows.
+    It dials no endpoint and holds no credential, so the transport and auth fields do not
+    exist on it and `extra="forbid"` refuses each by name; usage draws on the binary's own
+    Claude login.
     """
 
     model_config = MODEL_CONFIG
@@ -373,6 +436,13 @@ ProviderEntry = Annotated[
 
 
 def plan_metered(entry: object) -> bool:
-    """Whether calls through *entry* draw on a subscription plan: metered in
-    plan percent with an authoritative $0, never priced per token."""
+    """Return whether calls through the entry draw on a subscription plan.
+
+    Args:
+        entry: A provider entry.
+
+    Returns:
+        True for the plan-metered formats, whose calls count plan percent at an authoritative
+        $0 and are never priced per token.
+    """
     return isinstance(entry, (ChatGPTProviderEntry, ClaudeCodeProviderEntry))

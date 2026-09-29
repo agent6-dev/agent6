@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The surface models: `[skills]`, `[machine]`, `[web]`, `[notify]`, and
-`[parallel]`."""
+"""The surface models.
+
+`[skills]`, `[machine]`, `[web]`, `[notify]` and `[parallel]`.
+"""
 
 from __future__ import annotations
 
@@ -14,14 +16,11 @@ from agent6.config._base import MODEL_CONFIG, Argv, StrTuple
 
 
 class SkillsConfig(BaseModel):
-    """`[skills]` section: operator-installed SKILL.md packs (agentskills.io).
+    """The `[skills]` table: operator-installed SKILL.md packs (agentskills.io).
 
-    Skills live under `<data-dir>/skills/<name>/` (`agent6 skills install`)
-    plus any `extra_dirs`. Installed means enabled: the run-mode system
-    prompt lists each enabled skill's name + description and the worker loads
-    content on demand; the `state` map holds only the exceptions. Skills are
-    trusted like config (operator-chosen prompt content); nothing in a skill
-    is ever executed by the loader.
+    Skills live under `<data-dir>/skills/<name>/` plus any `extra_dirs`; installed means
+    enabled, and `state` holds only the exceptions. A skill is trusted like config, and the
+    loader executes nothing in it.
     """
 
     model_config = MODEL_CONFIG
@@ -33,9 +32,7 @@ class SkillsConfig(BaseModel):
             "tool, and no slash commands."
         ),
     )
-    # Additional skill directories scanned before the installed dir (a local
-    # checkout during skill development wins over an installed copy). Each may
-    # hold skill subdirectories or be a single skill dir itself.
+    # Each entry may hold skill subdirectories or be a single skill dir itself.
     extra_dirs: StrTuple = Field(
         default=(),
         description=(
@@ -43,11 +40,7 @@ class SkillsConfig(BaseModel):
             "of the same name in an earlier dir wins."
         ),
     )
-    # Per-skill exceptions, one value per skill so contradictory states are
-    # unrepresentable: "disabled" drops it from the index; "always" injects
-    # the full SKILL.md text into the system prompt instead of indexing it.
-    # Absent = "enabled". Layered configs merge this map key-wise, so a repo
-    # config can flip one skill without restating the rest.
+    # One value per skill, so contradictory states are unrepresentable.
     state: dict[str, Literal["enabled", "disabled", "always"]] = Field(
         default_factory=dict,
         description=(
@@ -59,24 +52,18 @@ class SkillsConfig(BaseModel):
 
 
 class MachineNotifyConfig(BaseModel):
-    """Optional out-of-band notify hook for a running machine.
+    """The `[machine.notify]` table: a hook run on each `machine.notify` and at `machine.end`.
 
-    When `on_event` is set, `agent6 machine run` runs the argv tuple on each
-    `machine.notify` (a state's `notify` message) and on the terminal
-    `machine.end`, on the host outside the jail (mirror of
-    `[notify].on_complete`). The argv is operator-controlled and never
-    includes LLM output. Env vars passed:
+    The argv is operator-controlled, never carries LLM output, and runs on the host outside
+    the jail like `[notify].on_complete`; a failed hook is logged and leaves the exit code.
+    Its environment carries:
 
-    - `AGENT6_MACHINE_ID`      , the machine id
-    - `AGENT6_MACHINE_DIR`     , absolute path to the instance dir
-    - `AGENT6_MACHINE_EVENT`   , `notify` or `end`
-    - `AGENT6_MACHINE_STATE`   , the state that emitted it
-    - `AGENT6_MACHINE_MESSAGE` , the notify message (or the end reason)
-    - `AGENT6_MACHINE_LEVEL`   , `info`/`warn`/`error` for notify, or the
-                                   `ok`/`failed` status for end
-
-    Use it to fan out to a phone (ntfy/Pushover/Telegram/email); agent6 owns no
-    push infra. A failed hook is logged and does not change the exit code.
+    - `AGENT6_MACHINE_ID`: the machine id
+    - `AGENT6_MACHINE_DIR`: the absolute path of the instance dir
+    - `AGENT6_MACHINE_EVENT`: `notify` or `end`
+    - `AGENT6_MACHINE_STATE`: the state that emitted it
+    - `AGENT6_MACHINE_MESSAGE`: the notify message, or the end reason
+    - `AGENT6_MACHINE_LEVEL`: `info`, `warn` or `error` for notify; `ok` or `failed` for end
     """
 
     model_config = MODEL_CONFIG
@@ -96,15 +83,11 @@ class MachineNotifyConfig(BaseModel):
 
 
 class MachineConfig(BaseModel):
-    """State-machine runtime knobs (`agent6 machine run`)."""
+    """The `[machine]` table: the `agent6 machine run` runtime knobs."""
 
     model_config = MODEL_CONFIG
 
-    # How many recent blackboard snapshots to keep per machine instance.
-    # Recovery only reads the latest and `machine replay` rebuilds from the
-    # journal, so old snapshots are an audit convenience, not state. 0 keeps
-    # every snapshot (one file per transition; budget disk accordingly for
-    # long-running machines).
+    # Old snapshots are an audit convenience, not state: recovery reads the latest only.
     snapshot_keep: int = Field(
         ge=0,
         default=5,
@@ -136,8 +119,17 @@ class MachineConfig(BaseModel):
 
 
 def is_loopback_host(host: str) -> bool:
-    """True iff *host* is a loopback bind (the one source of truth for the web
-    UI's secure-by-default gate; a wildcard like 0.0.0.0/:: is not loopback)."""
+    """Return whether the host is a loopback bind.
+
+    The one owner of the web UI's secure-by-default gate; a wildcard (`0.0.0.0`, `::`) is
+    not loopback.
+
+    Args:
+        host: A hostname or address, brackets allowed around an IPv6 address.
+
+    Returns:
+        True for `localhost` and any loopback IP.
+    """
     normalized = host.strip()
     if normalized.startswith("[") and normalized.endswith("]"):
         normalized = normalized[1:-1]
@@ -150,13 +142,10 @@ def is_loopback_host(host: str) -> bool:
 
 
 class WebConfig(BaseModel):
-    """`agent6 web` server bind. Secure by default: loopback only.
+    """The `[web]` table: the server bind, loopback by default.
 
-    Remote access is expected behind `tailscale serve` (HTTPS + WireGuard) in
-    front of the loopback bind; the tailnet identity is the access control, so
-    there is no app-level auth. Binding a non-loopback address exposes the write
-    surface (spawn runs, answer prompts) to anyone who can reach the port, so it
-    is gated behind `allow_non_loopback = true`.
+    Remote access goes behind `tailscale serve` in front of the loopback bind; the tailnet
+    identity is the access control, so there is no app-level auth.
     """
 
     model_config = MODEL_CONFIG
@@ -184,6 +173,14 @@ class WebConfig(BaseModel):
 
     @model_validator(mode="after")
     def _guard_non_loopback(self) -> WebConfig:
+        """Refuse a non-loopback host without the opt-in.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: `host` is not loopback and `allow_non_loopback` is off.
+        """
         if not is_loopback_host(self.host) and not self.allow_non_loopback:
             raise ValueError(
                 f"[web].host = {self.host!r} is not loopback. Binding a non-loopback"
@@ -195,26 +192,18 @@ class WebConfig(BaseModel):
 
 
 class NotifyConfig(BaseModel):
-    """Optional post-run notification hook.
+    """The `[notify]` table: a hook run after a run or resume ends.
 
-    When `on_complete` is set, agent6 runs the argv tuple after the
-    harness returns (`agent6 run` or `agent6 resume`). The argv is
-    operator-controlled, it never includes LLM output, and runs outside the
-    jail under a curated env (PATH/HOME/locale + desktop vars, never provider
-    keys; see `child_env.curated_env`) with these vars added:
+    The argv is operator-controlled, never carries LLM output, and runs outside the jail
+    under `child_env.curated_env` (never a provider key); a failed hook is logged and leaves
+    the exit code. Its environment carries:
 
-    - `AGENT6_SESSION_ID`      , session id under the per-repo state dir
-    - `AGENT6_SESSION_OK`      , `1` if the harness finished cleanly, `0` otherwise
-    - `AGENT6_SESSION_REASON`  , harness termination reason (e.g. `finish_session`,
-                                 `budget_exhausted`, `provider_error`)
-    - `AGENT6_SESSION_VERIFIED`, `passed` / `failed` / `unverified` /
-                                 `not_applicable` (the verify gate's verdict;
-                                 a hook wanting "green" reads this, not `OK`)
-    - `AGENT6_SESSION_DIR`     , absolute path to the session dir
-
-    Use cases: desktop notification (`notify-send`), shell-bell, ssh
-    push notification, mailx, etc. A failure of the notify command is
-    logged but does not change the agent6 exit code.
+    - `AGENT6_SESSION_ID`: the session id under the per-repo state dir
+    - `AGENT6_SESSION_DIR`: the absolute path of the session dir
+    - `AGENT6_SESSION_OK`: `1` when the harness finished cleanly, else `0`
+    - `AGENT6_SESSION_REASON`: the end reason (`finish_session`, `budget_exhausted`, ...)
+    - `AGENT6_SESSION_VERIFIED`: the gate's verdict, `passed`, `failed`, `unverified` or
+      `not_applicable`; a hook wanting green reads this, not `OK`
     """
 
     model_config = MODEL_CONFIG
@@ -234,21 +223,12 @@ class NotifyConfig(BaseModel):
 
 
 class ParallelConfig(BaseModel):
-    """`[parallel]` section: fan-out defaults for `agent6 run --parallel`.
-
-    `--parallel N` (or a comma-separated model list) runs N isolated lanes,
-    each a disposable clone of the repo, and auto-compares the results. These
-    knobs bound and place that fan-out; nothing here mutates the origin repo.
-    """
+    """The `[parallel]` table: the bounds and placement of a `--parallel` fan-out."""
 
     model_config = MODEL_CONFIG
 
-    # Hard cap on lanes per fan-out. `--parallel` over this refuses up front so a
-    # typo (or a long model list) can't spawn an unbounded pile of clones+runs.
-    # le: the cap itself must be bounded, or a huge max_lanes re-opens the
-    # huge-count allocation parse_spec refuses against. Static, not CPU-derived:
-    # lanes are I/O-bound detached runs, and the same repo config must load on
-    # every box.
+    # `le` bounds the cap itself, or a huge max_lanes re-opens the allocation parse_spec refuses.
+    # Static, not CPU-derived: lanes are I/O-bound and the same config must load on every box.
     max_lanes: int = Field(
         ge=1,
         le=1024,
@@ -258,12 +238,7 @@ class ParallelConfig(BaseModel):
             "more is refused before anything is cloned."
         ),
     )
-    # Base directory for subordinate working trees (a fan-out gets
-    # `<workdir>/<repo-id>/<fanout-id>/lane-<i>`; a machine's run states use a
-    # `machine-<id>` group the same way; a fork's worktree is
-    # `<workdir>/<repo-id>/<fork-id>`). "" resolves to `<cache_dir>/parallel`,
-    # a regenerable cache the orchestrator cleans up after importing each lane.
-    # Point it at a fast disk for large repos.
+    # A lane: `<workdir>/<repo-id>/<fanout-id>/lane-<i>`; a fork: `<workdir>/<repo-id>/<fork-id>`.
     workdir: str = Field(
         default="",
         description=(

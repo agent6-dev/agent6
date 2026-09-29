@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Config package: the models (`model` and its `_`-prefixed siblings), file IO
-(`io`), and the layered resolve/view/write (`layer`). The models are the
-package's public API and are re-exported here; the IO and layering are imported
-from `agent6.config.io` / `agent6.config.layer`."""
+"""The config models, file IO and layered resolve.
+
+The models are the package's public API and are re-exported here; the IO and
+layering are imported from `agent6.config.io` and `agent6.config.layer`.
+"""
 
 from __future__ import annotations
 

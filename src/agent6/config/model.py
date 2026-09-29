@@ -1,25 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Config loading, TOML to pydantic.
+"""The `Config` model: TOML to pydantic at the trust boundary.
 
-This is a trust boundary (untrusted text -> structured types), so we use
-pydantic and surface field-pointing errors.
-
-Field policy: secure by default, auditable. Every field has a default, and
-security-sensitive fields default to the *safe* value (`sandbox.network =
-"auto"`, `sandbox.run_commands = "ask"`, `sandbox.protect_git = true`; git
-push, `--force`, and history rewrites are refused unconditionally by
-`git_ops`, with no config override at all). Configs layer: global
-`$XDG_CONFIG_HOME` defaults, then the per-repo config (out of the workspace,
-under the state dir), so a repo is zero-config when the global config supplies
-providers + models. `agent6 config show` audits the *effective* value of every
-field and exactly where it came from (default / preset / global / repo / flag
-/ machine). A
-provider+key, which a run cannot guess, is checked by
-:meth:`Config.require_runnable` with a pointer to `agent6 connect` rather
-than a load-time failure, so `config show` always works. The repo's
-`verify_command` is optional: `agent6 run`/`plan` infer one per run when it
-is unset (see :mod:`agent6.verify_infer`), else run gateless.
+Every field has a default and the security-sensitive ones default safe; push, `--force`
+and history rewrites have no knob at all. A provider and key, which a run cannot guess,
+are checked by `Config.require_runnable` rather than at load, so `config show` always works.
 """
 
 from __future__ import annotations
@@ -59,34 +44,18 @@ from agent6.kinds import ModelRoute, RoleName
 
 
 class ConfigError(OperatorError):
-    """Raised when the config file is missing, malformed, or fails validation.
-
-    An OperatorError: the config is the operator's file, so `cli_main`
-    presents it as a refusal, never a crash report.
-    """
+    """The config file is missing, malformed or invalid: the operator's file, so a refusal."""
 
 
 EffortLevel = Literal["off", "low", "medium", "high", "xhigh", "max"]
 
 
 class RoleModel(BaseModel):
-    """One role's `(provider, model)` assignment.
+    """One role's provider and model.
 
-    `provider` is the name (TOML table key) of an entry in `[providers.*]`.
-
-    `temperature` is the sampling temperature agent6 will pin on every
-    call for this role. Defaults to `0.0`, agent6's tool-use loop is a
-    search-and-act feedback loop and high-temperature sampling causes
-    observable degeneration on some open-weights models (caught
-    Kimi K2.6 emitting 15997 literal `\\n` escapes in a single
-    `old_string` argument before hitting the completion-tokens cap).
-    Anthropic and OpenAI models are tuned to behave well at any
-    temperature; OpenRouter routes to provider defaults that vary by
-    model, so pinning is the only way to make benches reproducible.
-    Set to `null` only if you specifically want the provider's default
-    behaviour. TOML has no null literal and `temperature = nan` fails the
-    0.0-2.0 bounds, so null is reachable only via the Python API; omitting the
-    key leaves the `0.0` default, not the provider's default.
+    `temperature` defaults to 0.0: high-temperature sampling degenerates on some open-weights
+    models (an observed 15997 literal newline escapes in one `old_string`), and OpenRouter's
+    per-model defaults vary, so pinning is what makes a bench reproducible.
     """
 
     model_config = MODEL_CONFIG
@@ -109,11 +78,8 @@ class RoleModel(BaseModel):
             "provider's default."
         ),
     )
-    # Reasoning effort for this role. `None` leaves the provider default;
-    # `off` disables it explicitly. Mapped per wire: OpenAI-family models
-    # receive `reasoning.effort`, Anthropic adaptive models
-    # `output_config.effort` (older ones a thinking budget, `xhigh`/`max`
-    # collapsing to the top tier). Non-reasoning models ignore it.
+    # Per wire: `reasoning.effort` on OpenAI-family models, `output_config.effort` or a thinking
+    # budget on Anthropic ones.
     effort: EffortLevel | None = Field(
         default=None,
         description=(
@@ -126,23 +92,10 @@ class RoleModel(BaseModel):
 
 
 class ModelsConfig(BaseModel):
-    """Per-role provider + model routing.
+    """The `[models]` table: the provider and model per role.
 
-    Three roles, all optional:
-
-    - `worker` drives the single-loop agent (`agent6 run` / ``agent6
-      resume``).
-    - `planner` drives `agent6 plan` (the planning pass).
-      Unset -> falls back to `worker` (set it to a frontier model + high
-      thinking for careful up-front planning).
-    - `reviewer` drives `agent6 review`, the in-loop review panel and the
-      side calls (the context summariser and gister, the prompt reviser).
-      Unset -> falls back to `worker`.
-
-    Any configured provider may serve any role. Leaving every role unset is
-    valid (e.g. a global config that only declares providers); a role is
-    only *required* for the command that uses it, checked by
-    :meth:`Config.require_runnable`.
+    Every role is optional at load; `Config.require_runnable` requires the one a command
+    uses. `planner` and `reviewer` fall back to `worker`.
     """
 
     model_config = MODEL_CONFIG
@@ -164,7 +117,11 @@ class ModelsConfig(BaseModel):
     )
 
     def configured(self) -> dict[str, RoleModel]:
-        """Only the roles explicitly set (used for validation/key checks)."""
+        """Return the roles explicitly set.
+
+        Returns:
+            The set roles by name.
+        """
         out: dict[str, RoleModel] = {}
         if self.worker is not None:
             out["worker"] = self.worker
@@ -175,7 +132,14 @@ class ModelsConfig(BaseModel):
         return out
 
     def resolve(self, role: RoleName) -> RoleModel | None:
-        """The effective model for *role*, applying worker fallbacks."""
+        """Return the effective model for a role, with the worker fallback.
+
+        Args:
+            role: The role.
+
+        Returns:
+            The role's entry, the worker's for an unset planner or reviewer, or None.
+        """
         if role == "worker":
             return self.worker
         if role == "planner":
@@ -185,13 +149,20 @@ class ModelsConfig(BaseModel):
         return None
 
     def source_role(self, role: RoleName) -> RoleName:
-        """The configured entry `resolve(role)` reads: *role* itself when
-        explicitly set, else the worker fallback. Lets an error message name
-        the config key the user actually wrote (mirrors `resolve` above)."""
+        """Return the configured role `resolve` reads, so an error names the key written.
+
+        Args:
+            role: The role.
+
+        Returns:
+            The role itself when set, else `worker`.
+        """
         return role if role in self.configured() else "worker"
 
 
 class Agent6Section(BaseModel):
+    """The `[agent6]` table."""
+
     model_config = MODEL_CONFIG
 
     config_version: int = Field(
@@ -203,12 +174,11 @@ class Agent6Section(BaseModel):
 
 
 class Config(BaseModel):
-    """The validated effective config: one immutable object per load.
+    """The validated effective config, one immutable object per load.
 
-    Frozen at the attribute level; container values (dicts, the tuples'
-    contents) are not deep-frozen. The contract is read-only after
-    validation: every derived config goes through the `with_*` copiers,
-    never in-place mutation."""
+    Frozen at the attribute level only; every derived config goes through a `with_*` copier,
+    never in-place mutation.
+    """
 
     model_config = MODEL_CONFIG
 
@@ -234,9 +204,7 @@ class Config(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     parallel: ParallelConfig = Field(default_factory=ParallelConfig)
-    # Named strategy preset: fills in many settings at once (BUILTIN_PRESETS +
-    # user `[presets.<name>]`). "" / "standard" = plain defaults; injection
-    # order and stacking rules: `config.layer._apply_preset`.
+    # The injection order and stacking rules live in config.layer._apply_preset.
     preset: str = Field(
         default="",
         description=(
@@ -250,9 +218,16 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def _cross_validate_provider_routing(self) -> Config:
-        # Only configured roles are checked here, and only when their
-        # provider is actually present; an empty/partial config is valid
-        # at load time (require_runnable enforces completeness per command).
+        """Refuse a configured role naming a provider absent from a non-empty `[providers]`.
+
+        An empty or partial config is valid at load; `require_runnable` checks completeness.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: A role names an unknown provider.
+        """
         for role, rm in self.models.configured().items():
             if self.providers and rm.provider not in self.providers:
                 known = ", ".join(sorted(self.providers)) or "(none)"
@@ -265,8 +240,14 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def _model_git_control_needs_git_writes(self) -> Config:
-        """`git.control = "model"` hands git to the model, which cannot manage
-        what it cannot write: `sandbox.protect_git = true` contradicts it."""
+        """Refuse `git.control = "model"` beside `sandbox.protect_git`: the model must write .git.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: Both are set.
+        """
         if self.git.control == "model" and self.sandbox.protect_git:
             raise ValueError(
                 'git.control = "model" needs the model to write .git;'
@@ -276,11 +257,16 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def _pass_env_excludes_provider_keys(self) -> Config:
-        """No `pass_env` (an MCP server's, the machine allowlist) may name a
-        provider's `api_key_env`.
+        """Refuse a `pass_env` naming a provider's `api_key_env`.
 
-        The invariant lives here so a direct config edit cannot bypass it (mcp
-        connect pre-checks the same rule for a friendlier early refusal).
+        The invariant lives here so a direct config edit cannot bypass it; `mcp connect`
+        pre-checks the same rule for an earlier refusal.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: An MCP server's or the machine's `pass_env` names a provider key.
         """
         keys = {
             e.api_key_env
@@ -308,9 +294,16 @@ class Config(BaseModel):
         max_tokens_fallback: int | None = None,
         max_percent: float | None = None,
     ) -> Config:
-        """Return a copy with budget fields overridden (the per-run CLI flags,
-        each writing the config field of the same name). `None` keeps the
-        existing value."""
+        """Return a copy with the per-run budget flags applied.
+
+        Args:
+            max_usd: The `--max-usd` value, or None to keep the config's.
+            max_tokens_fallback: The `--max-tokens-fallback` value, or None.
+            max_percent: The `--max-percent` value, or None.
+
+        Returns:
+            The config with the given caps; self when none is given.
+        """
         if max_usd is None and max_tokens_fallback is None and max_percent is None:
             return self
         data = self.model_dump(mode="python")
@@ -324,11 +317,23 @@ class Config(BaseModel):
         return Config.model_validate(data)
 
     def model_route(self, role: RoleName, spec: str) -> ModelRoute:
-        """The pair a `[provider/]model` value names for *role*: a
-        `provider/model` whose first segment names a configured provider, or
-        a model id on the role's current provider (so an OpenRouter id with
-        its own slash stays one id). Parsed once, here; everything after
-        carries the pair. Raises ConfigError for a value that names nothing."""
+        """Parse a `[provider/]model` value into the route it names for a role.
+
+        A first segment naming a configured provider is the provider; otherwise the whole
+        value is a model id on the role's current provider, so an OpenRouter id with its own
+        slash stays one id.
+
+        Args:
+            role: The role whose current provider an unprefixed id lands on.
+            spec: The value.
+
+        Returns:
+            The route.
+
+        Raises:
+            ConfigError: The value is empty, names no model, or names no provider while the
+                role has none.
+        """
         raw_spec = spec
         spec = spec.strip()
         if not spec:
@@ -353,8 +358,15 @@ class Config(BaseModel):
         return ModelRoute(provider, model)
 
     def with_model_route(self, role: RoleName, route: ModelRoute) -> Config:
-        """Return a copy whose *role* runs *route*; the role keeps its effort
-        and temperature. In memory only, like `with_budget_overrides`."""
+        """Return a copy whose role runs a route, keeping the role's effort and temperature.
+
+        Args:
+            role: The role.
+            route: The provider and model.
+
+        Returns:
+            The config with the role rerouted.
+        """
         base = self.models.resolve(role)
         entry = base.model_dump(mode="python") if base is not None else {}
         entry["provider"], entry["model"] = route.provider, route.model
@@ -369,16 +381,19 @@ class Config(BaseModel):
         auto_approve: bool = False,
         no_commands: bool = False,
     ) -> Config:
-        """Return a copy with per-invocation sandbox overrides from CLI flags.
+        """Return a copy with the per-invocation sandbox flags applied.
 
-        `disable_sandbox` forces `sandbox.isolation = "none"` (unconfined).
-        `auto_approve` upgrades `run_commands` `"ask" -> "yes"` but never
-        resurrects a withheld `"no"` (a per-invocation flag must not grant a
-        capability the standing policy denied); it covers every MCP server's
-        `approve` too, because "do not prompt me this run" that still prompted
-        would not be that. `no_commands` pins `run_commands` to `"no"` and
-        always may: tightening needs no permission. All are operator-supplied
-        (flag/env); the LLM can reach none of them.
+        Every flag is operator-supplied; the model reaches none of them.
+
+        Args:
+            disable_sandbox: Force `sandbox.isolation = "none"`.
+            auto_approve: Turn `run_commands` `ask` into `yes` and every MCP server's
+                `approve` too; a configured `no` stays, since a flag never grants what the
+                standing policy denied.
+            no_commands: Pin `run_commands` to `no`; tightening needs no permission.
+
+        Returns:
+            The config with the flags applied; self when none is set.
         """
         if not disable_sandbox and not auto_approve and not no_commands:
             return self
@@ -405,11 +420,19 @@ class Config(BaseModel):
         max_usd: float | None = None,
         max_tokens_fallback: int | None = None,
     ) -> Config:
-        """Return a copy with a machine `agent` state's per-state knobs applied.
+        """Return a copy with a machine `agent` state's knobs on the worker role and the budget.
 
-        Overrides the `worker` role (the role machine agent loops run as)
-        and the budget ledgers. `None` means "inherit the effective config".
-        Re-validates so the provider-name checks run against the merged result."""
+        Args:
+            provider: The worker's provider, or None to inherit.
+            model: The worker's model, or None.
+            effort: The worker's effort, or None.
+            temperature: The worker's temperature, or None.
+            max_usd: The `budget.max_usd` cap, or None.
+            max_tokens_fallback: The `budget.max_tokens_fallback` cap, or None.
+
+        Returns:
+            The config, revalidated so the provider-name checks run on the merged result.
+        """
         data = self.model_dump(mode="python")
         worker = data.setdefault("models", {}).get("worker")
         if worker is None:
@@ -431,23 +454,26 @@ class Config(BaseModel):
         return Config.model_validate(data)
 
     def with_verify_command(self, argv: tuple[str, ...]) -> Config:
-        """Return a copy whose `harness.verify_command` is *argv*, `()` for
-        a gateless run.
+        """Return a copy whose `harness.verify_command` is the argv, `()` for a gateless run.
 
-        How `agent6 run`/`plan` inject a verify command inferred at run start,
-        and how a run whose policy withholds command tools drops the gate it
-        could never execute. In memory only: runs never write config, and the
-        operator is shown what was picked and can pin it explicitly.
+        Runs never write config: the operator is shown what was picked and can pin it.
+
+        Args:
+            argv: The gate command.
+
+        Returns:
+            The config with the gate set.
         """
         data = self.model_dump(mode="python")
         data.setdefault("harness", {})["verify_command"] = list(argv)
         return Config.model_validate(data)
 
     def cleartext_credential_endpoints(self) -> tuple[str, ...]:
-        """Configured endpoints that send a credential over plaintext http to a
-        non-loopback host, as `[table] url` labels for the run-entry warning
-        and the `mcp connect` confirmation. Loopback http is the normal
-        local-server case and never listed; neither is https."""
+        """Return the endpoints that send a credential over plain http off loopback.
+
+        Returns:
+            `[table] url` labels for the run-entry warning and the `mcp connect` confirmation.
+        """
         out: list[str] = []
         for name, entry in sorted(self.providers.items()):
             if (
@@ -463,15 +489,13 @@ class Config(BaseModel):
         return tuple(out)
 
     def with_run_commands_clamped(self) -> Config:
-        """Return a copy with `sandbox.run_commands` clamped for an interactive
-        mode (`agent6 ask` / `agent6 plan`).
+        """Return a copy with `sandbox.run_commands` `yes` clamped to `ask` for an interactive mode.
 
-        Ask and plan run with the operator sitting there, often in a directory
-        that is not even a repo, so they must never execute anything unwatched:
-        `"yes"` becomes `"ask"`. Only ever tightens (`"no"` stays refused),
-        because a run can never loosen a boundary the operator set. In memory
-        only, like `with_verify_command`: `config show` keeps reporting what the
-        operator actually configured.
+        Ask and plan run with the operator present, often outside a repo, so nothing runs
+        unwatched; `no` stays, since a run never loosens a boundary the operator set.
+
+        Returns:
+            The clamped config; self when nothing changes.
         """
         if self.sandbox.run_commands != "yes":
             return self
@@ -480,24 +504,30 @@ class Config(BaseModel):
         return Config.model_validate(data)
 
     def with_decompose(self, value: Literal["on", "off"]) -> Config:
-        """Return a copy with `prompt.decompose` pinned to *value*.
+        """Return a copy with `prompt.decompose` pinned, so the engine never sees `auto`.
 
-        Used by the CLI to resolve `"auto"` (from the model-capability
-        registry) before the harness starts, so the engine only ever sees
-        on/off. In memory only, like `with_verify_command`.
+        Args:
+            value: The resolved setting.
+
+        Returns:
+            The config with the setting pinned.
         """
         data = self.model_dump(mode="python")
         data.setdefault("prompt", {})["decompose"] = value
         return Config.model_validate(data)
 
     def require_runnable(self, role: RoleName = "worker") -> None:
-        """Raise ConfigError unless *role* can actually run.
+        """Refuse unless the role can run: a provider exists and the role resolves onto one.
 
-        Checks (in order) that a provider is configured and the role resolves
-        to a model whose provider exists. Messages point at the command that
-        fixes the gap so a fresh user is never stuck. `verify_command` is not
-        required: `agent6 run`/`plan` infer one when unset (and fall back to a
-        gateless run if even that fails; see `agent6.verify_infer`).
+        Each message names the command that fixes the gap. A verify command is not
+        required; `agent6.verify_infer` infers one.
+
+        Args:
+            role: The role the command uses.
+
+        Raises:
+            ConfigError: No provider, no model for the role, or the model's provider is
+                unknown.
         """
         if not self.providers:
             raise ConfigError(
@@ -519,9 +549,7 @@ class Config(BaseModel):
             )
 
 
-# pydantic reports a provider block with no `api_format` as
-# "Unable to extract tag using discriminator", which names neither the key to
-# add nor its values. A hand-written block is a documented way in.
+# pydantic's own message for a missing discriminator names neither the key nor its values.
 _MISSING_API_FORMAT = (
     'set api_format = "anthropic", "openai", "chatgpt", or "claude_code" (see docs/config.md)'
 )
@@ -532,6 +560,16 @@ def _format_validation_error(
     source: str,
     locate: Callable[[str, str], str | None] | None = None,
 ) -> str:
+    """Render a validation error as one line per issue, with the locator's hint under each.
+
+    Args:
+        err: The validation error.
+        source: The name of what was validated.
+        locate: A function from (dotted leaf, error type) to a hint line, or None.
+
+    Returns:
+        The message.
+    """
     lines = [f"Config validation failed: {source}"]
     for issue in err.errors():
         loc = ".".join(str(part) for part in issue["loc"]) or "<root>"
@@ -550,13 +588,21 @@ def validate_config(
     source: str = "<config>",
     locate: Callable[[str, str], str | None] | None = None,
 ) -> Config:
-    """Validate an already-parsed (and possibly layer-merged) config dict.
+    """Validate a parsed, possibly layer-merged, config table.
 
-    Shared by :func:`load_config` and the layered loader
-    (`agent6.config.layer`) so both surface identical field-pointing errors.
-    `locate` maps (dotted leaf, pydantic error type) to a "which file, how to
-    fix" hint appended to its error line, so a stale value in a layered config
-    names its own source and the remedy that works for that kind of error.
+    `load_config` and the layered loader share it, so both surface identical errors.
+
+    Args:
+        raw: The table.
+        source: The name errors report.
+        locate: A function from (dotted leaf, pydantic error type) to a hint naming the
+            file and the fix, appended under the error line; or None.
+
+    Returns:
+        The validated config.
+
+    Raises:
+        ConfigError: Validation failed; the message points at each field.
     """
     try:
         return Config.model_validate(raw)
@@ -565,9 +611,16 @@ def validate_config(
 
 
 def load_config(path: Path) -> Config:
-    """Load and strictly validate the TOML config at *path*.
+    """Load and validate one TOML config file.
 
-    Raises ConfigError on any problem; never returns a partially valid config.
+    Args:
+        path: The file.
+
+    Returns:
+        The validated config.
+
+    Raises:
+        ConfigError: The file is missing, unreadable, not TOML, or invalid.
     """
     if not path.is_file():
         raise ConfigError(f"Config file not found: {path}")
