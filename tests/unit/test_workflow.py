@@ -7193,9 +7193,7 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: Pat
     conversation = Conversation.from_wire(
         [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
     )
-    wf._dispatch_parallel(  # pyright: ignore[reportPrivateUsage]
-        conversation, 3, _state(), [Segment(spec="", task="do the thing")]
-    )
+    wf.parallel.dispatch(conversation, 3, _state(), [Segment(spec="", task="do the thing")])
     assert at_spawn["group"] == "p1"
     assert at_spawn["persisted"] == 1, "the bump must be on disk before the group blocks"
 
