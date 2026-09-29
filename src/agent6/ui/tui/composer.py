@@ -235,6 +235,7 @@ RUN_MENU = Menu(
         MenuItem("Resume this session", "resume"),
         MenuItem("Run this plan", "run_plan"),
         MenuItem("Fork this session", "fork"),
+        MenuItem("Review this run…", "review_run"),
         MenuItem("Delete this session…", "delete_session"),
     ),
 )

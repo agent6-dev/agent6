@@ -123,7 +123,21 @@ async function renderRun(id, opts, gen) {
         location.hash = '#session/' + encodeURIComponent(d.new_session_id);
       } catch (e) { toast(e.message, true); }
     };
-    for (const b of [stopBtn, stepBtn, compactBtn, planBtn, forkBtn, mergeBtn, rmBtn]) actions.appendChild(b);
+    // A read-only review of a finished run's record (`sessions review`): a
+    // model call that can take minutes; the markdown lands in its own card.
+    const reviewBtn = el('button', null, 'Review run');
+    reviewBtn.onclick = async () => {
+      reviewBtn.disabled = true;
+      toast('reviewing the run (a model call; the review opens when it lands)');
+      try {
+        const d = await postJSON(base + '/review', {});
+        cards.review.innerHTML = '';
+        const pre = el('pre', 'plan'); pre.textContent = d.review; cards.review.appendChild(pre);
+        cards.review.parentElement.style.display = '';
+      } catch (e) { toast(e.message, true); }
+      finally { reviewBtn.disabled = false; }
+    };
+    for (const b of [stopBtn, stepBtn, compactBtn, planBtn, forkBtn, reviewBtn, mergeBtn, rmBtn]) actions.appendChild(b);
     cards._live_btns = [stopBtn, stepBtn, compactBtn]; // paintRun disables these once finished
     cards._rm_btn = rmBtn; // paintRun gates it the other way: the server refuses a live run
     cards._plan_btn = planBtn;
@@ -134,6 +148,9 @@ async function renderRun(id, opts, gen) {
   mk('head', opts.title || 'Session', ''); // status/summary leads the drawer
   // A planning run's deliverable (plan.md), shown only when there is one.
   mk('plan', 'plan.md', 'scroll');
+  // The run review, shown once Review run has filled it.
+  mk('review', 'Run review', 'scroll');
+  cards.review.parentElement.style.display = 'none';
   mk('tasks', 'Task graph', 'scroll');
   mk('budget', 'Budget', '');
   mk('tools', 'Tool calls', 'scroll');

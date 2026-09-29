@@ -48,6 +48,7 @@ from agent6.ui.spawn import (
     agent6_argv,
     capture_message,
     run_cli_capture,
+    run_cli_output,
     spawn_and_confirm,
     spawn_and_locate,
     spawn_detached_resume,
@@ -432,6 +433,18 @@ def merge_run(
         argv += ["--strategy", strategy]
     argv += ["--", session_id]
     return run_cli_capture(argv, cwd)
+
+
+def review_run(
+    cwd: Path, session_id: str, config_path: Path | None = None
+) -> tuple[dict[str, str] | None, str]:
+    """Review a finished run's record: `agent6 sessions review <id>`, a model
+    call that can take minutes. Returns ({review}, "") with the markdown, or
+    (None, why) when the CLI refuses (a live run, no reviewer route)."""
+    ok, text = run_cli_output(
+        [*agent6_argv(config_path), "sessions", "review", "--", session_id], cwd, timeout_s=900.0
+    )
+    return ({"review": text}, "") if ok else (None, text)
 
 
 def prune_sessions(

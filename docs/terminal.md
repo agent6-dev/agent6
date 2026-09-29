@@ -58,6 +58,7 @@ Before the first model call, the header names the role and model from the manife
 - the View menu maximizes the focused pane
 - on a terminal under 28 rows the dashboard shows one pane row at a time: the row holding focus, else the log and diff, with a summary line of the tool calls; Tab reaches the folded panes and unfolds them
 - on a finished plan, Run > Run this plan starts `agent6 run --from` on it and opens the new run; the plan session stays as it was
+- on a finished run, Run > Review this run… runs `agent6 sessions review` on it (a model call that can take minutes) and opens the markdown in a modal; a live run is refused until it ends
 
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 

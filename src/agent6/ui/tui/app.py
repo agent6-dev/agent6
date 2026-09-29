@@ -63,6 +63,7 @@ from agent6.ui.spawn import (
     DETACHED_RUN_ENV,
     agent6_argv,
     run_cli_capture,
+    run_cli_output,
     spawn_and_locate,
     spawn_detached_resume,
 )
@@ -818,6 +819,34 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         with contextlib.suppress(NoMatches):
             self._dash.render_heartbeat()
         self._focus_composer()
+
+    def action_review_run(self) -> None:
+        """Run > Review this run…: `agent6 sessions review <id>` on a finished
+        run, its markdown in a modal. A live run's record is not complete, so
+        it is refused here as the CLI refuses it."""
+        if self.session_controllable():
+            self.notify("the run is live; review it once it has ended", severity="warning")
+            return
+        self.notify(
+            f"reviewing {self.session_dir.name} (a model call; the review opens when it lands)"
+        )
+        self._review_run()
+
+    @work(thread=True)
+    def _review_run(self) -> None:
+        """The review call, off the UI thread; the modal or the refusal lands
+        from here."""
+        ok, text = run_cli_output(
+            [*agent6_argv(self.config_path), "sessions", "review", "--", self.session_dir.name],
+            Path.cwd(),
+            timeout_s=900.0,
+        )
+        if not ok:
+            self.call_from_thread(self.notify, text or "review failed", severity="error")
+            return
+        self.call_from_thread(
+            self.push_screen, TextModal(f"review of {self.session_dir.name}", text)
+        )
 
     def context_pct(self) -> int | None:
         """Context-window fill (percent) at the last completed model call (the

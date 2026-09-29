@@ -272,8 +272,31 @@ def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> 
     return `(ok, message)`. For the fast, foreground CLI ops a front-end drives
     the same way a user would: `sessions merge`, `sessions prune`, `config set`. argv is
     fixed (the agent6 exe + operator-chosen args), never LLM output."""
+    proc = _run_cli(argv, cwd, timeout_s=timeout_s)
+    if isinstance(proc, str):
+        return False, proc
+    message = capture_message(proc.stdout, proc.stderr)
+    return proc.returncode == 0, message or f"exit {proc.returncode}"
+
+
+def run_cli_output(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+    """`run_cli_capture` for a subcommand whose stdout is the deliverable (a
+    review's markdown): on success the text is stdout alone, the console
+    notes on stderr dropped; on failure it is the captured message."""
+    proc = _run_cli(argv, cwd, timeout_s=timeout_s)
+    if isinstance(proc, str):
+        return False, proc
+    if proc.returncode == 0:
+        return True, proc.stdout.strip()
+    return False, capture_message(proc.stdout, proc.stderr) or f"exit {proc.returncode}"
+
+
+def _run_cli(
+    argv: list[str], cwd: Path, *, timeout_s: float
+) -> subprocess.CompletedProcess[str] | str:
+    """The completed process, or the one-line reason it could not run."""
     try:
-        proc = subprocess.run(
+        return subprocess.run(
             argv,
             cwd=str(cwd),
             stdin=subprocess.DEVNULL,
@@ -283,9 +306,7 @@ def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> 
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return False, f"failed to run agent6 {subcommand_label(argv)}: {exc}"
-    message = capture_message(proc.stdout, proc.stderr)
-    return proc.returncode == 0, message or f"exit {proc.returncode}"
+        return f"failed to run agent6 {subcommand_label(argv)}: {exc}"
 
 
 def spawn_and_confirm(

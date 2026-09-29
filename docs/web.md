@@ -50,6 +50,7 @@ Pages that take a task, a steer or a machine message dock their text entry at th
     - the Latest commit widget selects any per-step commit (cumulative toggle); the Budget and Task graph widgets then show that step's state; a model-controlled run has no chain and says so
     - stop now, or stop after step: the same stop as `agent6 stop` (the model call cut, a running command handed back, a worker that does not answer killed, the run resumable)
     - compact, fork (a new run at the latest checkpoint, unstarted: its composer starts it), merge, delete history
+    - review (a finished run's record read by the reviewer model, `sessions review`, a call that can take minutes; the markdown lands in the Run review card; a live run is refused until it ends)
     - run a finished plan (`run --from`, spawned detached)
     - approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline; "Allow all" appears only where it would grant something beyond the one call it is clicked on
 - **Machine view**: the state overview, the path taken, the current agent state's conversation
@@ -101,7 +102,7 @@ curl -sN localhost:7658/api/session/<id>/events      # SSE: a snapshot per chang
 - reads: `/api/meta`, `/api/hub`, `/api/routes?mode=&preset=` (the composer's model box), `/api/config`, `/api/config/suggest/<key>`, `/api/config/provider_choices`, `/api/session/<id>` with `/conversation`, `/restate`, `/diff` and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` (a `machine create` draft) with `/conversation`, `/diff` and `/events`
     - a `/diff` takes `?sha=<sha>` and `&cumulative=1` for the chain up to that step
 - the page and its PWA assets: `/`, `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/favicon.svg`
-- writes: small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,stop,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/provider`, `/api/machine/{create,run}`)
+- writes: small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,review,stop,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/provider`, `/api/machine/{create,run}`)
 - every write goes through the typed spawn and answer-file contracts
 - a machine's `approve`/`answer`/`steer` land in the current agent state's per-state dir; `poke` drops a signal (optional `message`/`data`) on the instance
 - machine names and answer ids validate to a single path component: no traversal out of the instance dir

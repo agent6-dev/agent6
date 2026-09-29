@@ -282,3 +282,22 @@ def test_a_failed_reviewer_call_is_reported(
     err = capsys.readouterr().err
     assert "reviewing the newest run: run-AAAA11" in err
     assert "REVIEW FAILED: provider call failed: boom" in err
+
+
+def test_a_live_session_is_refused_before_any_call(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A live run's record is not complete; the review waits for its end."""
+    import os
+
+    from agent6.sessions.ipc import write_worker_pid
+
+    layout = _write_session(repo, events=_EVENTS[:1])
+    write_worker_pid(layout.session_dir, os.getpid())
+    monkeypatch.setattr(
+        "agent6.ui.cli.review_cmds.load_effective",
+        MagicMock(side_effect=AssertionError("config loaded")),
+    )
+    assert main(["sessions", "review", "run-AAAA11"]) == 2
+    err = capsys.readouterr().err
+    assert "run-AAAA11 is live" in err and "agent6 stop run-AAAA11" in err

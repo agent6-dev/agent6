@@ -18,6 +18,7 @@ from agent6.providers import ProviderError, TranscriptSink
 from agent6.ui.cli._common import error
 from agent6.ui.cli.review_cmds import _reviewer_config, save_review
 from agent6.ui.cli.sessions_cmds import _resolve_session_manifest
+from agent6.viewmodel import session_is_live
 from agent6.workflows._context import agents_md_text
 from agent6.workflows.run_review import RunReviewError, run_digest, run_review
 
@@ -34,6 +35,12 @@ def _cmd_sessions_review(  # noqa: PLR0911
     if isinstance(resolved, int):
         return resolved
     layout, _manifest = resolved
+    if session_is_live(layout.session_dir):
+        error(
+            f"{layout.session_id} is live; its record is not complete. Review it once it"
+            f" has ended (`agent6 stop {layout.session_id}` ends it now)."
+        )
+        return 2
     try:
         cfg = _reviewer_config(config_path, model)
     except ConfigError as exc:

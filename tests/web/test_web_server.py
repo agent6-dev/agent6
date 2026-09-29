@@ -2319,3 +2319,42 @@ def test_new_work_carries_the_picked_model(
     )
     assert (status, body["session_id"]) == (200, "sid")
     assert seen == [("plan", "t", "fast", "o/f")]
+
+
+def test_review_answers_with_the_cli_review_of_a_finished_run(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The CLI has `sessions review` and the TUI Run > Review this run…; the
+    web verb runs the same CLI and answers with its markdown, or with the
+    CLI's refusal (a live run, no reviewer route)."""
+    from agent6.ui.web import actions
+
+    _srv, port = server
+    _make_run(
+        tmp_path,
+        "run-r",
+        [
+            {"type": "session.start"},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    calls: list[tuple[list[str], Path]] = []
+
+    def _fake_output(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+        calls.append((argv[-3:], cwd))
+        return True, "## Outcome\nfinished green"
+
+    monkeypatch.setattr(actions, "run_cli_output", _fake_output)
+    status, data = _post(port, "/api/session/run-r/review", {})
+    assert status == 200 and data["ok"] is True
+    assert data["review"] == "## Outcome\nfinished green"
+    assert calls == [(["review", "--", "run-r"], tmp_path)]
+
+    def _refused(_argv: list[str], _cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+        return False, "run-r is live; its record is not complete."
+
+    monkeypatch.setattr(actions, "run_cli_output", _refused)
+    status, data = _post(port, "/api/session/run-r/review", {})
+    assert status == 422 and data["error"] == "run-r is live; its record is not complete."
+    status, _data = _post(port, "/api/session/run-nope/review", {})
+    assert status == 404

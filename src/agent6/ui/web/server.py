@@ -518,9 +518,10 @@ class _Handler(BaseHTTPRequestHandler):
         elif verb == "rm":
             self._read_body()  # drain the `{}` body (keep-alive framing)
             ok, msg = actions.remove_session(self.cwd, session_id, self.config_path)
-        elif verb == "run_plan":
+        elif verb in ("run_plan", "review"):
             self._read_body()  # drain the `{}` body (keep-alive framing)
-            payload, err = actions.run_plan(self.cwd, session_id, self.config_path)
+            act = actions.run_plan if verb == "run_plan" else actions.review_run
+            payload, err = act(self.cwd, session_id, self.config_path)
             self._ok_or_err(payload is not None, payload or {}, err)
             return
         else:

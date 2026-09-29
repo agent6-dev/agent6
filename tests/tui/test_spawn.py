@@ -266,3 +266,38 @@ def test_stderr_tail_starts_at_a_line(tmp_path: Path) -> None:
     with f.open("r+", encoding="utf-8") as fh:
         assert spawn._stderr_tail(fh, limit=40) == "y" * 30 + "\n"  # pyright: ignore[reportPrivateUsage]
         assert spawn._stderr_tail(fh) == f.read_text(encoding="utf-8")  # pyright: ignore[reportPrivateUsage]
+
+
+def test_run_cli_output_hands_back_stdout_alone_on_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A review's markdown is the deliverable; the console notes on stderr
+    (`[agent6] reviewing run: …`, the cost summary) are not part of it. A
+    failure still carries the captured message."""
+
+    class _Done:
+        returncode = 0
+        stdout = "## Outcome\nfinished green\n"
+        stderr = "[agent6] reviewing run: x\nToken + cost summary:\n"
+
+    class _Refused:
+        returncode = 2
+        stdout = ""
+        stderr = "ERROR: x is live; its record is not complete.\n"
+
+    def _done(*_a: object, **_k: object) -> _Done:
+        return _Done()
+
+    def _refused(*_a: object, **_k: object) -> _Refused:
+        return _Refused()
+
+    monkeypatch.setattr(spawn.subprocess, "run", _done)
+    assert spawn.run_cli_output(["a6", "sessions", "review"], tmp_path) == (
+        True,
+        "## Outcome\nfinished green",
+    )
+    monkeypatch.setattr(spawn.subprocess, "run", _refused)
+    assert spawn.run_cli_output(["a6", "sessions", "review"], tmp_path) == (
+        False,
+        "x is live; its record is not complete.",
+    )
