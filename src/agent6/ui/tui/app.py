@@ -171,6 +171,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
     ) -> None:
         super().__init__()
         self.session_dir = session_dir
+        self._review_running = False  # Run > Review this run…: one call at a time
         # The invocation's `--config F`; a detach-resume it spawns re-applies F.
         self.config_path = config_path
         # When launched from the hub loop, Esc returns to it and q quits the hub
@@ -827,6 +828,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         if self.session_controllable():
             self.notify("the run is live; review it once it has ended", severity="warning")
             return
+        if self._review_running:
+            self.notify("a review of this run is already running; it opens when it lands")
+            return
+        self._review_running = True
         self.notify(
             f"reviewing {self.session_dir.name} (a model call; the review opens when it lands)"
         )
@@ -836,11 +841,14 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
     def _review_run(self) -> None:
         """The review call, off the UI thread; the modal or the refusal lands
         from here."""
-        ok, text = run_cli_output(
-            [*agent6_argv(self.config_path), "sessions", "review", "--", self.session_dir.name],
-            Path.cwd(),
-            timeout_s=900.0,
-        )
+        try:
+            ok, text = run_cli_output(
+                [*agent6_argv(self.config_path), "sessions", "review", "--", self.session_dir.name],
+                Path.cwd(),
+                timeout_s=900.0,
+            )
+        finally:
+            self.call_from_thread(setattr, self, "_review_running", False)
         if not ok:
             self.call_from_thread(self.notify, text or "review failed", severity="error")
             return

@@ -99,3 +99,39 @@ def test_a_refused_review_is_a_notice_not_a_modal(tmp_path: Path, monkeypatch: A
             assert not isinstance(app.screen, TextModal)
 
     asyncio.run(scenario())
+
+
+def test_a_second_pick_while_a_review_runs_starts_no_second_call(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Run > Review this run… picked twice during the minutes a call takes ran
+    two reviewer calls and stacked two modals."""
+    import threading
+
+    gate = threading.Event()
+    calls: list[list[str]] = []
+
+    def _slow_output(argv: list[str], _cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+        calls.append(argv[-3:])
+        gate.wait(5)
+        return True, "## Outcome\nfinished green"
+
+    monkeypatch.setattr(app_mod, "run_cli_output", _slow_output)
+    run = _run_dir(tmp_path, "done-run-CCCCCC", ended=True)
+
+    async def scenario() -> None:
+        app = Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            app.action_review_run()
+            await pilot.pause()
+            app.action_review_run()
+            await pilot.pause()
+            gate.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert calls == [["review", "--", "done-run-CCCCCC"]]
+            assert isinstance(app.screen, TextModal)
+
+    asyncio.run(scenario())
