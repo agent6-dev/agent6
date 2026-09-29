@@ -40,8 +40,8 @@ Linux (x86_64/aarch64) with Python 3.12+; other platforms run without the sandbo
 - **Your branch stays yours.** Each step commits to the run's own ref, so HEAD, the index and your branch are untouched until `sessions merge` lands the work; `resume` continues a run and `fork` branches it at any turn.
 - **A verify gate.** The repo's test command, inferred when unset, certifies the tree before a run may finish, and every surface shows the same green or red.
 - **One run, four front-ends.** The CLI, the TUI, a [browser](https://agent6.dev/web/) on a desktop or phone, and an [editor over ACP](https://agent6.dev/acp/) all drive the same runs; `attach` follows one live and `steer` queues an instruction from a script or a cron job.
-- **State machines for long work.** Declarative `.asm.toml` workflows you review, edit, run, watch and replay, with waits, operator input and steering built in ([State machines](https://agent6.dev/state-machines/)).
-- **Secure by default.** `network = "auto"`, `run_commands = "ask"`, `protect_git = true`; a fixed tool surface; Eight runtime dependencies, no telemetry, no auto-update.
+- **State machines for long work.** `.asm.toml` files you review, edit, run, watch and replay, with waits, operator input and steering built in ([State machines](https://agent6.dev/state-machines/)).
+- **Secure by default.** `network = "auto"`, `run_commands = "ask"`, `protect_git = true`; a fixed tool surface, eight runtime dependencies, no telemetry, no auto-update.
 
 Providers: Anthropic, any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, LM Studio), a ChatGPT subscription, or the signed-in Claude Code binary, with model and reasoning effort set per role ([Configuration](https://agent6.dev/config/)).
 

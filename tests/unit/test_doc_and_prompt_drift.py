@@ -101,11 +101,11 @@ def test_every_tool_mention_in_the_prompts_is_a_registered_tool() -> None:
 
 def test_readme_dependency_count_matches_pyproject() -> None:
     deps = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["dependencies"]
-    words = {5: "Five", 6: "Six", 7: "Seven", 8: "Eight", 9: "Nine", 10: "Ten"}
+    words = {5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
     readme = (REPO / "README.md").read_text()
     m = re.search(r"(\w+) runtime dependencies", readme)
     assert m is not None, "README no longer states the dependency count"
-    assert m.group(1) == words.get(len(deps), str(len(deps))), (
+    assert m.group(1).lower() == words.get(len(deps), str(len(deps))), (
         f"README says '{m.group(1)} runtime dependencies' but pyproject has {len(deps)}"
     )
 

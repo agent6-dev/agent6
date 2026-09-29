@@ -57,7 +57,7 @@ The CLI, the [terminal UI](terminal.md), a [browser](web.md) on a desktop or pho
 
 <div class="a6-card" markdown>
 ### State machines for long work
-Declarative `.asm.toml` workflows you review, edit, run, watch and replay, with waits, operator input and steering built in.
+`.asm.toml` files you review, edit, run, watch and replay, with waits, operator input and steering built in.
 [State machines](state-machines.md)
 </div>
 

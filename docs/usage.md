@@ -41,7 +41,7 @@ agent6 edits your working tree, commits each step to a per-run chain, and certif
 
 - your branch, HEAD, and index are never touched (the chain gets an `agent6/<id>` branch by default)
 - commands prompt for approval under the default `sandbox.run_commands = "ask"`: allow one call or the whole session
-- a headless run refuses to start unless `AGENT6_DETACHED_AWAY` is set: `deny` (auto-deny), `wait` (park the prompt for a front-end) or `approve` (grant every scope, as the detach prompt's approve-all does); under `deny` or `approve` a question gets empty answers with a note to decide alone (`sessions show` counts them)
+- a headless run (no terminal) refuses to start, naming its choices: settle commands with `--auto-approve` or `--no-commands`, or set `AGENT6_DETACHED_AWAY`: `deny` (auto-deny), `wait` (park each prompt for a front-end) or `approve` (grant every scope); under `deny` or `approve` a question gets empty answers with a note to decide alone (`sessions show` counts them)
 - a hub-spawned run parks its prompts
 - with commands settled (`--auto-approve`, `--no-commands`) and no away-mode, a fetch outside `sandbox.fetch_hosts` or an MCP call parks the run at its approval until a front-end answers, and the start says so
 - the run ends three ways: the model declares it finished, the operator stops it (`agent6 stop ID`, in the cheat sheet below), or a ceiling (budget, iterations) stops it
@@ -91,7 +91,7 @@ agent6 exec ID -- <command>   # run a command inside the run's jail and network
 agent6 forward ID 8000        # reach a port inside the run's session network; --local-port N
 agent6 history search <text>  # search every session's persisted data; --regex
 agent6 sessions rm            # delete one run's history; --asks clears saved asks
-agent6 sessions compare <ids> # ranked comparison: >=2 runs (judged), or one fan-out id (its recorded verdict; --rejudge for a fresh call)
+agent6 sessions compare <ids> # ranked comparison: >=2 runs (verify and cost, then the reviewer model judges; minutes), or one fan-out id (its recorded verdict; --rejudge for a fresh call)
 agent6 sessions graph         # the persisted task graph, each line led by the id `/retire` takes
 ```
 
