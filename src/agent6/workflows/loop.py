@@ -94,6 +94,7 @@ from agent6.tools.schema import (
     ReadBackgroundInput,
 )
 from agent6.workflows._advice import (
+    Gate,
     GuardSettings,
     Nudge,
     Refusal,
@@ -125,10 +126,10 @@ from agent6.workflows._dag_focus import (
     ready_subtask,
 )
 from agent6.workflows._finish_gates import (
+    END_GATES,
     FINISH_GATES,
+    SILENT_END_GATES,
     finish_reason,
-    red_gate_returns,
-    task_finish_nudge,
 )
 from agent6.workflows._guards import (
     AFTER_TOOLS,
@@ -148,7 +149,6 @@ from agent6.workflows._metric import (
     MetricSample,
     best_metric_sample,
     coerce_metric_score,
-    early_finish_refusal,
     extract_metric_targets,
     format_metric_feedback,
     metric_at_fraction_ceiling,
@@ -205,7 +205,7 @@ from agent6.workflows._toolset import (
     build_readonly_review_tools,
     tool_definitions,
 )
-from agent6.workflows._verify_gate import EXIT_TIMEOUT, VerifyGate, finish_red_notice
+from agent6.workflows._verify_gate import EXIT_TIMEOUT, VerifyGate
 from agent6.workflows.subrun import (
     SubrunError,
 )
@@ -958,14 +958,14 @@ class Workflow:
                 # every round, and standing_patience could never engage.
                 if name not in ("finish_session", "finish_planning"):
                     state.ok_tool_calls += 1
-                self._take(state, turn, unreachable_tool(state, name, tool_input, result))
+                self._take(state, turn, ctx, unreachable_tool(state, name, tool_input, result))
                 # Only a DISPATCHED finish counts: a refused finish tool (mode
                 # backstop, schema error) is an error result the model recovers
                 # from, not an end to the run.
                 self._capture_finish(turn, name, tool_input)
             except ToolError as exc:
                 content = self._note_tool_error(state, name, tool_input, exc)
-                self._take(state, turn, tool_error_ladder(turn, state, ctx))
+                self._take(state, turn, ctx, tool_error_ladder(turn, state, ctx))
             except OperatorCommandUnexecutable as exc:
                 return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
             turn.tool_results.append(
@@ -1407,20 +1407,23 @@ class Workflow:
         the standing goal. The first refusal revokes the finish (`_refuse`)."""
         if turn.finish_signal is None or turn.finish_kind != "finish_session":
             return
+        turn.ending = "finish_session"
         for gate in FINISH_GATES:
             if self._refuse(state, turn, gate(turn, state, ctx)):
                 return
 
     def _refuse(self, state: LoopState, turn: TurnState, refusal: Refusal | None) -> bool:
-        """Apply a gate's refusal: the finish is revoked (its tool_result
-        still goes back, so the call is not half-applied), the model gets
-        the refusal's text, the event and the line are recorded, and the
-        settle streak starts over (the work a refusal asks for is idle to
-        it). False when the gate let the finish through."""
+        """Apply a gate's refusal of the turn's end: a finish is revoked (its
+        tool_result still goes back, so the call is not half-applied) and a
+        declared end handed back (`turn.end_returned`), the model gets the
+        refusal's text, the event and the line are recorded, and the settle
+        streak starts over (the work a refusal asks for is idle to it). False
+        when the gate let the end through."""
         if refusal is None:
             return False
         turn.finish_signal = None
         turn.finish_payload = None
+        turn.end_returned = True
         if refusal.text:
             turn.tool_results.append(Notice(refusal.text))
         if refusal.event:
@@ -1466,13 +1469,13 @@ class Workflow:
         after-tools advisors in order, each answer applied."""
         self._turn_notices(state, turn)
         for advisor in AFTER_TOOLS:
-            aborted = self._take(state, turn, advisor(turn, state, ctx))
+            aborted = self._take(state, turn, ctx, advisor(turn, state, ctx))
             if aborted is not None:
                 return aborted
         return None
 
     def _take(
-        self, state: LoopState, turn: TurnState, outcome: Nudge | Stop | None
+        self, state: LoopState, turn: TurnState, ctx: TurnContext, outcome: Nudge | Stop | None
     ) -> SessionResult | None:
         """Apply one advisor's answer. A nudge joins the turn's results, its
         event emitted and its line logged. A stop joins `turn.stops` for the
@@ -1491,7 +1494,7 @@ class Workflow:
                 self._log(outcome.log)
             return None
         if outcome.declared and turn.finish_signal is None:
-            aborted = self._end_gates(state, turn, ending=outcome.declared)
+            aborted = self._end_gates(state, turn, ctx, ending=outcome.declared, gates=END_GATES)
             if aborted is not None:
                 return aborted
             if turn.end_returned:
@@ -1510,67 +1513,37 @@ class Workflow:
         if turn.metric_feedback:
             turn.tool_results.append(Notice(turn.metric_feedback))
 
-    def _end_gates(self, state: LoopState, turn: TurnState, *, ending: str) -> SessionResult | None:
+    def _end_gates(
+        self,
+        state: LoopState,
+        turn: TurnState,
+        ctx: TurnContext,
+        *,
+        ending: str,
+        gates: tuple[Gate, ...],
+    ) -> SessionResult | None:
         """An end declared without finish_session (`settled`: the harness's
-        idle stop; `silent_finish`: a prose turn with no tool call) passes the
-        gates a finish_session would: the verify certification (`verify_when`),
-        the before-finish review panel, and the open-task gate. A rejected gate
-        hands the end back (`turn.end_returned`) with the reason; the
-        unexecutable-command abort ends the run as it does on the tool path. The
-        STANDING verdict decides the red: the harness gate is skipped over a
-        tree a red already covers, so no verify fails on the ending turn itself."""
+        idle stop; `silent_finish`: a prose turn with no tool call) passes
+        *gates*, the rules a finish_session would, through the one applier
+        (`_refuse`): the first refusal hands the end back (`turn.end_returned`)
+        with its reason. The harness gate runs first on the ending turn (the
+        STANDING verdict decides the red: it is skipped over a tree a red
+        already covers); the unexecutable-command abort ends the run as it
+        does on the tool path. The panel's findings, when it sat, follow the
+        refusal as a notice."""
         try:
             self.gate.harness_verify(state, turn, ending=True)
         except OperatorCommandUnexecutable as exc:
             return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
-        red_returned = state.verify.last_ok is False and red_gate_returns(
-            self.gate.when,
-            self.gate.retries,
-            state.verify,
-            state.gates,
-            gate_present=self.gate.present(denied=state.verify.denied),
-        )
-        if red_returned:
-            state.gates.verify_retries_used += 1
-            turn.tool_results.append(
-                Notice(
-                    finish_red_notice(
-                        used=state.gates.verify_retries_used, retries=self.gate.retries
-                    )
-                )
-            )
-            self._emit(
-                "loop.verify_finish.gated",
-                iteration=turn.iteration,
-                nudges_used=state.gates.verify_retries_used,
-            )
-        # A red gate returns the end before the panel sits.
-        reviewed = not red_returned and self.reviewer.end_reviewed(state, turn, ending=ending)
+        turn.ending = ending
+        for gate in gates:
+            if self._refuse(state, turn, gate(turn, state, ctx)):
+                break
         if turn.review_text:
             # The turn's notices went out before the settled and plateau
             # checks, so the panel's findings are delivered here.
             turn.tool_results.append(Notice(review_notice(turn.review_text)))
             turn.review_text = None
-        turn.end_returned = red_returned or reviewed
-        if not turn.end_returned and (
-            task_nudge := task_finish_nudge(self._open_subtasks(), state.gates)
-        ):
-            turn.tool_results.append(Notice(task_nudge))
-            turn.end_returned = True
-            self._log(
-                f"  {ending} gated: open subtasks remain (nudge"
-                f" #{state.gates.task_nudges_used}) at iter {turn.iteration}"
-            )
-            self._emit(
-                "loop.task_finish.gated",
-                iteration=turn.iteration,
-                nudges_used=state.gates.task_nudges_used,
-                trigger=ending,
-            )
-        if turn.end_returned:
-            # A returned end asks for work whose turns are idle to the settle
-            # guard, so its streak starts over.
-            state.settled.restart()
         return None
 
     def _note_tool_error(
@@ -1963,18 +1936,6 @@ class Workflow:
             return self._handle_silent_finish(text, conversation, state, turn, ctx)
         return self._handle_went_quiet(resp, conversation, state, ctx)
 
-    def _silent_end_gates(
-        self, state: LoopState, turn: TurnState, conversation: Conversation
-    ) -> SessionResult | None:
-        """The verify certification and the before_finish panel over a silent
-        finish, as for an explicit finish_session; a prose turn has no tool
-        results, so the gates' notices go to the conversation directly."""
-        aborted = self._end_gates(state, turn, ending="silent_finish")
-        for item in turn.tool_results:
-            if isinstance(item, Notice):
-                conversation.notice(item.text)
-        return aborted
-
     def _handle_silent_finish(
         self,
         text: str,
@@ -1991,18 +1952,14 @@ class Workflow:
         if (stall := silent_no_work(state, ctx)) is not None:
             self._tell(conversation, stall)
             return None
-        aborted = self._silent_end_gates(state, turn, conversation)
+        aborted = self._end_gates(state, turn, ctx, ending="silent_finish", gates=SILENT_END_GATES)
+        # A prose turn has no tool results, so the gates' notices go to the
+        # conversation directly.
+        for item in turn.tool_results:
+            if isinstance(item, Notice):
+                conversation.notice(item.text)
         if aborted is not None or turn.end_returned:
             return aborted
-        # metric-run early-finish guard, mirroring the finish_session path: a
-        # silent finish on an optimisation run with budget to spare should be
-        # nudged to keep optimising rather than accepted. Without it, dropping
-        # tool_use skips the plateau/early-finish policy entirely.
-        refusal = early_finish_refusal(state, ctx, iteration=iteration, trigger="silent_finish")
-        if refusal is not None:
-            nudge = Nudge(refusal.text, refusal.event, refusal.fields, refusal.log)
-            self._tell(conversation, nudge)
-            return None
         if (asked := question_in_prose(state, ctx, text)) is not None:
             self._tell(conversation, asked)
             return None

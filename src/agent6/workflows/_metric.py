@@ -394,16 +394,14 @@ def metric_plateau(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge
     )
 
 
-def early_finish_refusal(
-    state: LoopState, ctx: TurnContext, *, iteration: int, trigger: str = ""
-) -> Refusal | None:
-    """The metric run's early-finish rule, shared by a finish_session and a
-    silent finish (`trigger` names the silent path). An optimisation run is
-    asked to keep going up to its cap, so while runway remains above the
-    final budget slice an early finish is rejected `METRIC_EARLY_FINISH_PATIENCE`
-    times; a metric at its ceiling, a run in the final slice, or no budget
-    signal at all (the worker's own judgement stands, so a finish can never
-    deadlock) lets it through."""
+def metric_early_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+    """The metric run's early-finish rule over a finish_session or a silent
+    finish (`turn.ending`). An optimisation run is asked to keep going up to
+    its cap, so while runway remains above the final budget slice an early
+    finish is rejected `METRIC_EARLY_FINISH_PATIENCE` times; a metric at its
+    ceiling, a run in the final slice, or no budget signal at all (the
+    worker's own judgement stands, so a finish can never deadlock) lets it
+    through."""
     if ctx.mode != "run" or not ctx.metric or state.metric.at_ceiling():
         return None
     remaining = ctx.budget_remaining()
@@ -413,22 +411,18 @@ def early_finish_refusal(
         return None
     state.metric.finish_nudges_used += 1
     used = state.metric.finish_nudges_used
+    trigger = turn.ending if turn.ending not in (None, "finish_session") else ""
     return Refusal(
         METRIC_FINISH_NUDGE,
         event="loop.metric_early_finish.rejected",
         fields={
-            "iteration": iteration,
+            "iteration": turn.iteration,
             "nudges_used": used,
             "budget_remaining": remaining,
             **({"trigger": trigger} if trigger else {}),
         },
         log=(
             f"  metric early-finish{' (silent)' if trigger else ''} rejected #{used}"
-            f" at iter {iteration} (budget {remaining:.0%} left)"
+            f" at iter {turn.iteration} (budget {remaining:.0%} left)"
         ),
     )
-
-
-def metric_early_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
-    """A finish_session on a metric run with runway left (`early_finish_refusal`)."""
-    return early_finish_refusal(state, ctx, iteration=turn.iteration)

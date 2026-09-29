@@ -2,10 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """The finish gates: what a finish_session must satisfy before the loop
 honours it, what an end is called, and the words each refusal carries. The
-loop runs `FINISH_GATES` in order over a turn that called finish_session
-and applies the first `Refusal` (`Workflow._turn_finish_gates`); the ends
-the harness declares (settled, plateau, a silent finish) pass the same
-rules through `Workflow._end_gates`."""
+loop runs a gate list in order over the turn that declared an end and
+applies the first `Refusal` (`Workflow._refuse`): `FINISH_GATES` over a
+finish_session, `END_GATES` over an end the harness declares (settled, a
+plateau), `SILENT_END_GATES` over a silent finish; `turn.ending` names the
+end the gates judge."""
 
 from __future__ import annotations
 
@@ -128,9 +129,9 @@ def finish_contract(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refu
 
 
 def review_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
-    """The before-finish panel over a finish_session: a rejection revokes it,
+    """The before-finish panel over the turn's end: a rejection revokes it,
     the findings reaching the model with the turn's notices."""
-    return Refusal() if ctx.end_reviewed(turn, "finish_session") else None
+    return Refusal() if ctx.end_reviewed(turn, turn.ending or "finish_session") else None
 
 
 def open_tasks_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
@@ -141,12 +142,17 @@ def open_tasks_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Re
     nudge = task_finish_nudge(ctx.open_subtasks(), state.gates)
     if nudge is None:
         return None
+    ending = turn.ending or "finish_session"
     return Refusal(
         nudge,
         event="loop.task_finish.gated",
-        fields={"iteration": turn.iteration, "nudges_used": state.gates.task_nudges_used},
+        fields={
+            "iteration": turn.iteration,
+            "nudges_used": state.gates.task_nudges_used,
+            "trigger": ending,
+        },
         log=(
-            f"  finish_session gated: open subtasks remain (nudge"
+            f"  {ending} gated: open subtasks remain (nudge"
             f" #{state.gates.task_nudges_used}) at iter {turn.iteration}"
         ),
     )
@@ -216,12 +222,25 @@ def standing_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refu
 
 
 # The gates over a finish_session, in precedence order.
+# One precedence for every end: the contract, then the verify certification
+# (a red tree returns the end before the panel sits), the panel, the metric
+# rule, the open tasks, the memory backstop, the standing goal.
 FINISH_GATES: tuple[Gate, ...] = (
     finish_contract,
+    verify_finish,
     review_finish,
     metric_early_finish,
     open_tasks_finish,
-    verify_finish,
     memory_finish,
     standing_finish,
+)
+# An end the harness declares has no payload to check; its memory backstop
+# and standing re-entry are judged where the end is decided.
+END_GATES: tuple[Gate, ...] = (verify_finish, review_finish, open_tasks_finish)
+# A silent finish is a finish the model wrote in prose: the metric rule applies.
+SILENT_END_GATES: tuple[Gate, ...] = (
+    verify_finish,
+    review_finish,
+    metric_early_finish,
+    open_tasks_finish,
 )

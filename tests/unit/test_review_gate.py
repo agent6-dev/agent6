@@ -478,7 +478,7 @@ def _settle(wf: Workflow, state: Any, turn: Any) -> Any:
     from agent6.workflows._guards import verify_settled
 
     ctx = wf._turn_context(state, iteration=turn.iteration, leg_start=1)  # pyright: ignore[reportPrivateUsage]
-    return wf._take(state, turn, verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
+    return wf._take(state, turn, ctx, verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
 def test_a_settled_end_is_reviewed_like_a_finish() -> None:

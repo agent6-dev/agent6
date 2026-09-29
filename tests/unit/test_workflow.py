@@ -25,7 +25,7 @@ from agent6.workflows._advice import GuardSettings, Stop, with_open_tasks
 from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import CompactionSettings
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
-from agent6.workflows._finish_gates import FinishGates, task_finish_nudge
+from agent6.workflows._finish_gates import SILENT_END_GATES, FinishGates, task_finish_nudge
 from agent6.workflows._guards import SettledGuard, settled_end, verify_settled
 from agent6.workflows._metric import MetricGuard, metric_plateau
 from agent6.workflows._provider_call import (
@@ -327,7 +327,8 @@ def _plateau_stop() -> Stop:
 def _settle(wf: Workflow, state: Any, turn: Any) -> Any:
     """The settled advisor's answer, applied through the loop (a stop runs
     the end gates at once)."""
-    return wf._take(state, turn, verify_settled(turn, state, _ctx(wf, state, turn.iteration)))  # pyright: ignore[reportPrivateUsage]
+    ctx = _ctx(wf, state, turn.iteration)
+    return wf._take(state, turn, ctx, verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
 def test_finish_planning_salvages_a_title_only_plan(tmp_path: Path) -> None:
@@ -3427,7 +3428,13 @@ def test_a_plans_tasks_neither_gate_nor_decorate_its_finish() -> None:
     assert task_finish_nudge(wf._open_subtasks(), _state().gates) is None  # pyright: ignore[reportPrivateUsage]
     assert with_open_tasks("planned", wf._open_subtasks()) == "planned"  # pyright: ignore[reportPrivateUsage]
     turn = _turn()
-    assert wf._end_gates(_state(), turn, ending="silent_finish") is None  # pyright: ignore[reportPrivateUsage]
+    state = _state()
+    assert (
+        wf._end_gates(  # pyright: ignore[reportPrivateUsage]
+            state, turn, _ctx(wf, state), ending="silent_finish", gates=SILENT_END_GATES
+        )
+        is None
+    )
     assert turn.end_returned is False and turn.tool_results == []
 
 
@@ -3532,7 +3539,8 @@ def test_metric_plateau_end_is_refused_while_a_subtask_is_open() -> None:
     )
     turn = _turn(metric_plateau_finish="score reached its ceiling")
 
-    result = wf._take(state, turn, metric_plateau(turn, state, _ctx(wf, state)))  # pyright: ignore[reportPrivateUsage]
+    ctx = _ctx(wf, state)
+    result = wf._take(state, turn, ctx, metric_plateau(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
     assert result is None
     assert turn.stops == []

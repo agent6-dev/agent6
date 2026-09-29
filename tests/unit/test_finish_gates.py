@@ -10,14 +10,19 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from agent6.workflows._conversation import AssistantTurn
-from agent6.workflows._finish_gates import FINISH_GATES, review_finish, standing_finish
+from agent6.workflows._finish_gates import (
+    END_GATES,
+    FINISH_GATES,
+    SILENT_END_GATES,
+    review_finish,
+    standing_finish,
+)
 from agent6.workflows._loop_state import LoopState, TurnState
 from agent6.workflows._metric import (
     METRIC_EARLY_FINISH_PATIENCE,
     METRIC_FINISH_NUDGE,
     MetricGuard,
     MetricSample,
-    early_finish_refusal,
     metric_early_finish,
 )
 from tests.unit.turn_context import turn_context
@@ -35,14 +40,27 @@ def _state() -> LoopState:
 
 
 def test_the_gates_run_in_precedence_order() -> None:
+    """One precedence for every end: the declared-end path had its own copy
+    of three gates in another order, with its own red test."""
     assert [gate.__name__ for gate in FINISH_GATES] == [
         "finish_contract",
+        "verify_finish",
         "review_finish",
         "metric_early_finish",
         "open_tasks_finish",
-        "verify_finish",
         "memory_finish",
         "standing_finish",
+    ]
+    assert [gate.__name__ for gate in END_GATES] == [
+        "verify_finish",
+        "review_finish",
+        "open_tasks_finish",
+    ]
+    assert [gate.__name__ for gate in SILENT_END_GATES] == [
+        "verify_finish",
+        "review_finish",
+        "metric_early_finish",
+        "open_tasks_finish",
     ]
 
 
@@ -71,7 +89,9 @@ def test_an_early_finish_on_a_metric_run_is_refused_while_runway_remains() -> No
     assert first.log == "  metric early-finish rejected #1 at iter 1 (budget 90% left)"
     assert state.metric.finish_nudges_used == METRIC_EARLY_FINISH_PATIENCE
 
-    silent = early_finish_refusal(_state(), runway, iteration=2, trigger="silent_finish")
+    quiet = _finishing(2)
+    quiet.finish_signal, quiet.ending = None, "silent_finish"
+    silent = metric_early_finish(quiet, _state(), runway)
     assert silent is not None and silent.fields["trigger"] == "silent_finish"
     assert "(silent)" in silent.log
 

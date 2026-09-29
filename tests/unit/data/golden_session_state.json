@@ -9,6 +9,9 @@
       "depth": 0,
       "is_cursor": false,
       "created_by": "",
+      "standing": false,
+      "note": "",
+      "short_id": "ok",
       "glyph": "·"
     }
   ],

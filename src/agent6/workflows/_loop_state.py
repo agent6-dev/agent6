@@ -153,6 +153,10 @@ class TurnState:
     # An end the harness or the model declared without finish_session (a
     # settled stop, a silent finish) that a gate handed back this turn.
     end_returned: bool = False
+    # The end whose gates are running: "finish_session" for the tool call,
+    # else the name the harness declared ("settled", "silent_finish", ...);
+    # the panel judges it by this name and the gates' events carry it.
+    ending: str | None = None
     # A finish that declared the configured gate stale, with the replacement it
     # proposes. Recorded and surfaced; the gate itself never moves.
     finish_stale_gate: str = ""

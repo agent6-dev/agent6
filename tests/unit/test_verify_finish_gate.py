@@ -17,7 +17,7 @@ from agent6.config import Config
 from agent6.prompts.loop import V2_VERIFY_WHEN
 from agent6.viewmodel.listing import status_word
 from agent6.workflows._chain import RunChain
-from agent6.workflows._finish_gates import red_gate_returns, verify_finish
+from agent6.workflows._finish_gates import SILENT_END_GATES, red_gate_returns, verify_finish
 from agent6.workflows._session_state import End
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
@@ -827,7 +827,13 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     state.verify.note_fail("sig")
     turn = TurnState(iteration=4, resp=MagicMock(), assistant=MagicMock())
 
-    wf._end_gates(state, turn, ending="silent_finish")  # pyright: ignore[reportPrivateUsage]
+    wf._end_gates(  # pyright: ignore[reportPrivateUsage]
+        state,
+        turn,
+        wf._turn_context(state, iteration=turn.iteration, leg_start=1),  # pyright: ignore[reportPrivateUsage]
+        ending="silent_finish",
+        gates=SILENT_END_GATES,
+    )
 
     assert dispatcher.run_verify.call_count == 0, "the standing red covers the tree"
     assert turn.end_returned is True
@@ -860,7 +866,13 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     state.verify.note_edit()
     turn = TurnState(iteration=7, resp=MagicMock(), assistant=MagicMock())
 
-    wf._end_gates(state, turn, ending="silent_finish")  # pyright: ignore[reportPrivateUsage]
+    wf._end_gates(  # pyright: ignore[reportPrivateUsage]
+        state,
+        turn,
+        wf._turn_context(state, iteration=turn.iteration, leg_start=1),  # pyright: ignore[reportPrivateUsage]
+        ending="silent_finish",
+        gates=SILENT_END_GATES,
+    )
 
     assert turn.end_returned is False
     assert dispatcher.run_verify.call_count == 0
