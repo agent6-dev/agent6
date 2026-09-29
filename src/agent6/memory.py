@@ -81,27 +81,23 @@ def use_path(state_dir: Path) -> Path:
 
 @dataclass(frozen=True, slots=True)
 class Touch:
-    """One session's touch of a fact: who, and when (UTC, to the minute;
-    empty when the record does not know)."""
+    """One session's touch of a fact: who, and when (UTC, to the minute)."""
 
     session: str
-    at: str = ""
+    at: str
 
 
 @dataclass(frozen=True, slots=True)
 class MemoryUse:
-    """One fact's provenance and use: every recorded write in order (the
-    first is its creation as the record knows it, the last its latest edit),
-    its read count and its last read. Empty for a fact written by hand or
-    before the record existed."""
+    """One fact's provenance and use: the write that created it (None when
+    the record never saw it made: a hand-written file, or one older than the
+    record), every recorded write in order, its read count and its last
+    read."""
 
+    created: Touch | None = None
     writes: tuple[Touch, ...] = ()
     reads: int = 0
     last_read: Touch | None = None
-
-    @property
-    def created(self) -> Touch | None:
-        return self.writes[0] if self.writes else None
 
     @property
     def updated(self) -> Touch | None:
@@ -134,41 +130,31 @@ def read_use(state_dir: Path) -> dict[str, MemoryUse]:
 
 
 def _touch(value: Any) -> Touch | None:
-    """A `{"session", "at"}` object as a Touch, None when it is not one."""
+    """A `{"session", "at"}` object as a Touch, None when it is not one
+    (both non-empty strings)."""
     if not isinstance(value, dict):
         return None
-    session, at = value.get("session"), value.get("at", "")  # pyright: ignore[reportUnknownMemberType]
-    if not isinstance(session, str) or not session or not isinstance(at, str):
+    session, at = value.get("session"), value.get("at")  # pyright: ignore[reportUnknownMemberType]
+    if not isinstance(session, str) or not session or not isinstance(at, str) or not at:
         return None
     return Touch(session, at)
 
 
 def _use_from_entry(entry: dict[Any, Any]) -> MemoryUse | None:
-    """One entry's fields, None when misshapen. The record's first shape
-    (`created_by`, `updated_by`, `writers`, `read_by`, `read_at`) still
-    reads: the first and the last writer keep their stamps, the others none."""
-    reads = entry.get("reads", 0)
-    if type(reads) is not int:
+    """One entry's fields (`created`, `writes`, `reads`, `last_read`), None
+    when misshapen."""
+    reads, raw_writes = entry.get("reads", 0), entry.get("writes")
+    if type(reads) is not int or not isinstance(raw_writes, list):
         return None
-    if "writes" in entry:
-        raw_writes, raw_last = entry["writes"], entry.get("last_read")
-        touches = [_touch(w) for w in raw_writes] if isinstance(raw_writes, list) else [None]
-        writes = tuple(t for t in touches if t is not None)
-        last_read = _touch(raw_last)
-        if len(writes) < len(touches) or (raw_last is not None and last_read is None):
-            return None
-        return MemoryUse(writes=writes, reads=reads, last_read=last_read)
-    created_by, created_at = entry.get("created_by", ""), entry.get("created_at", "")
-    updated_by, updated_at = entry.get("updated_by", ""), entry.get("updated_at", "")
-    read_by, read_at = entry.get("read_by", ""), entry.get("read_at", "")
-    writers = entry.get("writers", [w for w in (created_by, updated_by) if w])
-    strings = (created_by, created_at, updated_by, updated_at, read_by, read_at)
-    if not isinstance(writers, list) or not all(isinstance(v, str) for v in (*strings, *writers)):
+    touches = [_touch(w) for w in cast("list[Any]", raw_writes)]
+    writes = tuple(t for t in touches if t is not None)
+    raw_created, raw_last = entry.get("created"), entry.get("last_read")
+    created, last_read = _touch(raw_created), _touch(raw_last)
+    if len(writes) < len(touches) or (raw_created is not None and created is None):
         return None
-    stamps = {created_by: created_at, updated_by: updated_at}
-    writes = tuple(Touch(w, stamps.get(w, "")) for w in dict.fromkeys(writers) if w)
-    last_read = Touch(read_by, read_at) if read_by else None
-    return MemoryUse(writes=writes, reads=reads, last_read=last_read)
+    if raw_last is not None and last_read is None:
+        return None
+    return MemoryUse(created=created, writes=writes, reads=reads, last_read=last_read)
 
 
 def record_use(
@@ -177,15 +163,27 @@ def record_use(
     session: str,
     wrote: Sequence[str],
     read: Mapping[str, int],
+    created: Collection[str] = (),
+    deleted: Collection[str] = (),
     when: float | None = None,
 ) -> None:
-    """Fold one session's memory writes and reads into the use record: every
-    write appends a touch, reads accumulate with the last reader. Nothing to
-    record leaves the file alone."""
-    if not wrote and not read:
+    """Fold one session's memory writes and reads into the use record: a fact
+    in *deleted* leaves it first (as `memory rm` drops it), every write
+    appends a touch, a write of a fact in *created* is its creation (the
+    first stands), reads accumulate with the last reader. Nothing to record
+    leaves the file alone."""
+    if not wrote and not read and not deleted:
         return
     with _locked_memory(state_dir):
-        _record_use_unlocked(state_dir, session=session, wrote=wrote, read=read, when=when)
+        _record_use_unlocked(
+            state_dir,
+            session=session,
+            wrote=wrote,
+            read=read,
+            created=created,
+            deleted=deleted,
+            when=when,
+        )
 
 
 def _record_use_unlocked(
@@ -194,14 +192,21 @@ def _record_use_unlocked(
     session: str,
     wrote: Sequence[str],
     read: Mapping[str, int],
+    created: Collection[str] = (),
+    deleted: Collection[str] = (),
     when: float | None = None,
 ) -> None:
     touch = Touch(session, time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(when)))
     use = read_use(state_dir)
+    for name in deleted:
+        use.pop(name, None)
     for name in wrote:
         prior = use.get(name, MemoryUse())
-        use[name] = replace(prior, writes=(*prior.writes, touch))
+        made = touch if prior.created is None and name in created else prior.created
+        use[name] = replace(prior, created=made, writes=(*prior.writes, touch))
     for name, count in read.items():
+        if name in deleted and name not in wrote:
+            continue  # a read of a life that ended this leg brings no entry back
         prior = use.get(name, MemoryUse())
         use[name] = replace(prior, reads=prior.reads + count, last_read=touch)
     _write_use(state_dir, use)
@@ -227,7 +232,8 @@ def merge_use(
             changed = False
             if name in written and theirs.writes:
                 fresh = tuple(t for t in theirs.writes if t not in ours.writes)
-                ours = replace(ours, writes=(*ours.writes, *fresh))
+                made = theirs.created if ours.created is None else ours.created
+                ours = replace(ours, created=made, writes=(*ours.writes, *fresh))
                 carried += 1
                 changed = True
             if theirs.reads and (name in written or name in held):
@@ -246,6 +252,7 @@ def merge_use(
 def _write_use(state_dir: Path, use: Mapping[str, MemoryUse]) -> None:
     body = {
         name: {
+            "created": None if entry.created is None else asdict(entry.created),
             "writes": [asdict(t) for t in entry.writes],
             "reads": entry.reads,
             "last_read": None if entry.last_read is None else asdict(entry.last_read),
@@ -646,7 +653,7 @@ def add(state_dir: Path, name: str, body: str) -> Path:
             )
         atomic_write(path, body + "\n")
         _append_index_line(state_dir, name, body.splitlines()[0][:120])
-        _record_use_unlocked(state_dir, session="operator", wrote=(name,), read={})
+        _record_use_unlocked(state_dir, session="operator", wrote=(name,), created=(name,), read={})
     return path
 
 

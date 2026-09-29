@@ -19,6 +19,7 @@ from agent6.tools.operator_prompts import (
     QuestionAnswer,
     QuestionRequest,
 )
+from agent6.tools.results import EditResult
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel
 
@@ -803,13 +804,16 @@ def test_apply_edit_overwrite_replaces_an_existing_file_whole(tmp_path: Path) ->
         },
     ).to_wire()
     assert out["applied"] == ["overwrite"]
+    assert "created" not in out  # the harness's field, not the model's
     assert (tmp_path / "f.py").read_text(encoding="utf-8") == "def f():\n    return 1\n"
     # A missing file is written the same way: the kind states "the whole
-    # file is new_string", not "the file exists".
-    d.dispatch(
+    # file is new_string", not "the file exists"; the result tells the
+    # harness the file is new (the memory use record counts a creation).
+    res = d.dispatch(
         "apply_edit",
         {"path": "g.py", "edits": [{"kind": "overwrite", "old_string": "", "new_string": "y\n"}]},
     )
+    assert isinstance(res, EditResult) and res.created is True
     assert (tmp_path / "g.py").read_text(encoding="utf-8") == "y\n"
 
 

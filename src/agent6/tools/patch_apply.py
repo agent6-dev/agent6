@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Literal
 
 from agent6.tools._edit_diag import closest_on_disk_region
 
@@ -648,6 +649,33 @@ def patch_target_path(text: str) -> str:
                 raise PatchError("deletion patch has no `--- ` header to take a path from")
             return _strip_ab_prefix(header)
     raise PatchError("patch has no `+++ ` header to take a path from")
+
+
+PatchOp = Literal["create", "edit", "delete"]
+_V4A_OPS: dict[str, PatchOp] = {"Add": "create", "Update": "edit", "Delete": "delete"}
+
+
+def patch_op(text: str) -> PatchOp:
+    """What a single-file patch (either format) does to its file, read from
+    the V4A `*** Add/Update/Delete File:` directive or the unified headers
+    (`--- /dev/null` creates, `+++ /dev/null` deletes). Raises `PatchError`
+    when no header names the file."""
+    if is_v4a_patch(text):
+        for ln in text.splitlines():
+            d = _v4a_file_directive(ln)
+            if d is not None:
+                return _V4A_OPS[d[0]]
+        raise PatchError("V4A patch has no `*** Add/Update/Delete File:` directive")
+    minus = plus = None
+    for ln in text.splitlines():
+        if minus is None and ln.startswith("--- "):
+            minus = _header_path(ln[4:])
+        elif minus is not None and ln.startswith("+++ "):
+            plus = _header_path(ln[4:])
+            break
+    if minus is None or plus is None:
+        raise PatchError("Missing `--- `/`+++ ` header lines")
+    return "create" if minus == "/dev/null" else "delete" if plus == "/dev/null" else "edit"
 
 
 def _v4a_file_directive(line: str) -> tuple[str, str] | None:

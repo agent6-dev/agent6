@@ -367,7 +367,7 @@ def apply_edit(
     write_contained(sp, new_content)
     if index is not None:
         index.mark_changed(sp.abs_path)
-    return EditResult(applied=tuple(applied), path=str(sp.rel_path))
+    return EditResult(applied=tuple(applied), path=str(sp.rel_path), created=existing is None)
 
 
 def _first_repeated(paths: list[Path]) -> Path | None:

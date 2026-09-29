@@ -517,14 +517,16 @@ def test_an_index_rewrite_cannot_erase_a_concurrent_add(
 
 
 def test_record_use_keeps_who_wrote_and_who_read(tmp_path: Path) -> None:
-    """The use record: the first writer stays as `created`, the latest as
+    """The use record: the creating write stays as `created`, the latest as
     `updated`, reads accumulate with the last reader."""
-    record_use(tmp_path, session="run-a", wrote=("fact",), read={}, when=0.0)
+    record_use(tmp_path, session="run-a", wrote=("fact",), created=("fact",), read={}, when=0.0)
     record_use(tmp_path, session="run-b", wrote=("fact",), read={"fact": 2}, when=3600.0)
     record_use(tmp_path, session="run-c", wrote=(), read={"fact": 1, "other": 1}, when=7200.0)
     record_use(tmp_path, session="run-b", wrote=("fact",), read={}, when=10800.0)
+    record_use(tmp_path, session="run-d", wrote=("older",), read={}, when=14400.0)
     use = read_use(tmp_path)
     assert use["fact"] == MemoryUse(
+        created=Touch("run-a", "1970-01-01 00:00Z"),
         writes=(
             Touch("run-a", "1970-01-01 00:00Z"),
             Touch("run-b", "1970-01-01 01:00Z"),
@@ -534,10 +536,15 @@ def test_record_use_keeps_who_wrote_and_who_read(tmp_path: Path) -> None:
         last_read=Touch("run-c", "1970-01-01 02:00Z"),
     )
     assert use["fact"].writers == ("run-a", "run-b")
-    assert (use["fact"].created, use["fact"].updated) == (
-        Touch("run-a", "1970-01-01 00:00Z"),
-        Touch("run-b", "1970-01-01 03:00Z"),
+    assert use["fact"].updated == Touch("run-b", "1970-01-01 03:00Z")
+    # A write of a fact the record never saw created (hand-written, or older
+    # than the record) is an edit: no creation is claimed.
+    assert use["older"] == MemoryUse(writes=(Touch("run-d", "1970-01-01 04:00Z"),))
+    # A deletion ends the entry, as `memory rm` does; alone, it still writes.
+    record_use(
+        tmp_path, session="run-e", wrote=(), read={"older": 1}, deleted=("older",), when=18000.0
     )
+    assert "older" not in read_use(tmp_path)  # a read of its old life brings nothing back
     # A read of a fact nobody recorded writing (hand-written, or older than
     # the record) still counts, with no writer named.
     assert use["other"] == MemoryUse(reads=1, last_read=Touch("run-c", "1970-01-01 02:00Z"))
@@ -549,6 +556,7 @@ def test_operator_add_and_rm_keep_the_use_record_in_step(tmp_path: Path) -> None
     add(tmp_path, "quirk", "The build needs FOO=1.")
     use = read_use(tmp_path)
     assert use["quirk"].writers == ("operator",)
+    assert use["quirk"].created is not None and use["quirk"].created.session == "operator"
     assert use["quirk"].reads == 0
     remove(tmp_path, "quirk")
     assert "quirk" not in read_use(tmp_path)
@@ -559,42 +567,31 @@ def test_read_use_tolerates_a_missing_or_misshapen_record(tmp_path: Path) -> Non
     use_path(tmp_path).write_text("[1, 2]", encoding="utf-8")
     assert read_use(tmp_path) == {}
     use_path(tmp_path).write_text(
-        '{"fact": {"reads": "many"}, "ok": {"reads": 2}, "w": {"writers": "run-a"},'
-        ' "v": {"writers": ["run-a", 1]}, "u": {"writers": ["run-a"]}}',
+        '{"fact": {"reads": "many", "writes": []}, "ok": {"reads": 2, "writes": []},'
+        ' "w": {"reads": 1}}',
         encoding="utf-8",
     )
-    assert list(read_use(tmp_path)) == ["ok", "u"]
-    assert read_use(tmp_path)["u"].writers == ("run-a",)
+    assert read_use(tmp_path) == {"ok": MemoryUse(reads=2)}
     use_path(tmp_path).write_text(
-        '{"n": {"writes": [{"session": "run-a", "at": "2026-01-01 00:00Z"}], "reads": 1,'
+        '{"n": {"created": {"session": "run-a", "at": "2026-01-01 00:00Z"},'
+        ' "writes": [{"session": "run-a", "at": "2026-01-01 00:00Z"}], "reads": 1,'
         ' "last_read": {"session": "run-b", "at": "2026-01-02 00:00Z"}},'
-        ' "bad": {"writes": [{"session": 1}]}, "worse": {"writes": "run-a"}}',
+        ' "e": {"writes": [{"session": "run-a", "at": "2026-01-01 00:00Z"}]},'
+        ' "bad": {"writes": [{"session": 1}]}, "worse": {"writes": "run-a"},'
+        ' "worst": {"created": "run-a", "writes": []}, "old": {"created_by": "run-a"},'
+        ' "unstamped": {"writes": [{"session": "run-a"}]},'
+        ' "blank": {"writes": [{"session": "run-a", "at": ""}]}}',
         encoding="utf-8",
     )
     assert read_use(tmp_path) == {
         "n": MemoryUse(
+            created=Touch("run-a", "2026-01-01 00:00Z"),
             writes=(Touch("run-a", "2026-01-01 00:00Z"),),
             reads=1,
             last_read=Touch("run-b", "2026-01-02 00:00Z"),
-        )
+        ),
+        "e": MemoryUse(writes=(Touch("run-a", "2026-01-01 00:00Z"),)),
     }
-
-
-def test_read_use_fills_writers_for_an_entry_recorded_before_the_list_existed(
-    tmp_path: Path,
-) -> None:
-    """An entry with `created_by`/`updated_by` and no `writers` key (the
-    record's first shape) credited its session with no write in a review."""
-    use_path(tmp_path).write_text(
-        '{"a": {"created_by": "run-x", "updated_by": "run-y", "reads": 0},'
-        ' "b": {"created_by": "run-x", "updated_by": "run-x"},'
-        ' "c": {"reads": true}}',
-        encoding="utf-8",
-    )
-    use = read_use(tmp_path)
-    assert use["a"].writers == ("run-x", "run-y")
-    assert use["b"].writers == ("run-x",)
-    assert "c" not in use  # a bool is not a count
 
 
 def test_unindexed_names_lists_only_names_rm_can_take(tmp_path: Path) -> None:
@@ -620,9 +617,21 @@ def test_merge_use_carries_a_lanes_record_into_the_origin(tmp_path: Path) -> Non
     from agent6.memory import merge_use
 
     origin, lane = tmp_path / "origin", tmp_path / "lane"
-    record_use(origin, session="run-o", wrote=("shared",), read={"shared": 1}, when=0.0)
     record_use(
-        lane, session="lane-1", wrote=("shared", "fresh"), read={"shared": 2, "gone": 1}, when=60.0
+        origin,
+        session="run-o",
+        wrote=("shared",),
+        created=("shared",),
+        read={"shared": 1},
+        when=0.0,
+    )
+    record_use(
+        lane,
+        session="lane-1",
+        wrote=("shared", "fresh"),
+        created=("shared", "fresh"),  # the lane's store had neither: both created there
+        read={"shared": 2, "gone": 1},
+        when=60.0,
     )
     merged, reads = merge_use(lane, origin, written=("shared", "fresh"))
     assert (merged, reads) == (2, 1)  # two writers carried; one fact read (gone was never held)
@@ -632,7 +641,8 @@ def test_merge_use_carries_a_lanes_record_into_the_origin(tmp_path: Path) -> Non
         3,
         Touch("lane-1", "1970-01-01 00:01Z"),
     )
-    assert use["fresh"].writers == ("lane-1",)
+    assert use["shared"].created == Touch("run-o", "1970-01-01 00:00Z")  # the origin's stands
+    assert use["fresh"].created == Touch("lane-1", "1970-01-01 00:01Z")
     assert "gone" not in use  # a read of a fact the origin never held travels nowhere
     # Nothing to carry leaves the origin alone.
     assert merge_use(tmp_path / "empty", origin, written=()) == (0, 0)

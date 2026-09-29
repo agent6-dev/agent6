@@ -12,8 +12,8 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.config import Config
-from agent6.memory import memory_dir, read_use, use_path
-from agent6.tools.results import EditResult, ReadFileResult
+from agent6.memory import memory_dir, read_use, record_use, use_path
+from agent6.tools.results import EditResult, PatchResult, ReadFileResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import AssistantTurn
 from agent6.workflows._guards import MemoryState
@@ -54,13 +54,21 @@ def _read(wf: Workflow, state: LoopState, path: str) -> None:
     )
 
 
-def _edit(wf: Workflow, state: LoopState, path: str) -> None:
+def _edit(wf: Workflow, state: LoopState, path: str, *, created: bool = False) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state,
         _turn(),
         "apply_edit",
-        EditResult(applied=("create",), path=Path(path).name),
+        EditResult(
+            applied=("create" if created else "replace",), path=Path(path).name, created=created
+        ),
         {"path": path, "edits": []},
+    )
+
+
+def _patch(wf: Workflow, state: LoopState, text: str) -> None:
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state, _turn(), "apply_patch", PatchResult(path="x", bytes_written=1), {"patch": text}
     )
 
 
@@ -87,12 +95,73 @@ def test_an_edit_under_the_store_records_the_fact_name(tmp_path: Path) -> None:
     _edit(wf, state, str(store / "quirk.md"))
     _edit(wf, state, str(store / "quirk.md"))
     assert state.memory.wrote == ["quirk"]
+    assert state.memory.created == []
     assert state.memory.written is True
     # An index-only edit is a memory write for the nudges, but names no fact.
     state = _state()
     _edit(wf, state, str(store / "MEMORY.md"))
     assert state.memory.written is True
     assert state.memory.wrote == []
+
+
+def test_the_edit_tools_create_marks_the_fact_created(tmp_path: Path) -> None:
+    """`memory list` said `written by <session>` for a fact the session only
+    edited: the record tells a create (the edit tool's result says the file
+    is new, whichever kind wrote it; a patch's `--- /dev/null` or
+    `*** Add File:`) from an edit."""
+    wf = _wf(tmp_path)
+    state = _state()
+    store = memory_dir(tmp_path)
+    _edit(wf, state, str(store / "quirk.md"))
+    _edit(wf, state, str(store / "fresh.md"), created=True)
+    _patch(wf, state, f"*** Begin Patch\n*** Add File: {store}/added.md\n+x\n*** End Patch")
+    _patch(wf, state, f"--- {store}/quirk.md\n+++ {store}/quirk.md\n@@ -1 +1 @@\n-a\n+b\n")
+    _patch(wf, state, f"--- /dev/null\n+++ {store}/MEMORY.md\n@@ -0,0 +1 @@\n+- x\n")
+    assert state.memory.wrote == ["quirk", "fresh", "added"]
+    assert state.memory.created == ["fresh", "added"]
+
+
+def test_a_deletion_ends_the_fact_for_the_record(tmp_path: Path) -> None:
+    """A fact the model deleted through a patch stayed in the record as an
+    edit, so `memory list` kept a line for a file that was gone and a later
+    re-creation was not seen as one."""
+    wf = _wf(tmp_path)
+    state = _state()
+    store = memory_dir(tmp_path)
+    _read(wf, state, str(store / "quirk.md"))
+    _edit(wf, state, str(store / "quirk.md"))
+    _edit(wf, state, str(store / "fresh.md"), created=True)
+    _patch(wf, state, f"*** Begin Patch\n*** Delete File: {store}/quirk.md\n*** End Patch")
+    _patch(wf, state, f"--- {store}/fresh.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n")
+    assert (state.memory.wrote, state.memory.created) == ([], [])
+    assert state.memory.deleted == ["quirk", "fresh"]
+    # The read before the delete belonged to the fact's old life: a live run
+    # read a fact, deleted it, and the leg's end put an entry back for it.
+    assert state.memory.read == {}
+    _edit(wf, state, str(store / "quirk.md"), created=True)
+    assert (state.memory.wrote, state.memory.created) == (["quirk"], ["quirk"])
+    assert state.memory.deleted == ["quirk", "fresh"]
+
+
+def test_the_leg_end_drops_a_deleted_fact_and_starts_a_recreated_one_afresh(
+    tmp_path: Path,
+) -> None:
+    record_use(
+        tmp_path,
+        session="run-0",
+        wrote=("gone", "again"),
+        created=("gone", "again"),
+        read={"gone": 5, "again": 1},
+        when=0.0,
+    )
+    wf = _wf(tmp_path)
+    state = _state()
+    state.memory = MemoryState(wrote=["again"], created=["again"], deleted=["gone", "again"])
+    wf._record_memory_use(state)  # pyright: ignore[reportPrivateUsage]
+    use = read_use(tmp_path)
+    assert "gone" not in use
+    assert use["again"].created is not None and use["again"].created.session == "run-a"
+    assert (use["again"].reads, len(use["again"].writes)) == (0, 1)
 
 
 def test_a_state_dir_behind_a_symlink_still_counts(tmp_path: Path) -> None:
@@ -135,12 +204,17 @@ def test_no_store_means_nothing_is_counted() -> None:
 def test_the_leg_end_persists_what_it_wrote_and_read(tmp_path: Path) -> None:
     wf = _wf(tmp_path)
     state = _state()
-    state.memory = MemoryState(wrote=["quirk"], read={"quirk": 2, "other": 1})
+    state.memory = MemoryState(
+        wrote=["quirk", "edited"], created=["quirk"], read={"quirk": 2, "other": 1}
+    )
     wf._record_memory_use(state)  # pyright: ignore[reportPrivateUsage]
     use = read_use(tmp_path)
     assert use["quirk"].writers == ("run-a",)
+    assert use["quirk"].created is not None and use["quirk"].created.session == "run-a"
     assert use["quirk"].reads == 2
     assert use["quirk"].last_read is not None and use["quirk"].last_read.session == "run-a"
+    assert use["edited"].writers == ("run-a",)
+    assert use["edited"].created is None
     assert use["other"].created is None
     assert use["other"].reads == 1
 

@@ -184,6 +184,10 @@ class EditResult(ToolResult):
 
     applied: tuple[str, ...]
     path: str
+    # True when the write made the file (an `overwrite` of a missing path
+    # too). Off the wire: the memory use record reads it, the model reads
+    # `applied`.
+    created: bool = False
 
     def to_wire(self) -> dict[str, Any]:
         return {"applied": list(self.applied), "path": self.path}

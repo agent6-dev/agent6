@@ -77,8 +77,20 @@ from agent6.tools.dispatch import (
     ToolError,
 )
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX
-from agent6.tools.patch_apply import PatchError, patch_target_path, split_patch_files
-from agent6.tools.results import AnswersResult, ExecResult, MetricResult, PreviewResult, ToolResult
+from agent6.tools.patch_apply import (
+    PatchError,
+    patch_op,
+    patch_target_path,
+    split_patch_files,
+)
+from agent6.tools.results import (
+    AnswersResult,
+    EditResult,
+    ExecResult,
+    MetricResult,
+    PreviewResult,
+    ToolResult,
+)
 from agent6.tools.schema import (
     FinishPlanningInput,
     FinishSessionInput,
@@ -1050,7 +1062,7 @@ class Workflow:
                 turn.metric_plateau_finish = self._plateau_finish(state.metric.history)
         if name in ("apply_edit", "apply_patch") and isinstance(result, PreviewResult):
             return  # a dry run writes nothing: no memory write, no tree edit
-        if self._note_memory_touch(state, name, tool_input):
+        if self._note_memory_touch(state, name, result, tool_input):
             # An edit under the memory dir is a memory write, not workspace
             # work: both memory nudges stay quiet for the rest of the run and
             # none of the tree bookkeeping below applies (the gate's tree is
@@ -1074,12 +1086,14 @@ class Workflow:
         if name in DAG_MUTATING_TOOLS:
             turn.dag_mutated = True  # snapshot once after the turn
 
-    def _note_memory_touch(self, state: LoopState, name: str, tool_input: Any) -> bool:
+    def _note_memory_touch(
+        self, state: LoopState, name: str, result: ToolResult, tool_input: Any
+    ) -> bool:
         """Count a `read_file` of a fact in the memory store, or record an
-        edit tool's write there (the facts it named, and `written` for the
-        nudges). True for a write: the store sits outside the workspace, so
-        it is not workspace work."""
-        facts = self._memory_store_facts(name, tool_input)
+        edit tool's write there (the facts it created, edited or deleted, and
+        `written` for the nudges). True for a write: the store sits outside
+        the workspace, so it is not workspace work."""
+        facts = self._memory_store_facts(name, result, tool_input)
         if facts is None:
             return False
         if name == "read_file":
@@ -1088,29 +1102,45 @@ class Workflow:
             return False
         if name in ("apply_edit", "apply_patch"):
             state.memory.written = True
-            state.memory.wrote.extend(f for f in facts if f not in state.memory.wrote)
+            for fact, op in facts.items():
+                state.memory.note_write(fact, op)
             return True
         return False
 
-    def _memory_store_facts(self, name: str, tool_input: Any) -> tuple[str, ...] | None:
-        """The facts a tool call addressed in the memory store, None when the
-        call was not (wholly) about the store. Judged on the model's input
-        paths: the store sits outside the workspace root, so only an absolute
-        path reaches it (a result's path is store-relative, and matching on it
+    def _memory_store_facts(
+        self, name: str, result: ToolResult, tool_input: Any
+    ) -> dict[str, str] | None:
+        """The facts a tool call addressed in the memory store, each with what
+        the call did to it (`read`; `create`, `edit` or `delete` from the
+        edit result's `created` or the patch's headers); None when the call was not
+        (wholly) about the store. Judged on the model's input paths: the
+        store sits outside the workspace root, so only an absolute path
+        reaches it (a result's path is store-relative, and matching on it
         never fires). `apply_patch` normally carries no `path` and names its
         files in the headers; every one must be under the store (a patch over
         the store and the workspace together is workspace work). A fact is a
         file the store's name rule accepts; the index, the rulings and any
-        other file are not, so a call about them alone answers ()."""
+        other file are not, so a call about them alone answers {}."""
         if self.state_dir is None or not isinstance(tool_input, dict):
             return None
-        paths = [str(tool_input["path"])] if tool_input.get("path") else []
-        if not paths and name == "apply_patch":
-            try:
-                sections = split_patch_files(str(tool_input.get("patch", "")))
+        try:
+            sections = (
+                split_patch_files(str(tool_input.get("patch", ""))) if name == "apply_patch" else []
+            )
+            if tool_input.get("path"):
+                paths = [str(tool_input["path"])]
+                ops = [
+                    ("create" if result.created else "edit")
+                    if isinstance(result, EditResult)
+                    else patch_op(sections[0])
+                    if sections
+                    else "read"
+                ]
+            else:
                 paths = [patch_target_path(section) for section in sections]
-            except PatchError:
-                return None
+                ops = [patch_op(section) for section in sections]
+        except PatchError:
+            return None
         if not paths or not all(p.startswith("/") for p in paths):
             return None
         # Both sides resolved: the model is told the store's unresolved path
@@ -1119,22 +1149,25 @@ class Workflow:
         resolved = [Path(p).resolve() for p in paths]
         if not all(p.is_relative_to(store) for p in resolved):
             return None
-        return tuple(
-            p.stem
-            for p in resolved
+        return {
+            p.stem: op
+            for p, op in zip(resolved, ops, strict=True)
             if p.parent == store and p.suffix == ".md" and is_memory_name(p.stem)
-        )
+        }
 
     def _record_memory_use(self, state: LoopState) -> None:
         """Persist the facts this leg wrote and read (`memory list` shows them);
         a write fault must not break the end."""
-        if self.state_dir is None or not (state.memory.wrote or state.memory.read):
+        memory = state.memory
+        if self.state_dir is None or not (memory.wrote or memory.read or memory.deleted):
             return
         try:
             record_use(
                 self.state_dir,
                 session=self.session_id or "?",
                 wrote=tuple(state.memory.wrote),
+                created=tuple(state.memory.created),
+                deleted=tuple(state.memory.deleted),
                 read=dict(state.memory.read),
             )
         except OSError as exc:

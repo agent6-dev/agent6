@@ -83,7 +83,7 @@ def test_list_shows_who_wrote_and_read_each_fact(
 ) -> None:
     """The use record prints under its entry: an operator-added fact reads
     `written ... by operator, never read`; a run's reads follow."""
-    from agent6.memory import record_use
+    from agent6.memory import memory_dir, record_use
 
     assert _cmd_memory_add("build-quirk", "Needs FOO=1.") == 0
     state = state_dir(Path.cwd())
@@ -95,6 +95,12 @@ def test_list_shows_who_wrote_and_read_each_fact(
     assert "    written " in out
     assert "by operator" in out
     assert "read 3 times, last 1970-01-02 by run-a" in out
+    # A fact the record never saw (written by hand) still reads as never read.
+    (memory_dir(state) / "by-hand.md").write_text("By hand.\n", encoding="utf-8")
+    with (memory_dir(state) / "MEMORY.md").open("a", encoding="utf-8") as fh:
+        fh.write("- by-hand: By hand.\n")
+    assert _cmd_memory_list() == 0
+    assert "- by-hand: By hand.\n    never read\n" in capsys.readouterr().out
 
 
 def test_list_names_orphans_when_the_index_is_absent_or_blank(
@@ -119,13 +125,15 @@ def test_format_use_says_each_state_plainly() -> None:
     from agent6.memory import MemoryUse, Touch
     from agent6.ui.cli.memory_cmds import format_use
 
+    first, second = Touch("run-a", "2026-01-01 00:00Z"), Touch("run-b", "2026-01-02 00:00Z")
     assert format_use(MemoryUse()) == "never read"
-    assert format_use(MemoryUse(writes=(Touch("run-a", "2026-01-01 00:00Z"),))) == (
+    assert format_use(MemoryUse(created=first, writes=(first,))) == (
         "written 2026-01-01 by run-a, never read"
     )
     assert format_use(
         MemoryUse(
-            writes=(Touch("run-a", "2026-01-01 00:00Z"), Touch("run-b", "2026-01-02 00:00Z")),
+            created=first,
+            writes=(first, second),
             reads=1,
             last_read=Touch("run-c", "2026-01-03 00:00Z"),
         )
@@ -133,10 +141,10 @@ def test_format_use_says_each_state_plainly() -> None:
         "written 2026-01-01 by run-a, edited 2026-01-02 by run-b,"
         " read once, last 2026-01-03 by run-c"
     )
-    # A writer the record's first shape kept without a stamp.
-    assert format_use(MemoryUse(writes=(Touch("run-x"),), reads=0)) == (
-        "written by run-x, never read"
-    )
+    # A fact the record never saw created: its writes are edits.
+    assert format_use(MemoryUse(writes=(first, second))) == "edited 2026-01-02 by run-b, never read"
+    # A count without a last reader (a hand-edited record) still counts.
+    assert format_use(MemoryUse(reads=2)) == "read 2 times"
 
 
 def test_list_names_the_files_the_index_no_longer_lists(

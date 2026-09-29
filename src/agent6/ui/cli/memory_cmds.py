@@ -45,34 +45,35 @@ def _cmd_memory_list() -> int:
     for line in text.splitlines():
         print(line)
         name = index_name(line)
-        if name is not None and name in use:
-            print(f"    {format_use(use[name])}")
+        if name is not None:
+            print(f"    {format_use(use.get(name, MemoryUse()))}")
     if orphans:
         print(f"not in the index (no run sees them; `memory rm` deletes): {', '.join(orphans)}")
     return 0
 
 
 def format_use(use: MemoryUse) -> str:
-    """One line: `written <date> by <session>[, edited <date> by <session>],
+    """One line: `written <date> by <session>, edited <date> by <session>,
     read once|N times, last <date> by <session>` or `never read`; a part the
-    record does not hold is left out."""
+    record does not hold is left out (a fact it never saw created has no
+    `written`)."""
     parts: list[str] = []
     created, updated = use.created, use.updated
     if created is not None:
         parts.append(f"written {_when_by(created)}")
-        if updated is not None and updated != created:
-            parts.append(f"edited {_when_by(updated)}")
-    if use.reads and use.last_read is not None:
+    if updated is not None and updated != created:
+        parts.append(f"edited {_when_by(updated)}")
+    if use.reads:
         times = "once" if use.reads == 1 else f"{use.reads} times"
-        parts.append(f"read {times}, last {_when_by(use.last_read)}")
+        last = "" if use.last_read is None else f", last {_when_by(use.last_read)}"
+        parts.append(f"read {times}{last}")
     else:
         parts.append("never read")
     return ", ".join(parts)
 
 
 def _when_by(touch: Touch) -> str:
-    """`<date> by <session>`, or `by <session>` when the record holds no stamp."""
-    return f"{touch.at[:10]} by {touch.session}" if touch.at else f"by {touch.session}"
+    return f"{touch.at[:10]} by {touch.session}"
 
 
 def _cmd_memory_show(name: str) -> int:

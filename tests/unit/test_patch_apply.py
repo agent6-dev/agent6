@@ -241,7 +241,23 @@ def test_bare_path_header_no_a_b_prefix() -> None:
 
 # --- OpenAI V4A "*** Begin Patch" parser/applier ----------------------------
 
-from agent6.tools.patch_apply import apply_v4a_text, is_v4a_patch, patch_target_path  # noqa: E402
+from agent6.tools.patch_apply import (  # noqa: E402
+    apply_v4a_text,
+    is_v4a_patch,
+    patch_op,
+    patch_target_path,
+)
+
+
+def test_patch_op_reads_the_headers_of_either_format() -> None:
+    assert patch_op("--- /dev/null\n+++ b/new.md\n@@ -0,0 +1 @@\n+x\n") == "create"
+    assert patch_op("--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-a\n+b\n") == "edit"
+    assert patch_op("--- a/foo.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n") == "delete"
+    assert patch_op("*** Begin Patch\n*** Add File: new.md\n+x\n*** End Patch") == "create"
+    assert patch_op("*** Begin Patch\n*** Update File: m.py\n@@\n-a\n+b\n*** End Patch") == "edit"
+    assert patch_op("*** Begin Patch\n*** Delete File: m.py\n*** End Patch") == "delete"
+    with pytest.raises(PatchError):
+        patch_op("no header\n")
 
 
 def test_v4a_detect_and_target_path() -> None:

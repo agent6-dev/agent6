@@ -378,15 +378,36 @@ class MemoryState:
     memory store wired): one flip advisory when verify first goes green after
     failing, one deferred finish_session as the backstop; both silent once the
     worker recorded anything (`written`, any edit under the store). Those
-    three are run-lifetime and persist in the snapshot. `wrote` and `read`
-    name the facts this leg touched, for the use record its end persists
-    (`memory.record_use`); leg-local, each leg records its own."""
+    three are run-lifetime and persist in the snapshot. `wrote` (with
+    `created`, the facts an edit tool made rather than changed), `deleted`
+    and `read` name the facts this leg touched, for the use record its end
+    persists (`memory.record_use`); leg-local, each leg records its own."""
 
     written: bool = False
     flip_nudged: bool = False
     finish_nudged: bool = False
     wrote: list[str] = field(default_factory=list)
+    created: list[str] = field(default_factory=list)
+    deleted: list[str] = field(default_factory=list)
     read: dict[str, int] = field(default_factory=dict)
+
+    def note_write(self, fact: str, op: str) -> None:
+        """Fold one write of *fact* (`create`, `edit` or `delete`): a delete
+        ends it for this leg (its reads so far with it), so its entry goes at
+        the leg's end as `memory rm` drops it; a create after that starts it
+        afresh."""
+        if op == "delete":
+            for names in (self.wrote, self.created):
+                if fact in names:
+                    names.remove(fact)
+            self.read.pop(fact, None)  # its old life's reads go with it
+            if fact not in self.deleted:
+                self.deleted.append(fact)
+            return
+        if fact not in self.wrote:
+            self.wrote.append(fact)
+        if op == "create" and fact not in self.created:
+            self.created.append(fact)
 
 
 def memory_flip(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | None:
