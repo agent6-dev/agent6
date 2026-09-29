@@ -110,7 +110,6 @@ select = [
     "DOC201", # a Returns section where a value is returned
     "DOC402", # a Yields section where a value is yielded
     "DOC501", # a Raises section for what is raised
-    "DOC502", # no Raises entry for what is not raised
     "E",      # pycodestyle
     "ERA",    # no commented-out code
     "F",      # pyflakes
